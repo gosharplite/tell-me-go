@@ -8,11 +8,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/auth"
 )
 
 func TestSendMessage(t *testing.T) {
 	// 1. Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify Headers (Simulating Vertex Auth)
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+		}
+
 		// Verify request
 		var req Request
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,8 +43,9 @@ func TestSendMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 2. Setup client with mock server URL
-	client := NewClient(server.URL, "test-model", "test-key")
+	// 2. Setup client with mock server URL and mock authenticator
+	authenticator := &auth.VertexAuth{Token: "test-token"}
+	client := NewClient(server.URL, "test-model", authenticator)
 
 	// 3. Execution
 	result, err := client.SendMessage("Hello")

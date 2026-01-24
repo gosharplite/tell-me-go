@@ -10,13 +10,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+
+	"github.com/gosharplite/tell-me-go/internal/auth"
 )
 
 // Client represents a Gemini API client.
 type Client struct {
-	URL    string
-	Model  string
-	APIKey string
+	URL           string
+	Model         string
+	Authenticator auth.Authenticator
 }
 
 // Request represents the Gemini API request payload.
@@ -43,18 +46,37 @@ type Candidate struct {
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(url, model, apiKey string) *Client {
+func NewClient(url, model string, authenticator auth.Authenticator) *Client {
 	return &Client{
-		URL:    url,
-		Model:  model,
-		APIKey: apiKey,
+		URL:           url,
+		Model:         model,
+		Authenticator: authenticator,
 	}
 }
 
 // SendMessage sends a single prompt to the Gemini API and returns the text response.
 func (c *Client) SendMessage(prompt string) (string, error) {
-	apiURL := fmt.Sprintf("%s/%s:generateContent?key=%s", c.URL, c.Model, c.APIKey)
+	// 1. Prepare Base URL
+	u, err := url.Parse(fmt.Sprintf("%s/%s:generateContent", c.URL, c.Model))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse url: %w", err)
+	}
 
+	// 2. Apply Authentication
+	authReq := &auth.Request{
+		QueryParams: make(map[string]string),
+		Headers:     make(map[string]string),
+	}
+	c.Authenticator.Apply(authReq)
+
+	// Add Query Params
+	q := u.Query()
+	for k, v := range authReq.QueryParams {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+
+	// 3. Prepare Payload
 	reqPayload := Request{
 		Contents: []Content{
 			{
@@ -68,7 +90,20 @@ func (c *Client) SendMessage(prompt string) (string, error) {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	// 4. Execute Request
+	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Apply Headers
+	for k, v := range authReq.Headers {
+		httpReq.Header.Set(k, v)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
