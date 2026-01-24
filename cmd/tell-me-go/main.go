@@ -76,10 +76,10 @@ func main() {
 	isVertex := strings.Contains(cfg.URL, "aiplatform.googleapis.com")
 
 	if isVertex {
-		fmt.Println("[System] Using Vertex AI / GCP Token Authentication")
+		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Using Vertex AI / GCP Token Authentication\033[0m\n")
 		authenticator = &auth.VertexAuth{}
 	} else if cfg.APIKey != "" {
-		fmt.Println("[System] Using AI Studio / API Key Authentication")
+		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Using AI Studio / API Key Authentication\033[0m\n")
 		authenticator = &auth.APIKeyAuth{APIKey: cfg.APIKey}
 	} else {
 		log.Fatal("API_KEY not found in config or environment for AI Studio endpoint.")
@@ -104,7 +104,7 @@ func main() {
 	}
 
 	// 9. Send Chat
-	fmt.Printf("> %s\n", prompt)
+	fmt.Fprintf(os.Stderr, "\033[0;32m> %s\033[0m\n", prompt)
 	response, err := client.SendChat(hManager.GetContents())
 	if err != nil {
 		log.Fatalf("Error from Gemini: %v", err)

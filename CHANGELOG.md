@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.2.3] - 2026-01-25
+
+### Changed
+- UI Refinement: Aligned system messages and prompt echoes with the original `tell-me` Bash style.
+- System messages are now printed in gray (`\033[0;90m`) and sent to `stderr`.
+- User prompt echoes are now printed in green (`\033[0;32m`) and sent to `stderr`.
+
 ## [0.2.2] - 2026-01-25
 
 ### Changed
