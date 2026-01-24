@@ -22,30 +22,49 @@ All flags must follow a consistent naming convention:
 - **Model**: `-m` or `--model` for overriding the AI model.
 - **Verbose**: `-v` or `--verbose` for detailed logging.
 
-#### 2. Argument Handling
-- **Prompt**: The primary prompt should be the first non-flag argument.
-- **Validation**: The tool must provide a clear usage message if required arguments or flags are missing.
+#### 2. Argument and Input Handling
+The tool follows a "Triple-Mode" input strategy to provide a seamless user experience:
+- **Mode 1: Direct Argument**: If the first non-flag argument is present, use it as the prompt.
+- **Mode 2: Piped Input**: If no argument is present and `stdin` is a pipe (not a terminal), read the prompt from `stdin`.
+- **Mode 3: Interactive Multi-line**: If no argument is present and `stdin` is a terminal, enter an interactive mode that reads until `EOF` (`Ctrl+D`).
 
-#### 3. Flag Parsing Location
-- Flags should be defined and parsed within `cmd/tell-me-go/main.go` or a dedicated `internal/cli` package for complex commands.
+#### 3. Standard Alias (`a`)
+To maintain consistency with the project's roots, users are encouraged to set up a single, universal alias:
+```bash
+alias a='tell-me-go'
+```
+This alias should be the primary way users interact with the tool, relying on the "Triple-Mode" logic above.
+
+#### 4. Flag Parsing Location
+- Flags should be defined and parsed within `cmd/tell-me-go/main.go`.
 - Defaults should be sensible (e.g., default config path to `configs/gemini.yaml`).
 
 ---
 
 ### Code Templates
 
-#### Standard Flag Parsing:
+#### Standard Input and Flag Parsing:
 ```go
-var configPath string
-flag.StringVar(&configPath, "c", "configs/gemini.yaml", "Path to the configuration file")
+// 1. Parse Flags
+configPath := flag.String("c", "configs/gemini.yaml", "Path to config")
 flag.Parse()
 
+// 2. Resolve Prompt (Triple-Mode)
 prompt := flag.Arg(0)
 if prompt == "" {
-    fmt.Println("Usage: tell-me-go [flags] <prompt>")
-    flag.PrintDefaults()
-    os.Exit(1)
+    stat, _ := os.Stdin.Stat()
+    if (stat.Mode() & os.ModeCharDevice) == 0 {
+        // Mode 2: Piped Stdin
+        b, _ := io.ReadAll(os.Stdin)
+        prompt = string(b)
+    } else {
+        // Mode 3: Interactive
+        fmt.Println("Enter prompt (Ctrl+D to finish):")
+        b, _ := io.ReadAll(os.Stdin)
+        prompt = string(b)
+    }
 }
+prompt = strings.TrimSpace(prompt)
 ```
 
 ---
