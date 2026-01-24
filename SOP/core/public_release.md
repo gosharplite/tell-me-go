@@ -24,7 +24,7 @@ Before any public release, perform a mandatory security scan:
 
 #### 2. Documentation & Compliance Review
 - **License**: Verify `LICENSE` (MIT) is present in the root.
-- **SPDX Headers**: Ensure all Go source files (`*.go`) and YAML files contain the standard SPDX-License-Identifier header.
+- **SPDX Headers**: Ensure all Go source files (`*.go`), YAML files, and Markdown files (`*.md`) in the `SOP/` directory contain the standard SPDX-License-Identifier header.
     - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/core/self_update_safety.md`.
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
 - **Version Bump**: Update any version constants in the source code (e.g., in a `version` package or the main CLI help text).

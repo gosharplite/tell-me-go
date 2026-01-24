@@ -52,6 +52,7 @@ Every test must be isolated from the host system and other tests:
 #### Unit Test Boilerplate:
 ```go
 package history
+- **Strict Provider Compliance**: When mocking external APIs (like Gemini), the mock must enforce the schema requirements of the **strictest** available provider (e.g., Vertex AI). Passing a mock is only valid if the mock validates mandatory fields (like `role`) that strict providers require.
 
 import (
 	"testing"
