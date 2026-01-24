@@ -1,3 +1,6 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
 # Standard Operating Procedure (SOP): CLI Command Line Interface Standards
 
 ### Objective
