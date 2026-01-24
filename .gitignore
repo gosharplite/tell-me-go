@@ -1,5 +1,5 @@
 # Binaries
-tell-me-go
+/tell-me-go
 *.exe
 *.exe~
 *.dll

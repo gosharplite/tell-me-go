@@ -51,6 +51,32 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 ./tell-me-go -new "Start a fresh conversation."
 ```
 
+**Interactive Multi-line Mode:**
+If no prompt is provided as an argument, the tool reads from `stdin`. This is useful for multi-line prompts or piping content.
+```bash
+./tell-me-go
+# [Reading multi-line input. Press Ctrl+D to send]
+# ... type your long prompt here ...
+```
+
+**Piped Input:**
+```bash
+cat code.go | ./tell-me-go "Explain this code"
+```
+
+## ⌨️ Shell Integration (a & aa)
+To use `a` and `aa` shortcuts like in the original `tell-me` project, add the following to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+# Path to your tell-me-go binary
+alias a='/path/to/tell-me-go'
+alias aa='/path/to/tell-me-go'
+```
+
+*   **`a "prompt"`**: Quick single-line question.
+*   **`aa`**: Interactive multi-line prompt (press `Ctrl+D` to finish).
+*   **`cat file | a "question"`**: Analyze files.
+
 ## ⚙️ Configuration
 The tool supports two authentication methods based on your YAML configuration:
 

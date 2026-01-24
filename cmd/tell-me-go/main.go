@@ -26,6 +26,35 @@ func main() {
 	// 2. Handle Prompt Argument
 	prompt := flag.Arg(0)
 	if prompt == "" {
+		// If no argument, check if stdin is a pipe or wait for user input (multi-line)
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			// Piped input
+			var b []byte
+			b, err := os.ReadFile(os.Stdin.Name())
+			if err == nil {
+				prompt = string(b)
+			}
+		} else {
+			// Interactive multi-line input
+			fmt.Println("\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
+			var sb strings.Builder
+			var buf [1024]byte
+			for {
+				n, err := os.Stdin.Read(buf[:])
+				if n > 0 {
+					sb.Write(buf[:n])
+				}
+				if err != nil {
+					break
+				}
+			}
+			prompt = sb.String()
+		}
+	}
+
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
 		fmt.Println("Usage: tell-me-go [flags] <prompt>")
 		flag.PrintDefaults()
 		os.Exit(1)
