@@ -54,8 +54,8 @@ func NewClient(url, model string, authenticator auth.Authenticator) *Client {
 	}
 }
 
-// SendMessage sends a single prompt to the Gemini API and returns the text response.
-func (c *Client) SendMessage(prompt string) (string, error) {
+// SendChat sends the conversation history to the Gemini API and returns the model's text response.
+func (c *Client) SendChat(history []Content) (string, error) {
 	// 1. Prepare Base URL
 	u, err := url.Parse(fmt.Sprintf("%s/%s:generateContent", c.URL, c.Model))
 	if err != nil {
@@ -78,12 +78,7 @@ func (c *Client) SendMessage(prompt string) (string, error) {
 
 	// 3. Prepare Payload
 	reqPayload := Request{
-		Contents: []Content{
-			{
-				Role:  "user",
-				Parts: []Part{{Text: prompt}},
-			},
-		},
+		Contents: history,
 	}
 
 	jsonData, err := json.Marshal(reqPayload)

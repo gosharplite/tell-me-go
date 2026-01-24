@@ -12,7 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 )
 
-func TestSendMessage(t *testing.T) {
+func TestSendChat(t *testing.T) {
 	// 1. Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify Headers (Simulating Vertex Auth)
@@ -51,9 +51,12 @@ func TestSendMessage(t *testing.T) {
 	client := NewClient(server.URL, "test-model", authenticator)
 
 	// 3. Execution
-	result, err := client.SendMessage("Hello")
+	history := []Content{
+		{Role: "user", Parts: []Part{{Text: "Hello"}}},
+	}
+	result, err := client.SendChat(history)
 	if err != nil {
-		t.Fatalf("SendMessage failed: %v", err)
+		t.Fatalf("SendChat failed: %v", err)
 	}
 
 	// 4. Verification
