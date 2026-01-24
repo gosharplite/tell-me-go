@@ -25,6 +25,9 @@ func TestSendMessage(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("failed to decode request: %v", err)
 		}
+		if req.Contents[0].Role != "user" {
+			t.Errorf("expected role 'user', got '%s'", req.Contents[0].Role)
+		}
 		if req.Contents[0].Parts[0].Text != "Hello" {
 			t.Errorf("expected prompt 'Hello', got '%s'", req.Contents[0].Parts[0].Text)
 		}

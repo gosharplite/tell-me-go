@@ -80,6 +80,7 @@ func (c *Client) SendMessage(prompt string) (string, error) {
 	reqPayload := Request{
 		Contents: []Content{
 			{
+				Role:  "user",
 				Parts: []Part{{Text: prompt}},
 			},
 		},
