@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,44 +16,48 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: tell-me-go <prompt>")
+	// 1. Define Flags
+	configPath := flag.String("c", "configs/gemini.yaml", "Path to the configuration file")
+	flag.Parse()
+
+	// 2. Handle Prompt Argument
+	prompt := flag.Arg(0)
+	if prompt == "" {
+		fmt.Println("Usage: tell-me-go [flags] <prompt>")
+		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	prompt := os.Args[1]
 
-	// 1. Load Config
-	cfgPath := "configs/gemini.yaml"
-	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		// Fallback to local if configs/ doesn't exist (e.g. running from root)
-		cfgPath = "configs/gemini.yaml"
-	}
-	cfg, err := config.Load(cfgPath)
+	// 3. Load Config
+	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+		log.Fatalf("Error loading config [%s]: %v", *configPath, err)
 	}
 
-	// 2. Override API Key from Env if present
+	// 4. Override API Key from Env if present
 	if apiKey := os.Getenv("API_KEY"); apiKey != "" {
 		cfg.APIKey = apiKey
 	}
 
-	// 3. Determine Authentication Method
+	// 5. Determine Authentication Method
 	var authenticator auth.Authenticator
-	if strings.Contains(cfg.URL, "aiplatform.googleapis.com") || cfg.APIKey == "" {
-		// Vertex AI / GCP Token mode
+	isVertex := strings.Contains(cfg.URL, "aiplatform.googleapis.com")
+
+	if isVertex {
 		fmt.Println("[System] Using Vertex AI / GCP Token Authentication")
 		authenticator = &auth.VertexAuth{}
-	} else {
-		// AI Studio / API Key mode
+	} else if cfg.APIKey != "" {
 		fmt.Println("[System] Using AI Studio / API Key Authentication")
 		authenticator = &auth.APIKeyAuth{APIKey: cfg.APIKey}
+	} else {
+		// No key for AI Studio URL
+		log.Fatal("API_KEY not found in config or environment for AI Studio endpoint. \nIf you intended to use Vertex AI, ensure your AIURL is correct in the config file.")
 	}
 
-	// 4. Initialize API Client
+	// 6. Initialize API Client
 	client := api.NewClient(cfg.URL, cfg.Model, authenticator)
 
-	// 5. Send Message
+	// 7. Send Message
 	fmt.Printf("> %s\n", prompt)
 	response, err := client.SendMessage(prompt)
 	if err != nil {
