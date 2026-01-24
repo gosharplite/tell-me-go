@@ -7,6 +7,7 @@ A lightweight, terminal-based interface for Google's Gemini models, ported from 
 
 ## 🚀 Features
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
+*   **Session Persistence**: Automatically remembers conversation history across CLI calls.
 *   **Dual Auth Support**: Supports both **Google AI Studio** (API Key) and **Google Vertex AI** (GCP OAuth2 Tokens).
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` for Vertex AI sessions.
 *   **Flexible Configuration**: Specify custom YAML configuration files for different models and environments.
@@ -45,6 +46,11 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 ./tell-me-go -c configs/vertex.yaml "What is the capital of France?"
 ```
 
+**New Session:**
+```bash
+./tell-me-go -new "Start a fresh conversation."
+```
+
 ## ⚙️ Configuration
 The tool supports two authentication methods based on your YAML configuration:
 
@@ -70,6 +76,7 @@ This project adheres to strict **Standard Operating Procedures (SOPs)** to ensur
 *   [Authentication & Tokens](./SOP/core/authentication_and_token_management.md)
 *   [CLI Standards](./SOP/core/cli_standards.md)
 *   [Documentation Standards](./SOP/core/documentation_standards.md)
+*   [History Management](./SOP/core/history_management.md)
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
