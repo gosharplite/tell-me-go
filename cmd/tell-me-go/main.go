@@ -76,10 +76,8 @@ func main() {
 	isVertex := strings.Contains(cfg.URL, "aiplatform.googleapis.com")
 
 	if isVertex {
-		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Using Vertex AI / GCP Token Authentication\033[0m\n")
 		authenticator = &auth.VertexAuth{}
 	} else if cfg.APIKey != "" {
-		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Using AI Studio / API Key Authentication\033[0m\n")
 		authenticator = &auth.APIKeyAuth{APIKey: cfg.APIKey}
 	} else {
 		log.Fatal("API_KEY not found in config or environment for AI Studio endpoint.")
