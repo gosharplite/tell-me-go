@@ -64,18 +64,18 @@ If no prompt is provided as an argument, the tool reads from `stdin`. This is us
 cat code.go | ./tell-me-go "Explain this code"
 ```
 
-## ⌨️ Shell Integration (a & aa)
-To use `a` and `aa` shortcuts like in the original `tell-me` project, add the following to your `~/.bashrc` or `~/.zshrc`:
+## ⌨️ Shell Integration (`a`)
+To use the `a` shortcut (similar to the original `tell-me` project), add the following to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 # Path to your tell-me-go binary
 alias a='/path/to/tell-me-go'
-alias aa='/path/to/tell-me-go'
 ```
 
-*   **`a "prompt"`**: Quick single-line question.
-*   **`aa`**: Interactive multi-line prompt (press `Ctrl+D` to finish).
-*   **`cat file | a "question"`**: Analyze files.
+The `a` alias is smart and handles three modes:
+1.  **Quick Ask**: `a "What is the capital of France?"`
+2.  **Piped Input**: `cat main.go | a "Explain this code"`
+3.  **Interactive Multi-line**: Just type `a` and press Enter. Paste your long text/logs, then press `Ctrl+D` to send.
 
 ## ⚙️ Configuration
 The tool supports two authentication methods based on your YAML configuration:

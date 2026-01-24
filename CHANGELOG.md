@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.2.2] - 2026-01-25
+
+### Changed
+- Simplified Shell Integration: Merged `aa` functionality into a single, smart `a` alias.
+- Updated README to reflect the triple-mode behavior of the `a` alias.
+
 ### Added
 - Interactive multi-line input support when no prompt is provided (similar to `aa` in Bash).
 - Piped stdin support for analyzing files (e.g., `cat file | tell-me-go "Explain"`).
