@@ -1,3 +1,6 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 // Package api handles communication with the Gemini API.
 package api
 

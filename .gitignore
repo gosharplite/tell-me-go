@@ -1,0 +1,26 @@
+# Binaries
+tell-me-go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Logs and Output
+*.log
+output/
+
+# Session Data
+last-*.json
+history.json
+
+# Keys and Secrets
+*.json
+.env
+.config.yaml
+api_key.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
+

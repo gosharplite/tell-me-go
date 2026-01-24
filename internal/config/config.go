@@ -1,3 +1,6 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 // Package config handles application configuration loading and parsing.
 package config
 
