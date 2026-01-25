@@ -82,4 +82,3 @@ func estimateCost(logFile string, model string) (string, error) {
 	return fmt.Sprintf("Estimated Cost for Session:\n- Model: %s\n- Tokens: Hit: %d, Miss: %d, Comp: %d, Thinking: %d\n- Search Queries: %d\n- Total Cost: $%.4f",
 		model, totalH, totalM, totalC, totalTh, totalS, totalCost), nil
 }
-

@@ -58,12 +58,12 @@ func (a *VertexAuth) GetToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get gcloud token: %w", err)
 	}
-	
+
 	token := strings.TrimSpace(string(out))
-	
+
 	// 3. Save to cache
 	_ = os.WriteFile(cacheFile, []byte(token), 0600)
-	
+
 	a.Token = token
 	return a.Token, nil
 }
@@ -81,4 +81,3 @@ func (a *VertexAuth) Apply(req *Request) {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
 }
-

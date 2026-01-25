@@ -24,7 +24,7 @@ type Task struct {
 // RegisterStateTools adds scratchpad and task management tools.
 func RegisterStateTools(r *Registry, homeDir string, sessionName string) {
 	// We pass homeDir and sessionName to closures so the handlers know where to look.
-	
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent session scratchpad. Use this to keep track of plans, completed tasks, or architectural notes.",
@@ -111,7 +111,7 @@ func manageScratchpad(args map[string]interface{}, homeDir, sessionName string) 
 	}
 
 	path := getScratchpadPath(homeDir, sessionName, scope)
-	
+
 	// Ensure directory exists
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
@@ -139,7 +139,7 @@ func manageScratchpad(args map[string]interface{}, homeDir, sessionName string) 
 			return "", fmt.Errorf("failed to open scratchpad for append: %w", err)
 		}
 		defer f.Close()
-		
+
 		stat, _ := f.Stat()
 		if stat.Size() > 0 {
 			_, _ = f.WriteString("\n")
@@ -259,4 +259,3 @@ func saveTasks(path string, tasks []Task) {
 	data, _ := json.MarshalIndent(tasks, "", "  ")
 	_ = os.WriteFile(path, data, 0644)
 }
-

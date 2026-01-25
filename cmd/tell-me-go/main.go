@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.9.2"
+const Version = "0.9.3"
 
 func main() {
 	// 1. Define Flags
@@ -88,15 +88,13 @@ func main() {
 		homeDir = "."
 	}
 
-	// Extract session name from config file (e.g., configs/vertex.yaml -> vertex)
-	configBase := filepath.Base(*configPath)
-	sessionName := strings.TrimSuffix(configBase, filepath.Ext(configBase))
+	// Construct session name and file paths (Aligned with Bash version)
+	sessionName := "last-" + cfg.Mode
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
-	logPath := filepath.Join(homeDir, "output", sessionName+".log")
+	logPath := historyPath + ".log"
 
 	if *newSession {
-		os.Remove(historyPath)
-		os.Remove(logPath)
+		archiveSessionFiles(homeDir, sessionName, historyPath, logPath)
 	}
 	hManager := history.NewManager(historyPath)
 	if err := hManager.Load(); err != nil {
@@ -128,3 +126,34 @@ func main() {
 	}
 }
 
+// archiveSessionFiles moves existing session files to a timestamped backup directory.
+func archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
+	timestamp := time.Now().Format("20060102_150405")
+	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
+
+	// List of files to potentially archive
+	filesToMove := []string{
+		historyPath,
+		logPath,
+		filepath.Join(homeDir, "output", sessionName+".scratchpad.md"),
+		filepath.Join(homeDir, "output", sessionName+".tasks.json"),
+	}
+
+	backupCreated := false
+	for _, f := range filesToMove {
+		if _, err := os.Stat(f); err == nil {
+			if !backupCreated {
+				if err := os.MkdirAll(backupDir, 0755); err != nil {
+					fmt.Fprintf(os.Stderr, "Error creating backup directory: %v\n", err)
+					return
+				}
+				fmt.Printf("Archiving existing session files to %s\n", backupDir)
+				backupCreated = true
+			}
+			dest := filepath.Join(backupDir, filepath.Base(f))
+			if err := os.Rename(f, dest); err != nil {
+				fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+			}
+		}
+	}
+}

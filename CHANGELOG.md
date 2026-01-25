@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.9.3] - 2026-01-26
+
+### Added
+- **Session Archiving**: Implemented automatic backup of session files (history, logs, scratchpads, tasks) when starting a new session with the `-new` flag. Files are moved to timestamped directories in `output/backups/`.
+
+### Changed
+- **Unified Naming Alignment**: Aligned file naming conventions with the original Bash project for full cross-compatibility.
+    - History: `output/last-<MODE>.json`
+    - Log: `output/last-<MODE>.json.log`
+    - Scratchpad: `output/last-<MODE>.scratchpad.md`
+    - Tasks: `output/last-<MODE>.tasks.json`
+- **Version Bump**: Updated binary version to v0.9.3.
 ## [0.9.2] - 2026-01-26
 
 ### Changed

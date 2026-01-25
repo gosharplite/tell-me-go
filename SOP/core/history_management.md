@@ -21,6 +21,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 History must be stored as a slice of `Content` structs, mirroring the Gemini API's `contents` field.
 - **File Format**: Standard JSON.
 - **Locality**: History files should be saved in the `output/` directory by default, named `last-<MODE>.json`.
+- **Log Files**: Logs should be saved as `last-<MODE>.json.log` for compatibility with the Bash version.
 - **Serialization**: The `Role` field in the JSON payload must **never** be omitted. Strict providers like Vertex AI will reject payloads where the `role` key is missing. Ensure the struct tag does not use `omitempty` for this field.
 
 #### 2. Role Alternation Rules

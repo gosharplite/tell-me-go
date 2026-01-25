@@ -49,7 +49,7 @@ func TestSendChat(t *testing.T) {
 	history := []*genai.Content{
 		{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
 	}
-	content, err := client.SendChat(history, nil)
+	content, _, err := client.SendChat(history, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSystemInstruction(t *testing.T) {
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "Be helpful", false)
 
-	_, err := client.SendChat([]*genai.Content{}, nil)
+	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestThinkingBudget(t *testing.T) {
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", "", false)
 
-	_, err := client.SendChat([]*genai.Content{}, nil)
+	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}

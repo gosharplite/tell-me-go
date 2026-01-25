@@ -43,4 +43,3 @@ func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *Metrics 
 
 	return m
 }
-

@@ -11,9 +11,10 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 *   **Agentic Tools**: Natively executes local tools (e.g., `execute_command`, `read_url`, `list_files`, `read_file`) and Google Search to solve complex tasks.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
-*   **Session Persistence**: Automatically remembers conversation history across CLI calls with valid role alternation.
+*   **Session Persistence & Archiving**: Automatically remembers conversation history across CLI calls. When starting a new session (`-new`), existing files are archived to `output/backups/`.
 *   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
+*   **Bash Compatibility**: Uses identical file naming and structures as the original Bash version for full interoperability.
 *   **SOP-Driven**: Built with a "Safety First" architecture where every change follows documented procedures.
 
 ## 📋 Prerequisites
@@ -74,7 +75,7 @@ If you want to share "memory" (tasks and scratchpads) between the Go and Bash ve
 export TELL_ME_HOME=~/path/to/your/tell-me-project
 ./tell-me-go "What are my current tasks?"
 ```
-The assistant will look for data in `$TELL_ME_HOME/output/`.
+The assistant will look for data in `$TELL_ME_HOME/output/`, using naming conventions like `last-vertex.json` and `last-vertex.scratchpad.md`. When a new session is started, it will archive previous files to `$TELL_ME_HOME/output/backups/`.
 
 ## ⌨️ Shell Integration (`a`)
 To use the `a` shortcut, add the following to your `~/.bashrc` or `~/.zshrc`:
