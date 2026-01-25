@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.9.0"
+const Version = "1.11.0"
 
 func main() {
 	// 1. Define Flags
@@ -102,6 +102,11 @@ func main() {
 	// Snapshot for potential rollback before adding new prompt
 	hManager.Snapshot()
 
+	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
+	if err != nil {
+		log.Fatalf("Error creating client: %v", err)
+	}
+
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
 	tools.RegisterIntelligenceTools(registry)
@@ -110,11 +115,7 @@ func main() {
 	tools.RegisterDevTools(registry)
 	tools.RegisterStateTools(registry, homeDir, sessionName, hManager)
 	tools.RegisterMetricsTools(registry, logPath, cfg.Model)
-
-	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
-	if err != nil {
-		log.Fatalf("Error creating client: %v", err)
-	}
+	tools.RegisterMediaTools(registry, client)
 
 	// 6. Execute Agent
 	chatAgent := agent.New(client, hManager, registry)

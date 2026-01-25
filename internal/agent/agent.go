@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"google.golang.org/genai"
 )
 
 // Agent represents the chat orchestration logic.
@@ -256,20 +258,74 @@ func (a *Agent) Chat(prompt string) error {
 						finalResult = res
 					}
 
-					results[idx] = &api.Part{
-						FunctionResponse: &api.FunctionResponse{
-							Name:     call.Name,
-							Response: map[string]interface{}{"result": finalResult},
-						},
+					// Multi-modal image injection logic
+					if strings.HasPrefix(finalResult, "MULTI_MODAL_IMAGE|") {
+						parts := strings.SplitN(finalResult, "|", 4)
+						if len(parts) == 4 {
+							mimeType := parts[1]
+							b64Data := parts[2]
+							displayMsg := parts[3]
+
+							results[idx] = &api.Part{
+								FunctionResponse: &api.FunctionResponse{
+									Name:     call.Name,
+									Response: map[string]interface{}{"result": displayMsg},
+								},
+							}
+							// Mark for injection in a temporary field we won't serialize
+							results[idx].Text = "INJECT:" + mimeType + ":" + b64Data
+						} else {
+							results[idx] = &api.Part{
+								FunctionResponse: &api.FunctionResponse{
+									Name:     call.Name,
+									Response: map[string]interface{}{"result": finalResult},
+								},
+							}
+						}
+					} else {
+						results[idx] = &api.Part{
+							FunctionResponse: &api.FunctionResponse{
+								Name:     call.Name,
+								Response: map[string]interface{}{"result": finalResult},
+							},
+						}
 					}
 				}(i, fc)
 			}
 			wg.Wait()
 
+			// Post-process multi-modal injections
+			var responseParts []*api.Part
+			var imageParts []*api.Part
+
+			for _, p := range results {
+				if strings.HasPrefix(p.Text, "INJECT:") {
+					injectParts := strings.SplitN(p.Text, ":", 3)
+					p.Text = "" // Clear the marker
+					if len(injectParts) == 3 {
+						data, _ := base64.StdEncoding.DecodeString(injectParts[2])
+						imageParts = append(imageParts, &api.Part{
+							InlineData: &genai.Blob{
+								MIMEType: injectParts[1],
+								Data:     data,
+							},
+						})
+					}
+				}
+				responseParts = append(responseParts, p)
+			}
+
 			a.history.AddContent(&api.Content{
 				Role:  "user",
-				Parts: results,
+				Parts: responseParts,
 			})
+
+			if len(imageParts) > 0 {
+				a.history.AddContent(&api.Content{
+					Role:  "user",
+					Parts: imageParts,
+				})
+			}
 			continue
 		}
 

@@ -173,3 +173,28 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 
 	return resp.Candidates[0].Content, metrics, nil
 }
+
+// GenerateImages calls the Imagen model to generate images from a prompt.
+func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	config := &genai.GenerateImagesConfig{
+		OutputMIMEType: mimeType,
+	}
+
+	resp, err := c.sdkClient.Models.GenerateImages(ctx, model, prompt, config)
+	if err != nil {
+		return nil, err
+	}
+
+	var results [][]byte
+	for _, img := range resp.GeneratedImages {
+		if img.Image != nil && len(img.Image.ImageBytes) > 0 {
+			results = append(results, img.Image.ImageBytes)
+		}
+	}
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no images generated")
+	}
+
+	return results, nil
+}
