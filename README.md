@@ -8,11 +8,12 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 ## 🚀 Features
 *   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
 *   **Gemini 2.0 Reasoning**: Support for **Thinking (Reasoning)** models with visible thought processes and configurable token budgets.
-*   **Agentic Tools**: Natively executes local tools (e.g., `list_files`, `read_file`) and Google Search to solve complex tasks.
+*   **Agentic Tools**: Natively executes local tools (e.g., `execute_command`, `read_url`, `list_files`, `read_file`) and Google Search to solve complex tasks.
+*   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Session Persistence**: Automatically remembers conversation history across CLI calls with valid role alternation.
 *   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
-*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` for Vertex AI sessions.
+*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **SOP-Driven**: Built with a "Safety First" architecture where every change follows documented procedures.
 
 ## 📋 Prerequisites
@@ -57,6 +58,23 @@ If `THINKING_BUDGET` is set in your config, the assistant will display its reaso
 
 **Interactive Multi-line Mode:**
 If no prompt is provided as an argument, the tool reads from `stdin`. Press `Ctrl+D` to send.
+
+## 📂 Shared Storage & Compatibility
+`tell-me-go` is designed to be fully compatible with the data structures of the original `tell-me` Bash project. 
+
+### Environment Variables
+You can point the assistant to a specific directory to share tasks, scratchpads, and history across different versions or projects:
+
+*   `TELL_ME_HOME`: The base directory for shared data (defaults to the current directory).
+*   `AIT_HOME`: Fallback for compatibility with the original Bash project.
+
+### Cross-Project Usage
+If you want to share "memory" (tasks and scratchpads) between the Go and Bash versions:
+```bash
+export TELL_ME_HOME=~/path/to/your/tell-me-project
+./tell-me-go "What are my current tasks?"
+```
+The assistant will look for data in `$TELL_ME_HOME/output/`.
 
 ## ⌨️ Shell Integration (`a`)
 To use the `a` shortcut, add the following to your `~/.bashrc` or `~/.zshrc`:
