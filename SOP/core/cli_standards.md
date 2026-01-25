@@ -93,3 +93,10 @@ cfg, err := config.Load(*configPath)
 - **Exit Codes**: Use `os.Exit(1)` for user errors and `os.Exit(0)` for successful completion.
 - **Standard Error**: Print error and usage messages to `os.Stderr`.
 
+
+#### 8. Configuration File Templates
+To ensure discoverability of features and ease of setup:
+- **Completeness**: All configuration templates (e.g., `configs/vertex.yaml`) **MUST** include every variable supported by the application's `Config` struct.
+- **Sensible Defaults**: Variables should be set to safe, sensible defaults.
+- **Documentation**: Each variable in the template should be accompanied by a comment explaining its purpose, especially for safety limits like `MAX_HISTORY_TOKENS` or `MAX_TURNS`.
+
