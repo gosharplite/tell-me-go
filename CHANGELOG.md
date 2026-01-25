@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.0.1] - 2026-01-26
+
+### Fixed
+- **History Pruning**: Corrected logic in `Prune` to ensure an even number of messages are removed, maintaining proper "user" role start and preventing role alternation errors.
+- **Thinking Configuration**: Updated `SendChat` to properly initialize `ThinkingConfig` if only a `THINKING_LEVEL` is provided without a budget. Both parameters are now sent to the SDK when defined.
+- **Native Metrics**: Integrated native `ThoughtsTokenCount` from the GenAI SDK into the metrics collection logic, ensuring accurate tracking of reasoning usage.
+
 ## [1.0.0] - 2026-01-26
 
 ### Added

@@ -121,11 +121,16 @@ func (m *Manager) Prune(maxTurns int) {
 	maxMessages := maxTurns * 2
 	if len(m.Contents) > maxMessages {
 		removeCount := len(m.Contents) - maxMessages
-		// Ensure we always start with a 'user' message after pruning
+		// Ensure the first message after pruning is 'user'.
+		// Since role alternation is enforced, if the number of remaining messages
+		// is even, the first one will be 'user' (assuming turns are [User, Model]).
 		if (len(m.Contents)-removeCount)%2 != 0 {
-			removeCount++
+			removeCount--
 		}
-		m.Contents = m.Contents[removeCount:]
+		
+		if removeCount > 0 {
+			m.Contents = m.Contents[removeCount:]
+		}
 	}
 }
 

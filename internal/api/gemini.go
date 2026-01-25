@@ -144,14 +144,15 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		SystemInstruction: c.systemInstruction,
 	}
 
-	// Apply Thinking Budget or Level (mutually exclusive)
-	if c.thinkingBudget > 0 {
+	// Apply Thinking Budget or Level (Fix: Allow level without specific budget)
+	if c.thinkingBudget > 0 || c.thinkingLevel != "" {
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
 		if c.thinkingLevel != "" {
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
-		} else {
+		}
+		if c.thinkingBudget > 0 {
 			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(c.thinkingBudget))
 		}
 	}
@@ -182,3 +183,4 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 
 	return resp.Candidates[0].Content, metrics, nil
 }
+
