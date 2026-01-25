@@ -82,6 +82,33 @@ func RegisterSystemTools(r *Registry) {
 			Required: []string{"url"},
 		},
 	}, readExternalDocs)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "http_request",
+		Description: "Executes a custom HTTP request.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"method": {
+					Type:        genai.TypeString,
+					Description: "HTTP method (GET, POST, PUT, DELETE, etc.).",
+				},
+				"url": {
+					Type:        genai.TypeString,
+					Description: "The target URL.",
+				},
+				"headers": {
+					Type:        genai.TypeObject,
+					Description: "HTTP headers as a map of strings.",
+				},
+				"body": {
+					Type:        genai.TypeString,
+					Description: "Request body content.",
+				},
+			},
+			Required: []string{"method", "url"},
+		},
+	}, httpRequest)
 }
 
 func askUser(args map[string]interface{}) (string, error) {
@@ -159,6 +186,60 @@ func readExternalDocs(args map[string]interface{}) (string, error) {
 	}
 
 	return content, nil
+}
+
+func httpRequest(args map[string]interface{}) (string, error) {
+	method, _ := args["method"].(string)
+	url, _ := args["url"].(string)
+	bodyStr, _ := args["body"].(string)
+
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
+
+	var reqBody io.Reader
+	if bodyStr != "" {
+		reqBody = strings.NewReader(bodyStr)
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if headers, ok := args["headers"].(map[string]interface{}); ok {
+		for k, v := range headers {
+			if val, ok := v.(string); ok {
+				req.Header.Set(k, val)
+			}
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Status: %s\n", resp.Status))
+	sb.WriteString("Headers:\n")
+	for k, v := range resp.Header {
+		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, strings.Join(v, ", ")))
+	}
+	sb.WriteString("\nBody:\n")
+	sb.WriteString(string(respBody))
+
+	out := sb.String()
+	if len(out) > 10000 {
+		out = out[:10000] + "\n... (truncated)"
+	}
+
+	return out, nil
 }
 
 func isSafeCommand(command string) bool {

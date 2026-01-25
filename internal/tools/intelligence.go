@@ -142,6 +142,21 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 		},
 	}, listTodos)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "go_doc",
+		Description: "Runs 'go doc' to retrieve documentation for a package or symbol.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"symbol": {
+					Type:        genai.TypeString,
+					Description: "The package or symbol to get documentation for (e.g., 'fmt.Println', './internal/tools').",
+				},
+			},
+			Required: []string{"symbol"},
+		},
+	}, goDoc)
 }
 
 // AST-based helpers for existing tools
@@ -331,6 +346,19 @@ func listTodos(args map[string]interface{}) (string, error) {
 		return "No TODOs, FIXMEs, or BUGs found.", nil
 	}
 	return strings.Join(results, "\n"), nil
+}
+
+func goDoc(args map[string]interface{}) (string, error) {
+	symbol, _ := args["symbol"].(string)
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
+
+	cmd := exec.Command("go", "doc", symbol)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out)), nil
+	}
+
+	return string(out), nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {
