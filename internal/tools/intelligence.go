@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"google.golang.org/genai"
@@ -157,6 +158,21 @@ func RegisterIntelligenceTools(r *Registry) {
 			Required: []string{"symbol"},
 		},
 	}, goDoc)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "analyze_complexity",
+		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The file or directory to analyze.",
+				},
+			},
+			Required: []string{"path"},
+		},
+	}, analyzeComplexity)
 }
 
 // AST-based helpers for existing tools
@@ -359,6 +375,72 @@ func goDoc(args map[string]interface{}) (string, error) {
 	}
 
 	return string(out), nil
+}
+
+func analyzeComplexity(args map[string]interface{}) (string, error) {
+	path, _ := args["path"].(string)
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
+	var results []string
+	fset := token.NewFileSet()
+
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+			return nil
+		}
+
+		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		if err != nil {
+			return nil
+		}
+
+		for _, decl := range f.Decls {
+			if fd, ok := decl.(*ast.FuncDecl); ok {
+				complexity := 1
+				ast.Inspect(fd.Body, func(n ast.Node) bool {
+					switch t := n.(type) {
+					case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.CaseClause, *ast.CommClause:
+						complexity++
+					case *ast.BinaryExpr:
+						if t.Op == token.LAND || t.Op == token.LOR {
+							complexity++
+						}
+					}
+					return true
+				})
+				funcName := fd.Name.Name
+				if fd.Recv != nil {
+					recvType := exprToString(fd.Recv.List[0].Type)
+					funcName = fmt.Sprintf("(%s).%s", recvType, funcName)
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s - Complexity: %d", filePath, fset.Position(fd.Pos()).Line, funcName, complexity))
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "No Go functions found to analyze.", nil
+	}
+
+	// Sort by complexity descending
+	sort.Slice(results, func(i, j int) bool {
+		var ci, cj int
+		fmt.Sscanf(results[i], "%*[^:]: %*d: %*s - Complexity: %d", &ci)
+		fmt.Sscanf(results[j], "%*[^:]: %*d: %*s - Complexity: %d", &cj)
+		return ci > cj
+	})
+
+	if len(results) > 100 {
+		results = append(results[:100], "... (truncated)")
+	}
+
+	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {

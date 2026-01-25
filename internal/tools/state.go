@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/history"
 	"google.golang.org/genai"
 )
 
@@ -22,7 +23,7 @@ type Task struct {
 }
 
 // RegisterStateTools adds scratchpad and task management tools.
-func RegisterStateTools(r *Registry, homeDir string, sessionName string) {
+func RegisterStateTools(r *Registry, homeDir string, sessionName string, hManager *history.Manager) {
 	// We pass homeDir and sessionName to closures so the handlers know where to look.
 
 	r.Register(&genai.FunctionDeclaration{
@@ -85,6 +86,17 @@ func RegisterStateTools(r *Registry, homeDir string, sessionName string) {
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		return manageTasks(args, homeDir, sessionName)
+	})
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "rollback_last_turn",
+		Description: "Reverts the conversation history to the state before the current turn. This effectively undoes the last interaction.",
+	}, func(args map[string]interface{}) (string, error) {
+		if hManager != nil {
+			hManager.Rollback()
+			return "Rollback successful. History restored to previous snapshot.", nil
+		}
+		return "Error: History manager not available for rollback.", nil
 	})
 }
 
