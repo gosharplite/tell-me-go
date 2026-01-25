@@ -95,8 +95,17 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	defer f.Close()
 	_, _ = f.WriteString(logLine)
 
-	// Print to stderr in gray
-	fmt.Fprintf(os.Stderr, "\033[0;90m%s\033[0m", logLine)
+	// Prepare colored line for stderr
+	hColor := "\033[0;90m" // Dark Gray
+	if miss > m.CachedTokens {
+		hColor = "\033[0;37m" // Light Gray
+	}
+	dColor := "\033[0;37m" // Light Gray for duration
+	gray := "\033[0;90m"
+	reset := "\033[0m"
+
+	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%.2fs]%s\n",
+		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, dColor, m.Duration, reset)
 }
 
 func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
