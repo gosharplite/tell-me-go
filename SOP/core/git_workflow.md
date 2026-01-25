@@ -25,7 +25,11 @@ Before staging any files, you must run the following sequence to ensure code int
     ```bash
     go fmt ./...
     ```
-3.  **Lint**: Check for common mistakes and heuristic errors.
+3.  **Dependency Check**: Ensure no local `replace` directives are staged in `go.mod`.
+    ```bash
+    grep "replace" go.mod && echo "ERROR: Remove local replacements before commit!" || echo "OK"
+    ```
+4.  **Lint**: Check for common mistakes and heuristic errors.
     ```bash
     go vet ./...
     # Recommended: golangci-lint run

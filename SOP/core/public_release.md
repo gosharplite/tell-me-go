@@ -29,8 +29,22 @@ Before any public release, perform a mandatory security scan:
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
 - **Version Bump**: Update any version constants in the source code (e.g., in a `version` package or the main CLI help text).
 
-#### 3. Final Functional Verification
-Run the full suite in a clean environment:
+#### 3. Release Guardrails (⚠️ CRITICAL)
+To prevent build failures for users (e.g., local file path leaks), perform these checks:
+- **No Local Replacements**: Ensure `go.mod` does **NOT** contain `replace` directives pointing to local directories.
+    ```bash
+    grep "replace" go.mod && echo "ERROR: Remove local replacements!" || echo "OK"
+    ```
+- **Clean Room Verification**: Perform a trial build in a temporary, fresh directory to simulate a user's `git clone`.
+    ```bash
+    TMP_DIR=$(mktemp -d)
+    git clone . $TMP_DIR
+    cd $TMP_DIR && go build ./...
+    # If this fails, the release is NOT ready.
+    ```
+
+#### 4. Final Functional Verification
+Run the full suite in the main repository:
 ```bash
 go mod tidy
 go fmt ./...
@@ -62,6 +76,8 @@ Follow Semantic Versioning (vMAJOR.MINOR.PATCH):
 
 ### Release Checklist
 - [ ] Security audit completed (no secrets found).
+- [ ] **No `replace` directives** in `go.mod`.
+- [ ] **Clean room verification** passed in a fresh clone.
 - [ ] `go test ./...` returns **PASS**.
 - [ ] `go mod tidy` run and `go.sum` committed.
 - [ ] `README.md` includes all new features and configuration options.
