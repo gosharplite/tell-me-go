@@ -292,8 +292,8 @@ func (a *Agent) renderMarkdown(text string) {
 				fmt.Print(out)
 			}
 		} else {
-			// Code block - Print as is (with backticks) in light-grey
-			fmt.Printf("\033[38;5;250m%s\033[0m\n", "```"+part+"```")
+			// Code block - Print as is (with backticks) in dark-grey
+			fmt.Printf("\033[90m%s\033[0m\n", "```"+part+"```")
 		}
 	}
 }
