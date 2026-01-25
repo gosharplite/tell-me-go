@@ -194,7 +194,7 @@ func readImage(args map[string]interface{}) (string, error) {
 	}
 
 	b64Data := base64.StdEncoding.EncodeToString(data)
-	
+
 	// Special prefix that the agent will catch
 	return fmt.Sprintf("MULTI_MODAL_IMAGE|%s|%s|Successfully read image %s. You can now see it.", mimeType, b64Data, path), nil
 }

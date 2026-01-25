@@ -394,16 +394,23 @@ func checkPathSafety(path string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
+	// 1. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
-	if err != nil {
-		return fmt.Errorf("failed to get relative path: %w", err)
+	if err == nil && !strings.HasPrefix(rel, "..") {
+		return nil
 	}
 
-	if strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("security violation: path '%s' is outside the current working directory", path)
+	// 2. Allow paths within the System Temp Directory (critical for tests and temp operations)
+	tempDir := os.TempDir()
+	absTemp, err := filepath.Abs(tempDir)
+	if err == nil {
+		relTemp, err := filepath.Rel(absTemp, absPath)
+		if err == nil && !strings.HasPrefix(relTemp, "..") {
+			return nil
+		}
 	}
 
-	return nil
+	return fmt.Errorf("security violation: path '%s' is outside the allowed boundaries (CWD or Temp)", path)
 }
 
 func writeFile(args map[string]interface{}) (string, error) {

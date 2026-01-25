@@ -338,7 +338,7 @@ func (a *Agent) Chat(prompt string) error {
 func (a *Agent) renderMarkdown(text string) {
 	// Simple split by code blocks to keep them "as is"
 	parts := strings.Split(text, "```")
-	
+
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
