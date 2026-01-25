@@ -88,12 +88,14 @@ func (a *Agent) Chat(prompt string) error {
 			respContent, metrics, err = a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
 		}
 
+		// Log usage metrics (do this even if there's an error, as long as we have metrics)
+		if metrics != nil {
+			a.logUsage(metrics)
+		}
+
 		if err != nil {
 			return err
 		}
-
-		// Log usage metrics
-		a.logUsage(metrics)
 
 		// 1. Check for thoughts and print them
 		for _, part := range respContent.Parts {
@@ -105,7 +107,14 @@ func (a *Agent) Chat(prompt string) error {
 		// 2. Add response to history
 		a.history.AddContent(respContent)
 
-		// 3. Check for function calls
+		// 3. Print any text parts (even if there are function calls)
+		for _, part := range respContent.Parts {
+			if part.Text != "" && !part.Thought {
+				fmt.Println(part.Text)
+			}
+		}
+
+		// 4. Check for function calls
 		hasFunctionCall := false
 		var functionResponseParts []*api.Part
 
@@ -143,12 +152,6 @@ func (a *Agent) Chat(prompt string) error {
 			continue
 		}
 
-		// 4. No more function calls, print final text response
-		for _, part := range respContent.Parts {
-			if part.Text != "" && !part.Thought {
-				fmt.Println(part.Text)
-			}
-		}
 		break
 	}
 

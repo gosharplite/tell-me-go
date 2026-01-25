@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.9.4] - 2026-01-26
+
+### Fixed
+- **Usage Logging Robustness**: Usage metrics are now logged even if the API returns an error (e.g., safety filter block), provided that usage metadata is present in the response.
+- **Text Output during Tool Calls**: Fixed a bug where text parts of a model response were skipped if the response also contained function calls. Text is now printed immediately when received.
+- **Thinking Token Approximation**: Refined thinking token calculation to ensure it correctly contributes to the "New" (N) token total.
 ## [0.9.3] - 2026-01-26
 
 ### Added

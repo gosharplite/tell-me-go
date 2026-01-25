@@ -164,16 +164,19 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		return nil, nil, err // Return raw error for retry detection
 	}
 
+	metrics := GetMetrics(resp, duration)
+
 	if len(resp.Candidates) == 0 {
-		return nil, nil, fmt.Errorf("empty response from api")
+		return nil, metrics, fmt.Errorf("empty response from api")
 	}
 
 	// Extract thinking tokens from thought part if available (SDK limitation workaround)
-	metrics := GetMetrics(resp, duration)
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if part.Thought && part.Text != "" {
-			// This is an approximation, but better than zero
-			metrics.ThinkingTokens = int32(len(strings.Fields(part.Text)) * 4 / 3) // Approx 1.33 tokens per word
+	if metrics.ThinkingTokens == 0 {
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if part.Thought && part.Text != "" {
+				// This is an approximation, but better than zero
+				metrics.ThinkingTokens = int32(len(strings.Fields(part.Text)) * 4 / 3) // Approx 1.33 tokens per word
+			}
 		}
 	}
 
