@@ -28,7 +28,7 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
     - Parse arguments based on the schema.
     - Execute the function and capture the output (success or error).
 4.  **Update History**: 
-    - Append the model's `functionCall` to history (Role: `model`).
+    - **CRITICAL**: Append the model's full `Content` to history, including all `parts` (e.g., `thought`, `thoughtSignature`, `functionCall`). Stripping reasoning parts will cause subsequent API calls to fail on Vertex AI.
     - Append the execution results as a `functionResponse` (Role: `function`).
 5.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
 

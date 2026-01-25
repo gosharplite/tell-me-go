@@ -28,7 +28,10 @@ Every test must be isolated from the host system and other tests:
 
 #### 3. Mocking Dependencies
 - **Interfaces**: Define interfaces for external dependencies (API clients, File System, Git) to allow easy mocking in tests.
-- **Gemini API**: Use a mock HTTP client or a specialized mock for the Gemini SDK to verify requests without making actual network calls.
+- **Complex API Mocks**: When testing components that interact with the Gemini API (like the `agent` package), the mock server **MUST** simulate multi-part responses, including:
+    - `thought` and `thoughtSignature` fields.
+    - `functionCall` and `functionResponse` roles.
+- **Provider Compliance**: Mocks must enforce the schema requirements of the strictest provider (Vertex AI). For example, a mock should fail if a `thoughtSignature` is returned by the model but not preserved in subsequent history payloads sent by the system under test.
 
 #### 4. Test Execution
 - **Run All Tests**:

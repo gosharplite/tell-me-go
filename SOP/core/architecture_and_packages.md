@@ -17,8 +17,9 @@ To define a consistent, scalable, and idiomatic Go directory structure for `tell
 The project is organized into the following top-level directories:
 
 - **`cmd/`**: Contains the main entry points for the application. Each subdirectory should match the binary name (e.g., `cmd/tell-me-go/`).
-    - *Constraint*: Keep logic in `main.go` minimal. It should only handle initialization and hand off to `internal/`.
-- **`internal/`**: Contains private application and library code. This is code we do not want other projects to import.
+    - *Constraint*: Keep logic in `main.go` minimal. It should only handle initialization and hand off to `internal/`. **Business logic, specifically loops and orchestration, MUST NOT reside in `main`**; it must be moved to an internal package to ensure it is unit-testable.
+- **`internal/`**: Contains private application and library code.
+    - `internal/agent`: The high-level orchestration loop (Agent/Orchestrator).
     - `internal/config`: Configuration loading and YAML parsing.
     - `internal/api`: Communication logic for Gemini (AI Studio/Vertex).
     - `internal/history`: Session management and JSON persistence.

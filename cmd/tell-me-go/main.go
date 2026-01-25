@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -27,17 +28,14 @@ func main() {
 	// 2. Handle Prompt Argument
 	prompt := flag.Arg(0)
 	if prompt == "" {
-		// If no argument, check if stdin is a pipe or wait for user input (multi-line)
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			// Piped input
 			var b []byte
 			b, err := os.ReadFile(os.Stdin.Name())
 			if err == nil {
 				prompt = string(b)
 			}
 		} else {
-			// Interactive multi-line input
 			fmt.Println("\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
 			var sb strings.Builder
 			var buf [1024]byte
@@ -67,12 +65,11 @@ func main() {
 		log.Fatalf("Error loading config [%s]: %v", *configPath, err)
 	}
 
-	// 4. Override API Key from Env if present
 	if apiKey := os.Getenv("API_KEY"); apiKey != "" {
 		cfg.APIKey = apiKey
 	}
 
-	// 5. Determine Authentication Method
+	// 4. Determine Authentication Method
 	var authenticator auth.Authenticator
 	isVertex := strings.Contains(cfg.URL, "aiplatform.googleapis.com")
 
@@ -84,7 +81,7 @@ func main() {
 		log.Fatal("API_KEY not found in config or environment for AI Studio endpoint.")
 	}
 
-	// 6. Initialize History Manager
+	// 5. Initialize Components
 	historyPath := filepath.Join("output", fmt.Sprintf("last-%s.json", cfg.Mode))
 	if *newSession {
 		os.Remove(historyPath)
@@ -94,78 +91,17 @@ func main() {
 		log.Fatalf("Error loading history: %v", err)
 	}
 
-	// 7. Initialize API Client and Tools
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
 	client := api.NewClient(cfg.URL, cfg.Model, authenticator)
 
-	// 8. Add Prompt to History
-	if err := hManager.AddEntry("user", prompt); err != nil {
-		log.Fatalf("Error adding entry to history: %v", err)
+	// 6. Execute Agent
+	chatAgent := agent.New(client, hManager, registry)
+	if err := chatAgent.Chat(prompt); err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 
-	// 9. Main Interaction Loop
-	fmt.Fprintf(os.Stderr, "\033[0;32m> %s\033[0m\n", prompt)
-
-	for {
-		content, err := client.SendChat(hManager.GetContents(), registry.ToToolJSON())
-		if err != nil {
-			log.Fatalf("Error from Gemini: %v", err)
-		}
-
-		// Add Model Response to History
-		if err := hManager.AddContent(*content); err != nil {
-			log.Fatalf("Error adding model response to history: %v", err)
-		}
-
-		// Process Parts
-		hasFunctionCall := false
-		var toolParts []api.Part
-
-		for _, part := range content.Parts {
-			if part.Thought {
-				fmt.Fprintf(os.Stderr, "\033[0;90m[Thinking] %s\033[0m\n", part.Text)
-				continue
-			}
-
-			if part.FunctionCall != nil {
-				hasFunctionCall = true
-				fmt.Fprintf(os.Stderr, "\033[0;90m[Tool] Calling: %s(%v)\033[0m\n", part.FunctionCall.Name, part.FunctionCall.Args)
-
-				result, err := registry.Execute(part.FunctionCall.Name, part.FunctionCall.Args)
-				if err != nil {
-					result = fmt.Sprintf("Error: %v", err)
-				}
-
-				toolParts = append(toolParts, api.Part{
-					FunctionResponse: &api.FunctionResponse{
-						Name: part.FunctionCall.Name,
-						Response: map[string]interface{}{
-							"result": result,
-						},
-					},
-				})
-			}
-
-			if part.Text != "" && !part.Thought {
-				fmt.Printf("\n%s\n", part.Text)
-			}
-		}
-
-		if !hasFunctionCall {
-			break
-		}
-
-		// Add Tool Responses to History and Continue Loop
-		if err := hManager.AddContent(api.Content{
-			Role:  "function",
-			Parts: toolParts,
-		}); err != nil {
-			log.Fatalf("Error adding tool response to history: %v", err)
-		}
-	}
-
-	// 10. Prune and Save
+	// 7. Prune and Save
 	hManager.Prune(cfg.MaxTurns)
 	if err := hManager.Save(); err != nil {
 		log.Fatalf("Error saving history: %v", err)

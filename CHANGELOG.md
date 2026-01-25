@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.4.0] - 2026-01-25
+
+### Added
+- New `internal/agent` package: Refactored the orchestration loop into a testable package.
+- Comprehensive Agent Tests: Added tests that simulate complex tool-calling scenarios, including `thought` and `thoughtSignature` preservation.
+
+### Changed
+- Improved Architecture: Moved business logic out of `cmd/tell-me-go/main.go` into `internal/agent` to comply with updated SOPs.
+- Updated SOPs:
+    - `SOP/core/architecture_and_packages.md`: Now mandates business logic resides in testable packages.
+    - `SOP/core/testing_standards.md`: Now mandates mocking complex, multi-part API responses.
+    - `SOP/core/agentic_capabilities.md`: Explicitly mandates preserving model thoughts and signatures to prevent Vertex AI 400 errors.
+
 ## [0.3.1] - 2026-01-25
 
 ### Fixed
