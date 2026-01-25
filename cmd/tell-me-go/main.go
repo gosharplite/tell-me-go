@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.7.2"
+const Version = "0.8.0"
 
 func main() {
 	// 1. Define Flags
@@ -76,11 +76,24 @@ func main() {
 	}
 
 	// 4. Initialize Authentication
-	// Vertex AI is the only supported provider.
 	authenticator := &auth.VertexAuth{}
 
 	// 5. Initialize Components
-	historyPath := filepath.Join("output", fmt.Sprintf("last-%s.json", cfg.Mode))
+	// Determine Home Directory (Compatibility with Bash AIT_HOME)
+	homeDir := os.Getenv("TELL_ME_HOME")
+	if homeDir == "" {
+		homeDir = os.Getenv("AIT_HOME")
+	}
+	if homeDir == "" {
+		homeDir = "."
+	}
+
+	// Extract session name from config file (e.g., configs/vertex.yaml -> vertex)
+	// This matches the Bash version's logic in setup_session.
+	configBase := filepath.Base(*configPath)
+	sessionName := strings.TrimSuffix(configBase, filepath.Ext(configBase))
+	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
+
 	if *newSession {
 		os.Remove(historyPath)
 	}
@@ -91,8 +104,10 @@ func main() {
 
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
-	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
 	tools.RegisterSystemTools(registry)
+	tools.RegisterStateTools(registry, homeDir, sessionName)
+
+	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
 	if err != nil {
 		log.Fatalf("Error creating client: %v", err)
 	}
@@ -109,3 +124,4 @@ func main() {
 		log.Fatalf("Error saving history: %v", err)
 	}
 }
+
