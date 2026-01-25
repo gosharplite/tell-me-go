@@ -59,18 +59,19 @@ Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:
 - Categorize changes into: `Added`, `Changed`, `Fixed`, `Removed`.
 - Highlight Go-specific improvements (e.g., "Optimized concurrency with worker pools").
 
-#### 5. Git Tagging and Pushing
-Follow Semantic Versioning (vMAJOR.MINOR.PATCH):
+#### 5. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
+A release is **not complete** until it is reachable by the public on the remote repository:
 1.  **Switch to Main Branch**: `git checkout main`.
 2.  **Merge Dev**: `git merge dev`.
 3.  **Tag the release**:
     ```bash
     git tag -a v1.0.0 -m "Release version 1.0.0 - [Brief summary]"
     ```
-4.  **Push**:
+4.  **Push Everything**:
     ```bash
-    git push origin main --tags
+    git push origin main dev --tags
     ```
+5.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
 ---
 
@@ -83,7 +84,9 @@ Follow Semantic Versioning (vMAJOR.MINOR.PATCH):
 - [ ] `README.md` includes all new features and configuration options.
 - [ ] `SOP/` directory is updated to reflect structural changes.
 - [ ] Branch `dev` is successfully merged into `main`.
-- [ ] Git tag is applied and pushed.
+- [ ] Git tag is applied.
+- [ ] **Pushed to Remote**: `git push origin main dev --tags` executed successfully.
+- [ ] **Externally Verified**: Checked version from a separate folder or via GitHub UI.
 
 ---
 

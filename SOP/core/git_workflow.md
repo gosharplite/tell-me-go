@@ -64,7 +64,7 @@ Follow the "Summary + Details" format:
 #### 4. Final Review and Push
 - Review the staged changes: `git diff --staged`.
 - Commit: `git commit -m "Summary line..."`.
-- Push: `git push origin $(git branch --show-current)`.
+- Push: `git push origin $(git branch --show-current) --tags` (always include tags if they were created).
 
 ---
 
