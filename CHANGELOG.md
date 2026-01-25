@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.3.1] - 2026-01-25
+
+### Fixed
+- Vertex AI `thought_signature` Error: Updated `Part` struct to preserve model thoughts and signatures in history. This fixes the "missing a thought_signature" 400 error during tool calling.
+- UI: Model thoughts are now displayed in gray on `stderr` to align with the original Bash project style.
+
 ## [0.3.0] - 2026-01-25
 
 ### Added

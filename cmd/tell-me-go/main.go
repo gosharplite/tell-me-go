@@ -123,6 +123,11 @@ func main() {
 		var toolParts []api.Part
 
 		for _, part := range content.Parts {
+			if part.Thought {
+				fmt.Fprintf(os.Stderr, "\033[0;90m[Thinking] %s\033[0m\n", part.Text)
+				continue
+			}
+
 			if part.FunctionCall != nil {
 				hasFunctionCall = true
 				fmt.Fprintf(os.Stderr, "\033[0;90m[Tool] Calling: %s(%v)\033[0m\n", part.FunctionCall.Name, part.FunctionCall.Args)
@@ -142,7 +147,7 @@ func main() {
 				})
 			}
 
-			if part.Text != "" {
+			if part.Text != "" && !part.Thought {
 				fmt.Printf("\n%s\n", part.Text)
 			}
 		}
