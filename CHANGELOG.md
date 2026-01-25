@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.6.2] - 2026-01-26
+
+### Fixed
+- **Thinking Config Validation**: Fixed an issue where the Gemini API would return a 400 error if both `THINKING_BUDGET` and `THINKING_LEVEL` were sent. They are now mutually exclusive, with `THINKING_LEVEL` taking precedence.
+
 
 ## [0.6.1] - 2026-01-26
 
