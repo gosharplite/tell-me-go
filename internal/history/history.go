@@ -70,24 +70,31 @@ func (m *Manager) Save() error {
 	return nil
 }
 
-// AddEntry appends a new message to the history after validating role alternation.
+// AddEntry appends a new text message to the history.
 func (m *Manager) AddEntry(role, text string) error {
-	// 1. Validate role alternation
-	if len(m.Contents) > 0 {
-		lastRole := m.Contents[len(m.Contents)-1].Role
-		if lastRole == role {
-			return fmt.Errorf("role alternation violation: last role was %s, cannot add another %s", lastRole, role)
-		}
-	} else if role != "user" {
-		// First message must be user for Vertex AI compliance
-		return fmt.Errorf("first message must be 'user', got '%s'", role)
-	}
-
-	// 2. Add entry
-	m.Contents = append(m.Contents, api.Content{
+	return m.AddContent(api.Content{
 		Role:  role,
 		Parts: []api.Part{{Text: text}},
 	})
+}
+
+// AddContent appends a full api.Content object to the history after validating role alternation.
+func (m *Manager) AddContent(content api.Content) error {
+	// 1. Validate role alternation
+	if len(m.Contents) > 0 {
+		lastRole := m.Contents[len(m.Contents)-1].Role
+		// Vertex AI specific: 'function' role follows 'model' (with functionCall)
+		// And 'model' follows 'function'.
+		if lastRole == content.Role {
+			return fmt.Errorf("role alternation violation: last role was %s, cannot add another %s", lastRole, content.Role)
+		}
+	} else if content.Role != "user" {
+		// First message must be user for Vertex AI compliance
+		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
+	}
+
+	// 2. Add entry
+	m.Contents = append(m.Contents, content)
 
 	return nil
 }

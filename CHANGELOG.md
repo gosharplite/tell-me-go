@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.3.0] - 2026-01-25
+
+### Added
+- Agentic Capabilities (Function Calling): The model can now call local tools to perform tasks.
+- Multi-turn Tool Loop: Support for recursive model-tool interactions.
+- File System Tools:
+    - `list_files`: List directory contents.
+    - `read_file`: Read file content.
+- `internal/tools` package for tool registration and management.
+- New `AddContent` method in `internal/history` for multi-part message support.
+
+### Changed
+- Refactored `internal/api` to support Gemini's `tools` and `functionCall`/`functionResponse` schemas.
+- Updated the main CLI loop to handle tool execution orchestration.
+
 ## [0.2.4] - 2026-01-25
 
 ### Changed

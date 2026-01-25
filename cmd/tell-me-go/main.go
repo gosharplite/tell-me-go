@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
 func main() {
@@ -93,7 +94,9 @@ func main() {
 		log.Fatalf("Error loading history: %v", err)
 	}
 
-	// 7. Initialize API Client
+	// 7. Initialize API Client and Tools
+	registry := tools.NewRegistry()
+	tools.RegisterFileSystemTools(registry)
 	client := api.NewClient(cfg.URL, cfg.Model, authenticator)
 
 	// 8. Add Prompt to History
@@ -101,23 +104,65 @@ func main() {
 		log.Fatalf("Error adding entry to history: %v", err)
 	}
 
-	// 9. Send Chat
+	// 9. Main Interaction Loop
 	fmt.Fprintf(os.Stderr, "\033[0;32m> %s\033[0m\n", prompt)
-	response, err := client.SendChat(hManager.GetContents())
-	if err != nil {
-		log.Fatalf("Error from Gemini: %v", err)
+
+	for {
+		content, err := client.SendChat(hManager.GetContents(), registry.ToToolJSON())
+		if err != nil {
+			log.Fatalf("Error from Gemini: %v", err)
+		}
+
+		// Add Model Response to History
+		if err := hManager.AddContent(*content); err != nil {
+			log.Fatalf("Error adding model response to history: %v", err)
+		}
+
+		// Process Parts
+		hasFunctionCall := false
+		var toolParts []api.Part
+
+		for _, part := range content.Parts {
+			if part.FunctionCall != nil {
+				hasFunctionCall = true
+				fmt.Fprintf(os.Stderr, "\033[0;90m[Tool] Calling: %s(%v)\033[0m\n", part.FunctionCall.Name, part.FunctionCall.Args)
+
+				result, err := registry.Execute(part.FunctionCall.Name, part.FunctionCall.Args)
+				if err != nil {
+					result = fmt.Sprintf("Error: %v", err)
+				}
+
+				toolParts = append(toolParts, api.Part{
+					FunctionResponse: &api.FunctionResponse{
+						Name: part.FunctionCall.Name,
+						Response: map[string]interface{}{
+							"result": result,
+						},
+					},
+				})
+			}
+
+			if part.Text != "" {
+				fmt.Printf("\n%s\n", part.Text)
+			}
+		}
+
+		if !hasFunctionCall {
+			break
+		}
+
+		// Add Tool Responses to History and Continue Loop
+		if err := hManager.AddContent(api.Content{
+			Role:  "function",
+			Parts: toolParts,
+		}); err != nil {
+			log.Fatalf("Error adding tool response to history: %v", err)
+		}
 	}
 
-	// 10. Add Model Response to History and Save
-	if err := hManager.AddEntry("model", response); err != nil {
-		log.Fatalf("Error adding model response to history: %v", err)
-	}
-
-	// 11. Prune and Save
+	// 10. Prune and Save
 	hManager.Prune(cfg.MaxTurns)
 	if err := hManager.Save(); err != nil {
 		log.Fatalf("Error saving history: %v", err)
 	}
-
-	fmt.Printf("\n%s\n", response)
 }

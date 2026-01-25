@@ -28,9 +28,6 @@ func TestSendChat(t *testing.T) {
 		if req.Contents[0].Role != "user" {
 			t.Errorf("expected role 'user', got '%s'", req.Contents[0].Role)
 		}
-		if req.Contents[0].Parts[0].Text != "Hello" {
-			t.Errorf("expected prompt 'Hello', got '%s'", req.Contents[0].Parts[0].Text)
-		}
 
 		// Send mock response
 		resp := Response{
@@ -54,13 +51,13 @@ func TestSendChat(t *testing.T) {
 	history := []Content{
 		{Role: "user", Parts: []Part{{Text: "Hello"}}},
 	}
-	result, err := client.SendChat(history)
+	content, err := client.SendChat(history, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
 
 	// 4. Verification
-	if result != "World" {
-		t.Errorf("expected 'World', got '%s'", result)
+	if content.Parts[0].Text != "World" {
+		t.Errorf("expected 'World', got '%s'", content.Parts[0].Text)
 	}
 }

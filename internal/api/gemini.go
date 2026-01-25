@@ -24,16 +24,29 @@ type Client struct {
 
 // Request represents the Gemini API request payload.
 type Request struct {
-	Contents []Content `json:"contents"`
+	Contents []Content   `json:"contents"`
+	Tools    interface{} `json:"tools,omitempty"`
 }
 
 type Content struct {
-	Role  string `json:"role,omitempty"`
+	Role  string `json:"role,omitempty"` // Strictly required by some providers, don't use omitempty in final payload if possible
 	Parts []Part `json:"parts"`
 }
 
 type Part struct {
-	Text string `json:"text"`
+	Text             string            `json:"text,omitempty"`
+	FunctionCall     *FunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`
+}
+
+type FunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
+}
+
+type FunctionResponse struct {
+	Name     string                 `json:"name"`
+	Response map[string]interface{} `json:"response"`
 }
 
 // Response represents the Gemini API response payload.
@@ -42,7 +55,9 @@ type Response struct {
 }
 
 type Candidate struct {
-	Content Content `json:"content"`
+	Content      Content       `json:"content"`
+	FinishReason string        `json:"finishReason"`
+	SafetyRating []interface{} `json:"safetyRatings"`
 }
 
 // NewClient returns a new Gemini API client.
@@ -54,12 +69,12 @@ func NewClient(url, model string, authenticator auth.Authenticator) *Client {
 	}
 }
 
-// SendChat sends the conversation history to the Gemini API and returns the model's text response.
-func (c *Client) SendChat(history []Content) (string, error) {
+// SendChat sends the conversation history to the Gemini API and returns the full response content.
+func (c *Client) SendChat(history []Content, tools interface{}) (*Content, error) {
 	// 1. Prepare Base URL
 	u, err := url.Parse(fmt.Sprintf("%s/%s:generateContent", c.URL, c.Model))
 	if err != nil {
-		return "", fmt.Errorf("failed to parse url: %w", err)
+		return nil, fmt.Errorf("failed to parse url: %w", err)
 	}
 
 	// 2. Apply Authentication
@@ -79,17 +94,18 @@ func (c *Client) SendChat(history []Content) (string, error) {
 	// 3. Prepare Payload
 	reqPayload := Request{
 		Contents: history,
+		Tools:    tools,
 	}
 
 	jsonData, err := json.Marshal(reqPayload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// 4. Execute Request
 	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -101,23 +117,23 @@ func (c *Client) SendChat(history []Content) (string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
+		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var apiResp Response
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(apiResp.Candidates) == 0 || len(apiResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response from api")
+	if len(apiResp.Candidates) == 0 {
+		return nil, fmt.Errorf("empty response from api")
 	}
 
-	return apiResp.Candidates[0].Content.Parts[0].Text, nil
+	return &apiResp.Candidates[0].Content, nil
 }

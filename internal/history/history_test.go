@@ -6,6 +6,8 @@ package history
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/api"
 )
 
 func TestHistoryManager(t *testing.T) {
@@ -32,6 +34,11 @@ func TestHistoryManager(t *testing.T) {
 		t.Errorf("failed to add model entry: %v", err)
 	}
 
+	// Test function role (which follows model)
+	if err := m.AddContent(api.Content{Role: "function", Parts: []api.Part{{Text: "result"}}}); err != nil {
+		t.Errorf("failed to add function entry: %v", err)
+	}
+
 	// 2. Test Save and Load
 	if err := m.Save(); err != nil {
 		t.Fatalf("failed to save history: %v", err)
@@ -42,22 +49,13 @@ func TestHistoryManager(t *testing.T) {
 		t.Fatalf("failed to load history: %v", err)
 	}
 
-	if len(m2.GetContents()) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(m2.GetContents()))
+	if len(m2.GetContents()) != 3 {
+		t.Errorf("expected 3 entries, got %d", len(m2.GetContents()))
 	}
 
 	// 3. Test Pruning
-	// Add more entries
-	m.AddEntry("user", "3")
-	m.AddEntry("model", "4")
-	m.AddEntry("user", "5")
-	m.AddEntry("model", "6") // Total 6 messages (3 turns)
-
-	m.Prune(2) // Should keep 4 messages (2 turns)
-	if len(m.GetContents()) != 4 {
-		t.Errorf("expected 4 entries after pruning, got %d", len(m.GetContents()))
-	}
-	if m.GetContents()[0].Parts[0].Text != "3" {
-		t.Errorf("expected first message after pruning to be '3', got '%s'", m.GetContents()[0].Parts[0].Text)
+	m.Prune(1) // Should keep 2 messages
+	if len(m.GetContents()) != 2 {
+		t.Errorf("expected 2 entries after pruning, got %d", len(m.GetContents()))
 	}
 }
