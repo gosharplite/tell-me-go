@@ -81,17 +81,9 @@ func (c *Client) SendChat(history []Content, tools interface{}) (*Content, error
 
 	// 2. Apply Authentication
 	authReq := &auth.Request{
-		QueryParams: make(map[string]string),
-		Headers:     make(map[string]string),
+		Headers: make(map[string]string),
 	}
 	c.Authenticator.Apply(authReq)
-
-	// Add Query Params
-	q := u.Query()
-	for k, v := range authReq.QueryParams {
-		q.Set(k, v)
-	}
-	u.RawQuery = q.Encode()
 
 	// 3. Prepare Payload
 	reqPayload := Request{

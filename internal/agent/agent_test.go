@@ -64,7 +64,7 @@ func TestAgentToolLoop(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := api.NewClient(server.URL, "test-model", &auth.APIKeyAuth{APIKey: "test"})
+	client := api.NewClient(server.URL, "test-model", &auth.VertexAuth{Token: "test"})
 	a := New(client, hManager, registry)
 
 	// Execute Chat

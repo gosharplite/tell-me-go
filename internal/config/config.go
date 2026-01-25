@@ -21,7 +21,6 @@ type Config struct {
 	ThinkingBudget int    `yaml:"THINKING_BUDGET"`
 	MaxTurns       int    `yaml:"MAX_TURNS"`
 	KeyFile        string `yaml:"KEY_FILE"`
-	APIKey         string `yaml:"API_KEY"` // For AI Studio
 }
 
 // Load reads a YAML configuration file from the given path.

@@ -21,7 +21,7 @@ import (
 
 func main() {
 	// 1. Define Flags
-	configPath := flag.String("c", "configs/gemini.yaml", "Path to the configuration file")
+	configPath := flag.String("c", "configs/vertex.yaml", "Path to the configuration file")
 	newSession := flag.Bool("new", false, "Start a new session")
 	flag.Parse()
 
@@ -65,21 +65,9 @@ func main() {
 		log.Fatalf("Error loading config [%s]: %v", *configPath, err)
 	}
 
-	if apiKey := os.Getenv("API_KEY"); apiKey != "" {
-		cfg.APIKey = apiKey
-	}
-
-	// 4. Determine Authentication Method
-	var authenticator auth.Authenticator
-	isVertex := strings.Contains(cfg.URL, "aiplatform.googleapis.com")
-
-	if isVertex {
-		authenticator = &auth.VertexAuth{}
-	} else if cfg.APIKey != "" {
-		authenticator = &auth.APIKeyAuth{APIKey: cfg.APIKey}
-	} else {
-		log.Fatal("API_KEY not found in config or environment for AI Studio endpoint.")
-	}
+	// 4. Initialize Authentication
+	// Vertex AI is the only supported provider.
+	authenticator := &auth.VertexAuth{}
 
 	// 5. Initialize Components
 	historyPath := filepath.Join("output", fmt.Sprintf("last-%s.json", cfg.Mode))

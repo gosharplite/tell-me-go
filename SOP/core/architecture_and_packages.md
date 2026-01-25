@@ -21,11 +21,12 @@ The project is organized into the following top-level directories:
 - **`internal/`**: Contains private application and library code.
     - `internal/agent`: The high-level orchestration loop (Agent/Orchestrator).
     - `internal/config`: Configuration loading and YAML parsing.
-    - `internal/api`: Communication logic for Gemini (AI Studio/Vertex).
+    - `internal/api`: Communication logic for Vertex AI.
     - `internal/history`: Session management and JSON persistence.
     - `internal/cli`: Terminal UI, flag parsing, and command orchestration.
 - **`pkg/`**: Contains library code that is safe for use by external applications. 
 - **`configs/`**: Storage for default configuration templates (YAML).
+    - `configs/vertex.yaml`: The primary configuration template.
 - **`SOP/`**: Project governance and process documentation.
 
 #### 2. Package Naming and Visibility
@@ -55,7 +56,6 @@ tell-me-go/
 ├── pkg/
 │   └── utils/            # General purpose helpers
 ├── configs/
-│   ├── gemini.yaml       # AI Studio Template
 │   └── vertex.yaml       # Vertex AI Template
 ├── SOP/                  # Documentation
 ├── go.mod

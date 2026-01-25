@@ -8,15 +8,14 @@ A lightweight, terminal-based interface for Google's Gemini models, ported from 
 ## 🚀 Features
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Session Persistence**: Automatically remembers conversation history across CLI calls.
-*   **Dual Auth Support**: Supports both **Google AI Studio** (API Key) and **Google Vertex AI** (GCP OAuth2 Tokens).
+*   **Vertex AI Support**: Natively supports **Google Vertex AI** with GCP OAuth2 Tokens.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` for Vertex AI sessions.
 *   **Flexible Configuration**: Specify custom YAML configuration files for different models and environments.
 *   **SOP-Driven**: Built with a "Safety First" architecture where every change follows documented procedures.
 
 ## 📋 Prerequisites
 *   **Go**: 1.21 or higher.
-*   **Google AI Studio API Key**: (Optional) For AI Studio mode.
-*   **Google Cloud SDK (gcloud)**: (Optional) For Vertex AI mode using user credentials.
+*   **Google Cloud SDK (gcloud)**: Required for Vertex AI mode using user credentials.
 
 ## 🛠️ Installation
 1.  **Clone the repository**:
@@ -34,16 +33,16 @@ A lightweight, terminal-based interface for Google's Gemini models, ported from 
     ```
 
 ## 💻 Usage
-Run the assistant by passing your prompt as an argument. By default, it uses `configs/gemini.yaml`.
+Run the assistant by passing your prompt as an argument. By default, it uses `configs/vertex.yaml`.
 
-**Basic Usage (AI Studio):**
+**Basic Usage:**
 ```bash
 ./tell-me-go "What is the capital of France?"
 ```
 
-**Custom Configuration (Vertex AI):**
+**Custom Configuration:**
 ```bash
-./tell-me-go -c configs/vertex.yaml "What is the capital of France?"
+./tell-me-go -c configs/custom-vertex.yaml "Hello"
 ```
 
 **New Session:**
@@ -78,19 +77,16 @@ The `a` alias is smart and handles three modes:
 3.  **Interactive Multi-line**: Just type `a` and press Enter. Paste your long text/logs, then press `Ctrl+D` to send.
 
 ## ⚙️ Configuration
-The tool supports two authentication methods based on your YAML configuration:
+The tool exclusively supports **Google Vertex AI**.
 
-### 1. Google AI Studio (API Key)
-Ensure your `AIURL` points to `generativelanguage.googleapis.com` and provide an `API_KEY`.
-```bash
-export API_KEY="your_api_key_here"
-./tell-me-go "Hello"
-```
+Ensure your `AIURL` points to the Vertex AI endpoint (including your Project ID and Location). The tool will automatically use `gcloud auth print-access-token` to authenticate using your current user credentials.
 
-### 2. Google Vertex AI (Bearer Token)
-Ensure your `AIURL` points to `aiplatform.googleapis.com`. The tool will automatically use `gcloud auth print-access-token` to authenticate.
-```bash
-./tell-me-go -c configs/vertex.yaml "Hello"
+```yaml
+# configs/vertex.yaml
+MODE: "vertex"
+AIMODEL: "gemini-1.5-flash-002"
+AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+MAX_TURNS: 10
 ```
 
 ## 📜 SOP-Driven Development

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - 2026-01-25
 
+## [0.5.0] - 2026-01-25
+
+### Removed
+- **Deprecation**: Removed support for Google AI Studio (API Key authentication).
+- Removed `APIKeyAuth` from `internal/auth`.
+- Removed `API_KEY` environment variable and config field support.
+- Deleted `configs/gemini.yaml`.
+
+### Changed
+- Focus exclusively on **Google Vertex AI**.
+- Default configuration now points to `configs/vertex.yaml`.
+- Simplified `internal/api` and `internal/auth` by removing query-parameter-based authentication logic.
+- Updated all SOPs and README to reflect single-provider (Vertex AI) focus.
+
 ## [0.4.0] - 2026-01-25
 
 ### Added

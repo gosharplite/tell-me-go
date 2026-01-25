@@ -1,7 +1,7 @@
 # Standard Operating Procedure (SOP): Authentication and Token Management
 
 ### Objective
-To define how `tell-me-go` authenticates with Google's Generative AI services, supporting both API Key (Google AI Studio) and OAuth2 Bearer Tokens (Google Vertex AI / Service Accounts).
+To define how `tell-me-go` authenticates exclusively with Google Vertex AI using OAuth2 Bearer Tokens (User Credentials or Service Accounts).
 
 ---
 
@@ -14,25 +14,23 @@ To define how `tell-me-go` authenticates with Google's Generative AI services, s
 
 ### Step-by-Step Instructions
 
-#### 1. Identification of Auth Mode
-The system must determine the authentication method based on the configuration:
-- **API Key Mode**: Triggered when `API_KEY` is provided in the config or environment. Used for the `generativelanguage.googleapis.com` (AI Studio) endpoint.
-- **Bearer Token Mode**: Triggered when the `AIURL` contains `aiplatform.googleapis.com` (Vertex AI) or when a `KEY_FILE` is provided.
+#### 1. Authentication Strategy
+`tell-me-go` uses Google Vertex AI as its sole provider. All requests require an OAuth2 Bearer Token passed in the HTTP `Authorization` header.
 
-#### 2. Token Generation (Bearer Mode)
-- **User Credentials**: If `KEY_FILE` is empty, the system should attempt to retrieve the token using the equivalent of `gcloud auth print-access-token`.
-- **Service Account**: If `KEY_FILE` is provided, the system must load the JSON key and generate a JWT-based OAuth2 token with the appropriate scope (`https://www.googleapis.com/auth/cloud-platform`).
-- **Caching**: Tokens should be cached in memory (or a temporary local file) until they expire to minimize latency.
+#### 2. Token Generation
+- **User Credentials**: By default, the system retrieves the access token using the equivalent of `gcloud auth print-access-token`.
+- **Service Account**: (Planned) If a `KEY_FILE` is provided, the system must load the JSON key and generate a JWT-based OAuth2 token.
+- **Caching**: Tokens should be retrieved once per session or refreshed as needed.
 
 #### 3. Client Header Injection
-- **AI Studio**: The API Key is passed as a query parameter: `?key=YOUR_API_KEY`.
 - **Vertex AI**: The token must be passed in the HTTP `Authorization` header: `Authorization: Bearer <TOKEN>`.
+- **Project/Location**: The project ID and location must be part of the `AIURL` provided in the YAML configuration.
 
 ---
 
 ### Package Structure
-- **`internal/auth`**: A new package dedicated to token discovery and generation.
-- **`internal/api`**: Must be updated to accept an `Authenticator` interface or a token string.
+- **`internal/auth`**: Dedicated package for token discovery and management.
+- **`internal/api`**: Uses the `Authenticator` interface to inject credentials into requests.
 
 ---
 
@@ -41,19 +39,7 @@ The system must determine the authentication method based on the configuration:
 #### Authenticator Interface:
 ```go
 type Authenticator interface {
-    GetToken() (string, error)
-    AuthHeader() (string, string) // e.g., "Authorization", "Bearer <token>"
-}
-```
-
-#### Token Retrieval (Example):
-```go
-func GetGcloudToken() (string, error) {
-    out, err := exec.Command("gcloud", "auth", "print-access-token").Output()
-    if err != nil {
-        return "", err
-    }
-    return strings.TrimSpace(string(out)), nil
+    Apply(req *Request) error
 }
 ```
 
@@ -61,13 +47,13 @@ func GetGcloudToken() (string, error) {
 
 ### Verification
 1.  **Unit Tests**: Mock the token generation process.
-2.  **Integration**: Verify that the correct headers are sent for each mode using a mock HTTP server.
-3.  **Security**: Ensure tokens are never logged to `stdout` or saved in insecure history files.
+2.  **Integration**: Verify that the correct Bearer headers are sent using a mock HTTP server.
+3.  **Security**: Ensure tokens are never logged or saved in history files.
 
 ---
 
 ### Best Practices
-- **Minimal Scopes**: Only request the scopes necessary for the AI API.
-- **Expiry Awareness**: Check the token's remaining life before using it; refresh if less than 60 seconds remain.
-- **Service Account Safety**: Never hardcode the content of a `KEY_FILE`. Always refer to the file path.
+- **Minimal Scopes**: Only request the `https://www.googleapis.com/auth/cloud-platform` scope.
+- **Service Account Safety**: Never hardcode keys; always use file paths or environment variables.
+- **Vertex AI Only**: Do not implement logic for AI Studio (API Keys).
 

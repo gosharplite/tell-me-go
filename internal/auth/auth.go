@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package auth handles token management and authentication for Gemini services.
+// Package auth handles token management and authentication exclusively for Vertex AI.
 package auth
 
 import (
@@ -10,29 +10,15 @@ import (
 	"strings"
 )
 
-// Authenticator defines the interface for different authentication methods.
+// Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
 	GetToken() (string, error)
 	Apply(req *Request)
 }
 
-// Request is a wrapper for the data needed to apply authentication.
+// Request is a wrapper for the headers needed to apply authentication.
 type Request struct {
-	QueryParams map[string]string
-	Headers     map[string]string
-}
-
-// APIKeyAuth handles authentication via a simple API Key.
-type APIKeyAuth struct {
-	APIKey string
-}
-
-func (a *APIKeyAuth) GetToken() (string, error) {
-	return a.APIKey, nil
-}
-
-func (a *APIKeyAuth) Apply(req *Request) {
-	req.QueryParams["key"] = a.APIKey
+	Headers map[string]string
 }
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
@@ -40,11 +26,12 @@ type VertexAuth struct {
 	Token string
 }
 
+// GetToken retrieves the OAuth2 access token.
 func (a *VertexAuth) GetToken() (string, error) {
 	if a.Token != "" {
 		return a.Token, nil
 	}
-	// Fallback to gcloud if no token provided
+	// Retrieve token using gcloud
 	out, err := exec.Command("gcloud", "auth", "print-access-token").Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get gcloud token: %w", err)
@@ -52,6 +39,7 @@ func (a *VertexAuth) GetToken() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// Apply injects the Bearer token into the request headers.
 func (a *VertexAuth) Apply(req *Request) {
 	token, _ := a.GetToken()
 	if token != "" {
