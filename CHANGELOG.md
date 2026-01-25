@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.3.0] - 2026-01-26
+
+### Added
+- **Intelligence Suite (AST-based code analysis)**: Implemented IDE-level repository mapping for Go projects.
+    - \`find_usages\`: Project-wide symbol reference search.
+    - \`list_implementations\`: Map interface-struct relationships.
+    - \`get_type_info\`: Deep dive into Go types (fields, methods, tags).
+- **Go AST Integration**: Upgraded existing tools to use Go's native parser for 100% accuracy in Go files.
+    - \`grep_definitions\`: Refactored to use \`go/ast\` for Go source while maintaining regex fallback for other languages.
+    - \`get_file_skeleton\`: Upgraded to extract precise signatures, receiver types, and docstrings via AST traversal.
+- **Unit Testing**: Comprehensive test suite for AST-based analysis in \`internal/tools/intelligence_test.go\`.
+
+### Changed
+- **Version Bump**: Promoted to v1.3.0 to reflect the addition of language-intelligent features.
+
 ## [1.2.0] - 2026-01-26
 
 ### Added
