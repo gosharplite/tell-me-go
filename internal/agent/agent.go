@@ -161,7 +161,7 @@ func (a *Agent) Chat(prompt string) error {
 		// Log the payload info
 		tokenColor := "\033[0;90m" // Default dark gray
 		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;37m" // Light gray if > 90%
+			tokenColor = "\033[0;31m" // Red if > 90%
 		}
 		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
 			time.Now().Format("15:04:05"), tokenColor, tokens)
