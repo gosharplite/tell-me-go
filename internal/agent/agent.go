@@ -336,29 +336,15 @@ func (a *Agent) Chat(prompt string) error {
 }
 
 func (a *Agent) renderMarkdown(text string) {
-	// Simple split by code blocks to keep them "as is"
-	parts := strings.Split(text, "```")
-
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
 
-	for i, part := range parts {
-		if i%2 == 0 {
-			// Regular text - Render with Glamour
-			if strings.TrimSpace(part) == "" {
-				continue
-			}
-			out, err := r.Render(part)
-			if err != nil {
-				fmt.Print(part)
-			} else {
-				fmt.Print(out)
-			}
-		} else {
-			// Code block - Print as is (with backticks) in dark-grey
-			fmt.Printf("\033[90m%s\033[0m\n", "```"+part+"```")
-		}
+	out, err := r.Render(text)
+	if err != nil {
+		fmt.Print(text)
+	} else {
+		fmt.Print(out)
 	}
 }
