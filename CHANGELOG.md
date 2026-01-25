@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.0.0] - 2026-01-26
+
+### Added
+- **Major Tool Suite Expansion**: Reached feature parity with the original Bash assistant.
+    - **FileSystem**: Added `search_files`, `replace_text`, and `get_tree`.
+    - **Git**: Added `get_git_status`, `get_git_diff`, and `get_git_log`.
+- **Improved Observability**: Integrated new tools into the registry and main orchestration loop.
+
+### Changed
+- **Version Bump**: Promoted to v1.0.0.
+
 ## [0.9.9] - 2026-01-26
 
 ### Changed

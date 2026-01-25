@@ -8,7 +8,11 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 ## 🚀 Features
 *   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
 *   **Gemini 2.0 Reasoning**: Support for **Thinking (Reasoning)** models with visible thought processes and configurable token budgets.
-*   **Agentic Tools**: Natively executes local tools (e.g., `execute_command`, `read_url`, `list_files`, `read_file`) and Google Search to solve complex tasks.
+*   **Agentic Tools**: Natively executes local tools and Google Search to solve complex tasks.
+    *   **FileSystem**: `list_files`, `read_file`, `search_files`, `replace_text`, `get_tree`.
+    *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`.
+    *   **System**: `execute_command`, `read_url`, `ask_user`.
+    *   **Metrics**: `estimate_cost`.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
