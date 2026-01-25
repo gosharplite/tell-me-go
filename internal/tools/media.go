@@ -21,7 +21,7 @@ import (
 func RegisterMediaTools(r *Registry, client *api.Client) {
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "create_image",
-		Description: "Generates an image from a text prompt using Imagen 3. Saves to assets/generated/.",
+		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -33,6 +33,10 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 					Type:        genai.TypeString,
 					Description: "Aspect ratio (e.g., '1:1', '4:3', '16:9'). Default '1:1'.",
 				},
+				"model": {
+					Type:        genai.TypeString,
+					Description: "The model to use for generation (e.g., 'imagen-3.0-generate-001', 'imagen-3.0-fast-001').",
+				},
 			},
 			Required: []string{"prompt"},
 		},
@@ -42,13 +46,13 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_image",
-		Description: "Reads a local image file and allows the AI to see its content.",
+		Description: "Reads a local image file and allows the AI to see its content for vision analysis.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
 				"filepath": {
 					Type:        genai.TypeString,
-					Description: "The path to the image file.",
+					Description: "The path to the image file (e.g., './assets/screenshot.png').",
 				},
 			},
 			Required: []string{"filepath"},
@@ -63,7 +67,12 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 		aspectRatio = "1:1"
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image: %s (%s)\033[0m\n", prompt, aspectRatio)
+	model, _ := args["model"].(string)
+	if model == "" {
+		model = "imagen-3.0-generate-001"
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image using %s: %s (%s)\033[0m\n", model, prompt, aspectRatio)
 
 	// Append aspect ratio to prompt as guidance (Imagen 3 prompt engineering)
 	fullPrompt := fmt.Sprintf("%s. Aspect ratio %s.", prompt, aspectRatio)
@@ -71,8 +80,8 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Use Imagen 3
-	images, err := client.GenerateImages(ctx, "imagen-3.0-generate-001", fullPrompt, "image/png")
+	// Use specified model
+	images, err := client.GenerateImages(ctx, model, fullPrompt, "image/png")
 	if err != nil {
 		return fmt.Sprintf("Error generating image: %v", err), nil
 	}

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.12.9] - 2026-05-26
+
+### Changed
+- **Media Tools**: 
+    - Updated `create_image` to support an optional `model` parameter, allowing selection between different Imagen models (e.g., `imagen-3.0-generate-001`, `imagen-3.0-fast-001`).
+    - Refined `read_image` documentation for better clarity on vision analysis.
+- **Version Bump**: Promoted to v1.12.9.
+
 ## [1.12.8] - 2026-05-25
 
 ### Changed
