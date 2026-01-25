@@ -23,12 +23,12 @@ type Task struct {
 }
 
 // RegisterStateTools adds scratchpad and task management tools.
-func RegisterStateTools(r *Registry, homeDir string, sessionName string, hManager *history.Manager) {
-	// We pass homeDir and sessionName to closures so the handlers know where to look.
+func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) {
+	// We pass homeDir to closures so the handlers know where to look.
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
-		Description: "Read, write, or update the persistent session scratchpad. Use this to keep track of plans, completed tasks, or architectural notes.",
+		Description: "Read, write, or update the persistent global scratchpad. Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -41,21 +41,16 @@ func RegisterStateTools(r *Registry, homeDir string, sessionName string, hManage
 					Type:        genai.TypeString,
 					Description: "The text content to write or append. Required for 'write' and 'append' actions.",
 				},
-				"scope": {
-					Type:        genai.TypeString,
-					Description: "The scope of the scratchpad: 'session' (default) or 'global'.",
-					Enum:        []string{"session", "global"},
-				},
 			},
 			Required: []string{"action"},
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return manageScratchpad(args, homeDir, sessionName)
+		return manageScratchpad(args, homeDir)
 	})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
-		Description: "Manages a todo list of tasks. Supports adding, updating, listing, and deleting tasks.",
+		Description: "Manages a global to-do list of tasks. Supports adding, updating, listing, and deleting tasks.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -76,16 +71,11 @@ func RegisterStateTools(r *Registry, homeDir string, sessionName string, hManage
 					Type:        genai.TypeString,
 					Description: "The new status (e.g., 'completed', 'pending') for 'update' or filter for 'list'.",
 				},
-				"scope": {
-					Type:        genai.TypeString,
-					Description: "The scope of the task list: 'session' (default) or 'global'.",
-					Enum:        []string{"session", "global"},
-				},
 			},
 			Required: []string{"action"},
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return manageTasks(args, homeDir, sessionName)
+		return manageTasks(args, homeDir)
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -100,29 +90,19 @@ func RegisterStateTools(r *Registry, homeDir string, sessionName string, hManage
 	})
 }
 
-func getScratchpadPath(homeDir, sessionName, scope string) string {
-	if scope == "global" {
-		return filepath.Join(homeDir, "output", "global-scratchpad.md")
-	}
-	return filepath.Join(homeDir, "output", sessionName+".scratchpad.md")
+func getScratchpadPath(homeDir string) string {
+	return filepath.Join(homeDir, "output", "global-scratchpad.md")
 }
 
-func getTasksPath(homeDir, sessionName, scope string) string {
-	if scope == "global" {
-		return filepath.Join(homeDir, "output", "global-tasks.json")
-	}
-	return filepath.Join(homeDir, "output", sessionName+".tasks.json")
+func getTasksPath(homeDir string) string {
+	return filepath.Join(homeDir, "output", "global-tasks.json")
 }
 
-func manageScratchpad(args map[string]interface{}, homeDir, sessionName string) (string, error) {
+func manageScratchpad(args map[string]interface{}, homeDir string) (string, error) {
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
-	scope, _ := args["scope"].(string)
-	if scope == "" {
-		scope = "session"
-	}
 
-	path := getScratchpadPath(homeDir, sessionName, scope)
+	path := getScratchpadPath(homeDir)
 
 	// Ensure directory exists
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
@@ -170,14 +150,10 @@ func manageScratchpad(args map[string]interface{}, homeDir, sessionName string) 
 	return "Invalid action", nil
 }
 
-func manageTasks(args map[string]interface{}, homeDir, sessionName string) (string, error) {
+func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
 	action, _ := args["action"].(string)
-	scope, _ := args["scope"].(string)
-	if scope == "" {
-		scope = "session"
-	}
 
-	path := getTasksPath(homeDir, sessionName, scope)
+	path := getTasksPath(homeDir)
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
 	// Load existing tasks

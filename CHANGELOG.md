@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.12.4] - 2026-05-21
+
+### Changed
+- **State Tools**: Removed the "session" scope from `manage_scratchpad` and `manage_tasks`. These tools now operate exclusively on global files to simplify persistent context management.
+- **Version Bump**: Promoted to v1.12.4.
+
 ## [1.12.3] - 2026-05-20
 
 ### Removed

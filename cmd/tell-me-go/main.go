@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.12.2"
+const Version = "1.12.4"
 
 func main() {
 	// 1. Define Flags
@@ -113,7 +113,7 @@ func main() {
 	tools.RegisterSystemTools(registry)
 	tools.RegisterGitTools(registry)
 	tools.RegisterDevTools(registry)
-	tools.RegisterStateTools(registry, homeDir, sessionName, hManager)
+	tools.RegisterStateTools(registry, homeDir, hManager)
 	tools.RegisterMetricsTools(registry, logPath, cfg.Model)
 	tools.RegisterMediaTools(registry, client)
 
@@ -141,8 +141,6 @@ func archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
 	filesToMove := []string{
 		historyPath,
 		logPath,
-		filepath.Join(homeDir, "output", sessionName+".scratchpad.md"),
-		filepath.Join(homeDir, "output", sessionName+".tasks.json"),
 	}
 
 	backupCreated := false
