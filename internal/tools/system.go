@@ -256,10 +256,19 @@ func isSafeCommand(command string) bool {
 		return false
 	}
 
-	// 2. Check for unsafe characters (pipes, redirects, etc.)
-	unsafeChars := []string{"|", "&", ";", ">", "<", "$(", "`"}
+	// 2. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`"}
 	for _, char := range unsafeChars {
 		if strings.Contains(command, char) {
+			return false
+		}
+	}
+
+	// 3. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	// We check every part of the command (except the base command itself).
+	for i := 1; i < len(parts); i++ {
+		arg := strings.Trim(parts[i], "\"'")
+		if err := checkPathSafety(arg); err != nil {
 			return false
 		}
 	}
@@ -297,7 +306,7 @@ func executeCommand(args map[string]interface{}) (string, error) {
 		approved = true
 	} else {
 		// 2. Safety Confirmation Gate (Tell-me style)
-		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: %s\033[0m\n", command)
+		fmt.Fprintf(os.Stderr, "\033[1;37mExecute Command: %s\033[0m\n", command)
 		if reason != "" {
 			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
 		}
