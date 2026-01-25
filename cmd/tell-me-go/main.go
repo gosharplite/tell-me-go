@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -19,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.6.0"
+const Version = "0.6.1"
 
 func main() {
 	// 1. Define Flags
@@ -66,6 +67,7 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stderr, "\033[0;32m[%s] > %s\033[0m\n", time.Now().Format("15:04:05"), prompt)
 
 	// 3. Load Config
 	cfg, err := config.Load(*configPath)

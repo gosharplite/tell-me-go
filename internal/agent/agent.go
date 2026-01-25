@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"google.golang.org/genai"
+	"time"
 )
 
 // Agent handles the orchestration of the chat loop.
@@ -36,8 +37,6 @@ func (a *Agent) Chat(prompt string) error {
 		return fmt.Errorf("failed to add user prompt: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[0;32m> %s\033[0m\n", prompt)
-
 	for {
 		content, err := a.Client.SendChat(a.History.GetContents(), a.Registry.ToToolSDK())
 		if err != nil {
@@ -54,13 +53,13 @@ func (a *Agent) Chat(prompt string) error {
 
 		for _, part := range content.Parts {
 			if part.Thought {
-				fmt.Fprintf(os.Stderr, "\033[0;90m[Thinking] %s\033[0m\n", part.Text)
+				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking] %s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
 				continue
 			}
 
 			if part.FunctionCall != nil {
 				hasFunctionCall = true
-				fmt.Fprintf(os.Stderr, "\033[0;90m[Tool] Calling: %s(%v)\033[0m\n", part.FunctionCall.Name, part.FunctionCall.Args)
+				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Tool] Calling: %s(%v)\033[0m\n", time.Now().Format("15:04:05"), part.FunctionCall.Name, part.FunctionCall.Args)
 
 				result, err := a.Registry.Execute(part.FunctionCall.Name, part.FunctionCall.Args)
 				if err != nil {
