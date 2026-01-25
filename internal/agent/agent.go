@@ -115,16 +115,14 @@ func (a *Agent) Chat(prompt string) error {
 	})
 
 	for {
-		startGen := time.Now()
 		contents := a.history.GetContents()
 		toolsSDK := a.registry.ToToolSDK()
-		genDuration := time.Since(startGen).Seconds()
 
 		tokens := a.estimatePayloadTokens(contents)
 
-		// Log the payload info right before calling API
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%d tokens | Generated in %fs\033[0m\n",
-			time.Now().Format("15:04:05"), tokens, genDuration)
+		// Log the payload info right before calling API (Cleaned version)
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%d tokens\033[0m\n",
+			time.Now().Format("15:04:05"), tokens)
 
 		respContent, metrics, err := a.client.SendChat(contents, toolsSDK)
 
