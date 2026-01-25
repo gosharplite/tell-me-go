@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.9.7"
+const Version = "0.9.8"
 
 func main() {
 	// 1. Define Flags
@@ -79,7 +79,6 @@ func main() {
 	authenticator := &auth.VertexAuth{}
 
 	// 5. Initialize Components
-	// Determine Home Directory (Compatibility with Bash AIT_HOME)
 	homeDir := os.Getenv("TELL_ME_HOME")
 	if homeDir == "" {
 		homeDir = os.Getenv("AIT_HOME")
@@ -88,7 +87,6 @@ func main() {
 		homeDir = "."
 	}
 
-	// Construct session name and file paths (Aligned with Bash version)
 	sessionName := "last-" + cfg.Mode
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
 	logPath := historyPath + ".log"
@@ -100,6 +98,9 @@ func main() {
 	if err := hManager.Load(); err != nil {
 		log.Fatalf("Error loading history: %v", err)
 	}
+
+	// Snapshot for potential rollback before adding new prompt
+	hManager.Snapshot()
 
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
@@ -115,12 +116,13 @@ func main() {
 	// 6. Execute Agent
 	chatAgent := agent.New(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
+	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens)
 	if err := chatAgent.Chat(prompt); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
 
-	// 7. Prune and Save
-	hManager.Prune(cfg.MaxTurns)
+	// 7. Prune and Save using MaxHistoryTurns
+	hManager.Prune(cfg.MaxHistoryTurns)
 	if err := hManager.Save(); err != nil {
 		log.Fatalf("Error saving history: %v", err)
 	}
@@ -131,7 +133,6 @@ func archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
 	timestamp := time.Now().Format("20060102_150405")
 	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
 
-	// List of files to potentially archive
 	filesToMove := []string{
 		historyPath,
 		logPath,
@@ -157,3 +158,4 @@ func archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
 		}
 	}
 }
+

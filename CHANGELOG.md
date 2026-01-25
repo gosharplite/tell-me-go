@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [0.9.8] - 2026-01-26
+
+### Added
+- **Safety Rollback**: Implemented `MAX_HISTORY_TOKENS` check. If a payload exceeds the limit, the tool now rolls back the history to its last known good state and exits with an error.
+- **Recursion Limit**: Implemented `MAX_TURNS` (MaxToolTurns) to prevent infinite tool calling loops.
+- **Config Clarification**: Separated `MAX_HISTORY_TURNS` (for turn-based pruning) from `MAX_TURNS` (for tool call limits).
+
+### Changed
+- **Version Bump**: Updated binary version to v0.9.8.
+
 ## [0.9.7] - 2026-01-26
 
 ### Changed

@@ -18,6 +18,7 @@ import (
 type Manager struct {
 	FilePath string
 	Contents []*api.Content
+	backup   []*api.Content // Keep a copy of the state before the current user prompt
 }
 
 // NewManager creates a new history manager for the given file path.
@@ -98,8 +99,25 @@ func (m *Manager) AddContent(content *api.Content) error {
 	return nil
 }
 
+// Snapshot takes a backup of the current state for potential rollback.
+func (m *Manager) Snapshot() {
+	m.backup = make([]*api.Content, len(m.Contents))
+	copy(m.backup, m.Contents)
+}
+
+// Rollback restores the history to the state before Snapshot was called.
+func (m *Manager) Rollback() {
+	if m.backup != nil {
+		m.Contents = m.backup
+		m.Save() // Persist the rollback
+	}
+}
+
 // Prune reduces the history to the last N turns (1 turn = 1 user + 1 model message).
 func (m *Manager) Prune(maxTurns int) {
+	if maxTurns <= 0 {
+		return
+	}
 	maxMessages := maxTurns * 2
 	if len(m.Contents) > maxMessages {
 		removeCount := len(m.Contents) - maxMessages
@@ -115,3 +133,4 @@ func (m *Manager) Prune(maxTurns int) {
 func (m *Manager) GetContents() []*api.Content {
 	return m.Contents
 }
+

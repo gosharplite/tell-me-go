@@ -17,18 +17,32 @@ import (
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client   *api.Client
-	history  *history.Manager
-	registry *tools.Registry
-	logFile  string
+	client           *api.Client
+	history          *history.Manager
+	registry         *tools.Registry
+	logFile          string
+	maxToolTurns     int
+	maxHistoryTokens int
 }
 
 // New creates a new Agent.
 func New(client *api.Client, hManager *history.Manager, registry *tools.Registry) *Agent {
 	return &Agent{
-		client:   client,
-		history:  hManager,
-		registry: registry,
+		client:           client,
+		history:          hManager,
+		registry:         registry,
+		maxToolTurns:     10,
+		maxHistoryTokens: 120000,
+	}
+}
+
+// SetLimits sets the operational limits for the agent.
+func (a *Agent) SetLimits(toolTurns, historyTokens int) {
+	if toolTurns > 0 {
+		a.maxToolTurns = toolTurns
+	}
+	if historyTokens > 0 {
+		a.maxHistoryTokens = historyTokens
 	}
 }
 
@@ -73,7 +87,6 @@ func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
 	for _, decl := range a.registry.GetDeclarations() {
 		charCount += len(decl.Name) + len(decl.Description)
 		if decl.Parameters != nil {
-			// Rough estimate for schema complexity
 			charCount += 100
 		}
 	}
@@ -100,10 +113,7 @@ func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
 	}
 
 	// 3. Heuristic Adjustments
-	// Base overhead for system instruction, structural JSON, and formatting
 	charCount += 1000
-
-	// Use 3.2 chars per token for technical/structured content (more accurate than 4)
 	return int(float64(charCount) / 3.2)
 }
 
@@ -114,29 +124,37 @@ func (a *Agent) Chat(prompt string) error {
 		Parts: []*api.Part{{Text: prompt}},
 	})
 
-	for {
+	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
 		toolsSDK := a.registry.ToToolSDK()
 
 		tokens := a.estimatePayloadTokens(contents)
 
-		// Log the payload info right before calling API (Cleaned version)
+		// Log the payload info
 		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%d tokens\033[0m\n",
 			time.Now().Format("15:04:05"), tokens)
 
+		// Safety Check: MAX_HISTORY_TOKENS
+		if tokens > a.maxHistoryTokens {
+			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
+				time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
+				time.Now().Format("15:04:05"))
+			a.history.Rollback()
+			os.Exit(1)
+		}
+
 		respContent, metrics, err := a.client.SendChat(contents, toolsSDK)
 
-		// Handle 401 Unauthorized (Expired Token)
+		// Handle 401 Unauthorized
 		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
 			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
 			if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 				return fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 			}
-			// Retry once
 			respContent, metrics, err = a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
 		}
 
-		// Log usage metrics (do this even if there's an error, as long as we have metrics)
 		if metrics != nil {
 			a.logUsage(metrics)
 		}
@@ -145,24 +163,20 @@ func (a *Agent) Chat(prompt string) error {
 			return err
 		}
 
-		// 1. Check for thoughts and print them
 		for _, part := range respContent.Parts {
 			if part.Thought && part.Text != "" {
 				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
 			}
 		}
 
-		// 2. Add response to history
 		a.history.AddContent(respContent)
 
-		// 3. Print any text parts (even if there are function calls)
 		for _, part := range respContent.Parts {
 			if part.Text != "" && !part.Thought {
 				fmt.Println(part.Text)
 			}
 		}
 
-		// 4. Check for function calls
 		hasFunctionCall := false
 		var functionResponseParts []*api.Part
 
@@ -170,14 +184,10 @@ func (a *Agent) Chat(prompt string) error {
 			if part.FunctionCall != nil {
 				hasFunctionCall = true
 				fc := part.FunctionCall
-
-				// Tell-me style: log the tool action
 				fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), fc.Name)
 
-				// Execute the tool
 				result, err := a.registry.Execute(fc.Name, fc.Args)
 				if err != nil {
-					// On error, we still send the error back to the model
 					result = fmt.Sprintf("Error: %v", err)
 				}
 
@@ -191,12 +201,15 @@ func (a *Agent) Chat(prompt string) error {
 		}
 
 		if hasFunctionCall {
-			// Add function responses to history as a "user" role (SDK requirement)
+			if turn >= a.maxToolTurns {
+				fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
+					time.Now().Format("15:04:05"), a.maxToolTurns)
+				break
+			}
 			a.history.AddContent(&api.Content{
 				Role:  "user",
 				Parts: functionResponseParts,
 			})
-			// Loop again to give the result to the model
 			continue
 		}
 
@@ -205,3 +218,4 @@ func (a *Agent) Chat(prompt string) error {
 
 	return nil
 }
+
