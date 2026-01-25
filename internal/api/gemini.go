@@ -144,15 +144,15 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		SystemInstruction: c.systemInstruction,
 	}
 
-	// Apply Thinking Budget or Level (Fix: Allow level without specific budget)
-	if c.thinkingBudget > 0 || c.thinkingLevel != "" {
+	// Apply Thinking Config (Mutually Exclusive)
+	if c.thinkingLevel != "" || c.thinkingBudget > 0 {
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
+		// Prioritize ThinkingLevel if provided
 		if c.thinkingLevel != "" {
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
-		}
-		if c.thinkingBudget > 0 {
+		} else {
 			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(c.thinkingBudget))
 		}
 	}
@@ -169,16 +169,6 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 
 	if len(resp.Candidates) == 0 {
 		return nil, metrics, fmt.Errorf("empty response from api")
-	}
-
-	// Extract thinking tokens from thought part if available (SDK limitation workaround)
-	if metrics.ThinkingTokens == 0 {
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if part.Thought && part.Text != "" {
-				// This is an approximation, but better than zero
-				metrics.ThinkingTokens = int32(len(strings.Fields(part.Text)) * 4 / 3) // Approx 1.33 tokens per word
-			}
-		}
 	}
 
 	return resp.Candidates[0].Content, metrics, nil

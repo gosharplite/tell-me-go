@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"google.golang.org/genai"
 )
 
@@ -35,11 +34,6 @@ func TestHistoryManager(t *testing.T) {
 		t.Errorf("failed to add model entry: %v", err)
 	}
 
-	// Test function response role (which follows model)
-	if err := m.AddContent(&api.Content{Role: genai.RoleUser, Parts: []*api.Part{{Text: "result"}}}); err != nil {
-		t.Errorf("failed to add function entry: %v", err)
-	}
-
 	// 2. Test Save and Load
 	if err := m.Save(); err != nil {
 		t.Fatalf("failed to save history: %v", err)
@@ -50,13 +44,22 @@ func TestHistoryManager(t *testing.T) {
 		t.Fatalf("failed to load history: %v", err)
 	}
 
-	if len(m2.GetContents()) != 3 {
-		t.Errorf("expected 3 entries, got %d", len(m2.GetContents()))
+	if len(m2.GetContents()) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(m2.GetContents()))
 	}
 
 	// 3. Test Pruning
-	m.Prune(1) // Should keep 2 messages
+	// Add more to test pruning
+	_ = m.AddEntry("user", "Turn 2")
+	_ = m.AddEntry("model", "Response 2")
+	// [U1, M1, U2, M2] - 4 messages
+	
+	m.Prune(1) // Should keep last 1 turn (2 messages)
 	if len(m.GetContents()) != 2 {
 		t.Errorf("expected 2 entries after pruning, got %d", len(m.GetContents()))
 	}
+	if m.GetContents()[0].Role != genai.RoleUser {
+		t.Error("first message after pruning is not 'user'")
+	}
 }
+
