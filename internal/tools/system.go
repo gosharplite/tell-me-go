@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,8 +75,9 @@ func askUser(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("question argument is required")
 	}
 
-	fmt.Fprintf(os.Stderr, "\n\033[1;35m[Question]\033[0m %s\n", question)
-	fmt.Fprintf(os.Stderr, "Response: ")
+	// Tell-me style: Question in magenta, followed by "Answer > " prompt
+	fmt.Fprintf(os.Stderr, "\033[1;35m[AI Question] %s\033[0m\n", question)
+	fmt.Fprintf(os.Stderr, "Answer > ")
 
 	reader := bufio.NewReader(os.Stdin)
 	response, err := reader.ReadString('\n')
@@ -114,6 +116,45 @@ func readURL(args map[string]interface{}) (string, error) {
 	return string(body), nil
 }
 
+func isSafeCommand(command string) bool {
+	safeCommands := `^(grep|ls|pwd|cat|echo|head|tail|wc|stat|date|whoami|diff|awk|sed)`
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return false
+	}
+	base := parts[0]
+
+	// 1. Check against whitelist
+	match, _ := regexp.MatchString(safeCommands, base)
+	if !match {
+		return false
+	}
+
+	// 2. Check for unsafe characters (pipes, redirects, etc.)
+	unsafeChars := []string{"|", "&", ";", ">", "<", "$(", "`"}
+	for _, char := range unsafeChars {
+		if strings.Contains(command, char) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func readSingleKey() (string, error) {
+	// Disable input buffering
+	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+	// Restore input buffering on exit
+	defer exec.Command("stty", "-F", "/dev/tty", "-cbreak").Run()
+
+	var b []byte = make([]byte, 1)
+	_, err := os.Stdin.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(string(b)), nil
+}
+
 func executeCommand(args map[string]interface{}) (string, error) {
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
@@ -122,34 +163,63 @@ func executeCommand(args map[string]interface{}) (string, error) {
 
 	reason, _ := args["reason"].(string)
 
-	// 1. Safety Confirmation Gate
-	fmt.Fprintf(os.Stderr, "\n\033[1;33m[Confirmation Required]\033[0m\n")
-	if reason != "" {
-		fmt.Fprintf(os.Stderr, "Reason: %s\n", reason)
-	}
-	fmt.Fprintf(os.Stderr, "Command: \033[1;36m%s\033[0m\n", command)
-	fmt.Fprintf(os.Stderr, "Allow execution? (y/N): ")
+	approved := false
 
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read user input: %w", err)
+	// 1. Check for Auto-Approval (Safe read-only commands)
+	if isSafeCommand(command) {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe read-only command detected.\033[0m\n")
+		approved = true
+	} else {
+		// 2. Safety Confirmation Gate (Tell-me style)
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: %s\033[0m\n", command)
+		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
+
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n") // New line after key hit
+
+		if err == nil && (char == "y") {
+			approved = true
+		}
 	}
 
-	input = strings.ToLower(strings.TrimSpace(input))
-	if input != "y" && input != "yes" {
-		return "Operation cancelled by user.", nil
+	if !approved {
+		return fmt.Sprintf("User denied execution of command: %s", command), nil
 	}
 
-	// 2. Execution
-	// We use "sh -c" to allow for complex commands (pipes, redirects) similar to the Bash version.
+	// 3. Execution
+	fmt.Fprintf(os.Stderr, "\033[0;33mExecuting... (Output shown below)\033[0m\n")
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	// We use "sh -c" to allow for complex commands
 	cmd := exec.Command("sh", "-c", command)
-	output, err := cmd.CombinedOutput()
 
-	if err != nil {
-		// Return both error and output so the model can see what went wrong.
-		return fmt.Sprintf("Command failed with error: %v\nOutput:\n%s", err, string(output)), nil
+	// Stream output to stderr and capture it
+	var sb strings.Builder
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	multi := io.MultiReader(stdout, stderr)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Sprintf("Command failed to start: %v", err), nil
 	}
 
-	return string(output), nil
+	scanner := bufio.NewScanner(multi)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
+		sb.WriteString(line + "\n")
+	}
+
+	err := cmd.Wait()
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	output := sb.String()
+	if err != nil {
+		return fmt.Sprintf("Exit Code: 1\nError/Output:\n%s", output), nil
+	}
+
+	return fmt.Sprintf("Exit Code: 0\nOutput:\n%s", output), nil
 }

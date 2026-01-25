@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.7.1] - 2026-01-26
+
+### Changed
+- **Tool UI Refinement**: Aligned `execute_command` and `ask_user` with the original Bash project style.
+- **Single-Key Confirmation**: Users can now confirm command execution with a single key press ('y').
+- **Auto-Approval**: Implemented a safety whitelist for read-only commands (ls, cat, grep, etc.) to skip confirmation.
+- **Output Streaming**: Command output is now streamed in real-time to stderr with grey indentation.
+
 ## [0.7.0] - 2026-01-26
 
 ### Added
