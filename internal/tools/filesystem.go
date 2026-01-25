@@ -156,12 +156,35 @@ func RegisterFileSystemTools(r *Registry) {
 			Required: []string{"filepath"},
 		},
 	}, getFileSkeleton)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "write_file",
+		Description: "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"filepath": {
+					Type:        genai.TypeString,
+					Description: "The path to the file to write.",
+				},
+				"content": {
+					Type:        genai.TypeString,
+					Description: "The full content to write to the file.",
+				},
+			},
+			Required: []string{"filepath", "content"},
+		},
+	}, writeFile)
 }
 
 func listFiles(args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
 	}
 
 	entries, err := os.ReadDir(path)
@@ -187,6 +210,11 @@ func getTree(args map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		path = "."
 	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
 	maxDepth := 2
 	if d, ok := args["max_depth"].(float64); ok {
 		maxDepth = int(d)
@@ -238,6 +266,10 @@ func readFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to read file: %w", err)
@@ -251,6 +283,11 @@ func searchFiles(args map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		path = "."
 	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
 	query, ok := args["query"].(string)
 	if !ok || query == "" {
 		return "", fmt.Errorf("query argument is required")
@@ -305,10 +342,59 @@ func searchFiles(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
+func checkPathSafety(path string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	rel, err := filepath.Rel(cwd, absPath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %w", err)
+	}
+
+	if strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("security violation: path '%s' is outside the current working directory", path)
+	}
+
+	return nil
+}
+
+func writeFile(args map[string]interface{}) (string, error) {
+	path, _ := args["filepath"].(string)
+	content, _ := args["content"].(string)
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
+	// Create parent directories if they don't exist
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directories: %w", err)
+	}
+
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return "File written successfully.", nil
+}
+
 func replaceText(args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -333,6 +419,11 @@ func findFile(args map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		path = "."
 	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
 	pattern, ok := args["pattern"].(string)
 	if !ok || pattern == "" {
 		return "", fmt.Errorf("pattern argument is required")
@@ -377,6 +468,11 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		path = "."
 	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
 	query, _ := args["query"].(string)
 
 	// Attempt AST-based search for Go files first
@@ -466,6 +562,10 @@ func getFileSkeleton(args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
+	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
 	}
 
 	if filepath.Ext(path) == ".go" {
