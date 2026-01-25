@@ -171,10 +171,10 @@ func executeCommand(args map[string]interface{}) (string, error) {
 		approved = true
 	} else {
 		// 2. Safety Confirmation Gate (Tell-me style)
+		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: %s\033[0m\n", command)
 		if reason != "" {
 			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
 		}
-		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: %s\033[0m\n", command)
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
 		char, err := readSingleKey()
