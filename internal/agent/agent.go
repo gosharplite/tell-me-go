@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
@@ -189,7 +190,7 @@ func (a *Agent) Chat(prompt string) error {
 
 		for _, part := range respContent.Parts {
 			if part.Text != "" && !part.Thought {
-				fmt.Println(part.Text)
+				a.renderMarkdown(part.Text)
 			}
 		}
 
@@ -267,4 +268,32 @@ func (a *Agent) Chat(prompt string) error {
 	}
 
 	return nil
+}
+
+func (a *Agent) renderMarkdown(text string) {
+	// Simple split by code blocks to keep them "as is"
+	parts := strings.Split(text, "```")
+	
+	r, _ := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithEmoji(),
+	)
+
+	for i, part := range parts {
+		if i%2 == 0 {
+			// Regular text - Render with Glamour
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			out, err := r.Render(part)
+			if err != nil {
+				fmt.Print(part)
+			} else {
+				fmt.Print(out)
+			}
+		} else {
+			// Code block - Print as is (with backticks)
+			fmt.Printf("```%s```\n", part)
+		}
+	}
 }
