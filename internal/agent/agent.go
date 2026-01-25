@@ -73,6 +73,9 @@ func (a *Agent) Chat(prompt string) error {
 	})
 
 	for {
+		// Tell-me style: log the start of the API call
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [API] Calling Gemini...\033[0m\n", time.Now().Format("15:04:05"))
+
 		respContent, metrics, err := a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
 
 		// Handle 401 Unauthorized (Expired Token)
@@ -110,6 +113,9 @@ func (a *Agent) Chat(prompt string) error {
 			if part.FunctionCall != nil {
 				hasFunctionCall = true
 				fc := part.FunctionCall
+
+				// Tell-me style: log the tool action
+				fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), fc.Name)
 
 				// Execute the tool
 				result, err := a.registry.Execute(fc.Name, fc.Args)

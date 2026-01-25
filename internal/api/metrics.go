@@ -21,22 +21,20 @@ type Metrics struct {
 
 // GetMetrics extracts metrics from a GenAI response.
 func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *Metrics {
-	if resp == nil || resp.UsageMetadata == nil {
-		return nil
+	m := &Metrics{
+		Duration: duration,
 	}
 
-	um := resp.UsageMetadata
-	m := &Metrics{
-		Timestamp:      "", // To be filled by logger
-		CachedTokens:   um.CachedContentTokenCount,
-		PromptTokens:   um.PromptTokenCount,
-		ResponseTokens: um.CandidatesTokenCount,
-		TotalTokens:    um.TotalTokenCount,
-		Duration:       duration,
+	if resp != nil && resp.UsageMetadata != nil {
+		um := resp.UsageMetadata
+		m.CachedTokens = um.CachedContentTokenCount
+		m.PromptTokens = um.PromptTokenCount
+		m.ResponseTokens = um.CandidatesTokenCount
+		m.TotalTokens = um.TotalTokenCount
 	}
 
 	// Extract search count
-	if resp.Candidates != nil && len(resp.Candidates) > 0 {
+	if resp != nil && len(resp.Candidates) > 0 {
 		gm := resp.Candidates[0].GroundingMetadata
 		if gm != nil {
 			m.SearchQueries = len(gm.WebSearchQueries)
