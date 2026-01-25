@@ -30,24 +30,30 @@ The tool follows a "Triple-Mode" input strategy to provide a seamless user exper
 
 #### 3. Standard Alias (`a`)
 To maintain consistency with the project's roots, users are encouraged to set up a single, universal alias:
+
+#### 4. Session Management and Archiving
+The tool manages session state through history and log files.
+- **New Session**: When the `-new` flag is used, the tool must start a fresh conversation.
+- **Automatic Archiving**: To prevent data loss, instead of deleting old session files, the tool **MUST** move them to a timestamped backup directory: `output/backups/YYYYMMDD_HHMMSS/`. 
+- **Files to Archive**: This include history (`.json`), logs (`.log`), scratchpads (`.scratchpad.md`), and tasks (`.tasks.json`).
 ```bash
 alias a='tell-me-go'
 ```
 This alias should be the primary way users interact with the tool, relying on the "Triple-Mode" logic above.
 
-#### 4. Latency and User Feedback (⚠️ CRITICAL)
+#### 5. Latency and User Feedback (⚠️ CRITICAL)
 To ensure a responsive user experience:
 - **Immediate Echo**: The user's prompt must be echoed back (e.g., `> prompt`) immediately after input is finalized (e.g., after `Ctrl+D` or argument parsing).
 - **Execution Order**: This echo **MUST** occur before any slow operations, such as configuration loading, network calls, or authentication (e.g., `gcloud auth`).
 
-#### 5. Logging and Observability
+#### 6. Logging and Observability
 All terminal log outputs (prompt echoes, system messages, thought processes, tool calls) must include a timestamp in the following format:
 - `[HH:MM:SS]` (e.g., `[14:30:05]`)
 - Colors:
     - User Prompt: Green (`\033[0;32m`)
     - System/Thought/Tool logs: Gray (`\033[0;90m`) to `stderr`.
 
-#### 6. Flag Parsing Location
+#### 7. Flag Parsing Location
 - Flags should be defined and parsed within `cmd/tell-me-go/main.go`.
 - Defaults should be sensible (e.g., default config path to `configs/gemini.yaml`).
 

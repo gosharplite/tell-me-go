@@ -30,7 +30,10 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 4.  **Update History**: 
     - **CRITICAL**: Append the model's full `Content` to history, including all `parts` (e.g., `thought`, `thoughtSignature`, `functionCall`). Stripping reasoning parts will cause subsequent API calls to fail on Vertex AI.
     - Append the execution results as a `functionResponse` inside a `Content` with **Role: `user`** (as required by the GenAI SDK).
-5.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
+5.  **Output Management**: 
+    - **Thoughts**: Print model thoughts to `stderr` in gray immediately as they are received.
+    - **Text Parts**: If the model response contains text parts along with tool calls, these must be printed to `stdout` **immediately** before proceeding with tool execution. Do not wait for the final response in the multi-turn loop to print intermediate text.
+6.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
 
 #### 3. Security and Safety
 - **Read-Only by Default**: Tools that read data (e.g., `read_file`, `list_files`) require no special confirmation.
