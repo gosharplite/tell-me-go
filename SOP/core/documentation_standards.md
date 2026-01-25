@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Documentation Standards
 
 ### Objective
@@ -75,4 +79,3 @@ func NewManager(path string) *Manager {
 - **Visuals**: Use code blocks and ASCII/Markdown tables for clarity.
 - **Relative Links**: Always use relative links to other files within the repository (e.g., `[Git Workflow](./SOP/core/git_workflow.md)`).
 - **No Secrets**: Never include real API keys or sensitive data in examples.
-

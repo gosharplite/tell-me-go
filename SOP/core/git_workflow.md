@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Git Workflow (Commit and Push)
 
 ### Objective
@@ -103,4 +107,3 @@ git push origin $(git branch --show-current)
 - **Dependency Hygiene**: Never commit code that causes `go mod tidy` to produce changes; run it first.
 - **Never Push Broken Code**: The main branch should always compile and pass tests.
 - **Secret Scanning**: Double-check that no `.json` key files or sensitive configurations are staged.
-

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Testing Standards and Organization
 
 ### Objective
@@ -101,4 +105,3 @@ func TestSaveHistory(t *testing.T) {
 - **Resilience**: Mock API errors (429, 500, timeouts) to verify the client's retry logic.
 - **Golden Files**: Use "golden files" for large expected outputs (like complex JSON history structures).
 - **No Style in Assertions**: If comparing terminal output, strip ANSI escape codes before asserting.
-

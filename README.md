@@ -8,10 +8,14 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 ## 🚀 Features
 *   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
 *   **Gemini 2.0 Reasoning**: Support for **Thinking (Reasoning)** models with visible thought processes and configurable token budgets.
-*   **Agentic Tools**: Natively executes local tools and Google Search to solve complex tasks.
-    *   **FileSystem**: `list_files`, `read_file`, `search_files`, `replace_text`, `get_tree`.
-    *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`.
-    *   **System**: `execute_command`, `read_url`, `ask_user`.
+*   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
+    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`.
+    *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
+    *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
+    *   **Media & Vision**: `create_image` (Imagen 3), `create_video` (Veo), `read_image` (Vision).
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `rollback_last_turn`.
+    *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`.
+    *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Metrics**: `estimate_cost`.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Project Architecture and Package Standards
 
 ### Objective
@@ -97,4 +101,3 @@ func New() *Config {
 - **Flat is Better**: Avoid deep nesting (e.g., `internal/api/gemini/v1/client`). Keep the hierarchy as flat as possible.
 - **Main is for Wiring**: Use `main.go` only to instantiate dependencies and "wire" them together.
 - **Standard Library First**: Prefer Go's standard library over external dependencies (e.g., `encoding/json` over `easyjson`).
-

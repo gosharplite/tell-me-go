@@ -1,5 +1,7 @@
-# Copyright (c) 2026 gosharplite@gmail.com
-# SPDX-License-Identifier: MIT
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 
 # Standard Operating Procedure (SOP): CLI Command Line Interface Standards
 
@@ -50,12 +52,12 @@ To ensure a responsive user experience:
 All terminal log outputs (prompt echoes, system messages, thought processes, tool calls) must include a timestamp in the following format:
 - `[HH:MM:SS]` (e.g., `[14:30:05]`)
 - Colors:
-    - User Prompt: Green (`\033[0;32m`)
-    - System/Thought/Tool logs: Gray (`\033[0;90m`) to `stderr`.
+    - User Prompt: Green (`[0;32m`)
+    - System/Thought/Tool logs: Gray (`[0;90m`) to `stderr`.
 
 #### 7. Flag Parsing Location
 - Flags should be defined and parsed within `cmd/tell-me-go/main.go`.
-- Defaults should be sensible (e.g., default config path to `configs/gemini.yaml`).
+- Defaults should be sensible (e.g., default config path to `configs/vertex.yaml`).
 
 ---
 
@@ -64,7 +66,7 @@ All terminal log outputs (prompt echoes, system messages, thought processes, too
 #### Standard Input and Flag Parsing:
 ```go
 // 1. Parse Flags
-configPath := flag.String("c", "configs/gemini.yaml", "Path to config")
+configPath := flag.String("c", "configs/vertex.yaml", "Path to config")
 flag.Parse()
 
 // 2. Resolve Prompt (Triple-Mode)
@@ -73,7 +75,8 @@ prompt := flag.Arg(0)
 prompt = strings.TrimSpace(prompt)
 
 // 3. Immediate User Feedback with Timestamp
-fmt.Fprintf(os.Stderr, "\033[0;32m[%s] > %s\033[0m\n", time.Now().Format("15:04:05"), prompt)
+fmt.Fprintf(os.Stderr, "[0;32m[%s] > %s[0m
+", time.Now().Format("15:04:05"), prompt)
 
 // 4. Proceed to Load Config (potentially slow)
 cfg, err := config.Load(*configPath)
@@ -99,4 +102,3 @@ To ensure discoverability of features and ease of setup:
 - **Completeness**: All configuration templates (e.g., `configs/vertex.yaml`) **MUST** include every variable supported by the application's `Config` struct.
 - **Sensible Defaults**: Variables should be set to safe, sensible defaults.
 - **Documentation**: Each variable in the template should be accompanied by a comment explaining its purpose, especially for safety limits like `MAX_HISTORY_TOKENS` or `MAX_TURNS`.
-

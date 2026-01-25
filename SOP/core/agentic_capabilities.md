@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Agentic Capabilities (Function Calling)
 
 ### Objective
@@ -22,18 +26,23 @@ Every tool must be defined using a standard JSON schema that matches the Gemini 
 #### 2. The Orchestration Loop
 The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools are involved:
 1.  **Send Request**: Send history + tool definitions to Gemini.
-2.  **Detect Function Call**: Check if the `candidates[0].content.parts` contains a `functionCall`.
-3.  **Local Execution**:
+2.  **Detect Function Call**: Check if the `candidates[0].content.parts` contains one or more `functionCall` items.
+3.  **Parallel Execution**:
+    - Multiple `functionCall` parts should be executed in parallel using goroutines and a worker pool (semaphore) to limit concurrency (e.g., `maxConcurrentTools`).
     - Map the `functionCall.name` to a local Go function.
     - Parse arguments based on the schema.
     - Execute the function and capture the output (success or error).
+    - **Timeouts**: Apply a `context.WithTimeout` (default 30s) to non-interactive tools. Interactive tools (e.g., `ask_user`, `execute_command`) are exempt from timeouts.
 4.  **Update History**: 
     - **CRITICAL**: Append the model's full `Content` to history, including all `parts` (e.g., `thought`, `thoughtSignature`, `functionCall`). Stripping reasoning parts will cause subsequent API calls to fail on Vertex AI.
     - Append the execution results as a `functionResponse` inside a `Content` with **Role: `user`** (as required by the GenAI SDK).
 5.  **Output Management**: 
     - **Thoughts**: Print model thoughts to `stderr` in gray immediately as they are received.
     - **Text Parts**: If the model response contains text parts along with tool calls, these must be printed to `stdout` **immediately** before proceeding with tool execution. Do not wait for the final response in the multi-turn loop to print intermediate text.
-6.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
+6.  **Multi-Modal Handling**:
+    - Tools that produce media (e.g., `read_image`) return a special serialized string (e.g., `MULTI_MODAL_IMAGE|mime|data|message`).
+    - The agent must parse this and append a `user` role `Content` containing the raw `Blob` data to the history to enable vision capabilities.
+7.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
 
 #### 3. Security and Safety
 - **Read-Only by Default**: Tools that read data (e.g., `read_file`, `list_files`) require no special confirmation.
@@ -61,4 +70,3 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 - **Atomic Operations**: Tools should perform one clear action.
 - **Clear Descriptions**: The AI's ability to use a tool depends entirely on the clarity of the tool's description.
 - **No Side Effects in Tests**: Ensure tool tests use `t.TempDir()`.
-

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Public Release Process
 
 ### Objective
@@ -95,4 +99,3 @@ A release is **not complete** until it is reachable by the public on the remote 
 - **Binary Verification**: If distributing binaries, verify they run on target architectures (Linux/macOS/Windows).
 - **Draft Releases**: Use GitHub's "Draft Release" feature to stage the release notes.
 - **Minimal Dependencies**: Maintain the project's philosophy by preferring the Go standard library and avoiding unnecessary external packages.
-

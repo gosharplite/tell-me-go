@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.12.1] - 2026-05-10
+
+### Added
+- **Safety Documentation**: Added `SOP/core/self_update_safety.md` to define protocols for agentic self-modification.
+- **Compliance**: Applied missing SPDX-License-Identifier headers to all SOP documentation.
+
+### Changed
+- **Documentation**: Updated `README.md` and `agentic_capabilities.md` with detailed descriptions of parallel tool execution and multi-modal handling.
+- **Version Bump**: Promoted to v1.12.1.
+
 ## [1.12.0] - 2026-04-18
 
 ### Added

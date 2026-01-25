@@ -1,6 +1,8 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
+
+
 # Standard Operating Procedure (SOP): History Management
 
 ### Objective
@@ -80,4 +82,3 @@ type Manager interface {
 - **Thread Safety**: Use a `sync.Mutex` if the History Manager will be accessed by multiple goroutines.
 - **Minimalist Storage**: Do not store internal metadata (like timestamps) inside the `contents` array sent to the API; keep that array "clean" for the model.
 - **Rollback**: If a save fails, ensure the existing history file is not lost.
-

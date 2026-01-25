@@ -1,3 +1,7 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+
 # Standard Operating Procedure (SOP): Authentication and Token Management
 
 ### Objective
@@ -56,4 +60,3 @@ type Authenticator interface {
 - **Minimal Scopes**: Only request the `https://www.googleapis.com/auth/cloud-platform` scope.
 - **Service Account Safety**: Never hardcode keys; always use file paths or environment variables.
 - **Vertex AI Only**: Do not implement logic for AI Studio (API Keys).
-
