@@ -218,4 +218,3 @@ func (a *Agent) Chat(prompt string) error {
 
 	return nil
 }
-

@@ -53,7 +53,7 @@ func TestHistoryManager(t *testing.T) {
 	_ = m.AddEntry("user", "Turn 2")
 	_ = m.AddEntry("model", "Response 2")
 	// [U1, M1, U2, M2] - 4 messages
-	
+
 	m.Prune(1) // Should keep last 1 turn (2 messages)
 	if len(m.GetContents()) != 2 {
 		t.Errorf("expected 2 entries after pruning, got %d", len(m.GetContents()))
@@ -62,4 +62,3 @@ func TestHistoryManager(t *testing.T) {
 		t.Error("first message after pruning is not 'user'")
 	}
 }
-

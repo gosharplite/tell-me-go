@@ -173,4 +173,3 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 
 	return resp.Candidates[0].Content, metrics, nil
 }
-

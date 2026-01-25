@@ -77,4 +77,3 @@ func runGitCommand(args ...string) (string, error) {
 	}
 	return string(out), nil
 }
-

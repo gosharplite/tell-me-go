@@ -83,7 +83,7 @@ func RegisterFileSystemTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "replace_text",
-		Description: "Replaces a specific text block in a file with new content.",
+		Description: "Replaces a specific text block in a file with new content. Replaces ONLY the first occurrence found.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -93,7 +93,7 @@ func RegisterFileSystemTools(r *Registry) {
 				},
 				"old_text": {
 					Type:        genai.TypeString,
-					Description: "The exact text block to find.",
+					Description: "The exact text block to find and replace.",
 				},
 				"new_text": {
 					Type:        genai.TypeString,
@@ -274,4 +274,3 @@ func replaceText(args map[string]interface{}) (string, error) {
 
 	return "File updated successfully.", nil
 }
-

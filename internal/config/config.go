@@ -12,16 +12,16 @@ import (
 
 // Config represents the application configuration loaded from a YAML file.
 type Config struct {
-	Mode              string `yaml:"MODE"`
-	Person            string `yaml:"PERSON"`
-	URL               string `yaml:"AIURL"`
-	Model             string `yaml:"AIMODEL"`
-	UseSearch         bool   `yaml:"USE_SEARCH"`
-	MaxToolTurns      int    `yaml:"MAX_TURNS"`           // Renamed for clarity in logic, kept YAML tag for compatibility
-	MaxHistoryTurns   int    `yaml:"MAX_HISTORY_TURNS"`   // New: For pruning turns
-	MaxHistoryTokens  int    `yaml:"MAX_HISTORY_TOKENS"`  // New: For safety rollback
-	ThinkingBudget    int    `yaml:"THINKING_BUDGET"`
-	ThinkingLevel     string `yaml:"THINKING_LEVEL"`
+	Mode             string `yaml:"MODE"`
+	Person           string `yaml:"PERSON"`
+	URL              string `yaml:"AIURL"`
+	Model            string `yaml:"AIMODEL"`
+	UseSearch        bool   `yaml:"USE_SEARCH"`
+	MaxToolTurns     int    `yaml:"MAX_TURNS"`          // Renamed for clarity in logic, kept YAML tag for compatibility
+	MaxHistoryTurns  int    `yaml:"MAX_HISTORY_TURNS"`  // New: For pruning turns
+	MaxHistoryTokens int    `yaml:"MAX_HISTORY_TOKENS"` // New: For safety rollback
+	ThinkingBudget   int    `yaml:"THINKING_BUDGET"`
+	ThinkingLevel    string `yaml:"THINKING_LEVEL"`
 }
 
 // Load reads and parses the configuration file.
@@ -45,4 +45,3 @@ func Load(path string) (*Config, error) {
 
 	return &cfg, nil
 }
-

@@ -126,7 +126,7 @@ func (m *Manager) Prune(maxTurns int) {
 		// skipping an even number of messages guarantees the new index 0
 		// is also a 'user' role.
 		removeCount += (removeCount % 2)
-		
+
 		if removeCount > 0 && removeCount < len(m.Contents) {
 			m.Contents = m.Contents[removeCount:]
 		}
@@ -137,4 +137,3 @@ func (m *Manager) Prune(maxTurns int) {
 func (m *Manager) GetContents() []*api.Content {
 	return m.Contents
 }
-

@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.0.2"
+const Version = "1.0.3"
 
 func main() {
 	// 1. Define Flags
@@ -159,4 +159,3 @@ func archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
 		}
 	}
 }
-
