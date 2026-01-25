@@ -325,7 +325,7 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	}
 
 	// 3. Execution
-	fmt.Fprintf(os.Stderr, "\033[0;33mExecuting... (Output shown below)\033[0m\n")
+	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	// We use "sh -c" to allow for complex commands
