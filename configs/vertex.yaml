@@ -9,6 +9,10 @@ USE_SEARCH: true
 THINKING_BUDGET: 0
 THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
 
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5   # Maximum number of tools to execute in parallel
+TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
+
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)

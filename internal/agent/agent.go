@@ -4,10 +4,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -17,22 +19,26 @@ import (
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client           *api.Client
-	history          *history.Manager
-	registry         *tools.Registry
-	logFile          string
-	maxToolTurns     int
-	maxHistoryTokens int
+	client             *api.Client
+	history            *history.Manager
+	registry           *tools.Registry
+	logFile            string
+	maxToolTurns       int
+	maxHistoryTokens   int
+	maxConcurrentTools int
+	toolTimeout        time.Duration
 }
 
 // New creates a new Agent.
 func New(client *api.Client, hManager *history.Manager, registry *tools.Registry) *Agent {
 	return &Agent{
-		client:           client,
-		history:          hManager,
-		registry:         registry,
-		maxToolTurns:     10,
-		maxHistoryTokens: 120000,
+		client:             client,
+		history:            hManager,
+		registry:           registry,
+		maxToolTurns:       10,
+		maxHistoryTokens:   120000,
+		maxConcurrentTools: 5,
+		toolTimeout:        30 * time.Second,
 	}
 }
 
@@ -43,6 +49,16 @@ func (a *Agent) SetLimits(toolTurns, historyTokens int) {
 	}
 	if historyTokens > 0 {
 		a.maxHistoryTokens = historyTokens
+	}
+}
+
+// SetConcurrency sets the parallel execution limits for the agent.
+func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
+	if maxConcurrent > 0 {
+		a.maxConcurrentTools = maxConcurrent
+	}
+	if timeoutSeconds > 0 {
+		a.toolTimeout = time.Duration(timeoutSeconds) * time.Second
 	}
 }
 
@@ -177,38 +193,72 @@ func (a *Agent) Chat(prompt string) error {
 			}
 		}
 
-		hasFunctionCall := false
-		var functionResponseParts []*api.Part
-
+		// Parallel Tool Execution
+		var functionCalls []*api.FunctionCall
 		for _, part := range respContent.Parts {
 			if part.FunctionCall != nil {
-				hasFunctionCall = true
-				fc := part.FunctionCall
-				fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), fc.Name)
-
-				result, err := a.registry.Execute(fc.Name, fc.Args)
-				if err != nil {
-					result = fmt.Sprintf("Error: %v", err)
-				}
-
-				functionResponseParts = append(functionResponseParts, &api.Part{
-					FunctionResponse: &api.FunctionResponse{
-						Name:     fc.Name,
-						Response: map[string]interface{}{"result": result},
-					},
-				})
+				functionCalls = append(functionCalls, part.FunctionCall)
 			}
 		}
 
-		if hasFunctionCall {
+		if len(functionCalls) > 0 {
 			if turn >= a.maxToolTurns {
 				fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
 					time.Now().Format("15:04:05"), a.maxToolTurns)
 				break
 			}
+
+			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine] Executing %d tools (Parallel: %d, Timeout: %v)...\033[0m\n",
+				time.Now().Format("15:04:05"), len(functionCalls), a.maxConcurrentTools, a.toolTimeout)
+
+			results := make([]*api.Part, len(functionCalls))
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, a.maxConcurrentTools)
+
+			for i, fc := range functionCalls {
+				wg.Add(1)
+				go func(idx int, call *api.FunctionCall) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), call.Name)
+
+					// Execute with timeout
+					ctx, cancel := context.WithTimeout(context.Background(), a.toolTimeout)
+					defer cancel()
+
+					resChan := make(chan string, 1)
+					go func() {
+						result, err := a.registry.Execute(call.Name, call.Args)
+						if err != nil {
+							resChan <- fmt.Sprintf("Error: %v", err)
+						} else {
+							resChan <- result
+						}
+					}()
+
+					var finalResult string
+					select {
+					case <-ctx.Done():
+						finalResult = fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
+					case res := <-resChan:
+						finalResult = res
+					}
+
+					results[idx] = &api.Part{
+						FunctionResponse: &api.FunctionResponse{
+							Name:     call.Name,
+							Response: map[string]interface{}{"result": finalResult},
+						},
+					}
+				}(i, fc)
+			}
+			wg.Wait()
+
 			a.history.AddContent(&api.Content{
 				Role:  "user",
-				Parts: functionResponseParts,
+				Parts: results,
 			})
 			continue
 		}

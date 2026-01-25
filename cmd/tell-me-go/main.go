@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 func main() {
 	// 1. Define Flags
@@ -118,6 +118,7 @@ func main() {
 	chatAgent := agent.New(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens)
+	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 	if err := chatAgent.Chat(prompt); err != nil {
 		log.Fatalf("Error: %v", err)
 	}

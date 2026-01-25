@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.2.0] - 2026-01-26
+
+### Added
+- **Concurrent Tool Execution Engine**: Optimized performance by executing multiple model-requested tools in parallel.
+    - Implemented a semaphore-based worker pool to control concurrency levels.
+    - Added per-tool timeout protection using `context.Context` to prevent hanging executions.
+- **Configuration Expansion**: Added new parameters to `configs/vertex.yaml`:
+    - `MAX_CONCURRENT_TOOLS`: Controls the parallel worker pool size (default: 5).
+    - `TOOL_TIMEOUT`: Defines the maximum duration for a single tool call (default: 30s).
+
+### Changed
+- **Agent Orchestration**: Refactored the internal loop to collect and synchronize parallel tool results while maintaining conversational order.
+- **UI Improvements**: Added real-time feedback for the tool engine's parallel execution status.
 ## [1.1.0] - 2026-01-26
 
 ### Added
