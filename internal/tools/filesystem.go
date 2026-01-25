@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,6 +104,58 @@ func RegisterFileSystemTools(r *Registry) {
 			Required: []string{"filepath", "old_text", "new_text"},
 		},
 	}, replaceText)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "find_file",
+		Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go').",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The directory path to start the search (defaults to '.')",
+				},
+				"pattern": {
+					Type:        genai.TypeString,
+					Description: "The file name pattern to search for (e.g., 'config.*').",
+				},
+			},
+			Required: []string{"pattern"},
+		},
+	}, findFile)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "grep_definitions",
+		Description: "Searches for code definitions (functions, classes, structs) within files.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The directory path to search.",
+				},
+				"query": {
+					Type:        genai.TypeString,
+					Description: "Optional name pattern to filter definitions (regex).",
+				},
+			},
+		},
+	}, grepDefinitions)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_file_skeleton",
+		Description: "Returns the skeleton (function signatures, classes, structs, and docstrings) of a source code file, omitting function bodies.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"filepath": {
+					Type:        genai.TypeString,
+					Description: "The path to the source code file.",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, getFileSkeleton)
 }
 
 func listFiles(args map[string]interface{}) (string, error) {
@@ -273,4 +326,200 @@ func replaceText(args map[string]interface{}) (string, error) {
 	}
 
 	return "File updated successfully.", nil
+}
+
+func findFile(args map[string]interface{}) (string, error) {
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		path = "."
+	}
+	pattern, ok := args["pattern"].(string)
+	if !ok || pattern == "" {
+		return "", fmt.Errorf("pattern argument is required")
+	}
+
+	var results []string
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		matched, err := filepath.Match(pattern, info.Name())
+		if err != nil {
+			return err
+		}
+
+		if matched {
+			results = append(results, filePath)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(results) == 0 {
+		return "No files found matching pattern.", nil
+	}
+
+	return strings.Join(results, "\n"), nil
+}
+
+func grepDefinitions(args map[string]interface{}) (string, error) {
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		path = "."
+	}
+	query, _ := args["query"].(string)
+
+	// Broad definition patterns for Go, Python, JS, Bash
+	defPatterns := []string{
+		`^func\s+\(`,            // Go receiver method
+		`^func\s+\w+`,           // Go function
+		`^type\s+\w+`,           // Go type
+		`^def\s+\w+`,            // Python function
+		`^class\s+\w+`,          // Python/JS class
+		`^function\s+`,          // JS function
+		`^const\s+\w+\s*=\s*\(`, // JS arrow function
+		`^\w+\(\)\s*\{`,         // Bash function
+	}
+
+	var reQuery *regexp.Regexp
+	if query != "" {
+		var err error
+		reQuery, err = regexp.Compile("(?i)" + query)
+		if err != nil {
+			return "", fmt.Errorf("invalid query regex: %w", err)
+		}
+	}
+
+	var results []string
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Only check common source files
+		ext := filepath.Ext(filePath)
+		if ext != ".go" && ext != ".py" && ext != ".js" && ext != ".sh" && ext != ".md" {
+			return nil
+		}
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Text()
+			isDef := false
+			for _, p := range defPatterns {
+				if matched, _ := regexp.MatchString(p, line); matched {
+					isDef = true
+					break
+				}
+			}
+
+			if isDef {
+				if reQuery == nil || reQuery.MatchString(line) {
+					results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, strings.TrimSpace(line)))
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(results) == 0 {
+		return "No definitions found.", nil
+	}
+
+	return strings.Join(results, "\n"), nil
+}
+
+func getFileSkeleton(args map[string]interface{}) (string, error) {
+	path, ok := args["filepath"].(string)
+	if !ok || path == "" {
+		return "", fmt.Errorf("filepath argument is required")
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	ext := filepath.Ext(path)
+	scanner := bufio.NewScanner(file)
+	var sb strings.Builder
+	var lastComments []string
+
+	// Simple heuristic: extract lines that look like definitions and their preceding comments
+	defPatterns := []string{
+		`^func\s+`, `^type\s+`, `^def\s+`, `^class\s+`, `^function\s+`, `^\w+\(\)\s*\{`,
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			lastComments = append(lastComments, line)
+			continue
+		}
+
+		if trimmed == "" {
+			lastComments = nil
+			continue
+		}
+
+		isDef := false
+		for _, p := range defPatterns {
+			if matched, _ := regexp.MatchString(p, line); matched {
+				isDef = true
+				break
+			}
+		}
+
+		if isDef {
+			for _, c := range lastComments {
+				sb.WriteString(c + "\n")
+			}
+			sb.WriteString(line + "\n")
+			if ext == ".py" && strings.HasSuffix(trimmed, ":") {
+				// Keep going for Python
+			} else if !strings.HasSuffix(trimmed, "{") && ext != ".py" {
+				// Might be a multi-line signature or type, but we keep it simple
+			}
+			sb.WriteString("\n")
+		}
+		lastComments = nil
+	}
+
+	out := sb.String()
+	if out == "" {
+		return "Could not extract skeleton or file has no recognized definitions.", nil
+	}
+
+	return out, nil
 }

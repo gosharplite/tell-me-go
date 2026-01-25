@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.1.0] - 2026-01-26
+
+### Added
+- **Repository Mapping Toolset**: Implemented a 4-tool stack for efficient navigation of large codebases.
+    - `get_file_skeleton`: Extracts function signatures, classes, and docstrings without reading full file content (significant token savings).
+    - `grep_definitions`: Cross-language indexer to find code definitions (Go, Python, JS, Bash).
+    - `find_file`: Rapid discovery of files via name patterns.
+    - `get_tree`: Enhanced structural map of the repository.
+
+### Changed
+- **Tool Registry**: Optimized tool registration for better categorization and help text.
+- **Version Bump**: Promoted to v1.1.0 to reflect significant feature expansion.
 ## [1.0.3] - 2026-01-26
 
 ### Changed
