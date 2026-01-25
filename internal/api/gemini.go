@@ -198,3 +198,59 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 
 	return results, nil
 }
+
+// GenerateVideos calls the Veo model to generate videos from a prompt.
+func (c *Client) GenerateVideos(ctx context.Context, model, prompt string, gcsURI string) ([][]byte, error) {
+	config := &genai.GenerateVideosConfig{}
+	if c.backend == genai.BackendVertexAI && gcsURI != "" {
+		config.OutputGCSURI = gcsURI
+	}
+
+	operation, err := c.sdkClient.Models.GenerateVideos(ctx, model, prompt, nil, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Polling for completion
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			operation, err = c.sdkClient.Operations.GetVideosOperation(ctx, operation, nil)
+			if err != nil {
+				return nil, err
+			}
+			if operation.Done {
+				goto Done
+			}
+		}
+	}
+
+Done:
+	if operation.Response == nil || len(operation.Response.GeneratedVideos) == 0 {
+		return nil, fmt.Errorf("operation completed but no videos were generated")
+	}
+
+	var results [][]byte
+	for _, v := range operation.Response.GeneratedVideos {
+		if c.backend != genai.BackendVertexAI {
+			// Download directly from Gemini API
+			data, err := c.sdkClient.Files.Download(ctx, genai.NewDownloadURIFromGeneratedVideo(v), nil)
+			if err != nil {
+				continue
+			}
+			results = append(results, data)
+		} else {
+			// On Vertex, it's in GCS. For now, we return the URI as text or an error
+			// since tell-me doesn't have a GCS downloader yet.
+			// But the user requested to implement create_video.
+			return nil, fmt.Errorf("video generation on Vertex AI requires GCS output and tell-me does not yet support automatic GCS downloading. URI: %s", v.Video.URI)
+		}
+	}
+
+	return results, nil
+}
