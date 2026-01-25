@@ -6,6 +6,7 @@ package agent
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -73,6 +74,17 @@ func (a *Agent) Chat(prompt string) error {
 
 	for {
 		respContent, metrics, err := a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
+
+		// Handle 401 Unauthorized (Expired Token)
+		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+			if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
+				return fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
+			}
+			// Retry once
+			respContent, metrics, err = a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
+		}
+
 		if err != nil {
 			return err
 		}

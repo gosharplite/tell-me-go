@@ -16,6 +16,7 @@ import (
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
 	GetToken() (string, error)
+	Invalidate()
 	Apply(req *Request)
 }
 
@@ -29,6 +30,10 @@ type VertexAuth struct {
 	Token string
 }
 
+func (a *VertexAuth) getCachePath() string {
+	return filepath.Join(os.TempDir(), "tell_me_go_token_vertex.txt")
+}
+
 // GetToken retrieves the OAuth2 access token with local caching.
 func (a *VertexAuth) GetToken() (string, error) {
 	if a.Token != "" {
@@ -36,7 +41,7 @@ func (a *VertexAuth) GetToken() (string, error) {
 	}
 
 	// 1. Try local cache
-	cacheFile := filepath.Join(os.TempDir(), "tell_me_go_token_vertex.txt")
+	cacheFile := a.getCachePath()
 	if info, err := os.Stat(cacheFile); err == nil {
 		// Tokens are valid for 1 hour. We use 55 minutes (3300s) as a safe buffer.
 		if time.Since(info.ModTime()) < 55*time.Minute {
@@ -61,6 +66,12 @@ func (a *VertexAuth) GetToken() (string, error) {
 	
 	a.Token = token
 	return a.Token, nil
+}
+
+// Invalidate clears the current token and deletes the local cache file.
+func (a *VertexAuth) Invalidate() {
+	a.Token = ""
+	_ = os.Remove(a.getCachePath())
 }
 
 // Apply injects the Bearer token into the request headers.

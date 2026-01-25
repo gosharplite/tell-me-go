@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.9.1] - 2026-01-26
+
+### Fixed
+- **Auth Token Expiration**: Implemented automatic retry logic for `401 UNAUTHENTICATED` errors. If a cached token expires, the assistant will now automatically clear the cache, retrieve a fresh token via `gcloud`, and retry the request once without user intervention.
+
 ## [0.9.0] - 2026-01-26
 
 ### Added

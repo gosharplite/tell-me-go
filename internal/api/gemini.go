@@ -1,6 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
+// Package api handles communication with the Gemini API using the Google GenAI SDK.
 package api
 
 import (
@@ -23,6 +24,8 @@ type FunctionResponse = genai.FunctionResponse
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
 	sdkClient         *genai.Client
+	authenticator     auth.Authenticator
+	apiURL            string
 	model             string
 	thinkingBudget    int
 	thinkingLevel     string
@@ -33,16 +36,38 @@ type Client struct {
 
 // NewClient returns a new Gemini API client.
 func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, systemInstruction string, useSearch bool) (*Client, error) {
+	c := &Client{
+		authenticator:  authenticator,
+		apiURL:         apiURL,
+		model:          model,
+		thinkingBudget: thinkingBudget,
+		thinkingLevel:  thinkingLevel,
+		useSearch:      useSearch,
+	}
+
+	if systemInstruction != "" {
+		c.systemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: systemInstruction}},
+		}
+	}
+
+	if err := c.initSDK(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+func (c *Client) initSDK() error {
 	ctx := context.Background()
 
 	// 1. Determine Backend and parse Project/Location/BaseURL
 	backend := genai.BackendGeminiAPI
 	var project, location, baseURL string
 
-	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
+	if strings.Contains(c.apiURL, "aiplatform.googleapis.com") {
 		backend = genai.BackendVertexAI
-		// Parse project and location from URL if possible
-		parts := strings.Split(apiURL, "/")
+		parts := strings.Split(c.apiURL, "/")
 		for i, p := range parts {
 			if p == "projects" && i+1 < len(parts) {
 				project = parts[i+1]
@@ -51,17 +76,17 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 				location = parts[i+1]
 			}
 		}
-		// BaseURL for SDK should be the host part
-		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
-			baseURL = apiURL[:idx+1]
+		if idx := strings.Index(c.apiURL, "/v1/"); idx != -1 {
+			baseURL = c.apiURL[:idx+1]
 		}
 	}
+	c.backend = backend
 
 	// 2. Prepare Auth Headers
 	authReq := &auth.Request{
 		Headers: make(map[string]string),
 	}
-	authenticator.Apply(authReq)
+	c.authenticator.Apply(authReq)
 
 	// 3. Initialize SDK Client
 	headers := make(http.Header)
@@ -82,25 +107,17 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 
 	sdkClient, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create genai client: %w", err)
+		return fmt.Errorf("failed to create genai client: %w", err)
 	}
 
-	var si *genai.Content
-	if systemInstruction != "" {
-		si = &genai.Content{
-			Parts: []*genai.Part{{Text: systemInstruction}},
-		}
-	}
+	c.sdkClient = sdkClient
+	return nil
+}
 
-	return &Client{
-		sdkClient:         sdkClient,
-		model:             model,
-		thinkingBudget:    thinkingBudget,
-		thinkingLevel:     thinkingLevel,
-		useSearch:         useSearch,
-		systemInstruction: si,
-		backend:           backend,
-	}, nil
+// RefreshAuth invalidates the current token and re-initializes the SDK client.
+func (c *Client) RefreshAuth() error {
+	c.authenticator.Invalidate()
+	return c.initSDK()
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
@@ -108,20 +125,22 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 	ctx := context.Background()
 
 	// Add Search tool if requested
+	var activeTools []*genai.Tool
+	activeTools = append(activeTools, tools...)
 	if c.useSearch {
 		if c.backend == genai.BackendVertexAI {
-			tools = append(tools, &genai.Tool{
+			activeTools = append(activeTools, &genai.Tool{
 				GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{},
 			})
 		} else {
-			tools = append(tools, &genai.Tool{
+			activeTools = append(activeTools, &genai.Tool{
 				GoogleSearch: &genai.GoogleSearch{},
 			})
 		}
 	}
 
 	config := &genai.GenerateContentConfig{
-		Tools:             tools,
+		Tools:             activeTools,
 		SystemInstruction: c.systemInstruction,
 	}
 
@@ -142,7 +161,7 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("api request failed: %w", err)
+		return nil, nil, err // Return raw error for retry detection
 	}
 
 	if len(resp.Candidates) == 0 {
