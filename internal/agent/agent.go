@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -67,12 +68,43 @@ func (a *Agent) logUsage(m *api.Metrics) {
 
 func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
 	charCount := 0
-	for _, c := range contents {
-		for _, p := range c.Parts {
-			charCount += len(p.Text)
+
+	// 1. Tool Declarations overhead
+	for _, decl := range a.registry.GetDeclarations() {
+		charCount += len(decl.Name) + len(decl.Description)
+		if decl.Parameters != nil {
+			// Rough estimate for schema complexity
+			charCount += 100
 		}
 	}
-	return charCount / 4
+
+	// 2. Conversation History
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if p.Text != "" {
+				charCount += len(p.Text)
+			}
+			if p.FunctionCall != nil {
+				charCount += len(p.FunctionCall.Name)
+				if b, err := json.Marshal(p.FunctionCall.Args); err == nil {
+					charCount += len(b)
+				}
+			}
+			if p.FunctionResponse != nil {
+				charCount += len(p.FunctionResponse.Name)
+				if b, err := json.Marshal(p.FunctionResponse.Response); err == nil {
+					charCount += len(b)
+				}
+			}
+		}
+	}
+
+	// 3. Heuristic Adjustments
+	// Base overhead for system instruction, structural JSON, and formatting
+	charCount += 1000
+
+	// Use 3.2 chars per token for technical/structured content (more accurate than 4)
+	return int(float64(charCount) / 3.2)
 }
 
 // Chat runs the multi-turn orchestration loop.
