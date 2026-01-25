@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.6.2"
+const Version = "0.7.0"
 
 func main() {
 	// 1. Define Flags
@@ -92,6 +92,7 @@ func main() {
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
 	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
+	tools.RegisterSystemTools(registry)
 	if err != nil {
 		log.Fatalf("Error creating client: %v", err)
 	}
