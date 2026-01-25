@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.12.0] - 2026-04-18
+
+### Added
+- **Video Suite**: Integrated Veo 2.0 generation capabilities via `create_video` tool.
+- **Rollback Tool**: Added `rollback_last_turn` to manually undo the previous interaction.
+- **Enhanced Metrics**: Improved token tracking for multimodal and thinking models.
+
+### Changed
+- **Version Bump**: Promoted to v1.12.0.
+
+## [1.11.0] - 2026-04-10
+
+### Added
+- **Image Suite**: Integrated Imagen 3 generation via `create_image`.
+- **Vision Support**: Enhanced multi-modal capabilities for analyzing local images via `read_image`.
+
+## [1.9.0] - 2026-04-05
+
+### Added
+- **Performance & Security Tools**: Added `run_benchmark`, `check_vulnerabilities`, and `get_package_graph`.
+- **Complexity Analysis**: Added `analyze_complexity` for Go functions.
+
+## [1.7.0] - 2026-03-25
+
+### Added
+- **Documentation & Networking**: Added `go_doc` for symbol documentation and `http_request` for custom API interactions.
+
+## [1.6.0] - 2026-03-15
+
+### Added
+- **Refactoring & Testing Suite**: Added `rename_symbol`, `get_coverage`, `run_linter`, and `list_todos`.
+
+## [1.5.0] - 2026-03-01
+
+### Added
+- **Advanced Intelligence**: Added `search_usages_globally`, `semantic_diff`, and `manage_tasks` (global scope).
+
+## [1.4.1] - 2026-02-15
+
+### Added
+- **Enhanced Git & Testing**: Added `get_git_commit`, `get_git_blame`, and `run_tests` for automated test execution.
+
 ## [1.4.0] - 2026-01-26
 
 ### Added
