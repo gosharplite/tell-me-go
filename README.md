@@ -22,6 +22,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 *   **Safety Guardrails**: 
     *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn.
     *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
+    *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), existing files are archived to `output/backups/`.
 *   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
