@@ -105,6 +105,43 @@ func RegisterIntelligenceTools(r *Registry) {
 			Required: []string{"target"},
 		},
 	}, semanticDiff)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "rename_symbol",
+		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"old_name": {
+					Type:        genai.TypeString,
+					Description: "The current name of the symbol.",
+				},
+				"new_name": {
+					Type:        genai.TypeString,
+					Description: "The new name for the symbol.",
+				},
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The directory to search (defaults to '.')",
+				},
+			},
+			Required: []string{"old_name", "new_name"},
+		},
+	}, renameSymbol)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "list_todos",
+		Description: "Scans the project for TODO, FIXME, or BUG comments.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The directory to scan (defaults to '.')",
+				},
+			},
+		},
+	}, listTodos)
 }
 
 // AST-based helpers for existing tools
@@ -190,6 +227,110 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	}
 
 	return sb.String(), nil
+}
+
+func renameSymbol(args map[string]interface{}) (string, error) {
+	oldName, _ := args["old_name"].(string)
+	newName, _ := args["new_name"].(string)
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		path = "."
+	}
+
+	type change struct {
+		pos int
+		end int
+	}
+	fileChanges := make(map[string][]change)
+	totalCount := 0
+
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+			return nil
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		if err != nil {
+			return nil
+		}
+
+		ast.Inspect(f, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && id.Name == oldName {
+				p := fset.Position(id.Pos()).Offset
+				fileChanges[filePath] = append(fileChanges[filePath], change{pos: p, end: p + len(oldName)})
+				totalCount++
+			}
+			return true
+		})
+		return nil
+	})
+
+	for filePath, changes := range fileChanges {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		// Sort changes by position descending to apply them without shifting offsets
+		for i := len(changes) - 1; i >= 0; i-- {
+			c := changes[i]
+			newContent := make([]byte, 0, len(content)-len(oldName)+len(newName))
+			newContent = append(newContent, content[:c.pos]...)
+			newContent = append(newContent, []byte(newName)...)
+			newContent = append(newContent, content[c.end:]...)
+			content = newContent
+		}
+		os.WriteFile(filePath, content, 0644)
+	}
+
+	if totalCount == 0 {
+		return fmt.Sprintf("Symbol '%s' not found.", oldName), nil
+	}
+
+	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalCount, oldName, newName, len(fileChanges)), err
+}
+
+func listTodos(args map[string]interface{}) (string, error) {
+	path, ok := args["path"].(string)
+	if !ok || path == "" {
+		path = "."
+	}
+
+	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
+	var results []string
+
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil
+		}
+
+		lines := strings.Split(string(content), "\n")
+		for i, line := range lines {
+			if re.MatchString(line) {
+				match := re.FindString(line)
+				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, i+1, strings.TrimSpace(match)))
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "No TODOs, FIXMEs, or BUGs found.", nil
+	}
+	return strings.Join(results, "\n"), nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {

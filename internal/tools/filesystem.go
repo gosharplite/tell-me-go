@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -175,6 +176,25 @@ func RegisterFileSystemTools(r *Registry) {
 			Required: []string{"filepath", "content"},
 		},
 	}, writeFile)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_file_diff",
+		Description: "Compares two files and returns their differences.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"file1": {
+					Type:        genai.TypeString,
+					Description: "The first file to compare.",
+				},
+				"file2": {
+					Type:        genai.TypeString,
+					Description: "The second file to compare.",
+				},
+			},
+			Required: []string{"file1", "file2"},
+		},
+	}, getFileDiff)
 }
 
 func listFiles(args map[string]interface{}) (string, error) {
@@ -340,6 +360,27 @@ func searchFiles(args map[string]interface{}) (string, error) {
 		out += "\n... (truncated)"
 	}
 	return out, nil
+}
+
+func getFileDiff(args map[string]interface{}) (string, error) {
+	file1, _ := args["file1"].(string)
+	file2, _ := args["file2"].(string)
+
+	if err := checkPathSafety(file1); err != nil {
+		return "", err
+	}
+	if err := checkPathSafety(file2); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("diff", "-u", file1, file2)
+	out, _ := cmd.CombinedOutput()
+
+	if len(out) == 0 {
+		return "Files are identical.", nil
+	}
+
+	return string(out), nil
 }
 
 func checkPathSafety(path string) error {
