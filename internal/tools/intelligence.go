@@ -9,7 +9,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"google.golang.org/genai"
@@ -68,6 +70,41 @@ func RegisterIntelligenceTools(r *Registry) {
 			Required: []string{"typename"},
 		},
 	}, getTypeInfo)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_project_summary",
+		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
+	}, getProjectSummary)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "search_usages_globally",
+		Description: "Searches for a string or symbol usage across all file types in the project, with smart exclusions.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"query": {
+					Type:        genai.TypeString,
+					Description: "The string or regex to search for.",
+				},
+			},
+			Required: []string{"query"},
+		},
+	}, searchUsagesGlobally)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "semantic_diff",
+		Description: "Provides a summarized, logical view of changes between the current state and a commit/branch, focusing on function and structural changes.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"target": {
+					Type:        genai.TypeString,
+					Description: "The git target (commit hash, branch name, or 'HEAD~1') to compare against.",
+				},
+			},
+			Required: []string{"target"},
+		},
+	}, semanticDiff)
 }
 
 // AST-based helpers for existing tools
@@ -464,5 +501,169 @@ func getTypeInfo(args map[string]interface{}) (string, error) {
 	if sb.Len() == 0 {
 		return "Type not found.", nil
 	}
+	return sb.String(), nil
+}
+
+func getProjectSummary(args map[string]interface{}) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("Project Summary:\n")
+
+	// 1. Go Module Info
+	if content, err := os.ReadFile("go.mod"); err == nil {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "module ") || strings.HasPrefix(line, "go ") {
+				sb.WriteString(line + "\n")
+			}
+		}
+	}
+
+	// 2. Stats and Packages
+	fileCounts := make(map[string]int)
+	packages := make(map[string]bool)
+	totalLOC := 0
+
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		ext := filepath.Ext(path)
+		if ext == "" {
+			ext = "(no ext)"
+		}
+		fileCounts[ext]++
+
+		if ext == ".go" {
+			packages[filepath.Dir(path)] = true
+			// Crude LOC count
+			if c, err := os.ReadFile(path); err == nil {
+				totalLOC += len(strings.Split(string(c), "\n"))
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	sb.WriteString(fmt.Sprintf("\nFile Counts:\n"))
+	for ext, count := range fileCounts {
+		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, count))
+	}
+
+	sb.WriteString(fmt.Sprintf("\nGo Packages (%d):\n", len(packages)))
+	for pkg := range packages {
+		sb.WriteString(fmt.Sprintf("  - %s\n", pkg))
+	}
+	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
+
+	return sb.String(), nil
+}
+
+func searchUsagesGlobally(args map[string]interface{}) (string, error) {
+	query, _ := args["query"].(string)
+	re, err := regexp.Compile(query)
+	if err != nil {
+		return "", fmt.Errorf("invalid regex: %w", err)
+	}
+
+	var results []string
+	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" || info.Name() == "output" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip binary files heuristic
+		if info.Size() > 1024*1024 { // Skip files > 1MB
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		lines := strings.Split(string(content), "\n")
+		for i, line := range lines {
+			if re.MatchString(line) {
+				results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, strings.TrimSpace(line)))
+				if len(results) > 100 {
+					return fmt.Errorf("too many results")
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil && err.Error() != "too many results" {
+		return "", err
+	}
+
+	if len(results) == 0 {
+		return "No matches found.", nil
+	}
+
+	out := strings.Join(results, "\n")
+	if err != nil && err.Error() == "too many results" {
+		out += "\n... (truncated)"
+	}
+	return out, nil
+}
+
+func semanticDiff(args map[string]interface{}) (string, error) {
+	target, _ := args["target"].(string)
+
+	// Get stat summary
+	statOut, err := exec.Command("git", "diff", "--stat", target).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git diff --stat failed: %s", string(statOut))
+	}
+
+	// Get summary of changes
+	summaryOut, err := exec.Command("git", "diff", "--summary", target).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Semantic Diff Summary:\n\n")
+	sb.WriteString("File Statistics:\n")
+	sb.WriteString(string(statOut))
+	sb.WriteString("\nChange Summary:\n")
+	sb.WriteString(string(summaryOut))
+
+	// Try to extract changed Go functions if it's a small diff
+	funcDiff, err := exec.Command("git", "diff", "-U0", "--no-color", target).CombinedOutput()
+	if err == nil {
+		sb.WriteString("\nLogical Changes (Functions):\n")
+		lines := strings.Split(string(funcDiff), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "@@") {
+				// git diff -U0 includes function name in the hunk header
+				parts := strings.SplitN(line, "@@", 3)
+				if len(parts) >= 3 {
+					funcName := strings.TrimSpace(parts[2])
+					if funcName != "" {
+						sb.WriteString(fmt.Sprintf("  - %s\n", funcName))
+					}
+				}
+			}
+		}
+	}
+
 	return sb.String(), nil
 }

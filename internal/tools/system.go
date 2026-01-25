@@ -67,6 +67,21 @@ func RegisterSystemTools(r *Registry) {
 			Required: []string{"url"},
 		},
 	}, readURL)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "read_external_docs",
+		Description: "Fetches content from a URL and attempts to clean it into readable documentation by stripping HTML tags and boilerplate.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"url": {
+					Type:        genai.TypeString,
+					Description: "The documentation URL to fetch.",
+				},
+			},
+			Required: []string{"url"},
+		},
+	}, readExternalDocs)
 }
 
 func askUser(args map[string]interface{}) (string, error) {
@@ -114,6 +129,36 @@ func readURL(args map[string]interface{}) (string, error) {
 	}
 
 	return string(body), nil
+}
+
+func readExternalDocs(args map[string]interface{}) (string, error) {
+	content, err := readURL(args)
+	if err != nil {
+		return "", err
+	}
+
+	// Basic HTML stripping
+	// 1. Remove script and style tags and their contents
+	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
+	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
+	content = reStyle.ReplaceAllString(content, "")
+	content = reScript.ReplaceAllString(content, "")
+
+	// 2. Remove all other HTML tags
+	reTags := regexp.MustCompile(`<.*?>`)
+	content = reTags.ReplaceAllString(content, " ")
+
+	// 3. Clean up whitespace
+	reSpace := regexp.MustCompile(`\n\s*\n`)
+	content = reSpace.ReplaceAllString(content, "\n\n")
+	content = strings.Join(strings.Fields(content), " ")
+
+	// Truncate to avoid huge inputs
+	if len(content) > 10000 {
+		content = content[:10000] + "\n... (truncated)"
+	}
+
+	return content, nil
 }
 
 func isSafeCommand(command string) bool {

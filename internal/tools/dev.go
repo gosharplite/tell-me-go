@@ -29,6 +29,11 @@ func RegisterDevTools(r *Registry) {
 			Required: []string{"command"},
 		},
 	}, runTests)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "go_tidy",
+		Description: "Runs 'go mod tidy' and 'go fmt ./...' to clean up dependencies and format code.",
+	}, goTidy)
 }
 
 func runTests(args map[string]interface{}) (string, error) {
@@ -62,4 +67,20 @@ func runTests(args map[string]interface{}) (string, error) {
 	}
 
 	return fmt.Sprintf("FAIL:\n%s", outStr), nil
+}
+
+func goTidy(args map[string]interface{}) (string, error) {
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
+
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	if out, err := tidyCmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go mod tidy failed: %s", string(out))
+	}
+
+	fmtCmd := exec.Command("go", "fmt", "./...")
+	if out, err := fmtCmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go fmt failed: %s", string(out))
+	}
+
+	return "Success: Project tidied and formatted.", nil
 }
