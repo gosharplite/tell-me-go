@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"google.golang.org/genai"
 )
 
 // Agent handles the orchestration of the chat loop.
@@ -31,25 +32,25 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 
 // Chat handles a single user prompt and processes any subsequent tool calls.
 func (a *Agent) Chat(prompt string) error {
-	if err := a.History.AddEntry("user", prompt); err != nil {
+	if err := a.History.AddEntry(genai.RoleUser, prompt); err != nil {
 		return fmt.Errorf("failed to add user prompt: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "\033[0;32m> %s\033[0m\n", prompt)
 
 	for {
-		content, err := a.Client.SendChat(a.History.GetContents(), a.Registry.ToToolJSON())
+		content, err := a.Client.SendChat(a.History.GetContents(), a.Registry.ToToolSDK())
 		if err != nil {
 			return err
 		}
 
 		// Add Model Response to History (including thoughts and signatures)
-		if err := a.History.AddContent(*content); err != nil {
+		if err := a.History.AddContent(content); err != nil {
 			return fmt.Errorf("history violation: %w", err)
 		}
 
 		hasFunctionCall := false
-		var toolParts []api.Part
+		var toolParts []*api.Part
 
 		for _, part := range content.Parts {
 			if part.Thought {
@@ -66,7 +67,7 @@ func (a *Agent) Chat(prompt string) error {
 					result = fmt.Sprintf("Error: %v", err)
 				}
 
-				toolParts = append(toolParts, api.Part{
+				toolParts = append(toolParts, &api.Part{
 					FunctionResponse: &api.FunctionResponse{
 						Name: part.FunctionCall.Name,
 						Response: map[string]interface{}{
@@ -86,8 +87,9 @@ func (a *Agent) Chat(prompt string) error {
 		}
 
 		// Add Tool Responses to History and Continue Loop
-		if err := a.History.AddContent(api.Content{
-			Role:  "function",
+		// In the new GenAI SDK, function responses are sent with the 'user' role.
+		if err := a.History.AddContent(&api.Content{
+			Role:  genai.RoleUser,
 			Parts: toolParts,
 		}); err != nil {
 			return fmt.Errorf("failed to add tool response: %w", err)

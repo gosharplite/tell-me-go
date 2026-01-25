@@ -7,36 +7,38 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"google.golang.org/genai"
 )
 
 // RegisterFileSystemTools adds file-related tools to the registry.
 func RegisterFileSystemTools(r *Registry) {
-	r.Register(Definition{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_files",
 		Description: "Lists files and directories in the specified path.",
-		Parameters: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"path": map[string]interface{}{
-					"type":        "string",
-					"description": "The directory path to list (defaults to current directory '.')",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The directory path to list (defaults to current directory '.')",
 				},
 			},
 		},
 	}, listFiles)
 
-	r.Register(Definition{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_file",
 		Description: "Reads the full content of a specific file.",
-		Parameters: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"filepath": map[string]interface{}{
-					"type":        "string",
-					"description": "The path to the file to read.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"filepath": {
+					Type:        genai.TypeString,
+					Description: "The path to the file to read.",
 				},
 			},
-			"required": []string{"filepath"},
+			Required: []string{"filepath"},
 		},
 	}, readFile)
 }

@@ -19,6 +19,7 @@ type Config struct {
 	URL            string `yaml:"AIURL"`
 	UseSearch      bool   `yaml:"USE_SEARCH"`
 	ThinkingBudget int    `yaml:"THINKING_BUDGET"`
+	ThinkingLevel  string `yaml:"THINKING_LEVEL"`
 	MaxTurns       int    `yaml:"MAX_TURNS"`
 	KeyFile        string `yaml:"KEY_FILE"`
 }

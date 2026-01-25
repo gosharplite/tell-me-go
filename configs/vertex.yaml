@@ -5,6 +5,7 @@ AIMODEL: "gemini-1.5-flash-002"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
 USE_SEARCH: false
 THINKING_BUDGET: 0
+THINKING_LEVEL: ""
 MAX_TURNS: 10
 KEY_FILE: ""
 

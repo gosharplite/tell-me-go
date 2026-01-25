@@ -11,26 +11,27 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
+	"google.golang.org/genai"
 )
 
 // Manager handles loading, saving, and manipulating conversation history.
 type Manager struct {
 	FilePath string
-	Contents []api.Content
+	Contents []*api.Content
 }
 
 // NewManager creates a new history manager for the given file path.
 func NewManager(filePath string) *Manager {
 	return &Manager{
 		FilePath: filePath,
-		Contents: []api.Content{},
+		Contents: []*api.Content{},
 	}
 }
 
 // Load reads the history from the file system.
 func (m *Manager) Load() error {
 	if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
-		m.Contents = []api.Content{}
+		m.Contents = []*api.Content{}
 		return nil
 	}
 
@@ -72,24 +73,22 @@ func (m *Manager) Save() error {
 
 // AddEntry appends a new text message to the history.
 func (m *Manager) AddEntry(role, text string) error {
-	return m.AddContent(api.Content{
+	return m.AddContent(&api.Content{
 		Role:  role,
-		Parts: []api.Part{{Text: text}},
+		Parts: []*api.Part{{Text: text}},
 	})
 }
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
-func (m *Manager) AddContent(content api.Content) error {
+func (m *Manager) AddContent(content *api.Content) error {
 	// 1. Validate role alternation
 	if len(m.Contents) > 0 {
 		lastRole := m.Contents[len(m.Contents)-1].Role
-		// Vertex AI specific: 'function' role follows 'model' (with functionCall)
-		// And 'model' follows 'function'.
 		if lastRole == content.Role {
 			return fmt.Errorf("role alternation violation: last role was %s, cannot add another %s", lastRole, content.Role)
 		}
-	} else if content.Role != "user" {
-		// First message must be user for Vertex AI compliance
+	} else if content.Role != genai.RoleUser {
+		// First message must be user
 		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
 	}
 
@@ -105,7 +104,6 @@ func (m *Manager) Prune(maxTurns int) {
 	if len(m.Contents) > maxMessages {
 		removeCount := len(m.Contents) - maxMessages
 		// Ensure we always start with a 'user' message after pruning
-		// If we remove an odd number of messages, we might end up starting with 'model'
 		if (len(m.Contents)-removeCount)%2 != 0 {
 			removeCount++
 		}
@@ -114,6 +112,6 @@ func (m *Manager) Prune(maxTurns int) {
 }
 
 // GetContents returns the current history contents.
-func (m *Manager) GetContents() []api.Content {
+func (m *Manager) GetContents() []*api.Content {
 	return m.Contents
 }

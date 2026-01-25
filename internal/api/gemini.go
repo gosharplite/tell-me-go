@@ -1,133 +1,147 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package api handles communication with the Gemini API.
+// Package api handles communication with the Gemini API using the Google GenAI SDK.
 package api
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
+	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
+	"google.golang.org/genai"
 )
 
-// Client represents a Gemini API client.
+// Re-export types from genai for easier migration and consistency.
+type Content = genai.Content
+type Part = genai.Part
+type FunctionCall = genai.FunctionCall
+type FunctionResponse = genai.FunctionResponse
+
+// Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
-	URL           string
-	Model         string
-	Authenticator auth.Authenticator
-}
-
-// Request represents the Gemini API request payload.
-type Request struct {
-	Contents []Content   `json:"contents"`
-	Tools    interface{} `json:"tools,omitempty"`
-}
-
-type Content struct {
-	Role  string `json:"role,omitempty"` // Strictly required by some providers, don't use omitempty in final payload if possible
-	Parts []Part `json:"parts"`
-}
-
-type Part struct {
-	Text             string            `json:"text,omitempty"`
-	Thought          bool              `json:"thought,omitempty"`
-	ThoughtSignature string            `json:"thoughtSignature,omitempty"`
-	FunctionCall     *FunctionCall     `json:"functionCall,omitempty"`
-	FunctionResponse *FunctionResponse `json:"functionResponse,omitempty"`
-}
-
-type FunctionCall struct {
-	Name string                 `json:"name"`
-	Args map[string]interface{} `json:"args"`
-}
-
-type FunctionResponse struct {
-	Name     string                 `json:"name"`
-	Response map[string]interface{} `json:"response"`
-}
-
-// Response represents the Gemini API response payload.
-type Response struct {
-	Candidates []Candidate `json:"candidates"`
-}
-
-type Candidate struct {
-	Content      Content       `json:"content"`
-	FinishReason string        `json:"finishReason"`
-	SafetyRating []interface{} `json:"safetyRatings"`
+	sdkClient         *genai.Client
+	model             string
+	thinkingBudget    int
+	thinkingLevel     string
+	useSearch         bool
+	systemInstruction *genai.Content
+	backend           genai.Backend
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(url, model string, authenticator auth.Authenticator) *Client {
-	return &Client{
-		URL:           url,
-		Model:         model,
-		Authenticator: authenticator,
-	}
-}
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, systemInstruction string, useSearch bool) (*Client, error) {
+	ctx := context.Background()
 
-// SendChat sends the conversation history to the Gemini API and returns the full response content.
-func (c *Client) SendChat(history []Content, tools interface{}) (*Content, error) {
-	// 1. Prepare Base URL
-	u, err := url.Parse(fmt.Sprintf("%s/%s:generateContent", c.URL, c.Model))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse url: %w", err)
+	// 1. Determine Backend and parse Project/Location/BaseURL
+	backend := genai.BackendGeminiAPI
+	var project, location, baseURL string
+
+	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
+		backend = genai.BackendVertexAI
+		// Parse project and location from URL if possible
+		parts := strings.Split(apiURL, "/")
+		for i, p := range parts {
+			if p == "projects" && i+1 < len(parts) {
+				project = parts[i+1]
+			}
+			if p == "locations" && i+1 < len(parts) {
+				location = parts[i+1]
+			}
+		}
+		// BaseURL for SDK should be the host part
+		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
+			baseURL = apiURL[:idx+1]
+		}
 	}
 
-	// 2. Apply Authentication
+	// 2. Prepare Auth Headers
 	authReq := &auth.Request{
 		Headers: make(map[string]string),
 	}
-	c.Authenticator.Apply(authReq)
+	authenticator.Apply(authReq)
 
-	// 3. Prepare Payload
-	reqPayload := Request{
-		Contents: history,
-		Tools:    tools,
-	}
-
-	jsonData, err := json.Marshal(reqPayload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// 4. Execute Request
-	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Apply Headers
+	// 3. Initialize SDK Client
+	headers := make(http.Header)
 	for k, v := range authReq.Headers {
-		httpReq.Header.Set(k, v)
+		headers.Set(k, v)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(httpReq)
+	clientConfig := &genai.ClientConfig{
+		Backend:  backend,
+		Project:  project,
+		Location: location,
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: baseURL,
+			Headers: headers,
+		},
+		HTTPClient: http.DefaultClient,
+	}
+
+	sdkClient, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("failed to create genai client: %w", err)
 	}
 
-	var apiResp Response
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	var si *genai.Content
+	if systemInstruction != "" {
+		si = &genai.Content{
+			Parts: []*genai.Part{{Text: systemInstruction}},
+		}
 	}
 
-	if len(apiResp.Candidates) == 0 {
+	return &Client{
+		sdkClient:         sdkClient,
+		model:             model,
+		thinkingBudget:    thinkingBudget,
+		thinkingLevel:     thinkingLevel,
+		useSearch:         useSearch,
+		systemInstruction: si,
+		backend:           backend,
+	}, nil
+}
+
+// SendChat sends the conversation history to the Gemini API and returns the full response content.
+func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, error) {
+	ctx := context.Background()
+
+	// Add Search tool if requested
+	if c.useSearch {
+		if c.backend == genai.BackendVertexAI {
+			tools = append(tools, &genai.Tool{
+				GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{},
+			})
+		} else {
+			tools = append(tools, &genai.Tool{
+				GoogleSearch: &genai.GoogleSearch{},
+			})
+		}
+	}
+
+	config := &genai.GenerateContentConfig{
+		Tools:             tools,
+		SystemInstruction: c.systemInstruction,
+	}
+
+	// Apply Thinking Budget if supported/requested
+	if c.thinkingBudget > 0 {
+		config.ThinkingConfig = &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  genai.Ptr(int32(c.thinkingBudget)),
+			ThinkingLevel:   genai.ThinkingLevel(c.thinkingLevel),
+		}
+	}
+
+	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, history, config)
+	if err != nil {
+		return nil, fmt.Errorf("api request failed: %w", err)
+	}
+
+	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("empty response from api")
 	}
 
-	return &apiResp.Candidates[0].Content, nil
+	return resp.Candidates[0].Content, nil
 }

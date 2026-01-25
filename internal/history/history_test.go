@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
+	"google.golang.org/genai"
 )
 
 func TestHistoryManager(t *testing.T) {
@@ -34,8 +35,8 @@ func TestHistoryManager(t *testing.T) {
 		t.Errorf("failed to add model entry: %v", err)
 	}
 
-	// Test function role (which follows model)
-	if err := m.AddContent(api.Content{Role: "function", Parts: []api.Part{{Text: "result"}}}); err != nil {
+	// Test function response role (which follows model)
+	if err := m.AddContent(&api.Content{Role: genai.RoleUser, Parts: []*api.Part{{Text: "result"}}}); err != nil {
 		t.Errorf("failed to add function entry: %v", err)
 	}
 

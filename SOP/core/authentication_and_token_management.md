@@ -23,14 +23,14 @@ To define how `tell-me-go` authenticates exclusively with Google Vertex AI using
 - **Caching**: Tokens should be retrieved once per session or refreshed as needed.
 
 #### 3. Client Header Injection
-- **Vertex AI**: The token must be passed in the HTTP `Authorization` header: `Authorization: Bearer <TOKEN>`.
-- **Project/Location**: The project ID and location must be part of the `AIURL` provided in the YAML configuration.
+- **Vertex AI**: The token is retrieved via the `internal/auth` package and injected into the `google.golang.org/genai` client via `HTTPOptions.Headers`.
+- **Project/Location**: The project ID and location are parsed from the `AIURL` or environment and passed to the SDK's `ClientConfig`.
 
 ---
 
 ### Package Structure
-- **`internal/auth`**: Dedicated package for token discovery and management.
-- **`internal/api`**: Uses the `Authenticator` interface to inject credentials into requests.
+- **`internal/auth`**: Dedicated package for token discovery (e.g., via `gcloud`).
+- **`internal/api`**: Configures the GenAI SDK client with the injected authentication headers.
 
 ---
 

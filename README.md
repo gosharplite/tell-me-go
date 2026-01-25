@@ -1,20 +1,22 @@
 # tell-me-go: A Go Gemini CLI Assistant
 
-A lightweight, terminal-based interface for Google's Gemini models, ported from the original [tell-me](https://github.com/gosharplite/tell-me) Bash assistant.
+A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
 
 ## Overview
-`tell-me-go` is a high-performance, type-safe port of the `tell-me` tool. It provides a terminal-based interface to interact with Google's Gemini models. By moving from Bash to Go, this project aims for better performance, easier distribution via single binaries, and a robust codebase governed by strict Standard Operating Procedures (SOPs).
+`tell-me-go` is a high-performance, type-safe assistant designed for developers. It provides a terminal-based interface to interact with Google's Gemini models, specifically optimized for **Gemini 2.0+** reasoning and multimodal capabilities. Governed by strict Standard Operating Procedures (SOPs), it ensures a robust and predictable experience.
 
 ## 🚀 Features
+*   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
+*   **Gemini 2.0 Reasoning**: Support for **Thinking (Reasoning)** models with visible thought processes and configurable token budgets.
+*   **Agentic Tools**: Natively executes local tools (e.g., `list_files`, `read_file`) and Google Search to solve complex tasks.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
-*   **Session Persistence**: Automatically remembers conversation history across CLI calls.
-*   **Vertex AI Support**: Natively supports **Google Vertex AI** with GCP OAuth2 Tokens.
+*   **Session Persistence**: Automatically remembers conversation history across CLI calls with valid role alternation.
+*   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` for Vertex AI sessions.
-*   **Flexible Configuration**: Specify custom YAML configuration files for different models and environments.
 *   **SOP-Driven**: Built with a "Safety First" architecture where every change follows documented procedures.
 
 ## 📋 Prerequisites
-*   **Go**: 1.21 or higher.
+*   **Go**: 1.24 or higher.
 *   **Google Cloud SDK (gcloud)**: Required for Vertex AI mode using user credentials.
 
 ## 🛠️ Installation
@@ -40,6 +42,9 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 ./tell-me-go "What is the capital of France?"
 ```
 
+**Thinking Mode (Gemini 2.0):**
+If `THINKING_BUDGET` is set in your config, the assistant will display its reasoning process in the terminal.
+
 **Custom Configuration:**
 ```bash
 ./tell-me-go -c configs/custom-vertex.yaml "Hello"
@@ -51,54 +56,38 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 ```
 
 **Interactive Multi-line Mode:**
-If no prompt is provided as an argument, the tool reads from `stdin`. This is useful for multi-line prompts or piping content.
-```bash
-./tell-me-go
-# [Reading multi-line input. Press Ctrl+D to send]
-# ... type your long prompt here ...
-```
-
-**Piped Input:**
-```bash
-cat code.go | ./tell-me-go "Explain this code"
-```
+If no prompt is provided as an argument, the tool reads from `stdin`. Press `Ctrl+D` to send.
 
 ## ⌨️ Shell Integration (`a`)
-To use the `a` shortcut (similar to the original `tell-me` project), add the following to your `~/.bashrc` or `~/.zshrc`:
+To use the `a` shortcut, add the following to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 # Path to your tell-me-go binary
 alias a='/path/to/tell-me-go'
 ```
 
-The `a` alias is smart and handles three modes:
-1.  **Quick Ask**: `a "What is the capital of France?"`
-2.  **Piped Input**: `cat main.go | a "Explain this code"`
-3.  **Interactive Multi-line**: Just type `a` and press Enter. Paste your long text/logs, then press `Ctrl+D` to send.
-
 ## ⚙️ Configuration
-The tool exclusively supports **Google Vertex AI**.
-
-Ensure your `AIURL` points to the Vertex AI endpoint (including your Project ID and Location). The tool will automatically use `gcloud auth print-access-token` to authenticate using your current user credentials.
+The tool supports both Vertex AI and the Gemini Developer API.
 
 ```yaml
 # configs/vertex.yaml
 MODE: "vertex"
-AIMODEL: "gemini-1.5-flash-002"
+PERSON: "A helpful AI assistant."
+AIMODEL: "gemini-2.0-flash-001"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+USE_SEARCH: true
+THINKING_BUDGET: 1024
+THINKING_LEVEL: "MEDIUM"  # Options: LOW, MEDIUM, HIGH
 MAX_TURNS: 10
 ```
 
 ## 📜 SOP-Driven Development
-This project adheres to strict **Standard Operating Procedures (SOPs)** to ensure stability and security. All development must follow the protocols defined in the [SOP/](./SOP/) directory, including:
-*   [Git Workflow](./SOP/core/git_workflow.md)
-*   [Public Release Process](./SOP/core/public_release.md)
-*   [Testing Standards](./SOP/core/testing_standards.md)
+This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [SOP/](./SOP/) directory, including:
+*   [Agentic Capabilities](./SOP/core/agentic_capabilities.md) (Function Calling)
 *   [Project Architecture](./SOP/core/architecture_and_packages.md)
-*   [Authentication & Tokens](./SOP/core/authentication_and_token_management.md)
-*   [CLI Standards](./SOP/core/cli_standards.md)
-*   [Documentation Standards](./SOP/core/documentation_standards.md)
 *   [History Management](./SOP/core/history_management.md)
+*   [Authentication & Tokens](./SOP/core/authentication_and_token_management.md)
+*   [Testing Standards](./SOP/core/testing_standards.md)
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).

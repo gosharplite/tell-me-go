@@ -21,9 +21,11 @@ The project is organized into the following top-level directories:
 - **`internal/`**: Contains private application and library code.
     - `internal/agent`: The high-level orchestration loop (Agent/Orchestrator).
     - `internal/config`: Configuration loading and YAML parsing.
-    - `internal/api`: Communication logic for Vertex AI.
+    - `internal/api`: Communication logic using `google.golang.org/genai`.
     - `internal/history`: Session management and JSON persistence.
     - `internal/cli`: Terminal UI, flag parsing, and command orchestration.
+    - `internal/auth`: Token management for Vertex AI.
+    - `internal/tools`: Registry and implementation of executable functions.
 - **`pkg/`**: Contains library code that is safe for use by external applications. 
 - **`configs/`**: Storage for default configuration templates (YAML).
     - `configs/vertex.yaml`: The primary configuration template.

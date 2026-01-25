@@ -19,11 +19,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
+const Version = "0.6.0"
+
 func main() {
 	// 1. Define Flags
 	configPath := flag.String("c", "configs/vertex.yaml", "Path to the configuration file")
 	newSession := flag.Bool("new", false, "Start a new session")
+	showVersion := flag.Bool("v", false, "Show version information")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("tell-me-go version %s\n", Version)
+		os.Exit(0)
+	}
 
 	// 2. Handle Prompt Argument
 	prompt := flag.Arg(0)
@@ -81,7 +89,10 @@ func main() {
 
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
-	client := api.NewClient(cfg.URL, cfg.Model, authenticator)
+	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
+	if err != nil {
+		log.Fatalf("Error creating client: %v", err)
+	}
 
 	// 6. Execute Agent
 	chatAgent := agent.New(client, hManager, registry)

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.6.0] - 2026-01-26
+
+### Added
+- **Official SDK Migration**: Fully migrated to the `google.golang.org/genai` Go SDK.
+- **Gemini 2.0 Thinking Support**: Added support for Reasoning/Thinking features.
+- Configurable `THINKING_BUDGET` and `THINKING_LEVEL` (LOW, MEDIUM, HIGH, MINIMAL).
+- Display of model thought processes in the terminal.
+- **Search Retrieval**: Integrated native Google Search retrieval support (backend-aware).
+- **System Instructions**: Support for `Person` config via the SDK's `SystemInstruction` field.
+
+### Changed
+- **Tool Orchestration**: Standardized on SDK-native function calling and role alternation.
+- Improved `internal/api` with automatic project/location detection and simplified configuration.
+- Updated `internal/history` to use SDK-native `Content` and `Part` types with strict role validation.
+- Updated all SOPs to reflect SDK standards and Gemini 2.0 capabilities.
+
+### Fixed
+- Improved stability of multi-turn tool calling on Vertex AI by utilizing the official SDK's payload management.
 ## [0.2.1] - 2026-01-25
 
 ## [0.5.0] - 2026-01-25
