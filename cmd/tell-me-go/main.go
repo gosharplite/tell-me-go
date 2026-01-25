@@ -104,6 +104,7 @@ func main() {
 
 	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry)
+	tools.RegisterIntelligenceTools(registry)
 	tools.RegisterSystemTools(registry)
 	tools.RegisterGitTools(registry)
 	tools.RegisterStateTools(registry, homeDir, sessionName)

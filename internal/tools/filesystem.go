@@ -379,11 +379,14 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 	}
 	query, _ := args["query"].(string)
 
-	// Broad definition patterns for Go, Python, JS, Bash
+	// Attempt AST-based search for Go files first
+	astResults, err := grepDefinitionsGo(path, query)
+	if err != nil {
+		// Fallback to regex if AST fails for some reason
+	}
+
+	// Broad definition patterns for non-Go files
 	defPatterns := []string{
-		`^func\s+\(`,            // Go receiver method
-		`^func\s+\w+`,           // Go function
-		`^type\s+\w+`,           // Go type
 		`^def\s+\w+`,            // Python function
 		`^class\s+\w+`,          // Python/JS class
 		`^function\s+`,          // JS function
@@ -401,7 +404,9 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 	}
 
 	var results []string
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	results = append(results, astResults...)
+
+	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -412,9 +417,9 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 			return nil
 		}
 
-		// Only check common source files
+		// Only check common source files, skip .go if we already handled them with AST (which we do by default now)
 		ext := filepath.Ext(filePath)
-		if ext != ".go" && ext != ".py" && ext != ".js" && ext != ".sh" && ext != ".md" {
+		if ext != ".py" && ext != ".js" && ext != ".sh" && ext != ".md" {
 			return nil
 		}
 
@@ -461,6 +466,14 @@ func getFileSkeleton(args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
+	}
+
+	if filepath.Ext(path) == ".go" {
+		skeleton, err := getFileSkeletonGo(path)
+		if err == nil {
+			return skeleton, nil
+		}
+		// Fallback to heuristic if AST fails
 	}
 
 	file, err := os.Open(path)
