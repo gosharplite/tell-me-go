@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.12.7"
+const Version = "1.12.8"
 
 func main() {
 	// 1. Define Flags
@@ -67,7 +67,7 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stderr, "\033[0;32m[%s] > %s\033[0m\n", time.Now().Format("15:04:05"), prompt)
+	fmt.Fprintf(os.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
 
 	// 3. Load Config
 	cfg, err := config.Load(*configPath)
