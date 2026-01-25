@@ -354,7 +354,11 @@ func listTodos(args map[string]interface{}) (string, error) {
 		for i, line := range lines {
 			if re.MatchString(line) {
 				match := re.FindString(line)
-				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, i+1, strings.TrimSpace(match)))
+				trimmed := strings.TrimSpace(match)
+				if len(trimmed) > 500 {
+					trimmed = trimmed[:500] + " (truncated)"
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, i+1, trimmed))
 			}
 		}
 		return nil
@@ -900,10 +904,18 @@ func searchUsagesGlobally(args map[string]interface{}) (string, error) {
 			return nil
 		}
 
+		if isBinary(content) {
+			return nil
+		}
+
 		lines := strings.Split(string(content), "\n")
 		for i, line := range lines {
 			if re.MatchString(line) {
-				results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, strings.TrimSpace(line)))
+				trimmed := strings.TrimSpace(line)
+				if len(trimmed) > 500 {
+					trimmed = trimmed[:500] + " (truncated)"
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, trimmed))
 				if len(results) > 100 {
 					return fmt.Errorf("too many results")
 				}

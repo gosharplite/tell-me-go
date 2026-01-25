@@ -295,6 +295,10 @@ func readFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
+	if len(content) > 100000 {
+		return string(content[:100000]) + "\n... (truncated)", nil
+	}
+
 	return string(content), nil
 }
 
@@ -330,15 +334,31 @@ func searchFiles(args map[string]interface{}) (string, error) {
 			return nil
 		}
 
-		content, err := os.ReadFile(filePath)
+		file, err := os.Open(filePath)
 		if err != nil {
 			return nil
 		}
+		defer file.Close()
 
-		lines := strings.Split(string(content), "\n")
-		for i, line := range lines {
+		// Read first 1024 bytes to check if binary
+		buf := make([]byte, 1024)
+		n, _ := file.Read(buf)
+		if isBinary(buf[:n]) {
+			return nil
+		}
+		file.Seek(0, 0)
+
+		scanner := bufio.NewScanner(file)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Text()
 			if re.MatchString(line) {
-				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, i+1, strings.TrimSpace(line)))
+				trimmed := strings.TrimSpace(line)
+				if len(trimmed) > 500 {
+					trimmed = trimmed[:500] + " (truncated)"
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, trimmed))
 				if len(results) > 100 {
 					return fmt.Errorf("too many results")
 				}
@@ -360,6 +380,15 @@ func searchFiles(args map[string]interface{}) (string, error) {
 		out += "\n... (truncated)"
 	}
 	return out, nil
+}
+
+func isBinary(data []byte) bool {
+	for _, b := range data {
+		if b == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func getFileDiff(args map[string]interface{}) (string, error) {
@@ -588,7 +617,11 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 
 			if isDef {
 				if reQuery == nil || reQuery.MatchString(line) {
-					results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, strings.TrimSpace(line)))
+					trimmed := strings.TrimSpace(line)
+					if len(trimmed) > 500 {
+						trimmed = trimmed[:500] + " (truncated)"
+					}
+					results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, trimmed))
 				}
 			}
 		}

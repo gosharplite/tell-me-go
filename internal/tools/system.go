@@ -155,7 +155,12 @@ func readURL(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	return string(body), nil
+	out := string(body)
+	if len(out) > 50000 {
+		out = out[:50000] + "\n... (truncated)"
+	}
+
+	return out, nil
 }
 
 func readExternalDocs(args map[string]interface{}) (string, error) {
@@ -352,6 +357,10 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	output := sb.String()
+	if len(output) > 50000 {
+		output = output[:50000] + "\n... (truncated)"
+	}
+
 	if err != nil {
 		return fmt.Sprintf("Exit Code: 1\nError/Output:\n%s", output), nil
 	}
