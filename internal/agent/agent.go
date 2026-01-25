@@ -65,6 +65,16 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	fmt.Fprintf(os.Stderr, "\033[0;90m%s\033[0m", logLine)
 }
 
+func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
+	charCount := 0
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			charCount += len(p.Text)
+		}
+	}
+	return charCount / 4
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&api.Content{
@@ -73,10 +83,18 @@ func (a *Agent) Chat(prompt string) error {
 	})
 
 	for {
-		// Tell-me style: log the start of the API call
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [API] Calling Gemini...\033[0m\n", time.Now().Format("15:04:05"))
+		startGen := time.Now()
+		contents := a.history.GetContents()
+		toolsSDK := a.registry.ToToolSDK()
+		genDuration := time.Since(startGen).Seconds()
 
-		respContent, metrics, err := a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
+		tokens := a.estimatePayloadTokens(contents)
+
+		// Log the payload info right before calling API
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%d tokens | Generated in %fs\033[0m\n",
+			time.Now().Format("15:04:05"), tokens, genDuration)
+
+		respContent, metrics, err := a.client.SendChat(contents, toolsSDK)
 
 		// Handle 401 Unauthorized (Expired Token)
 		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {

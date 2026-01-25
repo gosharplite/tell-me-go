@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [0.9.5] - 2026-01-26
+
+### Changed
+- **Enhanced Pre-API Logging**: Replaced the generic `[API] Calling Gemini...` message with a detailed payload summary.
+    - New format: `[System] Payload: ~<TOKENS> tokens | Generated in <SECONDS>s`.
+    - Includes a heuristic-based token estimation for better transparency.
+- **Version Bump**: Updated binary version to v0.9.5.
+
 
 ### Fixed
 - **Usage Logging Robustness**: Usage metrics are now logged even if the API returns an error (e.g., safety filter block), provided that usage metadata is present in the response.
