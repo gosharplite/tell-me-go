@@ -6,6 +6,7 @@ package tools
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"google.golang.org/genai"
 )
@@ -47,6 +48,36 @@ func RegisterGitTools(r *Registry) {
 			},
 		},
 	}, getGitLog)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_git_commit",
+		Description: "Shows the full details (diff and metadata) of a specific commit hash.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"hash": {
+					Type:        genai.TypeString,
+					Description: "The commit hash to inspect.",
+				},
+			},
+			Required: []string{"hash"},
+		},
+	}, getGitCommit)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_git_blame",
+		Description: "Shows who changed which lines in a file.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"filepath": {
+					Type:        genai.TypeString,
+					Description: "The path to the file.",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, getGitBlame)
 }
 
 func getGitStatus(args map[string]interface{}) (string, error) {
@@ -67,6 +98,36 @@ func getGitLog(args map[string]interface{}) (string, error) {
 		limit = int(l)
 	}
 	return runGitCommand("log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+}
+
+func getGitCommit(args map[string]interface{}) (string, error) {
+	hash, ok := args["hash"].(string)
+	if !ok || hash == "" {
+		return "", fmt.Errorf("hash argument is required")
+	}
+	// Truncate output to prevent hitting token limits on very large diffs
+	out, err := runGitCommand("show", "--stat", "--patch", hash)
+	if err != nil {
+		return out, err
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) > 300 {
+		return strings.Join(lines[:300], "\n") + "\n... (Output truncated) ...", nil
+	}
+	return out, nil
+}
+
+func getGitBlame(args map[string]interface{}) (string, error) {
+	path, ok := args["filepath"].(string)
+	if !ok || path == "" {
+		return "", fmt.Errorf("filepath argument is required")
+	}
+
+	if err := checkPathSafety(path); err != nil {
+		return "", err
+	}
+
+	return runGitCommand("blame", "-w", path)
 }
 
 func runGitCommand(args ...string) (string, error) {
