@@ -1,99 +1,139 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package agent coordinates the interaction loop between the user, the AI model, and local tools.
 package agent
 
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
-	"google.golang.org/genai"
-	"time"
 )
 
-// Agent handles the orchestration of the chat loop.
+// Agent represents the chat orchestration logic.
 type Agent struct {
-	Client   *api.Client
-	History  *history.Manager
-	Registry *tools.Registry
+	client   *api.Client
+	history  *history.Manager
+	registry *tools.Registry
+	logFile  string
 }
 
-// New creates a new Agent instance.
+// New creates a new Agent.
 func New(client *api.Client, hManager *history.Manager, registry *tools.Registry) *Agent {
 	return &Agent{
-		Client:   client,
-		History:  hManager,
-		Registry: registry,
+		client:   client,
+		history:  hManager,
+		registry: registry,
 	}
 }
 
-// Chat handles a single user prompt and processes any subsequent tool calls.
-func (a *Agent) Chat(prompt string) error {
-	if err := a.History.AddEntry(genai.RoleUser, prompt); err != nil {
-		return fmt.Errorf("failed to add user prompt: %w", err)
+// SetLogFile sets the path for usage logging.
+func (a *Agent) SetLogFile(path string) {
+	a.logFile = path
+}
+
+func (a *Agent) logUsage(m *api.Metrics) {
+	if a.logFile == "" || m == nil {
+		return
 	}
 
+	miss := m.PromptTokens - m.CachedTokens
+	newTokens := miss + m.ResponseTokens + m.ThinkingTokens
+	percent := 0
+	if m.TotalTokens > 0 {
+		percent = int((int64(newTokens) * 100) / int64(m.TotalTokens))
+	}
+
+	timestamp := time.Now().Format("15:04:05")
+	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s]
+	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]\n",
+		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, m.Duration)
+
+	// Append to log file
+	f, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(logLine)
+
+	// Print to stderr in gray
+	fmt.Fprintf(os.Stderr, "\033[0;90m%s\033[0m", logLine)
+}
+
+// Chat runs the multi-turn orchestration loop.
+func (a *Agent) Chat(prompt string) error {
+	a.history.AddContent(&api.Content{
+		Role:  "user",
+		Parts: []*api.Part{{Text: prompt}},
+	})
+
 	for {
-		content, err := a.Client.SendChat(a.History.GetContents(), a.Registry.ToToolSDK())
+		respContent, metrics, err := a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
 		if err != nil {
 			return err
 		}
 
-		// Add Model Response to History (including thoughts and signatures)
-		if err := a.History.AddContent(content); err != nil {
-			return fmt.Errorf("history violation: %w", err)
+		// Log usage metrics
+		a.logUsage(metrics)
+
+		// 1. Check for thoughts and print them
+		for _, part := range respContent.Parts {
+			if part.Thought && part.Text != "" {
+				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			}
 		}
 
+		// 2. Add response to history
+		a.history.AddContent(respContent)
+
+		// 3. Check for function calls
 		hasFunctionCall := false
-		var toolParts []*api.Part
+		var functionResponseParts []*api.Part
 
-		for _, part := range content.Parts {
-			if part.Thought {
-				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking] %s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
-				continue
-			}
-
+		for _, part := range respContent.Parts {
 			if part.FunctionCall != nil {
 				hasFunctionCall = true
-				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Tool] Calling: %s(%v)\033[0m\n", time.Now().Format("15:04:05"), part.FunctionCall.Name, part.FunctionCall.Args)
+				fc := part.FunctionCall
 
-				result, err := a.Registry.Execute(part.FunctionCall.Name, part.FunctionCall.Args)
+				// Execute the tool
+				result, err := a.registry.Execute(fc.Name, fc.Args)
 				if err != nil {
+					// On error, we still send the error back to the model
 					result = fmt.Sprintf("Error: %v", err)
 				}
 
-				toolParts = append(toolParts, &api.Part{
+				functionResponseParts = append(functionResponseParts, &api.Part{
 					FunctionResponse: &api.FunctionResponse{
-						Name: part.FunctionCall.Name,
-						Response: map[string]interface{}{
-							"result": result,
-						},
+						Name:     fc.Name,
+						Response: map[string]interface{}{"result": result},
 					},
 				})
 			}
+		}
 
+		if hasFunctionCall {
+			// Add function responses to history as a "user" role (SDK requirement)
+			a.history.AddContent(&api.Content{
+				Role:  "user",
+				Parts: functionResponseParts,
+			})
+			// Loop again to give the result to the model
+			continue
+		}
+
+		// 4. No more function calls, print final text response
+		for _, part := range respContent.Parts {
 			if part.Text != "" && !part.Thought {
-				fmt.Printf("\n%s\n", part.Text)
+				fmt.Println(part.Text)
 			}
 		}
-
-		if !hasFunctionCall {
-			break
-		}
-
-		// Add Tool Responses to History and Continue Loop
-		// In the new GenAI SDK, function responses are sent with the 'user' role.
-		if err := a.History.AddContent(&api.Content{
-			Role:  genai.RoleUser,
-			Parts: toolParts,
-		}); err != nil {
-			return fmt.Errorf("failed to add tool response: %w", err)
-		}
+		break
 	}
 
 	return nil
 }
+

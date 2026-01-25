@@ -1,7 +1,6 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package api handles communication with the Gemini API using the Google GenAI SDK.
 package api
 
 import (
@@ -9,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"google.golang.org/genai"
@@ -103,8 +103,8 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 	}, nil
 }
 
-// SendChat sends the conversation history to the Gemini API and returns the full response content.
-func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, error) {
+// SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
+func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *Metrics, error) {
 	ctx := context.Background()
 
 	// Add Search tool if requested
@@ -137,14 +137,27 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, er
 		}
 	}
 
+	startTime := time.Now()
 	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, history, config)
+	duration := time.Since(startTime).Seconds()
+
 	if err != nil {
-		return nil, fmt.Errorf("api request failed: %w", err)
+		return nil, nil, fmt.Errorf("api request failed: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 {
-		return nil, fmt.Errorf("empty response from api")
+		return nil, nil, fmt.Errorf("empty response from api")
 	}
 
-	return resp.Candidates[0].Content, nil
+	// Extract thinking tokens from thought part if available (SDK limitation workaround)
+	metrics := GetMetrics(resp, duration)
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part.Thought && part.Text != "" {
+			// This is an approximation, but better than zero
+			metrics.ThinkingTokens = int32(len(strings.Fields(part.Text)) * 4 / 3) // Approx 1.33 tokens per word
+		}
+	}
+
+	return resp.Candidates[0].Content, metrics, nil
 }
+

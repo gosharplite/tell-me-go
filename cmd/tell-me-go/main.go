@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "0.8.1"
+const Version = "0.9.0"
 
 func main() {
 	// 1. Define Flags
@@ -89,13 +89,14 @@ func main() {
 	}
 
 	// Extract session name from config file (e.g., configs/vertex.yaml -> vertex)
-	// This matches the Bash version's logic in setup_session.
 	configBase := filepath.Base(*configPath)
 	sessionName := strings.TrimSuffix(configBase, filepath.Ext(configBase))
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
+	logPath := filepath.Join(homeDir, "output", sessionName+".log")
 
 	if *newSession {
 		os.Remove(historyPath)
+		os.Remove(logPath)
 	}
 	hManager := history.NewManager(historyPath)
 	if err := hManager.Load(); err != nil {
@@ -106,6 +107,7 @@ func main() {
 	tools.RegisterFileSystemTools(registry)
 	tools.RegisterSystemTools(registry)
 	tools.RegisterStateTools(registry, homeDir, sessionName)
+	tools.RegisterMetricsTools(registry, logPath, cfg.Model)
 
 	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
 	if err != nil {
@@ -114,6 +116,7 @@ func main() {
 
 	// 6. Execute Agent
 	chatAgent := agent.New(client, hManager, registry)
+	chatAgent.SetLogFile(logPath)
 	if err := chatAgent.Chat(prompt); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
