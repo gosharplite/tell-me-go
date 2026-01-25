@@ -248,7 +248,13 @@ func httpRequest(args map[string]interface{}) (string, error) {
 }
 
 func isSafeCommand(command string) bool {
-	safeCommands := `^(grep|ls|pwd|cat|echo|head|tail|wc|stat|date|whoami|diff|awk|sed)`
+	// Whitelist of allowed base commands (strict exact match)
+	safeCommands := map[string]bool{
+		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
+		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
+		"whoami": true, "diff": true, "awk": true, "sed": true,
+	}
+
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
 		return false
@@ -256,13 +262,13 @@ func isSafeCommand(command string) bool {
 	base := parts[0]
 
 	// 1. Check against whitelist
-	match, _ := regexp.MatchString(safeCommands, base)
-	if !match {
+	if !safeCommands[base] {
 		return false
 	}
 
 	// 2. Check for unsafe characters (pipes, redirects, expansion, etc.)
-	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`"}
+	// We are extremely strict here to prevent shell injection.
+	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
 	for _, char := range unsafeChars {
 		if strings.Contains(command, char) {
 			return false
@@ -270,10 +276,14 @@ func isSafeCommand(command string) bool {
 	}
 
 	// 3. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	// We check every part of the command (except the base command itself).
 	for i := 1; i < len(parts); i++ {
 		arg := strings.Trim(parts[i], "\"'")
+		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
+			// Skip empty args and simple flags like -la
+			continue
+		}
 		if err := checkPathSafety(arg); err != nil {
+			fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
 			return false
 		}
 	}
@@ -306,7 +316,8 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	approved := false
 
 	// 1. Check for Auto-Approval (Safe read-only commands)
-	if isSafeCommand(command) {
+	safe := isSafeCommand(command)
+	if safe {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe read-only command detected.\033[0m\n")
 		approved = true
 	} else {

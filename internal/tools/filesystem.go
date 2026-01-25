@@ -413,6 +413,18 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 }
 
 func checkPathSafety(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	// 0. Handle potential flag-based paths (e.g., --file=/path)
+	if strings.Contains(path, "=") {
+		parts := strings.SplitN(path, "=", 2)
+		if len(parts) == 2 {
+			path = parts[1]
+		}
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
@@ -425,21 +437,21 @@ func checkPathSafety(path string) error {
 
 	// 1. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
-	if err == nil && !strings.HasPrefix(rel, "..") {
+	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
 		return nil
 	}
 
-	// 2. Allow paths within the System Temp Directory (critical for tests and temp operations)
+	// 2. Allow paths within the System Temp Directory
 	tempDir := os.TempDir()
 	absTemp, err := filepath.Abs(tempDir)
 	if err == nil {
 		relTemp, err := filepath.Rel(absTemp, absPath)
-		if err == nil && !strings.HasPrefix(relTemp, "..") {
+		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("security violation: path '%s' is outside the allowed boundaries (CWD or Temp)", path)
+	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD or Temp)", path)
 }
 
 func writeFile(args map[string]interface{}) (string, error) {
