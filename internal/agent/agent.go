@@ -225,8 +225,17 @@ func (a *Agent) Chat(prompt string) error {
 
 					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), call.Name)
 
-					// Execute with timeout
-					ctx, cancel := context.WithTimeout(context.Background(), a.toolTimeout)
+					// Execute with timeout (exclude interactive tools)
+					var ctx context.Context
+					var cancel context.CancelFunc
+
+					if call.Name == "ask_user" || call.Name == "execute_command" {
+						// Interactive tools don't time out while waiting for user
+						ctx = context.Background()
+						cancel = func() {}
+					} else {
+						ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
+					}
 					defer cancel()
 
 					resChan := make(chan string, 1)
