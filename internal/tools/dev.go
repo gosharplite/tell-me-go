@@ -53,6 +53,29 @@ func RegisterDevTools(r *Registry) {
 		Name:        "run_linter",
 		Description: "Runs 'staticcheck' or 'golangci-lint' on the project.",
 	}, runLinter)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "run_benchmark",
+		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The package path to benchmark (default './...')",
+				},
+				"bench": {
+					Type:        genai.TypeString,
+					Description: "Regex for benchmarks to run (default '.')",
+				},
+			},
+		},
+	}, runBenchmark)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "check_vulnerabilities",
+		Description: "Runs 'govulncheck' to identify known security vulnerabilities in dependencies.",
+	}, checkVulnerabilities)
 }
 
 func runTests(args map[string]interface{}) (string, error) {
@@ -158,6 +181,44 @@ func runLinter(args map[string]interface{}) (string, error) {
 	lines := strings.Split(string(out), "\n")
 	if len(lines) > 100 {
 		return strings.Join(lines[:100], "\n") + "\n... (truncated)", nil
+	}
+
+	return string(out), nil
+}
+
+func runBenchmark(args map[string]interface{}) (string, error) {
+	path := "./..."
+	if p, ok := args["path"].(string); ok && p != "" {
+		path = p
+	}
+	bench := "."
+	if b, ok := args["bench"].(string); ok && b != "" {
+		bench = b
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
+
+	cmd := exec.Command("go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("Benchmark failed:\n%s", string(out)), nil
+	}
+
+	return string(out), nil
+}
+
+func checkVulnerabilities(args map[string]interface{}) (string, error) {
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
+
+	if _, err := exec.LookPath("govulncheck"); err != nil {
+		return "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest", nil
+	}
+
+	cmd := exec.Command("govulncheck", "./...")
+	out, _ := cmd.CombinedOutput()
+
+	if len(out) == 0 {
+		return "No vulnerabilities found.", nil
 	}
 
 	return string(out), nil

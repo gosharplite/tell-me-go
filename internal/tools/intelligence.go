@@ -173,6 +173,11 @@ func RegisterIntelligenceTools(r *Registry) {
 			Required: []string{"path"},
 		},
 	}, analyzeComplexity)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_package_graph",
+		Description: "Returns a mapping of internal package dependencies to help understand project architecture.",
+	}, getPackageGraph)
 }
 
 // AST-based helpers for existing tools
@@ -441,6 +446,53 @@ func analyzeComplexity(args map[string]interface{}) (string, error) {
 	}
 
 	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
+}
+
+func getPackageGraph(args map[string]interface{}) (string, error) {
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
+
+	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out)), nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var sb strings.Builder
+	sb.WriteString("Internal Package Dependency Graph:\n")
+
+	// Get module name to filter for internal imports
+	modCmd := exec.Command("go", "list", "-m")
+	modOut, _ := modCmd.Output()
+	modName := strings.TrimSpace(string(modOut))
+
+	for _, line := range lines {
+		parts := strings.Split(line, " -> ")
+		if len(parts) != 2 {
+			continue
+		}
+		pkg := parts[0]
+		importsRaw := strings.Trim(parts[1], "[]")
+		imports := strings.Fields(importsRaw)
+
+		var internalImports []string
+		for _, imp := range imports {
+			if strings.HasPrefix(imp, modName) {
+				internalImports = append(internalImports, imp)
+			}
+		}
+
+		if len(internalImports) > 0 {
+			sb.WriteString(fmt.Sprintf("%s\n", pkg))
+			for _, imp := range internalImports {
+				sb.WriteString(fmt.Sprintf("  └── %s\n", imp))
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("%s (no internal dependencies)\n", pkg))
+		}
+	}
+
+	return sb.String(), nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {
