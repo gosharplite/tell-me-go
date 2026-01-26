@@ -11,18 +11,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/genai"
 )
 
 var (
-	safePaths     []string
-	safePathsMu   sync.RWMutex
-	safePathsFile string // Path to persistent safe paths config
-	termMu        sync.Mutex
+	safePaths           []string
+	safePathsMu         sync.RWMutex
+	safePathsFile       string // Path to persistent safe paths config
+	commandsLogFile     string // Path to log executed commands
+	bypassConfirmations bool   // Skip all interactive confirmations
+	termMu              sync.Mutex
 )
+
+// SetCommandsLogFile sets the path for logging executed commands.
+func SetCommandsLogFile(path string) {
+	commandsLogFile = path
+}
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
 func readSingleKey() (string, error) {
@@ -49,9 +58,13 @@ func readSingleKey() (string, error) {
 	if isTerm {
 		// Disable input buffering for real terminal
 		// We use /dev/tty specifically for stty to be sure
-		exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+		flag := "-F" // Linux
+		if runtime.GOOS == "darwin" || runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
+			flag = "-f" // macOS and BSD
+		}
+		exec.Command("stty", flag, "/dev/tty", "cbreak", "min", "1").Run()
 		// Restore input buffering on exit
-		defer exec.Command("stty", "-F", "/dev/tty", "-cbreak").Run()
+		defer exec.Command("stty", flag, "/dev/tty", "-cbreak").Run()
 	}
 
 	var b []byte = make([]byte, 1)
@@ -62,10 +75,37 @@ func readSingleKey() (string, error) {
 	return strings.ToLower(string(b)), nil
 }
 
+// logAudit writes a two-line audit entry to the commands log file.
+func logAudit(label1, val1, label2, val2 string) {
+	if commandsLogFile == "" {
+		return
+	}
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label1, val1)
+	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label2, val2)
+}
+
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
 func ConfirmDestructiveAction(action, target, detail string) bool {
 	termMu.Lock()
 	defer termMu.Unlock()
+
+	detailLog := detail
+	if len(detailLog) > 500 {
+		detailLog = detailLog[:500] + "... (truncated)"
+	}
+
+	if bypassConfirmations {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
+		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
+		return true
+	}
 
 	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
 	fmt.Fprintf(os.Stderr, "AI is requesting to %s: %s\n", action, target)
@@ -79,7 +119,11 @@ func ConfirmDestructiveAction(action, target, detail string) bool {
 
 	char, err := readSingleKey()
 	fmt.Fprintf(os.Stderr, "\n")
-	return err == nil && char == "y"
+	if err == nil && char == "y" {
+		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+		return true
+	}
+	return false
 }
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.

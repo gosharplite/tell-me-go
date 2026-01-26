@@ -149,6 +149,35 @@ func RegisterSystemTools(r *Registry) {
 			Required: []string{"path"},
 		},
 	}, removeSafePathTool)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "bypass_confirmation",
+		Description: "Disables all interactive security prompts for the current run. Use this for automated tasks where you trust the model's planned actions.",
+	}, bypassConfirmationTool)
+}
+
+func bypassConfirmationTool(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
+	if bypassConfirmations {
+		return "Bypass mode is already enabled.", nil
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.\033[0m\n")
+	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
+	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
+
+	char, err := readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return "Bypass mode denied by user.", nil
+	}
+
+	bypassConfirmations = true
+	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS RUN.\033[0m\n")
+	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for the current run.")
+	return "All future confirmations in this run will be bypassed.", nil
 }
 
 func listSafePathsTool(args map[string]interface{}) (string, error) {
@@ -180,13 +209,19 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 	}
 
 	// Confirmation Gate
-	fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
-	fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
+	if bypassConfirmations {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
-	char, err := readSingleKey()
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil || char != "y" {
-		return "Removal denied by user.", nil
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Removal denied by user.", nil
+		}
+		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
 	if err := RemoveSafePath(absPath); err != nil {
@@ -216,25 +251,31 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("invalid path: %v", err)
 	}
 
-	// 1. First Confirmation
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
-	if reason != "" {
-		fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
-	}
-	fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
+	// 1. Confirmation
+	if bypassConfirmations {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
 
-	char, err := readSingleKey()
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil || char != "y" {
-		return "Access denied by user (first confirmation).", nil
-	}
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Access denied by user (first confirmation).", nil
+		}
 
-	// 2. Double Confirmation
-	fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
-	char, err = readSingleKey()
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil || char != "y" {
-		return "Access denied by user (double confirmation).", nil
+		// 2. Double Confirmation
+		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
+		char, err = readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Access denied by user (double confirmation).", nil
+		}
+		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
@@ -442,9 +483,12 @@ func executeCommand(args map[string]interface{}) (string, error) {
 
 	approved := false
 
-	// 1. Check for Auto-Approval (Safe read-only commands)
+	// 1. Check for Auto-Approval (Safe read-only commands or bypass enabled)
 	safe := isSafeCommand(command)
-	if safe {
+	if bypassConfirmations {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
+		approved = true
+	} else if safe {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe read-only command detected.\033[0m\n")
 		approved = true
 	} else {
@@ -466,6 +510,13 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	if !approved {
 		return fmt.Sprintf("User denied execution of command: %s", command), nil
 	}
+
+	// 2.5 Log command execution if log file is set
+	logSuffix := ""
+	if bypassConfirmations {
+		logSuffix = " (auto-approved via bypass_confirmation)"
+	}
+	logAudit("REASON", reason, "COMMAND", command+logSuffix)
 
 	// 3. Execution
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")

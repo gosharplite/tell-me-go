@@ -66,10 +66,11 @@ func (a *App) Run() {
 	sessionName := "last-" + cfg.Mode
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
 	logPath := historyPath + ".log"
+	commandsLogPath := historyPath + ".commands.log"
 	safePathsPath := filepath.Join(homeDir, "output", sessionName+".safepaths.json")
 
 	if *newSession {
-		a.archiveSessionFiles(homeDir, sessionName, historyPath, logPath)
+		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath)
 	}
 
 	hManager := history.NewManager(historyPath)
@@ -86,6 +87,7 @@ func (a *App) Run() {
 
 	// 5. Initialize Components
 	tools.SetSafePathsFile(safePathsPath)
+	tools.SetCommandsLogFile(commandsLogPath)
 	if err := tools.LoadSafePaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
 	}
@@ -207,14 +209,9 @@ func (a *App) showHistory(hManager *history.Manager, n int) {
 	}
 }
 
-func (a *App) archiveSessionFiles(homeDir, sessionName, historyPath, logPath string) {
+func (a *App) archiveSessionFiles(homeDir string, filesToMove ...string) {
 	timestamp := time.Now().Format("20060102_150405")
 	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
-
-	filesToMove := []string{
-		historyPath,
-		logPath,
-	}
 
 	backupCreated := false
 	for _, f := range filesToMove {

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0] - 2026-05-30
+
+### Added
+- **Automation Tools**: Added `bypass_confirmation` tool to disable interactive security prompts, enabling fully automated workflows for trusted agents.
+- **Audit Logging**: Implemented persistent command logging. All `execute_command` usage is now recorded in `output/command-log.json` for security auditing.
+- **Unified Auditing**: Consolidated destructive actions and bypass events into a unified audit logging stream.
+
+### Fixed
+- **Terminal Compatibility**: Improved `stty` state handling for better portability across different shell environments.
+- **Error Handling**: Enhanced error reporting and resource management for command logging.
+
+### Changed
+- **Version Bump**: Promoted to v1.21.0.
+
 ## [1.20.1] - 2026-01-26
 
 ### Changed
