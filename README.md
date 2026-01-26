@@ -19,7 +19,10 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `rollback_last_turn`.
     *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`.
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
-    *   **Metrics**: `estimate_cost`.
+    *   **Financial Metrics (Dynamic Pricing)**: 
+        *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
+        *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/cost-history.json`).
+        *   **Auto-Sync**: Automatically fetches the latest Google Cloud pricing from GitHub and caches it locally for 24 hours.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 

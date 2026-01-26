@@ -43,6 +43,7 @@ SOPs must follow the structure defined in `SOP/sop_management.md`:
 #### 4. Maintenance and Updates
 - **Sync**: Documentation must be updated in the same commit as the feature it describes.
 - **Verification**: Check for broken links (relative paths) and formatting errors before committing.
+- **README Priority**: The `README.md` is the primary entry point for users. It **must** be verified as up-to-date (reflecting all current tools, flags, and config options) before any public release.
 - **Review**: During a Public Release (see `SOP/core/public_release.md`), a full documentation audit is mandatory.
 
 ---

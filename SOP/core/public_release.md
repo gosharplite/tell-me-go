@@ -27,6 +27,11 @@ Before any public release, perform a mandatory security scan:
 - **Privacy**: Ensure no personal data or proprietary internal URLs are hardcoded in the Go source code or YAML configs.
 
 #### 2. Documentation & Compliance Review
+- **README Check**: Verify that `README.md` is strictly up-to-date. This includes:
+    - New CLI tools (e.g., cost estimation tools).
+    - New configuration parameters.
+    - Updated feature lists.
+    - Updated usage examples.
 - **License**: Verify `LICENSE` (MIT) is present in the root.
 - **SPDX Headers**: Ensure all Go source files (`*.go`), YAML files, and Markdown files (`*.md`) in the `SOP/` directory contain the standard SPDX-License-Identifier header.
     - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/core/self_update_safety.md`.
