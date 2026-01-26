@@ -61,11 +61,21 @@ func runCommand(args ...string) (string, string, error) {
 }
 
 func runCommandWithEnv(env []string, stdin string, args ...string) (string, string, error) {
+	return runCommandWithEnvInDir(projectRoot, env, stdin, args...)
+}
+
+func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, binPath, args...)
-	cmd.Dir = projectRoot
+	// Ensure absolute path to default config
+	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs/vertex.yaml"))
+
+	// Prepend config flag to ensure it's always set to a valid location
+	finalArgs := append([]string{configFlag}, args...)
+
+	cmd := exec.CommandContext(ctx, binPath, finalArgs...)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 
 	if stdin != "" {
@@ -198,7 +208,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 	}
 
-	stdout, stderr, err := runCommandWithEnv(env, "", "list the files")
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "list the files")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
@@ -254,7 +264,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 	}
 
 	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnv(env, "", "write a file")
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
@@ -273,13 +283,12 @@ func TestWriteFileConfirmation(t *testing.T) {
 	}
 
 	// Verify file actually written
-	content, err := os.ReadFile(filepath.Join(projectRoot, "test.txt"))
+	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
 	if err != nil {
 		t.Errorf("File was not written: %v", err)
 	} else if string(content) != "hello world" {
 		t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
 	}
-	os.Remove(filepath.Join(projectRoot, "test.txt"))
 }
 
 func TestWriteFileDenial(t *testing.T) {
@@ -332,7 +341,7 @@ func TestWriteFileDenial(t *testing.T) {
 	}
 
 	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnv(env, "", "write a file")
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
@@ -344,9 +353,8 @@ func TestWriteFileDenial(t *testing.T) {
 	}
 
 	// Verify file NOT written
-	if _, err := os.Stat(filepath.Join(projectRoot, "denied.txt")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
 		t.Errorf("File 'denied.txt' should not have been created")
-		os.Remove(filepath.Join(projectRoot, "denied.txt"))
 	}
 }
 
@@ -396,7 +404,7 @@ func TestSecurityGate(t *testing.T) {
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 	}
 
-	_, _, err := runCommandWithEnv(env, "", "read /etc/passwd")
+	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read /etc/passwd")
 	if err != nil {
 		t.Fatalf("CLI failed: %v", err)
 	}
@@ -444,20 +452,16 @@ func TestSymlinkAttack(t *testing.T) {
 	defer server.Close()
 
 	homeDir := t.TempDir()
-	// Create a symlink in the project root (or current dir where tests run)
-	// Since cmd.Dir = projectRoot, we should create it there or handle paths carefully.
-	// For E2E, it's easier to create it in the CWD of the test and point to it.
-
-	evilLink := filepath.Join(projectRoot, "evil_link")
+	// Create a symlink in the homeDir
+	evilLink := filepath.Join(homeDir, "evil_link")
 	os.Symlink("/etc/passwd", evilLink)
-	defer os.Remove(evilLink)
 
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 	}
 
-	_, _, err := runCommandWithEnv(env, "", "read evil_link")
+	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read evil_link")
 	if err != nil {
 		t.Fatalf("CLI failed: %v", err)
 	}
