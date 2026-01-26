@@ -95,7 +95,7 @@ func TestSaveHistory(t *testing.T) {
 ### Verification & Testing
 1.  **Linting**: Run `go vet ./...` to catch common testing mistakes (e.g., wrong signature).
 2.  **Execution**: Ensure `go test ./...` returns **PASS**.
-3.  **Pre-commit Hook**: Verification is enforced by the pre-commit requirements in `SOP/core/git_workflow.md`.
+3.  **Pre-commit Hook**: Verification is enforced by the pre-commit requirements in `SOP/standards/git_workflow.md`.
 
 ---
 

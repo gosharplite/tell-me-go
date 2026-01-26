@@ -35,7 +35,7 @@ Before any public release, perform a mandatory security scan:
 - **Config Sync Verification**: Ensure the `configs/` folder and its default YAML files are perfectly synchronized with the examples provided in `README.md`.
 - **License**: Verify `LICENSE` (MIT) is present in the root.
 - **SPDX Headers**: Ensure all Go source files (`*.go`), YAML files, and Markdown files (`*.md`) in the `SOP/` directory contain the standard SPDX-License-Identifier header.
-    - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/core/self_update_safety.md`.
+    - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/lifecycle/self_update_safety.md`.
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
 - **Version Bump**: Update any version constants in the source code (e.g., in a `version` package or the main CLI help text).
 
@@ -62,7 +62,7 @@ go vet ./...
 go test -race ./...
 go build ./...
 ```
-*Note: The Git pre-commit requirements defined in `SOP/core/git_workflow.md` provide the final safety gate before merging to `main`.*
+*Note: The Git pre-commit requirements defined in `SOP/standards/git_workflow.md` provide the final safety gate before merging to `main`.*
 
 #### 4. Changelog Update
 Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:

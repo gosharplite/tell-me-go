@@ -12,7 +12,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 
 ### Prerequisites
 - Go toolchain 1.21+.
-- `SOP/core/architecture_and_packages.md` (defining the `internal/history` package).
+- `SOP/technical/architecture_and_packages.md` (defining the `internal/history` package).
 - `internal/api` (for the `Content` and `Part` struct definitions).
 
 ---

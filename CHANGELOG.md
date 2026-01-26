@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.14.1] - 2026-05-28
 
 ### Changed
-- **Documentation**: Updated `SOP/core/public_release.md` with explicit branch synchronization and verification steps.
+- **Documentation**: Updated `SOP/lifecycle/public_release.md` with explicit branch synchronization and verification steps.
 - **Version Bump**: Promoted to v1.14.1.
 
 ## [1.14.0] - 2026-05-28
@@ -154,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.12.1] - 2026-05-10
 
 ### Added
-- **Safety Documentation**: Added `SOP/core/self_update_safety.md` to define protocols for agentic self-modification.
+- **Safety Documentation**: Added `SOP/lifecycle/self_update_safety.md` to define protocols for agentic self-modification.
 - **Compliance**: Applied missing SPDX-License-Identifier headers to all SOP documentation.
 
 ### Changed
@@ -449,9 +449,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Improved Architecture: Moved business logic out of `cmd/tell-me-go/main.go` into `internal/agent` to comply with updated SOPs.
 - Updated SOPs:
-    - `SOP/core/architecture_and_packages.md`: Now mandates business logic resides in testable packages.
-    - `SOP/core/testing_standards.md`: Now mandates mocking complex, multi-part API responses.
-    - `SOP/core/agentic_capabilities.md`: Explicitly mandates preserving model thoughts and signatures to prevent Vertex AI 400 errors.
+    - `SOP/technical/architecture_and_packages.md`: Now mandates business logic resides in testable packages.
+    - `SOP/standards/testing_standards.md`: Now mandates mocking complex, multi-part API responses.
+    - `SOP/agent/agentic_capabilities.md`: Explicitly mandates preserving model thoughts and signatures to prevent Vertex AI 400 errors.
 
 ## [0.3.1] - 2026-01-25
 
