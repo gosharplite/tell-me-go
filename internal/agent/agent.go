@@ -155,6 +155,20 @@ func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
 	return int(float64(charCount) / 3.2)
 }
 
+func (a *Agent) getTurnWarning(turn int) string {
+	remaining := a.maxToolTurns - turn
+	switch remaining {
+	case 3:
+		return "[SYSTEM NOTICE: You are approaching the operational turn limit. You have 3 turns remaining. Please begin finalizing your current task and avoid starting any new multi-step operations.]"
+	case 2:
+		return "[URGENT SYSTEM NOTICE: Operational limit imminent. Only 2 turns remaining. You must prioritize completing the current objective or documenting progress. New tool sequences will be cut off.]"
+	case 1:
+		return "[FINAL SYSTEM WARNING: This is your absolute final turn. Provide your final conclusion or progress summary now. Process execution will terminate after this response.]"
+	default:
+		return ""
+	}
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&api.Content{
@@ -164,6 +178,18 @@ func (a *Agent) Chat(prompt string) error {
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
+
+		// Inject turn-limit warnings if necessary
+		if warning := a.getTurnWarning(turn); warning != "" && len(contents) > 0 {
+			lastIdx := len(contents) - 1
+			// Append warning to the last message's parts
+			contents[lastIdx].Parts = append(contents[lastIdx].Parts, &api.Part{
+				Text: "\n\n" + warning,
+			})
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Warning injected: %d turns remaining.\033[0m\n",
+				time.Now().Format("15:04:05"), a.maxToolTurns-turn)
+		}
+
 		toolsSDK := a.registry.ToToolSDK()
 
 		tokens := a.estimatePayloadTokens(contents)
