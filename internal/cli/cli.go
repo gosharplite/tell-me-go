@@ -146,7 +146,7 @@ func (a *App) Run() {
 	chatAgent := agent.New(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
-	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens)
+	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
 	if err := chatAgent.Chat(prompt); err != nil {

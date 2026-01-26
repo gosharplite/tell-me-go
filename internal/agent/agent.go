@@ -28,6 +28,7 @@ type Agent struct {
 	logFile            string
 	maxToolTurns       int
 	maxHistoryTokens   int
+	maxHistoryTurns    int
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	showThoughts       bool
@@ -56,12 +57,15 @@ func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 }
 
 // SetLimits sets the operational limits for the agent.
-func (a *Agent) SetLimits(toolTurns, historyTokens int) {
+func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	if toolTurns > 0 {
 		a.maxToolTurns = toolTurns
 	}
 	if historyTokens > 0 {
 		a.maxHistoryTokens = historyTokens
+	}
+	if historyTurns > 0 {
+		a.maxHistoryTurns = historyTurns
 	}
 }
 
@@ -216,8 +220,12 @@ func (a *Agent) Chat(prompt string) error {
 		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
 			tokenColor = "\033[0;31m" // Red if > 90%
 		}
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%dk/%dk)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-			time.Now().Format("15:04:05"), tokens/1000, a.maxHistoryTokens/1000, tokenColor, tokens)
+
+		// Calculate current turns (1 turn = user + model pair)
+		currentTurns := len(contents) / 2
+
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
+			time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
 
 		// Safety Check: MAX_HISTORY_TOKENS
 		if tokens > a.maxHistoryTokens {
