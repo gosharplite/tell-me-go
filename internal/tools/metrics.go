@@ -57,11 +57,13 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_cost_summary",
-		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
+		Description: "Returns a summary of total AI costs grouped by date from the local history ledger. Automatically includes and updates the current session's cost.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
 	}, func(args map[string]interface{}) (string, error) {
+		// Silent update: Calculate and record the current session's latest cost before summary.
+		_, _ = estimateCost(logFile, model, true)
 		return getCostSummary(filepath.Dir(logFile))
 	})
 }
