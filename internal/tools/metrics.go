@@ -37,7 +37,7 @@ func estimateCost(logFile string, model string) (string, error) {
 	defer f.Close()
 
 	var totalH, totalM, totalC, totalS, totalTh int64
-	var totalCost float64
+	var costH, costM, costC, costTh, costS float64
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -70,18 +70,31 @@ func estimateCost(logFile string, model string) (string, error) {
 		} else if strings.Contains(model, "flash") {
 			rh, rm, rc = 0.05, 0.50, 3.00
 		} else {
-			// Fallback to 1.5 Pro standard rates
 			rh, rm, rc = 0.3125, 1.25, 3.75
 			if (h + m) > 128000 {
 				rm, rc = 2.50, 7.50
 			}
 		}
 
-		totalCost += (float64(h) * rh / 1e6) + (float64(m) * rm / 1e6) + (float64(c+th) * rc / 1e6)
-		// Grounding cost (Search)
-		totalCost += float64(s) * 0.014
+		costH += (float64(h) * rh / 1e6)
+		costM += (float64(m) * rm / 1e6)
+		costC += (float64(c) * rc / 1e6)
+		costTh += (float64(th) * rc / 1e6)
+		costS += float64(s) * 0.014
 	}
 
-	return fmt.Sprintf("Estimated Cost for Session:\n- Model: %s\n- Tokens: Hit: %d, Miss: %d, Comp: %d, Thinking: %d\n- Search Queries: %d\n- Total Cost: $%.4f",
-		model, totalH, totalM, totalC, totalTh, totalS, totalCost), nil
+	totalCost := costH + costM + costC + costTh + costS
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n\n", model))
+	sb.WriteString("| Item | Count | Cost (USD) |\n")
+	sb.WriteString("| :--- | :--- | :--- |\n")
+	sb.WriteString(fmt.Sprintf("| Cache Hits | %d | $%.6f |\n", totalH, costH))
+	sb.WriteString(fmt.Sprintf("| Cache Misses | %d | $%.6f |\n", totalM, costM))
+	sb.WriteString(fmt.Sprintf("| Completion | %d | $%.6f |\n", totalC, costC))
+	sb.WriteString(fmt.Sprintf("| Thinking | %d | $%.6f |\n", totalTh, costTh))
+	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.6f |\n", totalS, costS))
+	sb.WriteString("| **Total** | | **$" + fmt.Sprintf("%.4f", totalCost) + "** |\n")
+
+	return sb.String(), nil
 }
