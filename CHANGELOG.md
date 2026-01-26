@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.14.0] - 2026-05-28
+
+### Added
+- **CLI**: Improved `stdin` handling. The tool now correctly detects piped input even when a prompt argument is provided, merging them with a newline.
+- **CLI**: Improved multi-line interactive input by using `io.ReadAll`, ensuring more robust capture of `Ctrl+D`.
+
+### Changed
+- **Version Bump**: Promoted to v1.14.0.
+
 ## [1.13.6] - 2026-05-27
 
 ### Fixed

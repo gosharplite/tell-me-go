@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.13.6"
+const Version = "1.14.0"
 
 func main() {
 	// 1. Define Flags
@@ -34,30 +35,27 @@ func main() {
 		os.Exit(0)
 	}
 
-	// 2. Handle Prompt Argument
+	// 2. Handle Prompt Argument and Stdin
 	prompt := flag.Arg(0)
-	if prompt == "" {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			var b []byte
-			b, err := os.ReadFile(os.Stdin.Name())
-			if err == nil {
+	stat, _ := os.Stdin.Stat()
+	isTerminal := (stat.Mode() & os.ModeCharDevice) != 0
+
+	if !isTerminal {
+		// Piped or redirected input: Append to prompt if prompt exists, or replace it
+		b, err := io.ReadAll(os.Stdin)
+		if err == nil && len(b) > 0 {
+			if prompt != "" {
+				prompt = prompt + "\n" + string(b)
+			} else {
 				prompt = string(b)
 			}
-		} else {
-			fmt.Println("\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
-			var sb strings.Builder
-			var buf [1024]byte
-			for {
-				n, err := os.Stdin.Read(buf[:])
-				if n > 0 {
-					sb.Write(buf[:n])
-				}
-				if err != nil {
-					break
-				}
-			}
-			prompt = sb.String()
+		}
+	} else if prompt == "" {
+		// Interactive terminal and no argument provided: Multi-line input mode
+		fmt.Println("\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
+		b, err := io.ReadAll(os.Stdin)
+		if err == nil {
+			prompt = string(b)
 		}
 	}
 
