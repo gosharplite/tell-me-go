@@ -83,22 +83,20 @@ A release is **not complete** until it is reachable by the public on the remote 
     ```bash
     git push origin main dev --tags
     ```
-5.  **Return to dev**:
+5.  **Return to dev and Bump Version**:
     ```bash
     git checkout dev
+    # Immediately bump the version to next cycle with -dev suffix
+    # e.g. Update main.go to "1.16.0-dev"
+    git add cmd/tell-me-go/main.go
+    git commit -m "Chore: Start next development cycle"
+    git push origin dev
     ```
-6.  **Verify Synchronization**: Check that `dev` and `main` are identical locally and that they match the remote states exactly.
-    ```bash
-    # 1. Check local dev vs local main
-    git diff main dev # Should be empty
-
-    # 2. Check local dev vs remote dev
-    git fetch origin
-    git rev-parse dev origin/dev # Hashes must match
-
-    # 3. Check local main vs remote main
-    git rev-parse main origin/main # Hashes must match
-    ```
+6.  **Verify Synchronization**:
+    *   Check that `main` matches `origin/main`.
+    *   Check that `dev` matches `origin/dev`.
+    *   `dev` should now be exactly 1 commit ahead of `main` (the version bump).
+7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
 ---
