@@ -169,6 +169,16 @@ func (a *Agent) getTurnWarning(turn int) string {
 	}
 }
 
+func (a *Agent) getTokenWarning(tokens int) string {
+	ratio := float64(tokens) / float64(a.maxHistoryTokens)
+	if ratio > 0.95 {
+		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_scratchpad' and 'manage_tasks' to save a summary of your work and plans NOW. Keep your response extremely brief.]"
+	} else if ratio > 0.90 {
+		return "[SYSTEM NOTICE: The conversation history is at 90% capacity. To avoid a session crash, please minimize large file reads. Use 'manage_scratchpad' and 'manage_tasks' to save your current progress and architectural notes now, in case a rollback occurs.]"
+	}
+	return ""
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&api.Content{
@@ -178,21 +188,28 @@ func (a *Agent) Chat(prompt string) error {
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
+		tokens := a.estimatePayloadTokens(contents)
 
 		// Inject turn-limit warnings if necessary
-		if warning := a.getTurnWarning(turn); warning != "" && len(contents) > 0 {
+		warning := a.getTurnWarning(turn)
+		if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
+			if warning != "" {
+				warning += "\n" + tokenWarning
+			} else {
+				warning = tokenWarning
+			}
+		}
+
+		if warning != "" && len(contents) > 0 {
 			lastIdx := len(contents) - 1
-			// Append warning to the last message's parts
 			contents[lastIdx].Parts = append(contents[lastIdx].Parts, &api.Part{
 				Text: "\n\n" + warning,
 			})
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Warning injected: %d turns remaining.\033[0m\n",
-				time.Now().Format("15:04:05"), a.maxToolTurns-turn)
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into model history.\033[0m\n",
+				time.Now().Format("15:04:05"))
 		}
 
 		toolsSDK := a.registry.ToToolSDK()
-
-		tokens := a.estimatePayloadTokens(contents)
 
 		// Log the payload info
 		tokenColor := "\033[0;90m" // Default dark gray
