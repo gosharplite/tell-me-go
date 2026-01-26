@@ -55,6 +55,18 @@ func (m *Manager) Save() error {
 		return fmt.Errorf("failed to create history directory: %w", err)
 	}
 
+	// Clean up history: remove empty parts or parts with no content
+	for _, content := range m.Contents {
+		var cleanParts []*api.Part
+		for _, p := range content.Parts {
+			if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
+				continue
+			}
+			cleanParts = append(cleanParts, p)
+		}
+		content.Parts = cleanParts
+	}
+
 	data, err := json.MarshalIndent(m.Contents, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal history: %w", err)

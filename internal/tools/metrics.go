@@ -157,7 +157,8 @@ func getPricing(outputDir string) PricingData {
 
 	// 2. Try Remote if cache is missing or stale
 	if !useCache {
-		client := http.Client{Timeout: 5 * time.Second}
+		// Optimization: Check for connectivity before hitting network to avoid long timeout
+		client := http.Client{Timeout: 2 * time.Second} // Shorter timeout
 		resp, err := client.Get(pricingURL)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()

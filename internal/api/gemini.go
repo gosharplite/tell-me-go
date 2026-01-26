@@ -54,6 +54,7 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 
 	if systemInstruction != "" {
 		c.systemInstruction = &genai.Content{
+			Role:  "system",
 			Parts: []*genai.Part{{Text: systemInstruction}},
 		}
 	}
