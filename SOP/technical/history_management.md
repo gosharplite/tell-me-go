@@ -11,7 +11,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - `SOP/technical/architecture_and_packages.md` (defining the `internal/history` package).
 - `internal/api` (for the `Content` and `Part` struct definitions).
 
@@ -40,7 +40,7 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 
 #### 4. Pruning Logic
 To prevent the payload from exceeding the model's context window or the user's budget:
-- **Turn Limit**: Defined by `MAX_TURNS` in the config.
+- **Turn Limit**: Defined by `MAX_HISTORY_TURNS` in the config.
 - **Action**: When the limit is reached, the oldest pairs (one `user` and one `model` message) must be removed until the count is within limits.
 - **System Notice**: If history is pruned, a notification should be added to the scratchpad or logged.
 

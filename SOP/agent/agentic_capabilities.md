@@ -10,7 +10,7 @@ To define the standards for implementing and executing tools (function calling) 
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - `SOP/technical/history_management.md` (defining role alternation).
 - Vertex AI support for `functionDeclarations`.
 
@@ -20,8 +20,8 @@ To define the standards for implementing and executing tools (function calling) 
 
 #### 1. Tool Definition (Schema)
 Every tool must be defined using a standard JSON schema that matches the Gemini API requirements.
-- **Location**: Store tool definitions in `internal/tools/definitions.go` or a separate JSON file.
-- **Validation**: Every tool must have a `description` and a clear `parameters` schema.
+- **Location**: Tool definitions are registered within the `internal/tools` package using the `Register*Tools` functions (e.g., `RegisterFileSystemTools`).
+- **Validation**: Every tool must have a `description` and a clear `parameters` schema using `genai.FunctionDeclaration`.
 
 #### 2. The Orchestration Loop
 The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools are involved:

@@ -64,12 +64,12 @@ go build ./...
 ```
 *Note: The E2E suite in `tests/e2e/` is critical for ensuring that multi-turn tool orchestration and security gates are functional in the final binary.*
 
-#### 4. Changelog Update
+#### 5. Changelog Update
 Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:
 - Categorize changes into: `Added`, `Changed`, `Fixed`, `Removed`.
 - Highlight Go-specific improvements (e.g., "Optimized concurrency with worker pools").
 
-#### 5. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
+#### 6. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
 A release is **not complete** until it is reachable by the public on the remote repository:
 
 1.  **Start in dev branch**: Ensure you are on `dev` and all changes for the release are committed.
@@ -102,7 +102,6 @@ A release is **not complete** until it is reachable by the public on the remote 
     *   Check that `main` matches `origin/main`.
     *   Check that `dev` matches `origin/dev`.
     *   `dev` should now be exactly 1 commit ahead of `main` (the version bump).
-7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
 ---

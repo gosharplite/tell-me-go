@@ -3,7 +3,14 @@
 
 # Standard Operating Procedure (SOP): Creating and Managing SOPs
 
+### Objective
 This SOP defines the standard structure and process for documenting procedures within the `tell-me-go` project to ensure clarity, consistency, and maintainability.
+
+---
+
+### Prerequisites
+- Knowledge of Markdown syntax.
+- Access to the `SOP/` directory.
 
 ---
 

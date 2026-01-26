@@ -10,7 +10,7 @@ To ensure that the `tell-me-go` test suite remains modular, isolated, and utiliz
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - Familiarity with the standard `testing` package.
 - (Optional) `testify` or similar assertion libraries if adopted later.
 

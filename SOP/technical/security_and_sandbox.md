@@ -8,6 +8,12 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 
 ---
 
+### Prerequisites
+- Go toolchain 1.24+.
+- `SOP/agent/agentic_capabilities.md` (defining tool execution).
+
+---
+
 ### 1. Path Validation (Zero-Trust)
 All tools interacting with the local filesystem must verify that the requested paths are within authorized boundaries.
 

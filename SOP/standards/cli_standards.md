@@ -11,7 +11,7 @@ To ensure a consistent and user-friendly command-line interface for `tell-me-go`
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - Standard `flag` package.
 
 ---
@@ -30,7 +30,7 @@ The tool follows a "Triple-Mode" input strategy to provide a seamless user exper
 - **Mode 2: Piped Input**: If no argument is present and `stdin` is a pipe (not a terminal), read the prompt from `stdin`.
 - **Mode 3: Interactive Multi-line**: If no argument is present and `stdin` is a terminal, enter an interactive mode that reads until `EOF` (`Ctrl+D`).
 
-#### 3. Standard Alias (`a`)
+#### 3. Standard Alias (`b`)
 To maintain consistency with the project's roots, users are encouraged to set up a single, universal alias:
 
 #### 4. Session Management and Archiving
@@ -39,7 +39,7 @@ The tool manages session state through history and log files.
 - **Automatic Archiving**: To prevent data loss, instead of deleting old session files, the tool **MUST** move them to a timestamped backup directory: `output/backups/YYYYMMDD_HHMMSS/`. 
 - **Files to Archive**: This include history (`.json`), logs (`.log`), scratchpads (`.scratchpad.md`), and tasks (`.tasks.json`).
 ```bash
-alias a='tell-me-go'
+alias b='tell-me-go'
 ```
 This alias should be the primary way users interact with the tool, relying on the "Triple-Mode" logic above.
 

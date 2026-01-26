@@ -26,6 +26,8 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
         *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/cost-history.json`).
         *   **Auto-Sync**: Automatically fetches the latest Google Cloud pricing from GitHub and caches it locally for 24 hours.
+*   **Vertex AI Optimized**: Native support for the official Google GenAI SDK, focused on Vertex AI for enterprise-grade security and performance.
+*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
@@ -34,13 +36,11 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), existing files are archived to `output/backups/`.
-*   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
-*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **Bash Compatibility**: Uses identical file naming and structures as the original Bash project for full interoperability.
 
 ## 📋 Prerequisites
 *   **Go**: 1.24 or higher.
-*   **Google Cloud SDK (gcloud)**: Required for Vertex AI mode using user credentials.
+*   **Google Cloud SDK (gcloud)**: Required for Vertex AI authentication.
 
 ## 🛠️ Installation
 1.  **Clone the repository**:
@@ -72,7 +72,7 @@ Before every request, the tool shows the estimated token count of the history an
 `[14:19:43] [System] Payload: ~4549 tokens`
 
 **Thinking Mode (Gemini 2.0):**
-If `THINKING_BUDGET` is set in your config, the assistant will display its reasoning process in the terminal.
+If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.
 
 **New Session:**
 ```bash
@@ -87,7 +87,7 @@ If `THINKING_BUDGET` is set in your config, the assistant will display its reaso
 *   `AIT_HOME`: Fallback for compatibility with the original Bash project.
 
 ## ⚙️ Configuration
-The tool supports both Vertex AI and the Gemini Developer API.
+The tool is optimized for Google Vertex AI.
 
 ```yaml
 # configs/vertex.yaml

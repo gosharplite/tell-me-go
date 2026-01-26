@@ -10,7 +10,7 @@ To define a consistent, scalable, and idiomatic Go directory structure for `tell
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - Familiarity with the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 ---
@@ -55,14 +55,19 @@ tell-me-go/
 │   └── tell-me-go/
 │       └── main.go       # Orchestration and Entry Point
 ├── internal/
+│   ├── agent/            # High-level Agent Loop
 │   ├── api/              # Gemini Client Logic
+│   ├── auth/             # Token Management
+│   ├── cli/              # CLI logic and Flag Parsing
 │   ├── config/           # YAML/Env Loading
 │   ├── history/          # Conversation Storage
-│   └── terminal/         # UI and Markdown Rendering
+│   └── tools/            # Agent Tools
 ├── pkg/
 │   └── utils/            # General purpose helpers
 ├── configs/
 │   └── vertex.yaml       # Vertex AI Template
+├── tests/
+│   └── e2e/              # End-to-End Tests
 ├── SOP/                  # Documentation
 ├── go.mod
 └── go.sum
@@ -79,7 +84,7 @@ package config
 // Config holds the application settings
 type Config struct {
 	Model  string `yaml:"AIMODEL"`
-	APIKey string `yaml:"API_KEY"`
+	Mode   string `yaml:"MODE"`
 }
 
 // New returns a fresh configuration instance
