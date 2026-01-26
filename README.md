@@ -111,6 +111,32 @@ MAX_CONCURRENT_TOOLS: 5    # Parallel tool execution limit
 TOOL_TIMEOUT: 30           # Individual tool timeout (seconds)
 ```
 
+## ⌨️ Shell Integration (Recommended)
+To streamline your workflow, add these aliases to your `.bashrc` or `.zshrc`. This provides a fast, one-letter command (`b`) for interacting with the assistant and simplifies session management.
+
+```bash
+# 1. Set the home directory for session history, tasks, and scratchpad
+export TELL_ME_HOME="$HOME/tell-me-go"
+
+# 2. Main command alias (points to your preferred config)
+# Using a function allows passing flags and prompts easily
+b() {
+    tell-me-go -c "$TELL_ME_HOME/configs/vertex.yaml" "$@"
+}
+export -f b
+
+# 3. Start a fresh session (archives old history)
+alias b-new='b -new'
+
+# 4. Show the last N messages from history
+# Usage: bl 5
+alias bl='b -l'
+
+# 5. Maintenance: Update from GitHub or install local dev changes
+alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
+alias b-install-dev='go install ./cmd/tell-me-go'
+```
+
 ## 📜 SOP-Driven Development
 This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [SOP/](./SOP/) directory.
 
