@@ -158,7 +158,18 @@ func estimateCost(logFile string, model string) (string, error) {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", model))
-	sb.WriteString(fmt.Sprintf("Pricing Data As Of: %s\n\n", pricing.UpdatedAt))
+	sb.WriteString(fmt.Sprintf("Pricing Data As Of: %s\n", pricing.UpdatedAt))
+
+	// Check for stale data (older than 30 days)
+	if t, err := time.Parse(time.RFC3339, pricing.UpdatedAt); err == nil {
+		if time.Since(t) > 30*24*time.Hour {
+			sb.WriteString("⚠️ WARNING: Pricing data is over 30 days old. Accuracy not guaranteed.\n")
+		}
+	} else if pricing.UpdatedAt == "Hardcoded Fallback" {
+		sb.WriteString("⚠️ WARNING: Using hardcoded fallback rates. Accuracy not guaranteed.\n")
+	}
+	sb.WriteString("\n")
+
 	sb.WriteString("| Item | Count | Rate (USD/1M) | Cost (USD) |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 
