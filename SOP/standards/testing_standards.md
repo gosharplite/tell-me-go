@@ -22,16 +22,20 @@ To ensure that the `tell-me-go` test suite remains modular, isolated, and utiliz
 In Go, tests live alongside the source code to allow access to unexported members and ensure package-level integrity.
 - **Unit Tests**: Place in the same directory as the logic being tested. File name must end in `_test.go` (e.g., `pkg/history/manager_test.go`).
 - **Integration Tests**: Place in a top-level `test/` directory or within the package with a `//go:build integration` build tag.
+- **End-to-End (E2E) Tests**: Place in `tests/e2e/`. E2E tests MUST build the application binary and execute it as a separate process to verify the CLI contract.
 - **Function Naming**: Test functions must start with `Test` followed by a capitalized name (e.g., `func TestPruneHistory(t *testing.T)`).
 
 #### 2. Environment Isolation
 Every test must be isolated from the host system and other tests:
 1.  **Temporary Workspace**: Always use `t.TempDir()` to create a workspace that is automatically cleaned up after the test.
 2.  **Concurrency**: Use `t.Parallel()` where possible to speed up execution.
-3.  **No Side Effects**: Never modify global environment variables or local configuration files (`~/.config`) directly. Use dependency injection or environment mocking.
+3.  **TELL_ME_HOME**: For E2E and integration tests, explicitly set the `TELL_ME_HOME` environment variable to a temporary directory to avoid side effects on the developer's local state.
+4.  **No Side Effects**: Never modify global environment variables or local configuration files (`~/.config`) directly. Use dependency injection or environment mocking.
 
 #### 3. Mocking Dependencies
 - **Interfaces**: Define interfaces for external dependencies (API clients, File System, Git) to allow easy mocking in tests.
+- **Offline E2E Mocking**: E2E tests MUST NOT hit live Gemini/Vertex APIs. Use `httptest.NewServer` and redirect the CLI using the `TELL_ME_MOCK_URL` environment variable.
+- **Interactive Handshakes**: For tests involving user confirmation (y/N), use the `TELL_ME_MOCK_ANSWER` environment variable to simulate user input.
 - **Complex API Mocks**: When testing components that interact with the Gemini API (like the `agent` package), the mock server **MUST** simulate multi-part responses, including:
     - `thought` and `thoughtSignature` fields.
     - `functionCall` and `functionResponse` roles.

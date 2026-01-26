@@ -1,0 +1,55 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+# Standard Operating Procedure (SOP): Security and Sandbox Standards
+
+### Objective
+To define the mandatory security protocols for the `tell-me-go` agent, ensuring that model-driven tool execution remains within safe boundaries and requires user oversight for destructive actions.
+
+---
+
+### 1. Path Validation (Zero-Trust)
+All tools interacting with the local filesystem must verify that the requested paths are within authorized boundaries.
+
+*   **Mandatory Helper**: Use `tools.IsPathSafe(path)`.
+*   **Sanitization Steps**:
+    1.  **Clean**: Always apply `filepath.Clean(path)` to resolve `..` and `.` segments.
+    2.  **Symlink Resolution**: Call `filepath.EvalSymlinks(absPath)` if the file exists. This prevents "Symlink Attacks" where a model tries to escape a directory via a malicious link.
+*   **Authorized Roots**:
+    - Current Working Directory (CWD).
+    - System Temporary Directory (`os.TempDir()`).
+    - Explicitly registered "Safe Paths" (e.g., project configs, output folder).
+
+---
+
+### 2. User Confirmation Handshakes
+The assistant must never perform destructive or high-risk actions without explicit user approval.
+
+*   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`.
+*   **System Tools**: `execute_command`.
+*   **Mechanism**: Use `tools.ConfirmDestructiveAction(action, target, detail)`.
+    - **UI Standard**: The prompt and details must be printed to `os.Stderr` using high-visibility colors (Yellow/Red).
+    - **Bypass for Tests**: Use the `TELL_ME_MOCK_ANSWER` environment variable to automate confirmations in E2E tests.
+
+---
+
+### 3. Terminal Interaction (Stdin Independence)
+To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), interactive tools must not rely solely on `os.Stdin`.
+
+*   **Standard**: Use `/dev/tty` for interactive prompts whenever possible.
+*   **Fallback**: If `/dev/tty` is unavailable, fall back to `os.Stdin`.
+*   **Concurrency**: Use `termMu` (sync.Mutex) to ensure that only one tool or component is interacting with the terminal at a time.
+
+---
+
+### 4. Self-Protection
+The agent must be prevented from modifying its own security configurations.
+
+*   **Configuration Block**: `IsPathSafe` must explicitly deny read/write access to the active `safePathsFile` (the JSON file storing persistent authorizations).
+*   **Persistent Auth**: Registering a new safe path via `register_safepath` requires a **Double Confirmation** gate.
+
+---
+
+### Verification
+1.  **Security Gate E2E**: Run `tests/e2e/e2e_test.go` and ensure `TestSecurityGate` and `TestSymlinkAttack` pass.
+2.  **Manual Audit**: Verify that any new tool added to `internal/tools` follows the path validation and confirmation standards.

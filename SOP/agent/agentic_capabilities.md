@@ -45,8 +45,11 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 7.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
 
 #### 3. Security and Safety
-- **Read-Only by Default**: Tools that read data (e.g., `read_file`, `list_files`) require no special confirmation.
-- **Write-Safe**: Tools that modify the system (e.g., `write_file`, `execute_command`) must have a confirmation mechanism or restricted paths (e.g., only inside the current directory).
+- **Path Sanitization**: Every tool accessing the filesystem MUST call `tools.IsPathSafe(path)`. This function MUST:
+    - Call `filepath.Clean` to resolve traversal attempts.
+    - Call `filepath.EvalSymlinks` to prevent symlink-based boundary escapes.
+- **Confirmation Gates**: Tools that perform destructive actions (`write_file`, `replace_text`) or system execution (`execute_command`) MUST implement the `ConfirmDestructiveAction` handshake.
+- **Interactive Handling**: Tools requiring user input MUST attempt to use `/dev/tty` for interaction to remain functional even when `os.Stdin` is redirected (e.g., in piped command workflows).
 - **Error Handling**: Tool execution errors must be caught and sent back to the model as a string response so the model can attempt a fix.
 
 #### 4. Package Structure
