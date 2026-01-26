@@ -82,12 +82,12 @@ The tool supports both Vertex AI and the Gemini Developer API.
 ```yaml
 # configs/vertex.yaml
 MODE: "vertex"
-PERSON: "A helpful AI assistant."
+PERSON: "A helpful AI assistant using Google Vertex AI."
 AIMODEL: "gemini-2.0-flash-001"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
 USE_SEARCH: true
-THINKING_BUDGET: 1024
-THINKING_LEVEL: "MEDIUM"  # Options: LOW, MEDIUM, HIGH
+THINKING_BUDGET: 0
+THINKING_LEVEL: ""  # Options: LOW, MEDIUM, HIGH
 
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)

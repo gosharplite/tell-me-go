@@ -21,7 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-const Version = "1.16.0-dev"
+const Version = "1.16.0"
 
 func main() {
 	// 1. Define Flags

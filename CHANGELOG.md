@@ -4,13 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [0.9.4] - 2026-01-26
-## [1.16.0-dev] - 2026-01-26
+## [1.16.0] - 2026-01-26
 
 ### Added
-- **Security**: Centralized and exported `IsPathSafe` in `internal/tools`.
-- **Security**: Implemented `RegisterSafePath` to allow explicit authorization of directories (like `TELL_ME_HOME`) and files (like session logs) at startup.
-- **Tools**: `estimate_cost` now correctly accesses logs even when they are outside the current working directory, thanks to the new safe path registration.
+- **Financial Metrics (Dynamic Pricing)**: 
+    - Added `estimate_cost` tool to provide detailed session cost breakdowns.
+    - Added `get_cost_summary` tool with a persistent local ledger (`output/cost-history.json`) for daily expenditure tracking.
+    - Implemented a dynamic pricing engine that fetches live Vertex AI rates from GitHub with local 24-hour caching.
+    - `get_cost_summary` now automatically updates the current session's cost before displaying the report.
+- **Security**: 
+    - Centralized and exported `IsPathSafe` in `internal/tools`.
+    - Implemented `RegisterSafePath` to allow explicit authorization of directories (like `TELL_ME_HOME`) and files (like session logs) at startup.
+    - Hardened `estimate_cost` to securely access logs outside the working directory.
+
+### Changed
+- **SOP Organization**: Reorganized the `SOP/` directory into functional subdirectories: `standards/`, `technical/`, `agent/`, and `lifecycle/`. All internal cross-references have been updated.
+- **Documentation Standards**: Enforced strict synchronization between the `configs/` directory, CLI help text, and the `README.md` as a pre-release requirement.
+- **Version Bump**: Promoted to v1.16.0.
 
 ## [1.15.0] - 2026-01-26
 
