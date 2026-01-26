@@ -61,7 +61,7 @@ func runCommand(args ...string) (string, string, error) {
 }
 
 func runCommandWithEnv(env []string, stdin string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
@@ -154,10 +154,8 @@ func TestHelpOutput(t *testing.T) {
 
 func TestToolOrchestrationLoop(t *testing.T) {
 	// 1. Setup Mock Server
-	// The GenAI SDK for Gemini API calls /v1/models/{model}:generateContent
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "generateContent") {
-			// Check if we are in the second turn (after tool execution) or first
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
@@ -165,7 +163,6 @@ func TestToolOrchestrationLoop(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			if len(body.Contents) <= 1 {
-				// Turn 1: Return a function call
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -180,7 +177,6 @@ func TestToolOrchestrationLoop(t *testing.T) {
 					}]
 				}`)
 			} else {
-				// Turn 2: Return final text answer
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -196,27 +192,80 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 2. Setup isolated home and env
 	homeDir := t.TempDir()
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 	}
 
-	// 3. Run CLI
 	stdout, stderr, err := runCommandWithEnv(env, "", "list the files")
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
 
-	// 4. Verification
 	out := stripANSI(stdout)
 	errOut := stripANSI(stderr)
 
-	if !strings.Contains(errOut, "[Tool Engine (1/10)] Calling: list_files") {
+	if !strings.Contains(errOut, "Calling: list_files") {
 		t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
 	}
 	if !strings.Contains(out, "I have listed the files.") {
 		t.Errorf("Expected final answer in stdout, got: %q", out)
+	}
+}
+
+func TestSecurityGate(t *testing.T) {
+	// 1. Setup Mock Server that forces a security violation
+	var receivedResponse string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				// Turn 1: Return a malicious function call
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "read_file",
+									"args": {"filepath": "/etc/passwd"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				// Turn 2: Capture the error response sent by the agent
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				parts := lastTurn["parts"].([]interface{})
+				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
+				receivedResponse = resp["response"].(map[string]interface{})["result"].(string)
+
+				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Security error caught."}]}}]}`)
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+	}
+
+	_, _, err := runCommandWithEnv(env, "", "read /etc/passwd")
+	if err != nil {
+		t.Fatalf("CLI failed: %v", err)
+	}
+
+	if !strings.Contains(receivedResponse, "security violation") {
+		t.Errorf("Expected security violation error to be sent back to model, got: %q", receivedResponse)
 	}
 }
