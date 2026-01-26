@@ -234,8 +234,12 @@ func (a *Agent) Chat(prompt string) error {
 				break
 			}
 
-			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine] Executing %d tools (Parallel: %d, Timeout: %v)...\033[0m\n",
-				time.Now().Format("15:04:05"), len(functionCalls), a.maxConcurrentTools, a.toolTimeout)
+			var names []string
+			for _, fc := range functionCalls {
+				names = append(names, fc.Name)
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
+				time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
 
 			results := make([]*api.Part, len(functionCalls))
 			var wg sync.WaitGroup
@@ -249,7 +253,16 @@ func (a *Agent) Chat(prompt string) error {
 					defer func() { <-sem }()
 
 					if a.showTools {
-						fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), call.Name)
+						var argParts []string
+						for k, v := range call.Args {
+							valStr := fmt.Sprintf("%v", v)
+							if len(valStr) > 60 {
+								valStr = valStr[:57] + "..."
+							}
+							argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
+						}
+						fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
+							time.Now().Format("15:04:05"), call.Name, strings.Join(argParts, ", "))
 					}
 
 					// Execute with timeout (exclude interactive tools)
