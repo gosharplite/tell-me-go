@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os" // Added for os.Stderr
 	"strings"
 	"time"
-	"os" // Added for os.Stderr
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"google.golang.org/genai"
