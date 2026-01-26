@@ -20,6 +20,14 @@ import (
 	"google.golang.org/genai"
 )
 
+var (
+	// ErrContextLimitExceeded is returned when the payload exceeds the safety threshold.
+	ErrContextLimitExceeded = fmt.Errorf("payload estimate exceeds safety limit")
+
+	// ErrMaxTurnsReached is returned when the model reaches the turn limit.
+	ErrMaxTurnsReached = fmt.Errorf("maximum tool execution turns reached")
+)
+
 // Agent represents the chat orchestration logic.
 type Agent struct {
 	client             *api.Client
@@ -194,7 +202,29 @@ func (a *Agent) Chat(prompt string) error {
 		contents := a.history.GetContents()
 		tokens := a.estimatePayloadTokens(contents)
 
-		// Inject turn-limit warnings if necessary
+		// 1. Safety Check: MAX_HISTORY_TOKENS
+		if tokens > a.maxHistoryTokens {
+			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
+				time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
+				time.Now().Format("15:04:05"))
+			a.history.Rollback()
+			return ErrContextLimitExceeded
+		}
+
+		// Calculate current turns (1 turn = user + model pair)
+		currentTurns := len(contents) / 2
+		tokenColor := "\033[0;90m" // Default dark gray
+		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
+			tokenColor = "\033[0;31m" // Red if > 90%
+		}
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
+			time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
+
+		// 2. Prepare API Contents (Deep copy to avoid history pollution via warnings)
+		apiContents := make([]*api.Content, len(contents))
+		copy(apiContents, contents)
+
 		warning := a.getTurnWarning(turn)
 		if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
 			if warning != "" {
@@ -204,40 +234,26 @@ func (a *Agent) Chat(prompt string) error {
 			}
 		}
 
-		if warning != "" && len(contents) > 0 {
-			lastIdx := len(contents) - 1
-			contents[lastIdx].Parts = append(contents[lastIdx].Parts, &api.Part{
+		if warning != "" && len(apiContents) > 0 {
+			lastIdx := len(apiContents) - 1
+			orig := apiContents[lastIdx]
+			// Clone only the content that receives the warning
+			cloned := &api.Content{
+				Role:  orig.Role,
+				Parts: make([]*api.Part, len(orig.Parts)),
+			}
+			copy(cloned.Parts, orig.Parts)
+			cloned.Parts = append(cloned.Parts, &api.Part{
 				Text: "\n\n" + warning,
 			})
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into model history.\033[0m\n",
+			apiContents[lastIdx] = cloned
+
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
 				time.Now().Format("15:04:05"))
 		}
 
 		toolsSDK := a.registry.ToToolSDK()
-
-		// Log the payload info
-		tokenColor := "\033[0;90m" // Default dark gray
-		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m" // Red if > 90%
-		}
-
-		// Calculate current turns (1 turn = user + model pair)
-		currentTurns := len(contents) / 2
-
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-			time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
-
-		// Safety Check: MAX_HISTORY_TOKENS
-		if tokens > a.maxHistoryTokens {
-			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
-				time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
-				time.Now().Format("15:04:05"))
-			a.history.Rollback()
-			os.Exit(1)
-		}
-
-		respContent, metrics, err := a.client.SendChat(contents, toolsSDK)
+		respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
 
 		// Handle 401 Unauthorized
 		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
@@ -282,7 +298,7 @@ func (a *Agent) Chat(prompt string) error {
 			if turn >= a.maxToolTurns {
 				fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
 					time.Now().Format("15:04:05"), a.maxToolTurns)
-				break
+				return ErrMaxTurnsReached
 			}
 
 			var names []string

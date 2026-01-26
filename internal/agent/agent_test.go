@@ -389,8 +389,8 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
 	err = a.Chat("Run tool")
-	if err != nil {
-		t.Fatalf("Chat should not return error on recursion limit, just break: %v", err)
+	if err != ErrMaxTurnsReached {
+		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
 }
 
