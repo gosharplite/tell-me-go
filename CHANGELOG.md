@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.9.4] - 2026-01-26
+## [1.15.0] - 2026-01-26
+
+### Added
+- **UI Controls**: Added `SHOW_THOUGHTS` and `SHOW_TOOLS` visibility controls to `config.yaml` for a cleaner terminal experience.
+- **Smart Budget Cap**: Implemented automatic safety clamping for `THINKING_BUDGET`. The tool now automatically adjusts the budget to the model's supported maximum (e.g., 24,576 for Gemini 2.5 Flash, 32,768 for Gemini 3 Flash) to prevent `Error 400` failures.
+- **Concurrency**: Added `MAX_CONCURRENT_TOOLS` and `TOOL_TIMEOUT` configuration options.
+- **Safety**: Serialized interactive terminal prompts for tool confirmations to prevent UI overlap during parallel execution.
+
+### Fixed
+- **API Compatibility**: Corrected Gemini 3 Thinking Budget limit to 32,768 based on explicit API feedback.
+
+### Changed
+- **Version Bump**: Promoted to v1.15.0.
+
 ## [1.14.1] - 2026-05-28
 
 ### Changed
