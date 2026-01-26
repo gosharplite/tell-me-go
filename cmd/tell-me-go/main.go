@@ -91,8 +91,7 @@ func main() {
 
 	// Register safe paths for tool access (Security boundaries)
 	tools.RegisterSafePath(homeDir)
-	tools.RegisterSafePath(historyPath)
-	tools.RegisterSafePath(logPath)
+	tools.RegisterSafePath(*configPath)
 
 	if *newSession {
 		archiveSessionFiles(homeDir, sessionName, historyPath, logPath)
