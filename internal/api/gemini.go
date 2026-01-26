@@ -23,8 +23,8 @@ type FunctionCall = genai.FunctionCall
 type FunctionResponse = genai.FunctionResponse
 
 var modelMaxThinkingBudget = map[string]int{
-	"gemini-2.5-flash":        24576,
-	"gemini-3-flash-preview": 65536, // Higher limit for gemini-3 series
+	"gemini-2.5-flash":       24576,
+	"gemini-3-flash-preview": 32768, // Corrected from 65536 based on API error
 	// Add other model-specific caps as needed
 }
 
@@ -164,9 +164,9 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
 					actualBudget = maxBudget
 				}
-			} else if strings.Contains(c.model, "flash") && actualBudget > 24576 {
+			} else if strings.Contains(c.model, "flash") && actualBudget > 32768 {
 				// Generic cap for flash models if not explicitly in map
-				maxFlashBudget := 24576 // Based on gemini-2.5-flash limit
+				maxFlashBudget := 32768 // Based on gemini-3-flash-preview limit
 				if actualBudget > maxFlashBudget {
 					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for flash model '%s' exceeds common max (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxFlashBudget, maxFlashBudget)
 					actualBudget = maxFlashBudget
