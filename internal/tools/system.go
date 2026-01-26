@@ -469,13 +469,17 @@ func executeCommand(args map[string]interface{}) (string, error) {
 
 	// 2.5 Log command execution if log file is set
 	if commandsLogFile != "" {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-		if err == nil {
+		func() {
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
+				return
+			}
+			defer f.Close()
 			fmt.Fprintf(f, "[%s] REASON: %s\n", timestamp, reason)
 			fmt.Fprintf(f, "[%s] COMMAND: %s\n", timestamp, command)
-			f.Close()
-		}
+		}()
 	}
 
 	// 3. Execution
