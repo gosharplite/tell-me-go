@@ -100,6 +100,43 @@ func RegisterSafePath(path string) {
 	safePaths = append(safePaths, abs)
 }
 
+// GetSafePaths returns a copy of the currently registered safe paths.
+func GetSafePaths() []string {
+	safePathsMu.RLock()
+	defer safePathsMu.RUnlock()
+	paths := make([]string, len(safePaths))
+	copy(paths, safePaths)
+	return paths
+}
+
+// RemoveSafePath removes a path from the authorized list.
+func RemoveSafePath(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	safePathsMu.Lock()
+	defer safePathsMu.Unlock()
+
+	newPaths := []string{}
+	found := false
+	for _, p := range safePaths {
+		if p == abs {
+			found = true
+			continue
+		}
+		newPaths = append(newPaths, p)
+	}
+
+	if !found {
+		return fmt.Errorf("path '%s' not found in authorized list", abs)
+	}
+
+	safePaths = newPaths
+	return nil
+}
+
 // IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
 func IsPathSafe(path string) error {
 	if path == "" {

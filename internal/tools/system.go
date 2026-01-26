@@ -134,6 +134,75 @@ func RegisterSystemTools(r *Registry) {
 			Required: []string{"path", "reason"},
 		},
 	}, registerSafePathTool)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "list_safepaths",
+		Description: "Lists all currently authorized safe paths and files.",
+	}, listSafePathsTool)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "remove_safepath",
+		Description: "Removes a directory or file from the authorized boundaries. Requires user confirmation.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The path to remove from authorized boundaries.",
+				},
+			},
+			Required: []string{"path"},
+		},
+	}, removeSafePathTool)
+}
+
+func listSafePathsTool(args map[string]interface{}) (string, error) {
+	paths := GetSafePaths()
+	if len(paths) == 0 {
+		return "No additional safe paths are currently registered.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Currently authorized safe paths:\n")
+	for _, p := range paths {
+		sb.WriteString(fmt.Sprintf("- %s\n", p))
+	}
+	return sb.String(), nil
+}
+
+func removeSafePathTool(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
+	path, _ := args["path"].(string)
+	if path == "" {
+		return "", fmt.Errorf("path argument is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %v", err)
+	}
+
+	// Confirmation Gate
+	fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
+	fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
+
+	char, err := readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return "Removal denied by user.", nil
+	}
+
+	if err := RemoveSafePath(absPath); err != nil {
+		return fmt.Sprintf("Error: %v", err), nil
+	}
+
+	if err := SaveSafePaths(); err != nil {
+		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
+	}
+
+	return fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath), nil
 }
 
 func registerSafePathTool(args map[string]interface{}) (string, error) {
