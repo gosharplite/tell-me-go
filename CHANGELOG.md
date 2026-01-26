@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-01-26
+
+### Added
+- **Testing**: Implemented a comprehensive E2E testing suite in `tests/e2e/`, covering CLI fundamentals, session archiving, stdin piping, and multi-turn tool orchestration.
+- **Security**: Added `IsPathSafe` with `filepath.Clean` and `filepath.EvalSymlinks` to prevent path traversal and symlink-based boundary escapes.
+- **Safety**: Implemented `ConfirmDestructiveAction` gate for `write_file` and `replace_text`.
+- **UI/UX**: Enhanced `readSingleKey` to use `/dev/tty`, ensuring interactive tools remain functional even when `os.Stdin` is redirected.
+- **Architecture**: Refactored `main.go` into a thin entry point, moving application lifecycle and wiring to `internal/cli`.
+- **E2E Mocking**: Added `TELL_ME_MOCK_URL` and `TELL_ME_MOCK_ANSWER` environment variables for offline, automated validation of AI logic and interactive prompts.
+
+### Changed
+- **SOPs**: Fully revised and synchronized project Standard Operating Procedures (Testing, Security, Architecture, Agentic Capabilities) to reflect the new hardened standards.
+- **Version Bump**: Promoted to v1.20.0.
+
 ## [1.18.0] - 2026-01-26
 
 ### Added
