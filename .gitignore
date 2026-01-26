@@ -16,6 +16,7 @@ history.json
 
 # Keys and Secrets
 *.json
+!assets/pricing.json
 .env
 .config.yaml
 api_key.txt
