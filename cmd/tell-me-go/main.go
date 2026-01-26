@@ -90,7 +90,7 @@ func main() {
 	logPath := historyPath + ".log"
 
 	// Register safe paths for tool access (Security boundaries)
-	tools.RegisterSafePath(homeDir)
+	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
 	tools.RegisterSafePath(*configPath)
 
 	if *newSession {
