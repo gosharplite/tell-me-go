@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"os" // Added for os.Stderr
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"google.golang.org/genai"
@@ -20,6 +21,11 @@ type Content = genai.Content
 type Part = genai.Part
 type FunctionCall = genai.FunctionCall
 type FunctionResponse = genai.FunctionResponse
+
+var modelMaxThinkingBudget = map[string]int{
+	"gemini-2.5-flash": 24576,
+	// Add other model-specific caps as needed
+}
 
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
@@ -149,11 +155,29 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
+
+		actualBudget := c.thinkingBudget
+		if actualBudget > 0 {
+			if maxBudget, ok := modelMaxThinkingBudget[c.model]; ok {
+				if actualBudget > maxBudget {
+					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
+					actualBudget = maxBudget
+				}
+			} else if strings.Contains(c.model, "flash") && actualBudget > 24576 {
+				// Generic cap for flash models if not explicitly in map
+				maxFlashBudget := 24576 // Based on gemini-2.5-flash limit
+				if actualBudget > maxFlashBudget {
+					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for flash model '%s' exceeds common max (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxFlashBudget, maxFlashBudget)
+					actualBudget = maxFlashBudget
+				}
+			}
+		}
+
 		// If ThinkingBudget is set, use it (takes precedence for compatibility).
 		// If ONLY ThinkingLevel is set, use that.
 		// Note: Vertex AI currently does not support both together.
-		if c.thinkingBudget > 0 {
-			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(c.thinkingBudget))
+		if actualBudget > 0 {
+			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(actualBudget))
 		} else if c.thinkingLevel != "" {
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
 		}
