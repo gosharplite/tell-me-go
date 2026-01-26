@@ -23,7 +23,8 @@ type FunctionCall = genai.FunctionCall
 type FunctionResponse = genai.FunctionResponse
 
 var modelMaxThinkingBudget = map[string]int{
-	"gemini-2.5-flash": 24576,
+	"gemini-2.5-flash":        24576,
+	"gemini-3-flash-preview": 65536, // Higher limit for gemini-3 series
 	// Add other model-specific caps as needed
 }
 
