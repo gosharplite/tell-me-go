@@ -18,10 +18,11 @@ import (
 )
 
 var (
-	safePaths       []string
+	safePaths           []string
 	safePathsMu     sync.RWMutex
 	safePathsFile   string // Path to persistent safe paths config
 	commandsLogFile string // Path to log executed commands
+	bypassConfirmations bool   // Skip all interactive confirmations
 	termMu          sync.Mutex
 )
 
@@ -72,6 +73,11 @@ func readSingleKey() (string, error) {
 func ConfirmDestructiveAction(action, target, detail string) bool {
 	termMu.Lock()
 	defer termMu.Unlock()
+
+	if bypassConfirmations {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
+		return true
+	}
 
 	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
 	fmt.Fprintf(os.Stderr, "AI is requesting to %s: %s\n", action, target)
