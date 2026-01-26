@@ -6,7 +6,10 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,7 +61,7 @@ func runCommand(args ...string) (string, string, error) {
 }
 
 func runCommandWithEnv(env []string, stdin string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
@@ -146,5 +149,74 @@ func TestHelpOutput(t *testing.T) {
 	combined := stripANSI(stdout + stderr)
 	if !strings.Contains(combined, "Usage:") {
 		t.Errorf("Expected usage instructions, got: %q", combined)
+	}
+}
+
+func TestToolOrchestrationLoop(t *testing.T) {
+	// 1. Setup Mock Server
+	// The GenAI SDK for Gemini API calls /v1/models/{model}:generateContent
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			// Check if we are in the second turn (after tool execution) or first
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				// Turn 1: Return a function call
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "list_files",
+									"args": {"path": "."}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				// Turn 2: Return final text answer
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{"text": "I have listed the files."}]
+						}
+					}]
+				}`)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// 2. Setup isolated home and env
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+	}
+
+	// 3. Run CLI
+	stdout, stderr, err := runCommandWithEnv(env, "", "list the files")
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 4. Verification
+	out := stripANSI(stdout)
+	errOut := stripANSI(stderr)
+
+	if !strings.Contains(errOut, "[Tool Engine (1/10)] Calling: list_files") {
+		t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
+	}
+	if !strings.Contains(out, "I have listed the files.") {
+		t.Errorf("Expected final answer in stdout, got: %q", out)
 	}
 }

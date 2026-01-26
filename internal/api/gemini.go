@@ -88,6 +88,12 @@ func (c *Client) initSDK() error {
 			baseURL = c.apiURL[:idx+1]
 		}
 	}
+
+	// Support for local E2E mocking
+	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
+		baseURL = mockURL
+	}
+
 	c.backend = backend
 
 	// 2. Prepare Auth Headers
