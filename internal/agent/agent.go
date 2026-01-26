@@ -30,6 +30,8 @@ type Agent struct {
 	maxHistoryTokens   int
 	maxConcurrentTools int
 	toolTimeout        time.Duration
+	showThoughts       bool
+	showTools          bool
 }
 
 // New creates a new Agent.
@@ -42,7 +44,15 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 		maxHistoryTokens:   120000,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
+		showThoughts:       true,
+		showTools:          true,
 	}
+}
+
+// SetUIOptions sets the UI visibility options.
+func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
+	a.showThoughts = showThoughts
+	a.showTools = showTools
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -196,7 +206,7 @@ func (a *Agent) Chat(prompt string) error {
 		}
 
 		for _, part := range respContent.Parts {
-			if part.Thought && part.Text != "" {
+			if a.showThoughts && part.Thought && part.Text != "" {
 				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
 			}
 		}
@@ -238,7 +248,9 @@ func (a *Agent) Chat(prompt string) error {
 					sem <- struct{}{}
 					defer func() { <-sem }()
 
-					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), call.Name)
+					if a.showTools {
+						fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s\033[0m\n", time.Now().Format("15:04:05"), call.Name)
+					}
 
 					// Execute with timeout (exclude interactive tools)
 					var ctx context.Context

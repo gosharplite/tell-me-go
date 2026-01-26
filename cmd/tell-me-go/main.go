@@ -118,6 +118,7 @@ func main() {
 	// 6. Execute Agent
 	chatAgent := agent.New(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
+	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 	if err := chatAgent.Chat(prompt); err != nil {

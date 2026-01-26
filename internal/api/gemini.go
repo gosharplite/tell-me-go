@@ -149,11 +149,11 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
-		// If ThinkingBudget is set, use it (takes precedence for compatibility).
-		// If ONLY ThinkingLevel is set, use that.
+		// Apply both if provided; the SDK/API will handle them.
 		if c.thinkingBudget > 0 {
 			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(c.thinkingBudget))
-		} else if c.thinkingLevel != "" {
+		}
+		if c.thinkingLevel != "" {
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
 		}
 	}

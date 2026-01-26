@@ -11,6 +11,8 @@ AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_I
 USE_SEARCH: true
 THINKING_BUDGET: 0
 THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
+SHOW_THOUGHTS: true
+SHOW_TOOLS: true
 
 # --- Concurrent Execution ---
 MAX_CONCURRENT_TOOLS: 5   # Maximum number of tools to execute in parallel

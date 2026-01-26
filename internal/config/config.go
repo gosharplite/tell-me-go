@@ -22,6 +22,8 @@ type Config struct {
 	MaxHistoryTokens   int    `yaml:"MAX_HISTORY_TOKENS"` // For safety rollback
 	ThinkingBudget     int    `yaml:"THINKING_BUDGET"`
 	ThinkingLevel      string `yaml:"THINKING_LEVEL"`
+	ShowThoughts       bool   `yaml:"SHOW_THOUGHTS"`
+	ShowTools          bool   `yaml:"SHOW_TOOLS"`
 	MaxConcurrentTools int    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
 }
@@ -41,6 +43,8 @@ func Load(path string) (*Config, error) {
 	cfg.MaxHistoryTokens = 120000
 	cfg.MaxConcurrentTools = 5
 	cfg.ToolTimeoutSeconds = 30
+	cfg.ShowThoughts = true
+	cfg.ShowTools = true
 
 	decoder := yaml.NewDecoder(f)
 	if err := decoder.Decode(&cfg); err != nil {
