@@ -1,3 +1,6 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 # tell-me-go: A Go Gemini CLI Assistant
 
 A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
@@ -55,6 +58,12 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 **Basic Usage:**
 ```bash
 ./tell-me-go "What is the capital of France?"
+```
+
+**List History:**
+Show the last 5 messages:
+```bash
+./tell-me-go -l 5
 ```
 
 **Pre-flight Payload Log:**

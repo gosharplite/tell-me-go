@@ -1,3 +1,6 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 # Standard Operating Procedure (SOP): Creating and Managing SOPs
 
 This SOP defines the standard structure and process for documenting procedures within the `tell-me-go` project to ensure clarity, consistency, and maintainability.

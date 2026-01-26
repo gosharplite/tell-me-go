@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-01-26
+
+### Added
+- **CLI**: Added `-l <int>` flag to display the last N messages from conversation history.
+- **UI**: Integrated `glamour` for high-quality Markdown rendering of history entries with role-based coloring (Blue for User, Magenta for Model).
+- **History Management**: Implemented `showHistory` in `main.go` to provide a standalone view of the session context.
+
+### Changed
+- **Version Bump**: Promoted to v1.18.0.
+
 ## [1.17.0] - 2026-01-26
 
 ### Added
