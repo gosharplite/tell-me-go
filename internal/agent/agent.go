@@ -284,6 +284,22 @@ func (a *Agent) Chat(prompt string) error {
 			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
 				time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
 
+			// Print all Tool Action headers BEFORE spawning goroutines to prevent UI interleaving
+			if a.showTools {
+				for _, fc := range functionCalls {
+					var argParts []string
+					for k, v := range fc.Args {
+						valStr := fmt.Sprintf("%v", v)
+						if len(valStr) > 60 {
+							valStr = valStr[:57] + "..."
+						}
+						argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
+					}
+					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
+						time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
+				}
+			}
+
 			results := make([]*api.Part, len(functionCalls))
 			var wg sync.WaitGroup
 			sem := make(chan struct{}, a.maxConcurrentTools)
@@ -294,19 +310,6 @@ func (a *Agent) Chat(prompt string) error {
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-
-					if a.showTools {
-						var argParts []string
-						for k, v := range call.Args {
-							valStr := fmt.Sprintf("%v", v)
-							if len(valStr) > 60 {
-								valStr = valStr[:57] + "..."
-							}
-							argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
-						}
-						fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
-							time.Now().Format("15:04:05"), call.Name, strings.Join(argParts, ", "))
-					}
 
 					// Execute with timeout (exclude interactive tools)
 					var ctx context.Context
