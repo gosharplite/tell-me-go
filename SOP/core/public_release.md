@@ -65,17 +65,36 @@ Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:
 
 #### 5. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
 A release is **not complete** until it is reachable by the public on the remote repository:
-1.  **Switch to Main Branch**: `git checkout main`.
-2.  **Merge Dev**: `git merge dev`.
+
+1.  **Start in dev branch**: Ensure you are on `dev` and all changes for the release are committed.
+    ```bash
+    git checkout dev
+    ```
+2.  **Merge dev into main**:
+    ```bash
+    git checkout main
+    git merge dev
+    ```
 3.  **Tag the release**:
     ```bash
-    git tag -a v1.0.0 -m "Release version 1.0.0 - [Brief summary]"
+    git tag -a v1.x.x -m "Release version 1.x.x - [Brief summary]"
     ```
 4.  **Push Everything**:
     ```bash
     git push origin main dev --tags
     ```
-5.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
+5.  **Return to dev**:
+    ```bash
+    git checkout dev
+    ```
+6.  **Verify Synchronization**: Check that `dev` and `main` are identical and match the remote.
+    ```bash
+    git diff main dev
+    git fetch origin
+    git log main..origin/main
+    git log dev..origin/dev
+    ```
+7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
 ---
 
