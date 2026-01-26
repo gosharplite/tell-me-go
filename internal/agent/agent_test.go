@@ -83,7 +83,7 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 	}, nil)
 
 	a := New(nil, nil, registry)
-	
+
 	contents := []*api.Content{
 		{
 			Role: "user",
@@ -102,32 +102,34 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 }
 
 type mockAuth struct {
+	authCalls   int
 	refreshFunc func() error
 	applyFunc   func(req *auth.Request)
 }
+
 func (m *mockAuth) GetToken() (string, error) { return "token", nil }
-func (m *mockAuth) Invalidate() {}
-func (m *mockAuth) Apply(req *auth.Request) { m.applyFunc(req) }
-func (m *mockAuth) RefreshAuth() error { return m.refreshFunc() }
+func (m *mockAuth) Invalidate()               { m.authCalls++ }
+func (m *mockAuth) Apply(req *auth.Request)   { m.applyFunc(req) }
+func (m *mockAuth) RefreshAuth() error        { return m.refreshFunc() }
 
 func TestAgent_Chat_AuthRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	registry := tools.NewRegistry()
 
-	authCalls := 0
-	mockAuth := &mockAuth{
-		refreshFunc: func() error {
-			authCalls++
-			return nil
-		},
+	mAuth := &mockAuth{
 		applyFunc: func(req *auth.Request) {
-			if authCalls == 0 {
-				req.Headers["Authorization"] = "Bearer expired"
-			} else {
-				req.Headers["Authorization"] = "Bearer valid"
-			}
+			// This is tricky because we can't easily reference 'mAuth' here if it's not defined yet,
+			// but we can use a closure.
 		},
+	}
+	// Re-define applyFunc to use mAuth.authCalls
+	mAuth.applyFunc = func(req *auth.Request) {
+		if mAuth.authCalls == 0 {
+			req.Headers["Authorization"] = "Bearer expired"
+		} else {
+			req.Headers["Authorization"] = "Bearer valid"
+		}
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +139,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 			w.Write([]byte(`{"error": {"code": 401, "message": "unauthenticated"}}`))
 			return
 		}
-		
+
 		apiResp := genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Success"}}}},
@@ -149,20 +151,20 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 
 	// Points to our mock server and triggers Vertex logic in initSDK
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	
-	client, err := api.NewClient(apiURL, "test-model", mockAuth, 0, "", "", false)
+
+	client, err := api.NewClient(apiURL, "test-model", mAuth, 0, "", "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	
+
 	a := New(client, hManager, registry)
 	err = a.Chat("Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
 
-	if authCalls != 1 {
-		t.Errorf("Expected 1 auth refresh call, got %d", authCalls)
+	if mAuth.authCalls != 1 {
+		t.Errorf("Expected 1 auth refresh call, got %d", mAuth.authCalls)
 	}
 }
 
@@ -207,13 +209,13 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	
+
 	a := New(client, hManager, registry)
-	a.SetConcurrency(1, 1) // 1 second timeout
+	a.SetConcurrency(1, 1)                // 1 second timeout
 	a.toolTimeout = 50 * time.Millisecond // Overwrite with short timeout
 
 	_ = a.Chat("Run slow tool")
-	
+
 	contents := hManager.GetContents()
 	if len(contents) >= 3 {
 		resp := contents[2].Parts[0].FunctionResponse.Response["result"].(string)
@@ -265,7 +267,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	
+
 	a := New(client, hManager, registry)
 	_ = a.Chat("Generate an image")
 
@@ -382,7 +384,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	
+
 	a := New(client, hManager, registry)
 	a.SetLimits(2, 1000) // Max 2 turns
 
@@ -408,7 +410,7 @@ func TestAgent_Chat_APIError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	
+
 	a := New(client, hManager, registry)
 	err = a.Chat("Hello")
 	if err == nil {

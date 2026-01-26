@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.17.0] - 2026-01-26
+
+### Added
+- **Core Stability**: Improved `Agent.Chat` orchestration loop for more robust multi-modal and authentication handling.
+- **Multimodal Optimization**: Optimized history management for tool-generated media. Function responses and injected image blobs are now merged into a single `user` turn to strictly comply with role alternation standards and prevent context fragmentation.
+- **Auth Robustness**: Hardened automatic token refresh logic to ensure seamless session continuity during long-running tasks.
+
+### Fixed
+- **Role Alternation**: Fixed a "role alternation violation" error when tools returned multiple parts (e.g., text and images) simultaneously.
+- **Image Injection**: Fixed a bug where injected image blobs were occasionally dropped or caused history corruption.
+
+### Changed
+- **Logging**: Refactored the tool engine's terminal logging to provide clearer turn tracking (`[Tool Engine (turn/max)]`) and summarized tool arguments for better observability.
+- **Version Bump**: Promoted to v1.17.0.
+
 ## [1.16.0] - 2026-01-26
 
 ### Added

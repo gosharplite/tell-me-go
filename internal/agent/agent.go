@@ -334,7 +334,6 @@ func (a *Agent) Chat(prompt string) error {
 
 			// Post-process multi-modal injections
 			var responseParts []*api.Part
-			var imageParts []*api.Part
 
 			for _, p := range results {
 				if strings.HasPrefix(p.Text, "INJECT:") {
@@ -342,7 +341,7 @@ func (a *Agent) Chat(prompt string) error {
 					p.Text = "" // Clear the marker
 					if len(injectParts) == 3 {
 						data, _ := base64.StdEncoding.DecodeString(injectParts[2])
-						imageParts = append(imageParts, &api.Part{
+						responseParts = append(responseParts, &api.Part{
 							InlineData: &genai.Blob{
 								MIMEType: injectParts[1],
 								Data:     data,
@@ -357,13 +356,6 @@ func (a *Agent) Chat(prompt string) error {
 				Role:  "user",
 				Parts: responseParts,
 			})
-
-			if len(imageParts) > 0 {
-				a.history.AddContent(&api.Content{
-					Role:  "user",
-					Parts: imageParts,
-				})
-			}
 			continue
 		}
 

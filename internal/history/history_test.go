@@ -84,7 +84,7 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	m := NewManager(filepath.Join(filePath, "history.json"))
 	if err := m.Save(); err == nil {
 		t.Error("expected error when directory creation fails, got nil")
