@@ -269,3 +269,64 @@ func TestSecurityGate(t *testing.T) {
 		t.Errorf("Expected security violation error to be sent back to model, got: %q", receivedResponse)
 	}
 }
+
+func TestSymlinkAttack(t *testing.T) {
+	// 1. Setup Mock Server
+	var receivedResponse string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "read_file",
+									"args": {"filepath": "evil_link"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				parts := lastTurn["parts"].([]interface{})
+				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
+				receivedResponse = resp["response"].(map[string]interface{})["result"].(string)
+				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	// Create a symlink in the project root (or current dir where tests run)
+	// Since cmd.Dir = projectRoot, we should create it there or handle paths carefully.
+	// For E2E, it's easier to create it in the CWD of the test and point to it.
+
+	evilLink := filepath.Join(projectRoot, "evil_link")
+	os.Symlink("/etc/passwd", evilLink)
+	defer os.Remove(evilLink)
+
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+	}
+
+	_, _, err := runCommandWithEnv(env, "", "read evil_link")
+	if err != nil {
+		t.Fatalf("CLI failed: %v", err)
+	}
+
+	if !strings.Contains(receivedResponse, "security violation") {
+		t.Errorf("Expected security violation for symlink attack, got: %q", receivedResponse)
+	}
+}

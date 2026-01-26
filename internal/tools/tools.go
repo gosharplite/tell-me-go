@@ -143,6 +143,9 @@ func IsPathSafe(path string) error {
 		return nil
 	}
 
+	// 0. Hardened Sanitation: Explicitly clean the path first to resolve '..' and '.'
+	path = filepath.Clean(path)
+
 	// Handle potential flag-based paths (e.g., --file=/path)
 	if strings.Contains(path, "=") {
 		parts := strings.SplitN(path, "=", 2)
@@ -161,13 +164,20 @@ func IsPathSafe(path string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// 1. Allow paths within the Current Working Directory
+	// 1. Symlink Attack Mitigation:
+	// If the file exists, evaluate its real path to prevent symlink-based traversal.
+	// If it doesn't exist (e.g., for write_file), we proceed with the absolute path string.
+	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = realPath
+	}
+
+	// 2. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
 	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
 		return nil
 	}
 
-	// 2. Allow paths within the System Temp Directory
+	// 3. Allow paths within the System Temp Directory
 	tempDir := os.TempDir()
 	absTemp, err := filepath.Abs(tempDir)
 	if err == nil {
@@ -177,7 +187,7 @@ func IsPathSafe(path string) error {
 		}
 	}
 
-	// 3. Allow paths within explicitly registered safe paths
+	// 4. Allow paths within explicitly registered safe paths
 	safePathsMu.RLock()
 	defer safePathsMu.RUnlock()
 
