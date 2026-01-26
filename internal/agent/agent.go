@@ -216,8 +216,8 @@ func (a *Agent) Chat(prompt string) error {
 		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
 			tokenColor = "\033[0;31m" // Red if > 90%
 		}
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-			time.Now().Format("15:04:05"), tokenColor, tokens)
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%dk/%dk)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
+			time.Now().Format("15:04:05"), tokens/1000, a.maxHistoryTokens/1000, tokenColor, tokens)
 
 		// Safety Check: MAX_HISTORY_TOKENS
 		if tokens > a.maxHistoryTokens {
