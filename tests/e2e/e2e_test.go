@@ -24,7 +24,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "Failed to create temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tempDir)
 
 	binPath = filepath.Join(tempDir, "tell-me-go")
 
@@ -37,10 +36,13 @@ func TestMain(m *testing.M) {
 	build := exec.Command("go", "build", "-o", binPath, mainPath)
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\nOutput: %s\n", err, string(out))
+		os.RemoveAll(tempDir)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	code := m.Run()
+	os.RemoveAll(tempDir)
+	os.Exit(code)
 }
 
 // Helper to strip ANSI escape codes
@@ -73,7 +75,11 @@ func TestVersionFlag(t *testing.T) {
 
 func TestHelpOutput(t *testing.T) {
 	// Running with no args should show help/usage
-	stdout, stderr, _ := runCommand()
+	stdout, stderr, err := runCommand()
+
+	if err == nil {
+		t.Error("Expected error when running without arguments, got nil")
+	}
 
 	combined := stripANSI(stdout + stderr)
 	if !strings.Contains(combined, "Usage:") {
