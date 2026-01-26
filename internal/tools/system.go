@@ -467,6 +467,17 @@ func executeCommand(args map[string]interface{}) (string, error) {
 		return fmt.Sprintf("User denied execution of command: %s", command), nil
 	}
 
+	// 2.5 Log command execution if log file is set
+	if commandsLogFile != "" {
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err == nil {
+			fmt.Fprintf(f, "[%s] REASON: %s\n", timestamp, reason)
+			fmt.Fprintf(f, "[%s] COMMAND: %s\n", timestamp, command)
+			f.Close()
+		}
+	}
+
 	// 3. Execution
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")

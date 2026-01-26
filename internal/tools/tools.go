@@ -18,11 +18,17 @@ import (
 )
 
 var (
-	safePaths     []string
-	safePathsMu   sync.RWMutex
-	safePathsFile string // Path to persistent safe paths config
-	termMu        sync.Mutex
+	safePaths       []string
+	safePathsMu     sync.RWMutex
+	safePathsFile   string // Path to persistent safe paths config
+	commandsLogFile string // Path to log executed commands
+	termMu          sync.Mutex
 )
+
+// SetCommandsLogFile sets the path for logging executed commands.
+func SetCommandsLogFile(path string) {
+	commandsLogFile = path
+}
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
 func readSingleKey() (string, error) {
