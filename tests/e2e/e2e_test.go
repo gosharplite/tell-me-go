@@ -214,6 +214,142 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	}
 }
 
+func TestWriteFileConfirmation(t *testing.T) {
+	// 1. Setup Mock Server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "write_file",
+									"args": {"filepath": "test.txt", "content": "hello world"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "File written."}]}}]}`)
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_MOCK_ANSWER=y",
+	}
+
+	// 2. Run CLI
+	stdout, stderr, err := runCommandWithEnv(env, "", "write a file")
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 3. Verification
+	out := stripANSI(stdout)
+	errOut := stripANSI(stderr)
+
+	t.Logf("Stderr: %s", errOut)
+
+	if !strings.Contains(errOut, "[CONFIRMATION REQUIRED]") {
+		t.Errorf("Expected confirmation prompt in stderr, got: %q", errOut)
+	}
+	if !strings.Contains(out, "File written.") {
+		t.Errorf("Expected success message, got: %q", out)
+	}
+
+	// Verify file actually written
+	content, err := os.ReadFile(filepath.Join(projectRoot, "test.txt"))
+	if err != nil {
+		t.Errorf("File was not written: %v", err)
+	} else if string(content) != "hello world" {
+		t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
+	}
+	os.Remove(filepath.Join(projectRoot, "test.txt"))
+}
+
+func TestWriteFileDenial(t *testing.T) {
+	// 1. Setup Mock Server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "write_file",
+									"args": {"filepath": "denied.txt", "content": "should not exist"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				// We check the tool response in Turn 2
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				parts := lastTurn["parts"].([]interface{})
+				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
+				result := resp["response"].(map[string]interface{})["result"].(string)
+
+				if result == "Action denied by user." {
+					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
+				} else {
+					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Error: Denial failed."}]}}]}`)
+				}
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_MOCK_ANSWER=n",
+	}
+
+	// 2. Run CLI
+	stdout, stderr, err := runCommandWithEnv(env, "", "write a file")
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 3. Verification
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Model acknowledges denial.") {
+		t.Errorf("Expected model to acknowledge denial, got: %q", out)
+	}
+
+	// Verify file NOT written
+	if _, err := os.Stat(filepath.Join(projectRoot, "denied.txt")); !os.IsNotExist(err) {
+		t.Errorf("File 'denied.txt' should not have been created")
+		os.Remove(filepath.Join(projectRoot, "denied.txt"))
+	}
+}
+
 func TestSecurityGate(t *testing.T) {
 	// 1. Setup Mock Server that forces a security violation
 	var receivedResponse string

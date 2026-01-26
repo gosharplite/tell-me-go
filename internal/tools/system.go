@@ -13,14 +13,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/genai"
-)
-
-var (
-	termMu sync.Mutex // Protects terminal UI for interactive tools
 )
 
 // RegisterSystemTools adds system-related tools to the registry.
@@ -432,20 +427,6 @@ func isSafeCommand(command string) bool {
 	}
 
 	return true
-}
-
-func readSingleKey() (string, error) {
-	// Disable input buffering
-	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
-	// Restore input buffering on exit
-	defer exec.Command("stty", "-F", "/dev/tty", "-cbreak").Run()
-
-	var b []byte = make([]byte, 1)
-	_, err := os.Stdin.Read(b)
-	if err != nil {
-		return "", err
-	}
-	return strings.ToLower(string(b)), nil
 }
 
 func executeCommand(args map[string]interface{}) (string, error) {

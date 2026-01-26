@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,7 +21,66 @@ var (
 	safePaths     []string
 	safePathsMu   sync.RWMutex
 	safePathsFile string // Path to persistent safe paths config
+	termMu        sync.Mutex
 )
+
+// readSingleKey waits for a single key press from the user and returns it in lowercase.
+func readSingleKey() (string, error) {
+	// Support for E2E mocking of user input
+	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
+		return strings.ToLower(val[:1]), nil
+	}
+
+	// Try to open /dev/tty for interaction to avoid consuming Stdin
+	input := os.Stdin
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err == nil {
+		input = tty
+		defer tty.Close()
+	}
+
+	// Check if input is a terminal
+	isTerm := false
+	stat, err := input.Stat()
+	if err == nil && (stat.Mode()&os.ModeCharDevice) != 0 {
+		isTerm = true
+	}
+
+	if isTerm {
+		// Disable input buffering for real terminal
+		// We use /dev/tty specifically for stty to be sure
+		exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+		// Restore input buffering on exit
+		defer exec.Command("stty", "-F", "/dev/tty", "-cbreak").Run()
+	}
+
+	var b []byte = make([]byte, 1)
+	_, err = input.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(string(b)), nil
+}
+
+// ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
+func ConfirmDestructiveAction(action, target, detail string) bool {
+	termMu.Lock()
+	defer termMu.Unlock()
+
+	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
+	fmt.Fprintf(os.Stderr, "AI is requesting to %s: %s\n", action, target)
+	if detail != "" {
+		if len(detail) > 1000 {
+			detail = detail[:1000] + "\n... (truncated)"
+		}
+		fmt.Fprintf(os.Stderr, "\033[90m%s\033[0m\n", detail)
+	}
+	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
+
+	char, err := readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	return err == nil && char == "y"
+}
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.
 func SetSafePathsFile(path string) {

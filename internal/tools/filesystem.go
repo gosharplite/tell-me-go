@@ -420,6 +420,11 @@ func writeFile(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
+	// Confirmation Gate
+	if !ConfirmDestructiveAction("WRITE FILE", path, content) {
+		return "Action denied by user.", nil
+	}
+
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -441,6 +446,12 @@ func replaceText(args map[string]interface{}) (string, error) {
 
 	if err := IsPathSafe(path); err != nil {
 		return "", err
+	}
+
+	// Confirmation Gate
+	detail := fmt.Sprintf("Replace:\n%s\nWith:\n%s", oldText, newText)
+	if !ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
+		return "Action denied by user.", nil
 	}
 
 	content, err := os.ReadFile(path)
