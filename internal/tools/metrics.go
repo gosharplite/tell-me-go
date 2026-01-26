@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,14 @@ type PricingData struct {
 	SearchQuery float64                 `json:"search_query"`
 }
 
+// SessionCostRecord represents a single session's financial footprint.
+type SessionCostRecord struct {
+	Date      string  `json:"date"`
+	Session   string  `json:"session"`
+	Model     string  `json:"model"`
+	TotalCost float64 `json:"total_cost"`
+}
+
 // RegisterMetricsTools adds tools for usage and cost analysis.
 func RegisterMetricsTools(r *Registry, logFile string, model string) {
 	r.Register(&genai.FunctionDeclaration{
@@ -43,8 +52,88 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 			Type: genai.TypeObject,
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return estimateCost(logFile, model)
+		return estimateCost(logFile, model, true) // Records to ledger
 	})
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_cost_summary",
+		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+		},
+	}, func(args map[string]interface{}) (string, error) {
+		return getCostSummary(filepath.Dir(logFile))
+	})
+}
+
+// recordCost saves the current cost to a persistent local ledger.
+func recordCost(outputDir string, record SessionCostRecord) {
+	historyPath := filepath.Join(outputDir, "cost-history.json")
+	var history []SessionCostRecord
+
+	// Read existing history
+	if content, err := os.ReadFile(historyPath); err == nil {
+		_ = json.Unmarshal(content, &history)
+	}
+
+	// Update or Append (identify by log filename)
+	found := false
+	for i, r := range history {
+		if r.Session == record.Session {
+			history[i] = record
+			found = true
+			break
+		}
+	}
+	if !found {
+		history = append(history, record)
+	}
+
+	// Write back
+	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
+		_ = os.WriteFile(historyPath, bytes, 0644)
+	}
+}
+
+func getCostSummary(outputDir string) (string, error) {
+	historyPath := filepath.Join(outputDir, "cost-history.json")
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		return "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
+	}
+
+	var history []SessionCostRecord
+	if err := json.Unmarshal(content, &history); err != nil {
+		return "Error parsing cost history.", err
+	}
+
+	// Aggregate by Date
+	dailyTotals := make(map[string]float64)
+	for _, r := range history {
+		dailyTotals[r.Date] += r.TotalCost
+	}
+
+	var sb strings.Builder
+	sb.WriteString("### AI Usage Cost Summary (by Date)\n\n")
+	sb.WriteString("| Date | Total Cost (USD) |\n")
+	sb.WriteString("| :--- | :--- |\n")
+
+	// Sort dates descending
+	var dates []string
+	for d := range dailyTotals {
+		dates = append(dates, d)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+
+	var grandTotal float64
+	for _, d := range dates {
+		cost := dailyTotals[d]
+		sb.WriteString(fmt.Sprintf("| %s | $%.4f |\n", d, cost))
+		grandTotal += cost
+	}
+	sb.WriteString(fmt.Sprintf("| **Grand Total** | **$%.4f** |\n", grandTotal))
+
+	return sb.String(), nil
 }
 
 // getPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
@@ -85,8 +174,8 @@ func getPricing(outputDir string) PricingData {
 		data = PricingData{
 			UpdatedAt: "Hardcoded Fallback",
 			Models: map[string]ModelPricing{
-				"flash": {Hit: 0.05, Miss: 0.50, Comp: 3.00},
-				"pro":   {Hit: 0.20, Miss: 2.00, Comp: 12.00, TieredThreshold: 200000, TieredMiss: 4.00, TieredComp: 18.00},
+				"flash":   {Hit: 0.05, Miss: 0.50, Comp: 3.00},
+				"pro":     {Hit: 0.20, Miss: 2.00, Comp: 12.00, TieredThreshold: 200000, TieredMiss: 4.00, TieredComp: 18.00},
 				"default": {Hit: 0.3125, Miss: 1.25, Comp: 3.75, TieredThreshold: 128000, TieredMiss: 2.50, TieredComp: 7.50},
 			},
 			SearchQuery: 0.014,
@@ -96,12 +185,13 @@ func getPricing(outputDir string) PricingData {
 	return data
 }
 
-func estimateCost(logFile string, model string) (string, error) {
+func estimateCost(logFile string, model string, shouldRecord bool) (string, error) {
 	if err := IsPathSafe(logFile); err != nil {
 		return "", err
 	}
 
-	pricing := getPricing(filepath.Dir(logFile))
+	outputDir := filepath.Dir(logFile)
+	pricing := getPricing(outputDir)
 
 	f, err := os.Open(logFile)
 	if err != nil {
@@ -155,6 +245,16 @@ func estimateCost(logFile string, model string) (string, error) {
 	}
 
 	totalCost := costH + costM + costC + costTh + costS
+
+	// Persistence: Record to local ledger
+	if shouldRecord {
+		recordCost(outputDir, SessionCostRecord{
+			Date:      time.Now().Format("2006-01-02"),
+			Session:   filepath.Base(logFile),
+			Model:     model,
+			TotalCost: totalCost,
+		})
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", model))
