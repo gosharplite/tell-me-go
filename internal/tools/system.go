@@ -12,9 +12,14 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/genai"
+)
+
+var (
+	termMu sync.Mutex // Protects terminal UI for interactive tools
 )
 
 // RegisterSystemTools adds system-related tools to the registry.
@@ -112,6 +117,9 @@ func RegisterSystemTools(r *Registry) {
 }
 
 func askUser(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
 	question, ok := args["question"].(string)
 	if !ok || question == "" {
 		return "", fmt.Errorf("question argument is required")
@@ -306,6 +314,9 @@ func readSingleKey() (string, error) {
 }
 
 func executeCommand(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
 		return "", fmt.Errorf("command argument is required")
