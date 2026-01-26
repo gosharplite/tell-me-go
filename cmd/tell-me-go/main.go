@@ -55,6 +55,7 @@ func main() {
 	sessionName := "last-" + cfg.Mode
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
 	logPath := historyPath + ".log"
+	safePathsPath := filepath.Join(homeDir, "output", sessionName+".safepaths.json")
 
 	if *newSession {
 		archiveSessionFiles(homeDir, sessionName, historyPath, logPath)
@@ -108,6 +109,10 @@ func main() {
 
 	// 6. Initialize Components
 	// Register safe paths for tool access (Security boundaries)
+	tools.SetSafePathsFile(safePathsPath)
+	if err := tools.LoadSafePaths(); err != nil {
+		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
+	}
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
 	tools.RegisterSafePath(*configPath)
 

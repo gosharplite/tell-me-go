@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -114,6 +115,71 @@ func RegisterSystemTools(r *Registry) {
 			Required: []string{"method", "url"},
 		},
 	}, httpRequest)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "register_safepath",
+		Description: "Adds a directory or file to the allowed boundaries for AI access. This is a persistent configuration that requires double user confirmation.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The absolute or relative path to authorize.",
+				},
+				"reason": {
+					Type:        genai.TypeString,
+					Description: "Reason why this path needs to be authorized.",
+				},
+			},
+			Required: []string{"path", "reason"},
+		},
+	}, registerSafePathTool)
+}
+
+func registerSafePathTool(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
+	path, _ := args["path"].(string)
+	reason, _ := args["reason"].(string)
+
+	if path == "" {
+		return "", fmt.Errorf("path argument is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %v", err)
+	}
+
+	// 1. First Confirmation
+	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
+	if reason != "" {
+		fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+	}
+	fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
+
+	char, err := readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return "Access denied by user (first confirmation).", nil
+	}
+
+	// 2. Double Confirmation
+	fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
+	char, err = readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return "Access denied by user (double confirmation).", nil
+	}
+
+	// Register and Persist
+	RegisterSafePath(absPath)
+	if err := SaveSafePaths(); err != nil {
+		return fmt.Sprintf("Path authorized but failed to persist: %v", err), nil
+	}
+
+	return fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath), nil
 }
 
 func askUser(args map[string]interface{}) (string, error) {

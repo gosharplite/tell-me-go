@@ -6,6 +6,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,9 +17,67 @@ import (
 )
 
 var (
-	safePaths   []string
-	safePathsMu sync.RWMutex
+	safePaths     []string
+	safePathsMu   sync.RWMutex
+	safePathsFile string // Path to persistent safe paths config
 )
+
+// SetSafePathsFile sets the file where persistent safe paths are stored.
+func SetSafePathsFile(path string) {
+	safePathsMu.Lock()
+	defer safePathsMu.Unlock()
+	safePathsFile = path
+}
+
+// LoadSafePaths reads persistent safe paths from disk.
+func LoadSafePaths() error {
+	safePathsMu.RLock()
+	file := safePathsFile
+	safePathsMu.RUnlock()
+
+	if file == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(file); os.IsNotExist(err) {
+		return nil
+	}
+
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("failed to read safe paths file: %w", err)
+	}
+
+	var paths []string
+	if err := json.Unmarshal(data, &paths); err != nil {
+		return fmt.Errorf("failed to parse safe paths JSON: %w", err)
+	}
+
+	for _, p := range paths {
+		RegisterSafePath(p)
+	}
+	return nil
+}
+
+// SaveSafePaths writes persistent safe paths to disk.
+func SaveSafePaths() error {
+	safePathsMu.RLock()
+	file := safePathsFile
+	paths := make([]string, len(safePaths))
+	copy(paths, safePaths)
+	safePathsMu.RUnlock()
+
+	if file == "" {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(paths, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal safe paths: %w", err)
+	}
+
+	return os.WriteFile(file, data, 0600) // Restricted permissions
+}
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.
 func RegisterSafePath(path string) {
@@ -31,6 +90,13 @@ func RegisterSafePath(path string) {
 	}
 	safePathsMu.Lock()
 	defer safePathsMu.Unlock()
+
+	// Check for duplicates
+	for _, p := range safePaths {
+		if p == abs {
+			return
+		}
+	}
 	safePaths = append(safePaths, abs)
 }
 
@@ -77,6 +143,15 @@ func IsPathSafe(path string) error {
 	// 3. Allow paths within explicitly registered safe paths
 	safePathsMu.RLock()
 	defer safePathsMu.RUnlock()
+
+	// CRITICAL: Block access to the safePathsFile itself for the AI
+	if safePathsFile != "" {
+		absSafeFile, err := filepath.Abs(safePathsFile)
+		if err == nil && absPath == absSafeFile {
+			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
+		}
+	}
+
 	for _, sp := range safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
@@ -84,7 +159,7 @@ func IsPathSafe(path string) error {
 		}
 	}
 
-	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered Home)", path)
+	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered paths)", path)
 }
 
 // ToolFunc is the signature for Go functions that can be called by the model.

@@ -20,7 +20,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `rollback_last_turn`.
-    *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`.
+    *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`, `register_safepath`.
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Financial Metrics (Dynamic Pricing)**: 
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
@@ -32,6 +32,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn.
     *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
+    *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), existing files are archived to `output/backups/`.
 *   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
