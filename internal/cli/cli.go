@@ -36,12 +36,39 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run() {
+	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
+	// if no value is provided.
+	args := os.Args[1:]
+	for i, arg := range args {
+		if arg == "-l" {
+			// If -l is the last argument or the next argument starts with -, 
+			// it means the user didn't provide a number.
+			if i+1 == len(args) || strings.HasPrefix(args[i+1], "-") {
+				// Insert "1" after "-l"
+				newArgs := make([]string, 0, len(os.Args)+1)
+				newArgs = append(newArgs, os.Args[:i+2]...)
+				newArgs = append(newArgs, "1")
+				newArgs = append(newArgs, os.Args[i+2:]...)
+				os.Args = newArgs
+				break
+			}
+		}
+	}
+
 	// 1. Define and Parse Flags
 	configPath := flag.String("c", "configs/vertex.yaml", "Path to the configuration file")
 	newSession := flag.Bool("new", false, "Start a new session")
 	showVersion := flag.Bool("v", false, "Show version information")
 	lastN := flag.Int("l", 0, "Show the last N messages from history")
 	flag.Parse()
+
+	// Handle "b -l" without an argument by checking if -l was provided but is 0
+	// However, flag.Int defaults to 0. We can check os.Args to see if -l was provided without a value.
+	// A better way is to check if -l is provided at the end of Args.
+	
+	// If the user provided -l but no value, and it's the last argument, flag package might complain
+	// or set it to 0. Let's look at how flag.Int works: if "-l" is the last arg, it fails.
+	// If the user wants "b -l" to mean "b -l 1", we should change the default or handle it.
 
 	if *showVersion {
 		fmt.Printf("tell-me-go version %s\n", a.Version)
