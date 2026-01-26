@@ -68,9 +68,10 @@ func (a *App) Run() {
 	logPath := historyPath + ".log"
 	commandsLogPath := historyPath + ".commands.log"
 	safePathsPath := filepath.Join(homeDir, "output", sessionName+".safepaths.json")
+	bypassPath := filepath.Join(homeDir, "output", sessionName+".bypass")
 
 	if *newSession {
-		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath)
+		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath, safePathsPath, bypassPath)
 	}
 
 	hManager := history.NewManager(historyPath)
@@ -87,10 +88,12 @@ func (a *App) Run() {
 
 	// 5. Initialize Components
 	tools.SetSafePathsFile(safePathsPath)
+	tools.SetBypassFile(bypassPath)
 	tools.SetCommandsLogFile(commandsLogPath)
 	if err := tools.LoadSafePaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
 	}
+	tools.LoadBypassState()
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
 	tools.RegisterSafePath(*configPath)
 

@@ -152,8 +152,24 @@ func RegisterSystemTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
-		Description: "Disables all interactive security prompts for the current run. Use this for automated tasks where you trust the model's planned actions.",
+		Description: "Disables all interactive security prompts for the current session. Use this for automated tasks where you trust the model's planned actions. This setting is persistent for the session until revoked or a new session is started.",
 	}, bypassConfirmationTool)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "revoke_bypass",
+		Description: "Re-enables interactive security prompts by revoking the bypass status.",
+	}, revokeBypassTool)
+}
+
+func revokeBypassTool(args map[string]interface{}) (string, error) {
+	termMu.Lock()
+	defer termMu.Unlock()
+
+	bypassConfirmations = false
+	SaveBypassState()
+	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
+	logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
+	return "Interactive security prompts have been re-enabled.", nil
 }
 
 func bypassConfirmationTool(args map[string]interface{}) (string, error) {
@@ -175,9 +191,10 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 	}
 
 	bypassConfirmations = true
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS RUN.\033[0m\n")
-	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for the current run.")
-	return "All future confirmations in this run will be bypassed.", nil
+	SaveBypassState()
+	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
+	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
+	return "All future confirmations in this session will be bypassed. This setting is now persistent for this session name.", nil
 }
 
 func listSafePathsTool(args map[string]interface{}) (string, error) {

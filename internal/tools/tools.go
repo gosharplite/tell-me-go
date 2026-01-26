@@ -23,10 +23,39 @@ var (
 	safePaths           []string
 	safePathsMu         sync.RWMutex
 	safePathsFile       string // Path to persistent safe paths config
+	bypassFile          string // Path to persistent bypass state
 	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
 	termMu              sync.Mutex
 )
+
+// SetBypassFile sets the file where persistent bypass state is stored.
+func SetBypassFile(path string) {
+	bypassFile = path
+}
+
+// LoadBypassState reads the persistent bypass state from disk.
+func LoadBypassState() {
+	if bypassFile == "" {
+		return
+	}
+	data, err := os.ReadFile(bypassFile)
+	if err == nil {
+		bypassConfirmations = strings.TrimSpace(string(data)) == "true"
+	}
+}
+
+// SaveBypassState writes the persistent bypass state to disk.
+func SaveBypassState() {
+	if bypassFile == "" {
+		return
+	}
+	val := "false"
+	if bypassConfirmations {
+		val = "true"
+	}
+	_ = os.WriteFile(bypassFile, []byte(val), 0600)
+}
 
 // SetCommandsLogFile sets the path for logging executed commands.
 func SetCommandsLogFile(path string) {
