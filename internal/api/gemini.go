@@ -149,11 +149,12 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
-		// Apply both if provided; the SDK/API will handle them.
+		// If ThinkingBudget is set, use it (takes precedence for compatibility).
+		// If ONLY ThinkingLevel is set, use that.
+		// Note: Vertex AI currently does not support both together.
 		if c.thinkingBudget > 0 {
 			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(c.thinkingBudget))
-		}
-		if c.thinkingLevel != "" {
+		} else if c.thinkingLevel != "" {
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
 		}
 	}
