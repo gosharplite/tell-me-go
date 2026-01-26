@@ -1,18 +1,18 @@
 {
-  "updated_at": "2026-01-26T12:00:00Z",
+  "updated_at": "2026-01-26T14:45:00Z",
   "models": {
     "flash": {
-      "hit": 0.05,
-      "miss": 0.50,
-      "comp": 3.00
+      "hit": 0.025,
+      "miss": 0.075,
+      "comp": 0.30
     },
     "pro": {
-      "hit": 0.20,
-      "miss": 2.00,
-      "comp": 12.00,
-      "tiered_threshold": 200000,
-      "tiered_miss": 4.00,
-      "tiered_comp": 18.00
+      "hit": 0.3125,
+      "miss": 1.25,
+      "comp": 3.75,
+      "tiered_threshold": 128000,
+      "tiered_miss": 2.50,
+      "tiered_comp": 7.50
     },
     "default": {
       "hit": 0.3125,
