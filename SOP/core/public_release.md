@@ -87,12 +87,17 @@ A release is **not complete** until it is reachable by the public on the remote 
     ```bash
     git checkout dev
     ```
-6.  **Verify Synchronization**: Check that `dev` and `main` are identical and match the remote.
+6.  **Verify Synchronization**: Check that `dev` and `main` are identical locally and that they match the remote states exactly.
     ```bash
-    git diff main dev
+    # 1. Check local dev vs local main
+    git diff main dev # Should be empty
+
+    # 2. Check local dev vs remote dev
     git fetch origin
-    git log main..origin/main
-    git log dev..origin/dev
+    git rev-parse dev origin/dev # Hashes must match
+
+    # 3. Check local main vs remote main
+    git rev-parse main origin/main # Hashes must match
     ```
 7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
