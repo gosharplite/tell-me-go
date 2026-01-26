@@ -7,8 +7,11 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 
 ## 🚀 Features
 *   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
-*   **Gemini 2.0 Reasoning**: Support for **Thinking (Reasoning)** models with visible thought processes and configurable token budgets.
+*   **Gemini Reasoning**: Support for **Thinking (Reasoning)** models with configurable budgets.
+    *   **Smart Budget Cap**: Automatically adjusts `THINKING_BUDGET` to the maximum allowed by the selected model, preventing `Error 400` failures.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
+    *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
+    *   **Interactive Safety**: Serialized terminal prompts for tool confirmations—no more "flying by" messages.
     *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`.
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
@@ -87,6 +90,12 @@ THINKING_LEVEL: "MEDIUM"  # Options: LOW, MEDIUM, HIGH
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
 MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback
+
+# --- UI & Execution ---
+SHOW_THOUGHTS: true        # Show model reasoning
+SHOW_TOOLS: true          # Show tool execution status logs
+MAX_CONCURRENT_TOOLS: 5    # Parallel tool execution limit
+TOOL_TIMEOUT: 30           # Individual tool timeout (seconds)
 ```
 
 ## 📜 SOP-Driven Development
