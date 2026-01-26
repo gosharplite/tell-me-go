@@ -27,6 +27,9 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 }
 
 func estimateCost(logFile string, model string) (string, error) {
+	if err := IsPathSafe(logFile); err != nil {
+		return "", err
+	}
 	f, err := os.Open(logFile)
 	if err != nil {
 		return "Error: Log file not found. Ensure you have made at least one request.", nil

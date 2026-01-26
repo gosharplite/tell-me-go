@@ -120,7 +120,7 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 
 func readImage(args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 

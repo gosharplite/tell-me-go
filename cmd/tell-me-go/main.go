@@ -89,6 +89,11 @@ func main() {
 	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
 	logPath := historyPath + ".log"
 
+	// Register safe paths for tool access (Security boundaries)
+	tools.RegisterSafePath(homeDir)
+	tools.RegisterSafePath(historyPath)
+	tools.RegisterSafePath(logPath)
+
 	if *newSession {
 		archiveSessionFiles(homeDir, sessionName, historyPath, logPath)
 	}

@@ -290,7 +290,7 @@ func isSafeCommand(command string) bool {
 			// Skip empty args and simple flags like -la
 			continue
 		}
-		if err := checkPathSafety(arg); err != nil {
+		if err := IsPathSafe(arg); err != nil {
 			fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
 			return false
 		}

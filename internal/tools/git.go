@@ -123,7 +123,7 @@ func getGitBlame(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 

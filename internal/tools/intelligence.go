@@ -388,7 +388,7 @@ func goDoc(args map[string]interface{}) (string, error) {
 
 func analyzeComplexity(args map[string]interface{}) (string, error) {
 	path, _ := args["path"].(string)
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 

@@ -203,7 +203,7 @@ func listFiles(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -231,7 +231,7 @@ func getTree(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -286,7 +286,7 @@ func readFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -308,7 +308,7 @@ func searchFiles(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -395,10 +395,10 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 	file1, _ := args["file1"].(string)
 	file2, _ := args["file2"].(string)
 
-	if err := checkPathSafety(file1); err != nil {
+	if err := IsPathSafe(file1); err != nil {
 		return "", err
 	}
-	if err := checkPathSafety(file2); err != nil {
+	if err := IsPathSafe(file2); err != nil {
 		return "", err
 	}
 
@@ -412,53 +412,11 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func checkPathSafety(path string) error {
-	if path == "" {
-		return nil
-	}
-
-	// 0. Handle potential flag-based paths (e.g., --file=/path)
-	if strings.Contains(path, "=") {
-		parts := strings.SplitN(path, "=", 2)
-		if len(parts) == 2 {
-			path = parts[1]
-		}
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	// 1. Allow paths within the Current Working Directory
-	rel, err := filepath.Rel(cwd, absPath)
-	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
-		return nil
-	}
-
-	// 2. Allow paths within the System Temp Directory
-	tempDir := os.TempDir()
-	absTemp, err := filepath.Abs(tempDir)
-	if err == nil {
-		relTemp, err := filepath.Rel(absTemp, absPath)
-		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD or Temp)", path)
-}
-
 func writeFile(args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	content, _ := args["content"].(string)
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -481,7 +439,7 @@ func replaceText(args map[string]interface{}) (string, error) {
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -509,7 +467,7 @@ func findFile(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -558,7 +516,7 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -657,7 +615,7 @@ func getFileSkeleton(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := checkPathSafety(path); err != nil {
+	if err := IsPathSafe(path); err != nil {
 		return "", err
 	}
 

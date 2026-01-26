@@ -7,8 +7,85 @@ package tools
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
 	"google.golang.org/genai"
 )
+
+var (
+	safePaths   []string
+	safePathsMu sync.RWMutex
+)
+
+// RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.
+func RegisterSafePath(path string) {
+	if path == "" {
+		return
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return
+	}
+	safePathsMu.Lock()
+	defer safePathsMu.Unlock()
+	safePaths = append(safePaths, abs)
+}
+
+// IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
+func IsPathSafe(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	// Handle potential flag-based paths (e.g., --file=/path)
+	if strings.Contains(path, "=") {
+		parts := strings.SplitN(path, "=", 2)
+		if len(parts) == 2 {
+			path = parts[1]
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// 1. Allow paths within the Current Working Directory
+	rel, err := filepath.Rel(cwd, absPath)
+	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return nil
+	}
+
+	// 2. Allow paths within the System Temp Directory
+	tempDir := os.TempDir()
+	absTemp, err := filepath.Abs(tempDir)
+	if err == nil {
+		relTemp, err := filepath.Rel(absTemp, absPath)
+		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
+			return nil
+		}
+	}
+
+	// 3. Allow paths within explicitly registered safe paths
+	safePathsMu.RLock()
+	defer safePathsMu.RUnlock()
+	for _, sp := range safePaths {
+		relSafe, err := filepath.Rel(sp, absPath)
+		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered Home)", path)
+}
 
 // ToolFunc is the signature for Go functions that can be called by the model.
 type ToolFunc func(args map[string]interface{}) (string, error)
