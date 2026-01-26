@@ -160,9 +160,23 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 	termMu.Lock()
 	defer termMu.Unlock()
 
+	if bypassConfirmations {
+		return "Bypass mode is already enabled.", nil
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.\033[0m\n")
+	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
+	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
+
+	char, err := readSingleKey()
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return "Bypass mode denied by user.", nil
+	}
+
 	bypassConfirmations = true
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS RUN.\033[0m\n")
-	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User-initiated bypass of all interactive security prompts for the current run.")
+	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for the current run.")
 	return "All future confirmations in this run will be bypassed.", nil
 }
 

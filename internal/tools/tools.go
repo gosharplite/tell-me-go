@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,11 +21,11 @@ import (
 
 var (
 	safePaths           []string
-	safePathsMu     sync.RWMutex
-	safePathsFile   string // Path to persistent safe paths config
-	commandsLogFile string // Path to log executed commands
+	safePathsMu         sync.RWMutex
+	safePathsFile       string // Path to persistent safe paths config
+	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
-	termMu          sync.Mutex
+	termMu              sync.Mutex
 )
 
 // SetCommandsLogFile sets the path for logging executed commands.
@@ -57,9 +58,13 @@ func readSingleKey() (string, error) {
 	if isTerm {
 		// Disable input buffering for real terminal
 		// We use /dev/tty specifically for stty to be sure
-		exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+		flag := "-F" // Linux
+		if runtime.GOOS == "darwin" || runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
+			flag = "-f" // macOS and BSD
+		}
+		exec.Command("stty", flag, "/dev/tty", "cbreak", "min", "1").Run()
 		// Restore input buffering on exit
-		defer exec.Command("stty", "-F", "/dev/tty", "-cbreak").Run()
+		defer exec.Command("stty", flag, "/dev/tty", "-cbreak").Run()
 	}
 
 	var b []byte = make([]byte, 1)
