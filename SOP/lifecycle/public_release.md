@@ -10,7 +10,7 @@ This SOP defines the requirements and steps for publishing a new public release 
 ---
 
 ### Prerequisites
-- All tests must pass: `go test ./...`.
+- All tests (Unit, Integration, and E2E) must pass: `go test ./...`.
 - `go mod tidy` has been run and `go.sum` is up to date.
 - The `README.md` must be updated with the latest features and usage examples.
 - A clean Git state (no uncommitted or untracked experimental files).
@@ -54,7 +54,7 @@ To prevent build failures for users (e.g., local file path leaks), perform these
     ```
 
 #### 4. Final Functional Verification
-Run the full suite in the main repository:
+Run the full suite in the main repository. This MUST include the E2E tests which verify the CLI binary's behavior:
 ```bash
 go mod tidy
 go fmt ./...
@@ -62,7 +62,7 @@ go vet ./...
 go test -race ./...
 go build ./...
 ```
-*Note: The Git pre-commit requirements defined in `SOP/standards/git_workflow.md` provide the final safety gate before merging to `main`.*
+*Note: The E2E suite in `tests/e2e/` is critical for ensuring that multi-turn tool orchestration and security gates are functional in the final binary.*
 
 #### 4. Changelog Update
 Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:
@@ -111,6 +111,7 @@ A release is **not complete** until it is reachable by the public on the remote 
 - [ ] Security audit completed (no secrets found).
 - [ ] **No `replace` directives** in `go.mod`.
 - [ ] **Clean room verification** passed in a fresh clone.
+- [ ] **E2E Tests passed**: `go test -v ./tests/e2e` returns **PASS**.
 - [ ] `go test ./...` returns **PASS**.
 - [ ] `go mod tidy` run and `go.sum` committed.
 - [ ] `README.md` includes all new features and configuration options.
