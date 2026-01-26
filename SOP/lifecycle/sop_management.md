@@ -34,7 +34,7 @@ Every SOP should follow a consistent Markdown structure:
 
 #### Step 3: Localization
 - **File Path**: Save the file in the `SOP/` directory or an appropriate sub-folder (e.g., `SOP/tools/`).
-- **Naming Convention**: Use lowercase with underscores (e.g., `SOP/core/architecture_guide.md`).
+- **Naming Convention**: Use lowercase with underscores (e.g., `SOP/technical/architecture_guide.md`).
 
 #### Step 4: Verification
 - Follow your own draft as if you were a new user.
