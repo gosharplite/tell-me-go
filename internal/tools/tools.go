@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -69,13 +70,35 @@ func readSingleKey() (string, error) {
 	return strings.ToLower(string(b)), nil
 }
 
+// logAudit writes a two-line audit entry to the commands log file.
+func logAudit(label1, val1, label2, val2 string) {
+	if commandsLogFile == "" {
+		return
+	}
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label1, val1)
+	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label2, val2)
+}
+
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
 func ConfirmDestructiveAction(action, target, detail string) bool {
 	termMu.Lock()
 	defer termMu.Unlock()
 
+	detailLog := detail
+	if len(detailLog) > 500 {
+		detailLog = detailLog[:500] + "... (truncated)"
+	}
+
 	if bypassConfirmations {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
+		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
 		return true
 	}
 
@@ -91,7 +114,11 @@ func ConfirmDestructiveAction(action, target, detail string) bool {
 
 	char, err := readSingleKey()
 	fmt.Fprintf(os.Stderr, "\n")
-	return err == nil && char == "y"
+	if err == nil && char == "y" {
+		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+		return true
+	}
+	return false
 }
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.

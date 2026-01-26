@@ -162,6 +162,7 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 
 	bypassConfirmations = true
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS RUN.\033[0m\n")
+	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User-initiated bypass of all interactive security prompts for the current run.")
 	return "All future confirmations in this run will be bypassed.", nil
 }
 
@@ -196,6 +197,7 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 	// Confirmation Gate
 	if bypassConfirmations {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
@@ -205,6 +207,7 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Removal denied by user.", nil
 		}
+		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
 	if err := RemoveSafePath(absPath); err != nil {
@@ -237,6 +240,7 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 	// 1. Confirmation
 	if bypassConfirmations {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
 		if reason != "" {
@@ -257,6 +261,7 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
+		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
@@ -493,19 +498,11 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	}
 
 	// 2.5 Log command execution if log file is set
-	if commandsLogFile != "" {
-		func() {
-			timestamp := time.Now().Format("2006-01-02 15:04:05")
-			f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
-				return
-			}
-			defer f.Close()
-			fmt.Fprintf(f, "[%s] REASON: %s\n", timestamp, reason)
-			fmt.Fprintf(f, "[%s] COMMAND: %s\n", timestamp, command)
-		}()
+	logSuffix := ""
+	if bypassConfirmations {
+		logSuffix = " (auto-approved via bypass_confirmation)"
 	}
+	logAudit("REASON", reason, "COMMAND", command+logSuffix)
 
 	// 3. Execution
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
