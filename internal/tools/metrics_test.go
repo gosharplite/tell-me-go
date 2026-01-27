@@ -169,7 +169,7 @@ func TestEstimateCostIntegration(t *testing.T) {
 	logContent := `
 [10:00:00] H: 1000 M: 500 C: 200 T: 1700 N: 1700(1%) S: 1 Th: 50 [1.00s]
 `
-	logPath := filepath.Join(tmpDir, "last-test.json.log")
+	logPath := filepath.Join(tmpDir, "test-tokens.log")
 	if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
 		t.Fatalf("Failed to write log file: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestEstimateCostIntegration(t *testing.T) {
 	if len(history) != 1 {
 		t.Errorf("Expected 1 history record, got %d", len(history))
 	} else {
-		if history[0].Session != "last-test.json.log" {
+		if history[0].Session != "test-tokens.log" {
 			t.Errorf("Session name mismatch: %s", history[0].Session)
 		}
 		if history[0].TotalCost <= 0 {

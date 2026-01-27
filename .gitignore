@@ -11,8 +11,12 @@
 output/
 
 # Session Data
+*-history.json
+*-tokens.log
+*-commands.log
+*-safepaths.json
+*.bypass
 last-*.json
-history.json
 
 # Keys and Secrets
 *.json

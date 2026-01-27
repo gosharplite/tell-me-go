@@ -51,7 +51,7 @@ func TestCostLedgerSystem(t *testing.T) {
 	// 3. Create dummy log
 	logDir := filepath.Join(tmpDir, "output")
 	os.MkdirAll(logDir, 0755)
-	logFile := filepath.Join(logDir, "last-vertex.json.log")
+	logFile := filepath.Join(logDir, "vertex-tokens.log")
 
 	// Create a log that has enough info to generate cost
 	// Format matches internal/agent/agent.go: [Time] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]

@@ -74,11 +74,11 @@ func (a *App) Run() {
 		homeDir = "."
 	}
 
-	sessionName := "last-" + cfg.Mode
-	historyPath := filepath.Join(homeDir, "output", sessionName+".json")
-	logPath := historyPath + ".log"
-	commandsLogPath := historyPath + ".commands.log"
-	safePathsPath := filepath.Join(homeDir, "output", sessionName+".safepaths.json")
+	sessionName := cfg.Mode
+	historyPath := filepath.Join(homeDir, "output", sessionName+"-history.json")
+	logPath := filepath.Join(homeDir, "output", sessionName+"-tokens.log")
+	commandsLogPath := filepath.Join(homeDir, "output", sessionName+"-commands.log")
+	safePathsPath := filepath.Join(homeDir, "output", sessionName+"-safepaths.json")
 	bypassPath := filepath.Join(homeDir, "output", sessionName+".bypass")
 
 	if *newSession {
