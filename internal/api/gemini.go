@@ -138,6 +138,14 @@ func (c *Client) RefreshAuth() error {
 func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *Metrics, error) {
 	ctx := context.Background()
 
+	// 0. Defensive check: Ensure all content objects have at least one part.
+	// Vertex AI returns 400 INVALID_ARGUMENT if a content object has an empty parts list.
+	for _, h := range history {
+		if len(h.Parts) == 0 {
+			h.Parts = []*genai.Part{{Text: "[empty]"}}
+		}
+	}
+
 	// Add Search tool if requested
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, tools...)

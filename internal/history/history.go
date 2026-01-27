@@ -55,7 +55,8 @@ func (m *Manager) Save() error {
 		return fmt.Errorf("failed to create history directory: %w", err)
 	}
 
-	// Clean up history: remove empty parts or parts with no content
+	// Clean up history: remove empty parts or parts with no content.
+	// If a message would become empty, we add a placeholder to prevent API errors (400 INVALID_ARGUMENT).
 	for _, content := range m.Contents {
 		var cleanParts []*api.Part
 		for _, p := range content.Parts {
@@ -63,6 +64,9 @@ func (m *Manager) Save() error {
 				continue
 			}
 			cleanParts = append(cleanParts, p)
+		}
+		if len(cleanParts) == 0 {
+			cleanParts = append(cleanParts, &api.Part{Text: "[empty response]"})
 		}
 		content.Parts = cleanParts
 	}
