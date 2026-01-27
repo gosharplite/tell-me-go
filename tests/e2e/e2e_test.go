@@ -537,3 +537,70 @@ func TestManageTasks(t *testing.T) {
 		t.Errorf("Tasks file does not contain expected content. Got: %s", string(content))
 	}
 }
+
+func TestManageScratchpad(t *testing.T) {
+	// 1. Setup Mock Server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "manage_scratchpad",
+									"args": {"action": "write", "content": "# E2E Scratchpad"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				// Turn 2
+				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Scratchpad updated."}]}}]}`)
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+	}
+
+	// 2. Run CLI
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "update scratchpad")
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 3. Verification
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Scratchpad updated.") {
+		t.Errorf("Expected success message, got: %q", out)
+	}
+
+	// Check if file exists and has content
+	scratchpadFile := filepath.Join(homeDir, "output", "global-scratchpad.md")
+	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
+		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
+	}
+
+	content, err := os.ReadFile(scratchpadFile)
+	if err != nil {
+		t.Fatalf("Failed to read scratchpad file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "# E2E Scratchpad") {
+		t.Errorf("Scratchpad file does not contain expected content. Got: %s", string(content))
+	}
+}
