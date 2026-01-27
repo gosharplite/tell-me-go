@@ -55,6 +55,7 @@ The agent must monitor resource limits during the orchestration loop to allow th
 #### 4. Security and Safety
 - **Thread Safety**: Since tools are executed in parallel, any tool that modifies shared state (e.g., `manage_tasks`, `manage_scratchpad`) MUST use synchronization primitives like `sync.Mutex` to prevent race conditions.
 - **Atomic Writes**: Tools that update files MUST use an atomic write pattern (writing to a temporary file and then renaming it) to ensure file integrity in case of crashes or concurrent access.
+- **Robust Parsing**: Tools that load persistent state (JSON, YAML) MUST handle corruption gracefully, typically by resetting to a clean state or attempting partial recovery, to prevent the agent from becoming stuck due to a malformed file.
 - **Path Sanitization**: Every tool accessing the filesystem MUST call `tools.IsPathSafe(path)`. This function MUST:
     - Call `filepath.Clean` to resolve traversal attempts.
     - Call `filepath.EvalSymlinks` to prevent symlink-based boundary escapes.

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -292,4 +293,109 @@ func TestManageScratchpad(t *testing.T) {
 			t.Errorf("Expected empty file, got: %q", content)
 		}
 	})
+}
+
+func TestStateConcurrency(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "concurrency_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testMode := "concurrent"
+	numGroutines := 20
+	tasksPerRoutine := 10
+
+	var wg sync.WaitGroup
+	wg.Add(numGroutines)
+
+	for i := 0; i < numGroutines; i++ {
+		go func(routineID int) {
+			defer wg.Done()
+			for j := 0; j < tasksPerRoutine; j++ {
+				content := fmt.Sprintf("Task from %d index %d", routineID, j)
+				_, err := manageTasks(map[string]interface{}{
+					"action":  "add",
+					"content": content,
+				}, tmpDir, testMode)
+				if err != nil {
+					t.Errorf("manageTasks add failed: %v", err)
+				}
+
+				// Also do some scratchpad appends
+				_, err = manageScratchpad(map[string]interface{}{
+					"action":  "append",
+					"content": fmt.Sprintf("Log from %d-%d", routineID, j),
+				}, tmpDir, testMode)
+				if err != nil {
+					t.Errorf("manageScratchpad append failed: %v", err)
+				}
+
+				// Also do config sets
+				_, err = manageConfig(map[string]interface{}{
+					"action": "set",
+					"key":    fmt.Sprintf("key-%d-%d", routineID, j),
+					"value":  "val",
+				}, tmpDir, testMode)
+				if err != nil {
+					t.Errorf("manageConfig set failed: %v", err)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify total tasks
+	msg, err := manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
+	if err != nil {
+		t.Fatalf("manageTasks list failed: %v", err)
+	}
+
+	expectedTotal := numGroutines * tasksPerRoutine
+	
+	count := 0
+	for _, line := range strings.Split(msg, "\n") {
+		if strings.HasPrefix(line, "[") {
+			count++
+		}
+	}
+
+	if count != expectedTotal {
+		t.Errorf("Expected %d tasks, got %d. Output:\n%s", expectedTotal, count, msg)
+	}
+}
+
+func TestCorruptionRecovery(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "corruption_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testMode := "corrupt"
+	path := getTasksPath(tmpDir, testMode)
+	os.MkdirAll(filepath.Dir(path), 0755)
+
+	// Write invalid JSON
+	os.WriteFile(path, []byte("{ invalid json ["), 0644)
+
+	// Try to add a task. It should reset and succeed.
+	msg, err := manageTasks(map[string]interface{}{
+		"action":  "add",
+		"content": "Recovery Task",
+	}, tmpDir, testMode)
+
+	if err != nil {
+		t.Fatalf("manageTasks failed after corruption: %v", err)
+	}
+	if !strings.Contains(msg, "Task added with ID: 1") {
+		t.Errorf("Expected recovery and ID 1, got: %s", msg)
+	}
+
+	// Verify list works
+	msg, err = manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
+	if !strings.Contains(msg, "[1] [pending] Recovery Task") {
+		t.Errorf("List missing recovered task: %s", msg)
+	}
 }

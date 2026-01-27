@@ -160,17 +160,24 @@ func getConfigPath(homeDir, mode string) string {
 }
 
 func manageConfig(args map[string]interface{}, homeDir, mode string) (string, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	action, _ := args["action"].(string)
 	key, _ := args["key"].(string)
 	value, _ := args["value"].(string)
 
 	path := getConfigPath(homeDir, mode)
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", fmt.Errorf("failed to create config directory: %w", err)
+	}
 
 	config := make(map[string]string)
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
-		_ = json.Unmarshal(data, &config)
+		if err := json.Unmarshal(data, &config); err != nil {
+			// If JSON is corrupted, reset to empty
+			config = make(map[string]string)
+		}
 	}
 
 	switch action {
@@ -180,7 +187,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		config[key] = value
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := os.WriteFile(path, newData, 0644); err != nil {
+		if err := atomicWrite(path, newData); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration '%s' set successfully.", key), nil
@@ -215,7 +222,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		delete(config, key)
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := os.WriteFile(path, newData, 0644); err != nil {
+		if err := atomicWrite(path, newData); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration key '%s' deleted.", key), nil
