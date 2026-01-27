@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2026-02-14
+
+### Added
+- **SOP Hardening**: Integrated "Agentic State Management" standards into all project SOPs.
+- **Standards**: Mandated **Atomic Turns**, **Immediate State Sync**, and **Mandatory Verification** in `SOP/standards/cli_standards.md` to prevent agentic amnesia.
+- **Lifecycle**: Integrated state initialization requirements into `sop_management.md` and `self_update_safety.md`.
+
+### Changed
+- **Documentation**: Standardized "AI Agent Implementation Guides" across all relevant SOPs.
+- **Release Process**: Promoted to v1.36.0 following the hardened public release procedure.
+
 ## [1.35.0] - 2026-02-14
 
 ### Added
