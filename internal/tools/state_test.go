@@ -117,7 +117,7 @@ func TestManageTasks(t *testing.T) {
 	t.Run("Clear", func(t *testing.T) {
 		// Add a task first
 		manageTasks(map[string]interface{}{"action": "add", "content": "To be cleared"}, tmpDir)
-		
+
 		args := map[string]interface{}{
 			"action": "clear",
 		}
