@@ -182,13 +182,21 @@ func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
 	action, _ := args["action"].(string)
 
 	path := getTasksPath(homeDir)
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return "", fmt.Errorf("failed to create tasks directory: %w", err)
+	}
 
 	// Load existing tasks
 	var tasks []Task
 	data, err := os.ReadFile(path)
 	if err == nil {
-		_ = json.Unmarshal(data, &tasks)
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &tasks); err != nil {
+				return "", fmt.Errorf("failed to parse existing tasks: %w", err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to read tasks file: %w", err)
 	}
 
 	switch action {
@@ -204,7 +212,9 @@ func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
 			}
 		}
 		tasks = append(tasks, Task{ID: nextID, Content: content, Status: "pending"})
-		saveTasks(path, tasks)
+		if err := saveTasks(path, tasks); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("Task added with ID: %d", nextID), nil
 
 	case "list":
@@ -242,7 +252,9 @@ func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
 		if !found {
 			return fmt.Sprintf("Error: Task ID %d not found.", id), nil
 		}
-		saveTasks(path, tasks)
+		if err := saveTasks(path, tasks); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("Task %d updated.", id), nil
 
 	case "delete":
@@ -260,18 +272,28 @@ func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
 		if !found {
 			return fmt.Sprintf("Error: Task ID %d not found.", id), nil
 		}
-		saveTasks(path, newTasks)
+		if err := saveTasks(path, newTasks); err != nil {
+			return "", err
+		}
 		return fmt.Sprintf("Task %d deleted.", id), nil
 
 	case "clear":
-		saveTasks(path, []Task{})
+		if err := saveTasks(path, []Task{}); err != nil {
+			return "", err
+		}
 		return "All tasks cleared.", nil
 	}
 
 	return "Invalid action", nil
 }
 
-func saveTasks(path string, tasks []Task) {
-	data, _ := json.MarshalIndent(tasks, "", "  ")
-	_ = os.WriteFile(path, data, 0644)
+func saveTasks(path string, tasks []Task) error {
+	data, err := json.MarshalIndent(tasks, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal tasks: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write tasks file: %w", err)
+	}
+	return nil
 }
