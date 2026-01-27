@@ -64,14 +64,14 @@ func TestCostLedgerSystem(t *testing.T) {
 	// and we don't want to make live API calls in E2E unless necessary,
 	// we will rely on the unit tests in `internal/tools/metrics_test.go` which cover the logic 100%.
 	//
-	// However, we CAN verify that the `cost-history.json` file format is compatible with what the
+	// However, we CAN verify that the `global_costs.json` file format is compatible with what the
 	// `get_cost_summary` tool expects by manually writing a file and checking if our data structure
 	// matches the "production" one defined in the source.
 
-	// Let's create a `cost-history.json` manually and verify we can read it back using the defined structs.
+	// Let's create a `global_costs.json` manually and verify we can read it back using the defined structs.
 	// This ensures the "Shared State" contract is valid.
 
-	historyPath := filepath.Join(logDir, "cost-history.json")
+	historyPath := filepath.Join(logDir, "global_costs.json")
 
 	// Defined in metrics.go (we have to duplicate struct definition here or import it if exported,
 	// but it's not exported. This is a good check for stability).

@@ -70,7 +70,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 
 // recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
 func recordCost(outputDir string, record SessionCostRecord) {
-	historyPath := filepath.Join(outputDir, "cost-history.json")
+	historyPath := filepath.Join(outputDir, "global_costs.json")
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock
@@ -116,7 +116,7 @@ func recordCost(outputDir string, record SessionCostRecord) {
 }
 
 func getCostSummary(outputDir string) (string, error) {
-	historyPath := filepath.Join(outputDir, "cost-history.json")
+	historyPath := filepath.Join(outputDir, "global_costs.json")
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
@@ -158,7 +158,7 @@ func getCostSummary(outputDir string) (string, error) {
 
 // getPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
 func getPricing(outputDir string) PricingData {
-	cachePath := filepath.Join(outputDir, "prices.json")
+	cachePath := filepath.Join(outputDir, "global_prices.json")
 	var data PricingData
 	useCache := false
 

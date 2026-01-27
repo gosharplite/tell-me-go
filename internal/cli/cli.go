@@ -75,10 +75,10 @@ func (a *App) Run() {
 	}
 
 	sessionName := cfg.Mode
-	historyPath := filepath.Join(homeDir, "output", sessionName+"-history.json")
-	logPath := filepath.Join(homeDir, "output", sessionName+"-tokens.log")
-	commandsLogPath := filepath.Join(homeDir, "output", sessionName+"-commands.log")
-	safePathsPath := filepath.Join(homeDir, "output", sessionName+"-safepaths.json")
+	historyPath := filepath.Join(homeDir, "output", sessionName+"_history.json")
+	logPath := filepath.Join(homeDir, "output", sessionName+"_tokens.log")
+	commandsLogPath := filepath.Join(homeDir, "output", sessionName+"_commands.log")
+	safePathsPath := filepath.Join(homeDir, "output", sessionName+"_safepaths.json")
 	bypassPath := filepath.Join(homeDir, "output", sessionName+".bypass")
 
 	if *newSession {

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Unit tests for cost-history.json logic
+// Unit tests for global_costs.json logic
 // Note: We are testing unexported functions recordCost, getCostSummary, estimateCost
 // because they are in the same package 'tools'.
 
@@ -22,7 +22,7 @@ func TestRecordCost(t *testing.T) {
 
 	// Helper to read history
 	readHistory := func() []SessionCostRecord {
-		path := filepath.Join(tmpDir, "cost-history.json")
+		path := filepath.Join(tmpDir, "global_costs.json")
 		data, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			return []SessionCostRecord{}
@@ -134,7 +134,7 @@ func TestGetCostSummary(t *testing.T) {
 			{Date: "2026-01-02", Session: "s3", TotalCost: 5.0}, // Different day
 		}
 		data, _ := json.Marshal(records)
-		os.WriteFile(filepath.Join(tmpDir, "cost-history.json"), data, 0644)
+		os.WriteFile(filepath.Join(tmpDir, "global_costs.json"), data, 0644)
 
 		summary, err := getCostSummary(tmpDir)
 		if err != nil {
@@ -190,9 +190,9 @@ func TestEstimateCostIntegration(t *testing.T) {
 	}
 
 	// 4. Verify Side Effect (File Creation)
-	historyPath := filepath.Join(tmpDir, "cost-history.json")
+	historyPath := filepath.Join(tmpDir, "global_costs.json")
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		t.Error("cost-history.json was not created")
+		t.Error("global_costs.json was not created")
 	}
 
 	// 5. Verify Content of Ledger

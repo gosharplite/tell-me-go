@@ -98,8 +98,8 @@ func TestSessionArchiving(t *testing.T) {
 	outputDir := filepath.Join(homeDir, "output")
 	os.MkdirAll(outputDir, 0755)
 
-	histFile := filepath.Join(outputDir, "vertex-history.json")
-	logFile := filepath.Join(outputDir, "vertex-tokens.log")
+	histFile := filepath.Join(outputDir, "vertex_history.json")
+	logFile := filepath.Join(outputDir, "vertex_tokens.log")
 
 	os.WriteFile(histFile, []byte("[]"), 0644)
 	os.WriteFile(logFile, []byte("log data"), 0644)
