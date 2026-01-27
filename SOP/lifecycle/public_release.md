@@ -21,13 +21,19 @@ This SOP defines the requirements and steps for publishing a new public release 
 ### Step-by-Step Instructions
 
 #### 0. Task Initialization (⚠️ NEW)
-Before starting the release, the agent MUST initialize the project Task Manager (`manage_tasks`) with the following milestones to ensure cross-turn visibility and prevent "process amnesia" in new sessions:
-1. `add`: "**SOP Compliance: public_release.md**" (Mandatory Anchor Task)
-2. `add`: "Security & Privacy Audit"
-3. `add`: "Functional Verification (Tests/E2E)"
-4. `add`: "Versioning & Tagging (Local)"
-5. `add`: "Remote Synchronization (Git Push)"
-6. `add`: "Final Verification & Cleanup"
+Before starting the release, the agent MUST initialize the project state to prevent "process amnesia" across session boundaries:
+
+1.  **Initialize Tasks**: Use `manage_tasks` to add the following milestones:
+    - `add`: "**SOP Compliance: public_release.md**" (Mandatory Anchor Task)
+    - `add`: "**Initialize Scratchpad with Granular Checklist**"
+    - `add`: "Security & Privacy Audit"
+    - `add`: "Functional Verification (Tests/E2E)"
+    - `add`: "Versioning & Tagging (Local)"
+    - `add`: "Remote Synchronization (Git Push)"
+    - `add`: "Final Verification & Cleanup"
+
+2.  **Initialize Scratchpad**: Use `manage_scratchpad` to `write` the full **Release Checklist** (found at the bottom of this document) to the persistent scratchpad. 
+    - **CRITICAL**: The agent MUST update this scratchpad checklist after every sub-step to maintain a granular record of progress.
 
 #### 1. Security & Privacy Audit
 Before any public release, perform a mandatory security scan:
