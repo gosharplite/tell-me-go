@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
@@ -37,7 +38,6 @@ func TestSendChat(t *testing.T) {
 	defer server.Close()
 
 	// 2. Setup client with mock server URL and mock authenticator
-	// We use a URL that triggers the Vertex AI detection logic
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
 	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", "", false)
@@ -60,19 +60,56 @@ func TestSendChat(t *testing.T) {
 	}
 }
 
+func TestSendChat_SafetyBlock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := genai.GenerateContentResponse{
+			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
+				BlockReason: "SAFETY",
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+
+	_, _, err := client.SendChat([]*genai.Content{}, nil)
+	if err == nil {
+		t.Fatalf("expected error for safety block, got nil")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety filters") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestSendChat_FinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					FinishReason: genai.FinishReasonSafety,
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+
+	_, _, err := client.SendChat([]*genai.Content{}, nil)
+	if err == nil {
+		t.Fatalf("expected error for finish reason SAFETY, got nil")
+	}
+	if !strings.Contains(err.Error(), "Finish Reason: SAFETY") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func TestSystemInstruction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&req)
-
-		// The SDK transforms SystemInstruction to the expected format for Vertex AI or Gemini API
-		// We can just check if something was sent.
-		if req["systemInstruction"] == nil && req["system_instruction"] == nil {
-			// Note: The actual key in the JSON might be different depending on backend and transformation
-			// but genai.GenerateContentConfig should have it.
-			// However, our mock doesn't know about the backend yet.
-		}
-
 		resp := genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
 		}

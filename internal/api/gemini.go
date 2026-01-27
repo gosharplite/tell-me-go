@@ -210,10 +210,27 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 	metrics := GetMetrics(resp, duration)
 
 	if len(resp.Candidates) == 0 {
+		if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
+			return nil, metrics, fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
+		}
 		return nil, metrics, fmt.Errorf("empty response from api")
 	}
 
-	return resp.Candidates[0].Content, metrics, nil
+	candidate := resp.Candidates[0]
+	// If the candidate is blocked or stopped for reasons other than natural completion,
+	// and there is no content, provide a descriptive error.
+	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
+		if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
+			msg := string(candidate.FinishReason)
+			if candidate.FinishMessage != "" {
+				msg = fmt.Sprintf("%s - %s", msg, candidate.FinishMessage)
+			}
+			return nil, metrics, fmt.Errorf("empty response (Finish Reason: %s)", msg)
+		}
+		return nil, metrics, fmt.Errorf("empty response from api")
+	}
+
+	return candidate.Content, metrics, nil
 }
 
 // GenerateImages calls the Imagen model to generate images from a prompt.
