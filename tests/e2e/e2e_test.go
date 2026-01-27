@@ -470,3 +470,70 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Errorf("Expected security violation for symlink attack, got: %q", receivedResponse)
 	}
 }
+
+func TestManageTasks(t *testing.T) {
+	// 1. Setup Mock Server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "generateContent") {
+			var body struct {
+				Contents []interface{} `json:"contents"`
+			}
+			json.NewDecoder(r.Body).Decode(&body)
+
+			w.Header().Set("Content-Type", "application/json")
+			if len(body.Contents) <= 1 {
+				fmt.Fprint(w, `{
+					"candidates": [{
+						"content": {
+							"role": "model",
+							"parts": [{
+								"functionCall": {
+									"name": "manage_tasks",
+									"args": {"action": "add", "content": "End-to-End Test Task"}
+								}
+							}]
+						}
+					}]
+				}`)
+			} else {
+				// Turn 2
+				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Task added."}]}}]}`)
+			}
+			return
+		}
+	}))
+	defer server.Close()
+
+	homeDir := t.TempDir()
+	env := []string{
+		"TELL_ME_HOME=" + homeDir,
+		"TELL_ME_MOCK_URL=" + server.URL + "/",
+	}
+
+	// 2. Run CLI
+	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "add a task")
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+
+	// 3. Verification
+	out := stripANSI(stdout)
+	if !strings.Contains(out, "Task added.") {
+		t.Errorf("Expected success message, got: %q", out)
+	}
+
+	// Check if file exists and has content
+	taskFile := filepath.Join(homeDir, "output", "global-tasks.json")
+	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
+		t.Fatalf("Tasks file was not created at %s", taskFile)
+	}
+
+	content, err := os.ReadFile(taskFile)
+	if err != nil {
+		t.Fatalf("Failed to read tasks file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "End-to-End Test Task") {
+		t.Errorf("Tasks file does not contain expected content. Got: %s", string(content))
+	}
+}
