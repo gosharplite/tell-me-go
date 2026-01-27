@@ -52,7 +52,7 @@ func TestCostLedgerSystem(t *testing.T) {
 	logDir := filepath.Join(tmpDir, "output")
 	os.MkdirAll(logDir, 0755)
 	logFile := filepath.Join(logDir, "last-vertex.json.log")
-	
+
 	// Create a log that has enough info to generate cost
 	// Format matches internal/agent/agent.go: [Time] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]
 	logContent := `[10:00:00] [System] Init
@@ -72,8 +72,8 @@ func TestCostLedgerSystem(t *testing.T) {
 	// This ensures the "Shared State" contract is valid.
 
 	historyPath := filepath.Join(logDir, "cost-history.json")
-	
-	// Defined in metrics.go (we have to duplicate struct definition here or import it if exported, 
+
+	// Defined in metrics.go (we have to duplicate struct definition here or import it if exported,
 	// but it's not exported. This is a good check for stability).
 	type SessionCostRecord struct {
 		Date      string  `json:"date"`
@@ -81,11 +81,11 @@ func TestCostLedgerSystem(t *testing.T) {
 		Model     string  `json:"model"`
 		TotalCost float64 `json:"total_cost"`
 	}
-	
+
 	records := []SessionCostRecord{
 		{Date: "2026-01-27", Session: "test-session", Model: "gpt-4", TotalCost: 0.50},
 	}
-	
+
 	data, _ := json.Marshal(records)
 	os.WriteFile(historyPath, data, 0644)
 
@@ -94,7 +94,7 @@ func TestCostLedgerSystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read history: %v", err)
 	}
-	
+
 	var readRecords []SessionCostRecord
 	if err := json.Unmarshal(readData, &readRecords); err != nil {
 		t.Fatalf("Failed to unmarshal: %v", err)

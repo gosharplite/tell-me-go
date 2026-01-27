@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0] - 2026-01-27
+
+### Added
+- **Testing**: Added unit and E2E tests for `cost-history.json` and metrics logic.
+- **Safety**: Implemented file locking and corruption recovery for the cost ledger to prevent data loss during concurrent access.
+
+### Changed
+- **Architecture**: Scoped `manage_tasks` and `manage_scratchpad` to the configuration `MODE` (e.g., `tasks_vertex.json`).
+- **Safety**: Enabled persistent `bypass_confirmation` across sessions.
+- **Maintenance**: Performed comprehensive public release audit.
+- **Version Bump**: Promoted to v1.30.0.
+
 ## [1.29.0] - 2026-01-27
 
 ### Added
