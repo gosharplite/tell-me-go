@@ -20,6 +20,14 @@ This SOP defines the requirements and steps for publishing a new public release 
 
 ### Step-by-Step Instructions
 
+#### 0. Task Initialization (⚠️ NEW)
+Before starting the release, the agent MUST initialize the project Task Manager (`manage_tasks`) with the following milestones to ensure cross-turn visibility and prevent premature completion:
+1. `add`: "Security & Privacy Audit"
+2. `add`: "Functional Verification (Tests/E2E)"
+3. `add`: "Versioning & Tagging (Local)"
+4. `add`: "Remote Synchronization (Git Push)"
+5. `add`: "Final Verification & Cleanup"
+
 #### 1. Security & Privacy Audit
 Before any public release, perform a mandatory security scan:
 - **Secret Scanning**: Ensure no Service Account JSON keys (`*.json`), API keys, or `.env` files are in the repository. Use `git grep` for common patterns like `"private_key"` or `"api_key"`.
@@ -124,8 +132,9 @@ A release is **not complete** until it is reachable by the public on the remote 
 ---
 
 ### Best Practices
-- **Strict Checklist Adherence**: The agent MUST copy the "Release Checklist" from this SOP into their scratchpad at the start of the task and mark items only after verified completion.
-- **Verification of Remote State**: Never announce completion until `git status` or `git remote -v` confirms the local state is synchronized with `origin`.
+- **Task Manager vs. Scratchpad**: The agent MUST use `manage_tasks` for high-level process milestones and the `scratchpad` for granular, low-level checkboxes (like specific file audits). This dual-layer approach prevents "process amnesia" and ensures critical steps like remote synchronization are never missed.
+- **Verification of Remote State**: Never announce completion until `git status` or `git remote -v` confirms the local state is strictly synchronized with `origin`. The "Remote Synchronization" task must only be marked completed AFTER the push is verified.
+- **Strict Checklist Adherence**: Items in the scratchpad should be marked only after verified completion.
 - **Release Often**: Small, frequent releases are easier to audit and test.
 - **Binary Verification**: If distributing binaries, verify they run on target architectures (Linux/macOS/Windows).
 - **Draft Releases**: Use GitHub's "Draft Release" feature to stage the release notes.

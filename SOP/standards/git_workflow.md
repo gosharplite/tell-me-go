@@ -77,6 +77,7 @@ When an AI assistant performs a commit, it must:
 1.  **Explicitly verify** `go mod tidy`, `go fmt`, `go vet`, and `go test` status before recommending a commit.
 2.  **Generate a structured message** based on the specific packages (e.g., `pkg/core`, `internal/api`) modified.
 3.  **Confirm the branch name** using `git branch --show-current`.
+4.  **Update Task Manager**: If the commit fulfills a task (e.g., a bug fix or feature), update the corresponding entry in `manage_tasks`.
 
 ---
 
