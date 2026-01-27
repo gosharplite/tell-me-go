@@ -30,15 +30,16 @@ The project is organized into the following top-level directories:
     - `internal/cli`: Terminal UI, flag parsing, and command orchestration.
     - `internal/auth`: Token management for Vertex AI.
     - `internal/tools`: Registry and implementation of executable functions.
-- **`pkg/`**: Contains library code that is safe for use by external applications. 
 - **`configs/`**: Storage for default configuration templates (YAML).
     - `configs/vertex.yaml`: The primary configuration template.
 - **`SOP/`**: Project governance and process documentation.
+- **`assets/`**: Static assets like pricing data.
+- **`tests/`**: Integration and End-to-End tests.
 
 #### 2. Package Naming and Visibility
 - **Naming**: Use short, lowercase, single-word names (e.g., `config`, not `config_loader`).
 - **Visibility**: Keep structs and functions unexported (lowercase) by default. Export (Uppercase) only what is strictly necessary for cross-package interaction.
-- **Internal vs Pkg**: Always start new logic in `internal/`. Only move to `pkg/` if there is a demonstrated need for external reuse.
+- **Internal Only**: Always keep application logic in `internal/`. Do not create a `pkg/` directory unless there is a specific need for public library consumption.
 
 #### 3. Dependency Management
 - **Constructor Pattern**: Use `New<StructName>` functions to initialize packages (e.g., `func NewClient(apiKey string) *Client`).
@@ -62,8 +63,6 @@ tell-me-go/
 │   ├── config/           # YAML/Env Loading
 │   ├── history/          # Conversation Storage
 │   └── tools/            # Agent Tools
-├── pkg/
-│   └── utils/            # General purpose helpers
 ├── configs/
 │   └── vertex.yaml       # Vertex AI Template
 ├── tests/

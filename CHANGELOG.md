@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.0] - 2026-01-27
+## [1.23.0] - 2026-06-05
 
 ### Added
 - **History Pruning (50% Strategy)**: Implemented a cost-optimized pruning strategy. When `MAX_HISTORY_TURNS` is hit, history is now pruned down to 50% of the limit to create a stable context prefix for Gemini caching.
@@ -22,14 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture**: Implemented deep-cloning of history payloads to prevent "context rot" by keeping safety warnings out of persistent history files.
 - **Documentation**: Fully revised README and all SOPs to reflect new safety, UX, and context management standards.
 
-## [1.22.0-dev] - 2026-06-01
+## [1.22.0] - 2026-06-01
 
 ### Changed
 - **Documentation**: Fully revised and synchronized all Standard Operating Procedures (SOPs) and README.md.
 - **Go Toolchain**: Updated all documentation to require Go 1.24+ for alignment with `go.mod`.
 - **Backend Clarification**: Removed deprecated Gemini Developer API (AI Studio) references from README and SOPs, focusing exclusively on Vertex AI as the primary provider.
 - **Consistency**: Fixed various typos, structural inconsistencies, and outdated code templates across the SOP library.
-- **Version Bump**: Promoted to v1.22.0-dev.
+- **Version Bump**: Promoted to v1.22.0.
 
 ## [1.21.0] - 2026-05-30
 
