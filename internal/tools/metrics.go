@@ -172,14 +172,35 @@ func getPricing(outputDir string) PricingData {
 		}
 	}
 
-	// 3. Hardcoded Fallback
+	// 3. Hardcoded Fallback (Updated for Gemini 3 Preview)
 	if !useCache {
 		data = PricingData{
 			UpdatedAt: "Hardcoded Fallback",
 			Models: map[string]ModelPricing{
-				"flash":   {Hit: 0.05, Miss: 0.50, Comp: 3.00},
-				"pro":     {Hit: 0.20, Miss: 2.00, Comp: 12.00, TieredThreshold: 200000, TieredMiss: 4.00, TieredComp: 18.00},
-				"default": {Hit: 0.3125, Miss: 1.25, Comp: 3.75, TieredThreshold: 128000, TieredMiss: 2.50, TieredComp: 7.50},
+				"flash": {
+					Hit:             0.025,
+					Miss:            0.025,
+					Comp:            0.30,
+					TieredThreshold: 128000,
+					TieredMiss:      0.075,
+					TieredComp:      0.30,
+				},
+				"pro": {
+					Hit:             0.3125,
+					Miss:            0.3125,
+					Comp:            3.75,
+					TieredThreshold: 128000,
+					TieredMiss:      1.25,
+					TieredComp:      7.50,
+				},
+				"default": {
+					Hit:             0.3125,
+					Miss:            0.3125,
+					Comp:            3.75,
+					TieredThreshold: 128000,
+					TieredMiss:      1.25,
+					TieredComp:      7.50,
+				},
 			},
 			SearchQuery: 0.014,
 		}

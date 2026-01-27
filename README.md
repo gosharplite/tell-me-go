@@ -122,6 +122,27 @@ MAX_CONCURRENT_TOOLS: 5    # Parallel tool execution limit
 TOOL_TIMEOUT: 30           # Individual tool timeout (seconds)
 ```
 
+### 🧠 Strategic Memory Management
+To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
+
+1.  **`MAX_HISTORY_TOKENS` (Default: 120,000)**:
+    *   **The Price Cliff**: Gemini 1.5/2.0 pricing tiers jump at **128k tokens**. Staying below 120k ensures you always pay the "Standard" rate ($0.025 - $0.31/1M) and avoid the "Premium" rate ($0.075 - $1.25/1M).
+    *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
+
+2.  **`MAX_HISTORY_TURNS`**:
+    *   **50% Pruning Strategy**: When this limit is hit, the agent prunes the oldest **50%** of the conversation.
+    *   **Why 50%?**: Gemini charges for the full "Cache Miss" when the prefix changes. By pruning half the history instead of just 1 turn, the agent creates a **stable cache prefix**. The next dozens of turns will be processed using high-speed, 90%-discounted cached tokens.
+    *   **AI Re-Sync**: After a major prune, the agent injects an **Urgent System Notice** into the history, instructing the model to use the **Scratchpad** to recover its situational awareness.
+
+3.  **`MAX_TURNS` (Default: 10)**:
+    *   **Execution Safety**: Limits how many consecutive tool-calls the agent can make in a single prompt. This prevents infinite loops and controls turn-by-turn costs.
+
+#### Recommended Settings:
+| Model Type | MAX_HISTORY_TOKENS | MAX_HISTORY_TURNS | MAX_TURNS |
+| :--- | :--- | :--- | :--- |
+| **Flash (Fast/Light)** | 120,000 | **40** | 50 |
+| **Pro (Deep/Complex)** | 120,000 | **20** | 50 |
+
 ## ⌨️ Shell Integration (Recommended)
 To streamline your workflow, add these aliases to your `.bashrc` or `.zshrc`. This provides a fast, one-letter command (`b`) for interacting with the assistant and simplifies session management.
 

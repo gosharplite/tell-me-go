@@ -1,25 +1,28 @@
 {
-  "updated_at": "2026-01-27T08:00:00Z",
+  "updated_at": "2026-01-27T10:00:00Z",
   "models": {
     "flash": {
       "hit": 0.025,
-      "miss": 0.075,
-      "comp": 0.30
+      "miss": 0.025,
+      "comp": 0.30,
+      "tiered_threshold": 128000,
+      "tiered_miss": 0.075,
+      "tiered_comp": 0.30
     },
     "pro": {
       "hit": 0.3125,
-      "miss": 1.25,
+      "miss": 0.3125,
       "comp": 3.75,
       "tiered_threshold": 128000,
-      "tiered_miss": 2.50,
+      "tiered_miss": 1.25,
       "tiered_comp": 7.50
     },
     "default": {
       "hit": 0.3125,
-      "miss": 1.25,
+      "miss": 0.3125,
       "comp": 3.75,
       "tiered_threshold": 128000,
-      "tiered_miss": 2.50,
+      "tiered_miss": 1.25,
       "tiered_comp": 7.50
     }
   },
