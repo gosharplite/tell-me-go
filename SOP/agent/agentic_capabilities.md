@@ -53,6 +53,8 @@ The agent must monitor resource limits during the orchestration loop to allow th
 - **Volatile Injection**: Injected warnings must only exist in the API payload and **must not** be saved to the persistent history file on disk to prevent "context rot."
 
 #### 4. Security and Safety
+- **Thread Safety**: Since tools are executed in parallel, any tool that modifies shared state (e.g., `manage_tasks`, `manage_scratchpad`) MUST use synchronization primitives like `sync.Mutex` to prevent race conditions.
+- **Atomic Writes**: Tools that update files MUST use an atomic write pattern (writing to a temporary file and then renaming it) to ensure file integrity in case of crashes or concurrent access.
 - **Path Sanitization**: Every tool accessing the filesystem MUST call `tools.IsPathSafe(path)`. This function MUST:
     - Call `filepath.Clean` to resolve traversal attempts.
     - Call `filepath.EvalSymlinks` to prevent symlink-based boundary escapes.
@@ -61,7 +63,7 @@ The agent must monitor resource limits during the orchestration loop to allow th
 - **Interactive Handling**: Tools requiring user input MUST attempt to use `/dev/tty` for interaction to remain functional even when `os.Stdin` is redirected (e.g., in piped command workflows).
 - **Error Handling**: Tool execution errors must be caught and sent back to the model as a string response so the model can attempt a fix.
 
-#### 4. Package Structure
+#### 5. Package Structure
 - **Location**: `internal/tools`.
 - **Registry**: A central map or registry to link function names (strings) to Go implementation functions.
 - **Interface**:
