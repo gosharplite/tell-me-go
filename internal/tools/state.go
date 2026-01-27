@@ -22,9 +22,37 @@ type Task struct {
 	Status  string `json:"status"`
 }
 
-// RegisterStateTools adds scratchpad and task management tools.
+// RegisterStateTools adds scratchpad, task management, and session info tools.
 func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) {
 	// We pass homeDir to closures so the handlers know where to look.
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "get_session_info",
+		Description: "Returns the active configuration, environment variables, and session file paths to help the agent understand its identity and constraints.",
+	}, func(args map[string]interface{}) (string, error) {
+		info := map[string]interface{}{
+			"home_dir":           homeDir,
+			"safe_paths":         GetSafePaths(),
+			"bypass_active":      IsBypassActive(),
+			"history_file":       hManager.GetPath(),
+			"active_config_path": "", // Will be filled if found in safe paths
+		}
+
+		// Try to identify the config path from safe paths (usually the 2nd one registered in main.go)
+		paths := GetSafePaths()
+		for _, p := range paths {
+			if strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml") {
+				info["active_config_path"] = p
+				break
+			}
+		}
+
+		b, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",

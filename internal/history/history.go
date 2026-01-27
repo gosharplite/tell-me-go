@@ -157,3 +157,8 @@ func (m *Manager) Prune(maxTurns int) int {
 func (m *Manager) GetContents() []*api.Content {
 	return m.Contents
 }
+
+// GetPath returns the file path of the history file.
+func (m *Manager) GetPath() string {
+	return m.FilePath
+}
