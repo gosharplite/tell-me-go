@@ -153,7 +153,7 @@ func getTasksPath(homeDir, mode string) string {
 }
 
 func getConfigPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", fmt.Sprintf("config_%s.json", mode))
+	return filepath.Join(homeDir, "output", fmt.Sprintf("%s_config.json", mode))
 }
 
 func manageConfig(args map[string]interface{}, homeDir, mode string) (string, error) {
