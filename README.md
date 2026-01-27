@@ -14,7 +14,9 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Smart Budget Cap**: Automatically adjusts `THINKING_BUDGET` to the maximum allowed by the selected model, preventing `Error 400` failures.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
-    *   **Interactive Safety**: Serialized terminal prompts for tool confirmations—no more "flying by" messages.
+    *   **Interactive Safety**: 
+        *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
+        *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
     *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`.
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
@@ -31,7 +33,10 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
-    *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn.
+    *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn and an error is returned.
+    *   **Pre-Limit Warnings**: 
+        *   **AI Awareness**: When `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) is nearing, the agent injects escalating **System Notices** into the AI's volatile history. 
+        *   **Graceful Exit**: This instructs the model to prioritize state persistence (scratchpad/tasks) before the process terminates or rolls back.
     *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
@@ -66,10 +71,16 @@ Show the last 5 messages:
 ```bash
 ./tell-me-go -l 5
 ```
+Show the very last message (shorthand):
+```bash
+./tell-me-go -l
+```
 
-**Pre-flight Payload Log:**
-Before every request, the tool shows the estimated token count of the history and tools being sent:
-`[14:19:43] [System] Payload: ~4549 tokens`
+**Pre-flight Status Log:**
+Before every request, the tool shows your current resource usage relative to configured limits:
+`[14:19:43] [System (3/20)] Payload: ~4549 tokens`
+*   **(3/20)**: Current turn count / Max history turns.
+*   **Tokens**: Estimated payload size. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
 
 **Thinking Mode (Gemini 2.0):**
 If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.

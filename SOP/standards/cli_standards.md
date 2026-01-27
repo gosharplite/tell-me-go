@@ -23,6 +23,7 @@ All flags must follow a consistent naming convention:
 - **Config**: `-c` or `--config` for specifying the configuration YAML path.
 - **Model**: `-m` or `--model` for overriding the AI model.
 - **Verbose**: `-v` or `--verbose` for detailed logging.
+- **History**: `-l` for showing conversation history. If used without a numeric argument (e.g., `b -l`), it defaults to showing the single last message (`b -l 1`).
 
 #### 2. Argument and Input Handling
 The tool follows a "Triple-Mode" input strategy to provide a seamless user experience:
@@ -51,9 +52,11 @@ To ensure a responsive user experience:
 #### 6. Logging and Observability
 All terminal log outputs (prompt echoes, system messages, thought processes, tool calls) must include a timestamp in the following format:
 - `[HH:MM:SS]` (e.g., `[14:30:05]`)
+- **System Status Indicator**: The primary payload log must show current resource usage relative to limits: `[System (CurrentTurn/MaxTurn)] Payload: ~Tokens tokens`.
 - Colors:
     - User Prompt: Green (`[0;32m`)
     - System/Thought/Tool logs: Gray (`[0;90m`) to `stderr`.
+    - Safety Warnings: Yellow or Red for urgency.
 
 #### 7. Flag Parsing Location
 - Flags should be defined and parsed within `cmd/tell-me-go/main.go`.

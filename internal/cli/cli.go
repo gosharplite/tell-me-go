@@ -105,6 +105,8 @@ func (a *App) Run() {
 	if err := hManager.Load(); err != nil {
 		log.Fatalf("Error loading history: %v", err)
 	}
+	// Proactively prune history immediately after loading to ensure cache efficiency
+	hManager.Prune(cfg.MaxHistoryTurns)
 
 	if *lastN > 0 {
 		a.showHistory(hManager, *lastN)
@@ -154,7 +156,6 @@ func (a *App) Run() {
 	}
 
 	// 7. Save History
-	hManager.Prune(cfg.MaxHistoryTurns)
 	if err := hManager.Save(); err != nil {
 		log.Fatalf("Error saving history: %v", err)
 	}

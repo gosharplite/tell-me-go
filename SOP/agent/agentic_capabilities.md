@@ -29,6 +29,7 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 2.  **Detect Function Call**: Check if the `candidates[0].content.parts` contains one or more `functionCall` items.
 3.  **Parallel Execution**:
     - Multiple `functionCall` parts should be executed in parallel using goroutines and a worker pool (semaphore) to limit concurrency (e.g., `maxConcurrentTools`).
+    - **UI Sequencing**: To prevent log interleaving during interactive prompts, all `[Tool Action]` headers must be printed sequentially to `stderr` **before** the parallel goroutines are started.
     - Map the `functionCall.name` to a local Go function.
     - Parse arguments based on the schema.
     - Execute the function and capture the output (success or error).
@@ -44,7 +45,14 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
     - The agent must parse this and append a `user` role `Content` containing the raw `Blob` data to the history to enable vision capabilities.
 7.  **Recurse**: Send the updated history back to the model to receive the final answer or another tool call.
 
-#### 3. Security and Safety
+#### 3. Safety Monitoring & Warning Injection
+The agent must monitor resource limits during the orchestration loop to allow the AI to fail gracefully.
+- **Turn Limits**: When the current turn count is close to `MAX_TURNS` (e.g., 3, 2, or 1 turns remaining), the agent must inject escalating **System Notices** into the model's volatile history.
+- **Token Limits**: When the payload estimate exceeds **90%** or **95%** of `MAX_HISTORY_TOKENS`, the agent must inject an urgent warning.
+- **Persistence Request**: These warnings should explicitly instruct the AI to use `manage_scratchpad` and `manage_tasks` to save its work before execution is cut off.
+- **Volatile Injection**: Injected warnings must only exist in the API payload and **must not** be saved to the persistent history file on disk to prevent "context rot."
+
+#### 4. Security and Safety
 - **Path Sanitization**: Every tool accessing the filesystem MUST call `tools.IsPathSafe(path)`. This function MUST:
     - Call `filepath.Clean` to resolve traversal attempts.
     - Call `filepath.EvalSymlinks` to prevent symlink-based boundary escapes.

@@ -42,7 +42,13 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 To prevent the payload from exceeding the model's context window or the user's budget:
 - **Turn Limit**: Defined by `MAX_HISTORY_TURNS` in the config.
 - **Action**: When the limit is reached, the oldest pairs (one `user` and one `model` message) must be removed until the count is within limits.
+- **Consistency**: Ensure the pruning logic always removes an even number of messages to maintain `user` -> `model` role alternation starting from index 0.
 - **System Notice**: If history is pruned, a notification should be added to the scratchpad or logged.
+
+#### 5. Volatile vs. Persistent Context
+The history manager must distinguish between data that belongs in the permanent session record and data that is temporary for safety.
+- **Persistent**: User prompts, Model responses, and Tool outputs. These are saved to disk.
+- **Volatile**: System-injected warnings (e.g., "You have 1 turn left"). These must be injected into the API payload but **filtered out** before saving to disk to prevent polluting future conversation turns with stale warnings.
 
 ---
 

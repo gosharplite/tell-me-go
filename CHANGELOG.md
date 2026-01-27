@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0-dev] - 2026-01-27
+
+### Added
+- **Safety**: Implemented pre-limit **System Warnings** for the AI model. Escalating notices are injected into the volatile history when `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) limits are nearing.
+- **Safety**: Added `ErrContextLimitExceeded` and `ErrMaxTurnsReached` for graceful error handling, replacing `os.Exit(1)` inside the agent library.
+- **UI/UX**: Added usage/limit indicators to system logs (e.g., `[System (3/20)]` and `[System (55k/120k)]`).
+- **UI/UX**: Sequenced `[Tool Action]` headers to ensure they appear before any interactive prompts, preventing log interleaving.
+- **CLI**: Added support for `-l` without an argument to show the last conversation message.
+- **Persistence**: Made `bypass_confirmation` state session-persistent by saving it to `output/<session>.bypass`.
+
+### Changed
+- **Architecture**: Implemented deep-cloning of history payloads to prevent "context rot" by keeping safety warnings out of persistent history files.
+- **Documentation**: Fully revised README and all SOPs to reflect new safety, UX, and persistence standards.
+
 ## [1.22.0-dev] - 2026-06-01
 
 ### Changed

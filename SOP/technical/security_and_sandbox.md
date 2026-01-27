@@ -57,7 +57,7 @@ To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), intera
 
 ---
 
-### 4. Self-Protection
+### 5. Self-Protection
 The agent must be prevented from modifying its own security configurations.
 
 *   **Configuration Block**: `IsPathSafe` must explicitly deny read/write access to the active `safePathsFile` (the JSON file storing persistent authorizations).
