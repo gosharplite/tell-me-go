@@ -393,6 +393,11 @@ func TestCorruptionRecovery(t *testing.T) {
 		t.Errorf("Expected recovery and ID 1, got: %s", msg)
 	}
 
+	// Verify .bak file exists
+	if _, err := os.Stat(path + ".bak"); os.IsNotExist(err) {
+		t.Errorf("Expected corruption backup file %s.bak to exist", path)
+	}
+
 	// Verify list works
 	msg, err = manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
 	if !strings.Contains(msg, "[1] [pending] Recovery Task") {

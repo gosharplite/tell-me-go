@@ -16,7 +16,11 @@ import (
 	"google.golang.org/genai"
 )
 
-var stateMu sync.Mutex
+var (
+	taskMu       sync.Mutex
+	scratchpadMu sync.Mutex
+	configMu     sync.Mutex
+)
 
 // Task represents a single item in the task manager, matching the Bash version's schema.
 type Task struct {
@@ -160,8 +164,8 @@ func getConfigPath(homeDir, mode string) string {
 }
 
 func manageConfig(args map[string]interface{}, homeDir, mode string) (string, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	configMu.Lock()
+	defer configMu.Unlock()
 	action, _ := args["action"].(string)
 	key, _ := args["key"].(string)
 	value, _ := args["value"].(string)
@@ -175,7 +179,8 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
-			// If JSON is corrupted, reset to empty
+			fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			_ = os.Rename(path, path+".bak")
 			config = make(map[string]string)
 		}
 	}
@@ -232,8 +237,8 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 }
 
 func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	scratchpadMu.Lock()
+	defer scratchpadMu.Unlock()
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
 
@@ -286,8 +291,8 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 }
 
 func manageTasks(args map[string]interface{}, homeDir, mode string) (string, error) {
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	taskMu.Lock()
+	defer taskMu.Unlock()
 	action, _ := args["action"].(string)
 
 	path := getTasksPath(homeDir, mode)
@@ -300,7 +305,8 @@ func manageTasks(args map[string]interface{}, homeDir, mode string) (string, err
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &tasks); err != nil {
-			// If JSON is corrupted, reset to empty
+			fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			_ = os.Rename(path, path+".bak")
 			tasks = []Task{}
 		}
 	}
