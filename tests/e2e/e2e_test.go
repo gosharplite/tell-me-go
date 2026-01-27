@@ -121,6 +121,40 @@ func TestSessionArchiving(t *testing.T) {
 	}
 }
 
+func TestBypassArchiving(t *testing.T) {
+	// 1. Setup isolated home directory
+	homeDir := t.TempDir()
+	env := []string{"TELL_ME_HOME=" + homeDir}
+
+	// 2. Create dummy session files including bypass
+	outputDir := filepath.Join(homeDir, "output")
+	os.MkdirAll(outputDir, 0755)
+
+	histFile := filepath.Join(outputDir, "vertex_history.json")
+	bypassFile := filepath.Join(outputDir, "vertex_bypass.log")
+
+	os.WriteFile(histFile, []byte("[]"), 0644)
+	os.WriteFile(bypassFile, []byte("true"), 0644)
+
+	// 3. Run with -new flag
+	_, _, _ = runCommandWithEnv(env, "", "-new", "hello")
+
+	// 4. Verify bypass file STILL exists in output (not archived)
+	if _, err := os.Stat(bypassFile); os.IsNotExist(err) {
+		t.Errorf("Expected bypass file to remain in output directory, but it was moved or deleted")
+	}
+
+	// 5. Verify it's NOT in the backup
+	backupsDir := filepath.Join(outputDir, "backups")
+	entries, _ := os.ReadDir(backupsDir)
+	if len(entries) > 0 {
+		backupPath := filepath.Join(backupsDir, entries[0].Name(), "vertex_bypass.log")
+		if _, err := os.Stat(backupPath); err == nil {
+			t.Errorf("Expected bypass file NOT to be archived, but found it in %s", backupPath)
+		}
+	}
+}
+
 func TestStdinPiping(t *testing.T) {
 	// Use a fake config to avoid real API attempts but verify prompt capture
 	homeDir := t.TempDir()

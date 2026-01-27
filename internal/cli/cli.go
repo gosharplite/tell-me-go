@@ -82,7 +82,7 @@ func (a *App) Run() {
 	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
 	if *newSession {
-		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath, safePathsPath, bypassPath)
+		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath, safePathsPath)
 	}
 
 	hManager := history.NewManager(historyPath)
