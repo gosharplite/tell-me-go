@@ -229,6 +229,17 @@ func (a *Agent) Chat(prompt string) error {
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
+
+		// 0. Enforce history turn limit during long tool sequences or growing history.
+		// If we exceed the limit, we prune immediately to keep the request valid and cache-friendly.
+		if a.maxHistoryTurns > 0 && len(contents) > a.maxHistoryTurns*2 {
+			pruned := a.history.Prune(a.maxHistoryTurns)
+			if pruned > 0 {
+				a.prunedTurns += pruned
+				contents = a.history.GetContents()
+			}
+		}
+
 		tokens := a.estimatePayloadTokens(contents)
 
 		// 1. Safety Check: MAX_HISTORY_TOKENS
@@ -297,7 +308,8 @@ func (a *Agent) Chat(prompt string) error {
 			if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 				return fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 			}
-			respContent, metrics, err = a.client.SendChat(a.history.GetContents(), a.registry.ToToolSDK())
+			// Retry with the same apiContents (which includes any safety warnings)
+			respContent, metrics, err = a.client.SendChat(apiContents, a.registry.ToToolSDK())
 		}
 
 		if metrics != nil {

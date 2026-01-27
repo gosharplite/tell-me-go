@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0] - 2026-01-27
+
+### Changed
+- **Documentation**: Fully revised all Standard Operating Procedures (SOPs) and README.md for the public release.
+- **Maintenance**: Performed a comprehensive security audit and clean-room build verification.
+- **Version Bump**: Promoted to v1.25.0.
+
 ## [1.24.0] - 2026-01-27
 
 ### Changed
@@ -608,4 +615,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dual Auth: AI Studio (API Key) & Vertex AI (GCP Tokens).
 - Session Persistence (History Management).
 - SOP-driven architecture.
-
