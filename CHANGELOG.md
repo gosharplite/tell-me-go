@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2026-02-12
+
+### Added
+- **Safety**: Preserved the `bypass_confirmation` state across new sessions (`-new`). This ensures that automation approvals persist across tasks within the same mode.
+- **Testing**: Added E2E verification for bypass state preservation.
+
+### Changed
+- **Documentation**: Updated Standard Operating Procedures (`SOP/standards/cli_standards.md` and `SOP/technical/security_and_sandbox.md`) to reflect the persistent nature of the bypass state.
+- **Maintenance**: Performed a full security audit and clean-room build verification for public release.
+- **Version Bump**: Promoted to v1.33.0.
+
 ## [1.32.0] - 2026-01-27
 
 ### Changed
