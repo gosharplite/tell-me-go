@@ -11,14 +11,15 @@
 output/
 
 # Session Data
-*-history.json
-*-tokens.log
-*-commands.log
-*-safepaths.json
-*.bypass
+*_history.json
+*_tokens.log
+*_commands.log
+*_safepaths.json
 *_bypass.log
 *_tasks.json
 *_scratchpad.md
+*_config.json
+*.bypass
 last-*.json
 
 # Keys and Secrets

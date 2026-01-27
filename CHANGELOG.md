@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.31.0] - 2026-01-27
 
 ### Changed
-- **Config**: Updated the naming convention for persistent session files to `<MODE>-history.json`, `<MODE>-tokens.log`, `<MODE>-commands.log`, `<MODE>-safepaths.json`, `<MODE>_bypass.log`, `<MODE>_tasks.json`, and `<MODE>_scratchpad.md` to improve clarity and organization.
+- **Config**: Updated the naming convention for persistent session files to `<MODE>_history.json`, `<MODE>_tokens.log`, `<MODE>_commands.log`, `<MODE>_safepaths.json`, `<MODE>_bypass.log`, `<MODE>_tasks.json`, and `<MODE>_scratchpad.md` to improve clarity and organization.
 - **Documentation**: Updated `SOP/technical/history_management.md` and `.gitignore` to reflect the new file naming standards.
 
 ## [1.30.0] - 2026-01-27
 
 ### Added
-- **Testing**: Added unit and E2E tests for `cost-history.json` and metrics logic.
+- **Testing**: Added unit and E2E tests for `global_costs.json` and metrics logic.
 - **Safety**: Implemented file locking and corruption recovery for the cost ledger to prevent data loss during concurrent access.
 
 ### Changed
@@ -159,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Financial Metrics (Dynamic Pricing)**: 
     - Added `estimate_cost` tool to provide detailed session cost breakdowns.
-    - Added `get_cost_summary` tool with a persistent local ledger (`output/cost-history.json`) for daily expenditure tracking.
+    - Added `get_cost_summary` tool with a persistent local ledger (`output/global_costs.json`) for daily expenditure tracking.
     - Implemented a dynamic pricing engine that fetches live Vertex AI rates from GitHub with local 24-hour caching.
     - `get_cost_summary` now automatically updates the current session's cost before displaying the report.
 - **Security**: 
@@ -496,10 +496,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Unified Naming Alignment**: Aligned file naming conventions with the original Bash project for full cross-compatibility.
-    - History: `output/last-<MODE>.json`
-    - Log: `output/last-<MODE>.json.log`
-    - Scratchpad: `output/last-<MODE>.scratchpad.md`
-    - Tasks: `output/last-<MODE>.tasks.json`
+    - History: `output/<MODE>_history.json`
+    - Log: `output/<MODE>_tokens.log`
+    - Scratchpad: `output/<MODE>_scratchpad.md`
+    - Tasks: `output/<MODE>_tasks.json`
 - **Version Bump**: Updated binary version to v0.9.3.
 ## [0.9.2] - 2026-01-26
 

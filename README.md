@@ -31,7 +31,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Financial Metrics (Dynamic Pricing)**: 
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
-        *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/cost-history.json`).
+        *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/global_costs.json`).
         *   **Auto-Sync**: Automatically fetches the latest Google Cloud pricing from GitHub and caches it locally for 24 hours.
 *   **Vertex AI Optimized**: Native support for the official Google GenAI SDK, focused on Vertex AI for enterprise-grade security and performance.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.

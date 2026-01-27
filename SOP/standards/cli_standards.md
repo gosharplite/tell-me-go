@@ -38,7 +38,7 @@ To maintain consistency with the project's roots, users are encouraged to set up
 The tool manages session state through history and log files.
 - **New Session**: When the `-new` flag is used, the tool must start a fresh conversation.
 - **Automatic Archiving**: To prevent data loss, instead of deleting old session files, the tool **MUST** move them to a timestamped backup directory: `output/backups/YYYYMMDD_HHMMSS/`. 
-- **Files to Archive**: This include history (`.json`), logs (`.log`), scratchpads (`.scratchpad.md`), and tasks (`.tasks.json`).
+- **Files to Archive**: This include history (`_history.json`), logs (`_tokens.log`, `_commands.log`), scratchpads (`_scratchpad.md`), tasks (`_tasks.json`), and safety settings (`_safepaths.json`, `_bypass.log`).
 ```bash
 alias b='tell-me-go'
 ```
