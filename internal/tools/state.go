@@ -23,7 +23,7 @@ type Task struct {
 }
 
 // RegisterStateTools adds scratchpad, task management, and session info tools.
-func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) {
+func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string) {
 	// We pass homeDir to closures so the handlers know where to look.
 
 	r.Register(&genai.FunctionDeclaration{
@@ -56,7 +56,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) 
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
-		Description: "Read, write, or update the persistent global scratchpad. Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
+		Description: "Read, write, or update the persistent scratchpad (scoped to current mode). Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -73,12 +73,12 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) 
 			Required: []string{"action"},
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return manageScratchpad(args, homeDir)
+		return manageScratchpad(args, homeDir, mode)
 	})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
-		Description: "Manages a global to-do list of tasks. Supports adding, updating, listing, and deleting tasks.",
+		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -103,7 +103,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) 
 			Required: []string{"action"},
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return manageTasks(args, homeDir)
+		return manageTasks(args, homeDir, mode)
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -118,19 +118,19 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager) 
 	})
 }
 
-func getScratchpadPath(homeDir string) string {
-	return filepath.Join(homeDir, "output", "global-scratchpad.md")
+func getScratchpadPath(homeDir, mode string) string {
+	return filepath.Join(homeDir, "output", fmt.Sprintf("scratchpad_%s.md", mode))
 }
 
-func getTasksPath(homeDir string) string {
-	return filepath.Join(homeDir, "output", "global-tasks.json")
+func getTasksPath(homeDir, mode string) string {
+	return filepath.Join(homeDir, "output", fmt.Sprintf("tasks_%s.json", mode))
 }
 
-func manageScratchpad(args map[string]interface{}, homeDir string) (string, error) {
+func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string, error) {
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
 
-	path := getScratchpadPath(homeDir)
+	path := getScratchpadPath(homeDir, mode)
 
 	// Ensure directory exists
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
@@ -178,10 +178,10 @@ func manageScratchpad(args map[string]interface{}, homeDir string) (string, erro
 	return "Invalid action", nil
 }
 
-func manageTasks(args map[string]interface{}, homeDir string) (string, error) {
+func manageTasks(args map[string]interface{}, homeDir, mode string) (string, error) {
 	action, _ := args["action"].(string)
 
-	path := getTasksPath(homeDir)
+	path := getTasksPath(homeDir, mode)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", fmt.Errorf("failed to create tasks directory: %w", err)
 	}

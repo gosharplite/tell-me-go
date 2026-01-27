@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,11 @@ func TestManageTasks(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	testMode := "test_mode"
+
 	// Helper to read the tasks file directly
 	readTasksFile := func() []Task {
-		path := filepath.Join(tmpDir, "output", "global-tasks.json")
+		path := filepath.Join(tmpDir, "output", fmt.Sprintf("tasks_%s.json", testMode))
 		data, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			return []Task{}
@@ -41,7 +44,7 @@ func TestManageTasks(t *testing.T) {
 			"action":  "add",
 			"content": "First Task",
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -63,7 +66,7 @@ func TestManageTasks(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "list",
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -79,7 +82,7 @@ func TestManageTasks(t *testing.T) {
 			"task_id": 1.0, // JSON numbers are floats
 			"status":  "completed",
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -99,7 +102,7 @@ func TestManageTasks(t *testing.T) {
 			"action":  "delete",
 			"task_id": 1.0,
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -116,12 +119,12 @@ func TestManageTasks(t *testing.T) {
 	// Test 5: Clear tasks
 	t.Run("Clear", func(t *testing.T) {
 		// Add a task first
-		manageTasks(map[string]interface{}{"action": "add", "content": "To be cleared"}, tmpDir)
+		manageTasks(map[string]interface{}{"action": "add", "content": "To be cleared"}, tmpDir, testMode)
 
 		args := map[string]interface{}{
 			"action": "clear",
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -142,7 +145,7 @@ func TestManageTasks(t *testing.T) {
 			{ID: 10, Content: "Persistent Task", Status: "pending"},
 		}
 		data, _ := json.Marshal(initialTasks)
-		path := filepath.Join(tmpDir, "output", "global-tasks.json")
+		path := filepath.Join(tmpDir, "output", fmt.Sprintf("tasks_%s.json", testMode))
 		os.MkdirAll(filepath.Dir(path), 0755)
 		os.WriteFile(path, data, 0644)
 
@@ -150,7 +153,7 @@ func TestManageTasks(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "list",
 		}
-		msg, err := manageTasks(args, tmpDir)
+		msg, err := manageTasks(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -167,7 +170,8 @@ func TestManageScratchpad(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	scratchpadPath := filepath.Join(tmpDir, "output", "global-scratchpad.md")
+	testMode := "test_mode"
+	scratchpadPath := filepath.Join(tmpDir, "output", fmt.Sprintf("scratchpad_%s.md", testMode))
 
 	// Helper to read content
 	readScratchpad := func() string {
@@ -184,7 +188,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 1: Read non-existent
 	t.Run("ReadEmpty", func(t *testing.T) {
 		args := map[string]interface{}{"action": "read"}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -199,7 +203,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "write",
 			"content": "# Plan\n- Step 1",
 		}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -216,7 +220,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 3: Read Existing
 	t.Run("ReadExisting", func(t *testing.T) {
 		args := map[string]interface{}{"action": "read"}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -231,7 +235,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "append",
 			"content": "- Step 2",
 		}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -255,7 +259,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "append",
 			"content": "New Note",
 		}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -272,7 +276,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 6: Clear
 	t.Run("Clear", func(t *testing.T) {
 		args := map[string]interface{}{"action": "clear"}
-		msg, err := manageScratchpad(args, tmpDir)
+		msg, err := manageScratchpad(args, tmpDir, testMode)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
