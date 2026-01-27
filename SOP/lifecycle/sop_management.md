@@ -52,7 +52,10 @@ Every SOP should follow a consistent Markdown structure:
 - **CI/Hook Integration**: Ensure the new SOP's verification steps are aligned with the pre-commit requirements defined in `SOP/standards/git_workflow.md`.
 
 ### 3. Maintenance & Revision
-- **Task-Driven Execution**: For complex, multi-stage SOPs (e.g., Releases, Refactors), the instructions SHOULD include a "Task Initialization" step that uses the `manage_tasks` tool. High-level process milestones should be tracked in the Task Manager, while granular checkboxes remain in the `scratchpad`.
+- **Mandatory State Management**: For any SOP involving 3+ steps or destructive actions, the instructions **MUST** include a "Task Initialization" step as per `SOP/standards/cli_standards.md`:
+    - **Anchor Tasking**: The first task MUST be named "SOP Compliance: [filename.md]".
+    - **Atomic Turns**: Technical milestones and state updates (Tasks/Scratchpad) must occur in separate turns.
+    - **Verification**: The agent must read back the state after updates.
 - **Evolution**: When a codebase change (e.g., a Go module update or refactor) breaks a documented procedure, the corresponding SOP **must** be updated immediately.
 - **Versioning**: Use Git commit messages to track the "why" behind SOP revisions.
 - **Consistency**: Periodically review all files in the `SOP/` tree to ensure they don't contradict each other or standard Go idioms.
