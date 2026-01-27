@@ -155,6 +155,57 @@ func TestBypassArchiving(t *testing.T) {
 	}
 }
 
+func TestEnvironmentPersistence(t *testing.T) {
+	// 1. Setup isolated home directory
+	homeDir := t.TempDir()
+	env := []string{"TELL_ME_HOME=" + homeDir}
+
+	// 2. Create dummy persistent and session files
+	outputDir := filepath.Join(homeDir, "output")
+	os.MkdirAll(outputDir, 0755)
+
+	sessionFiles := []string{"vertex_history.json", "vertex_tokens.log", "vertex_commands.log"}
+	persistentFiles := []string{"vertex_safepaths.json", "vertex_scratchpad.md", "vertex_tasks.json", "vertex_bypass.log"}
+
+	for _, f := range sessionFiles {
+		os.WriteFile(filepath.Join(outputDir, f), []byte("session content"), 0644)
+	}
+	for _, f := range persistentFiles {
+		os.WriteFile(filepath.Join(outputDir, f), []byte("persistent content"), 0644)
+	}
+
+	// 3. Run with -new flag
+	_, _, _ = runCommandWithEnv(env, "", "-new", "hello persistence")
+
+	// 4. Verify persistent files STILL exist in output
+	for _, f := range persistentFiles {
+		if _, err := os.Stat(filepath.Join(outputDir, f)); os.IsNotExist(err) {
+			t.Errorf("Expected persistent file %s to remain in output directory, but it was moved or deleted", f)
+		}
+	}
+
+	// 5. Verify session files are GONE (moved to backups)
+	for _, f := range sessionFiles {
+		if _, err := os.Stat(filepath.Join(outputDir, f)); !os.IsNotExist(err) {
+			t.Errorf("Expected session file %s to be archived, but it still exists in output", f)
+		}
+	}
+
+	// 6. Verify they are in the backup
+	backupsDir := filepath.Join(outputDir, "backups")
+	entries, _ := os.ReadDir(backupsDir)
+	if len(entries) == 0 {
+		t.Fatalf("Expected backup directory to contain entries")
+	}
+
+	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
+	for _, f := range sessionFiles {
+		if _, err := os.Stat(filepath.Join(backupSubDir, f)); err != nil {
+			t.Errorf("Expected archived session file %s in backup, but it's missing", f)
+		}
+	}
+}
+
 func TestStdinPiping(t *testing.T) {
 	// Use a fake config to avoid real API attempts but verify prompt capture
 	homeDir := t.TempDir()
