@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] - 2026-01-27
+
+### Changed
+- **Documentation**: Synchronized all Standard Operating Procedures (SOPs), README.md, and system configurations with the actual Go implementation.
+- **Naming Convention**: Enforced a consistent underscore (`_`) naming convention for all session-persistent files across the codebase and documentation.
+- **Compliance**: Added missing SPDX-License-Identifier headers to all project source files, including test files and SOPs.
+- **Maintenance**: Performed a full security audit and clean-room build verification for public release.
+
 ## [1.31.0] - 2026-01-27
 
 ### Changed
