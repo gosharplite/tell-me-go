@@ -77,6 +77,32 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	})
 
 	r.Register(&genai.FunctionDeclaration{
+		Name:        "manage_config",
+		Description: "Manages persistent key-value configuration/settings scoped by mode. Useful for storing URLs, IDs, or preferences across sessions.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"action": {
+					Type:        genai.TypeString,
+					Description: "The operation to perform: 'set', 'get', 'list', 'delete'.",
+					Enum:        []string{"set", "get", "list", "delete"},
+				},
+				"key": {
+					Type:        genai.TypeString,
+					Description: "The configuration key (e.g., 'teams_webhook_url').",
+				},
+				"value": {
+					Type:        genai.TypeString,
+					Description: "The value to store (required for 'set').",
+				},
+			},
+			Required: []string{"action"},
+		},
+	}, func(args map[string]interface{}) (string, error) {
+		return manageConfig(args, homeDir, mode)
+	})
+
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
 		Parameters: &genai.Schema{
@@ -124,6 +150,75 @@ func getScratchpadPath(homeDir, mode string) string {
 
 func getTasksPath(homeDir, mode string) string {
 	return filepath.Join(homeDir, "output", fmt.Sprintf("tasks_%s.json", mode))
+}
+
+func getConfigPath(homeDir, mode string) string {
+	return filepath.Join(homeDir, "output", fmt.Sprintf("config_%s.json", mode))
+}
+
+func manageConfig(args map[string]interface{}, homeDir, mode string) (string, error) {
+	action, _ := args["action"].(string)
+	key, _ := args["key"].(string)
+	value, _ := args["value"].(string)
+
+	path := getConfigPath(homeDir, mode)
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+
+	config := make(map[string]string)
+	data, err := os.ReadFile(path)
+	if err == nil && len(data) > 0 {
+		_ = json.Unmarshal(data, &config)
+	}
+
+	switch action {
+	case "set":
+		if key == "" {
+			return "Error: 'key' is required for 'set'", nil
+		}
+		config[key] = value
+		newData, _ := json.MarshalIndent(config, "", "  ")
+		if err := os.WriteFile(path, newData, 0644); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Configuration '%s' set successfully.", key), nil
+
+	case "get":
+		if key == "" {
+			return "Error: 'key' is required for 'get'", nil
+		}
+		val, ok := config[key]
+		if !ok {
+			return fmt.Sprintf("Configuration key '%s' not found.", key), nil
+		}
+		return val, nil
+
+	case "list":
+		if len(config) == 0 {
+			return "No configuration found for this mode.", nil
+		}
+		var lines []string
+		for k, v := range config {
+			lines = append(lines, fmt.Sprintf("- %s: %s", k, v))
+		}
+		sort.Strings(lines)
+		return "Persistent Configuration:\n" + strings.Join(lines, "\n"), nil
+
+	case "delete":
+		if key == "" {
+			return "Error: 'key' is required for 'delete'", nil
+		}
+		if _, ok := config[key]; !ok {
+			return fmt.Sprintf("Key '%s' not found.", key), nil
+		}
+		delete(config, key)
+		newData, _ := json.MarshalIndent(config, "", "  ")
+		if err := os.WriteFile(path, newData, 0644); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Configuration key '%s' deleted.", key), nil
+	}
+
+	return "Invalid action", nil
 }
 
 func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string, error) {

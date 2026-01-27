@@ -21,9 +21,12 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad` and `manage_tasks`. 
-        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `tasks_vertex.json`, `scratchpad_vertex.md`) to prevent conflicts when switching environments.
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, and `manage_config`.
+        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `tasks_vertex.json`, `scratchpad_vertex.md`, `config_vertex.json`) to prevent conflicts when switching environments.
+        *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
         *   **Rollback**: `rollback_last_turn` allows undoing the last interaction.
+    *   **External Integration**:
+        *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
     *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`, `register_safepath`, `list_safepaths`, `remove_safepath`.
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Financial Metrics (Dynamic Pricing)**: 

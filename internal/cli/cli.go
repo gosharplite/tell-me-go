@@ -125,6 +125,7 @@ func (a *App) Run() {
 	tools.RegisterSystemTools(registry)
 	tools.RegisterGitTools(registry)
 	tools.RegisterDevTools(registry)
+	tools.RegisterTeamsTools(registry)
 	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode)
 	tools.RegisterMetricsTools(registry, logPath, cfg.Model)
 	tools.RegisterMediaTools(registry, client)
