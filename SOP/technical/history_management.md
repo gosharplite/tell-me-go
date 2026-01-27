@@ -23,6 +23,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 History must be stored as a slice of `Content` structs, mirroring the Gemini API's `contents` field.
 - **File Format**: Standard JSON.
 - **Locality**: History files should be saved in the `output/` directory by default, named `last-<MODE>.json`.
+- **Auxiliary State**: Persistent state files (Tasks and Scratchpad) must also follow the mode-scoped naming convention (e.g., `tasks_<MODE>.json`, `scratchpad_<MODE>.md`) to ensure context isolation between different configuration environments.
 - **Log Files**: Logs should be saved as `last-<MODE>.json.log` for compatibility with the Bash version.
 - **Serialization**: The `Role` field in the JSON payload must **never** be omitted. Strict providers like Vertex AI will reject payloads where the `role` key is missing. Ensure the struct tag does not use `omitempty` for this field.
 

@@ -21,7 +21,9 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `rollback_last_turn`.
+    *   **State & Session**: `manage_scratchpad` and `manage_tasks`. 
+        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `tasks_vertex.json`, `scratchpad_vertex.md`) to prevent conflicts when switching environments.
+        *   **Rollback**: `rollback_last_turn` allows undoing the last interaction.
     *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`, `register_safepath`, `list_safepaths`, `remove_safepath`.
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Financial Metrics (Dynamic Pricing)**: 
@@ -30,7 +32,6 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **Auto-Sync**: Automatically fetches the latest Google Cloud pricing from GitHub and caches it locally for 24 hours.
 *   **Vertex AI Optimized**: Native support for the official Google GenAI SDK, focused on Vertex AI for enterprise-grade security and performance.
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
-*   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
     *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn and an error is returned.
@@ -91,11 +92,18 @@ If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant wi
 ```
 
 ## 📂 Shared Storage & Compatibility
-`tell-me-go` is designed to be fully compatible with the data structures of the original `tell-me` Bash project. 
+`tell-me-go` uses a structured output directory for session history and state.
 
 ### Environment Variables
 *   `TELL_ME_HOME`: The base directory for shared data (defaults to the current directory).
 *   `AIT_HOME`: Fallback for compatibility with the original Bash project.
+
+### Mode-Scoped State
+Tasks and Scratchpads are scoped to the active `MODE` defined in your configuration file.
+*   **Tasks**: stored in `output/tasks_<MODE>.json`
+*   **Scratchpad**: stored in `output/scratchpad_<MODE>.md`
+
+This allows you to maintain separate contexts (e.g., "Personal" vs "Work") simply by switching config files.
 
 ## ⚙️ Configuration
 The tool is optimized for Google Vertex AI.
