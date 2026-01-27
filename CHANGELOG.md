@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] - 2026-01-27
+
+### Added
+- **Testing**: Added comprehensive unit tests for `manage_tasks` and `manage_scratchpad` tools.
+- **Testing**: Integrated E2E tests for task management and scratchpad workflows, ensuring end-to-end tool orchestration stability.
+
+### Changed
+- **Architecture**: Modularized Agent, CLI, and Tools packages for better separation of concerns and testability.
+- **Safety**: Updated system notices and safety warnings to include explicit instructions for Task List management.
+- **State Management**: Refactored `manageTasks` with improved error handling for file operations and JSON parsing.
+- **Maintenance**: Performed comprehensive public release audit, including security scanning, SPDX compliance verification, and clean-room build validation.
+
 ## [1.28.0] - 2026-01-27
 
 ### Changed
