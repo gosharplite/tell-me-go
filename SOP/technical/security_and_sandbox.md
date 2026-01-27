@@ -43,7 +43,7 @@ The assistant must never perform destructive or high-risk actions without explic
 For trusted environments or highly repetitive automated tasks, a `bypass_confirmation` tool is available.
 
 *   **Scope**: Disables all interactive security prompts.
-*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<session>.bypass`).
+*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<MODE>_bypass.log`).
 *   **Archival**: When a new session is started (`--new`), the bypass state is archived along with other session files.
 *   **Revocation**: Use the `revoke_bypass` tool to re-enable confirmations.
 *   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs within the same session.

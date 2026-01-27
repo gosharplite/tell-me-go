@@ -79,7 +79,7 @@ func (a *App) Run() {
 	logPath := filepath.Join(homeDir, "output", sessionName+"_tokens.log")
 	commandsLogPath := filepath.Join(homeDir, "output", sessionName+"_commands.log")
 	safePathsPath := filepath.Join(homeDir, "output", sessionName+"_safepaths.json")
-	bypassPath := filepath.Join(homeDir, "output", sessionName+".bypass")
+	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
 	if *newSession {
 		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath, safePathsPath, bypassPath)

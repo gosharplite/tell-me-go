@@ -16,6 +16,7 @@ output/
 *-commands.log
 *-safepaths.json
 *.bypass
+*_bypass.log
 *_tasks.json
 *_scratchpad.md
 last-*.json
