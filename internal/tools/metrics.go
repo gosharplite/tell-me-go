@@ -68,17 +68,35 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 	})
 }
 
-// recordCost saves the current cost to a persistent local ledger.
+// recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
 func recordCost(outputDir string, record SessionCostRecord) {
 	historyPath := filepath.Join(outputDir, "cost-history.json")
+	lockPath := historyPath + ".lock"
+
+	// 1. Acquire simple file-based lock
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		// If lock exists, wait a bit or just give up to avoid hanging the CLI
+		// For a CLI tool, giving up is often better than a long hang.
+		return
+	}
+	defer func() {
+		lock.Close()
+		os.Remove(lockPath)
+	}()
+
 	var history []SessionCostRecord
 
-	// Read existing history
+	// 2. Read existing history
 	if content, err := os.ReadFile(historyPath); err == nil {
-		_ = json.Unmarshal(content, &history)
+		if err := json.Unmarshal(content, &history); err != nil {
+			// If corrupted, try to recover what we can or start fresh
+			// We'll proceed with an empty slice to "fix" the file on next write
+			history = []SessionCostRecord{}
+		}
 	}
 
-	// Update or Append (identify by log filename)
+	// 3. Update or Append (identify by log filename)
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -91,7 +109,7 @@ func recordCost(outputDir string, record SessionCostRecord) {
 		history = append(history, record)
 	}
 
-	// Write back
+	// 4. Write back
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
 		_ = os.WriteFile(historyPath, bytes, 0644)
 	}
@@ -106,7 +124,7 @@ func getCostSummary(outputDir string) (string, error) {
 
 	var history []SessionCostRecord
 	if err := json.Unmarshal(content, &history); err != nil {
-		return "Error parsing cost history.", err
+		return "Error parsing cost history. The file may be corrupted.", err
 	}
 
 	// Aggregate by Date
