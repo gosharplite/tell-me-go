@@ -37,6 +37,7 @@ type Agent struct {
 	maxToolTurns       int
 	maxHistoryTokens   int
 	maxHistoryTurns    int
+	prunedTurns        int
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	showThoughts       bool
@@ -195,6 +196,14 @@ func (a *Agent) getHistoryTurnWarning(currentTurns int) string {
 	if a.maxHistoryTurns <= 0 {
 		return ""
 	}
+
+	// 1. Check for recent major pruning (Aggressive cleanup)
+	if a.prunedTurns > 5 {
+		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to the 'manage_scratchpad' and read relevant source files to re-synchronize your internal state with the current project status.]", a.prunedTurns)
+		a.prunedTurns = 0 // Reset after warning once
+		return msg
+	}
+
 	ratio := float64(currentTurns) / float64(a.maxHistoryTurns)
 	if ratio >= 1.0 {
 		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to the 'manage_scratchpad' for the latest summaries.]"
@@ -204,6 +213,11 @@ func (a *Agent) getHistoryTurnWarning(currentTurns int) string {
 		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad.]"
 	}
 	return ""
+}
+
+// SetPrunedTurns informs the agent how many turns were removed during startup.
+func (a *Agent) SetPrunedTurns(n int) {
+	a.prunedTurns = n
 }
 
 // Chat runs the multi-turn orchestration loop.

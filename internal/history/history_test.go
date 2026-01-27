@@ -135,8 +135,8 @@ func TestHistoryManager_Prune(t *testing.T) {
 		maxTurns int
 		wantLen  int
 	}{
-		{"Prune to 1 turn", 1, 2},
-		{"Prune to 2 turns", 2, 4},
+		{"Prune to 1 turn (drop to 1)", 1, 2},
+		{"Prune to 2 turns (drop to 1)", 2, 2},
 		{"Prune to more than exists", 10, 6},
 		{"Prune to 0", 0, 6},
 		{"Prune to negative", -1, 6},

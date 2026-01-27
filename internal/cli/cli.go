@@ -105,8 +105,9 @@ func (a *App) Run() {
 	if err := hManager.Load(); err != nil {
 		log.Fatalf("Error loading history: %v", err)
 	}
-	// Proactively prune history immediately after loading to ensure cache efficiency
-	hManager.Prune(cfg.MaxHistoryTurns)
+	// Proactively prune history immediately after loading to ensure cache efficiency.
+	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
+	pruned := hManager.Prune(cfg.MaxHistoryTurns)
 
 	if *lastN > 0 {
 		a.showHistory(hManager, *lastN)
@@ -149,6 +150,7 @@ func (a *App) Run() {
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens, cfg.MaxHistoryTurns)
+	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
 	if err := chatAgent.Chat(prompt); err != nil {
