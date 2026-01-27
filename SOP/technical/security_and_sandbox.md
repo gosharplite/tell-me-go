@@ -8,6 +8,12 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 
 ---
 
+### Prerequisites
+- Go toolchain 1.24+.
+- `SOP/agent/agentic_capabilities.md` (defining tool execution).
+
+---
+
 ### 1. Path Validation (Zero-Trust)
 All tools interacting with the local filesystem must verify that the requested paths are within authorized boundaries.
 
@@ -33,7 +39,16 @@ The assistant must never perform destructive or high-risk actions without explic
 
 ---
 
-### 3. Terminal Interaction (Stdin Independence)
+### 3. Bypass Confirmation (Automation Mode)
+For trusted environments or highly repetitive automated tasks, a `bypass_confirmation` tool is available.
+
+*   **Scope**: Disables all interactive security prompts.
+*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<session>.bypass`).
+*   **Archival**: When a new session is started (`--new`), the bypass state is archived along with other session files.
+*   **Revocation**: Use the `revoke_bypass` tool to re-enable confirmations.
+*   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs within the same session.
+
+### 4. Terminal Interaction (Stdin Independence)
 To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), interactive tools must not rely solely on `os.Stdin`.
 
 *   **Standard**: Use `/dev/tty` for interactive prompts whenever possible.
@@ -42,7 +57,7 @@ To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), intera
 
 ---
 
-### 4. Self-Protection
+### 5. Self-Protection
 The agent must be prevented from modifying its own security configurations.
 
 *   **Configuration Block**: `IsPathSafe` must explicitly deny read/write access to the active `safePathsFile` (the JSON file storing persistent authorizations).

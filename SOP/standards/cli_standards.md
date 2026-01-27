@@ -11,7 +11,7 @@ To ensure a consistent and user-friendly command-line interface for `tell-me-go`
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - Standard `flag` package.
 
 ---
@@ -23,6 +23,7 @@ All flags must follow a consistent naming convention:
 - **Config**: `-c` or `--config` for specifying the configuration YAML path.
 - **Model**: `-m` or `--model` for overriding the AI model.
 - **Verbose**: `-v` or `--verbose` for detailed logging.
+- **History**: `-l` for showing conversation history. If used without a numeric argument (e.g., `b -l`), it defaults to showing the single last message (`b -l 1`).
 
 #### 2. Argument and Input Handling
 The tool follows a "Triple-Mode" input strategy to provide a seamless user experience:
@@ -30,7 +31,7 @@ The tool follows a "Triple-Mode" input strategy to provide a seamless user exper
 - **Mode 2: Piped Input**: If no argument is present and `stdin` is a pipe (not a terminal), read the prompt from `stdin`.
 - **Mode 3: Interactive Multi-line**: If no argument is present and `stdin` is a terminal, enter an interactive mode that reads until `EOF` (`Ctrl+D`).
 
-#### 3. Standard Alias (`a`)
+#### 3. Standard Alias (`b`)
 To maintain consistency with the project's roots, users are encouraged to set up a single, universal alias:
 
 #### 4. Session Management and Archiving
@@ -39,7 +40,7 @@ The tool manages session state through history and log files.
 - **Automatic Archiving**: To prevent data loss, instead of deleting old session files, the tool **MUST** move them to a timestamped backup directory: `output/backups/YYYYMMDD_HHMMSS/`. 
 - **Files to Archive**: This include history (`.json`), logs (`.log`), scratchpads (`.scratchpad.md`), and tasks (`.tasks.json`).
 ```bash
-alias a='tell-me-go'
+alias b='tell-me-go'
 ```
 This alias should be the primary way users interact with the tool, relying on the "Triple-Mode" logic above.
 
@@ -51,9 +52,11 @@ To ensure a responsive user experience:
 #### 6. Logging and Observability
 All terminal log outputs (prompt echoes, system messages, thought processes, tool calls) must include a timestamp in the following format:
 - `[HH:MM:SS]` (e.g., `[14:30:05]`)
+- **System Status Indicator**: The primary payload log must show current resource usage relative to limits: `[System (CurrentTurn/MaxTurn)] Payload: ~Tokens tokens`.
 - Colors:
     - User Prompt: Green (`[0;32m`)
     - System/Thought/Tool logs: Gray (`[0;90m`) to `stderr`.
+    - Safety Warnings: Yellow or Red for urgency.
 
 #### 7. Flag Parsing Location
 - Flags should be defined and parsed within `cmd/tell-me-go/main.go`.

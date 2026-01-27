@@ -125,24 +125,32 @@ func (m *Manager) Rollback() {
 	}
 }
 
-// Prune reduces the history to the last N turns (1 turn = 1 user + 1 model message).
-func (m *Manager) Prune(maxTurns int) {
+// Prune reduces the history when it exceeds maxTurns. 
+// To improve cache efficiency, it doesn't just prune 1 turn; 
+// it prunes down to 50% of maxTurns to allow for a stable cache prefix 
+// during the next 50% of the conversation.
+// Returns the number of turns removed.
+func (m *Manager) Prune(maxTurns int) int {
 	if maxTurns <= 0 {
-		return
+		return 0
 	}
 	maxMessages := maxTurns * 2
 	if len(m.Contents) > maxMessages {
-		removeCount := len(m.Contents) - maxMessages
-		// Force removeCount to be even to maintain role alternation.
-		// Since conversation always starts with 'user' and alternates,
-		// skipping an even number of messages guarantees the new index 0
-		// is also a 'user' role.
-		removeCount += (removeCount % 2)
+		// Prune down to 50% of the limit
+		targetMessages := (maxTurns / 2) * 2
+		if targetMessages < 2 {
+			targetMessages = 2 // Keep at least one turn
+		}
+
+		removeCount := len(m.Contents) - targetMessages
+		removeCount += (removeCount % 2) // Ensure role alternation
 
 		if removeCount > 0 && removeCount < len(m.Contents) {
 			m.Contents = m.Contents[removeCount:]
+			return removeCount / 2
 		}
 	}
+	return 0
 }
 
 // GetContents returns the current history contents.

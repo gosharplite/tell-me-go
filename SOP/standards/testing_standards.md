@@ -10,7 +10,7 @@ To ensure that the `tell-me-go` test suite remains modular, isolated, and utiliz
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - Familiarity with the standard `testing` package.
 - (Optional) `testify` or similar assertion libraries if adopted later.
 
@@ -107,5 +107,6 @@ func TestSaveHistory(t *testing.T) {
 - **Table-Driven Tests**: Use anonymous structs and loops for testing multiple edge cases efficiently.
 - **Clean Assertions**: Keep tests readable. If an assertion is complex, wrap it in a helper function.
 - **Resilience**: Mock API errors (429, 500, timeouts) to verify the client's retry logic.
+- **Safety Boundary Testing**: Tests for resource limits (turn-count, token-count) must verify that the system returns a graceful error (e.g., `ErrContextLimitExceeded`) rather than terminating the process.
 - **Golden Files**: Use "golden files" for large expected outputs (like complex JSON history structures).
 - **No Style in Assertions**: If comparing terminal output, strip ANSI escape codes before asserting.

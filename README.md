@@ -14,7 +14,9 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Smart Budget Cap**: Automatically adjusts `THINKING_BUDGET` to the maximum allowed by the selected model, preventing `Error 400` failures.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
-    *   **Interactive Safety**: Serialized terminal prompts for tool confirmations—no more "flying by" messages.
+    *   **Interactive Safety**: 
+        *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
+        *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
     *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`.
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
@@ -26,21 +28,24 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
         *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/cost-history.json`).
         *   **Auto-Sync**: Automatically fetches the latest Google Cloud pricing from GitHub and caches it locally for 24 hours.
+*   **Vertex AI Optimized**: Native support for the official Google GenAI SDK, focused on Vertex AI for enterprise-grade security and performance.
+*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **Shared State**: Shared Task Manager and Scratchpad across sessions and versions.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
-    *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn.
+    *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn and an error is returned.
+    *   **Pre-Limit Warnings**: 
+        *   **AI Awareness**: When `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) is nearing, the agent injects escalating **System Notices** into the AI's volatile history. 
+        *   **Graceful Exit**: This instructs the model to prioritize state persistence (scratchpad/tasks) before the process terminates or rolls back.
     *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), existing files are archived to `output/backups/`.
-*   **Vertex AI & Gemini API**: Seamlessly switches between backends based on configuration.
-*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **Bash Compatibility**: Uses identical file naming and structures as the original Bash project for full interoperability.
 
 ## 📋 Prerequisites
 *   **Go**: 1.24 or higher.
-*   **Google Cloud SDK (gcloud)**: Required for Vertex AI mode using user credentials.
+*   **Google Cloud SDK (gcloud)**: Required for Vertex AI authentication.
 
 ## 🛠️ Installation
 1.  **Clone the repository**:
@@ -66,13 +71,19 @@ Show the last 5 messages:
 ```bash
 ./tell-me-go -l 5
 ```
+Show the very last message (shorthand):
+```bash
+./tell-me-go -l
+```
 
-**Pre-flight Payload Log:**
-Before every request, the tool shows the estimated token count of the history and tools being sent:
-`[14:19:43] [System] Payload: ~4549 tokens`
+**Pre-flight Status Log:**
+Before every request, the tool shows your current resource usage relative to configured limits:
+`[14:19:43] [System (3/20)] Payload: ~4549 tokens`
+*   **(3/20)**: Current turn count / Max history turns.
+*   **Tokens**: Estimated payload size. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
 
 **Thinking Mode (Gemini 2.0):**
-If `THINKING_BUDGET` is set in your config, the assistant will display its reasoning process in the terminal.
+If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.
 
 **New Session:**
 ```bash
@@ -87,7 +98,7 @@ If `THINKING_BUDGET` is set in your config, the assistant will display its reaso
 *   `AIT_HOME`: Fallback for compatibility with the original Bash project.
 
 ## ⚙️ Configuration
-The tool supports both Vertex AI and the Gemini Developer API.
+The tool is optimized for Google Vertex AI.
 
 ```yaml
 # configs/vertex.yaml
@@ -110,6 +121,27 @@ SHOW_TOOLS: true          # Show tool execution status logs
 MAX_CONCURRENT_TOOLS: 5    # Parallel tool execution limit
 TOOL_TIMEOUT: 30           # Individual tool timeout (seconds)
 ```
+
+### 🧠 Strategic Memory Management
+To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
+
+1.  **`MAX_HISTORY_TOKENS` (Default: 120,000)**:
+    *   **The Price Cliff**: Gemini 1.5/2.0 pricing tiers jump at **128k tokens**. Staying below 120k ensures you always pay the "Standard" rate ($0.025 - $0.31/1M) and avoid the "Premium" rate ($0.075 - $1.25/1M).
+    *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
+
+2.  **`MAX_HISTORY_TURNS`**:
+    *   **50% Pruning Strategy**: When this limit is hit, the agent prunes the oldest **50%** of the conversation.
+    *   **Why 50%?**: Gemini charges for the full "Cache Miss" when the prefix changes. By pruning half the history instead of just 1 turn, the agent creates a **stable cache prefix**. The next dozens of turns will be processed using high-speed, 90%-discounted cached tokens.
+    *   **AI Re-Sync**: After a major prune, the agent injects an **Urgent System Notice** into the history, instructing the model to use the **Scratchpad** to recover its situational awareness.
+
+3.  **`MAX_TURNS` (Default: 10)**:
+    *   **Execution Safety**: Limits how many consecutive tool-calls the agent can make in a single prompt. This prevents infinite loops and controls turn-by-turn costs.
+
+#### Recommended Settings:
+| Model Type | MAX_HISTORY_TOKENS | MAX_HISTORY_TURNS | MAX_TURNS |
+| :--- | :--- | :--- | :--- |
+| **Flash (Fast/Light)** | 120,000 | **40** | 50 |
+| **Pro (Deep/Complex)** | 120,000 | **20** | 50 |
 
 ## ⌨️ Shell Integration (Recommended)
 To streamline your workflow, add these aliases to your `.bashrc` or `.zshrc`. This provides a fast, one-letter command (`b`) for interacting with the assistant and simplifies session management.

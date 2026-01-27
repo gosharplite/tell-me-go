@@ -28,8 +28,8 @@ func TestAgent_Setters(t *testing.T) {
 		t.Error("SetUIOptions failed")
 	}
 
-	a.SetLimits(5, 1000)
-	if a.maxToolTurns != 5 || a.maxHistoryTokens != 1000 {
+	a.SetLimits(5, 1000, 20)
+	if a.maxToolTurns != 5 || a.maxHistoryTokens != 1000 || a.maxHistoryTurns != 20 {
 		t.Error("SetLimits failed")
 	}
 
@@ -386,11 +386,11 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	}
 
 	a := New(client, hManager, registry)
-	a.SetLimits(2, 1000) // Max 2 turns
+	a.SetLimits(2, 1000, 20) // Max 2 turns
 
 	err = a.Chat("Run tool")
-	if err != nil {
-		t.Fatalf("Chat should not return error on recursion limit, just break: %v", err)
+	if err != ErrMaxTurnsReached {
+		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
 }
 

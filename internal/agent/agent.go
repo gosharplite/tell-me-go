@@ -20,6 +20,14 @@ import (
 	"google.golang.org/genai"
 )
 
+var (
+	// ErrContextLimitExceeded is returned when the payload exceeds the safety threshold.
+	ErrContextLimitExceeded = fmt.Errorf("payload estimate exceeds safety limit")
+
+	// ErrMaxTurnsReached is returned when the model reaches the turn limit.
+	ErrMaxTurnsReached = fmt.Errorf("maximum tool execution turns reached")
+)
+
 // Agent represents the chat orchestration logic.
 type Agent struct {
 	client             *api.Client
@@ -28,6 +36,8 @@ type Agent struct {
 	logFile            string
 	maxToolTurns       int
 	maxHistoryTokens   int
+	maxHistoryTurns    int
+	prunedTurns        int
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	showThoughts       bool
@@ -56,12 +66,15 @@ func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 }
 
 // SetLimits sets the operational limits for the agent.
-func (a *Agent) SetLimits(toolTurns, historyTokens int) {
+func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	if toolTurns > 0 {
 		a.maxToolTurns = toolTurns
 	}
 	if historyTokens > 0 {
 		a.maxHistoryTokens = historyTokens
+	}
+	if historyTurns > 0 {
+		a.maxHistoryTurns = historyTurns
 	}
 }
 
@@ -155,6 +168,58 @@ func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
 	return int(float64(charCount) / 3.2)
 }
 
+func (a *Agent) getTurnWarning(turn int) string {
+	remaining := a.maxToolTurns - turn
+	switch remaining {
+	case 3:
+		return "[SYSTEM NOTICE: You are approaching the operational turn limit. You have 3 turns remaining. Please begin finalizing your current task and avoid starting any new multi-step operations.]"
+	case 2:
+		return "[URGENT SYSTEM NOTICE: Operational limit imminent. Only 2 turns remaining. You must prioritize completing the current objective or documenting progress. New tool sequences will be cut off.]"
+	case 1:
+		return "[FINAL SYSTEM WARNING: This is your absolute final turn. Provide your final conclusion or progress summary now. Process execution will terminate after this response.]"
+	default:
+		return ""
+	}
+}
+
+func (a *Agent) getTokenWarning(tokens int) string {
+	ratio := float64(tokens) / float64(a.maxHistoryTokens)
+	if ratio > 0.95 {
+		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_scratchpad' and 'manage_tasks' to save a summary of your work and plans NOW. Keep your response extremely brief.]"
+	} else if ratio > 0.90 {
+		return "[SYSTEM NOTICE: The conversation history is at 90% capacity. To avoid a session crash, please minimize large file reads. Use 'manage_scratchpad' and 'manage_tasks' to save your current progress and architectural notes now, in case a rollback occurs.]"
+	}
+	return ""
+}
+
+func (a *Agent) getHistoryTurnWarning(currentTurns int) string {
+	if a.maxHistoryTurns <= 0 {
+		return ""
+	}
+
+	// 1. Check for recent major pruning (Aggressive cleanup)
+	if a.prunedTurns > 5 {
+		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to the 'manage_scratchpad' and read relevant source files to re-synchronize your internal state with the current project status.]", a.prunedTurns)
+		a.prunedTurns = 0 // Reset after warning once
+		return msg
+	}
+
+	ratio := float64(currentTurns) / float64(a.maxHistoryTurns)
+	if ratio >= 1.0 {
+		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to the 'manage_scratchpad' for the latest summaries.]"
+	} else if ratio > 0.95 {
+		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad immediately.]"
+	} else if ratio > 0.90 {
+		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad.]"
+	}
+	return ""
+}
+
+// SetPrunedTurns informs the agent how many turns were removed during startup.
+func (a *Agent) SetPrunedTurns(n int) {
+	a.prunedTurns = n
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&api.Content{
@@ -164,29 +229,67 @@ func (a *Agent) Chat(prompt string) error {
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
-		toolsSDK := a.registry.ToToolSDK()
-
 		tokens := a.estimatePayloadTokens(contents)
 
-		// Log the payload info
-		tokenColor := "\033[0;90m" // Default dark gray
-		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m" // Red if > 90%
-		}
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-			time.Now().Format("15:04:05"), tokenColor, tokens)
-
-		// Safety Check: MAX_HISTORY_TOKENS
+		// 1. Safety Check: MAX_HISTORY_TOKENS
 		if tokens > a.maxHistoryTokens {
 			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
 				time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
 			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
 				time.Now().Format("15:04:05"))
 			a.history.Rollback()
-			os.Exit(1)
+			return ErrContextLimitExceeded
 		}
 
-		respContent, metrics, err := a.client.SendChat(contents, toolsSDK)
+		// Calculate current turns (1 turn = user + model pair)
+		currentTurns := len(contents) / 2
+		tokenColor := "\033[0;90m" // Default dark gray
+		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
+			tokenColor = "\033[0;31m" // Red if > 90%
+		}
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
+			time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
+
+		// 2. Prepare API Contents (Deep copy to avoid history pollution via warnings)
+		apiContents := make([]*api.Content, len(contents))
+		copy(apiContents, contents)
+
+		warning := a.getTurnWarning(turn)
+		if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
+			if warning != "" {
+				warning += "\n" + tokenWarning
+			} else {
+				warning = tokenWarning
+			}
+		}
+		if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
+			if warning != "" {
+				warning += "\n" + turnWarning
+			} else {
+				warning = turnWarning
+			}
+		}
+
+		if warning != "" && len(apiContents) > 0 {
+			lastIdx := len(apiContents) - 1
+			orig := apiContents[lastIdx]
+			// Clone only the content that receives the warning
+			cloned := &api.Content{
+				Role:  orig.Role,
+				Parts: make([]*api.Part, len(orig.Parts)),
+			}
+			copy(cloned.Parts, orig.Parts)
+			cloned.Parts = append(cloned.Parts, &api.Part{
+				Text: "\n\n" + warning,
+			})
+			apiContents[lastIdx] = cloned
+
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
+				time.Now().Format("15:04:05"))
+		}
+
+		toolsSDK := a.registry.ToToolSDK()
+		respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
 
 		// Handle 401 Unauthorized
 		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
@@ -231,7 +334,7 @@ func (a *Agent) Chat(prompt string) error {
 			if turn >= a.maxToolTurns {
 				fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
 					time.Now().Format("15:04:05"), a.maxToolTurns)
-				break
+				return ErrMaxTurnsReached
 			}
 
 			var names []string
@@ -240,6 +343,22 @@ func (a *Agent) Chat(prompt string) error {
 			}
 			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
 				time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
+
+			// Print all Tool Action headers BEFORE spawning goroutines to prevent UI interleaving
+			if a.showTools {
+				for _, fc := range functionCalls {
+					var argParts []string
+					for k, v := range fc.Args {
+						valStr := fmt.Sprintf("%v", v)
+						if len(valStr) > 60 {
+							valStr = valStr[:57] + "..."
+						}
+						argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
+					}
+					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
+						time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
+				}
+			}
 
 			results := make([]*api.Part, len(functionCalls))
 			var wg sync.WaitGroup
@@ -251,19 +370,6 @@ func (a *Agent) Chat(prompt string) error {
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-
-					if a.showTools {
-						var argParts []string
-						for k, v := range call.Args {
-							valStr := fmt.Sprintf("%v", v)
-							if len(valStr) > 60 {
-								valStr = valStr[:57] + "..."
-							}
-							argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
-						}
-						fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
-							time.Now().Format("15:04:05"), call.Name, strings.Join(argParts, ", "))
-					}
 
 					// Execute with timeout (exclude interactive tools)
 					var ctx context.Context

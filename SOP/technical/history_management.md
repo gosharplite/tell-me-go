@@ -11,7 +11,7 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 ---
 
 ### Prerequisites
-- Go toolchain 1.21+.
+- Go toolchain 1.24+.
 - `SOP/technical/architecture_and_packages.md` (defining the `internal/history` package).
 - `internal/api` (for the `Content` and `Part` struct definitions).
 
@@ -40,9 +40,15 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 
 #### 4. Pruning Logic
 To prevent the payload from exceeding the model's context window or the user's budget:
-- **Turn Limit**: Defined by `MAX_TURNS` in the config.
+- **Turn Limit**: Defined by `MAX_HISTORY_TURNS` in the config.
 - **Action**: When the limit is reached, the oldest pairs (one `user` and one `model` message) must be removed until the count is within limits.
+- **Consistency**: Ensure the pruning logic always removes an even number of messages to maintain `user` -> `model` role alternation starting from index 0.
 - **System Notice**: If history is pruned, a notification should be added to the scratchpad or logged.
+
+#### 5. Volatile vs. Persistent Context
+The history manager must distinguish between data that belongs in the permanent session record and data that is temporary for safety.
+- **Persistent**: User prompts, Model responses, and Tool outputs. These are saved to disk.
+- **Volatile**: System-injected warnings (e.g., "You have 1 turn left"). These must be injected into the API payload but **filtered out** before saving to disk to prevent polluting future conversation turns with stale warnings.
 
 ---
 
