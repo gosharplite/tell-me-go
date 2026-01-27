@@ -9,13 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"golang.org/x/term"
 	"google.golang.org/genai"
 )
 
@@ -74,35 +73,31 @@ func readSingleKey() (string, error) {
 		return strings.ToLower(val[:1]), nil
 	}
 
-	// Try to open /dev/tty for interaction to avoid consuming Stdin
-	input := os.Stdin
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err == nil {
-		input = tty
-		defer tty.Close()
-	}
+	// Try to open /dev/tty for interaction to avoid consuming Stdin if possible
+	// However, term.MakeRaw typically works on Stdin's FD.
+	fd := int(os.Stdin.Fd())
 
-	// Check if input is a terminal
-	isTerm := false
-	stat, err := input.Stat()
-	if err == nil && (stat.Mode()&os.ModeCharDevice) != 0 {
-		isTerm = true
-	}
-
-	if isTerm {
-		// Disable input buffering for real terminal
-		// We use /dev/tty specifically for stty to be sure
-		flag := "-F" // Linux
-		if runtime.GOOS == "darwin" || runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
-			flag = "-f" // macOS and BSD
+	// Check if Stdin is a terminal
+	if !term.IsTerminal(fd) {
+		// If not a terminal, we can't switch to raw mode.
+		// Just read one byte from stdin directly.
+		b := make([]byte, 1)
+		_, err := os.Stdin.Read(b)
+		if err != nil {
+			return "", err
 		}
-		exec.Command("stty", flag, "/dev/tty", "cbreak", "min", "1").Run()
-		// Restore input buffering on exit
-		defer exec.Command("stty", flag, "/dev/tty", "-cbreak").Run()
+		return strings.ToLower(string(b)), nil
 	}
 
-	var b []byte = make([]byte, 1)
-	_, err = input.Read(b)
+	// Switch to raw mode
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", err
+	}
+	defer term.Restore(fd, state)
+
+	b := make([]byte, 1)
+	_, err = os.Stdin.Read(b)
 	if err != nil {
 		return "", err
 	}

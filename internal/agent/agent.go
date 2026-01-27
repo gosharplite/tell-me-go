@@ -230,8 +230,7 @@ func (a *Agent) Chat(prompt string) error {
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
 
-		// 0. Enforce history turn limit during long tool sequences or growing history.
-		// If we exceed the limit, we prune immediately to keep the request valid and cache-friendly.
+		// 0. Enforce history turn limit
 		if a.maxHistoryTurns > 0 && len(contents) > a.maxHistoryTurns*2 {
 			pruned := a.history.Prune(a.maxHistoryTurns)
 			if pruned > 0 {
@@ -244,243 +243,289 @@ func (a *Agent) Chat(prompt string) error {
 
 		// 1. Safety Check: MAX_HISTORY_TOKENS
 		if tokens > a.maxHistoryTokens {
-			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
-				time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
-				time.Now().Format("15:04:05"))
-			a.history.Rollback()
+			a.handleLimitExceeded(tokens)
 			return ErrContextLimitExceeded
 		}
 
-		// Calculate current turns (1 turn = user + model pair)
+		// Calculate current turns
 		currentTurns := len(contents) / 2
-		tokenColor := "\033[0;90m" // Default dark gray
-		if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m" // Red if > 90%
-		}
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-			time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
+		a.logSystemStatus(currentTurns, tokens)
 
-		// 2. Prepare API Contents (Deep copy to avoid history pollution via warnings)
-		apiContents := make([]*api.Content, len(contents))
-		copy(apiContents, contents)
+		// 2. Prepare API Contents with warnings
+		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
 
-		warning := a.getTurnWarning(turn)
-		if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
-			if warning != "" {
-				warning += "\n" + tokenWarning
-			} else {
-				warning = tokenWarning
-			}
-		}
-		if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
-			if warning != "" {
-				warning += "\n" + turnWarning
-			} else {
-				warning = turnWarning
-			}
-		}
-
-		if warning != "" && len(apiContents) > 0 {
-			lastIdx := len(apiContents) - 1
-			orig := apiContents[lastIdx]
-			// Clone only the content that receives the warning
-			cloned := &api.Content{
-				Role:  orig.Role,
-				Parts: make([]*api.Part, len(orig.Parts)),
-			}
-			copy(cloned.Parts, orig.Parts)
-			cloned.Parts = append(cloned.Parts, &api.Part{
-				Text: "\n\n" + warning,
-			})
-			apiContents[lastIdx] = cloned
-
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
-				time.Now().Format("15:04:05"))
-		}
-
-		toolsSDK := a.registry.ToToolSDK()
-		respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
-
-		// Handle 401 Unauthorized
-		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-			if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
-				return fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
-			}
-			// Retry with the same apiContents (which includes any safety warnings)
-			respContent, metrics, err = a.client.SendChat(apiContents, a.registry.ToToolSDK())
-		}
-
+		// 3. Send Chat Request
+		respContent, metrics, err := a.sendChat(apiContents)
 		if metrics != nil {
 			a.logUsage(metrics)
 		}
-
 		if err != nil {
 			return err
 		}
 
-		for _, part := range respContent.Parts {
-			if a.showThoughts && part.Thought && part.Text != "" {
-				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
-			}
-		}
-
+		// 4. Render Output
+		a.renderResponse(respContent)
 		a.history.AddContent(respContent)
 
-		for _, part := range respContent.Parts {
-			if part.Text != "" && !part.Thought {
-				a.renderMarkdown(part.Text)
-			}
+		// 5. Handle Tool Execution
+		if err := a.handleToolExecution(respContent, turn); err != nil {
+			return err
 		}
 
-		// Parallel Tool Execution
-		var functionCalls []*api.FunctionCall
-		for _, part := range respContent.Parts {
-			if part.FunctionCall != nil {
-				functionCalls = append(functionCalls, part.FunctionCall)
-			}
+		if !a.hasToolCalls(respContent) {
+			break
 		}
-
-		if len(functionCalls) > 0 {
-			if turn >= a.maxToolTurns {
-				fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
-					time.Now().Format("15:04:05"), a.maxToolTurns)
-				return ErrMaxTurnsReached
-			}
-
-			var names []string
-			for _, fc := range functionCalls {
-				names = append(names, fc.Name)
-			}
-			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
-				time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
-
-			// Print all Tool Action headers BEFORE spawning goroutines to prevent UI interleaving
-			if a.showTools {
-				for _, fc := range functionCalls {
-					var argParts []string
-					for k, v := range fc.Args {
-						valStr := fmt.Sprintf("%v", v)
-						if len(valStr) > 60 {
-							valStr = valStr[:57] + "..."
-						}
-						argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
-					}
-					fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
-						time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
-				}
-			}
-
-			results := make([]*api.Part, len(functionCalls))
-			var wg sync.WaitGroup
-			sem := make(chan struct{}, a.maxConcurrentTools)
-
-			for i, fc := range functionCalls {
-				wg.Add(1)
-				go func(idx int, call *api.FunctionCall) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-
-					// Execute with timeout (exclude interactive tools)
-					var ctx context.Context
-					var cancel context.CancelFunc
-
-					if call.Name == "ask_user" || call.Name == "execute_command" {
-						// Interactive tools don't time out while waiting for user
-						ctx = context.Background()
-						cancel = func() {}
-					} else {
-						ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
-					}
-					defer cancel()
-
-					resChan := make(chan string, 1)
-					go func() {
-						result, err := a.registry.Execute(call.Name, call.Args)
-						if err != nil {
-							resChan <- fmt.Sprintf("Error: %v", err)
-						} else {
-							resChan <- result
-						}
-					}()
-
-					var finalResult string
-					select {
-					case <-ctx.Done():
-						finalResult = fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
-					case res := <-resChan:
-						finalResult = res
-					}
-
-					// Multi-modal image injection logic
-					if strings.HasPrefix(finalResult, "MULTI_MODAL_IMAGE|") {
-						parts := strings.SplitN(finalResult, "|", 4)
-						if len(parts) == 4 {
-							mimeType := parts[1]
-							b64Data := parts[2]
-							displayMsg := parts[3]
-
-							results[idx] = &api.Part{
-								FunctionResponse: &api.FunctionResponse{
-									Name:     call.Name,
-									Response: map[string]interface{}{"result": displayMsg},
-								},
-							}
-							// Mark for injection in a temporary field we won't serialize
-							results[idx].Text = "INJECT:" + mimeType + ":" + b64Data
-						} else {
-							results[idx] = &api.Part{
-								FunctionResponse: &api.FunctionResponse{
-									Name:     call.Name,
-									Response: map[string]interface{}{"result": finalResult},
-								},
-							}
-						}
-					} else {
-						results[idx] = &api.Part{
-							FunctionResponse: &api.FunctionResponse{
-								Name:     call.Name,
-								Response: map[string]interface{}{"result": finalResult},
-							},
-						}
-					}
-				}(i, fc)
-			}
-			wg.Wait()
-
-			// Post-process multi-modal injections
-			var responseParts []*api.Part
-
-			for _, p := range results {
-				if strings.HasPrefix(p.Text, "INJECT:") {
-					injectParts := strings.SplitN(p.Text, ":", 3)
-					p.Text = "" // Clear the marker
-					if len(injectParts) == 3 {
-						data, _ := base64.StdEncoding.DecodeString(injectParts[2])
-						responseParts = append(responseParts, &api.Part{
-							InlineData: &genai.Blob{
-								MIMEType: injectParts[1],
-								Data:     data,
-							},
-						})
-					}
-				}
-				responseParts = append(responseParts, p)
-			}
-
-			a.history.AddContent(&api.Content{
-				Role:  "user",
-				Parts: responseParts,
-			})
-			continue
-		}
-
-		break
 	}
 
 	return nil
+}
+
+func (a *Agent) handleLimitExceeded(tokens int) {
+	fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
+		time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
+	fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
+		time.Now().Format("15:04:05"))
+	a.history.Rollback()
+}
+
+func (a *Agent) logSystemStatus(currentTurns, tokens int) {
+	tokenColor := "\033[0;90m" // Default dark gray
+	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
+		tokenColor = "\033[0;31m" // Red if > 90%
+	}
+	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
+		time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
+}
+
+func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, currentTurns int) []*api.Content {
+	apiContents := make([]*api.Content, len(contents))
+	copy(apiContents, contents)
+
+	warning := a.getTurnWarning(turn)
+	if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
+		if warning != "" {
+			warning += "\n" + tokenWarning
+		} else {
+			warning = tokenWarning
+		}
+	}
+	if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
+		if warning != "" {
+			warning += "\n" + turnWarning
+		} else {
+			warning = turnWarning
+		}
+	}
+
+	if warning != "" && len(apiContents) > 0 {
+		lastIdx := len(apiContents) - 1
+		orig := apiContents[lastIdx]
+		// Clone only the content that receives the warning
+		cloned := &api.Content{
+			Role:  orig.Role,
+			Parts: make([]*api.Part, len(orig.Parts)),
+		}
+		copy(cloned.Parts, orig.Parts)
+		cloned.Parts = append(cloned.Parts, &api.Part{
+			Text: "\n\n" + warning,
+		})
+		apiContents[lastIdx] = cloned
+
+		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
+			time.Now().Format("15:04:05"))
+	}
+	return apiContents
+}
+
+func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics, error) {
+	toolsSDK := a.registry.ToToolSDK()
+	respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
+
+	// Handle 401 Unauthorized
+	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
+			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
+		}
+		// Retry
+		respContent, metrics, err = a.client.SendChat(apiContents, a.registry.ToToolSDK())
+	}
+	return respContent, metrics, err
+}
+
+func (a *Agent) renderResponse(respContent *api.Content) {
+	for _, part := range respContent.Parts {
+		if a.showThoughts && part.Thought && part.Text != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+		}
+	}
+	for _, part := range respContent.Parts {
+		if part.Text != "" && !part.Thought {
+			a.renderMarkdown(part.Text)
+		}
+	}
+}
+
+func (a *Agent) hasToolCalls(content *api.Content) bool {
+	for _, part := range content.Parts {
+		if part.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
+	var functionCalls []*api.FunctionCall
+	for _, part := range respContent.Parts {
+		if part.FunctionCall != nil {
+			functionCalls = append(functionCalls, part.FunctionCall)
+		}
+	}
+
+	if len(functionCalls) == 0 {
+		return nil
+	}
+
+	if turn >= a.maxToolTurns {
+		fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
+			time.Now().Format("15:04:05"), a.maxToolTurns)
+		return ErrMaxTurnsReached
+	}
+
+	a.logToolCalls(functionCalls, turn)
+	responseParts := a.executeToolsConcurrently(functionCalls)
+
+	a.history.AddContent(&api.Content{
+		Role:  "user",
+		Parts: responseParts,
+	})
+	return nil
+}
+
+func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
+	var names []string
+	for _, fc := range calls {
+		names = append(names, fc.Name)
+	}
+	fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
+		time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
+
+	if a.showTools {
+		for _, fc := range calls {
+			var argParts []string
+			for k, v := range fc.Args {
+				valStr := fmt.Sprintf("%v", v)
+				if len(valStr) > 60 {
+					valStr = valStr[:57] + "..."
+				}
+				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
+				time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
+		}
+	}
+}
+
+func (a *Agent) executeToolsConcurrently(calls []*api.FunctionCall) []*api.Part {
+	results := make([]*api.Part, len(calls))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, a.maxConcurrentTools)
+
+	for i, fc := range calls {
+		wg.Add(1)
+		go func(idx int, call *api.FunctionCall) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// Execute with timeout (exclude interactive tools)
+			var ctx context.Context
+			var cancel context.CancelFunc
+
+			if call.Name == "ask_user" || call.Name == "execute_command" {
+				ctx = context.Background()
+				cancel = func() {}
+			} else {
+				ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
+			}
+			defer cancel()
+
+			resChan := make(chan string, 1)
+			go func() {
+				result, err := a.registry.Execute(call.Name, call.Args)
+				if err != nil {
+					resChan <- fmt.Sprintf("Error: %v", err)
+				} else {
+					resChan <- result
+				}
+			}()
+
+			var finalResult string
+			select {
+			case <-ctx.Done():
+				finalResult = fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
+			case res := <-resChan:
+				finalResult = res
+			}
+
+			results[idx] = a.processToolResult(call.Name, finalResult)
+		}(i, fc)
+	}
+	wg.Wait()
+
+	// Post-process for injections
+	return a.injectBinaryData(results)
+}
+
+func (a *Agent) processToolResult(name, result string) *api.Part {
+	// Multi-modal image injection logic
+	if strings.HasPrefix(result, "MULTI_MODAL_IMAGE|") {
+		parts := strings.SplitN(result, "|", 4)
+		if len(parts) == 4 {
+			mimeType := parts[1]
+			b64Data := parts[2]
+			displayMsg := parts[3]
+
+			p := &api.Part{
+				FunctionResponse: &api.FunctionResponse{
+					Name:     name,
+					Response: map[string]interface{}{"result": displayMsg},
+				},
+			}
+			// Mark for injection in a temporary field we won't serialize
+			p.Text = "INJECT:" + mimeType + ":" + b64Data
+			return p
+		}
+	}
+
+	return &api.Part{
+		FunctionResponse: &api.FunctionResponse{
+			Name:     name,
+			Response: map[string]interface{}{"result": result},
+		},
+	}
+}
+
+func (a *Agent) injectBinaryData(parts []*api.Part) []*api.Part {
+	var finalParts []*api.Part
+	for _, p := range parts {
+		if strings.HasPrefix(p.Text, "INJECT:") {
+			injectParts := strings.SplitN(p.Text, ":", 3)
+			p.Text = "" // Clear the marker
+			if len(injectParts) == 3 {
+				data, _ := base64.StdEncoding.DecodeString(injectParts[2])
+				finalParts = append(finalParts, &api.Part{
+					InlineData: &genai.Blob{
+						MIMEType: injectParts[1],
+						Data:     data,
+					},
+				})
+			}
+		}
+		finalParts = append(finalParts, p)
+	}
+	return finalParts
 }
 
 func (a *Agent) renderMarkdown(text string) {

@@ -37,25 +37,9 @@ func New(version string) *App {
 // Run executes the application logic.
 func (a *App) Run() {
 	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
-	// if no value is provided.
-	args := os.Args[1:]
-	for i, arg := range args {
-		if arg == "-l" {
-			// If -l is the last argument or the next argument starts with -,
-			// it means the user didn't provide a number.
-			if i+1 == len(args) || strings.HasPrefix(args[i+1], "-") {
-				// Insert "1" after "-l"
-				newArgs := make([]string, 0, len(os.Args)+1)
-				newArgs = append(newArgs, os.Args[:i+2]...)
-				newArgs = append(newArgs, "1")
-				newArgs = append(newArgs, os.Args[i+2:]...)
-				os.Args = newArgs
-				break
-			}
-		}
-	}
+	os.Args = a.sanitizeArgs(os.Args)
 
-	// 1. Define and Parse Flags
+	// 2. Define and Parse Flags
 	configPath := flag.String("c", "configs/vertex.yaml", "Path to the configuration file")
 	newSession := flag.Bool("new", false, "Start a new session")
 	showVersion := flag.Bool("v", false, "Show version information")
@@ -263,4 +247,28 @@ func (a *App) archiveSessionFiles(homeDir string, filesToMove ...string) {
 			}
 		}
 	}
+}
+
+func (a *App) sanitizeArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+
+	processed := args[1:]
+	for i, arg := range processed {
+		if arg == "-l" {
+			// If -l is the last argument or the next argument starts with -,
+			// it means the user didn't provide a number.
+			if i+1 == len(processed) || strings.HasPrefix(processed[i+1], "-") {
+				// Insert "1" after "-l"
+				newArgs := make([]string, 0, len(args)+1)
+				// Copy everything up to and including -l (which is at args[i+1])
+				newArgs = append(newArgs, args[:i+2]...)
+				newArgs = append(newArgs, "1")
+				newArgs = append(newArgs, args[i+2:]...)
+				return newArgs
+			}
+		}
+	}
+	return args
 }
