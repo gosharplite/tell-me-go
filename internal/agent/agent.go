@@ -196,7 +196,9 @@ func (a *Agent) getHistoryTurnWarning(currentTurns int) string {
 		return ""
 	}
 	ratio := float64(currentTurns) / float64(a.maxHistoryTurns)
-	if ratio > 0.95 {
+	if ratio >= 1.0 {
+		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to the 'manage_scratchpad' for the latest summaries.]"
+	} else if ratio > 0.95 {
 		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad immediately.]"
 	} else if ratio > 0.90 {
 		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad.]"
