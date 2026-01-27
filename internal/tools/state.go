@@ -10,10 +10,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"google.golang.org/genai"
 )
+
+var stateMu sync.Mutex
 
 // Task represents a single item in the task manager, matching the Bash version's schema.
 type Task struct {
@@ -222,6 +225,8 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 }
 
 func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
 
@@ -274,6 +279,8 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 }
 
 func manageTasks(args map[string]interface{}, homeDir, mode string) (string, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	action, _ := args["action"].(string)
 
 	path := getTasksPath(homeDir, mode)
