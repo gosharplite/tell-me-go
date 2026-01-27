@@ -191,6 +191,19 @@ func (a *Agent) getTokenWarning(tokens int) string {
 	return ""
 }
 
+func (a *Agent) getHistoryTurnWarning(currentTurns int) string {
+	if a.maxHistoryTurns <= 0 {
+		return ""
+	}
+	ratio := float64(currentTurns) / float64(a.maxHistoryTurns)
+	if ratio > 0.95 {
+		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad immediately.]"
+	} else if ratio > 0.90 {
+		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad.]"
+	}
+	return ""
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&api.Content{
@@ -231,6 +244,13 @@ func (a *Agent) Chat(prompt string) error {
 				warning += "\n" + tokenWarning
 			} else {
 				warning = tokenWarning
+			}
+		}
+		if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
+			if warning != "" {
+				warning += "\n" + turnWarning
+			} else {
+				warning = turnWarning
 			}
 		}
 
