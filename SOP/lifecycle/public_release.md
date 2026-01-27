@@ -124,6 +124,8 @@ A release is **not complete** until it is reachable by the public on the remote 
 ---
 
 ### Best Practices
+- **Strict Checklist Adherence**: The agent MUST copy the "Release Checklist" from this SOP into their scratchpad at the start of the task and mark items only after verified completion.
+- **Verification of Remote State**: Never announce completion until `git status` or `git remote -v` confirms the local state is synchronized with `origin`.
 - **Release Often**: Small, frequent releases are easier to audit and test.
 - **Binary Verification**: If distributing binaries, verify they run on target architectures (Linux/macOS/Windows).
 - **Draft Releases**: Use GitHub's "Draft Release" feature to stage the release notes.
