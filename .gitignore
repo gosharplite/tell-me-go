@@ -16,6 +16,8 @@ output/
 *-commands.log
 *-safepaths.json
 *.bypass
+*_tasks.json
+*_scratchpad.md
 last-*.json
 
 # Keys and Secrets

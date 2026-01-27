@@ -145,11 +145,11 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 }
 
 func getScratchpadPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", fmt.Sprintf("scratchpad_%s.md", mode))
+	return filepath.Join(homeDir, "output", fmt.Sprintf("%s_scratchpad.md", mode))
 }
 
 func getTasksPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", fmt.Sprintf("tasks_%s.json", mode))
+	return filepath.Join(homeDir, "output", fmt.Sprintf("%s_tasks.json", mode))
 }
 
 func getConfigPath(homeDir, mode string) string {

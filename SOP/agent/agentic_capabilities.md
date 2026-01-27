@@ -49,7 +49,7 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 The agent must monitor resource limits during the orchestration loop to allow the AI to fail gracefully.
 - **Turn Limits**: When the current turn count is close to `MAX_TURNS` (e.g., 3, 2, or 1 turns remaining), the agent must inject escalating **System Notices** into the model's volatile history.
 - **Token Limits**: When the payload estimate exceeds **90%** or **95%** of `MAX_HISTORY_TOKENS`, the agent must inject an urgent warning.
-- **Persistence Request**: These warnings should explicitly instruct the AI to use `manage_scratchpad` and `manage_tasks` to save its work before execution is cut off. Note that these tools are **scoped to the current configuration MODE** (e.g., `tasks_vertex.json`), allowing for context isolation.
+- **Persistence Request**: These warnings should explicitly instruct the AI to use `manage_scratchpad` and `manage_tasks` to save its work before execution is cut off. Note that these tools are **scoped to the current configuration MODE** (e.g., `vertex_tasks.json`), allowing for context isolation.
 - **Volatile Injection**: Injected warnings must only exist in the API payload and **must not** be saved to the persistent history file on disk to prevent "context rot."
 
 #### 4. Security and Safety

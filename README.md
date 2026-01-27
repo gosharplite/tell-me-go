@@ -22,7 +22,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, and `manage_config`.
-        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `tasks_vertex.json`, `scratchpad_vertex.md`, `vertex_config.json`) to prevent conflicts when switching environments.
+        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `vertex_tasks.json`, `vertex_scratchpad.md`, `vertex_config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
         *   **Rollback**: `rollback_last_turn` allows undoing the last interaction.
     *   **External Integration**:
@@ -103,8 +103,8 @@ If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant wi
 
 ### Mode-Scoped State
 Tasks and Scratchpads are scoped to the active `MODE` defined in your configuration file.
-*   **Tasks**: stored in `output/tasks_<MODE>.json`
-*   **Scratchpad**: stored in `output/scratchpad_<MODE>.md`
+*   **Tasks**: stored in `output/<MODE>_tasks.json`
+*   **Scratchpad**: stored in `output/<MODE>_scratchpad.md`
 
 This allows you to maintain separate contexts (e.g., "Personal" vs "Work") simply by switching config files.
 

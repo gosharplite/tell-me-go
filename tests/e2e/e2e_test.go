@@ -523,7 +523,7 @@ func TestManageTasks(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	taskFile := filepath.Join(homeDir, "output", "tasks_vertex.json")
+	taskFile := filepath.Join(homeDir, "output", "vertex_tasks.json")
 	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
 		t.Fatalf("Tasks file was not created at %s", taskFile)
 	}
@@ -590,7 +590,7 @@ func TestManageScratchpad(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	scratchpadFile := filepath.Join(homeDir, "output", "scratchpad_vertex.md")
+	scratchpadFile := filepath.Join(homeDir, "output", "vertex_scratchpad.md")
 	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
 		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
 	}
