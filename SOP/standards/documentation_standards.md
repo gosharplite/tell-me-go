@@ -81,3 +81,4 @@ func NewManager(path string) *Manager {
 - **Visuals**: Use code blocks and ASCII/Markdown tables for clarity.
 - **Relative Links**: Always use relative links to other files within the repository (e.g., `[Git Workflow](./SOP/standards/git_workflow.md)`).
 - **No Secrets**: Never include real API keys or sensitive data in examples.
+- **State Management Consistency**: When documenting or providing examples for SOPs, always include the "Task Initialization" and "State Verification" steps required by `SOP/standards/cli_standards.md`.
