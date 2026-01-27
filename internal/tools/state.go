@@ -291,14 +291,11 @@ func manageTasks(args map[string]interface{}, homeDir, mode string) (string, err
 	// Load existing tasks
 	var tasks []Task
 	data, err := os.ReadFile(path)
-	if err == nil {
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &tasks); err != nil {
-				return "", fmt.Errorf("failed to parse existing tasks: %w", err)
-			}
+	if err == nil && len(data) > 0 {
+		if err := json.Unmarshal(data, &tasks); err != nil {
+			// If JSON is corrupted, reset to empty
+			tasks = []Task{}
 		}
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("failed to read tasks file: %w", err)
 	}
 
 	switch action {
