@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.0] - 2026-02-14
+
+### Fixed
+- **State Persistence**: Fixed `safepaths`, `scratchpad`, and `tasks` persistence across new sessions (`-new`). These environment-level states now remain stable while conversation history is archived.
+- **Safety**: Ensured `bypass_confirmation` state is preserved across sessions within the same mode.
+
+### Added
+- **Testing**: Added E2E tests for environment persistence and bypass state preservation to ensure stable multi-session workflows.
+
+### Changed
+- **Documentation**: Updated `README.md` to clarify the distinction between archived session history and persistent environment state.
+- **Maintenance**: Performed comprehensive security audit and clean-room build verification.
+- **Version Bump**: Promoted to v1.34.0.
+
 ## [1.33.0] - 2026-02-12
 
 ### Added
