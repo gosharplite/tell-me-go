@@ -125,9 +125,9 @@ func (m *Manager) Rollback() {
 	}
 }
 
-// Prune reduces the history when it exceeds maxTurns. 
-// To improve cache efficiency, it doesn't just prune 1 turn; 
-// it prunes down to 50% of maxTurns to allow for a stable cache prefix 
+// Prune reduces the history when it exceeds maxTurns.
+// To improve cache efficiency, it doesn't just prune 1 turn;
+// it prunes down to 50% of maxTurns to allow for a stable cache prefix
 // during the next 50% of the conversation.
 // Returns the number of turns removed.
 func (m *Manager) Prune(maxTurns int) int {
@@ -156,4 +156,9 @@ func (m *Manager) Prune(maxTurns int) int {
 // GetContents returns the current history contents.
 func (m *Manager) GetContents() []*api.Content {
 	return m.Contents
+}
+
+// GetPath returns the file path of the history file.
+func (m *Manager) GetPath() string {
+	return m.FilePath
 }

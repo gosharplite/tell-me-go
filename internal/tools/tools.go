@@ -45,6 +45,11 @@ func LoadBypassState() {
 	}
 }
 
+// IsBypassActive returns the current state of bypass_confirmation.
+func IsBypassActive() bool {
+	return bypassConfirmations
+}
+
 // SaveBypassState writes the persistent bypass state to disk.
 func SaveBypassState() {
 	if bypassFile == "" {

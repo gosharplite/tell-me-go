@@ -41,7 +41,7 @@ func (a *App) Run() {
 	args := os.Args[1:]
 	for i, arg := range args {
 		if arg == "-l" {
-			// If -l is the last argument or the next argument starts with -, 
+			// If -l is the last argument or the next argument starts with -,
 			// it means the user didn't provide a number.
 			if i+1 == len(args) || strings.HasPrefix(args[i+1], "-") {
 				// Insert "1" after "-l"
@@ -65,7 +65,7 @@ func (a *App) Run() {
 	// Handle "b -l" without an argument by checking if -l was provided but is 0
 	// However, flag.Int defaults to 0. We can check os.Args to see if -l was provided without a value.
 	// A better way is to check if -l is provided at the end of Args.
-	
+
 	// If the user provided -l but no value, and it's the last argument, flag package might complain
 	// or set it to 0. Let's look at how flag.Int works: if "-l" is the last arg, it fails.
 	// If the user wants "b -l" to mean "b -l 1", we should change the default or handle it.
