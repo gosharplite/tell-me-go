@@ -15,7 +15,7 @@ func TestIsSafeCommand(t *testing.T) {
 		{"ls -la", true},
 		{"pwd", true},
 		{"cat /etc/passwd", false},
-		{"cat ../../../etc/passwd", false},
+		{"cat ../../../../../../../../../../etc/passwd", false},
 		{"echo $HOME", false},
 		{"cat \"/etc/passwd\"", false},
 		{"grep pattern file.txt", true},

@@ -99,6 +99,7 @@ A release is **not complete** until it is reachable by the public on the remote 
     git push origin dev
     ```
 6.  **Verify Synchronization**:
+    *   **CRITICAL**: Run `git status` to ensure `Your branch is up to date with 'origin/...'`.
     *   Check that `main` matches `origin/main`.
     *   Check that `dev` matches `origin/dev`.
     *   `dev` should now be exactly 1 commit ahead of `main` (the version bump).
