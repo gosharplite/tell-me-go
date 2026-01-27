@@ -247,7 +247,7 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 		return string(data), nil
 
 	case "write":
-		err := os.WriteFile(path, []byte(content), 0644)
+		err := atomicWrite(path, []byte(content))
 		if err != nil {
 			return "", fmt.Errorf("failed to write scratchpad: %w", err)
 		}
@@ -394,8 +394,16 @@ func saveTasks(path string, tasks []Task) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal tasks: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write tasks file: %w", err)
+	return atomicWrite(path, data)
+}
+
+func atomicWrite(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 	return nil
 }
