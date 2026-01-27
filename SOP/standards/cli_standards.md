@@ -86,12 +86,22 @@ fmt.Fprintf(os.Stderr, "[0;32m[%s] > %s[0m
 cfg, err := config.Load(*configPath)
 ```
 
+#### 9. Agentic State Management (⚠️ CRITICAL)
+To prevent "Agentic Amnesia" and ensure the reliability of long-running or multi-turn tasks:
+
+- **Atomic Turns**: Major technical actions (e.g., `git push`, `write_file`, `go test`) **MUST** be executed in their own turn. 
+- **Immediate State Sync**: The turn immediately following a milestone action **MUST** be used to update the Task Manager (`manage_tasks`) and Scratchpad (`manage_scratchpad`). 
+- **No Batching**: Do not batch technical milestones with administrative completion (e.g., don't perform a `git push` and then immediately say "I'm done" in the same response).
+- **Mandatory Verification**: After updating the state, the agent **MUST** list the tasks or read the scratchpad to verify the write was successful and the state is consistent.
+- **Tool Error Handling**: If a state-management tool (Task/Scratchpad) returns an error (e.g., "failed to parse"), this MUST be treated as a **blocking failure**. The agent must stop and fix the underlying file corruption before proceeding.
+
 ---
 
 ### Verification
 1.  **Help Text**: Run `tell-me-go -h` to verify that all flags are documented.
 2.  **Usage Errors**: Run the tool without arguments to verify the usage message.
 3.  **Override Check**: Verify that passing `-c` actually changes the configuration being loaded.
+4.  **State Consistency**: Verify that `manage_tasks list` matches the actual state of the project.
 
 ---
 
