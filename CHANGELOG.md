@@ -5,9 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.0-dev] - 2026-01-27
+## [1.23.0] - 2026-01-27
 
 ### Added
+- **History Pruning (50% Strategy)**: Implemented a cost-optimized pruning strategy. When `MAX_HISTORY_TURNS` is hit, history is now pruned down to 50% of the limit to create a stable context prefix for Gemini caching.
+- **Amnesia Recovery**: Injected a system-level "Urgent Notice" that instructs the model to use the **Scratchpad** to recover situational awareness after a major history cleanup.
+- **Gemini 3 Pricing**: Updated the `estimate_cost` tool and local pricing engine to support Gemini 3 Preview rates and tiered input pricing (Standard vs. Premium at 128k tokens).
 - **Safety**: Implemented pre-limit **System Warnings** for the AI model. Escalating notices are injected into the volatile history when `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) limits are nearing.
 - **Safety**: Added `ErrContextLimitExceeded` and `ErrMaxTurnsReached` for graceful error handling, replacing `os.Exit(1)` inside the agent library.
 - **UI/UX**: Added usage/limit indicators to system logs (e.g., `[System (3/20)]` and `[System (55k/120k)]`).
@@ -17,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Architecture**: Implemented deep-cloning of history payloads to prevent "context rot" by keeping safety warnings out of persistent history files.
-- **Documentation**: Fully revised README and all SOPs to reflect new safety, UX, and persistence standards.
+- **Documentation**: Fully revised README and all SOPs to reflect new safety, UX, and context management standards.
 
 ## [1.22.0-dev] - 2026-06-01
 
