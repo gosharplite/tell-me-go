@@ -82,29 +82,6 @@ func (a *App) Run() {
 	safePathsPath := filepath.Join(homeDir, "output", sessionName+"_safepaths.json")
 	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
-	if *newSession {
-		timestamp := time.Now().Format("20060102_150405")
-		// Record cost with a unique ID including the timestamp before archiving
-		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(logPath, cfg.Model, uniqueID)
-		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
-	}
-
-	hManager := history.NewManager(historyPath)
-	if err := hManager.Load(); err != nil {
-		log.Fatalf("Error loading history: %v", err)
-	}
-	// Proactively prune history immediately after loading to ensure cache efficiency.
-	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
-	pruned := hManager.Prune(cfg.MaxHistoryTurns)
-
-	if *lastN > 0 {
-		a.showHistory(hManager, *lastN)
-	}
-
-	// 4. Handle Prompt
-	prompt := a.capturePrompt(*lastN)
-
 	// 5. Initialize Components
 	tools.SetSafePathsFile(safePathsPath)
 	tools.SetBypassFile(bypassPath)
@@ -115,6 +92,14 @@ func (a *App) Run() {
 	tools.LoadBypassState()
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
 	tools.RegisterSafePath(*configPath)
+
+	if *newSession {
+		timestamp := time.Now().Format("20060102_150405")
+		// Record cost with a unique ID including the timestamp before archiving
+		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
+		_ = tools.RecordSessionCost(logPath, cfg.Model, uniqueID)
+		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
+	}
 
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
