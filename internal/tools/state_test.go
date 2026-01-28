@@ -353,7 +353,7 @@ func TestStateConcurrency(t *testing.T) {
 	}
 
 	expectedTotal := numGroutines * tasksPerRoutine
-	
+
 	count := 0
 	for _, line := range strings.Split(msg, "\n") {
 		if strings.HasPrefix(line, "[") {
