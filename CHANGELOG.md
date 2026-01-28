@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0] - 2026-01-28
+
+### Added
+- **Testing**: Added comprehensive unit tests for the AST-based `renameSymbol` refactor, verifying semantic accuracy and literal protection.
+
+### Changed
+- **Feat**: Implemented dynamic thinking budgets. The application now live-syncs reasoning limits from `assets/pricing.json` instead of using hardcoded values.
+- **Refactor**: Upgraded `renameSymbol` to use Go's native AST (`go/ast`) and parser (`go/parser`). The tool now performs semantic renaming and automatically formats modified files using `go/format`.
+- **Maintenance**: Stabilized the pricing engine by pointing the remote pricing URL to the `main` branch for production reliability.
+
 ## [1.38.0] - 2026-01-28
 
 ### Changed
