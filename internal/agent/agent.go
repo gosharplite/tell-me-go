@@ -128,8 +128,8 @@ func (a *Agent) logUsage(m *api.Metrics) {
 
 	tools.TerminalMutex.Lock()
 	defer tools.TerminalMutex.Unlock()
-	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%.2fs]%s\n",
-		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, m.Duration, reset)
+	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s]%s\n",
+		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, reset)
 }
 
 func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
