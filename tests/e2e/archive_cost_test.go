@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestArchiveCostPreservation verifies that starting a new session (-new) 
+// TestArchiveCostPreservation verifies that starting a new session (-new)
 // preserves the cost of the archived session in the ledger under a unique ID.
 func TestArchiveCostPreservation(t *testing.T) {
 	// 1. Build the binary
@@ -89,7 +89,7 @@ MAX_HISTORY_TURNS: 10
 	// We expect:
 	// 1. The original entry (test_tokens.log) with cost 1.2345
 	// 2. A NEW backup entry (backup/.../test_tokens.log) with recalculated cost from log file
-	
+
 	hasBackup := false
 	originalPreserved := false
 
