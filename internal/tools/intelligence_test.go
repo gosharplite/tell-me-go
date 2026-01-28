@@ -89,4 +89,56 @@ func Helper() int { return 42 }
 			t.Errorf("Implementations not found: %s", res)
 		}
 	})
+
+	t.Run("renameSymbol", func(t *testing.T) {
+		// Setup specific file for renaming to test AST logic vs Text replacement
+		renameCode := `package test
+
+func OldFunction() {
+	println("OldFunction") // String literal should NOT change
+}
+
+var ref = OldFunction
+`
+		renameFile := filepath.Join(tmpDir, "rename_test.go")
+		if err := os.WriteFile(renameFile, []byte(renameCode), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		args := map[string]interface{}{
+			"path":     tmpDir,
+			"old_name": "OldFunction",
+			"new_name": "NewFunction",
+		}
+
+		res, err := renameSymbol(args)
+		if err != nil {
+			t.Fatalf("renameSymbol failed: %v", err)
+		}
+
+		// Read back
+		contentBytes, err := os.ReadFile(renameFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(contentBytes)
+
+		// Assertions
+		if strings.Contains(content, "func OldFunction") {
+			t.Error("Old function definition still exists")
+		}
+		if !strings.Contains(content, "func NewFunction") {
+			t.Error("New function definition missing")
+		}
+		if !strings.Contains(content, "var ref = NewFunction") {
+			t.Error("Reference was not renamed")
+		}
+		if !strings.Contains(content, `println("OldFunction")`) {
+			t.Error("String literal was incorrectly renamed (AST check failed)")
+		}
+		// Flexible check for success message
+		if !strings.Contains(res, "OldFunction") || !strings.Contains(res, "NewFunction") || !strings.Contains(res, "Renamed") {
+			t.Errorf("Unexpected result message: %s", res)
+		}
+	})
 }
