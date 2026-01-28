@@ -10,18 +10,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.45.0] - 2026-01-28
+## [1.46.0] - 2026-01-28
 
 ### Added
 - **Financial Metrics**: Implemented unique session IDs for cost recording. Archived sessions are now keyed by a unique ID (e.g., `backup/timestamp/logname`) in `global_costs.json` to prevent them from being overwritten by new sessions.
 - **Testing**: Added a comprehensive End-to-End (E2E) test (`tests/e2e/archive_cost_test.go`) to verify cost preservation during session archiving.
 
 ### Fixed
+- **CLI Initialization**: Fixed initialization order to ensure safe paths are registered before session archiving and cost recording occurs. This ensures archived sessions are correctly recorded in `global_costs.json`.
 - **Atomic Writes**: Hardened `AtomicWrite` utility to use `fsync` and explicitly set file permissions, preventing stale reads and potential race conditions in state management.
 - **Resource Cleanup**: Implemented automatic cleanup of temporary files in `AtomicWrite` on failure.
 
 ### Changed
-- **Version Bump**: Promoted to v1.45.0.
+- **Version Bump**: Promoted to v1.46.0.
+
+## [1.45.0] - 2026-01-28
 
 ## [1.44.0] - 2026-01-28
 

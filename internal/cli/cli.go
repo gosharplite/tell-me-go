@@ -47,14 +47,6 @@ func (a *App) Run() {
 	lastN := flag.Int("l", 0, "Show the last N messages from history")
 	flag.Parse()
 
-	// Handle "b -l" without an argument by checking if -l was provided but is 0
-	// However, flag.Int defaults to 0. We can check os.Args to see if -l was provided without a value.
-	// A better way is to check if -l is provided at the end of Args.
-
-	// If the user provided -l but no value, and it's the last argument, flag package might complain
-	// or set it to 0. Let's look at how flag.Int works: if "-l" is the last arg, it fails.
-	// If the user wants "b -l" to mean "b -l 1", we should change the default or handle it.
-
 	if *showVersion {
 		fmt.Printf("tell-me-go version %s\n", a.Version)
 		os.Exit(0)
@@ -82,6 +74,17 @@ func (a *App) Run() {
 	safePathsPath := filepath.Join(homeDir, "output", sessionName+"_safepaths.json")
 	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
+	// 5. Initialize Components
+	tools.SetSafePathsFile(safePathsPath)
+	tools.SetBypassFile(bypassPath)
+	tools.SetCommandsLogFile(commandsLogPath)
+	if err := tools.LoadSafePaths(); err != nil {
+		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
+	}
+	tools.LoadBypassState()
+	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
+	tools.RegisterSafePath(*configPath)
+
 	if *newSession {
 		timestamp := time.Now().Format("20060102_150405")
 		// Record cost with a unique ID including the timestamp before archiving
@@ -104,17 +107,6 @@ func (a *App) Run() {
 
 	// 4. Handle Prompt
 	prompt := a.capturePrompt(*lastN)
-
-	// 5. Initialize Components
-	tools.SetSafePathsFile(safePathsPath)
-	tools.SetBypassFile(bypassPath)
-	tools.SetCommandsLogFile(commandsLogPath)
-	if err := tools.LoadSafePaths(); err != nil {
-		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
-	}
-	tools.LoadBypassState()
-	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
-	tools.RegisterSafePath(*configPath)
 
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
