@@ -47,14 +47,6 @@ func (a *App) Run() {
 	lastN := flag.Int("l", 0, "Show the last N messages from history")
 	flag.Parse()
 
-	// Handle "b -l" without an argument by checking if -l was provided but is 0
-	// However, flag.Int defaults to 0. We can check os.Args to see if -l was provided without a value.
-	// A better way is to check if -l is provided at the end of Args.
-
-	// If the user provided -l but no value, and it's the last argument, flag package might complain
-	// or set it to 0. Let's look at how flag.Int works: if "-l" is the last arg, it fails.
-	// If the user wants "b -l" to mean "b -l 1", we should change the default or handle it.
-
 	if *showVersion {
 		fmt.Printf("tell-me-go version %s\n", a.Version)
 		os.Exit(0)
@@ -100,6 +92,21 @@ func (a *App) Run() {
 		_ = tools.RecordSessionCost(logPath, cfg.Model, uniqueID)
 		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
 	}
+
+	hManager := history.NewManager(historyPath)
+	if err := hManager.Load(); err != nil {
+		log.Fatalf("Error loading history: %v", err)
+	}
+	// Proactively prune history immediately after loading to ensure cache efficiency.
+	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
+	pruned := hManager.Prune(cfg.MaxHistoryTurns)
+
+	if *lastN > 0 {
+		a.showHistory(hManager, *lastN)
+	}
+
+	// 4. Handle Prompt
+	prompt := a.capturePrompt(*lastN)
 
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
