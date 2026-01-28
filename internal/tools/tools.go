@@ -407,9 +407,26 @@ func (r *Registry) ToToolSDK() []*genai.Tool {
 // This ensures that the target file is either fully updated or not updated at all.
 func AtomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open temp file: %w", err)
+	}
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
+
+	// Force flush to disk to prevent stale reads
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to sync temp file: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
 	if err := os.Rename(tmp, path); err != nil {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
