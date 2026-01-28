@@ -162,8 +162,8 @@ func RegisterSystemTools(r *Registry) {
 }
 
 func revokeBypassTool(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	bypassMu.Lock()
 	bypassConfirmations = false
@@ -176,8 +176,8 @@ func revokeBypassTool(args map[string]interface{}) (string, error) {
 }
 
 func bypassConfirmationTool(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	if IsBypassActive() {
 		return "Bypass mode is already enabled.", nil
@@ -218,8 +218,8 @@ func listSafePathsTool(args map[string]interface{}) (string, error) {
 }
 
 func removeSafePathTool(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -259,8 +259,8 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 }
 
 func registerSafePathTool(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
@@ -311,8 +311,8 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 }
 
 func askUser(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	question, ok := args["question"].(string)
 	if !ok || question == "" {
@@ -400,7 +400,9 @@ func httpRequest(args map[string]interface{}) (string, error) {
 	url, _ := args["url"].(string)
 	bodyStr, _ := args["body"].(string)
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
+	TerminalMutex.Unlock()
 
 	var reqBody io.Reader
 	if bodyStr != "" {
@@ -494,8 +496,8 @@ func isSafeCommand(command string) bool {
 }
 
 func executeCommand(args map[string]interface{}) (string, error) {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	command, ok := args["command"].(string)
 	if !ok || command == "" {

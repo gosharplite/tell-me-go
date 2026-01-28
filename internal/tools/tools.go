@@ -26,7 +26,7 @@ var (
 	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
 	bypassMu            sync.RWMutex
-	termMu              sync.Mutex
+	TerminalMutex       sync.Mutex
 )
 
 // SetBypassFile sets the file where persistent bypass state is stored.
@@ -134,8 +134,8 @@ func logAudit(label1, val1, label2, val2 string) {
 
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
 func ConfirmDestructiveAction(action, target, detail string) bool {
-	termMu.Lock()
-	defer termMu.Unlock()
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
 
 	detailLog := detail
 	if len(detailLog) > 500 {
