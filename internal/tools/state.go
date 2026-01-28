@@ -266,24 +266,22 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 		return "Scratchpad overwritten.", nil
 
 	case "append":
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return "", fmt.Errorf("failed to open scratchpad for append: %w", err)
+		existing, _ := os.ReadFile(path)
+		var newContent []byte
+		if len(existing) > 0 {
+			newContent = append(existing, '\n')
+			newContent = append(newContent, []byte(content)...)
+		} else {
+			newContent = []byte(content)
 		}
-		defer f.Close()
-
-		stat, _ := f.Stat()
-		if stat.Size() > 0 {
-			_, _ = f.WriteString("\n")
-		}
-		_, err = f.WriteString(content)
+		err := AtomicWrite(path, newContent)
 		if err != nil {
 			return "", fmt.Errorf("failed to append to scratchpad: %w", err)
 		}
 		return "Content appended to scratchpad.", nil
 
 	case "clear":
-		_ = os.WriteFile(path, []byte(""), 0644)
+		_ = AtomicWrite(path, []byte(""))
 		return "Scratchpad cleared.", nil
 	}
 
