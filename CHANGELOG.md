@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.38.0] - 2026-02-14
+
+### Changed
+- **Refactor**: Hardened project-wide thread-safety and implemented atomic writes for all state management tools (`manage_tasks`, `manage_scratchpad`). This ensures file integrity and prevents race conditions during parallel tool execution.
+- **Maintenance**: Refactored `internal/tools` to use a centralized `AtomicWrite` utility, reducing code duplication and improving reliability.
+
+## [1.37.0] - 2026-02-14
+
+### Added
+- **SOP**: Added "Thread Safety" and "Atomic Write" requirements to the `Agentic Capabilities` SOP.
+
+### Fixed
+- **Stability**: Implemented `sync.Mutex` and robust JSON parsing for state management tools to prevent data corruption and race conditions.
+- **Refinement**: Improved state management logic based on code review for better robustness and clarity.
+
 ## [1.36.0] - 2026-02-14
 
 ### Added
