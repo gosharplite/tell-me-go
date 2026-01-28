@@ -110,6 +110,43 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	})
 
 	r.Register(&genai.FunctionDeclaration{
+		Name: "configure_ux_preferences",
+		Description: `Configures User Experience (UX) behaviors for the AI assistant. 
+When 'smart_suggestions' is enabled, the AI MUST conclude every response by suggesting 
+2 to 3 context-aware follow-up commands (e.g., tool calls or workflow actions) 
+that are most relevant to the current conversation state. The AI should intelligently 
+determine these suggestions based on its available tools, current tasks, and 
+immediate project needs. If the AI detects a repeating command pattern, it 
+should increase the suggestion count.`,
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"feature": {
+					Type:        genai.TypeString,
+					Description: "The UX feature to configure.",
+					Enum:        []string{"smart_suggestions"},
+				},
+				"status": {
+					Type:        genai.TypeString,
+					Description: "Whether the feature is 'on' or 'off'.",
+					Enum:        []string{"on", "off"},
+				},
+			},
+			Required: []string{"feature", "status"},
+		},
+	}, func(args map[string]interface{}) (string, error) {
+		feature, _ := args["feature"].(string)
+		status, _ := args["status"].(string)
+
+		configArgs := map[string]interface{}{
+			"action": "set",
+			"key":    feature,
+			"value":  status,
+		}
+		return manageConfig(configArgs, homeDir, mode)
+	})
+
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
 		Parameters: &genai.Schema{

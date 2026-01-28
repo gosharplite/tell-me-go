@@ -10,6 +10,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0] - 2026-01-28
+
+### Added
+- **UX Preference**: Added `configure_ux_preferences` tool to enable "Smart Suggestions" at the end of every response. This state is persistent and mode-scoped.
+- **System Prompt Injection**: Implemented automatic injection of UX preferences into the AI's core instructions at session startup.
+- **Observability**: Added warning logs for persistent configuration loading errors in the CLI.
+
+### Changed
+- **CLI Shell**: Optimized the `hack.sh` script to support dynamic command selection (`bbb` vs `ccc`) and retired it in favor of the new agentic Smart Suggestions.
+- **Documentation**: Fully revised `README.md` to document the new UX customization capabilities.
+- **Version Bump**: Promoted to v1.41.0.
+
 ## [1.40.0] - 2026-01-28
 
 ### Changed
