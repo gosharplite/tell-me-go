@@ -1,3 +1,8 @@
+<!--
+Copyright (c) 2026 gosharplite@gmail.com
+SPDX-License-Identifier: MIT
+-->
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

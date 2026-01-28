@@ -1,5 +1,7 @@
-// Copyright (c) 2026 gosharplite@gmail.com
-// SPDX-License-Identifier: MIT
+<!--
+Copyright (c) 2026 gosharplite@gmail.com
+SPDX-License-Identifier: MIT
+-->
 
 
 # Standard Operating Procedure (SOP): Authentication and Token Management
