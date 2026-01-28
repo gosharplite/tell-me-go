@@ -293,8 +293,8 @@ func (a *Agent) logSystemStatus(currentTurns, tokens int) {
 	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
 		tokenColor = "\033[0;31m" // Red if > 90%
 	}
-	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d\033[0;90m tokens\033[0m\n",
-		time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens)
+	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d/%d\033[0;90m tokens\033[0m\n",
+		time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens, a.maxHistoryTokens)
 }
 
 func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, currentTurns int) []*api.Content {

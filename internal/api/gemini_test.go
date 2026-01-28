@@ -40,7 +40,7 @@ func TestSendChat(t *testing.T) {
 	// 2. Setup client with mock server URL and mock authenticator
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", "", false)
+	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSendChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 
 	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err == nil {
@@ -97,7 +97,7 @@ func TestSendChat_FinishReason(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 
 	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err == nil {
@@ -118,7 +118,7 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "Be helpful", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "Be helpful", false)
 
 	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestThinkingBudget(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", nil, "", false)
 
 	_, _, err := client.SendChat([]*genai.Content{}, nil)
 	if err != nil {

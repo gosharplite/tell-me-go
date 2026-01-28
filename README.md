@@ -83,9 +83,9 @@ Show the very last message (shorthand):
 
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:
-`[14:19:43] [System (3/20)] Payload: ~4549 tokens`
+`[14:19:43] [System (3/20)] Payload: ~4549/120000 tokens`
 *   **(3/20)**: Current turn count / Max history turns.
-*   **Tokens**: Estimated payload size. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
+*   **Tokens**: Estimated payload size / Max history tokens. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
 
 **Thinking Mode (Gemini 2.0):**
 If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.

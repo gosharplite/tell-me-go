@@ -24,7 +24,7 @@ var (
 	pricingMu sync.Mutex
 )
 
-const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/dev/assets/pricing.json"
+const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
 
 type ModelPricing struct {
 	Hit             float64 `json:"hit"`
@@ -33,12 +33,14 @@ type ModelPricing struct {
 	TieredThreshold int64   `json:"tiered_threshold"`
 	TieredMiss      float64 `json:"tiered_miss"`
 	TieredComp      float64 `json:"tiered_comp"`
+	ThinkingBudget  int     `json:"thinking_budget,omitempty"`
 }
 
 type PricingData struct {
-	UpdatedAt   string                  `json:"updated_at"`
-	Models      map[string]ModelPricing `json:"models"`
-	SearchQuery float64                 `json:"search_query"`
+	UpdatedAt       string                  `json:"updated_at"`
+	Models          map[string]ModelPricing `json:"models"`
+	ThinkingBudgets map[string]int          `json:"thinking_budgets,omitempty"`
+	SearchQuery     float64                 `json:"search_query"`
 }
 
 // SessionCostRecord represents a single session's financial footprint.
@@ -166,8 +168,8 @@ func getCostSummary(outputDir string) (string, error) {
 	return sb.String(), nil
 }
 
-// getPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func getPricing(outputDir string) PricingData {
+// GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
+func GetPricing(outputDir string) PricingData {
 	pricingMu.Lock()
 	defer pricingMu.Unlock()
 	cachePath := filepath.Join(outputDir, "global_prices.json")
@@ -232,6 +234,10 @@ func getPricing(outputDir string) PricingData {
 					TieredComp:      7.50,
 				},
 			},
+			ThinkingBudgets: map[string]int{
+				"gemini-2.5-flash":       24576,
+				"gemini-3-flash-preview": 32768,
+			},
 			SearchQuery: 0.014,
 		}
 	}
@@ -245,7 +251,7 @@ func estimateCost(logFile string, model string, shouldRecord bool) (string, erro
 	}
 
 	outputDir := filepath.Dir(logFile)
-	pricing := getPricing(outputDir)
+	pricing := GetPricing(outputDir)
 
 	f, err := os.Open(logFile)
 	if err != nil {

@@ -111,10 +111,12 @@ func (a *App) Run() {
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
 	tools.RegisterSafePath(*configPath)
 
+	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
+
 	hManager.Snapshot()
 
 	authenticator := &auth.VertexAuth{}
-	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, cfg.Person, cfg.UseSearch)
+	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, pricing.ThinkingBudgets, cfg.Person, cfg.UseSearch)
 	if err != nil {
 		log.Fatalf("Error creating client: %v", err)
 	}
