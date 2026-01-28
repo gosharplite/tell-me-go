@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -112,6 +113,17 @@ func (a *App) Run() {
 	tools.RegisterSafePath(*configPath)
 
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
+
+	// Load persistent config to augment system prompt (e.g., smart_suggestions)
+	persistentConfigPath := filepath.Join(homeDir, "output", cfg.Mode+"_config.json")
+	if data, err := os.ReadFile(persistentConfigPath); err == nil {
+		var pCfg map[string]string
+		if err := json.Unmarshal(data, &pCfg); err == nil {
+			if pCfg["smart_suggestions"] == "on" {
+				cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. Increase the suggestion count if you detect a repeating command pattern."
+			}
+		}
+	}
 
 	hManager.Snapshot()
 
