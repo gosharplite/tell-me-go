@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -18,7 +20,10 @@ func TestTerminalMutexConcurrency(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	// Create a pipe to capture output
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	os.Stderr = w
 
 	const (
@@ -49,19 +54,23 @@ func TestTerminalMutexConcurrency(t *testing.T) {
 
 	// Read and verify output
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
-
-	output := buf.String()
-	// Basic check: Ensure we have the expected number of lines
-	lines := 0
-	for _, char := range output {
-		if char == '\n' {
-			lines++
-		}
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Errorf("Failed to read from pipe: %v", err)
 	}
 
+	output := buf.String()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+
 	expectedLines := numGoroutines * iterations
-	if lines != expectedLines {
-		t.Errorf("Expected %d lines of output, got %d", expectedLines, lines)
+	if len(lines) != expectedLines {
+		t.Errorf("Expected %d lines of output, got %d", expectedLines, len(lines))
+	}
+
+	// Verify line integrity using regex to ensure no interleaving/garbling
+	re := regexp.MustCompile(`^\[ID:\d+\]\[Iter:\d+\]$`)
+	for i, line := range lines {
+		if !re.MatchString(line) {
+			t.Errorf("Line %d is garbled or interleaved: %q", i+1, line)
+		}
 	}
 }
