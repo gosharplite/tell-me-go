@@ -26,5 +26,9 @@
       "tiered_comp": 7.50
     }
   },
+  "thinking_budgets": {
+    "gemini-2.5-flash": 24576,
+    "gemini-3-flash-preview": 32768
+  },
   "search_query": 0.014
 }

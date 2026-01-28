@@ -152,7 +152,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 	// Points to our mock server and triggers Vertex logic in initSDK
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 
-	client, err := api.NewClient(apiURL, "test-model", mAuth, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", mAuth, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestAgentToolLoop(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestAgent_Chat_APIError(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

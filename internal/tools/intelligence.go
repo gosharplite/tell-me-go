@@ -4,8 +4,10 @@
 package tools
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -273,56 +275,49 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
-	type change struct {
-		pos int
-		end int
-	}
-	fileChanges := make(map[string][]change)
-	totalCount := 0
+	totalFiles := 0
+	totalChanges := 0
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
+
 		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
 			return nil
 		}
 
+		changed := false
 		ast.Inspect(f, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && id.Name == oldName {
-				p := fset.Position(id.Pos()).Offset
-				fileChanges[filePath] = append(fileChanges[filePath], change{pos: p, end: p + len(oldName)})
-				totalCount++
+				id.Name = newName
+				changed = true
+				totalChanges++
 			}
 			return true
 		})
+
+		if changed {
+			totalFiles++
+			// Write back formatted
+			var buf bytes.Buffer
+			if err := format.Node(&buf, fset, f); err != nil {
+				return fmt.Errorf("failed to format %s: %w", filePath, err)
+			}
+			if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", filePath, err)
+			}
+		}
 		return nil
 	})
 
-	for filePath, changes := range fileChanges {
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-		// Sort changes by position descending to apply them without shifting offsets
-		for i := len(changes) - 1; i >= 0; i-- {
-			c := changes[i]
-			newContent := make([]byte, 0, len(content)-len(oldName)+len(newName))
-			newContent = append(newContent, content[:c.pos]...)
-			newContent = append(newContent, []byte(newName)...)
-			newContent = append(newContent, content[c.end:]...)
-			content = newContent
-		}
-		os.WriteFile(filePath, content, 0644)
-	}
-
-	if totalCount == 0 {
+	if totalChanges == 0 {
 		return fmt.Sprintf("Symbol '%s' not found.", oldName), nil
 	}
 
-	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalCount, oldName, newName, len(fileChanges)), err
+	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
 }
 
 func listTodos(args map[string]interface{}) (string, error) {

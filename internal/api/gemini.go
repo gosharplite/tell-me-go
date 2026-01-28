@@ -22,12 +22,6 @@ type Part = genai.Part
 type FunctionCall = genai.FunctionCall
 type FunctionResponse = genai.FunctionResponse
 
-var modelMaxThinkingBudget = map[string]int{
-	"gemini-2.5-flash":       24576,
-	"gemini-3-flash-preview": 32768, // Corrected from 65536 based on API error
-	// Add other model-specific caps as needed
-}
-
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
 	sdkClient         *genai.Client
@@ -36,20 +30,22 @@ type Client struct {
 	model             string
 	thinkingBudget    int
 	thinkingLevel     string
+	thinkingBudgets   map[string]int
 	useSearch         bool
 	systemInstruction *genai.Content
 	backend           genai.Backend
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, systemInstruction string, useSearch bool) (*Client, error) {
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, thinkingBudgets map[string]int, systemInstruction string, useSearch bool) (*Client, error) {
 	c := &Client{
-		authenticator:  authenticator,
-		apiURL:         apiURL,
-		model:          model,
-		thinkingBudget: thinkingBudget,
-		thinkingLevel:  thinkingLevel,
-		useSearch:      useSearch,
+		authenticator:   authenticator,
+		apiURL:          apiURL,
+		model:           model,
+		thinkingBudget:  thinkingBudget,
+		thinkingLevel:   thinkingLevel,
+		thinkingBudgets: thinkingBudgets,
+		useSearch:       useSearch,
 	}
 
 	if systemInstruction != "" {
@@ -174,7 +170,7 @@ func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *M
 
 		actualBudget := c.thinkingBudget
 		if actualBudget > 0 {
-			if maxBudget, ok := modelMaxThinkingBudget[c.model]; ok {
+			if maxBudget, ok := c.thinkingBudgets[c.model]; ok {
 				if actualBudget > maxBudget {
 					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
 					actualBudget = maxBudget
