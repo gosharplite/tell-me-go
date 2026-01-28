@@ -72,7 +72,9 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 		model = "imagen-3.0-generate-001"
 	}
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image using %s: %s (%s)\033[0m\n", model, prompt, aspectRatio)
+	TerminalMutex.Unlock()
 
 	// Append aspect ratio to prompt as guidance (Imagen 3 prompt engineering)
 	fullPrompt := fmt.Sprintf("%s. Aspect ratio %s.", prompt, aspectRatio)
@@ -124,7 +126,9 @@ func readImage(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", path)
+	TerminalMutex.Unlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {

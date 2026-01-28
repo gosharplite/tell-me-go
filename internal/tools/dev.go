@@ -91,7 +91,9 @@ func runTests(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("security violation: command '%s' is not a recognized test command", command)
 	}
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
+	TerminalMutex.Unlock()
 
 	// Execute the command
 	cmd := exec.Command("sh", "-c", command)
@@ -112,7 +114,9 @@ func runTests(args map[string]interface{}) (string, error) {
 }
 
 func goTidy(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
+	TerminalMutex.Unlock()
 
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
@@ -133,7 +137,9 @@ func getCoverage(args map[string]interface{}) (string, error) {
 		path = p
 	}
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
+	TerminalMutex.Unlock()
 
 	cmd := exec.Command("go", "test", "-coverprofile=coverage.out", path)
 	out, err := cmd.CombinedOutput()
@@ -161,7 +167,9 @@ func getCoverage(args map[string]interface{}) (string, error) {
 }
 
 func runLinter(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
+	TerminalMutex.Unlock()
 
 	// Try golangci-lint first, fallback to staticcheck
 	var cmd *exec.Cmd
@@ -196,7 +204,9 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 		bench = b
 	}
 
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
+	TerminalMutex.Unlock()
 
 	cmd := exec.Command("go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	out, err := cmd.CombinedOutput()
@@ -208,7 +218,9 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 }
 
 func checkVulnerabilities(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
+	TerminalMutex.Unlock()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {
 		return "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest", nil

@@ -197,7 +197,9 @@ func (a *App) capturePrompt(lastN int) string {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
+	tools.TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
+	tools.TerminalMutex.Unlock()
 	return prompt
 }
 
@@ -254,7 +256,9 @@ func (a *App) archiveSessionFiles(homeDir string, filesToMove ...string) {
 		if _, err := os.Stat(f); err == nil {
 			if !backupCreated {
 				if err := os.MkdirAll(backupDir, 0755); err != nil {
+					tools.TerminalMutex.Lock()
 					fmt.Fprintf(os.Stderr, "Error creating backup directory: %v\n", err)
+					tools.TerminalMutex.Unlock()
 					return
 				}
 				fmt.Printf("Archiving existing session files to %s\n", backupDir)
@@ -262,7 +266,9 @@ func (a *App) archiveSessionFiles(homeDir string, filesToMove ...string) {
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
+				tools.TerminalMutex.Lock()
 				fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+				tools.TerminalMutex.Unlock()
 			}
 		}
 	}

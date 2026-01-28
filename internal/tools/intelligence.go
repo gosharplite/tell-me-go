@@ -370,7 +370,9 @@ func listTodos(args map[string]interface{}) (string, error) {
 
 func goDoc(args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
+	TerminalMutex.Unlock()
 
 	cmd := exec.Command("go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
@@ -448,7 +450,9 @@ func analyzeComplexity(args map[string]interface{}) (string, error) {
 }
 
 func getPackageGraph(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
+	TerminalMutex.Unlock()
 
 	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()

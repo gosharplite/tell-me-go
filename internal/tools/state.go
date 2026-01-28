@@ -216,7 +216,9 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
+			TerminalMutex.Lock()
 			fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			TerminalMutex.Unlock()
 			_ = os.Rename(path, path+".bak")
 			config = make(map[string]string)
 		}
@@ -340,7 +342,9 @@ func manageTasks(args map[string]interface{}, homeDir, mode string) (string, err
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &tasks); err != nil {
+			TerminalMutex.Lock()
 			fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			TerminalMutex.Unlock()
 			_ = os.Rename(path, path+".bak")
 			tasks = []Task{}
 		}

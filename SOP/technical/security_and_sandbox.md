@@ -55,7 +55,7 @@ To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), intera
 
 *   **Standard**: Use `/dev/tty` for interactive prompts whenever possible.
 *   **Fallback**: If `/dev/tty` is unavailable, fall back to `os.Stdin`.
-*   **Concurrency**: Use `termMu` (sync.Mutex) to ensure that only one tool or component is interacting with the terminal at a time.
+*   **Concurrency**: Use `TerminalMutex` (sync.Mutex) to ensure that only one tool or component is interacting with the terminal at a time.
 
 ---
 

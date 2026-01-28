@@ -127,6 +127,8 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
 
+	tools.TerminalMutex.Lock()
+	defer tools.TerminalMutex.Unlock()
 	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%.2fs]%s\n",
 		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, dColor, m.Duration, reset)
 }
@@ -281,6 +283,9 @@ func (a *Agent) Chat(prompt string) error {
 }
 
 func (a *Agent) handleLimitExceeded(tokens int) {
+	tools.TerminalMutex.Lock()
+	defer tools.TerminalMutex.Unlock()
+
 	fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
 		time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
 	fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
@@ -293,6 +298,8 @@ func (a *Agent) logSystemStatus(currentTurns, tokens int) {
 	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
 		tokenColor = "\033[0;31m" // Red if > 90%
 	}
+	tools.TerminalMutex.Lock()
+	defer tools.TerminalMutex.Unlock()
 	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d/%d\033[0;90m tokens\033[0m\n",
 		time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens, a.maxHistoryTokens)
 }
@@ -331,8 +338,10 @@ func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, curren
 		})
 		apiContents[lastIdx] = cloned
 
+		tools.TerminalMutex.Lock()
 		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
 			time.Now().Format("15:04:05"))
+		tools.TerminalMutex.Unlock()
 	}
 	return apiContents
 }
@@ -343,7 +352,9 @@ func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+		tools.TerminalMutex.Lock()
 		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+		tools.TerminalMutex.Unlock()
 		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}
@@ -356,7 +367,9 @@ func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics
 func (a *Agent) renderResponse(respContent *api.Content) {
 	for _, part := range respContent.Parts {
 		if a.showThoughts && part.Thought && part.Text != "" {
+			tools.TerminalMutex.Lock()
 			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			tools.TerminalMutex.Unlock()
 		}
 	}
 	for _, part := range respContent.Parts {
@@ -388,8 +401,10 @@ func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
 	}
 
 	if turn >= a.maxToolTurns {
+		tools.TerminalMutex.Lock()
 		fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
 			time.Now().Format("15:04:05"), a.maxToolTurns)
+		tools.TerminalMutex.Unlock()
 		return ErrMaxTurnsReached
 	}
 
@@ -404,6 +419,9 @@ func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
 }
 
 func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
+	tools.TerminalMutex.Lock()
+	defer tools.TerminalMutex.Unlock()
+
 	var names []string
 	for _, fc := range calls {
 		names = append(names, fc.Name)
