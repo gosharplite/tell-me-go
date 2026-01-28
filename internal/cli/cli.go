@@ -120,9 +120,13 @@ func (a *App) Run() {
 		var pCfg map[string]string
 		if err := json.Unmarshal(data, &pCfg); err == nil {
 			if pCfg["smart_suggestions"] == "on" {
-				cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. Increase the suggestion count if you detect a repeating command pattern."
+				cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
 			}
+		} else {
+			log.Printf("Warning: Failed to parse persistent config [%s]: %v", persistentConfigPath, err)
 		}
+	} else if !os.IsNotExist(err) {
+		log.Printf("Warning: Failed to read persistent config [%s]: %v", persistentConfigPath, err)
 	}
 
 	hManager.Snapshot()
