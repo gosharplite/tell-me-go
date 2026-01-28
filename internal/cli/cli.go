@@ -83,6 +83,7 @@ func (a *App) Run() {
 	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
 	if *newSession {
+		_ = tools.RecordSessionCost(logPath, cfg.Model)
 		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath)
 	}
 
@@ -164,6 +165,9 @@ func (a *App) Run() {
 	if err := hManager.Save(); err != nil {
 		log.Fatalf("Error saving history: %v", err)
 	}
+
+	// 8. Record session cost
+	_ = tools.RecordSessionCost(logPath, cfg.Model)
 }
 
 func (a *App) capturePrompt(lastN int) string {
