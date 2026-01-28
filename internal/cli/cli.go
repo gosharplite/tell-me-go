@@ -167,7 +167,9 @@ func (a *App) Run() {
 	}
 
 	// 8. Record session cost
-	_ = tools.RecordSessionCost(logPath, cfg.Model)
+	if err := tools.RecordSessionCost(logPath, cfg.Model); err != nil {
+		log.Printf("Warning: Failed to record final session cost: %v", err)
+	}
 }
 
 func (a *App) capturePrompt(lastN int) string {
