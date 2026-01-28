@@ -25,25 +25,34 @@ This SOP defines the requirements and steps for publishing a new public release 
 #### 0. Task Initialization (⚠️ NEW)
 Before starting the release, the agent MUST initialize the project state to prevent "process amnesia" across session boundaries:
 
-1.  **Initialize Tasks**: Use `manage_tasks` to add the following milestones:
+1.  **Initialize Tasks**: Use `manage_tasks` to add the following milestones **sequentially**. The agent MUST add them in the exact order listed below so that Task IDs (1, 2, 3...) correspond directly to the SOP step numbers:
     - `add`: "**SOP Compliance: public_release.md**" (Mandatory Anchor Task)
     - `add`: "**Initialize Scratchpad with Granular Checklist**"
+    - `add`: "Workspace Integrity Check"
     - `add`: "Security & Privacy Audit"
-    - `add`: "Functional Verification (Tests/E2E)"
-    - `add`: "Versioning & Tagging (Local)"
-    - `add`: "Remote Synchronization (Git Push)"
+    - `add`: "Documentation & Compliance Review"
+    - `add`: "Release Guardrails"
+    - `add`: "Final Functional Verification"
+    - `add`: "Changelog Update"
+    - `add`: "Git Tagging and Remote Synchronization"
     - `add`: "Final Verification & Cleanup"
 
 2.  **Initialize Scratchpad**: Use `manage_scratchpad` to `write` the full **Release Checklist** (found at the bottom of this document) to the persistent scratchpad. 
     - **CRITICAL**: The agent MUST update this scratchpad checklist after every sub-step to maintain a granular record of progress.
 
-#### 1. Security & Privacy Audit
+#### 1. Workspace Integrity Check
+Before proceeding, ensure the development environment is stable:
+- **Branch Check**: Verify you are on the `dev` branch: `git branch --show-current`.
+- **Clean State**: Verify there are no uncommitted changes or untracked files: `git status`.
+- **Remote Sync**: Ensure the local `dev` branch is synchronized with the remote: `git fetch origin && git status`.
+
+#### 2. Security & Privacy Audit
 Before any public release, perform a mandatory security scan:
 - **Secret Scanning**: Ensure no Service Account JSON keys (`*.json`), API keys, or `.env` files are in the repository. Use `git grep` for common patterns like `"private_key"` or `"api_key"`.
 - **Ignore Check**: Verify `.gitignore` covers `output/`, `*.log`, and any local session files.
 - **Privacy**: Ensure no personal data or proprietary internal URLs are hardcoded in the Go source code or YAML configs.
 
-#### 2. Documentation & Compliance Review
+#### 3. Documentation & Compliance Review
 - **README Check**: Verify that `README.md` is strictly up-to-date. This includes:
     - New CLI tools (e.g., cost estimation tools).
     - New configuration parameters.
@@ -56,7 +65,7 @@ Before any public release, perform a mandatory security scan:
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
 - **Version Bump**: Update any version constants in the source code (e.g., in a `version` package or the main CLI help text).
 
-#### 3. Release Guardrails (⚠️ CRITICAL)
+#### 4. Release Guardrails (⚠️ CRITICAL)
 To prevent build failures for users (e.g., local file path leaks), perform these checks:
 - **No Local Replacements**: Ensure `go.mod` does **NOT** contain `replace` directives pointing to local directories.
     ```bash
@@ -70,7 +79,7 @@ To prevent build failures for users (e.g., local file path leaks), perform these
     # If this fails, the release is NOT ready.
     ```
 
-#### 4. Final Functional Verification
+#### 5. Final Functional Verification
 Run the full suite in the main repository. This MUST include the E2E tests which verify the CLI binary's behavior:
 ```bash
 go mod tidy
@@ -81,12 +90,12 @@ go build ./...
 ```
 *Note: The E2E suite in `tests/e2e/` is critical for ensuring that multi-turn tool orchestration and security gates are functional in the final binary.*
 
-#### 5. Changelog Update
+#### 6. Changelog Update
 Create or update a `CHANGELOG.md` or the "Latest Changes" section of the README:
 - Categorize changes into: `Added`, `Changed`, `Fixed`, `Removed`.
 - Highlight Go-specific improvements (e.g., "Optimized concurrency with worker pools").
 
-#### 6. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
+#### 7. Git Tagging and Remote Synchronization (⚠️ CRITICAL)
 A release is **not complete** until it is reachable by the public on the remote repository:
 
 1.  **Start in dev branch**: Ensure you are on `dev` and all changes for the release are committed.
@@ -121,6 +130,10 @@ A release is **not complete** until it is reachable by the public on the remote 
     *   Check that `dev` matches `origin/dev`.
     *   `dev` should now be exactly 1 commit ahead of `main` (the version bump).
 7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
+
+#### 8. Final Verification & Cleanup
+- **Artifact Cleanup**: Remove any temporary build files or local logs.
+- **Task Completion**: Check if all tasks are completed and revise the scratchpad for the next cycle.
 
 ---
 
