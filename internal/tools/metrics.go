@@ -60,7 +60,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 			Type: genai.TypeObject,
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return EstimateCost(logFile, model, true) // Records to ledger
+		return EstimateCost(logFile, model, true, "") // Records to ledger with default ID
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -71,15 +71,16 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
-		_, _ = EstimateCost(logFile, model, true)
+		_, _ = EstimateCost(logFile, model, true, "")
 		return getCostSummary(filepath.Dir(logFile))
 	})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger.
 // It is intended for use in the application lifecycle (archiving/shutdown).
-func RecordSessionCost(logFile, model string) error {
-	_, err := EstimateCost(logFile, model, true)
+// sessionID allows providing a unique name (e.g. timestamped) to avoid overwriting entries in the ledger.
+func RecordSessionCost(logFile, model, sessionID string) error {
+	_, err := EstimateCost(logFile, model, true, sessionID)
 	return err
 }
 
@@ -113,7 +114,7 @@ func recordCost(outputDir string, record SessionCostRecord) {
 		}
 	}
 
-	// 3. Update or Append (identify by log filename)
+	// 3. Update or Append (identify by session ID)
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -252,7 +253,7 @@ func GetPricing(outputDir string) PricingData {
 	return data
 }
 
-func EstimateCost(logFile string, model string, shouldRecord bool) (string, error) {
+func EstimateCost(logFile string, model string, shouldRecord bool, sessionID string) (string, error) {
 	if err := IsPathSafe(logFile); err != nil {
 		return "", err
 	}
@@ -315,9 +316,12 @@ func EstimateCost(logFile string, model string, shouldRecord bool) (string, erro
 
 	// Persistence: Record to local ledger
 	if shouldRecord {
+		if sessionID == "" {
+			sessionID = filepath.Base(logFile)
+		}
 		recordCost(outputDir, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
-			Session:   filepath.Base(logFile),
+			Session:   sessionID,
 			Model:     model,
 			TotalCost: totalCost,
 		})

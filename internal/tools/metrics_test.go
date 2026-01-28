@@ -179,7 +179,7 @@ func TestEstimateCostIntegration(t *testing.T) {
 
 	// 2. Run EstimateCost (which triggers recordCost)
 	model := "gemini-2.0-flash-001"
-	summary, err := EstimateCost(logPath, model, true)
+	summary, err := EstimateCost(logPath, model, true, "")
 	if err != nil {
 		t.Fatalf("EstimateCost failed: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestRecordSessionCost(t *testing.T) {
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
 	os.WriteFile(logPath, []byte(logContent), 0644)
 
-	err = RecordSessionCost(logPath, "gemini-test")
+	err = RecordSessionCost(logPath, "gemini-test", "")
 	if err != nil {
 		t.Fatalf("RecordSessionCost failed: %v", err)
 	}

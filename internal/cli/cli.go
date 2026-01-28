@@ -83,8 +83,11 @@ func (a *App) Run() {
 	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
 
 	if *newSession {
-		_ = tools.RecordSessionCost(logPath, cfg.Model)
-		a.archiveSessionFiles(homeDir, historyPath, logPath, commandsLogPath)
+		timestamp := time.Now().Format("20060102_150405")
+		// Record cost with a unique ID including the timestamp before archiving
+		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
+		_ = tools.RecordSessionCost(logPath, cfg.Model, uniqueID)
+		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
 	}
 
 	hManager := history.NewManager(historyPath)
@@ -167,7 +170,7 @@ func (a *App) Run() {
 	}
 
 	// 8. Record session cost
-	if err := tools.RecordSessionCost(logPath, cfg.Model); err != nil {
+	if err := tools.RecordSessionCost(logPath, cfg.Model, ""); err != nil {
 		log.Printf("Warning: Failed to record final session cost: %v", err)
 	}
 }
@@ -253,8 +256,7 @@ func (a *App) showHistory(hManager *history.Manager, n int) {
 	}
 }
 
-func (a *App) archiveSessionFiles(homeDir string, filesToMove ...string) {
-	timestamp := time.Now().Format("20060102_150405")
+func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesToMove ...string) {
 	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
 
 	backupCreated := false
