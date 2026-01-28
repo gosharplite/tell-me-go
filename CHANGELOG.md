@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.38.0] - 2026-02-14
+## [1.38.0] - 2026-01-28
 
 ### Changed
 - **Refactor**: Hardened project-wide thread-safety and implemented atomic writes for all state management tools (`manage_tasks`, `manage_scratchpad`). This ensures file integrity and prevents race conditions during parallel tool execution.
 - **Maintenance**: Refactored `internal/tools` to use a centralized `AtomicWrite` utility, reducing code duplication and improving reliability.
 
-## [1.37.0] - 2026-02-14
+## [1.37.0] - 2026-01-28
 
 ### Added
 - **SOP**: Added "Thread Safety" and "Atomic Write" requirements to the `Agentic Capabilities` SOP.
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stability**: Implemented `sync.Mutex` and robust JSON parsing for state management tools to prevent data corruption and race conditions.
 - **Refinement**: Improved state management logic based on code review for better robustness and clarity.
 
-## [1.36.0] - 2026-02-14
+## [1.36.0] - 2026-01-28
 
 ### Added
 - **SOP Hardening**: Integrated "Agentic State Management" standards into all project SOPs.
@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: Standardized "AI Agent Implementation Guides" across all relevant SOPs.
 - **Release Process**: Promoted to v1.36.0 following the hardened public release procedure.
 
-## [1.35.0] - 2026-02-14
+## [1.35.0] - 2026-01-28
 
 ### Added
 - **API Error Handling**: Improved error reporting for empty API responses. The tool now identifies and reports specific block reasons (e.g., `SAFETY`, `RECITATION`) and `FinishMessage` context instead of a generic "empty response" error.
@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Maintenance**: Performed comprehensive security audit and clean-room build verification.
 - **Version Bump**: Promoted to v1.35.0.
 
-## [1.34.0] - 2026-02-14
+## [1.34.0] - 2026-01-28
 
 ### Fixed
 - **State Persistence**: Fixed `safepaths`, `scratchpad`, and `tasks` persistence across new sessions (`-new`). These environment-level states now remain stable while conversation history is archived.
