@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Maintenance**: Performed comprehensive security audit and clean-room build verification.
 - **Version Bump**: Promoted to v1.34.0.
 
-## [1.33.0] - 2026-02-12
+## [1.33.0] - 2026-01-27
 
 ### Added
 - **Safety**: Preserved the `bypass_confirmation` state across new sessions (`-new`). This ensures that automation approvals persist across tasks within the same mode.
