@@ -119,18 +119,17 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	_, _ = f.WriteString(logLine)
 
 	// Prepare colored line for stderr
-	hColor := "\033[0;90m" // Dark Gray
+	hColor := "\033[0;90m" // Dark Gray (Quiet when Hit > Miss)
+	reset := "\033[0m"      // Default Foreground (High contrast Miss)
 	if miss > m.CachedTokens {
-		hColor = "\033[0;37m" // Light Gray
+		hColor = reset
 	}
-	dColor := "\033[0;37m" // Light Gray for duration
 	gray := "\033[0;90m"
-	reset := "\033[0m"
 
 	tools.TerminalMutex.Lock()
 	defer tools.TerminalMutex.Unlock()
 	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%.2fs]%s\n",
-		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, dColor, m.Duration, reset)
+		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, m.Duration, reset)
 }
 
 func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
@@ -294,14 +293,17 @@ func (a *Agent) handleLimitExceeded(tokens int) {
 }
 
 func (a *Agent) logSystemStatus(currentTurns, tokens int) {
-	tokenColor := "\033[0;90m" // Default dark gray
+	tokenColor := "\033[0m" // Default white
 	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
 		tokenColor = "\033[0;31m" // Red if > 90%
 	}
+	gray := "\033[0;90m"
+	reset := "\033[0m"
+
 	tools.TerminalMutex.Lock()
 	defer tools.TerminalMutex.Unlock()
-	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [System (%d/%d)] Payload: ~%s%d/%d\033[0;90m tokens\033[0m\n",
-		time.Now().Format("15:04:05"), currentTurns, a.maxHistoryTurns, tokenColor, tokens, a.maxHistoryTokens)
+	fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
+		gray, time.Now().Format("15:04:05"), reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tokens, gray, a.maxHistoryTokens, reset)
 }
 
 func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, currentTurns int) []*api.Content {
@@ -426,8 +428,13 @@ func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
 	for _, fc := range calls {
 		names = append(names, fc.Name)
 	}
-	fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Engine (%d/%d)] Calling: %s\033[0m\n",
-		time.Now().Format("15:04:05"), turn+1, a.maxToolTurns, strings.Join(names, ", "))
+
+	gray := "\033[0;90m"
+	cyan := "\033[0;36m"
+	reset := "\033[0m"
+
+	fmt.Fprintf(os.Stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
+		gray, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, a.maxToolTurns, strings.Join(names, ", "), reset)
 
 	if a.showTools {
 		for _, fc := range calls {
@@ -451,49 +458,68 @@ func (a *Agent) executeToolsConcurrently(calls []*api.FunctionCall) []*api.Part 
 	sem := make(chan struct{}, a.maxConcurrentTools)
 
 	for i, fc := range calls {
-		wg.Add(1)
-		go func(idx int, call *api.FunctionCall) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		if a.isSerialTool(fc.Name) {
+			// Serialization Logic:
+			// To ensure strict execution order as perceived by the model (e.g., Task ID assignment),
+			// we wait for all previously dispatched parallel tools to finish before executing
+			// the serial tool.
+			wg.Wait()
+			results[i] = a.processToolResult(fc.Name, a.executeTool(fc))
+		} else {
+			// Parallel Execution:
+			wg.Add(1)
+			go func(idx int, call *api.FunctionCall) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
-			// Execute with timeout (exclude interactive tools)
-			var ctx context.Context
-			var cancel context.CancelFunc
-
-			if call.Name == "ask_user" || call.Name == "execute_command" {
-				ctx = context.Background()
-				cancel = func() {}
-			} else {
-				ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
-			}
-			defer cancel()
-
-			resChan := make(chan string, 1)
-			go func() {
-				result, err := a.registry.Execute(call.Name, call.Args)
-				if err != nil {
-					resChan <- fmt.Sprintf("Error: %v", err)
-				} else {
-					resChan <- result
-				}
-			}()
-
-			var finalResult string
-			select {
-			case <-ctx.Done():
-				finalResult = fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
-			case res := <-resChan:
-				finalResult = res
-			}
-
-			results[idx] = a.processToolResult(call.Name, finalResult)
-		}(i, fc)
+				results[idx] = a.processToolResult(call.Name, a.executeTool(call))
+			}(i, fc)
+		}
 	}
 	wg.Wait()
 
 	// Post-process for injections
 	return a.injectBinaryData(results)
+}
+
+func (a *Agent) isSerialTool(name string) bool {
+	switch name {
+	case "manage_tasks", "manage_scratchpad", "manage_config", "configure_ux_preferences", "register_safepath", "remove_safepath", "execute_command", "ask_user":
+		return true
+	}
+	return false
+}
+
+func (a *Agent) executeTool(call *api.FunctionCall) string {
+	// Execute with timeout (exclude interactive tools)
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	if call.Name == "ask_user" || call.Name == "execute_command" {
+		ctx = context.Background()
+		cancel = func() {}
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
+	}
+	defer cancel()
+
+	resChan := make(chan string, 1)
+	go func() {
+		result, err := a.registry.Execute(call.Name, call.Args)
+		if err != nil {
+			resChan <- fmt.Sprintf("Error: %v", err)
+		} else {
+			resChan <- result
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
+	case res := <-resChan:
+		return res
+	}
 }
 
 func (a *Agent) processToolResult(name, result string) *api.Part {
