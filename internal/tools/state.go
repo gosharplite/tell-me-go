@@ -231,7 +231,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		config[key] = value
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := AtomicWrite(path, newData); err != nil {
+		if err := AtomicWrite(path, newData, 0644); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration '%s' set successfully.", key), nil
@@ -266,7 +266,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		delete(config, key)
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := AtomicWrite(path, newData); err != nil {
+		if err := AtomicWrite(path, newData, 0644); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration key '%s' deleted.", key), nil
@@ -298,7 +298,7 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 		return string(data), nil
 
 	case "write":
-		err := AtomicWrite(path, []byte(content))
+		err := AtomicWrite(path, []byte(content), 0644)
 		if err != nil {
 			return "", fmt.Errorf("failed to write scratchpad: %w", err)
 		}
@@ -313,14 +313,14 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 		} else {
 			newContent = []byte(content)
 		}
-		err := AtomicWrite(path, newContent)
+		err := AtomicWrite(path, newContent, 0644)
 		if err != nil {
 			return "", fmt.Errorf("failed to append to scratchpad: %w", err)
 		}
 		return "Content appended to scratchpad.", nil
 
 	case "clear":
-		_ = AtomicWrite(path, []byte(""))
+		_ = AtomicWrite(path, []byte(""), 0644)
 		return "Scratchpad cleared.", nil
 	}
 
@@ -443,5 +443,5 @@ func saveTasks(path string, tasks []Task) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal tasks: %w", err)
 	}
-	return AtomicWrite(path, data)
+	return AtomicWrite(path, data, 0644)
 }

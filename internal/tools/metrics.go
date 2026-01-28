@@ -128,7 +128,7 @@ func recordCost(outputDir string, record SessionCostRecord) {
 
 	// 4. Write back atomically
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
-		_ = AtomicWrite(historyPath, bytes)
+		_ = AtomicWrite(historyPath, bytes, 0644)
 	}
 }
 
@@ -204,7 +204,7 @@ func GetPricing(outputDir string) PricingData {
 			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
 				// Save to cache atomically
 				if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
-					_ = AtomicWrite(cachePath, bytes)
+					_ = AtomicWrite(cachePath, bytes, 0644)
 				}
 				useCache = true
 			}
