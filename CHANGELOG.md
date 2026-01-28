@@ -10,6 +10,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.0] - 2026-01-28
+
+### Added
+- **Financial Metrics**: Implemented lifecycle-based cost recording. The application now automatically calculates and appends the session cost to the daily ledger (`output/global_costs.json`) upon termination.
+
+### Changed
+- **Refactor**: Optimized metrics tools to support centralized, automated session cost recording.
+- **Version Bump**: Promoted to v1.43.0.
+
 ## [1.42.0] - 2026-01-28
 
 ### Fixed

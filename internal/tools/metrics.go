@@ -60,7 +60,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 			Type: genai.TypeObject,
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return estimateCost(logFile, model, true) // Records to ledger
+		return EstimateCost(logFile, model, true) // Records to ledger
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -71,9 +71,16 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
-		_, _ = estimateCost(logFile, model, true)
+		_, _ = EstimateCost(logFile, model, true)
 		return getCostSummary(filepath.Dir(logFile))
 	})
+}
+
+// RecordSessionCost calculates and saves the session cost to the global ledger.
+// It is intended for use in the application lifecycle (archiving/shutdown).
+func RecordSessionCost(logFile, model string) error {
+	_, err := EstimateCost(logFile, model, true)
+	return err
 }
 
 // recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
@@ -245,7 +252,7 @@ func GetPricing(outputDir string) PricingData {
 	return data
 }
 
-func estimateCost(logFile string, model string, shouldRecord bool) (string, error) {
+func EstimateCost(logFile string, model string, shouldRecord bool) (string, error) {
 	if err := IsPathSafe(logFile); err != nil {
 		return "", err
 	}
