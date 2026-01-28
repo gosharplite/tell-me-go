@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"google.golang.org/genai"
@@ -16,6 +17,7 @@ import (
 
 // Manager handles loading, saving, and manipulating conversation history.
 type Manager struct {
+	mu       sync.RWMutex
 	FilePath string
 	Contents []*api.Content
 	backup   []*api.Content // Keep a copy of the state before the current user prompt
@@ -31,6 +33,8 @@ func NewManager(filePath string) *Manager {
 
 // Load reads the history from the file system.
 func (m *Manager) Load() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
 		m.Contents = []*api.Content{}
 		return nil
@@ -50,6 +54,12 @@ func (m *Manager) Load() error {
 
 // Save writes the current history to the file system atomically.
 func (m *Manager) Save() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.saveLocked()
+}
+
+func (m *Manager) saveLocked() error {
 	dir := filepath.Dir(m.FilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create history directory: %w", err)
@@ -90,7 +100,9 @@ func (m *Manager) Save() error {
 
 // AddEntry appends a new text message to the history.
 func (m *Manager) AddEntry(role, text string) error {
-	return m.AddContent(&api.Content{
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.addContentLocked(&api.Content{
 		Role:  role,
 		Parts: []*api.Part{{Text: text}},
 	})
@@ -98,6 +110,12 @@ func (m *Manager) AddEntry(role, text string) error {
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
 func (m *Manager) AddContent(content *api.Content) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.addContentLocked(content)
+}
+
+func (m *Manager) addContentLocked(content *api.Content) error {
 	// 1. Validate role alternation
 	if len(m.Contents) > 0 {
 		lastRole := m.Contents[len(m.Contents)-1].Role
@@ -117,15 +135,19 @@ func (m *Manager) AddContent(content *api.Content) error {
 
 // Snapshot takes a backup of the current state for potential rollback.
 func (m *Manager) Snapshot() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.backup = make([]*api.Content, len(m.Contents))
 	copy(m.backup, m.Contents)
 }
 
 // Rollback restores the history to the state before Snapshot was called.
 func (m *Manager) Rollback() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.backup != nil {
 		m.Contents = m.backup
-		m.Save() // Persist the rollback
+		m.saveLocked() // Persist the rollback
 	}
 }
 
@@ -135,6 +157,8 @@ func (m *Manager) Rollback() {
 // during the next 50% of the conversation.
 // Returns the number of turns removed.
 func (m *Manager) Prune(maxTurns int) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if maxTurns <= 0 {
 		return 0
 	}
@@ -159,7 +183,12 @@ func (m *Manager) Prune(maxTurns int) int {
 
 // GetContents returns the current history contents.
 func (m *Manager) GetContents() []*api.Content {
-	return m.Contents
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// Return a copy to be safe?
+	contents := make([]*api.Content, len(m.Contents))
+	copy(contents, m.Contents)
+	return contents
 }
 
 // GetPath returns the file path of the history file.

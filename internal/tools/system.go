@@ -165,7 +165,10 @@ func revokeBypassTool(args map[string]interface{}) (string, error) {
 	termMu.Lock()
 	defer termMu.Unlock()
 
+	bypassMu.Lock()
 	bypassConfirmations = false
+	bypassMu.Unlock()
+
 	SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
 	logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
@@ -176,7 +179,7 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 	termMu.Lock()
 	defer termMu.Unlock()
 
-	if bypassConfirmations {
+	if IsBypassActive() {
 		return "Bypass mode is already enabled.", nil
 	}
 
@@ -190,7 +193,10 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 		return "Bypass mode denied by user.", nil
 	}
 
+	bypassMu.Lock()
 	bypassConfirmations = true
+	bypassMu.Unlock()
+
 	SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
 	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
@@ -226,7 +232,7 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 	}
 
 	// Confirmation Gate
-	if bypassConfirmations {
+	if IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
 		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
@@ -269,7 +275,7 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 	}
 
 	// 1. Confirmation
-	if bypassConfirmations {
+	if IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
 		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
@@ -502,7 +508,7 @@ func executeCommand(args map[string]interface{}) (string, error) {
 
 	// 1. Check for Auto-Approval (Safe read-only commands or bypass enabled)
 	safe := isSafeCommand(command)
-	if bypassConfirmations {
+	if IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
 		approved = true
 	} else if safe {

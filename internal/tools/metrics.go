@@ -13,9 +13,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/genai"
+)
+
+var (
+	metricsMu sync.Mutex
+	pricingMu sync.Mutex
 )
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/dev/assets/pricing.json"
@@ -70,6 +76,8 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 
 // recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
 func recordCost(outputDir string, record SessionCostRecord) {
+	metricsMu.Lock()
+	defer metricsMu.Unlock()
 	historyPath := filepath.Join(outputDir, "global_costs.json")
 	lockPath := historyPath + ".lock"
 
@@ -91,7 +99,7 @@ func recordCost(outputDir string, record SessionCostRecord) {
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			// If corrupted, try to recover what we can or start fresh
-			// We'll proceed with an empty slice to "fix" the file on next write
+			_ = os.Rename(historyPath, historyPath+".bak")
 			history = []SessionCostRecord{}
 		}
 	}
@@ -109,13 +117,15 @@ func recordCost(outputDir string, record SessionCostRecord) {
 		history = append(history, record)
 	}
 
-	// 4. Write back
+	// 4. Write back atomically
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
-		_ = os.WriteFile(historyPath, bytes, 0644)
+		_ = AtomicWrite(historyPath, bytes)
 	}
 }
 
 func getCostSummary(outputDir string) (string, error) {
+	metricsMu.Lock()
+	defer metricsMu.Unlock()
 	historyPath := filepath.Join(outputDir, "global_costs.json")
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
@@ -158,6 +168,8 @@ func getCostSummary(outputDir string) (string, error) {
 
 // getPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
 func getPricing(outputDir string) PricingData {
+	pricingMu.Lock()
+	defer pricingMu.Unlock()
 	cachePath := filepath.Join(outputDir, "global_prices.json")
 	var data PricingData
 	useCache := false
@@ -181,9 +193,9 @@ func getPricing(outputDir string) PricingData {
 		if err == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()
 			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
-				// Save to cache
+				// Save to cache atomically
 				if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
-					_ = os.WriteFile(cachePath, bytes, 0644)
+					_ = AtomicWrite(cachePath, bytes)
 				}
 				useCache = true
 			}

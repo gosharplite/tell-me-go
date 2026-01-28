@@ -25,16 +25,21 @@ var (
 	bypassFile          string // Path to persistent bypass state
 	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
+	bypassMu            sync.RWMutex
 	termMu              sync.Mutex
 )
 
 // SetBypassFile sets the file where persistent bypass state is stored.
 func SetBypassFile(path string) {
+	bypassMu.Lock()
+	defer bypassMu.Unlock()
 	bypassFile = path
 }
 
 // LoadBypassState reads the persistent bypass state from disk.
 func LoadBypassState() {
+	bypassMu.Lock()
+	defer bypassMu.Unlock()
 	if bypassFile == "" {
 		return
 	}
@@ -46,19 +51,26 @@ func LoadBypassState() {
 
 // IsBypassActive returns the current state of bypass_confirmation.
 func IsBypassActive() bool {
+	bypassMu.RLock()
+	defer bypassMu.RUnlock()
 	return bypassConfirmations
 }
 
 // SaveBypassState writes the persistent bypass state to disk.
 func SaveBypassState() {
-	if bypassFile == "" {
+	bypassMu.RLock()
+	file := bypassFile
+	active := bypassConfirmations
+	bypassMu.RUnlock()
+
+	if file == "" {
 		return
 	}
 	val := "false"
-	if bypassConfirmations {
+	if active {
 		val = "true"
 	}
-	_ = os.WriteFile(bypassFile, []byte(val), 0600)
+	_ = AtomicWrite(file, []byte(val))
 }
 
 // SetCommandsLogFile sets the path for logging executed commands.
@@ -130,7 +142,7 @@ func ConfirmDestructiveAction(action, target, detail string) bool {
 		detailLog = detailLog[:500] + "... (truncated)"
 	}
 
-	if bypassConfirmations {
+	if IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
 		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
 		return true
@@ -209,7 +221,7 @@ func SaveSafePaths() error {
 		return fmt.Errorf("failed to marshal safe paths: %w", err)
 	}
 
-	return os.WriteFile(file, data, 0600) // Restricted permissions
+	return AtomicWrite(file, data)
 }
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.
@@ -389,4 +401,17 @@ func (r *Registry) ToToolSDK() []*genai.Tool {
 			FunctionDeclarations: r.declarations,
 		},
 	}
+}
+
+// AtomicWrite writes data to a temporary file and then renames it to the target path.
+// This ensures that the target file is either fully updated or not updated at all.
+func AtomicWrite(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+	return nil
 }

@@ -192,7 +192,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		config[key] = value
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := atomicWrite(path, newData); err != nil {
+		if err := AtomicWrite(path, newData); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration '%s' set successfully.", key), nil
@@ -227,7 +227,7 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 		}
 		delete(config, key)
 		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := atomicWrite(path, newData); err != nil {
+		if err := AtomicWrite(path, newData); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Configuration key '%s' deleted.", key), nil
@@ -259,7 +259,7 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 		return string(data), nil
 
 	case "write":
-		err := atomicWrite(path, []byte(content))
+		err := AtomicWrite(path, []byte(content))
 		if err != nil {
 			return "", fmt.Errorf("failed to write scratchpad: %w", err)
 		}
@@ -404,16 +404,5 @@ func saveTasks(path string, tasks []Task) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal tasks: %w", err)
 	}
-	return atomicWrite(path, data)
-}
-
-func atomicWrite(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-	return nil
+	return AtomicWrite(path, data)
 }
