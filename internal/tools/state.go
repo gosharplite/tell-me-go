@@ -31,7 +31,7 @@ type Task struct {
 
 // RegisterStateTools adds scratchpad, task management, and session info tools.
 func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string) {
-	// We pass homeDir to closures so the handlers know where to look.
+	// We pass homeDir to closures so the tool functions know where to look.
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_session_info",
@@ -61,7 +61,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 		return string(b), nil
 	})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode). Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
 		Parameters: &genai.Schema{
@@ -81,9 +81,9 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		return manageScratchpad(args, homeDir, mode)
-	})
+	}, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode. Useful for storing URLs, IDs, or preferences across sessions.",
 		Parameters: &genai.Schema{
@@ -107,9 +107,9 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		return manageConfig(args, homeDir, mode)
-	})
+	}, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name: "configure_ux_preferences",
 		Description: `Configures User Experience (UX) behaviors for the AI assistant. 
 When 'smart_suggestions' is enabled, the AI MUST conclude every response by suggesting 
@@ -144,9 +144,9 @@ should increase the suggestion count.`,
 			"value":  status,
 		}
 		return manageConfig(configArgs, homeDir, mode)
-	})
+	}, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
 		Parameters: &genai.Schema{
@@ -174,9 +174,9 @@ should increase the suggestion count.`,
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		return manageTasks(args, homeDir, mode)
-	})
+	}, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rollback_last_turn",
 		Description: "Reverts the conversation history to the state before the current turn. This effectively undoes the last interaction.",
 	}, func(args map[string]interface{}) (string, error) {
@@ -185,7 +185,7 @@ should increase the suggestion count.`,
 			return "Rollback successful. History restored to previous snapshot.", nil
 		}
 		return "Error: History manager not available for rollback.", nil
-	})
+	}, ToolOptions{Serial: true})
 }
 
 func getScratchpadPath(homeDir, mode string) string {

@@ -357,24 +357,45 @@ func IsPathSafe(path string) error {
 // ToolFunc is the signature for Go functions that can be called by the model.
 type ToolFunc func(args map[string]interface{}) (string, error)
 
+// ToolOptions defines execution behavior for a tool.
+type ToolOptions struct {
+	Serial bool // If true, the agent waits for this tool to finish before running others.
+}
+
+// toolEntry stores a tool's definition, handler, and execution options.
+type toolEntry struct {
+	declaration *genai.FunctionDeclaration
+	handler     ToolFunc
+	options     ToolOptions
+}
+
 // Registry maintains a mapping between function names and their Go implementations.
 type Registry struct {
 	declarations []*genai.FunctionDeclaration
-	handlers     map[string]ToolFunc
+	entries      map[string]toolEntry
 }
 
 // NewRegistry initializes an empty tool registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		declarations: make([]*genai.FunctionDeclaration, 0),
-		handlers:     make(map[string]ToolFunc),
+		entries:      make(map[string]toolEntry),
 	}
 }
 
-// Register adds a new tool to the registry.
+// Register adds a new tool to the registry with default options.
 func (r *Registry) Register(def *genai.FunctionDeclaration, handler ToolFunc) {
+	r.RegisterWithOptions(def, handler, ToolOptions{})
+}
+
+// RegisterWithOptions adds a new tool to the registry with specific options.
+func (r *Registry) RegisterWithOptions(def *genai.FunctionDeclaration, handler ToolFunc, opts ToolOptions) {
 	r.declarations = append(r.declarations, def)
-	r.handlers[def.Name] = handler
+	r.entries[def.Name] = toolEntry{
+		declaration: def,
+		handler:     handler,
+		options:     opts,
+	}
 }
 
 // GetDeclarations returns the list of function declarations.
@@ -384,11 +405,19 @@ func (r *Registry) GetDeclarations() []*genai.FunctionDeclaration {
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
 func (r *Registry) Execute(name string, args map[string]interface{}) (string, error) {
-	handler, ok := r.handlers[name]
+	entry, ok := r.entries[name]
 	if !ok {
 		return "", fmt.Errorf("tool not found: %s", name)
 	}
-	return handler(args)
+	return entry.handler(args)
+}
+
+// IsSerial returns true if the tool is configured for serial execution.
+func (r *Registry) IsSerial(name string) bool {
+	if entry, ok := r.entries[name]; ok {
+		return entry.options.Serial
+	}
+	return false
 }
 
 // ToToolSDK converts declarations into the format expected by the GenAI SDK.

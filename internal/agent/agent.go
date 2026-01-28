@@ -484,11 +484,7 @@ func (a *Agent) executeToolsConcurrently(calls []*api.FunctionCall) []*api.Part 
 }
 
 func (a *Agent) isSerialTool(name string) bool {
-	switch name {
-	case "manage_tasks", "manage_scratchpad", "manage_config", "configure_ux_preferences", "register_safepath", "remove_safepath", "execute_command", "ask_user":
-		return true
-	}
-	return false
+	return a.registry.IsSerial(name)
 }
 
 func (a *Agent) executeTool(call *api.FunctionCall) string {

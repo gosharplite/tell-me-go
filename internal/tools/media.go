@@ -19,7 +19,7 @@ import (
 
 // RegisterMediaTools adds image and media-related tools to the registry.
 func RegisterMediaTools(r *Registry, client *api.Client) {
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
 		Parameters: &genai.Schema{
@@ -42,7 +42,7 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		return createImage(args, client)
-	})
+	}, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_image",
