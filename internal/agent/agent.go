@@ -124,19 +124,41 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	}
 	defer f.Close()
 	_, _ = f.WriteString(logLine)
+}
 
-	// Prepare colored line for stderr
-	hColor := "\033[0;90m" // Dark Gray (Quiet when Hit > Miss)
-	reset := "\033[0m"     // Default Foreground (High contrast Miss)
-	if miss > m.CachedTokens {
-		hColor = reset
-	}
+func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics) {
 	gray := "\033[0;90m"
+	reset := "\033[0m"
+	timestamp := time.Now().Format("15:04:05")
 
 	tools.TerminalMutex.Lock()
 	defer tools.TerminalMutex.Unlock()
-	fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s]%s\n",
-		gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, reset)
+
+	// 1. Print Payload Status
+	tokenColor := reset
+	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
+		tokenColor = "\033[0;31m" // Red if > 90%
+	}
+	fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
+		gray, timestamp, reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tokens, gray, a.maxHistoryTokens, reset)
+
+	// 2. Print Usage Metrics
+	if m != nil {
+		miss := m.PromptTokens - m.CachedTokens
+		newTokens := miss + m.ResponseTokens + m.ThinkingTokens
+		percent := 0
+		if m.TotalTokens > 0 {
+			percent = int((int64(newTokens) * 100) / int64(m.TotalTokens))
+		}
+
+		hColor := gray
+		if miss > m.CachedTokens {
+			hColor = reset
+		}
+
+		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s]%s\n",
+			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, reset)
+	}
 }
 
 func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
@@ -258,7 +280,6 @@ func (a *Agent) Chat(prompt string) error {
 
 		// Calculate current turns
 		currentTurns := len(contents) / 2
-		a.logSystemStatus(currentTurns, tokens)
 
 		// 2. Prepare API Contents with warnings
 		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
@@ -282,6 +303,8 @@ func (a *Agent) Chat(prompt string) error {
 			return err
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
+
+		a.logTurnStatus(currentTurns, tokens, metrics)
 
 		if !a.hasToolCalls(respContent) {
 			break
@@ -309,20 +332,6 @@ func (a *Agent) handleLimitExceeded(tokens int) {
 	fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
 		time.Now().Format("15:04:05"))
 	a.history.Rollback()
-}
-
-func (a *Agent) logSystemStatus(currentTurns, tokens int) {
-	tokenColor := "\033[0m" // Default white
-	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-		tokenColor = "\033[0;31m" // Red if > 90%
-	}
-	gray := "\033[0;90m"
-	reset := "\033[0m"
-
-	tools.TerminalMutex.Lock()
-	defer tools.TerminalMutex.Unlock()
-	fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
-		gray, time.Now().Format("15:04:05"), reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tokens, gray, a.maxHistoryTokens, reset)
 }
 
 func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, currentTurns int) []*api.Content {
