@@ -82,12 +82,12 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(prompt string) error                               { m.capturedPrompt = prompt; return nil }
-func (m *mockChatter) SetLogFile(path string)                                 {}
-func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)              {}
-func (m *mockChatter) SetRawOutput(raw bool)                                  {}
-func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int)    {}
-func (m *mockChatter) SetPrunedTurns(n int)                                   {}
+func (m *mockChatter) Chat(prompt string) error                             { m.capturedPrompt = prompt; return nil }
+func (m *mockChatter) SetLogFile(path string)                               {}
+func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)            {}
+func (m *mockChatter) SetRawOutput(raw bool)                                {}
+func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
+func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 
 func TestRunCapturePrompt(t *testing.T) {
@@ -95,7 +95,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
 	os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644)
-	
+
 	var out, errOut bytes.Buffer
 	app := New("test")
 	app.homeDir = tmpDir
@@ -103,7 +103,7 @@ func TestRunCapturePrompt(t *testing.T) {
 
 	app.Stdout = &out
 	app.Stderr = &errOut
-	
+
 	mock := &mockChatter{}
 	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
 		return mock

@@ -26,10 +26,10 @@ import (
 
 // App represents the tell-me-go application.
 type App struct {
-	Version      string
-	Stdin        io.Reader
-	Stdout       io.Writer
-	Stderr       io.Writer
+	Version       string
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
 	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error)
 	// Internal properties for better testability
