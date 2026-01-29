@@ -120,7 +120,7 @@ func (a *Agent) logUsage(m *api.Metrics) {
 
 	// Prepare colored line for stderr
 	hColor := "\033[0;90m" // Dark Gray (Quiet when Hit > Miss)
-	reset := "\033[0m"      // Default Foreground (High contrast Miss)
+	reset := "\033[0m"     // Default Foreground (High contrast Miss)
 	if miss > m.CachedTokens {
 		hColor = reset
 	}
