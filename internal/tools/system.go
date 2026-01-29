@@ -22,7 +22,7 @@ import (
 func RegisterSystemTools(r *Registry) {
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
-		Description: "Executes a shell command on the local system. Requires user confirmation for safety.",
+		Description: "Executes a shell command on the local system.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -71,7 +71,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
-		Description: "Fetches content from a URL and attempts to clean it into readable documentation by stripping HTML tags and boilerplate.",
+		Description: "Fetches the content of a specific URL and cleans it into readable documentation.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -137,7 +137,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_safepath",
-		Description: "Removes a directory or file from the authorized boundaries. Requires user confirmation.",
+		Description: "Removes a directory or file from the authorized boundaries.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{

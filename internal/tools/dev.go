@@ -17,7 +17,7 @@ import (
 func RegisterDevTools(r *Registry) {
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_tests",
-		Description: "Executes project tests (Go, Python, NPM, etc.) with automatic output truncation.",
+		Description: "Executes project tests (Go, Python, NPM, etc.).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -32,7 +32,7 @@ func RegisterDevTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "go_tidy",
-		Description: "Runs 'go mod tidy' and 'go fmt ./...' to clean up dependencies and format code.",
+		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
 	}, goTidy, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -74,7 +74,7 @@ func RegisterDevTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "check_vulnerabilities",
-		Description: "Runs 'govulncheck' to identify known security vulnerabilities in dependencies.",
+		Description: "Runs 'govulncheck'.",
 	}, checkVulnerabilities)
 }
 

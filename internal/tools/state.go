@@ -142,7 +142,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
-		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
+		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -172,7 +172,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rollback_last_turn",
-		Description: "Reverts the conversation history to the state before the current turn. This effectively undoes the last interaction.",
+		Description: "Reverts the conversation history to the state before the current turn.",
 	}, func(args map[string]interface{}) (string, error) {
 		if hManager != nil {
 			hManager.Rollback()

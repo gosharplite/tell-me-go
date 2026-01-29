@@ -55,7 +55,7 @@ type SessionCostRecord struct {
 func RegisterMetricsTools(r *Registry, logFile string, model string, mode string) {
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "estimate_cost",
-		Description: "Calculates the estimated USD cost of the current session based on token usage and grounding queries recorded in the log file.",
+		Description: "Calculates the estimated USD cost of the current session.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
@@ -65,7 +65,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string, mode string
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_cost_summary",
-		Description: "Returns a summary of total AI costs grouped by date from the local history ledger. Automatically includes and updates the current session's cost.",
+		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
