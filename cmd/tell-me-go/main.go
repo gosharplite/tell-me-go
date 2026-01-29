@@ -4,12 +4,18 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-const Version = "1.51.0"
+const Version = "1.52.0"
 
 func main() {
 	app := cli.New(Version)
-	app.Run()
+	if err := app.Run(os.Args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 }

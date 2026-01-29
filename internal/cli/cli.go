@@ -26,41 +26,18 @@ import (
 
 // App represents the tell-me-go application.
 type App struct {
-	Version string
+	Version       string
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error)
+	// Internal properties for better testability
+	homeDir string
 }
 
-// New creates a new App instance.
+// New creates a new App instance with default IO and factories.
 func New(version string) *App {
-	return &App{
-		Version: version,
-	}
-}
-
-// Run executes the application logic.
-func (a *App) Run() {
-	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
-	os.Args = a.sanitizeArgs(os.Args)
-
-	// 2. Define and Parse Flags
-	configPath := flag.String("c", "configs/vertex.yaml", "Path to the configuration file")
-	newSession := flag.Bool("new", false, "Start a new session")
-	showVersion := flag.Bool("v", false, "Show version information")
-	lastN := flag.Int("l", 0, "Show the last N messages from history")
-	rawOutput := flag.Bool("r", false, "Show raw output (without markdown rendering)")
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("tell-me-go version %s\n", a.Version)
-		os.Exit(0)
-	}
-
-	// 2. Load Config
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		log.Fatalf("Error loading config [%s]: %v", *configPath, err)
-	}
-
-	// 3. Initialize Paths
 	homeDir := os.Getenv("TELL_ME_HOME")
 	if homeDir == "" {
 		homeDir = os.Getenv("AIT_HOME")
@@ -68,6 +45,55 @@ func (a *App) Run() {
 	if homeDir == "" {
 		homeDir = "."
 	}
+
+	return &App{
+		Version: version,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		homeDir: homeDir,
+		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
+			return agent.New(client, hManager, registry)
+		},
+		ClientFactory: func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {
+			authenticator := &auth.VertexAuth{}
+			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, pricing.ThinkingBudgets, cfg.Person, cfg.UseSearch)
+		},
+	}
+}
+
+// Run executes the application logic.
+func (a *App) Run(args []string) error {
+	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
+	args = a.sanitizeArgs(args)
+
+	// 2. Define and Parse Flags
+	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+
+	configPath := fs.String("c", "configs/vertex.yaml", "Path to the configuration file")
+	newSession := fs.Bool("new", false, "Start a new session")
+	showVersion := fs.Bool("v", false, "Show version information")
+	lastN := fs.Int("l", 0, "Show the last N messages from history")
+	rawOutput := fs.Bool("r", false, "Show raw output (without markdown rendering)")
+
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	if *showVersion {
+		fmt.Fprintf(a.Stdout, "tell-me-go version %s\n", a.Version)
+		return nil
+	}
+
+	// 2. Load Config
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config [%s]: %v", *configPath, err)
+	}
+
+	// 3. Initialize Paths
+	homeDir := a.homeDir
 
 	sessionName := cfg.Mode
 	historyPath := filepath.Join(homeDir, "output", sessionName+"_history.json")
@@ -98,7 +124,7 @@ func (a *App) Run() {
 
 	hManager := history.NewManager(historyPath)
 	if err := hManager.Load(); err != nil {
-		log.Fatalf("Error loading history: %v", err)
+		return fmt.Errorf("error loading history: %v", err)
 	}
 	// Proactively prune history immediately after loading to ensure cache efficiency.
 	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
@@ -109,7 +135,10 @@ func (a *App) Run() {
 	}
 
 	// 4. Handle Prompt
-	prompt := a.capturePrompt(*lastN)
+	prompt, err := a.capturePrompt(fs, *lastN)
+	if err != nil {
+		return err
+	}
 
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
@@ -122,18 +151,17 @@ func (a *App) Run() {
 				cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
 			}
 		} else {
-			log.Printf("Warning: Failed to parse persistent config [%s]: %v", persistentConfigPath, err)
+			fmt.Fprintf(a.Stderr, "Warning: Failed to parse persistent config [%s]: %v\n", persistentConfigPath, err)
 		}
 	} else if !os.IsNotExist(err) {
-		log.Printf("Warning: Failed to read persistent config [%s]: %v", persistentConfigPath, err)
+		fmt.Fprintf(a.Stderr, "Warning: Failed to read persistent config [%s]: %v\n", persistentConfigPath, err)
 	}
 
 	hManager.Snapshot()
 
-	authenticator := &auth.VertexAuth{}
-	client, err := api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, pricing.ThinkingBudgets, cfg.Person, cfg.UseSearch)
+	client, err := a.ClientFactory(cfg, pricing)
 	if err != nil {
-		log.Fatalf("Error creating client: %v", err)
+		return fmt.Errorf("error creating client: %v", err)
 	}
 
 	registry := tools.NewRegistry()
@@ -148,7 +176,7 @@ func (a *App) Run() {
 	tools.RegisterMediaTools(registry, client)
 
 	// 6. Execute Agent
-	chatAgent := agent.New(client, hManager, registry)
+	chatAgent := a.AgentFactory(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetRawOutput(*rawOutput)
@@ -157,27 +185,34 @@ func (a *App) Run() {
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
 	if err := chatAgent.Chat(prompt); err != nil {
-		log.Fatalf("Error: %v", err)
+		return fmt.Errorf("error: %v", err)
 	}
 
 	// 7. Save History
 	if err := hManager.Save(); err != nil {
-		log.Fatalf("Error saving history: %v", err)
+		return fmt.Errorf("error saving history: %v", err)
 	}
 
 	// 8. Record session cost
 	if err := tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, ""); err != nil {
-		log.Printf("Warning: Failed to record final session cost: %v", err)
+		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
+
+	return nil
 }
 
-func (a *App) capturePrompt(lastN int) string {
-	prompt := flag.Arg(0)
-	stat, _ := os.Stdin.Stat()
-	isTerminal := (stat.Mode() & os.ModeCharDevice) != 0
+func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
+	prompt := fs.Arg(0)
+	var isTerminal bool
+	if f, ok := a.Stdin.(*os.File); ok {
+		stat, _ := f.Stat()
+		isTerminal = (stat.Mode() & os.ModeCharDevice) != 0
+	} else {
+		isTerminal = false // Assume non-terminal for non-file readers (like buffers in tests)
+	}
 
 	if !isTerminal {
-		b, err := io.ReadAll(os.Stdin)
+		b, err := io.ReadAll(a.Stdin)
 		if err == nil && len(b) > 0 {
 			if prompt != "" {
 				prompt = prompt + "\n" + string(b)
@@ -186,8 +221,8 @@ func (a *App) capturePrompt(lastN int) string {
 			}
 		}
 	} else if prompt == "" && lastN == 0 {
-		fmt.Println("\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
-		b, err := io.ReadAll(os.Stdin)
+		fmt.Fprintln(a.Stdout, "\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
+		b, err := io.ReadAll(a.Stdin)
 		if err == nil {
 			prompt = string(b)
 		}
@@ -196,22 +231,23 @@ func (a *App) capturePrompt(lastN int) string {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		if lastN > 0 {
-			os.Exit(0)
+			return "", nil // Valid case if just showing history
 		}
-		fmt.Println("Usage: tell-me-go [flags] <prompt>")
-		flag.PrintDefaults()
-		os.Exit(1)
+		fmt.Fprintln(a.Stderr, "Usage: tell-me-go [flags] <prompt>")
+		fs.SetOutput(a.Stderr)
+		fs.PrintDefaults()
+		return "", fmt.Errorf("empty prompt")
 	}
 	tools.TerminalMutex.Lock()
-	fmt.Fprintf(os.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
+	fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
 	tools.TerminalMutex.Unlock()
-	return prompt
+	return prompt, nil
 }
 
 func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 	contents := hManager.GetContents()
 	if len(contents) == 0 {
-		fmt.Println("No history found.")
+		fmt.Fprintln(a.Stdout, "No history found.")
 		return
 	}
 
@@ -234,31 +270,31 @@ func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 		if c.Role != "user" {
 			roleColor = "\033[1;35m" // Magenta for Model
 		}
-		fmt.Printf("%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
+		fmt.Fprintf(a.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
 		for _, p := range c.Parts {
 			if p.Text != "" {
 				if raw || r == nil {
-					fmt.Print(p.Text)
+					fmt.Fprint(a.Stdout, p.Text)
 					if !strings.HasSuffix(p.Text, "\n") {
-						fmt.Println()
+						fmt.Fprintln(a.Stdout)
 					}
 				} else {
 					out, err := r.Render(p.Text)
 					if err != nil {
-						fmt.Println(p.Text)
+						fmt.Fprintln(a.Stdout, p.Text)
 					} else {
-						fmt.Print(out)
+						fmt.Fprint(a.Stdout, out)
 					}
 				}
 			}
 			if p.FunctionCall != nil {
-				fmt.Printf("\033[0;36m[Tool Call] %s\033[0m\n", p.FunctionCall.Name)
+				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Call] %s\033[0m\n", p.FunctionCall.Name)
 			}
 			if p.FunctionResponse != nil {
-				fmt.Printf("\033[0;36m[Tool Response] %s\033[0m\n", p.FunctionResponse.Name)
+				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Response] %s\033[0m\n", p.FunctionResponse.Name)
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(a.Stdout)
 	}
 }
 
@@ -271,17 +307,17 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 			if !backupCreated {
 				if err := os.MkdirAll(backupDir, 0755); err != nil {
 					tools.TerminalMutex.Lock()
-					fmt.Fprintf(os.Stderr, "Error creating backup directory: %v\n", err)
+					fmt.Fprintf(a.Stderr, "Error creating backup directory: %v\n", err)
 					tools.TerminalMutex.Unlock()
 					return
 				}
-				fmt.Printf("Archiving existing session files to %s\n", backupDir)
+				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
 				tools.TerminalMutex.Lock()
-				fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+				fmt.Fprintf(a.Stderr, "Error archiving %s: %v\n", f, err)
 				tools.TerminalMutex.Unlock()
 			}
 		}
@@ -332,7 +368,7 @@ func (a *App) cleanupOldBackups(homeDir, mode string) {
 			path := filepath.Join(backupBaseDir, entry.Name())
 			if err := os.RemoveAll(path); err != nil {
 				tools.TerminalMutex.Lock()
-				fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+				fmt.Fprintf(a.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
 				tools.TerminalMutex.Unlock()
 			}
 		}
