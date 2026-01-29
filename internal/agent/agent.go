@@ -28,6 +28,17 @@ var (
 	ErrMaxTurnsReached = fmt.Errorf("maximum tool execution turns reached")
 )
 
+// Chatter defines the interface for the AI agent orchestration.
+type Chatter interface {
+	Chat(prompt string) error
+	SetLogFile(path string)
+	SetUIOptions(showThoughts, showTools bool)
+	SetRawOutput(raw bool)
+	SetLimits(toolTurns, historyTokens, historyTurns int)
+	SetPrunedTurns(n int)
+	SetConcurrency(maxConcurrent int, timeoutSeconds int)
+}
+
 // Agent represents the chat orchestration logic.
 type Agent struct {
 	client             *api.Client
