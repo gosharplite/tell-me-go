@@ -10,6 +10,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55.0] - 2026-02-12
+
+### Fixed
+- **CLI**: Ensured the application exits immediately after displaying history with the `-l` flag, preventing unintended prompt processing.
+- **CLI**: Improved argument sanitization for history display and raw output flags.
+
+### Changed
+- **Maintenance**: Promoted to v1.55.0 following the refined public release procedure.
+
 ## [1.54.0] - 2026-02-12
 
 ### Added
