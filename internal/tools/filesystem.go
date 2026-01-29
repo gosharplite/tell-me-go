@@ -85,7 +85,7 @@ func RegisterFileSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "replace_text",
-		Description: "Replaces a specific text block in a file with new content.",
+		Description: "Replaces the first occurrence of a specific text block in a file with new content.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
