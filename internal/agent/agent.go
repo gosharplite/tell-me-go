@@ -126,7 +126,7 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	_, _ = f.WriteString(logLine)
 }
 
-func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics) {
+func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCall bool) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
 	timestamp := time.Now().Format("15:04:05")
@@ -134,16 +134,29 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics) {
 	tools.TerminalMutex.Lock()
 	defer tools.TerminalMutex.Unlock()
 
-	// 1. Print Payload Status
-	tokenColor := reset
-	if float64(tokens) > float64(a.maxHistoryTokens)*0.9 {
-		tokenColor = "\033[0;31m" // Red if > 90%
-	}
-	fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
-		gray, timestamp, reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tokens, gray, a.maxHistoryTokens, reset)
+	printSystemLine := func(tks int, isActual bool) {
+		tokenColor := reset
+		if float64(tks) > float64(a.maxHistoryTokens)*0.9 {
+			tokenColor = "\033[0;31m" // Red if > 90%
+		}
 
-	// 2. Print Usage Metrics
-	if m != nil {
+		if isActual {
+			fmt.Fprintf(os.Stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
+				gray, timestamp, tokenColor, tks, gray, a.maxHistoryTokens, reset)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
+				gray, timestamp, reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tks, gray, a.maxHistoryTokens, reset)
+		}
+	}
+
+	if !isPostCall {
+		// 1. Print Payload Status (Pre-call estimate)
+		printSystemLine(tokens, false)
+	} else if m != nil {
+		// 2. Re-print Payload Status (Post-call actual)
+		printSystemLine(int(m.PromptTokens), true)
+
+		// 3. Print Usage Metrics (Post-call)
 		miss := m.PromptTokens - m.CachedTokens
 		newTokens := miss + m.ResponseTokens + m.ThinkingTokens
 		percent := 0
@@ -283,6 +296,7 @@ func (a *Agent) Chat(prompt string) error {
 
 		// 2. Prepare API Contents with warnings
 		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
+		a.logTurnStatus(currentTurns, tokens, nil, false)
 
 		// 3. Send Chat Request
 		respContent, metrics, err := a.sendChat(apiContents)
@@ -304,7 +318,7 @@ func (a *Agent) Chat(prompt string) error {
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
-		a.logTurnStatus(currentTurns, tokens, metrics)
+		a.logTurnStatus(currentTurns, tokens, metrics, true)
 
 		if !a.hasToolCalls(respContent) {
 			break
@@ -464,12 +478,11 @@ func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
 		names = append(names, fc.Name)
 	}
 
-	gray := "\033[0;90m"
 	cyan := "\033[0;36m"
 	reset := "\033[0m"
 
 	fmt.Fprintf(os.Stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		gray, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, a.maxToolTurns, strings.Join(names, ", "), reset)
+		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, a.maxToolTurns, strings.Join(names, ", "), reset)
 
 	if a.showTools {
 		for _, fc := range calls {
