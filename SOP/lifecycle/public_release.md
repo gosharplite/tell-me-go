@@ -9,6 +9,8 @@ SPDX-License-Identifier: MIT
 ### Objective
 This SOP defines the requirements and steps for publishing a new public release of the `tell-me-go` project, ensuring code quality, security compliance, and comprehensive documentation for a Go-based application.
 
+**⚠️ SECURITY NOTE**: This SOP MUST be executed with `bypass_confirmation` enabled to allow for automated checks and trial builds. It MUST be revoked upon completion.
+
 ---
 
 ### Prerequisites
@@ -25,7 +27,8 @@ This SOP defines the requirements and steps for publishing a new public release 
 #### 0. Task Initialization (⚠️ NEW)
 Before starting the release, the agent MUST initialize the project state to prevent "process amnesia" across session boundaries:
 
-1.  **Initialize Tasks**: Use `manage_tasks` to add the following milestones **sequentially**. The agent MUST add them in the exact order listed below so that Task IDs (1, 2, 3...) correspond directly to the SOP step numbers:
+1.  **Enable Automation**: Execute `bypass_confirmation` immediately. This SOP involves many repetitive confirmations (file writes, test runs, trial builds) that are pre-validated by the SOP itself.
+2.  **Initialize Tasks**: Use `manage_tasks` to add the following milestones **sequentially**. The agent MUST add them in the exact order listed below so that Task IDs (1, 2, 3...) correspond directly to the SOP step numbers:
     - `add`: "**SOP Compliance: public_release.md**" (Mandatory Anchor Task)
     - `add`: "**Initialize Scratchpad with Granular Checklist**"
     - `add`: "Workspace Integrity Check"
@@ -35,9 +38,9 @@ Before starting the release, the agent MUST initialize the project state to prev
     - `add`: "Final Functional Verification"
     - `add`: "Changelog Update"
     - `add`: "Git Tagging and Remote Synchronization"
-    - `add`: "Final Verification & Cleanup"
+    - `add`: "Final Verification & Cleanup and Revoke Bypass"
 
-2.  **Initialize Scratchpad**: Use `manage_scratchpad` to `write` the full **Release Checklist** (found at the bottom of this document) to the persistent scratchpad. 
+3.  **Initialize Scratchpad**: Use `manage_scratchpad` to `write` the full **Release Checklist** (found at the bottom of this document) to the persistent scratchpad. 
     - **CRITICAL**: The agent MUST update this scratchpad checklist after every sub-step to maintain a granular record of progress.
 
 #### 1. Workspace Integrity Check
@@ -131,13 +134,15 @@ A release is **not complete** until it is reachable by the public on the remote 
     *   `dev` should now be exactly 1 commit ahead of `main` (the version bump).
 7.  **External Verification**: If possible, verify the release from a separate local folder or environment using `git pull`.
 
-#### 8. Final Verification & Cleanup
+#### 8. Final Verification & Cleanup and Revoke Bypass
 - **Artifact Cleanup**: Remove any temporary build files or local logs.
 - **Task Completion**: Check if all tasks are completed and revise the scratchpad for the next cycle.
+- **Revoke Automation**: Execute `revoke_bypass` as the final action. This ensures the agent returns to a secure "ask-first" state for normal operations.
 
 ---
 
 ### Release Checklist
+- [ ] **Bypass Enabled**: `bypass_confirmation` executed.
 - [ ] Security audit completed (no secrets found).
 - [ ] **No `replace` directives** in `go.mod`.
 - [ ] **Clean room verification** passed in a fresh clone.
@@ -150,6 +155,7 @@ A release is **not complete** until it is reachable by the public on the remote 
 - [ ] Git tag is applied.
 - [ ] **Pushed to Remote**: `git push origin main dev --tags` executed successfully.
 - [ ] **Externally Verified**: Checked version from a separate folder or via GitHub UI.
+- [ ] **Bypass Revoked**: `revoke_bypass` executed.
 
 ---
 
