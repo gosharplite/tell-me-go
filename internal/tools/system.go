@@ -456,7 +456,7 @@ func isSafeCommand(command string) bool {
 	safeCommands := map[string]bool{
 		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-		"whoami": true, "diff": true, "awk": true, "sed": true,
+		"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
 	}
 
 	parts := strings.Fields(command)
@@ -470,7 +470,23 @@ func isSafeCommand(command string) bool {
 		return false
 	}
 
-	// 2. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	// 2. Specialized Check for 'git': Only allow read-only subcommands
+	if base == "git" {
+		if len(parts) < 2 {
+			return false
+		}
+		sub := parts[1]
+		readOnlyGit := map[string]bool{
+			"status": true, "log": true, "diff": true, "branch": true,
+			"show": true, "blame": true, "ls-files": true, "rev-parse": true,
+			"tag": true, "remote": true, "describe": true,
+		}
+		if !readOnlyGit[sub] {
+			return false
+		}
+	}
+
+	// 3. Check for unsafe characters (pipes, redirects, expansion, etc.)
 	// We are extremely strict here to prevent shell injection.
 	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
 	for _, char := range unsafeChars {
