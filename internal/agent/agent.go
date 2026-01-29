@@ -234,6 +234,7 @@ func (a *Agent) Chat(prompt string) error {
 		Role:  "user",
 		Parts: []*api.Part{{Text: prompt}},
 	})
+	a.saveHistory() // Persist initial user prompt immediately
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
@@ -274,11 +275,13 @@ func (a *Agent) Chat(prompt string) error {
 		// 4. Render Output
 		a.renderResponse(respContent)
 		a.history.AddContent(respContent)
+		a.saveHistory() // SAVE 1: Capture model's response/tool calls
 
 		// 5. Handle Tool Execution
 		if err := a.handleToolExecution(respContent, turn); err != nil {
 			return err
 		}
+		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
 		if !a.hasToolCalls(respContent) {
 			break
@@ -286,6 +289,15 @@ func (a *Agent) Chat(prompt string) error {
 	}
 
 	return nil
+}
+
+func (a *Agent) saveHistory() {
+	if err := a.history.Save(); err != nil {
+		tools.TerminalMutex.Lock()
+		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
+			time.Now().Format("15:04:05"), err)
+		tools.TerminalMutex.Unlock()
+	}
 }
 
 func (a *Agent) handleLimitExceeded(tokens int) {

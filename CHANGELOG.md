@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.0] - 2026-02-04
+
+### Added
+- **History**: Implemented incremental history saving. The agent now persists history to disk after every significant state change (user prompt, model response, tool results).
+- **History**: Added a `Repair()` mechanism that automatically detects and closes "dangling" tool calls after a system crash or reboot, ensuring the history remains valid for the Gemini API.
+
+### Changed
+- **Agent**: Refined history persistence to log warnings on failure instead of silently suppressing them.
+- **Maintenance**: Promoted to v1.50.0 following the refined public release procedure.
+
 ## [1.49.0] - 2026-02-04
 
 ### Added

@@ -115,9 +115,11 @@ func TestSessionArchiving(t *testing.T) {
 		t.Fatalf("Expected backup directory to be created and contain entries, got error: %v", err)
 	}
 
-	// Verify original files are gone (moved)
-	if _, err := os.Stat(histFile); !os.IsNotExist(err) {
-		t.Errorf("Expected original history file to be moved, but it still exists")
+	// Verify original files are archived (check backup content)
+	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
+	archivedLog, err := os.ReadFile(filepath.Join(backupSubDir, "vertex_tokens.log"))
+	if err != nil || string(archivedLog) != "log data" {
+		t.Errorf("Expected archived log to contain 'log data', got %q (err: %v)", string(archivedLog), err)
 	}
 }
 
@@ -184,14 +186,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 		}
 	}
 
-	// 5. Verify session files are GONE (moved to backups)
-	for _, f := range sessionFiles {
-		if _, err := os.Stat(filepath.Join(outputDir, f)); !os.IsNotExist(err) {
-			t.Errorf("Expected session file %s to be archived, but it still exists in output", f)
-		}
-	}
-
-	// 6. Verify they are in the backup
+	// 5. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
 	entries, _ := os.ReadDir(backupsDir)
 	if len(entries) == 0 {
@@ -200,8 +195,9 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
 	for _, f := range sessionFiles {
-		if _, err := os.Stat(filepath.Join(backupSubDir, f)); err != nil {
-			t.Errorf("Expected archived session file %s in backup, but it's missing", f)
+		content, err := os.ReadFile(filepath.Join(backupSubDir, f))
+		if err != nil || string(content) != "session content" {
+			t.Errorf("Expected archived session file %s in backup with 'session content', got err: %v", f, err)
 		}
 	}
 }

@@ -49,7 +49,41 @@ func (m *Manager) Load() error {
 		return fmt.Errorf("failed to parse history JSON: %w", err)
 	}
 
+	m.repairLocked()
 	return nil
+}
+
+// repairLocked ensures the history is valid for the Gemini API after a crash.
+// If the history ends with a model role containing function calls, it appends
+// a user role with corresponding "interrupted" responses to maintain role alternation.
+func (m *Manager) repairLocked() {
+	if len(m.Contents) == 0 {
+		return
+	}
+
+	last := m.Contents[len(m.Contents)-1]
+	if last.Role != "model" {
+		return
+	}
+
+	var responses []*api.Part
+	for _, p := range last.Parts {
+		if p.FunctionCall != nil {
+			responses = append(responses, &api.Part{
+				FunctionResponse: &api.FunctionResponse{
+					Name:     p.FunctionCall.Name,
+					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
+				},
+			})
+		}
+	}
+
+	if len(responses) > 0 {
+		m.Contents = append(m.Contents, &api.Content{
+			Role:  "user",
+			Parts: responses,
+		})
+	}
 }
 
 // Save writes the current history to the file system atomically.
