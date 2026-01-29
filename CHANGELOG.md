@@ -10,6 +10,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.0] - 2026-02-04
+
+### Added
+- **Logging**: Implemented a two-phase logging approach for turn status. Pre-call logs show estimated payload and turn count, while post-call logs show actual metrics and final token counts.
+- **UI**: Added cyan timestamps to `[Tool Engine]` logs for better visual grouping with tool prefixes.
+- **Safety**: Enabled auto-approval for read-only `git` commands (status, diff, log, commit, blame) in `execute_command` to streamline developer workflows.
+- **Stability**: Hardened the turn counter to remain stable during complex tool execution loops.
+- **Testing**: Added regression tests for the refactored logging system in `internal/agent`.
+
+### Changed
+- **Maintenance**: Promoted to v1.51.0 following the refined public release procedure.
+
 ## [1.50.0] - 2026-02-04
 
 ### Added
