@@ -472,10 +472,24 @@ func isSafeCommand(command string) bool {
 
 	// 2. Specialized Check for 'git': Only allow read-only subcommands
 	if base == "git" {
-		if len(parts) < 2 {
+		sub := ""
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
+				// Note: git -Cpath is also valid, but parts[i] would be "-Cpath" and start with "-".
+				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
+					i++
+				}
+				continue
+			}
+			sub = parts[i]
+			break
+		}
+
+		if sub == "" {
 			return false
 		}
-		sub := parts[1]
+
 		readOnlyGit := map[string]bool{
 			"status": true, "log": true, "diff": true, "branch": true,
 			"show": true, "blame": true, "ls-files": true, "rev-parse": true,

@@ -88,7 +88,10 @@ func RecordSessionCost(logFile, model, mode, sessionID string) error {
 func recordCost(outputDir string, mode string, record SessionCostRecord) {
 	metricsMu.Lock()
 	defer metricsMu.Unlock()
-	historyPath := filepath.Join(outputDir, "global_costs.json")
+
+	// Global costs are in the parent output directory
+	globalDir := filepath.Dir(outputDir)
+	historyPath := filepath.Join(globalDir, "global_costs.json")
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock
@@ -126,7 +129,7 @@ func recordCost(outputDir string, mode string, record SessionCostRecord) {
 
 	// 4. Apply Retention Policy
 	retentionDays := 30
-	configPath := filepath.Join(outputDir, mode+"_config.json")
+	configPath := filepath.Join(outputDir, "config.json")
 	if data, err := os.ReadFile(configPath); err == nil {
 		var cfg map[string]string
 		if err := json.Unmarshal(data, &cfg); err == nil {
@@ -158,7 +161,9 @@ func recordCost(outputDir string, mode string, record SessionCostRecord) {
 func getCostSummary(outputDir string) (string, error) {
 	metricsMu.Lock()
 	defer metricsMu.Unlock()
-	historyPath := filepath.Join(outputDir, "global_costs.json")
+
+	globalDir := filepath.Dir(outputDir)
+	historyPath := filepath.Join(globalDir, "global_costs.json")
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
@@ -202,7 +207,17 @@ func getCostSummary(outputDir string) (string, error) {
 func GetPricing(outputDir string) PricingData {
 	pricingMu.Lock()
 	defer pricingMu.Unlock()
-	cachePath := filepath.Join(outputDir, "global_prices.json")
+
+	globalDir := outputDir
+	// If outputDir is a mode-specific directory (not containing global_prices.json), use parent
+	if _, err := os.Stat(filepath.Join(outputDir, "global_prices.json")); os.IsNotExist(err) {
+		parent := filepath.Dir(outputDir)
+		if _, err := os.Stat(filepath.Join(parent, "global_prices.json")); err == nil {
+			globalDir = parent
+		}
+	}
+
+	cachePath := filepath.Join(globalDir, "global_prices.json")
 	var data PricingData
 	useCache := false
 

@@ -25,7 +25,7 @@ func TestManageTasks(t *testing.T) {
 
 	// Helper to read the tasks file directly
 	readTasksFile := func() []Task {
-		path := filepath.Join(tmpDir, "output", fmt.Sprintf("%s_tasks.json", testMode))
+		path := filepath.Join(tmpDir, "output", testMode, "tasks.json")
 		data, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			return []Task{}
@@ -149,7 +149,7 @@ func TestManageTasks(t *testing.T) {
 			{ID: 10, Content: "Persistent Task", Status: "pending"},
 		}
 		data, _ := json.Marshal(initialTasks)
-		path := filepath.Join(tmpDir, "output", fmt.Sprintf("%s_tasks.json", testMode))
+		path := filepath.Join(tmpDir, "output", testMode, "tasks.json")
 		os.MkdirAll(filepath.Dir(path), 0755)
 		os.WriteFile(path, data, 0644)
 
@@ -175,7 +175,7 @@ func TestManageScratchpad(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testMode := "test_mode"
-	scratchpadPath := filepath.Join(tmpDir, "output", fmt.Sprintf("%s_scratchpad.md", testMode))
+	scratchpadPath := filepath.Join(tmpDir, "output", testMode, "scratchpad.md")
 
 	// Helper to read content
 	readScratchpad := func() string {

@@ -24,6 +24,9 @@ func TestRecordCost(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	modeDir := filepath.Join(tmpDir, "testmode")
+	os.MkdirAll(modeDir, 0755)
+
 	// Helper to read history
 	readHistory := func() []SessionCostRecord {
 		path := filepath.Join(tmpDir, "global_costs.json")
@@ -51,7 +54,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.1234,
 		}
-		recordCost(tmpDir, "testmode", record)
+		recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 1 {
@@ -70,7 +73,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.5678,
 		}
-		recordCost(tmpDir, "testmode", record)
+		recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -89,7 +92,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.9999, // Updated cost
 		}
-		recordCost(tmpDir, "testmode", record)
+		recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -112,10 +115,13 @@ func TestRecordCost(t *testing.T) {
 
 	// Test 4: Retention Policy
 	t.Run("RetentionPolicy", func(t *testing.T) {
+		retentionDir := filepath.Join(tmpDir, "retentionmode")
+		os.MkdirAll(retentionDir, 0755)
+
 		// Create config with 1 day retention
 		config := map[string]string{"cost_retention_days": "1"}
 		configData, _ := json.Marshal(config)
-		os.WriteFile(filepath.Join(tmpDir, "retentionmode_config.json"), configData, 0644)
+		os.WriteFile(filepath.Join(retentionDir, "config.json"), configData, 0644)
 
 		// Old record (more than 1 day ago)
 		oldRecord := SessionCostRecord{
@@ -132,8 +138,8 @@ func TestRecordCost(t *testing.T) {
 			TotalCost: 1.0,
 		}
 
-		recordCost(tmpDir, "retentionmode", oldRecord)
-		recordCost(tmpDir, "retentionmode", newRecord)
+		recordCost(retentionDir, "retentionmode", oldRecord)
+		recordCost(retentionDir, "retentionmode", newRecord)
 
 		history := readHistory()
 		// Session 'old.log' should be purged because of the 1-day retention policy
@@ -155,9 +161,12 @@ func TestGetCostSummary(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	modeDir := filepath.Join(tmpDir, "testmode")
+	os.MkdirAll(modeDir, 0755)
+
 	// Test 1: Empty/No File
 	t.Run("NoFile", func(t *testing.T) {
-		summary, err := getCostSummary(tmpDir)
+		summary, err := getCostSummary(modeDir)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
@@ -177,7 +186,7 @@ func TestGetCostSummary(t *testing.T) {
 		data, _ := json.Marshal(records)
 		os.WriteFile(filepath.Join(tmpDir, "global_costs.json"), data, 0644)
 
-		summary, err := getCostSummary(tmpDir)
+		summary, err := getCostSummary(modeDir)
 		if err != nil {
 			t.Fatalf("getCostSummary failed: %v", err)
 		}
@@ -204,13 +213,16 @@ func TestEstimateCostIntegration(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	modeDir := filepath.Join(tmpDir, "testmode")
+	os.MkdirAll(modeDir, 0755)
+
 	// 1. Create a dummy log file
 	// Format matches internal/agent/agent.go
 	// [Time] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]
 	logContent := `
 [10:00:00] H: 1000 M: 500 C: 200 T: 1700 N: 1700(1%) S: 1 Th: 50 [1.00s]
 `
-	logPath := filepath.Join(tmpDir, "test-tokens.log")
+	logPath := filepath.Join(modeDir, "test-tokens.log")
 	if err := os.WriteFile(logPath, []byte(logContent), 0644); err != nil {
 		t.Fatalf("Failed to write log file: %v", err)
 	}
@@ -259,7 +271,10 @@ func TestRecordSessionCost(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	logPath := filepath.Join(tmpDir, "test.log")
+	modeDir := filepath.Join(tmpDir, "testmode")
+	os.MkdirAll(modeDir, 0755)
+
+	logPath := filepath.Join(modeDir, "test.log")
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
 	os.WriteFile(logPath, []byte(logContent), 0644)
 

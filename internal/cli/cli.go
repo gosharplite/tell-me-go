@@ -96,11 +96,17 @@ func (a *App) Run(args []string) error {
 	homeDir := a.homeDir
 
 	sessionName := cfg.Mode
-	historyPath := filepath.Join(homeDir, "output", sessionName+"_history.json")
-	logPath := filepath.Join(homeDir, "output", sessionName+"_tokens.log")
-	commandsLogPath := filepath.Join(homeDir, "output", sessionName+"_commands.log")
-	safePathsPath := filepath.Join(homeDir, "output", sessionName+"_safepaths.json")
-	bypassPath := filepath.Join(homeDir, "output", sessionName+"_bypass.log")
+	modeDir := filepath.Join(homeDir, "output", sessionName)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		return fmt.Errorf("failed to create session directory [%s]: %v", modeDir, err)
+	}
+
+	historyPath := filepath.Join(modeDir, "history.json")
+	logPath := filepath.Join(modeDir, "tokens.log")
+	commandsLogPath := filepath.Join(modeDir, "commands.log")
+	safePathsPath := filepath.Join(modeDir, "safepaths.json")
+	bypassPath := filepath.Join(modeDir, "bypass.log")
+	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
 	// 5. Initialize Components
 	tools.SetSafePathsFile(safePathsPath)
@@ -143,7 +149,6 @@ func (a *App) Run(args []string) error {
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
-	persistentConfigPath := filepath.Join(homeDir, "output", cfg.Mode+"_config.json")
 	if data, err := os.ReadFile(persistentConfigPath); err == nil {
 		var pCfg map[string]string
 		if err := json.Unmarshal(data, &pCfg); err == nil {
@@ -332,7 +337,7 @@ func (a *App) cleanupOldBackups(homeDir, mode string) {
 	}
 
 	retentionDays := 30
-	configPath := filepath.Join(homeDir, "output", mode+"_config.json")
+	configPath := filepath.Join(homeDir, "output", mode, "config.json")
 	if data, err := os.ReadFile(configPath); err == nil {
 		var cfg map[string]string
 		if err := json.Unmarshal(data, &cfg); err == nil {
