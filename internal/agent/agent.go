@@ -157,7 +157,7 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCa
 			fmt.Fprintf(os.Stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
 				gray, timestamp, tokenColor, tks, gray, a.maxHistoryTokens, reset)
 		} else {
-			fmt.Fprintf(os.Stderr, "%s[%s] [System (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
+			fmt.Fprintf(os.Stderr, "%s[%s] [Turn (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
 				gray, timestamp, reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tks, gray, a.maxHistoryTokens, reset)
 		}
 	}
