@@ -96,10 +96,11 @@ func TestSessionArchiving(t *testing.T) {
 
 	// 2. Create dummy session files
 	outputDir := filepath.Join(homeDir, "output")
-	os.MkdirAll(outputDir, 0755)
+	modeDir := filepath.Join(outputDir, "vertex")
+	os.MkdirAll(modeDir, 0755)
 
-	histFile := filepath.Join(outputDir, "vertex_history.json")
-	logFile := filepath.Join(outputDir, "vertex_tokens.log")
+	histFile := filepath.Join(modeDir, "history.json")
+	logFile := filepath.Join(modeDir, "tokens.log")
 
 	os.WriteFile(histFile, []byte("[]"), 0644)
 	os.WriteFile(logFile, []byte("log data"), 0644)
@@ -117,7 +118,7 @@ func TestSessionArchiving(t *testing.T) {
 
 	// Verify original files are archived (check backup content)
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
-	archivedLog, err := os.ReadFile(filepath.Join(backupSubDir, "vertex_tokens.log"))
+	archivedLog, err := os.ReadFile(filepath.Join(backupSubDir, "tokens.log"))
 	if err != nil || string(archivedLog) != "log data" {
 		t.Errorf("Expected archived log to contain 'log data', got %q (err: %v)", string(archivedLog), err)
 	}
@@ -130,10 +131,11 @@ func TestBypassArchiving(t *testing.T) {
 
 	// 2. Create dummy session files including bypass
 	outputDir := filepath.Join(homeDir, "output")
-	os.MkdirAll(outputDir, 0755)
+	modeDir := filepath.Join(outputDir, "vertex")
+	os.MkdirAll(modeDir, 0755)
 
-	histFile := filepath.Join(outputDir, "vertex_history.json")
-	bypassFile := filepath.Join(outputDir, "vertex_bypass.log")
+	histFile := filepath.Join(modeDir, "history.json")
+	bypassFile := filepath.Join(modeDir, "bypass.log")
 
 	os.WriteFile(histFile, []byte("[]"), 0644)
 	os.WriteFile(bypassFile, []byte("true"), 0644)
@@ -150,7 +152,7 @@ func TestBypassArchiving(t *testing.T) {
 	backupsDir := filepath.Join(outputDir, "backups")
 	entries, _ := os.ReadDir(backupsDir)
 	if len(entries) > 0 {
-		backupPath := filepath.Join(backupsDir, entries[0].Name(), "vertex_bypass.log")
+		backupPath := filepath.Join(backupsDir, entries[0].Name(), "bypass.log")
 		if _, err := os.Stat(backupPath); err == nil {
 			t.Errorf("Expected bypass file NOT to be archived, but found it in %s", backupPath)
 		}
@@ -164,16 +166,17 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	// 2. Create dummy persistent and session files
 	outputDir := filepath.Join(homeDir, "output")
-	os.MkdirAll(outputDir, 0755)
+	modeDir := filepath.Join(outputDir, "vertex")
+	os.MkdirAll(modeDir, 0755)
 
-	sessionFiles := []string{"vertex_history.json", "vertex_tokens.log", "vertex_commands.log"}
-	persistentFiles := []string{"vertex_safepaths.json", "vertex_scratchpad.md", "vertex_tasks.json", "vertex_bypass.log"}
+	sessionFiles := []string{"history.json", "tokens.log", "commands.log"}
+	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
 
 	for _, f := range sessionFiles {
-		os.WriteFile(filepath.Join(outputDir, f), []byte("session content"), 0644)
+		os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
 	}
 	for _, f := range persistentFiles {
-		os.WriteFile(filepath.Join(outputDir, f), []byte("persistent content"), 0644)
+		os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
 	}
 
 	// 3. Run with -new flag
@@ -181,8 +184,8 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	// 4. Verify persistent files STILL exist in output
 	for _, f := range persistentFiles {
-		if _, err := os.Stat(filepath.Join(outputDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain in output directory, but it was moved or deleted", f)
+		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
+			t.Errorf("Expected persistent file %s to remain in session directory, but it was moved or deleted", f)
 		}
 	}
 
@@ -604,7 +607,7 @@ func TestManageTasks(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	taskFile := filepath.Join(homeDir, "output", "vertex_tasks.json")
+	taskFile := filepath.Join(homeDir, "output", "vertex", "tasks.json")
 	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
 		t.Fatalf("Tasks file was not created at %s", taskFile)
 	}
@@ -671,7 +674,7 @@ func TestManageScratchpad(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	scratchpadFile := filepath.Join(homeDir, "output", "vertex_scratchpad.md")
+	scratchpadFile := filepath.Join(homeDir, "output", "vertex", "scratchpad.md")
 	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
 		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
 	}

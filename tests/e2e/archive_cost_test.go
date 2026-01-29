@@ -49,7 +49,7 @@ MAX_HISTORY_TURNS: 10
 	initialLedger := []map[string]interface{}{
 		{
 			"date":       "2026-01-28",
-			"session":    "test_tokens.log",
+			"session":    "tokens.log",
 			"model":      "gemini-test-flash",
 			"total_cost": 1.2345,
 		},
@@ -58,7 +58,9 @@ MAX_HISTORY_TURNS: 10
 	os.WriteFile(ledgerPath, ledgerBytes, 0644)
 
 	// Simulate a previous session log file
-	logFile := filepath.Join(outputDir, "test_tokens.log")
+	modeDir := filepath.Join(outputDir, "test")
+	os.MkdirAll(modeDir, 0755)
+	logFile := filepath.Join(modeDir, "tokens.log")
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
 	os.WriteFile(logFile, []byte(logContent), 0644)
 
@@ -94,10 +96,10 @@ MAX_HISTORY_TURNS: 10
 	originalPreserved := false
 
 	for _, r := range history {
-		if r.Session == "test_tokens.log" && r.TotalCost == 1.2345 {
+		if r.Session == "tokens.log" && r.TotalCost == 1.2345 {
 			originalPreserved = true
 		}
-		if filepath.HasPrefix(r.Session, "backup/") && filepath.Base(r.Session) == "test_tokens.log" {
+		if filepath.HasPrefix(r.Session, "backup/") && filepath.Base(r.Session) == "tokens.log" {
 			hasBackup = true
 		}
 	}
