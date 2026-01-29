@@ -416,7 +416,7 @@ func writeFile(args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	content, _ := args["content"].(string)
 
-	if err := IsPathSafe(path); err != nil {
+	if err := IsPathWritable(path); err != nil {
 		return "", err
 	}
 
@@ -444,7 +444,7 @@ func replaceText(args map[string]interface{}) (string, error) {
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
 
-	if err := IsPathSafe(path); err != nil {
+	if err := IsPathWritable(path); err != nil {
 		return "", err
 	}
 

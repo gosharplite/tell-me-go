@@ -19,21 +19,24 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 ### 1. Path Validation (Zero-Trust)
 All tools interacting with the local filesystem must verify that the requested paths are within authorized boundaries.
 
-*   **Mandatory Helper**: Use `tools.IsPathSafe(path)`.
+*   **Mandatory Helpers**:
+    - `tools.IsPathSafe(path)`: Checks if a path is allowed for **reading**. Includes CWD, Temp, Safe Paths, and Read-Only Paths.
+    - `tools.IsPathWritable(path)`: Checks if a path is allowed for **writing**. Includes CWD, Temp, and Safe Paths (excludes Read-Only Paths).
 *   **Sanitization Steps**:
     1.  **Clean**: Always apply `filepath.Clean(path)` to resolve `..` and `.` segments.
     2.  **Symlink Resolution**: Call `filepath.EvalSymlinks(absPath)` if the file exists. This prevents "Symlink Attacks" where a model tries to escape a directory via a malicious link.
 *   **Authorized Roots**:
     - Current Working Directory (CWD).
     - System Temporary Directory (`os.TempDir()`).
-    - Explicitly registered "Safe Paths" (e.g., project configs, output folder).
+    - Explicitly registered "Safe Paths" (Read/Write).
+    - Explicitly registered "Read-Only Paths" (Read-Only).
 
 ---
 
 ### 2. User Confirmation Handshakes
 The assistant must never perform destructive or high-risk actions without explicit user approval.
 
-*   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`.
+*   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`, `remove_readpath`.
 *   **System Tools**: `execute_command`.
 *   **Mechanism**: Use `tools.ConfirmDestructiveAction(action, target, detail)`.
     - **UI Standard**: The prompt and details must be printed to `os.Stderr` using high-visibility colors (Yellow/Red).
@@ -62,8 +65,8 @@ To support piped workflows (e.g., `cat logs.txt | tell-me-go "analyze"`), intera
 ### 5. Self-Protection
 The agent must be prevented from modifying its own security configurations.
 
-*   **Configuration Block**: `IsPathSafe` must explicitly deny read/write access to the active `safePathsFile` (the JSON file storing persistent authorizations).
-*   **Persistent Auth**: Registering a new safe path via `register_safepath` requires a **Double Confirmation** gate.
+*   **Configuration Block**: `IsPathSafe` and `IsPathWritable` must explicitly deny read/write access to the active `safePathsFile` and `readOnlyPathsFile` (the JSON files storing persistent authorizations).
+*   **Persistent Auth**: Registering a new path via `register_safepath` or `register_readpath` requires a **Double Confirmation** gate.
 
 ---
 

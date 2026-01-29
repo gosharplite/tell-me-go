@@ -105,15 +105,20 @@ func (a *App) Run(args []string) error {
 	logPath := filepath.Join(modeDir, "tokens.log")
 	commandsLogPath := filepath.Join(modeDir, "commands.log")
 	safePathsPath := filepath.Join(modeDir, "safepaths.json")
+	readPathsPath := filepath.Join(modeDir, "readpaths.json")
 	bypassPath := filepath.Join(modeDir, "bypass.log")
 	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
 	// 5. Initialize Components
 	tools.SetSafePathsFile(safePathsPath)
+	tools.SetReadOnlyPathsFile(readPathsPath)
 	tools.SetBypassFile(bypassPath)
 	tools.SetCommandsLogFile(commandsLogPath)
 	if err := tools.LoadSafePaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
+	}
+	if err := tools.LoadReadOnlyPaths(); err != nil {
+		log.Printf("Warning: Failed to load persistent read-only paths: %v", err)
 	}
 	tools.LoadBypassState()
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))

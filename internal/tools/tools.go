@@ -22,6 +22,9 @@ var (
 	safePaths           []string
 	safePathsMu         sync.RWMutex
 	safePathsFile       string // Path to persistent safe paths config
+	readOnlyPaths       []string
+	readOnlyPathsMu     sync.RWMutex
+	readOnlyPathsFile   string // Path to persistent read-only paths config
 	bypassFile          string // Path to persistent bypass state
 	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
@@ -174,6 +177,13 @@ func SetSafePathsFile(path string) {
 	safePathsFile = path
 }
 
+// SetReadOnlyPathsFile sets the file where persistent read-only paths are stored.
+func SetReadOnlyPathsFile(path string) {
+	readOnlyPathsMu.Lock()
+	defer readOnlyPathsMu.Unlock()
+	readOnlyPathsFile = path
+}
+
 // LoadSafePaths reads persistent safe paths from disk.
 func LoadSafePaths() error {
 	safePathsMu.RLock()
@@ -204,6 +214,36 @@ func LoadSafePaths() error {
 	return nil
 }
 
+// LoadReadOnlyPaths reads persistent read-only paths from disk.
+func LoadReadOnlyPaths() error {
+	readOnlyPathsMu.RLock()
+	file := readOnlyPathsFile
+	readOnlyPathsMu.RUnlock()
+
+	if file == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(file); os.IsNotExist(err) {
+		return nil
+	}
+
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("failed to read read-only paths file: %w", err)
+	}
+
+	var paths []string
+	if err := json.Unmarshal(data, &paths); err != nil {
+		return fmt.Errorf("failed to parse read-only paths JSON: %w", err)
+	}
+
+	for _, p := range paths {
+		RegisterReadOnlyPath(p)
+	}
+	return nil
+}
+
 // SaveSafePaths writes persistent safe paths to disk.
 func SaveSafePaths() error {
 	safePathsMu.RLock()
@@ -219,6 +259,26 @@ func SaveSafePaths() error {
 	data, err := json.MarshalIndent(paths, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal safe paths: %w", err)
+	}
+
+	return AtomicWrite(file, data, 0644)
+}
+
+// SaveReadOnlyPaths writes persistent read-only paths to disk.
+func SaveReadOnlyPaths() error {
+	readOnlyPathsMu.RLock()
+	file := readOnlyPathsFile
+	paths := make([]string, len(readOnlyPaths))
+	copy(paths, readOnlyPaths)
+	readOnlyPathsMu.RUnlock()
+
+	if file == "" {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(paths, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal read-only paths: %w", err)
 	}
 
 	return AtomicWrite(file, data, 0644)
@@ -245,12 +305,42 @@ func RegisterSafePath(path string) {
 	safePaths = append(safePaths, abs)
 }
 
+// RegisterReadOnlyPath adds a directory or file to the list of allowed boundaries for read-only access.
+func RegisterReadOnlyPath(path string) {
+	if path == "" {
+		return
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return
+	}
+	readOnlyPathsMu.Lock()
+	defer readOnlyPathsMu.Unlock()
+
+	// Check for duplicates
+	for _, p := range readOnlyPaths {
+		if p == abs {
+			return
+		}
+	}
+	readOnlyPaths = append(readOnlyPaths, abs)
+}
+
 // GetSafePaths returns a copy of the currently registered safe paths.
 func GetSafePaths() []string {
 	safePathsMu.RLock()
 	defer safePathsMu.RUnlock()
 	paths := make([]string, len(safePaths))
 	copy(paths, safePaths)
+	return paths
+}
+
+// GetReadOnlyPaths returns a copy of the currently registered read-only paths.
+func GetReadOnlyPaths() []string {
+	readOnlyPathsMu.RLock()
+	defer readOnlyPathsMu.RUnlock()
+	paths := make([]string, len(readOnlyPaths))
+	copy(paths, readOnlyPaths)
 	return paths
 }
 
@@ -279,6 +369,34 @@ func RemoveSafePath(path string) error {
 	}
 
 	safePaths = newPaths
+	return nil
+}
+
+// RemoveReadOnlyPath removes a path from the read-only authorized list.
+func RemoveReadOnlyPath(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	readOnlyPathsMu.Lock()
+	defer readOnlyPathsMu.Unlock()
+
+	newPaths := []string{}
+	found := false
+	for _, p := range readOnlyPaths {
+		if p == abs {
+			found = true
+			continue
+		}
+		newPaths = append(newPaths, p)
+	}
+
+	if !found {
+		return fmt.Errorf("path '%s' not found in read-only authorized list", abs)
+	}
+
+	readOnlyPaths = newPaths
 	return nil
 }
 
@@ -344,6 +462,13 @@ func IsPathSafe(path string) error {
 		}
 	}
 
+	if readOnlyPathsFile != "" {
+		absReadSafeFile, err := filepath.Abs(readOnlyPathsFile)
+		if err == nil && absPath == absReadSafeFile {
+			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
+		}
+	}
+
 	for _, sp := range safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
@@ -351,7 +476,92 @@ func IsPathSafe(path string) error {
 		}
 	}
 
+	// 5. Allow paths within explicitly registered read-only paths
+	readOnlyPathsMu.RLock()
+	defer readOnlyPathsMu.RUnlock()
+
+	for _, rop := range readOnlyPaths {
+		relReadSafe, err := filepath.Rel(rop, absPath)
+		if err == nil && !strings.HasPrefix(relReadSafe, "..") && !filepath.IsAbs(relReadSafe) {
+			return nil
+		}
+	}
+
 	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered paths)", path)
+}
+
+// IsPathWritable checks if a path is within the writable boundaries (CWD, Temp, or registered safe paths).
+// It does NOT include read-only paths.
+func IsPathWritable(path string) error {
+	if path == "" {
+		return nil
+	}
+
+	path = filepath.Clean(path)
+
+	if strings.Contains(path, "=") {
+		parts := strings.SplitN(path, "=", 2)
+		if len(parts) == 2 {
+			path = parts[1]
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = realPath
+	}
+
+	// 1. Allow paths within the Current Working Directory
+	rel, err := filepath.Rel(cwd, absPath)
+	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return nil
+	}
+
+	// 2. Allow paths within the System Temp Directory
+	tempDir := os.TempDir()
+	absTemp, err := filepath.Abs(tempDir)
+	if err == nil {
+		relTemp, err := filepath.Rel(absTemp, absPath)
+		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
+			return nil
+		}
+	}
+
+	// 3. Allow paths within explicitly registered safe paths
+	safePathsMu.RLock()
+	defer safePathsMu.RUnlock()
+
+	if safePathsFile != "" {
+		absSafeFile, err := filepath.Abs(safePathsFile)
+		if err == nil && absPath == absSafeFile {
+			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
+		}
+	}
+
+	if readOnlyPathsFile != "" {
+		absReadSafeFile, err := filepath.Abs(readOnlyPathsFile)
+		if err == nil && absPath == absReadSafeFile {
+			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
+		}
+	}
+
+	for _, sp := range safePaths {
+		relSafe, err := filepath.Rel(sp, absPath)
+		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("security violation: path '%s' is not in a writable boundary (read-only or unregistered)", path)
 }
 
 // ToolFunc is the signature for Go functions that can be called by the model.
