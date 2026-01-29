@@ -35,7 +35,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_session_info",
-		Description: "Returns the active configuration, environment variables, and session file paths to help the agent understand its identity and constraints.",
+		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, func(args map[string]interface{}) (string, error) {
 		info := map[string]interface{}{
 			"home_dir":           homeDir,
@@ -63,7 +63,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
-		Description: "Read, write, or update the persistent scratchpad (scoped to current mode). Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
+		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -85,7 +85,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_config",
-		Description: "Manages persistent key-value configuration/settings scoped by mode. Useful for storing URLs, IDs, or preferences across sessions.",
+		Description: "Manages persistent key-value configuration/settings scoped by mode.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
