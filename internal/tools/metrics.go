@@ -52,7 +52,7 @@ type SessionCostRecord struct {
 }
 
 // RegisterMetricsTools adds tools for usage and cost analysis.
-func RegisterMetricsTools(r *Registry, logFile string, model string) {
+func RegisterMetricsTools(r *Registry, logFile string, model string, mode string) {
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session based on token usage and grounding queries recorded in the log file.",
@@ -60,7 +60,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 			Type: genai.TypeObject,
 		},
 	}, func(args map[string]interface{}) (string, error) {
-		return EstimateCost(logFile, model, true, "") // Records to ledger with default ID
+		return EstimateCost(logFile, model, mode, true, "") // Records to ledger with default ID
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -71,7 +71,7 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 		},
 	}, func(args map[string]interface{}) (string, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
-		_, _ = EstimateCost(logFile, model, true, "")
+		_, _ = EstimateCost(logFile, model, mode, true, "")
 		return getCostSummary(filepath.Dir(logFile))
 	})
 }
@@ -79,13 +79,13 @@ func RegisterMetricsTools(r *Registry, logFile string, model string) {
 // RecordSessionCost calculates and saves the session cost to the global ledger.
 // It is intended for use in the application lifecycle (archiving/shutdown).
 // sessionID allows providing a unique name (e.g. timestamped) to avoid overwriting entries in the ledger.
-func RecordSessionCost(logFile, model, sessionID string) error {
-	_, err := EstimateCost(logFile, model, true, sessionID)
+func RecordSessionCost(logFile, model, mode, sessionID string) error {
+	_, err := EstimateCost(logFile, model, mode, true, sessionID)
 	return err
 }
 
 // recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
-func recordCost(outputDir string, record SessionCostRecord) {
+func recordCost(outputDir string, mode string, record SessionCostRecord) {
 	metricsMu.Lock()
 	defer metricsMu.Unlock()
 	historyPath := filepath.Join(outputDir, "global_costs.json")
@@ -94,8 +94,6 @@ func recordCost(outputDir string, record SessionCostRecord) {
 	// 1. Acquire simple file-based lock
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
-		// If lock exists, wait a bit or just give up to avoid hanging the CLI
-		// For a CLI tool, giving up is often better than a long hang.
 		return
 	}
 	defer func() {
@@ -108,7 +106,6 @@ func recordCost(outputDir string, record SessionCostRecord) {
 	// 2. Read existing history
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
-			// If corrupted, try to recover what we can or start fresh
 			_ = os.Rename(historyPath, historyPath+".bak")
 			history = []SessionCostRecord{}
 		}
@@ -127,7 +124,32 @@ func recordCost(outputDir string, record SessionCostRecord) {
 		history = append(history, record)
 	}
 
-	// 4. Write back atomically
+	// 4. Apply Retention Policy
+	retentionDays := 30
+	configPath := filepath.Join(outputDir, mode+"_config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var cfg map[string]string
+		if err := json.Unmarshal(data, &cfg); err == nil {
+			if val, ok := cfg["cost_retention_days"]; ok {
+				if days, err := strconv.Atoi(val); err == nil {
+					retentionDays = days
+				}
+			}
+		}
+	}
+
+	if retentionDays > 0 {
+		cutoff := time.Now().AddDate(0, 0, -retentionDays).Format("2006-01-02")
+		filtered := make([]SessionCostRecord, 0, len(history))
+		for _, r := range history {
+			if r.Date >= cutoff {
+				filtered = append(filtered, r)
+			}
+		}
+		history = filtered
+	}
+
+	// 5. Write back atomically
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
 		_ = AtomicWrite(historyPath, bytes, 0644)
 	}
@@ -253,7 +275,7 @@ func GetPricing(outputDir string) PricingData {
 	return data
 }
 
-func EstimateCost(logFile string, model string, shouldRecord bool, sessionID string) (string, error) {
+func EstimateCost(logFile string, model string, mode string, shouldRecord bool, sessionID string) (string, error) {
 	if err := IsPathSafe(logFile); err != nil {
 		return "", err
 	}
@@ -319,7 +341,7 @@ func EstimateCost(logFile string, model string, shouldRecord bool, sessionID str
 		if sessionID == "" {
 			sessionID = filepath.Base(logFile)
 		}
-		recordCost(outputDir, SessionCostRecord{
+		recordCost(outputDir, mode, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
 			Session:   sessionID,
 			Model:     model,

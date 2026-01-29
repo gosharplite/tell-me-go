@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Unit tests for global_costs.json logic
@@ -50,7 +51,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.1234,
 		}
-		recordCost(tmpDir, record)
+		recordCost(tmpDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 1 {
@@ -69,7 +70,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.5678,
 		}
-		recordCost(tmpDir, record)
+		recordCost(tmpDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -88,7 +89,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.9999, // Updated cost
 		}
-		recordCost(tmpDir, record)
+		recordCost(tmpDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -106,6 +107,43 @@ func TestRecordCost(t *testing.T) {
 		}
 		if !found {
 			t.Error("Session 1 disappeared after update")
+		}
+	})
+
+	// Test 4: Retention Policy
+	t.Run("RetentionPolicy", func(t *testing.T) {
+		// Create config with 1 day retention
+		config := map[string]string{"cost_retention_days": "1"}
+		configData, _ := json.Marshal(config)
+		os.WriteFile(filepath.Join(tmpDir, "retentionmode_config.json"), configData, 0644)
+
+		// Old record (more than 1 day ago)
+		oldRecord := SessionCostRecord{
+			Date:      "2000-01-01",
+			Session:   "old.log",
+			Model:     "gemini-test",
+			TotalCost: 0.0001,
+		}
+		// New record
+		newRecord := SessionCostRecord{
+			Date:      time.Now().Format("2006-01-02"),
+			Session:   "new.log",
+			Model:     "gemini-test",
+			TotalCost: 1.0,
+		}
+
+		recordCost(tmpDir, "retentionmode", oldRecord)
+		recordCost(tmpDir, "retentionmode", newRecord)
+
+		history := readHistory()
+		// Session 'old.log' should be purged because of the 1-day retention policy
+		for _, r := range history {
+			if r.Session == "old.log" {
+				t.Errorf("Old record should have been purged")
+			}
+		}
+		if len(history) == 0 {
+			t.Errorf("Expected at least one record (the new one)")
 		}
 	})
 }
@@ -179,7 +217,7 @@ func TestEstimateCostIntegration(t *testing.T) {
 
 	// 2. Run EstimateCost (which triggers recordCost)
 	model := "gemini-2.0-flash-001"
-	summary, err := EstimateCost(logPath, model, true, "")
+	summary, err := EstimateCost(logPath, model, "testmode", true, "")
 	if err != nil {
 		t.Fatalf("EstimateCost failed: %v", err)
 	}
@@ -225,7 +263,7 @@ func TestRecordSessionCost(t *testing.T) {
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
 	os.WriteFile(logPath, []byte(logContent), 0644)
 
-	err = RecordSessionCost(logPath, "gemini-test", "")
+	err = RecordSessionCost(logPath, "gemini-test", "testmode", "")
 	if err != nil {
 		t.Fatalf("RecordSessionCost failed: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,8 +91,9 @@ func (a *App) Run() {
 		timestamp := time.Now().Format("20060102_150405")
 		// Record cost with a unique ID including the timestamp before archiving
 		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(logPath, cfg.Model, uniqueID)
+		_ = tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, uniqueID)
 		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
+		a.cleanupOldBackups(homeDir, cfg.Mode)
 	}
 
 	hManager := history.NewManager(historyPath)
@@ -142,7 +144,7 @@ func (a *App) Run() {
 	tools.RegisterDevTools(registry)
 	tools.RegisterTeamsTools(registry)
 	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode)
-	tools.RegisterMetricsTools(registry, logPath, cfg.Model)
+	tools.RegisterMetricsTools(registry, logPath, cfg.Model, cfg.Mode)
 	tools.RegisterMediaTools(registry, client)
 
 	// 6. Execute Agent
@@ -164,7 +166,7 @@ func (a *App) Run() {
 	}
 
 	// 8. Record session cost
-	if err := tools.RecordSessionCost(logPath, cfg.Model, ""); err != nil {
+	if err := tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, ""); err != nil {
 		log.Printf("Warning: Failed to record final session cost: %v", err)
 	}
 }
@@ -280,6 +282,57 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 			if err := os.Rename(f, dest); err != nil {
 				tools.TerminalMutex.Lock()
 				fmt.Fprintf(os.Stderr, "Error archiving %s: %v\n", f, err)
+				tools.TerminalMutex.Unlock()
+			}
+		}
+	}
+}
+
+func (a *App) cleanupOldBackups(homeDir, mode string) {
+	backupBaseDir := filepath.Join(homeDir, "output", "backups")
+	entries, err := os.ReadDir(backupBaseDir)
+	if err != nil {
+		return // Likely doesn't exist yet
+	}
+
+	retentionDays := 30
+	configPath := filepath.Join(homeDir, "output", mode+"_config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var cfg map[string]string
+		if err := json.Unmarshal(data, &cfg); err == nil {
+			if val, ok := cfg["backup_retention_days"]; ok {
+				if days, err := strconv.Atoi(val); err == nil {
+					retentionDays = days
+				}
+			}
+		}
+	}
+
+	if retentionDays <= 0 {
+		return // 0 or negative means keep forever
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Format: YYYYMMDD_HHMMSS (15 chars)
+		if len(entry.Name()) < 15 {
+			continue
+		}
+
+		folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
+		if err != nil {
+			continue
+		}
+
+		if folderTime.Before(cutoff) {
+			path := filepath.Join(backupBaseDir, entry.Name())
+			if err := os.RemoveAll(path); err != nil {
+				tools.TerminalMutex.Lock()
+				fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
 				tools.TerminalMutex.Unlock()
 			}
 		}
