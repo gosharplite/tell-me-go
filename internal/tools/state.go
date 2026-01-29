@@ -35,7 +35,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_session_info",
-		Description: "Returns the active configuration, environment variables, and session file paths to help the agent understand its identity and constraints.",
+		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, func(args map[string]interface{}) (string, error) {
 		info := map[string]interface{}{
 			"home_dir":           homeDir,
@@ -63,7 +63,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
-		Description: "Read, write, or update the persistent scratchpad (scoped to current mode). Use this to keep track of plans, completed tasks, or architectural notes across sessions.",
+		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -85,7 +85,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_config",
-		Description: "Manages persistent key-value configuration/settings scoped by mode. Useful for storing URLs, IDs, or preferences across sessions.",
+		Description: "Manages persistent key-value configuration/settings scoped by mode.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -110,14 +110,8 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
-		Name: "configure_ux_preferences",
-		Description: `Configures User Experience (UX) behaviors for the AI assistant. 
-When 'smart_suggestions' is enabled, the AI MUST conclude every response by suggesting 
-2 to 3 context-aware follow-up commands (e.g., tool calls or workflow actions) 
-that are most relevant to the current conversation state. The AI should intelligently 
-determine these suggestions based on its available tools, current tasks, and 
-immediate project needs. If the AI detects a repeating command pattern, it 
-should increase the suggestion count.`,
+		Name:        "configure_ux_preferences",
+		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -148,7 +142,7 @@ should increase the suggestion count.`,
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
-		Description: "Manages a to-do list of tasks (scoped to current mode). Supports adding, updating, listing, and deleting tasks.",
+		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -178,7 +172,7 @@ should increase the suggestion count.`,
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rollback_last_turn",
-		Description: "Reverts the conversation history to the state before the current turn. This effectively undoes the last interaction.",
+		Description: "Reverts the conversation history to the state before the current turn.",
 	}, func(args map[string]interface{}) (string, error) {
 		if hManager != nil {
 			hManager.Rollback()

@@ -54,6 +54,7 @@ type Agent struct {
 	showThoughts       bool
 	showTools          bool
 	rawOutput          bool
+	startTime          time.Time
 }
 
 // New creates a new Agent.
@@ -69,6 +70,7 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 		showThoughts:       true,
 		showTools:          true,
 		rawOutput:          false,
+		startTime:          time.Now(),
 	}
 }
 
@@ -124,9 +126,9 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	}
 
 	timestamp := time.Now().Format("15:04:05")
-	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s]
-	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]\n",
-		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, m.Duration)
+	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s / 15.2s]
+	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs / %.2fs]\n",
+		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, m.Duration, time.Since(a.startTime).Seconds())
 
 	// Append to log file
 	f, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -180,8 +182,9 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCa
 			hColor = reset
 		}
 
-		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s]%s\n",
-			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, reset)
+		totalDuration := time.Since(a.startTime).Seconds()
+		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s / %.2fs%s]%s\n",
+			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, totalDuration, gray, reset)
 	}
 }
 

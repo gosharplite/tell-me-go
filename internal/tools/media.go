@@ -46,7 +46,7 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_image",
-		Description: "Reads a local image file and allows the AI to see its content for vision analysis.",
+		Description: "Reads a local image file for vision analysis.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{

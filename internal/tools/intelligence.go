@@ -178,7 +178,7 @@ func RegisterIntelligenceTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_package_graph",
-		Description: "Returns a mapping of internal package dependencies to help understand project architecture.",
+		Description: "Returns a mapping of internal package dependencies.",
 	}, getPackageGraph)
 }
 

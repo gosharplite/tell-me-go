@@ -22,7 +22,7 @@ import (
 func RegisterSystemTools(r *Registry) {
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
-		Description: "Executes a shell command on the local system. Requires user confirmation for safety.",
+		Description: "Executes a shell command on the local system.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -41,7 +41,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
-		Description: "Asks the user a specific question to clarify requirements or request confirmation. Use this when you need input before proceeding.",
+		Description: "Asks the user a specific question to clarify requirements or request confirmation.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -56,7 +56,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_url",
-		Description: "Fetches the content of a specific URL. Useful for reading documentation or articles.",
+		Description: "Fetches the content of a specific URL.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -71,7 +71,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
-		Description: "Fetches content from a URL and attempts to clean it into readable documentation by stripping HTML tags and boilerplate.",
+		Description: "Fetches the content of a specific URL and cleans it into readable documentation.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -113,7 +113,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_safepath",
-		Description: "Adds a directory or file to the allowed boundaries for AI access. This is a persistent configuration that requires double user confirmation.",
+		Description: "Adds a directory or file to the allowed boundaries for AI access. This is a persistent configuration.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -137,7 +137,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_safepath",
-		Description: "Removes a directory or file from the authorized boundaries. Requires user confirmation.",
+		Description: "Removes a directory or file from the authorized boundaries.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -152,7 +152,7 @@ func RegisterSystemTools(r *Registry) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
-		Description: "Disables all interactive security prompts for the current session. Use this for automated tasks where you trust the model's planned actions. This setting is persistent for the session until revoked or a new session is started.",
+		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
 	}, bypassConfirmationTool, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
