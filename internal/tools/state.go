@@ -111,13 +111,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name: "configure_ux_preferences",
-		Description: `Configures User Experience (UX) behaviors for the AI assistant. 
-When 'smart_suggestions' is enabled, the AI MUST conclude every response by suggesting 
-2 to 3 context-aware follow-up commands (e.g., tool calls or workflow actions) 
-that are most relevant to the current conversation state. The AI should intelligently 
-determine these suggestions based on its available tools, current tasks, and 
-immediate project needs. If the AI detects a repeating command pattern, it 
-should increase the suggestion count.`,
+		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
