@@ -110,7 +110,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
-		Name: "configure_ux_preferences",
+		Name:        "configure_ux_preferences",
 		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
