@@ -17,7 +17,7 @@ import (
 func RegisterDevTools(r *Registry) {
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_tests",
-		Description: "Executes project tests (Go, Python, NPM, etc.).",
+		Description: "Executes project tests (Go, Python, NPM, etc.) and returns the truncated output.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
