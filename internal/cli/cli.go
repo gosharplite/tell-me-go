@@ -146,6 +146,11 @@ func (a *App) Run(args []string) error {
 		return err
 	}
 
+	// If the user only requested history (-l), exit after displaying it.
+	if prompt == "" && *lastN > 0 {
+		return nil
+	}
+
 	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
@@ -207,7 +212,7 @@ func (a *App) Run(args []string) error {
 }
 
 func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
-	prompt := fs.Arg(0)
+	prompt := strings.Join(fs.Args(), " ")
 	var isTerminal bool
 	if f, ok := a.Stdin.(*os.File); ok {
 		stat, _ := f.Stat()
@@ -388,12 +393,18 @@ func (a *App) sanitizeArgs(args []string) []string {
 	processed := args[1:]
 	for i, arg := range processed {
 		if arg == "-l" {
-			// If -l is the last argument or the next argument starts with -,
-			// it means the user didn't provide a number.
-			if i+1 == len(processed) || strings.HasPrefix(processed[i+1], "-") {
-				// Insert "1" after "-l"
+			// If -l is the last argument or the next argument is not a number,
+			// it means the user didn't provide a specific count for -l.
+			isNextNum := false
+			if i+1 < len(processed) {
+				if _, err := strconv.Atoi(processed[i+1]); err == nil {
+					isNextNum = true
+				}
+			}
+
+			if !isNextNum {
+				// Insert "1" after "-l" to satisfy the integer flag
 				newArgs := make([]string, 0, len(args)+1)
-				// Copy everything up to and including -l (which is at args[i+1])
 				newArgs = append(newArgs, args[:i+2]...)
 				newArgs = append(newArgs, "1")
 				newArgs = append(newArgs, args[i+2:]...)
