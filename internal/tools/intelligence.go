@@ -109,7 +109,7 @@ func RegisterIntelligenceTools(r *Registry) {
 		},
 	}, semanticDiff)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rename_symbol",
 		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
 		Parameters: &genai.Schema{
@@ -130,7 +130,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"old_name", "new_name"},
 		},
-	}, renameSymbol)
+	}, renameSymbol, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_todos",

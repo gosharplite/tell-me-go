@@ -83,7 +83,7 @@ func RegisterFileSystemTools(r *Registry) {
 		},
 	}, searchFiles)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "replace_text",
 		Description: "Replaces a specific text block in a file with new content. Replaces ONLY the first occurrence found.",
 		Parameters: &genai.Schema{
@@ -104,7 +104,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath", "old_text", "new_text"},
 		},
-	}, replaceText)
+	}, replaceText, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_file",
@@ -158,7 +158,7 @@ func RegisterFileSystemTools(r *Registry) {
 		},
 	}, getFileSkeleton)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "write_file",
 		Description: "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
 		Parameters: &genai.Schema{
@@ -175,7 +175,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath", "content"},
 		},
-	}, writeFile)
+	}, writeFile, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_diff",

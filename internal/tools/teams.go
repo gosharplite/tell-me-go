@@ -15,7 +15,7 @@ import (
 
 // RegisterTeamsTools adds Teams-related tools to the registry.
 func RegisterTeamsTools(r *Registry) {
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
 		Parameters: &genai.Schema{
@@ -32,7 +32,7 @@ func RegisterTeamsTools(r *Registry) {
 			},
 			Required: []string{"webhook_url", "message"},
 		},
-	}, sendTeamsMessage)
+	}, sendTeamsMessage, ToolOptions{Serial: true})
 }
 
 func sendTeamsMessage(args map[string]interface{}) (string, error) {

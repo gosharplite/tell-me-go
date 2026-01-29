@@ -15,7 +15,7 @@ import (
 
 // RegisterDevTools adds developer-related tools to the registry.
 func RegisterDevTools(r *Registry) {
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_tests",
 		Description: "Executes project tests (Go, Python, NPM, etc.) with automatic output truncation.",
 		Parameters: &genai.Schema{
@@ -28,12 +28,12 @@ func RegisterDevTools(r *Registry) {
 			},
 			Required: []string{"command"},
 		},
-	}, runTests)
+	}, runTests, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...' to clean up dependencies and format code.",
-	}, goTidy)
+	}, goTidy, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_coverage",

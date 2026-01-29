@@ -20,7 +20,7 @@ import (
 
 // RegisterSystemTools adds system-related tools to the registry.
 func RegisterSystemTools(r *Registry) {
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
 		Description: "Executes a shell command on the local system. Requires user confirmation for safety.",
 		Parameters: &genai.Schema{
@@ -37,9 +37,9 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"command"},
 		},
-	}, executeCommand)
+	}, executeCommand, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
 		Description: "Asks the user a specific question to clarify requirements or request confirmation. Use this when you need input before proceeding.",
 		Parameters: &genai.Schema{
@@ -52,7 +52,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"question"},
 		},
-	}, askUser)
+	}, askUser, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_url",
@@ -111,7 +111,7 @@ func RegisterSystemTools(r *Registry) {
 		},
 	}, httpRequest)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_safepath",
 		Description: "Adds a directory or file to the allowed boundaries for AI access. This is a persistent configuration that requires double user confirmation.",
 		Parameters: &genai.Schema{
@@ -128,14 +128,14 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, registerSafePathTool)
+	}, registerSafePathTool, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
 	}, listSafePathsTool)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_safepath",
 		Description: "Removes a directory or file from the authorized boundaries. Requires user confirmation.",
 		Parameters: &genai.Schema{
@@ -148,17 +148,17 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, removeSafePathTool)
+	}, removeSafePathTool, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. Use this for automated tasks where you trust the model's planned actions. This setting is persistent for the session until revoked or a new session is started.",
-	}, bypassConfirmationTool)
+	}, bypassConfirmationTool, ToolOptions{Serial: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, revokeBypassTool)
+	}, revokeBypassTool, ToolOptions{Serial: true})
 }
 
 func revokeBypassTool(args map[string]interface{}) (string, error) {

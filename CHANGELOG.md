@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.0] - 2026-02-04
+
+### Changed
+- **Refactor**: Re-engineered the tool registry to encapsulate tool execution behavior (serial vs. parallel) within tool definitions, fully adhering to the Open-Closed Principle (OCP).
+- **Architecture**: Decoupled the `Agent` from specific tool names by utilizing a centralized `IsSerial(name)` registry query.
+- **Safety**: Expanded mandatory serial execution to 18 mutation, interactive, and high-stakes tools (Filesystem, Git, State, Media, Teams, etc.) to ensure predictable terminal output and execution state.
+- **Maintenance**: Address code review feedback by standardizing unexported map names and improving documentation consistency in the tools package.
+- **Testing**: Added `internal/tools/tools_test.go` for comprehensive verification of tool registration and property logic.
+- **Version Bump**: Promoted to v1.48.0.
+
 ## [1.47.0] - 2026-02-04
 
 ### Changed
