@@ -83,6 +83,16 @@ Show the very last message (shorthand):
 ```bash
 ./tell-me-go -l
 ```
+Show raw output (skip Markdown rendering):
+```bash
+./tell-me-go -l -r
+```
+
+**Raw Output Mode:**
+You can also use the `-r` flag with a regular prompt to receive raw text without formatting:
+```bash
+./tell-me-go -r "Write a bash script to list files"
+```
 
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:

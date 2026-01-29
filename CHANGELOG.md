@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.0] - 2026-02-04
+
+### Added
+- **CLI**: Added `-r` flag for raw text output. This allows displaying history and chat responses without Markdown rendering, improving compatibility with plain-text environments and scripts.
+- **Agent**: Implemented `SetRawOutput` to toggle between `glamour` Markdown rendering and plain text output.
+
+### Changed
+- **Documentation**: Updated `README.md` to document the new `-r` flag and provided examples for raw history and prompt output.
+- **Maintenance**: Promoted to v1.49.0 following the refined public release procedure.
+
 ## [1.48.0] - 2026-02-04
 
 ### Changed

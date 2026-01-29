@@ -45,6 +45,7 @@ func (a *App) Run() {
 	newSession := flag.Bool("new", false, "Start a new session")
 	showVersion := flag.Bool("v", false, "Show version information")
 	lastN := flag.Int("l", 0, "Show the last N messages from history")
+	rawOutput := flag.Bool("r", false, "Show raw output (without markdown rendering)")
 	flag.Parse()
 
 	if *showVersion {
@@ -102,7 +103,7 @@ func (a *App) Run() {
 	pruned := hManager.Prune(cfg.MaxHistoryTurns)
 
 	if *lastN > 0 {
-		a.showHistory(hManager, *lastN)
+		a.showHistory(hManager, *lastN, *rawOutput)
 	}
 
 	// 4. Handle Prompt
@@ -148,6 +149,7 @@ func (a *App) Run() {
 	chatAgent := agent.New(client, hManager, registry)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
+	chatAgent.SetRawOutput(*rawOutput)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
@@ -204,7 +206,7 @@ func (a *App) capturePrompt(lastN int) string {
 	return prompt
 }
 
-func (a *App) showHistory(hManager *history.Manager, n int) {
+func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 	contents := hManager.GetContents()
 	if len(contents) == 0 {
 		fmt.Println("No history found.")
@@ -216,10 +218,13 @@ func (a *App) showHistory(hManager *history.Manager, n int) {
 	}
 
 	start := len(contents) - n
-	r, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithEmoji(),
-	)
+	var r *glamour.TermRenderer
+	if !raw {
+		r, _ = glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithEmoji(),
+		)
+	}
 
 	for i := start; i < len(contents); i++ {
 		c := contents[i]
@@ -230,11 +235,18 @@ func (a *App) showHistory(hManager *history.Manager, n int) {
 		fmt.Printf("%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
 		for _, p := range c.Parts {
 			if p.Text != "" {
-				out, err := r.Render(p.Text)
-				if err != nil {
-					fmt.Println(p.Text)
+				if raw || r == nil {
+					fmt.Print(p.Text)
+					if !strings.HasSuffix(p.Text, "\n") {
+						fmt.Println()
+					}
 				} else {
-					fmt.Print(out)
+					out, err := r.Render(p.Text)
+					if err != nil {
+						fmt.Println(p.Text)
+					} else {
+						fmt.Print(out)
+					}
 				}
 			}
 			if p.FunctionCall != nil {

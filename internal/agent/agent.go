@@ -42,6 +42,7 @@ type Agent struct {
 	toolTimeout        time.Duration
 	showThoughts       bool
 	showTools          bool
+	rawOutput          bool
 }
 
 // New creates a new Agent.
@@ -56,6 +57,7 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 		toolTimeout:        30 * time.Second,
 		showThoughts:       true,
 		showTools:          true,
+		rawOutput:          false,
 	}
 }
 
@@ -63,6 +65,11 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
+}
+
+// SetRawOutput sets whether to output raw text or rendered markdown.
+func (a *Agent) SetRawOutput(raw bool) {
+	a.rawOutput = raw
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -376,7 +383,14 @@ func (a *Agent) renderResponse(respContent *api.Content) {
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
-			a.renderMarkdown(part.Text)
+			if a.rawOutput {
+				fmt.Print(part.Text)
+				if !strings.HasSuffix(part.Text, "\n") {
+					fmt.Println()
+				}
+			} else {
+				a.renderMarkdown(part.Text)
+			}
 		}
 	}
 }
