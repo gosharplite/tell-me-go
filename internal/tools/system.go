@@ -151,6 +151,45 @@ func RegisterSystemTools(r *Registry) {
 	}, removeSafePathTool, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "register_readpath",
+		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The absolute or relative path to authorize for reading.",
+				},
+				"reason": {
+					Type:        genai.TypeString,
+					Description: "Reason why this path needs to be authorized.",
+				},
+			},
+			Required: []string{"path", "reason"},
+		},
+	}, registerReadOnlyPathTool, ToolOptions{Serial: true})
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "list_readpaths",
+		Description: "Lists all currently authorized read-only paths and files.",
+	}, listReadOnlyPathsTool)
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "remove_readpath",
+		Description: "Removes a directory or file from the read-only authorized boundaries.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"path": {
+					Type:        genai.TypeString,
+					Description: "The path to remove from read-only authorized boundaries.",
+				},
+			},
+			Required: []string{"path"},
+		},
+	}, removeReadOnlyPathTool, ToolOptions{Serial: true})
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
 	}, bypassConfirmationTool, ToolOptions{Serial: true})
@@ -217,6 +256,20 @@ func listSafePathsTool(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
+func listReadOnlyPathsTool(args map[string]interface{}) (string, error) {
+	paths := GetReadOnlyPaths()
+	if len(paths) == 0 {
+		return "No additional read-only paths are currently registered.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Currently authorized read-only paths:\n")
+	for _, p := range paths {
+		sb.WriteString(fmt.Sprintf("- %s\n", p))
+	}
+	return sb.String(), nil
+}
+
 func removeSafePathTool(args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
@@ -256,6 +309,47 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath), nil
+}
+
+func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
+
+	path, _ := args["path"].(string)
+	if path == "" {
+		return "", fmt.Errorf("path argument is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %v", err)
+	}
+
+	// Confirmation Gate
+	if IsBypassActive() {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of read-only authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
+
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Removal denied by user.", nil
+		}
+		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
+	}
+
+	if err := RemoveReadOnlyPath(absPath); err != nil {
+		return fmt.Sprintf("Error: %v", err), nil
+	}
+
+	if err := SaveReadOnlyPaths(); err != nil {
+		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
+	}
+
+	return fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath), nil
 }
 
 func registerSafePathTool(args map[string]interface{}) (string, error) {
@@ -308,6 +402,58 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath), nil
+}
+
+func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
+	TerminalMutex.Lock()
+	defer TerminalMutex.Unlock()
+
+	path, _ := args["path"].(string)
+	reason, _ := args["reason"].(string)
+
+	if path == "" {
+		return "", fmt.Errorf("path argument is required")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid path: %v", err)
+	}
+
+	// 1. Confirmation
+	if IsBypassActive() {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Read-only authorization auto-approved.\033[0m\n")
+		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent READ-ONLY access to:\033[0m %s\n", absPath)
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
+
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Access denied by user (first confirmation).", nil
+		}
+
+		// 2. Double Confirmation
+		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.\033[0m (y/N) ")
+		char, err = readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return "Access denied by user (double confirmation).", nil
+		}
+		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+	}
+
+	// Register and Persist
+	RegisterReadOnlyPath(absPath)
+	if err := SaveReadOnlyPaths(); err != nil {
+		return fmt.Sprintf("Path authorized for reading but failed to persist: %v", err), nil
+	}
+
+	return fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath), nil
 }
 
 func askUser(args map[string]interface{}) (string, error) {
