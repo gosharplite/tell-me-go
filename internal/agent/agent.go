@@ -234,6 +234,7 @@ func (a *Agent) Chat(prompt string) error {
 		Role:  "user",
 		Parts: []*api.Part{{Text: prompt}},
 	})
+	_ = a.history.Save() // Persist initial user prompt immediately
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		contents := a.history.GetContents()
@@ -274,11 +275,13 @@ func (a *Agent) Chat(prompt string) error {
 		// 4. Render Output
 		a.renderResponse(respContent)
 		a.history.AddContent(respContent)
+		_ = a.history.Save() // SAVE 1: Capture model's response/tool calls
 
 		// 5. Handle Tool Execution
 		if err := a.handleToolExecution(respContent, turn); err != nil {
 			return err
 		}
+		_ = a.history.Save() // SAVE 2: Capture results of the tool calls
 
 		if !a.hasToolCalls(respContent) {
 			break
