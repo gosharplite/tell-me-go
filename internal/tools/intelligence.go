@@ -187,6 +187,29 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
 	}, m.getPackageGraph)
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "move_definition",
+		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"symbol": {
+					Type:        genai.TypeString,
+					Description: "The name of the symbol to move.",
+				},
+				"src_file": {
+					Type:        genai.TypeString,
+					Description: "The source file path.",
+				},
+				"dst_file": {
+					Type:        genai.TypeString,
+					Description: "The destination file path.",
+				},
+			},
+			Required: []string{"symbol", "src_file", "dst_file"},
+		},
+	}, m.moveDefinition, ToolOptions{Serial: true})
 }
 
 // AST-based helpers for existing tools
@@ -278,6 +301,251 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	}
 
 	return sb.String(), nil
+}
+
+func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (string, error) {
+	symbol, _ := args["symbol"].(string)
+	srcPath, _ := args["src_file"].(string)
+	dstPath, _ := args["dst_file"].(string)
+
+	if err := m.sm.IsPathWritable(srcPath); err != nil {
+		return "", err
+	}
+	if err := m.sm.IsPathWritable(dstPath); err != nil {
+		return "", err
+	}
+
+	if !m.sm.ConfirmDestructiveAction("MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath)) {
+		return "Action denied by user.", nil
+	}
+
+	fset := token.NewFileSet()
+	srcFile, err := parser.ParseFile(fset, srcPath, nil, parser.ParseComments)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse source file: %w", err)
+	}
+
+	dstFile, err := parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Try to infer package name from directory
+			pkgName := filepath.Base(filepath.Dir(dstPath))
+			// If it's the same directory as src, use src package name
+			if filepath.Dir(dstPath) == filepath.Dir(srcPath) {
+				pkgName = srcFile.Name.Name
+			}
+			content := fmt.Sprintf("package %s\n", pkgName)
+			if err := os.WriteFile(dstPath, []byte(content), 0644); err != nil {
+				return "", fmt.Errorf("failed to create destination file: %w", err)
+			}
+			dstFile, err = parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse newly created destination file: %w", err)
+			}
+		} else {
+			return "", fmt.Errorf("failed to parse destination file: %w", err)
+		}
+	}
+
+	// Check for name collision in destination
+	for _, decl := range dstFile.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == symbol {
+					return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+				}
+				if vs, ok := spec.(*ast.ValueSpec); ok {
+					for _, name := range vs.Names {
+						if name.Name == symbol {
+							return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+						}
+					}
+				}
+			}
+		case *ast.FuncDecl:
+			if d.Name.Name == symbol {
+				return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+			}
+		}
+	}
+
+	var movedDecls []ast.Decl
+	var newSrcDecls []ast.Decl
+	srcPackageName := srcFile.Name.Name
+	dstPackageName := dstFile.Name.Name
+
+	// Identify what to move
+	for _, decl := range srcFile.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.IMPORT {
+				newSrcDecls = append(newSrcDecls, d)
+				continue
+			}
+			var keptSpecs []ast.Spec
+			var movingSpecs []ast.Spec
+			for _, spec := range d.Specs {
+				match := false
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name.Name == symbol {
+						match = true
+					}
+				case *ast.ValueSpec:
+					for _, name := range s.Names {
+						if name.Name == symbol {
+							match = true
+							break
+						}
+					}
+				}
+
+				if match {
+					movingSpecs = append(movingSpecs, spec)
+				} else {
+					keptSpecs = append(keptSpecs, spec)
+				}
+			}
+
+			if len(movingSpecs) > 0 {
+				movedGenDecl := &ast.GenDecl{
+					Tok:   d.Tok,
+					Specs: movingSpecs,
+				}
+				if len(movingSpecs) > 1 {
+					movedGenDecl.Lparen = d.Lparen
+					movedGenDecl.Rparen = d.Rparen
+				}
+				movedDecls = append(movedDecls, movedGenDecl)
+			}
+			if len(keptSpecs) > 0 {
+				d.Specs = keptSpecs
+				if len(keptSpecs) == 1 {
+					d.Lparen = 0
+					d.Rparen = 0
+				}
+				newSrcDecls = append(newSrcDecls, d)
+			}
+
+		case *ast.FuncDecl:
+			shouldMove := false
+			if d.Name.Name == symbol {
+				shouldMove = true
+			} else if d.Recv != nil {
+				// Move methods of the symbol if symbol is a type
+				recvType := exprToString(d.Recv.List[0].Type)
+				if strings.TrimPrefix(recvType, "*") == symbol {
+					shouldMove = true
+				}
+			}
+
+			if shouldMove {
+				movedDecls = append(movedDecls, d)
+			} else {
+				newSrcDecls = append(newSrcDecls, d)
+			}
+		default:
+			newSrcDecls = append(newSrcDecls, decl)
+		}
+	}
+
+	if len(movedDecls) == 0 {
+		return fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath), nil
+	}
+
+	// Update source file
+	srcFile.Decls = newSrcDecls
+	var srcBuf bytes.Buffer
+	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
+		return "", fmt.Errorf("failed to format source file: %w", err)
+	}
+	if err := AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+
+	// Update destination file
+	// We need to handle imports from movedDecls.
+	// This is complex. For now, let's just append and let the user fix imports,
+	// OR try a naive import copy.
+	
+	// Collect imports used in movedDecls
+	neededImports := make(map[string]*ast.ImportSpec)
+	for _, decl := range movedDecls {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				if x, ok := sel.X.(*ast.Ident); ok {
+					// Check if x.Name is an imported package in src
+					for _, imp := range srcFile.Imports {
+						pkgName := ""
+						if imp.Name != nil {
+							pkgName = imp.Name.Name
+						} else {
+							// Infer from path
+							path := strings.Trim(imp.Path.Value, "\"")
+							parts := strings.Split(path, "/")
+							pkgName = parts[len(parts)-1]
+						}
+						if pkgName == x.Name {
+							neededImports[imp.Path.Value] = imp
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	// Add missing imports to dstFile
+	for path, spec := range neededImports {
+		found := false
+		for _, imp := range dstFile.Imports {
+			if imp.Path.Value == path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Add to dstFile
+			newImp := &ast.ImportSpec{
+				Path: spec.Path,
+				Name: spec.Name,
+			}
+			// Find or create GenDecl for imports
+			added := false
+			for _, d := range dstFile.Decls {
+				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+					gd.Specs = append(gd.Specs, newImp)
+					added = true
+					break
+				}
+			}
+			if !added {
+				newGd := &ast.GenDecl{
+					Tok:   token.IMPORT,
+					Specs: []ast.Spec{newImp},
+				}
+				dstFile.Decls = append([]ast.Decl{newGd}, dstFile.Decls...)
+			}
+		}
+	}
+
+	dstFile.Decls = append(dstFile.Decls, movedDecls...)
+	
+	var dstBuf bytes.Buffer
+	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
+		return "", fmt.Errorf("failed to format destination file: %w", err)
+	}
+	if err := AtomicWrite(dstPath, dstBuf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+
+	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
+	if srcPackageName != dstPackageName {
+		resultMsg += " Note: Package names differ. References across the project were NOT updated. Please update them manually or use rename_symbol if applicable."
+	}
+
+	return resultMsg, nil
 }
 
 func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
