@@ -85,7 +85,7 @@ func (b *BackupManager) Undo(n int) (string, error) {
 	count := 0
 	for i := len(b.backups) - 1; i >= 0 && count < n; i-- {
 		snap := b.backups[i]
-		
+
 		if err := b.sm.IsPathWritable(snap.Path); err != nil {
 			return "", fmt.Errorf("permission denied for %s: %w", snap.Path, err)
 		}

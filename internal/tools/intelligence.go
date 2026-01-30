@@ -468,7 +468,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	// We need to handle imports from movedDecls.
 	// This is complex. For now, let's just append and let the user fix imports,
 	// OR try a naive import copy.
-	
+
 	// Collect imports used in movedDecls
 	neededImports := make(map[string]*ast.ImportSpec)
 	for _, decl := range movedDecls {
@@ -531,7 +531,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	dstFile.Decls = append(dstFile.Decls, movedDecls...)
-	
+
 	var dstBuf bytes.Buffer
 	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
 		return "", fmt.Errorf("failed to format destination file: %w", err)

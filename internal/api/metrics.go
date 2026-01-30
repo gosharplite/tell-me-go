@@ -4,8 +4,8 @@
 package api
 
 import (
-	"google.golang.org/genai"
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"google.golang.org/genai"
 )
 
 // Metrics alias for backward compatibility during migration

@@ -41,22 +41,22 @@ type Chatter interface {
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client             *api.Client
-	history            *history.Manager
-	registry           *tools.Registry
-	sm                 *tools.SecurityManager
-	logFile            string
-	maxToolTurns       int
-	maxHistoryTokens   int
-	maxHistoryTurns    int
-	prunedTurns        int
-	maxConcurrentTools int
-	toolTimeout        time.Duration
-	showThoughts       bool
-	showTools          bool
-	rawOutput          bool
+	client               *api.Client
+	history              *history.Manager
+	registry             *tools.Registry
+	sm                   *tools.SecurityManager
+	logFile              string
+	maxToolTurns         int
+	maxHistoryTokens     int
+	maxHistoryTurns      int
+	prunedTurns          int
+	maxConcurrentTools   int
+	toolTimeout          time.Duration
+	showThoughts         bool
+	showTools            bool
+	rawOutput            bool
 	persistentConfigPath string
-	startTime          time.Time
+	startTime            time.Time
 }
 
 // New creates a new Agent.
