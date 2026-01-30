@@ -890,7 +890,7 @@ func getProjectSummary(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
-	sb.WriteString(fmt.Sprintf("\nFile Counts:\n"))
+	sb.WriteString("\nFile Counts:\n")
 	for ext, count := range fileCounts {
 		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, count))
 	}

@@ -400,6 +400,9 @@ func TestCorruptionRecovery(t *testing.T) {
 
 	// Verify list works
 	msg, err = manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
+	if err != nil {
+		t.Fatalf("manageTasks list failed after recovery: %v", err)
+	}
 	if !strings.Contains(msg, "[1] [pending] Recovery Task") {
 		t.Errorf("List missing recovered task: %s", msg)
 	}
