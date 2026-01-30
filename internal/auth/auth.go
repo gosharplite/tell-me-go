@@ -31,7 +31,8 @@ type VertexAuth struct {
 }
 
 func (a *VertexAuth) getCachePath() string {
-	return filepath.Join(os.TempDir(), "tell_me_go_token_vertex.txt")
+	uid := os.Getuid()
+	return filepath.Join(os.TempDir(), fmt.Sprintf("tell_me_go_token_vertex_%d.txt", uid))
 }
 
 // GetToken retrieves the OAuth2 access token with local caching.
