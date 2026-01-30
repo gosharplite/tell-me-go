@@ -6,6 +6,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -565,7 +566,7 @@ func IsPathWritable(path string) error {
 }
 
 // ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc func(args map[string]interface{}) (string, error)
+type ToolFunc func(ctx context.Context, args map[string]interface{}) (string, error)
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {
@@ -614,12 +615,12 @@ func (r *Registry) GetDeclarations() []*genai.FunctionDeclaration {
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
-func (r *Registry) Execute(name string, args map[string]interface{}) (string, error) {
+func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
 	entry, ok := r.entries[name]
 	if !ok {
 		return "", fmt.Errorf("tool not found: %s", name)
 	}
-	return entry.handler(args)
+	return entry.handler(ctx, args)
 }
 
 // IsSerial returns true if the tool is configured for serial execution.

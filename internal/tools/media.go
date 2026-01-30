@@ -40,8 +40,8 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 			},
 			Required: []string{"prompt"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return createImage(args, client)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return createImage(ctx, args, client)
 	}, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -60,7 +60,7 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 	}, readImage)
 }
 
-func createImage(args map[string]interface{}, client *api.Client) (string, error) {
+func createImage(ctx context.Context, args map[string]interface{}, client *api.Client) (string, error) {
 	prompt, _ := args["prompt"].(string)
 	aspectRatio, _ := args["aspect_ratio"].(string)
 	if aspectRatio == "" {
@@ -79,7 +79,7 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 	// Append aspect ratio to prompt as guidance (Imagen 3 prompt engineering)
 	fullPrompt := fmt.Sprintf("%s. Aspect ratio %s.", prompt, aspectRatio)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	// Use specified model
@@ -120,7 +120,7 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 	return fmt.Sprintf("Image generated successfully and saved to: %s", outPath), nil
 }
 
-func readImage(args map[string]interface{}) (string, error) {
+func readImage(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	if err := IsPathSafe(path); err != nil {
 		return "", err

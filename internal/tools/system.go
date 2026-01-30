@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -200,7 +201,7 @@ func RegisterSystemTools(r *Registry) {
 	}, revokeBypassTool, ToolOptions{Serial: true})
 }
 
-func revokeBypassTool(args map[string]interface{}) (string, error) {
+func revokeBypassTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -214,7 +215,7 @@ func revokeBypassTool(args map[string]interface{}) (string, error) {
 	return "Interactive security prompts have been re-enabled.", nil
 }
 
-func bypassConfirmationTool(args map[string]interface{}) (string, error) {
+func bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -242,7 +243,7 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 	return "All future confirmations in this session will be bypassed. This setting is now persistent for this session name.", nil
 }
 
-func listSafePathsTool(args map[string]interface{}) (string, error) {
+func listSafePathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	paths := GetSafePaths()
 	if len(paths) == 0 {
 		return "No additional safe paths are currently registered.", nil
@@ -256,7 +257,7 @@ func listSafePathsTool(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func listReadOnlyPathsTool(args map[string]interface{}) (string, error) {
+func listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	paths := GetReadOnlyPaths()
 	if len(paths) == 0 {
 		return "No additional read-only paths are currently registered.", nil
@@ -270,7 +271,7 @@ func listReadOnlyPathsTool(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func removeSafePathTool(args map[string]interface{}) (string, error) {
+func removeSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -311,7 +312,7 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath), nil
 }
 
-func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
+func removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -352,7 +353,7 @@ func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath), nil
 }
 
-func registerSafePathTool(args map[string]interface{}) (string, error) {
+func registerSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -404,7 +405,7 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath), nil
 }
 
-func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
+func registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -456,7 +457,7 @@ func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath), nil
 }
 
-func askUser(args map[string]interface{}) (string, error) {
+func askUser(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -478,7 +479,7 @@ func askUser(args map[string]interface{}) (string, error) {
 	return strings.TrimSpace(response), nil
 }
 
-func readURL(args map[string]interface{}) (string, error) {
+func readURL(ctx context.Context, args map[string]interface{}) (string, error) {
 	url, ok := args["url"].(string)
 	if !ok || url == "" {
 		return "", fmt.Errorf("url argument is required")
@@ -488,7 +489,8 @@ func readURL(args map[string]interface{}) (string, error) {
 		Timeout: 30 * time.Second,
 	}
 
-	resp, err := client.Get(url)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -511,8 +513,8 @@ func readURL(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func readExternalDocs(args map[string]interface{}) (string, error) {
-	content, err := readURL(args)
+func readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
+	content, err := readURL(ctx, args)
 	if err != nil {
 		return "", err
 	}
@@ -541,7 +543,7 @@ func readExternalDocs(args map[string]interface{}) (string, error) {
 	return content, nil
 }
 
-func httpRequest(args map[string]interface{}) (string, error) {
+func httpRequest(ctx context.Context, args map[string]interface{}) (string, error) {
 	method, _ := args["method"].(string)
 	url, _ := args["url"].(string)
 	bodyStr, _ := args["body"].(string)
@@ -555,7 +557,7 @@ func httpRequest(args map[string]interface{}) (string, error) {
 		reqBody = strings.NewReader(bodyStr)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -671,7 +673,7 @@ func isSafeCommand(command string) bool {
 	return true
 }
 
-func executeCommand(args map[string]interface{}) (string, error) {
+func executeCommand(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	defer TerminalMutex.Unlock()
 
@@ -724,7 +726,7 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	// We use "sh -c" to allow for complex commands
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 
 	// Stream output to stderr and capture it
 	var sb strings.Builder

@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,10 +12,6 @@ import (
 	"testing"
 	"time"
 )
-
-// Unit tests for global_costs.json logic
-// Note: We are testing unexported functions recordCost, getCostSummary, estimateCost
-// because they are in the same package 'tools'.
 
 func TestRecordCost(t *testing.T) {
 	// 1. Setup Temp Dir
@@ -26,6 +23,13 @@ func TestRecordCost(t *testing.T) {
 
 	modeDir := filepath.Join(tmpDir, "testmode")
 	os.MkdirAll(modeDir, 0755)
+
+	logFile := filepath.Join(modeDir, "tokens.log")
+	m := &metricsManager{
+		logFile: logFile,
+		model:   "gemini-test",
+		mode:    "testmode",
+	}
 
 	// Helper to read history
 	readHistory := func() []SessionCostRecord {
@@ -54,7 +58,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.1234,
 		}
-		recordCost(modeDir, "testmode", record)
+		m.recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 1 {
@@ -73,7 +77,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.5678,
 		}
-		recordCost(modeDir, "testmode", record)
+		m.recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -92,7 +96,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.9999, // Updated cost
 		}
-		recordCost(modeDir, "testmode", record)
+		m.recordCost(modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -123,6 +127,12 @@ func TestRecordCost(t *testing.T) {
 		configData, _ := json.Marshal(config)
 		os.WriteFile(filepath.Join(retentionDir, "config.json"), configData, 0644)
 
+		mRetention := &metricsManager{
+			logFile: filepath.Join(retentionDir, "tokens.log"),
+			model:   "gemini-test",
+			mode:    "retentionmode",
+		}
+
 		// Old record (more than 1 day ago)
 		oldRecord := SessionCostRecord{
 			Date:      "2000-01-01",
@@ -138,8 +148,8 @@ func TestRecordCost(t *testing.T) {
 			TotalCost: 1.0,
 		}
 
-		recordCost(retentionDir, "retentionmode", oldRecord)
-		recordCost(retentionDir, "retentionmode", newRecord)
+		mRetention.recordCost(retentionDir, "retentionmode", oldRecord)
+		mRetention.recordCost(retentionDir, "retentionmode", newRecord)
 
 		history := readHistory()
 		// Session 'old.log' should be purged because of the 1-day retention policy
@@ -163,10 +173,19 @@ func TestGetCostSummary(t *testing.T) {
 
 	modeDir := filepath.Join(tmpDir, "testmode")
 	os.MkdirAll(modeDir, 0755)
+	logFile := filepath.Join(modeDir, "tokens.log")
+
+	m := &metricsManager{
+		logFile: logFile,
+		model:   "gemini-test",
+		mode:    "testmode",
+	}
+
+	ctx := context.Background()
 
 	// Test 1: Empty/No File
 	t.Run("NoFile", func(t *testing.T) {
-		summary, err := getCostSummary(modeDir)
+		summary, err := m.getCostSummary(ctx)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
@@ -186,7 +205,7 @@ func TestGetCostSummary(t *testing.T) {
 		data, _ := json.Marshal(records)
 		os.WriteFile(filepath.Join(tmpDir, "global_costs.json"), data, 0644)
 
-		summary, err := getCostSummary(modeDir)
+		summary, err := m.getCostSummary(ctx)
 		if err != nil {
 			t.Fatalf("getCostSummary failed: %v", err)
 		}
@@ -217,8 +236,6 @@ func TestEstimateCostIntegration(t *testing.T) {
 	os.MkdirAll(modeDir, 0755)
 
 	// 1. Create a dummy log file
-	// Format matches internal/agent/agent.go
-	// [Time] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]
 	logContent := `
 [10:00:00] H: 1000 M: 500 C: 200 T: 1700 N: 1700(1%) S: 1 Th: 50 [1.00s]
 `
@@ -227,9 +244,14 @@ func TestEstimateCostIntegration(t *testing.T) {
 		t.Fatalf("Failed to write log file: %v", err)
 	}
 
+	m := &metricsManager{
+		logFile: logPath,
+		model:   "gemini-2.0-flash-001",
+		mode:    "testmode",
+	}
+
 	// 2. Run EstimateCost (which triggers recordCost)
-	model := "gemini-2.0-flash-001"
-	summary, err := EstimateCost(logPath, model, "testmode", true, "")
+	summary, err := m.EstimateCost(context.Background(), true, "")
 	if err != nil {
 		t.Fatalf("EstimateCost failed: %v", err)
 	}
@@ -261,31 +283,5 @@ func TestEstimateCostIntegration(t *testing.T) {
 		if history[0].TotalCost <= 0 {
 			t.Errorf("Total cost should be > 0, got %f", history[0].TotalCost)
 		}
-	}
-}
-
-func TestRecordSessionCost(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "record_session_cost_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	modeDir := filepath.Join(tmpDir, "testmode")
-	os.MkdirAll(modeDir, 0755)
-
-	logPath := filepath.Join(modeDir, "test.log")
-	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
-	os.WriteFile(logPath, []byte(logContent), 0644)
-
-	err = RecordSessionCost(logPath, "gemini-test", "testmode", "")
-	if err != nil {
-		t.Fatalf("RecordSessionCost failed: %v", err)
-	}
-
-	// Verify ledger
-	historyPath := filepath.Join(tmpDir, "global_costs.json")
-	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		t.Error("global_costs.json was not created")
 	}
 }

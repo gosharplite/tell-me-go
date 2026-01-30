@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,11 +18,6 @@ import (
 	"time"
 
 	"google.golang.org/genai"
-)
-
-var (
-	metricsMu sync.Mutex
-	pricingMu sync.Mutex
 )
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
@@ -51,16 +47,30 @@ type SessionCostRecord struct {
 	TotalCost float64 `json:"total_cost"`
 }
 
+type metricsManager struct {
+	metricsMu sync.Mutex
+	pricingMu sync.Mutex
+	logFile   string
+	model     string
+	mode      string
+}
+
 // RegisterMetricsTools adds tools for usage and cost analysis.
 func RegisterMetricsTools(r *Registry, logFile string, model string, mode string) {
+	m := &metricsManager{
+		logFile: logFile,
+		model:   model,
+		mode:    mode,
+	}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return EstimateCost(logFile, model, mode, true, "") // Records to ledger with default ID
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -69,25 +79,27 @@ func RegisterMetricsTools(r *Registry, logFile string, model string, mode string
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
-		_, _ = EstimateCost(logFile, model, mode, true, "")
-		return getCostSummary(filepath.Dir(logFile))
+		_, _ = m.EstimateCost(ctx, true, "")
+		return m.getCostSummary(ctx)
 	})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger.
-// It is intended for use in the application lifecycle (archiving/shutdown).
-// sessionID allows providing a unique name (e.g. timestamped) to avoid overwriting entries in the ledger.
 func RecordSessionCost(logFile, model, mode, sessionID string) error {
-	_, err := EstimateCost(logFile, model, mode, true, sessionID)
+	m := &metricsManager{
+		logFile: logFile,
+		model:   model,
+		mode:    mode,
+	}
+	_, err := m.EstimateCost(context.Background(), true, sessionID)
 	return err
 }
 
-// recordCost saves the current cost to a persistent local ledger with file locking to prevent corruption.
-func recordCost(outputDir string, mode string, record SessionCostRecord) {
-	metricsMu.Lock()
-	defer metricsMu.Unlock()
+func (m *metricsManager) recordCost(outputDir string, mode string, record SessionCostRecord) {
+	m.metricsMu.Lock()
+	defer m.metricsMu.Unlock()
 
 	// Global costs are in the parent output directory
 	globalDir := filepath.Dir(outputDir)
@@ -158,10 +170,11 @@ func recordCost(outputDir string, mode string, record SessionCostRecord) {
 	}
 }
 
-func getCostSummary(outputDir string) (string, error) {
-	metricsMu.Lock()
-	defer metricsMu.Unlock()
+func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
+	m.metricsMu.Lock()
+	defer m.metricsMu.Unlock()
 
+	outputDir := filepath.Dir(m.logFile)
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 	content, err := os.ReadFile(historyPath)
@@ -204,10 +217,11 @@ func getCostSummary(outputDir string) (string, error) {
 }
 
 // GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func GetPricing(outputDir string) PricingData {
-	pricingMu.Lock()
-	defer pricingMu.Unlock()
+func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
+	m.pricingMu.Lock()
+	defer m.pricingMu.Unlock()
 
+	outputDir := filepath.Dir(m.logFile)
 	globalDir := outputDir
 	// If outputDir is a mode-specific directory (not containing global_prices.json), use parent
 	if _, err := os.Stat(filepath.Join(outputDir, "global_prices.json")); os.IsNotExist(err) {
@@ -236,7 +250,8 @@ func GetPricing(outputDir string) PricingData {
 	if !useCache {
 		// Optimization: Check for connectivity before hitting network to avoid long timeout
 		client := http.Client{Timeout: 2 * time.Second} // Shorter timeout
-		resp, err := client.Get(pricingURL)
+		req, _ := http.NewRequestWithContext(ctx, "GET", pricingURL, nil)
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()
 			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
@@ -290,15 +305,15 @@ func GetPricing(outputDir string) PricingData {
 	return data
 }
 
-func EstimateCost(logFile string, model string, mode string, shouldRecord bool, sessionID string) (string, error) {
-	if err := IsPathSafe(logFile); err != nil {
+func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
+	if err := IsPathSafe(m.logFile); err != nil {
 		return "", err
 	}
 
-	outputDir := filepath.Dir(logFile)
-	pricing := GetPricing(outputDir)
+	outputDir := filepath.Dir(m.logFile)
+	pricing := m.GetPricing(ctx)
 
-	f, err := os.Open(logFile)
+	f, err := os.Open(m.logFile)
 	if err != nil {
 		return "Error: Log file not found. Ensure you have made at least one request.", nil
 	}
@@ -316,34 +331,34 @@ func EstimateCost(logFile string, model string, mode string, shouldRecord bool, 
 		}
 
 		h, _ := strconv.ParseInt(parts[2], 10, 64)
-		m, _ := strconv.ParseInt(parts[4], 10, 64)
+		mMiss, _ := strconv.ParseInt(parts[4], 10, 64)
 		c, _ := strconv.ParseInt(parts[6], 10, 64)
 		s, _ := strconv.ParseInt(parts[12], 10, 64)
 		th, _ := strconv.ParseInt(parts[14], 10, 64)
 
 		totalH += h
-		totalM += m
+		totalM += mMiss
 		totalC += c
 		totalS += s
 		totalTh += th
 
 		// Pricing Selection
 		var p ModelPricing
-		if strings.Contains(model, "flash") {
+		if strings.Contains(m.model, "flash") {
 			p = pricing.Models["flash"]
-		} else if strings.Contains(model, "pro") {
+		} else if strings.Contains(m.model, "pro") {
 			p = pricing.Models["pro"]
 		} else {
 			p = pricing.Models["default"]
 		}
 
 		rh, rm, rc := p.Hit, p.Miss, p.Comp
-		if p.TieredThreshold > 0 && (h+m) > p.TieredThreshold {
+		if p.TieredThreshold > 0 && (h+mMiss) > p.TieredThreshold {
 			rm, rc = p.TieredMiss, p.TieredComp
 		}
 
 		costH += (float64(h) * rh / 1e6)
-		costM += (float64(m) * rm / 1e6)
+		costM += (float64(mMiss) * rm / 1e6)
 		costC += (float64(c) * rc / 1e6)
 		costTh += (float64(th) * rc / 1e6)
 		costS += float64(s) * pricing.SearchQuery
@@ -354,18 +369,18 @@ func EstimateCost(logFile string, model string, mode string, shouldRecord bool, 
 	// Persistence: Record to local ledger
 	if shouldRecord {
 		if sessionID == "" {
-			sessionID = filepath.Base(logFile)
+			sessionID = filepath.Base(m.logFile)
 		}
-		recordCost(outputDir, mode, SessionCostRecord{
+		m.recordCost(outputDir, m.mode, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
 			Session:   sessionID,
-			Model:     model,
+			Model:     m.model,
 			TotalCost: totalCost,
 		})
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", model))
+	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", m.model))
 	sb.WriteString(fmt.Sprintf("Pricing Data As Of: %s\n", pricing.UpdatedAt))
 
 	// Check for stale data (older than 30 days)
@@ -384,9 +399,9 @@ func EstimateCost(logFile string, model string, mode string, shouldRecord bool, 
 	// Helper to determine display rate (shows tiered if applicable)
 	getRateStr := func(item string) string {
 		var p ModelPricing
-		if strings.Contains(model, "flash") {
+		if strings.Contains(m.model, "flash") {
 			p = pricing.Models["flash"]
-		} else if strings.Contains(model, "pro") {
+		} else if strings.Contains(m.model, "pro") {
 			p = pricing.Models["pro"]
 		} else {
 			p = pricing.Models["default"]

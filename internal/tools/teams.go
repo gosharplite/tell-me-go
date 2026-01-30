@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -35,7 +36,7 @@ func RegisterTeamsTools(r *Registry) {
 	}, sendTeamsMessage, ToolOptions{Serial: true})
 }
 
-func sendTeamsMessage(args map[string]interface{}) (string, error) {
+func sendTeamsMessage(ctx context.Context, args map[string]interface{}) (string, error) {
 	webhookURL, _ := args["webhook_url"].(string)
 	message, _ := args["message"].(string)
 
@@ -66,7 +67,9 @@ func sendTeamsMessage(args map[string]interface{}) (string, error) {
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}

@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -197,7 +198,7 @@ func RegisterFileSystemTools(r *Registry) {
 	}, getFileDiff)
 }
 
-func listFiles(args map[string]interface{}) (string, error) {
+func listFiles(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -225,7 +226,7 @@ func listFiles(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getTree(args map[string]interface{}) (string, error) {
+func getTree(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -280,7 +281,7 @@ func buildTree(path, indent string, depth, maxDepth int, sb *strings.Builder) er
 	return nil
 }
 
-func readFile(args map[string]interface{}) (string, error) {
+func readFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
@@ -302,7 +303,7 @@ func readFile(args map[string]interface{}) (string, error) {
 	return string(content), nil
 }
 
-func searchFiles(args map[string]interface{}) (string, error) {
+func searchFiles(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -391,7 +392,7 @@ func isBinary(data []byte) bool {
 	return false
 }
 
-func getFileDiff(args map[string]interface{}) (string, error) {
+func getFileDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	file1, _ := args["file1"].(string)
 	file2, _ := args["file2"].(string)
 
@@ -402,7 +403,7 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("diff", "-u", file1, file2)
+	cmd := exec.CommandContext(ctx, "diff", "-u", file1, file2)
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {
@@ -412,7 +413,7 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func writeFile(args map[string]interface{}) (string, error) {
+func writeFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	content, _ := args["content"].(string)
 
@@ -439,7 +440,7 @@ func writeFile(args map[string]interface{}) (string, error) {
 	return "File written successfully.", nil
 }
 
-func replaceText(args map[string]interface{}) (string, error) {
+func replaceText(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
@@ -472,7 +473,7 @@ func replaceText(args map[string]interface{}) (string, error) {
 	return "File updated successfully.", nil
 }
 
-func findFile(args map[string]interface{}) (string, error) {
+func findFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -521,7 +522,7 @@ func findFile(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func grepDefinitions(args map[string]interface{}) (string, error) {
+func grepDefinitions(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -620,7 +621,7 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func getFileSkeleton(args map[string]interface{}) (string, error) {
+func getFileSkeleton(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")

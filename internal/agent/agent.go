@@ -564,7 +564,7 @@ func (a *Agent) executeTool(call *api.FunctionCall) string {
 
 	resChan := make(chan string, 1)
 	go func() {
-		result, err := a.registry.Execute(call.Name, call.Args)
+		result, err := a.registry.Execute(ctx, call.Name, call.Args)
 		if err != nil {
 			resChan <- fmt.Sprintf("Error: %v", err)
 		} else {

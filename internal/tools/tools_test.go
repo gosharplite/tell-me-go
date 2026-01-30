@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"testing"
 
 	"google.golang.org/genai"
@@ -38,11 +39,12 @@ func TestRegistry_SerialProperty(t *testing.T) {
 
 func TestRegistry_Execute(t *testing.T) {
 	r := NewRegistry()
-	r.Register(&genai.FunctionDeclaration{Name: "test"}, func(args map[string]interface{}) (string, error) {
+	ctx := context.Background()
+	r.Register(&genai.FunctionDeclaration{Name: "test"}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		return "success", nil
 	})
 
-	res, err := r.Execute("test", nil)
+	res, err := r.Execute(ctx, "test", nil)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
@@ -50,7 +52,7 @@ func TestRegistry_Execute(t *testing.T) {
 		t.Errorf("expected success, got %s", res)
 	}
 
-	_, err = r.Execute("unknown", nil)
+	_, err = r.Execute(ctx, "unknown", nil)
 	if err == nil {
 		t.Error("expected error for unknown tool")
 	}

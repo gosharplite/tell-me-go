@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,7 @@ func Helper() int { return 42 }
 
 	t.Run("grep_definitions", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir}
-		res, err := grepDefinitions(args)
+		res, err := grepDefinitions(context.Background(), args)
 		if err != nil {
 			t.Fatalf("grepDefinitions failed: %v", err)
 		}
@@ -48,7 +49,7 @@ func Helper() int { return 42 }
 
 	t.Run("get_file_skeleton", func(t *testing.T) {
 		args := map[string]interface{}{"filepath": filePath}
-		res, err := getFileSkeleton(args)
+		res, err := getFileSkeleton(context.Background(), args)
 		if err != nil {
 			t.Fatalf("getFileSkeleton failed: %v", err)
 		}
@@ -59,7 +60,7 @@ func Helper() int { return 42 }
 
 	t.Run("find_usages", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir, "query": "MyStruct"}
-		res, err := findUsages(args)
+		res, err := findUsages(context.Background(), args)
 		if err != nil {
 			t.Fatalf("findUsages failed: %v", err)
 		}
@@ -70,7 +71,7 @@ func Helper() int { return 42 }
 
 	t.Run("getTypeInfo", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir, "typename": "MyStruct"}
-		res, err := getTypeInfo(args)
+		res, err := getTypeInfo(context.Background(), args)
 		if err != nil {
 			t.Fatalf("getTypeInfo failed: %v", err)
 		}
@@ -81,7 +82,7 @@ func Helper() int { return 42 }
 
 	t.Run("listImplementations", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir}
-		res, err := listImplementations(args)
+		res, err := listImplementations(context.Background(), args)
 		if err != nil {
 			t.Fatalf("listImplementations failed: %v", err)
 		}
@@ -113,7 +114,7 @@ var ref = OldFunction
 			"new_name": "NewFunction",
 		}
 
-		res, err := renameSymbol(args)
+		res, err := renameSymbol(context.Background(), args)
 		if err != nil {
 			t.Fatalf("renameSymbol failed: %v", err)
 		}

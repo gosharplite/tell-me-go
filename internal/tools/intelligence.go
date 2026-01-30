@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -273,7 +274,7 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	return sb.String(), nil
 }
 
-func renameSymbol(args map[string]interface{}) (string, error) {
+func renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
 	oldName, _ := args["old_name"].(string)
 	newName, _ := args["new_name"].(string)
 	path, ok := args["path"].(string)
@@ -334,7 +335,7 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
 }
 
-func listTodos(args map[string]interface{}) (string, error) {
+func listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -386,13 +387,13 @@ func listTodos(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func goDoc(args map[string]interface{}) (string, error) {
+func goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
 	TerminalMutex.Unlock()
 
-	cmd := exec.Command("go", "doc", symbol)
+	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out)), nil
@@ -401,7 +402,7 @@ func goDoc(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func analyzeComplexity(args map[string]interface{}) (string, error) {
+func analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["path"].(string)
 	if err := IsPathSafe(path); err != nil {
 		return "", err
@@ -467,12 +468,12 @@ func analyzeComplexity(args map[string]interface{}) (string, error) {
 	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
 }
 
-func getPackageGraph(args map[string]interface{}) (string, error) {
+func getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
 	TerminalMutex.Unlock()
 
-	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
+	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out)), nil
@@ -483,7 +484,7 @@ func getPackageGraph(args map[string]interface{}) (string, error) {
 	sb.WriteString("Internal Package Dependency Graph:\n")
 
 	// Get module name to filter for internal imports
-	modCmd := exec.Command("go", "list", "-m")
+	modCmd := exec.CommandContext(ctx, "go", "list", "-m")
 	modOut, _ := modCmd.Output()
 	modName := strings.TrimSpace(string(modOut))
 
@@ -591,7 +592,7 @@ func exprToString(expr ast.Expr) string {
 
 // New Intelligence Tools Implementation
 
-func findUsages(args map[string]interface{}) (string, error) {
+func findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
@@ -636,7 +637,7 @@ func findUsages(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func listImplementations(args map[string]interface{}) (string, error) {
+func listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
@@ -751,7 +752,7 @@ func listImplementations(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getTypeInfo(args map[string]interface{}) (string, error) {
+func getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
 	typename, _ := args["typename"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
@@ -840,7 +841,7 @@ func getTypeInfo(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getProjectSummary(args map[string]interface{}) (string, error) {
+func getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -904,7 +905,7 @@ func getProjectSummary(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func searchUsagesGlobally(args map[string]interface{}) (string, error) {
+func searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	re, err := regexp.Compile(query)
 	if err != nil {
@@ -968,17 +969,17 @@ func searchUsagesGlobally(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func semanticDiff(args map[string]interface{}) (string, error) {
+func semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	target, _ := args["target"].(string)
 
 	// Get stat summary
-	statOut, err := exec.Command("git", "diff", "--stat", target).CombinedOutput()
+	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git diff --stat failed: %s", string(statOut))
 	}
 
 	// Get summary of changes
-	summaryOut, err := exec.Command("git", "diff", "--summary", target).CombinedOutput()
+	summaryOut, err := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
 	}
@@ -991,7 +992,7 @@ func semanticDiff(args map[string]interface{}) (string, error) {
 	sb.WriteString(string(summaryOut))
 
 	// Try to extract changed Go functions if it's a small diff
-	funcDiff, err := exec.Command("git", "diff", "-U0", "--no-color", target).CombinedOutput()
+	funcDiff, err := exec.CommandContext(ctx, "git", "diff", "-U0", "--no-color", target).CombinedOutput()
 	if err == nil {
 		sb.WriteString("\nLogical Changes (Functions):\n")
 		lines := strings.Split(string(funcDiff), "\n")

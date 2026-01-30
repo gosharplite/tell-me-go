@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -77,7 +78,7 @@ func RegisterDevTools(r *Registry) {
 	}, checkVulnerabilities)
 }
 
-func runTests(args map[string]interface{}) (string, error) {
+func runTests(ctx context.Context, args map[string]interface{}) (string, error) {
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
 		return "", fmt.Errorf("command argument is required")
@@ -113,7 +114,7 @@ func runTests(args map[string]interface{}) (string, error) {
 	TerminalMutex.Unlock()
 
 	// Execute the command directly without shell wrapper
-	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
 
 	outStr := string(output)
@@ -130,17 +131,17 @@ func runTests(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("FAIL:\n%s", outStr), nil
 }
 
-func goTidy(args map[string]interface{}) (string, error) {
+func goTidy(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
 	TerminalMutex.Unlock()
 
-	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("go mod tidy failed: %s", string(out))
 	}
 
-	fmtCmd := exec.Command("go", "fmt", "./...")
+	fmtCmd := exec.CommandContext(ctx, "go", "fmt", "./...")
 	if out, err := fmtCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("go fmt failed: %s", string(out))
 	}
@@ -148,7 +149,7 @@ func goTidy(args map[string]interface{}) (string, error) {
 	return "Success: Project tidied and formatted.", nil
 }
 
-func getCoverage(args map[string]interface{}) (string, error) {
+func getCoverage(ctx context.Context, args map[string]interface{}) (string, error) {
 	path := "./..."
 	if p, ok := args["path"].(string); ok && p != "" {
 		path = p
@@ -158,7 +159,7 @@ func getCoverage(args map[string]interface{}) (string, error) {
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
 	TerminalMutex.Unlock()
 
-	cmd := exec.Command("go", "test", "-coverprofile=coverage.out", path)
+	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", path)
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -166,7 +167,7 @@ func getCoverage(args map[string]interface{}) (string, error) {
 	}
 
 	// Get summary
-	summaryCmd := exec.Command("go", "tool", "cover", "-func=coverage.out")
+	summaryCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func=coverage.out")
 	summaryOut, err := summaryCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Failed to generate coverage summary: %v", err), nil
@@ -183,7 +184,7 @@ func getCoverage(args map[string]interface{}) (string, error) {
 	return string(summaryOut), nil
 }
 
-func runLinter(args map[string]interface{}) (string, error) {
+func runLinter(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
 	TerminalMutex.Unlock()
@@ -191,9 +192,9 @@ func runLinter(args map[string]interface{}) (string, error) {
 	// Try golangci-lint first, fallback to staticcheck
 	var cmd *exec.Cmd
 	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		cmd = exec.Command("golangci-lint", "run")
+		cmd = exec.CommandContext(ctx, "golangci-lint", "run")
 	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		cmd = exec.Command("staticcheck", "./...")
+		cmd = exec.CommandContext(ctx, "staticcheck", "./...")
 	} else {
 		return "Error: No supported linter found (golangci-lint or staticcheck).", nil
 	}
@@ -211,7 +212,7 @@ func runLinter(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func runBenchmark(args map[string]interface{}) (string, error) {
+func runBenchmark(ctx context.Context, args map[string]interface{}) (string, error) {
 	path := "./..."
 	if p, ok := args["path"].(string); ok && p != "" {
 		path = p
@@ -225,7 +226,7 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
 	TerminalMutex.Unlock()
 
-	cmd := exec.Command("go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
+	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Benchmark failed:\n%s", string(out)), nil
@@ -234,7 +235,7 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func checkVulnerabilities(args map[string]interface{}) (string, error) {
+func checkVulnerabilities(ctx context.Context, args map[string]interface{}) (string, error) {
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
 	TerminalMutex.Unlock()
@@ -243,7 +244,7 @@ func checkVulnerabilities(args map[string]interface{}) (string, error) {
 		return "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest", nil
 	}
 
-	cmd := exec.Command("govulncheck", "./...")
+	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {

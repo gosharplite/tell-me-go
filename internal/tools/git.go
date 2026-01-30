@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -80,33 +81,33 @@ func RegisterGitTools(r *Registry) {
 	}, getGitBlame)
 }
 
-func getGitStatus(args map[string]interface{}) (string, error) {
-	return runGitCommand("status", "--short")
+func getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
+	return runGitCommand(ctx, "status", "--short")
 }
 
-func getGitDiff(args map[string]interface{}) (string, error) {
+func getGitDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	staged, _ := args["staged"].(bool)
 	if staged {
-		return runGitCommand("diff", "--staged")
+		return runGitCommand(ctx, "diff", "--staged")
 	}
-	return runGitCommand("diff")
+	return runGitCommand(ctx, "diff")
 }
 
-func getGitLog(args map[string]interface{}) (string, error) {
+func getGitLog(ctx context.Context, args map[string]interface{}) (string, error) {
 	limit := 10
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	return runGitCommand("log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	return runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 }
 
-func getGitCommit(args map[string]interface{}) (string, error) {
+func getGitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
 	hash, ok := args["hash"].(string)
 	if !ok || hash == "" {
 		return "", fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
-	out, err := runGitCommand("show", "--stat", "--patch", hash)
+	out, err := runGitCommand(ctx, "show", "--stat", "--patch", hash)
 	if err != nil {
 		return out, err
 	}
@@ -117,7 +118,7 @@ func getGitCommit(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func getGitBlame(args map[string]interface{}) (string, error) {
+func getGitBlame(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
@@ -127,11 +128,11 @@ func getGitBlame(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
-	return runGitCommand("blame", "-w", path)
+	return runGitCommand(ctx, "blame", "-w", path)
 }
 
-func runGitCommand(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+func runGitCommand(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("git command failed: %w", err)
