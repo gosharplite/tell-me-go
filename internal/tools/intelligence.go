@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/tools/imports"
 	"google.golang.org/genai"
 )
 
@@ -517,80 +518,25 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		return "", err
 	}
 
-	// Update destination file
-	// We need to handle imports from movedDecls.
-	// This is complex. For now, let's just append and let the user fix imports,
-	// OR try a naive import copy.
-
-	// Collect imports used in movedDecls
-	neededImports := make(map[string]*ast.ImportSpec)
-	for _, decl := range movedDecls {
-		ast.Inspect(decl, func(n ast.Node) bool {
-			if sel, ok := n.(*ast.SelectorExpr); ok {
-				if x, ok := sel.X.(*ast.Ident); ok {
-					// Check if x.Name is an imported package in src
-					for _, imp := range srcFile.Imports {
-						pkgName := ""
-						if imp.Name != nil {
-							pkgName = imp.Name.Name
-						} else {
-							// Infer from path
-							path := strings.Trim(imp.Path.Value, "\"")
-							parts := strings.Split(path, "/")
-							pkgName = parts[len(parts)-1]
-						}
-						if pkgName == x.Name {
-							neededImports[imp.Path.Value] = imp
-						}
-					}
-				}
-			}
-			return true
-		})
-	}
-
-	// Add missing imports to dstFile
-	for path, spec := range neededImports {
-		found := false
-		for _, imp := range dstFile.Imports {
-			if imp.Path.Value == path {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// Add to dstFile
-			newImp := &ast.ImportSpec{
-				Path: spec.Path,
-				Name: spec.Name,
-			}
-			// Find or create GenDecl for imports
-			added := false
-			for _, d := range dstFile.Decls {
-				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
-					gd.Specs = append(gd.Specs, newImp)
-					added = true
-					break
-				}
-			}
-			if !added {
-				newGd := &ast.GenDecl{
-					Tok:   token.IMPORT,
-					Specs: []ast.Spec{newImp},
-				}
-				dstFile.Decls = append([]ast.Decl{newGd}, dstFile.Decls...)
-			}
-		}
-	}
-
 	dstFile.Decls = append(dstFile.Decls, movedDecls...)
 
 	var dstBuf bytes.Buffer
 	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
 		return "", fmt.Errorf("failed to format destination file: %w", err)
 	}
-	if err := AtomicWrite(dstPath, dstBuf.Bytes(), 0644); err != nil {
+
+	formatted, err := imports.Process(dstPath, dstBuf.Bytes(), nil)
+	if err != nil {
+		// Fallback to raw formatted content if imports.Process fails
+		formatted = dstBuf.Bytes()
+	}
+
+	if err := AtomicWrite(dstPath, formatted, 0644); err != nil {
 		return "", err
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
 	}
 
 	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
