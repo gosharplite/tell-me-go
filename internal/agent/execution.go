@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
-func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
-	var functionCalls []*api.FunctionCall
+func (a *Agent) handleToolExecution(respContent *types.Content, turn int) error {
+	var functionCalls []*types.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
 			functionCalls = append(functionCalls, part.FunctionCall)
@@ -39,14 +39,14 @@ func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
 	a.logToolCalls(functionCalls, turn)
 	responseParts := a.executeToolsConcurrently(functionCalls)
 
-	a.history.AddContent(&api.Content{
+	a.history.AddContent(&types.Content{
 		Role:  "user",
 		Parts: responseParts,
 	})
 	return nil
 }
 
-func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
+func (a *Agent) logToolCalls(calls []*types.FunctionCall, turn int) {
 	a.sm.TerminalLock()
 	defer a.sm.TerminalUnlock()
 
@@ -77,8 +77,8 @@ func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
 	}
 }
 
-func (a *Agent) executeToolsConcurrently(calls []*api.FunctionCall) []*api.Part {
-	results := make([]*api.Part, len(calls))
+func (a *Agent) executeToolsConcurrently(calls []*types.FunctionCall) []*types.Part {
+	results := make([]*types.Part, len(calls))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, a.maxConcurrentTools)
 
@@ -93,7 +93,7 @@ func (a *Agent) executeToolsConcurrently(calls []*api.FunctionCall) []*api.Part 
 		} else {
 			// Parallel Execution:
 			wg.Add(1)
-			go func(idx int, call *api.FunctionCall) {
+			go func(idx int, call *types.FunctionCall) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
@@ -112,7 +112,7 @@ func (a *Agent) isSerialTool(name string) bool {
 	return a.registry.IsSerial(name)
 }
 
-func (a *Agent) executeTool(call *api.FunctionCall) string {
+func (a *Agent) executeTool(call *types.FunctionCall) string {
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -143,7 +143,7 @@ func (a *Agent) executeTool(call *api.FunctionCall) string {
 	}
 }
 
-func (a *Agent) processToolResult(name, result string) *api.Part {
+func (a *Agent) processToolResult(name, result string) *types.Part {
 	// Multi-modal image injection logic
 	if strings.HasPrefix(result, "MULTI_MODAL_IMAGE|") {
 		parts := strings.SplitN(result, "|", 4)
@@ -152,8 +152,8 @@ func (a *Agent) processToolResult(name, result string) *api.Part {
 			b64Data := parts[2]
 			displayMsg := parts[3]
 
-			p := &api.Part{
-				FunctionResponse: &api.FunctionResponse{
+			p := &types.Part{
+				FunctionResponse: &types.FunctionResponse{
 					Name:     name,
 					Response: map[string]interface{}{"result": displayMsg},
 				},
@@ -164,23 +164,23 @@ func (a *Agent) processToolResult(name, result string) *api.Part {
 		}
 	}
 
-	return &api.Part{
-		FunctionResponse: &api.FunctionResponse{
+	return &types.Part{
+		FunctionResponse: &types.FunctionResponse{
 			Name:     name,
 			Response: map[string]interface{}{"result": result},
 		},
 	}
 }
 
-func (a *Agent) injectBinaryData(parts []*api.Part) []*api.Part {
-	var finalParts []*api.Part
+func (a *Agent) injectBinaryData(parts []*types.Part) []*types.Part {
+	var finalParts []*types.Part
 	for _, p := range parts {
 		if strings.HasPrefix(p.Text, "INJECT:") {
 			injectParts := strings.SplitN(p.Text, ":", 3)
 			p.Text = "" // Clear the marker
 			if len(injectParts) == 3 {
 				data, _ := base64.StdEncoding.DecodeString(injectParts[2])
-				finalParts = append(finalParts, &api.Part{
+				finalParts = append(finalParts, &types.Part{
 					InlineData: &genai.Blob{
 						MIMEType: injectParts[1],
 						Data:     data,

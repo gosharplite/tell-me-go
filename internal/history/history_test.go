@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -147,7 +147,7 @@ func TestHistoryManager_Prune(t *testing.T) {
 			// Clone manager state for each test case
 			m2 := NewManager("dummy.json")
 			for _, c := range m.Contents {
-				_ = m2.AddContent(&api.Content{Role: c.Role, Parts: c.Parts})
+				_ = m2.AddContent(&types.Content{Role: c.Role, Parts: c.Parts})
 			}
 
 			m2.Prune(tt.maxTurns)

@@ -9,10 +9,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-func (a *Agent) estimatePayloadTokens(contents []*api.Content) int {
+func (a *Agent) estimatePayloadTokens(contents []*types.Content) int {
 	charCount := 0
 
 	// 1. Tool Declarations overhead

@@ -648,12 +648,12 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 	return sb.String(), nil
 }
 
-func splitCommand(cmd string) []string {
+func splitCommand(cmd string) ([]string, error) {
 	parts, err := shlex.Split(cmd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return parts
+	return parts, nil
 }
 
 func (m *systemManager) isSafeCommand(command string) bool {
@@ -665,8 +665,8 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		"go": true, // Adding go to whitelist but it will still need path checks
 	}
 
-	parts := splitCommand(command)
-	if len(parts) == 0 {
+	parts, err := splitCommand(command)
+	if err != nil || len(parts) == 0 {
 		return false
 	}
 	base := parts[0]
@@ -829,7 +829,10 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	parts := splitCommand(command)
+	parts, err := splitCommand(command)
+	if err != nil {
+		return fmt.Sprintf("Error parsing command: %v", err), nil
+	}
 	if len(parts) == 0 {
 		return "Error: Empty command", nil
 	}
@@ -873,7 +876,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		}
 	}
 
-	err := cmd.Wait()
+	err = cmd.Wait()
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	output := sb.String()
@@ -964,12 +967,23 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 
 	cmds := make([]*exec.Cmd, len(commands))
 	for i, cmdStr := range commands {
-		parts := splitCommand(cmdStr)
+		parts, err := splitCommand(cmdStr)
+		if err != nil {
+			return fmt.Sprintf("Error parsing command at index %d: %v", i, err), nil
+		}
 		if len(parts) == 0 {
 			return fmt.Sprintf("Error: Empty command at index %d", i), nil
 		}
 		cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
 	}
+
+	// Track pipes to ensure they are closed on startup failure
+	var pipes []io.Closer
+	defer func() {
+		for _, p := range pipes {
+			_ = p.Close()
+		}
+	}()
 
 	// Setup pipes
 	for i := 0; i < len(cmds)-1; i++ {
@@ -977,6 +991,7 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		if err != nil {
 			return "", fmt.Errorf("failed to create pipe for command %d: %w", i, err)
 		}
+		pipes = append(pipes, pipe)
 		cmds[i+1].Stdin = pipe
 	}
 
@@ -987,6 +1002,8 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	stdout, _ := lastCmd.StdoutPipe()
 	stderr, _ := lastCmd.StderrPipe()
 	multi := io.MultiReader(stdout, stderr)
+	// These pipes are also managed by the cmd, but we add them to our closer just in case of start failure
+	pipes = append(pipes, stdout, stderr)
 
 	var file *os.File
 	if outputFile != "" {
@@ -1010,6 +1027,10 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 			return fmt.Sprintf("Command %d (%s) failed to start: %v", i, commands[i], err), nil
 		}
 	}
+
+	// After all commands started successfully, Wait() will eventually close the pipes.
+	// We clear the pipes slice so the deferred Close() calls don't interfere with Wait().
+	pipes = nil
 
 	// Stream output of the last command
 	scanner := bufio.NewScanner(multi)

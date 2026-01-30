@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-func (a *Agent) logUsage(m *api.Metrics) {
+func (a *Agent) logUsage(m *types.Metrics) {
 	if a.logFile == "" || m == nil {
 		return
 	}
@@ -39,7 +39,7 @@ func (a *Agent) logUsage(m *api.Metrics) {
 	_, _ = f.WriteString(logLine)
 }
 
-func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCall bool) {
+func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPostCall bool) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
 	timestamp := time.Now().Format("15:04:05")
@@ -88,7 +88,7 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCa
 	}
 }
 
-func (a *Agent) renderResponse(respContent *api.Content) {
+func (a *Agent) renderResponse(respContent *types.Content) {
 	for _, part := range respContent.Parts {
 		if a.showThoughts && part.Thought && part.Text != "" {
 			a.sm.TerminalLock()

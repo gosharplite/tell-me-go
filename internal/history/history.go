@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -19,15 +19,15 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	FilePath string
-	Contents []*api.Content
-	backup   []*api.Content // Keep a copy of the state before the current user prompt
+	Contents []*types.Content
+	backup   []*types.Content // Keep a copy of the state before the current user prompt
 }
 
 // NewManager creates a new history manager for the given file path.
 func NewManager(filePath string) *Manager {
 	return &Manager{
 		FilePath: filePath,
-		Contents: []*api.Content{},
+		Contents: []*types.Content{},
 	}
 }
 
@@ -36,7 +36,7 @@ func (m *Manager) Load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
-		m.Contents = []*api.Content{}
+		m.Contents = []*types.Content{}
 		return nil
 	}
 
@@ -66,11 +66,11 @@ func (m *Manager) repairLocked() {
 		return
 	}
 
-	var responses []*api.Part
+	var responses []*types.Part
 	for _, p := range last.Parts {
 		if p.FunctionCall != nil {
-			responses = append(responses, &api.Part{
-				FunctionResponse: &api.FunctionResponse{
+			responses = append(responses, &types.Part{
+				FunctionResponse: &types.FunctionResponse{
 					Name:     p.FunctionCall.Name,
 					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
 				},
@@ -79,7 +79,7 @@ func (m *Manager) repairLocked() {
 	}
 
 	if len(responses) > 0 {
-		m.Contents = append(m.Contents, &api.Content{
+		m.Contents = append(m.Contents, &types.Content{
 			Role:  "user",
 			Parts: responses,
 		})
@@ -102,7 +102,7 @@ func (m *Manager) saveLocked() error {
 	// Clean up history: remove empty parts or parts with no content.
 	// If a message would become empty, we add a placeholder to prevent API errors (400 INVALID_ARGUMENT).
 	for _, content := range m.Contents {
-		var cleanParts []*api.Part
+		var cleanParts []*types.Part
 		for _, p := range content.Parts {
 			if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
 				continue
@@ -110,7 +110,7 @@ func (m *Manager) saveLocked() error {
 			cleanParts = append(cleanParts, p)
 		}
 		if len(cleanParts) == 0 {
-			cleanParts = append(cleanParts, &api.Part{Text: "[empty response]"})
+			cleanParts = append(cleanParts, &types.Part{Text: "[empty response]"})
 		}
 		content.Parts = cleanParts
 	}
@@ -136,20 +136,20 @@ func (m *Manager) saveLocked() error {
 func (m *Manager) AddEntry(role, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.addContentLocked(&api.Content{
+	return m.addContentLocked(&types.Content{
 		Role:  role,
-		Parts: []*api.Part{{Text: text}},
+		Parts: []*types.Part{{Text: text}},
 	})
 }
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
-func (m *Manager) AddContent(content *api.Content) error {
+func (m *Manager) AddContent(content *types.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.addContentLocked(content)
 }
 
-func (m *Manager) addContentLocked(content *api.Content) error {
+func (m *Manager) addContentLocked(content *types.Content) error {
 	// 1. Validate role alternation
 	if len(m.Contents) > 0 {
 		lastRole := m.Contents[len(m.Contents)-1].Role
@@ -171,7 +171,7 @@ func (m *Manager) addContentLocked(content *api.Content) error {
 func (m *Manager) Snapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.backup = make([]*api.Content, len(m.Contents))
+	m.backup = make([]*types.Content, len(m.Contents))
 	copy(m.backup, m.Contents)
 }
 
@@ -216,11 +216,11 @@ func (m *Manager) Prune(maxTurns int) int {
 }
 
 // GetContents returns the current history contents.
-func (m *Manager) GetContents() []*api.Content {
+func (m *Manager) GetContents() []*types.Content {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	// Return a copy to be safe?
-	contents := make([]*api.Content, len(m.Contents))
+	contents := make([]*types.Content, len(m.Contents))
 	copy(contents, m.Contents)
 	return contents
 }

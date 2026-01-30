@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -53,7 +54,7 @@ func TestAgent_LogUsage(t *testing.T) {
 	a := New(nil, nil, nil, sm)
 	a.SetLogFile(logFile)
 
-	metrics := &api.Metrics{
+	metrics := &types.Metrics{
 		CachedTokens:   100,
 		PromptTokens:   150,
 		ResponseTokens: 50,
@@ -90,13 +91,13 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 	sm := tools.NewSecurityManager()
 	a := New(nil, nil, registry, sm)
 
-	contents := []*api.Content{
+	contents := []*types.Content{
 		{
 			Role: "user",
-			Parts: []*api.Part{
+			Parts: []*types.Part{
 				{Text: "Hello world"},
-				{FunctionCall: &api.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
-				{FunctionResponse: &api.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
+				{FunctionCall: &types.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
+				{FunctionResponse: &types.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
 			},
 		},
 	}

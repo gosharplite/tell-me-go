@@ -45,16 +45,22 @@ func TestSplitCommand(t *testing.T) {
 	tests := []struct {
 		cmd      string
 		expected []string
+		wantErr  bool
 	}{
-		{"ls -la", []string{"ls", "-la"}},
-		{"grep \"hello world\" file.txt", []string{"grep", "hello world", "file.txt"}},
-		{"echo \"\"", []string{"echo", ""}},
-		{"echo \"   \"", []string{"echo", "   "}},
-		{"", nil},
+		{"ls -la", []string{"ls", "-la"}, false},
+		{"grep \"hello world\" file.txt", []string{"grep", "hello world", "file.txt"}, false},
+		{"echo \"\"", []string{"echo", ""}, false},
+		{"echo \"   \"", []string{"echo", "   "}, false},
+		{"echo \"unclosed quote", nil, true},
+		{"", nil, false},
 	}
 
 	for _, tt := range tests {
-		got := splitCommand(tt.cmd)
+		got, err := splitCommand(tt.cmd)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("splitCommand(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+			continue
+		}
 		if len(got) != len(tt.expected) {
 			t.Errorf("splitCommand(%q) length = %d, want %d", tt.cmd, len(got), len(tt.expected))
 			continue

@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 var (
@@ -116,9 +117,9 @@ func (a *Agent) SetPrunedTurns(n int) {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
-	a.history.AddContent(&api.Content{
+	a.history.AddContent(&types.Content{
 		Role:  "user",
-		Parts: []*api.Part{{Text: prompt}},
+		Parts: []*types.Part{{Text: prompt}},
 	})
 	a.saveHistory() // Persist initial user prompt immediately
 
@@ -188,8 +189,8 @@ func (a *Agent) saveHistory() {
 	}
 }
 
-func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, currentTurns int) []*api.Content {
-	apiContents := make([]*api.Content, len(contents))
+func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, currentTurns int) []*types.Content {
+	apiContents := make([]*types.Content, len(contents))
 	copy(apiContents, contents)
 
 	warning := a.getTurnWarning(turn)
@@ -212,12 +213,12 @@ func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, curren
 		lastIdx := len(apiContents) - 1
 		orig := apiContents[lastIdx]
 		// Clone only the content that receives the warning
-		cloned := &api.Content{
+		cloned := &types.Content{
 			Role:  orig.Role,
-			Parts: make([]*api.Part, len(orig.Parts)),
+			Parts: make([]*types.Part, len(orig.Parts)),
 		}
 		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &api.Part{
+		cloned.Parts = append(cloned.Parts, &types.Part{
 			Text: "\n\n" + warning,
 		})
 		apiContents[lastIdx] = cloned
@@ -230,7 +231,7 @@ func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, curren
 	return apiContents
 }
 
-func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics, error) {
+func (a *Agent) sendChat(apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
 	toolsSDK := a.registry.ToToolSDK()
 	respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
 
@@ -248,7 +249,7 @@ func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics
 	return respContent, metrics, err
 }
 
-func (a *Agent) hasToolCalls(content *api.Content) bool {
+func (a *Agent) hasToolCalls(content *types.Content) bool {
 	for _, part := range content.Parts {
 		if part.FunctionCall != nil {
 			return true

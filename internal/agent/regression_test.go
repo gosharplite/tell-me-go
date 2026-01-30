@@ -10,6 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -18,15 +19,15 @@ type MockClient struct {
 	ResponseText string
 }
 
-func (m *MockClient) SendChat(history []*api.Content, tools []*genai.Tool) (*api.Content, *api.Metrics, error) {
+func (m *MockClient) SendChat(history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
 	// Simulate an empty response if specifically requested
 	if m.ResponseText == "EMPTY" {
-		return &api.Content{Role: "model", Parts: []*api.Part{}}, &api.Metrics{}, nil
+		return &types.Content{Role: "model", Parts: []*types.Part{}}, &types.Metrics{}, nil
 	}
-	return &api.Content{
+	return &types.Content{
 		Role:  "model",
-		Parts: []*api.Part{{Text: m.ResponseText}},
-	}, &api.Metrics{TotalTokens: 100}, nil
+		Parts: []*types.Part{{Text: m.ResponseText}},
+	}, &types.Metrics{TotalTokens: 100}, nil
 }
 
 func (m *MockClient) RefreshAuth() error { return nil }
@@ -39,9 +40,9 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	h := history.NewManager(tmpFile)
 
 	// Manually add a content with no parts (which previously caused 400 error)
-	_ = h.AddContent(&api.Content{
+	_ = h.AddContent(&types.Content{
 		Role:  "user",
-		Parts: []*api.Part{},
+		Parts: []*types.Part{},
 	})
 
 	if err := h.Save(); err != nil {
