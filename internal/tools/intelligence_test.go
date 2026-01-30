@@ -91,6 +91,8 @@ func Helper() int { return 42 }
 	})
 
 	t.Run("renameSymbol", func(t *testing.T) {
+		os.Setenv("TELL_ME_MOCK_ANSWER", "y")
+		defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 		// Setup specific file for renaming to test AST logic vs Text replacement
 		renameCode := `package test
 
