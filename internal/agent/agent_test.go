@@ -514,3 +514,34 @@ func TestAgent_RefreshLimits(t *testing.T) {
 		t.Errorf("expected maxToolTurns 15, got %d", a.maxToolTurns)
 	}
 }
+
+func TestAgent_RefreshLimits_YAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	yamlPath := filepath.Join(tmpDir, "config.yaml")
+
+	sm := tools.NewSecurityManager()
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
+	a.SetLimits(10, 1000, 20)
+
+	// Set the main config path
+	a.SetMainConfigPath(yamlPath)
+
+	// Create YAML config file
+	yamlContent := "MAX_HISTORY_TOKENS: 200000\nMAX_TURNS: 25\nMAX_HISTORY_TURNS: 30"
+	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write yaml config file: %v", err)
+	}
+
+	a.refreshLimits()
+
+	if a.maxHistoryTokens != 200000 {
+		t.Errorf("expected maxHistoryTokens 200000, got %d", a.maxHistoryTokens)
+	}
+	if a.maxToolTurns != 25 {
+		t.Errorf("expected maxToolTurns 25, got %d", a.maxToolTurns)
+	}
+	if a.maxHistoryTurns != 30 {
+		t.Errorf("expected maxHistoryTurns 30, got %d", a.maxHistoryTurns)
+	}
+}

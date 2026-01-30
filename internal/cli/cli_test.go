@@ -94,6 +94,7 @@ func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
+func (m *mockChatter) SetMainConfigPath(path string)                        {}
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output
