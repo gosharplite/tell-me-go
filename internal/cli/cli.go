@@ -114,7 +114,7 @@ func (a *App) Run(args []string) error {
 	bypassPath := filepath.Join(modeDir, "bypass.log")
 	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
-		// 5. Initialize Components
+	// 5. Initialize Components
 	a.sm.SetSafePathsFile(safePathsPath)
 	a.sm.SetReadOnlyPathsFile(readPathsPath)
 	a.sm.SetBypassFile(bypassPath)
@@ -184,7 +184,7 @@ func (a *App) Run(args []string) error {
 		return fmt.Errorf("error creating client: %v", err)
 	}
 
-		registry := tools.NewRegistry()
+	registry := tools.NewRegistry()
 	tools.RegisterFileSystemTools(registry, a.sm)
 	tools.RegisterIntelligenceTools(registry, a.sm)
 	tools.RegisterSystemTools(registry, a.sm)
