@@ -41,10 +41,48 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 					Type:        genai.TypeString,
 					Description: "A short explanation of why this command needs to be executed.",
 				},
+				"output_file": {
+					Type:        genai.TypeString,
+					Description: "Optional: Redirect output to this file.",
+				},
+				"append": {
+					Type:        genai.TypeBoolean,
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
 			},
 			Required: []string{"command"},
 		},
 	}, m.executeCommand, ToolOptions{Serial: true})
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "pipe_commands",
+		Description: "Executes a sequence of commands, piping the output of each to the next.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"commands": {
+					Type: genai.TypeArray,
+					Items: &genai.Schema{
+						Type: genai.TypeString,
+					},
+					Description: "The sequence of commands to pipe (e.g., ['ls -la', 'grep .go']).",
+				},
+				"reason": {
+					Type:        genai.TypeString,
+					Description: "A short explanation of why this pipeline needs to be executed.",
+				},
+				"output_file": {
+					Type:        genai.TypeString,
+					Description: "Optional: Redirect the final output to this file.",
+				},
+				"append": {
+					Type:        genai.TypeBoolean,
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
+			},
+			Required: []string{"commands"},
+		},
+	}, m.pipeCommands, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
@@ -609,15 +647,40 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 	return sb.String(), nil
 }
 
+func splitCommand(cmd string) []string {
+	var parts []string
+	var current strings.Builder
+	inQuotes := false
+	for _, r := range cmd {
+		if r == '"' {
+			inQuotes = !inQuotes
+			continue
+		}
+		if r == ' ' && !inQuotes {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(r)
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
+}
+
 func (m *systemManager) isSafeCommand(command string) bool {
 	// Whitelist of allowed base commands (strict exact match)
 	safeCommands := map[string]bool{
 		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
 		"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
+		"go": true, // Adding go to whitelist but it will still need path checks
 	}
 
-	parts := strings.Fields(command)
+	parts := splitCommand(command)
 	if len(parts) == 0 {
 		return false
 	}
@@ -634,7 +697,6 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		for i := 1; i < len(parts); i++ {
 			if strings.HasPrefix(parts[i], "-") {
 				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
-				// Note: git -Cpath is also valid, but parts[i] would be "-Cpath" and start with "-".
 				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
 					i++
 				}
@@ -658,7 +720,25 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		}
 	}
 
-	// 3. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	// 3. Specialized check for 'go': Only allow read-only or build/test subcommands
+	if base == "go" {
+		sub := ""
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				continue
+			}
+			sub = parts[i]
+			break
+		}
+		allowedGo := map[string]bool{
+			"test": true, "list": true, "help": true, "version": true, "env": true,
+		}
+		if !allowedGo[sub] {
+			return false
+		}
+	}
+
+	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
 	// We are extremely strict here to prevent shell injection.
 	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
 	for _, char := range unsafeChars {
@@ -667,16 +747,24 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		}
 	}
 
-	// 3. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
 	for i := 1; i < len(parts); i++ {
-		arg := strings.Trim(parts[i], "\"'")
+		arg := parts[i]
 		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
 			// Skip empty args and simple flags like -la
 			continue
 		}
+		// If it's a flag with a path like --config=path
+		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
+			arg = strings.SplitN(arg, "=", 2)[1]
+		}
+
 		if err := m.sm.IsPathSafe(arg); err != nil {
-			fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
-			return false
+			// Some args might not be paths, but we try to check them anyway if they look like paths
+			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
+				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
+				return false
+			}
 		}
 	}
 
@@ -693,6 +781,14 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	}
 
 	reason, _ := args["reason"].(string)
+	outputFile, _ := args["output_file"].(string)
+	appendMode, _ := args["append"].(bool)
+
+	if outputFile != "" {
+		if err := m.sm.IsPathWritable(outputFile); err != nil {
+			return "", err
+		}
+	}
 
 	approved := false
 
@@ -709,6 +805,13 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: \033[0m%s\n", command)
 		if reason != "" {
 			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		if outputFile != "" {
+			redir := ">"
+			if appendMode {
+				redir = ">>"
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect: %s %s\033[0m\n", redir, outputFile)
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
@@ -735,7 +838,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	parts := strings.Fields(command)
+	parts := splitCommand(command)
 	if len(parts) == 0 {
 		return "Error: Empty command", nil
 	}
@@ -749,6 +852,22 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	stderr, _ := cmd.StderrPipe()
 	multi := io.MultiReader(stdout, stderr)
 
+	var file *os.File
+	if outputFile != "" {
+		flags := os.O_CREATE | os.O_WRONLY
+		if appendMode {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		var err error
+		file, err = os.OpenFile(outputFile, flags, 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer file.Close()
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Sprintf("Command failed to start: %v", err), nil
 	}
@@ -758,6 +877,9 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		line := scanner.Text()
 		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
 		sb.WriteString(line + "\n")
+		if file != nil {
+			file.WriteString(line + "\n")
+		}
 	}
 
 	err := cmd.Wait()
@@ -773,4 +895,161 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	}
 
 	return fmt.Sprintf("Exit Code: 0\nOutput:\n%s", output), nil
+}
+
+func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
+
+	rawCommands, ok := args["commands"].([]interface{})
+	if !ok || len(rawCommands) < 2 {
+		return "", fmt.Errorf("at least two commands are required for piping")
+	}
+
+	commands := make([]string, len(rawCommands))
+	for i, c := range rawCommands {
+		cmdStr, ok := c.(string)
+		if !ok || cmdStr == "" {
+			return "", fmt.Errorf("invalid command at index %d", i)
+		}
+		commands[i] = cmdStr
+	}
+
+	reason, _ := args["reason"].(string)
+	outputFile, _ := args["output_file"].(string)
+	appendMode, _ := args["append"].(bool)
+
+	if outputFile != "" {
+		if err := m.sm.IsPathWritable(outputFile); err != nil {
+			return "", err
+		}
+	}
+
+	// Safety check
+	allSafe := true
+	for _, cmd := range commands {
+		if !m.isSafeCommand(cmd) {
+			allSafe = false
+			break
+		}
+	}
+
+	approved := false
+	if m.sm.IsBypassActive() {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Pipeline auto-approved (bypass_confirmation enabled).\033[0m\n")
+		approved = true
+	} else if allSafe {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe pipeline detected.\033[0m\n")
+		approved = true
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Pipeline: \033[0m%s\n", strings.Join(commands, " | "))
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		if outputFile != "" {
+			redir := ">"
+			if appendMode {
+				redir = ">>"
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect Final Output: %s %s\033[0m\n", redir, outputFile)
+		}
+		fmt.Fprintf(os.Stderr, "⚠️  Execute this pipeline? (y/N) ")
+
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err == nil && (char == "y") {
+			approved = true
+		}
+	}
+
+	if !approved {
+		return "User denied execution of pipeline.", nil
+	}
+
+	m.sm.logAudit("REASON", reason, "PIPELINE", strings.Join(commands, " | "))
+
+	fmt.Fprintf(os.Stderr, "\033[90mExecuting Pipeline... (Output shown below)\033[0m\n")
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	cmds := make([]*exec.Cmd, len(commands))
+	for i, cmdStr := range commands {
+		parts := splitCommand(cmdStr)
+		if len(parts) == 0 {
+			return fmt.Sprintf("Error: Empty command at index %d", i), nil
+		}
+		cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+	}
+
+	// Setup pipes
+	for i := 0; i < len(cmds)-1; i++ {
+		pipe, err := cmds[i].StdoutPipe()
+		if err != nil {
+			return "", fmt.Errorf("failed to create pipe for command %d: %w", i, err)
+		}
+		cmds[i+1].Stdin = pipe
+	}
+
+	var sb strings.Builder
+	// Capture stderr of all commands to a single multi-reader if possible, or just the last command's stdout
+	// For simplicity, we'll stream only the last command's stdout/stderr, but we should capture errors from others.
+	lastCmd := cmds[len(cmds)-1]
+	stdout, _ := lastCmd.StdoutPipe()
+	stderr, _ := lastCmd.StderrPipe()
+	multi := io.MultiReader(stdout, stderr)
+
+	var file *os.File
+	if outputFile != "" {
+		flags := os.O_CREATE | os.O_WRONLY
+		if appendMode {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		var err error
+		file, err = os.OpenFile(outputFile, flags, 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer file.Close()
+	}
+
+	// Start all commands
+	for i := 0; i < len(cmds); i++ {
+		if err := cmds[i].Start(); err != nil {
+			return fmt.Sprintf("Command %d (%s) failed to start: %v", i, commands[i], err), nil
+		}
+	}
+
+	// Stream output of the last command
+	scanner := bufio.NewScanner(multi)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
+		sb.WriteString(line + "\n")
+		if file != nil {
+			file.WriteString(line + "\n")
+		}
+	}
+
+	// Wait for all commands in reverse order
+	var lastErr error
+	for i := len(cmds) - 1; i >= 0; i-- {
+		err := cmds[i].Wait()
+		if err != nil && i == len(cmds)-1 {
+			lastErr = err
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	output := sb.String()
+	if len(output) > 50000 {
+		output = output[:50000] + "\n... (truncated)"
+	}
+
+	if lastErr != nil {
+		return fmt.Sprintf("Pipeline failed at last command. Exit Code: 1\nOutput:\n%s", output), nil
+	}
+
+	return fmt.Sprintf("Pipeline completed successfully. Exit Code: 0\nOutput:\n%s", output), nil
 }
