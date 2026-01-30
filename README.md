@@ -19,18 +19,17 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Interactive Safety**: 
         *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
         *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
-    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`.
-    *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`.
-    *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`.
+    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
+    *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
+    *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, and `configure_ux_preferences`.
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `configure_ux_preferences`, `get_session_info`, and `rollback_last_turn`.
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `vertex_tasks.json`, `vertex_scratchpad.md`, `vertex_config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
         *   **Smart Suggestions**: `configure_ux_preferences` enables a "Smart Suggestions" UI where the AI intelligently suggests 2-3 context-aware follow-up commands at the end of every response. This state is persistent and automatically injected into the AI's System Prompt.
-        *   **Rollback**: `rollback_last_turn` allows undoing the last interaction.
     *   **External Integration**:
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
-    *   **System**: `execute_command`, `ask_user`, `read_url`, `read_external_docs`, `http_request`, `register_safepath`, `list_safepaths`, `remove_safepath`.
+    *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `read_external_docs`, `http_request`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.
     *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
     *   **Financial Metrics (Dynamic Pricing)**: 
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
@@ -87,6 +86,11 @@ Show the very last message (shorthand):
 Show raw output (skip Markdown rendering):
 ```bash
 ./tell-me-go -l -r
+```
+
+**Show Version:**
+```bash
+./tell-me-go -v
 ```
 
 **Raw Output Mode:**
