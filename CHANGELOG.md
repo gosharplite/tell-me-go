@@ -10,6 +10,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.63.0] - 2026-01-30
+### Added
+- **CLI**: The application now automatically seeds the mode-scoped `config.json` with core limits (`MAX_TURNS`, `MAX_HISTORY_TURNS`, `MAX_HISTORY_TOKENS`) if it doesn't exist. This improves discoverability of configurable parameters for new users.
+- **Agent**: Implemented hot-reloading for the main YAML configuration. The agent now re-parses the configuration file at the start of every request, allowing for dynamic adjustments to limits and features without restarting the session.
+
+### Changed
+- **Refactor**: Restored explicit error logging during configuration parsing and simplified the internal configuration loading logic for better maintainability.
+- **Maintenance**: Promoted to v1.63.0 following the refined public release procedure.
+
 ## [1.62.0] - 2026-01-30
 ### Fixed
 - **Testing**: Updated `mockChatter` in `internal/cli/cli_test.go` to implement the full `agent.Chatter` interface, resolving a compilation error during release verification.

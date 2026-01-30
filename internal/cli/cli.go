@@ -103,6 +103,27 @@ func (a *App) Run(args []string) error {
 	bypassPath := filepath.Join(modeDir, "bypass.log")
 	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
+	// Ensure core limits are present in persistent config for human discoverability
+	pCfg := make(map[string]string)
+	if data, err := os.ReadFile(persistentConfigPath); err == nil {
+		_ = json.Unmarshal(data, &pCfg)
+	}
+	updated := false
+	seedLimit := func(key string, val int) {
+		if _, ok := pCfg[key]; !ok {
+			pCfg[key] = fmt.Sprintf("%d", val)
+			updated = true
+		}
+	}
+	seedLimit("MAX_HISTORY_TOKENS", cfg.MaxHistoryTokens)
+	seedLimit("MAX_TOOL_TURNS", cfg.MaxToolTurns)
+	seedLimit("MAX_HISTORY_TURNS", cfg.MaxHistoryTurns)
+	if updated {
+		if data, err := json.MarshalIndent(pCfg, "", "  "); err == nil {
+			_ = os.WriteFile(persistentConfigPath, data, 0644)
+		}
+	}
+
 	// 5. Initialize Components
 	a.sm.SetSafePathsFile(safePathsPath)
 	a.sm.SetReadOnlyPathsFile(readPathsPath)
@@ -155,18 +176,9 @@ func (a *App) Run(args []string) error {
 
 	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
 
-	// Load persistent config to augment system prompt (e.g., smart_suggestions)
-	if data, err := os.ReadFile(persistentConfigPath); err == nil {
-		var pCfg map[string]string
-		if err := json.Unmarshal(data, &pCfg); err == nil {
-			if pCfg["smart_suggestions"] == "on" {
-				cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
-			}
-		} else {
-			fmt.Fprintf(a.Stderr, "Warning: Failed to parse persistent config [%s]: %v\n", persistentConfigPath, err)
-		}
-	} else if !os.IsNotExist(err) {
-		fmt.Fprintf(a.Stderr, "Warning: Failed to read persistent config [%s]: %v\n", persistentConfigPath, err)
+	// Apply smart_suggestions from the already loaded pCfg
+	if pCfg["smart_suggestions"] == "on" {
+		cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
 	}
 
 	hManager.Snapshot()
