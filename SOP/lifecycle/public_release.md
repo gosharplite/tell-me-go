@@ -66,7 +66,8 @@ Before any public release, perform a mandatory security scan:
 - **SPDX Headers**: Ensure all Go source files (`*.go`), YAML files, and Markdown files (`*.md`) in the `SOP/` directory contain the standard SPDX-License-Identifier header.
     - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/lifecycle/self_update_safety.md`.
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
-- **Version Bump**: Update any version constants in the source code (e.g., in a `version` package or the main CLI help text).
+- **Version Stabilization**: **CRITICAL**. Update `cmd/tell-me-go/main.go` to remove the `-dev` suffix (e.g., change `1.56.0-dev` to `1.56.0`). Commit this change to `dev` with the message `Chore: Stabilize version for release v1.x.x`.
+
 
 #### 4. Release Guardrails (⚠️ CRITICAL)
 To prevent build failures for users (e.g., local file path leaks), perform these checks:
@@ -143,6 +144,7 @@ A release is **not complete** until it is reachable by the public on the remote 
 
 ### Release Checklist
 - [ ] **Bypass Enabled**: `bypass_confirmation` executed.
+- [ ] **Version Stabilized**: `-dev` suffix removed from `main.go`.
 - [ ] Security audit completed (no secrets found).
 - [ ] **No `replace` directives** in `go.mod`.
 - [ ] **Clean room verification** passed in a fresh clone.
