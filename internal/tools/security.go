@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"golang.org/x/term"
 )
 
@@ -78,7 +79,7 @@ func (sm *SecurityManager) SaveBypassState() {
 	if active {
 		val = "true"
 	}
-	_ = AtomicWrite(file, []byte(val), 0644)
+	_ = fsutil.AtomicWrite(file, []byte(val), 0644)
 }
 
 // SetCommandsLogFile sets the path for logging executed commands.
@@ -295,7 +296,7 @@ func (sm *SecurityManager) SaveSafePaths() error {
 		return fmt.Errorf("failed to marshal safe paths: %w", err)
 	}
 
-	return AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(file, data, 0644)
 }
 
 // SaveReadOnlyPaths writes persistent read-only paths to disk.
@@ -315,7 +316,7 @@ func (sm *SecurityManager) SaveReadOnlyPaths() error {
 		return fmt.Errorf("failed to marshal read-only paths: %w", err)
 	}
 
-	return AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(file, data, 0644)
 }
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.

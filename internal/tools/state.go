@@ -8,68 +8,67 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"google.golang.org/genai"
 )
 
 type stateManager struct {
-	taskMu       sync.Mutex
-	scratchpadMu sync.Mutex
-	configMu     sync.Mutex
-	homeDir      string
-	mode         string
 	sm           *SecurityManager
+	mu           sync.RWMutex
+	tasks        map[float64]Task
+	taskNextID   float64
+	config       map[string]string
+	configFile   string
+	scratchpad   string
+	scratchFile  string
+	tasksFile    string
+	sessionInfo  SessionInfo
 }
 
-// Task represents a single item in the task manager, matching the Bash version's schema.
+// SessionInfo holds metadata about the current execution environment.
+type SessionInfo struct {
+	Config map[string]string `json:"config"`
+	Env    map[string]string `json:"env"`
+	Paths  map[string]string `json:"paths"`
+}
+
+// Task represents a unit of work in the to-do list.
 type Task struct {
-	ID      int    `json:"id"`
-	Content string `json:"content"`
-	Status  string `json:"status"`
+	ID        float64   `json:"id"`
+	Content   string    `json:"content"`
+	Status    string    `json:"status"` // pending, completed
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// RegisterStateTools adds scratchpad, task management, and session info tools.
-func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string, sm *SecurityManager) {
-	state := &stateManager{
-		homeDir: homeDir,
-		mode:    mode,
-		sm:      sm,
+// RegisterStateTools adds state management tools (scratchpad, config, tasks) to the registry.
+func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
+	m := &stateManager{
+		sm:          sm,
+		tasks:       make(map[float64]Task),
+		taskNextID:  1,
+		config:      make(map[string]string),
+		configFile:  fmt.Sprintf("%s/config.json", configDir),
+		scratchFile: fmt.Sprintf("%s/scratchpad.md", configDir),
+		tasksFile:   fmt.Sprintf("%s/tasks.json", configDir),
 	}
+
+	// Initialize state
+	m.loadConfig()
+	m.loadScratchpad()
+	m.loadTasks()
+	m.initSessionInfo(configDir)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		info := map[string]interface{}{
-			"home_dir":           homeDir,
-			"safe_paths":         sm.GetSafePaths(),
-			"bypass_active":      sm.IsBypassActive(),
-			"history_file":       hManager.GetPath(),
-			"active_config_path": "", // Will be filled if found in safe paths
-		}
+	}, m.getSessionInfo)
 
-		// Try to identify the config path from safe paths (usually the 2nd one registered in main.go)
-		paths := sm.GetSafePaths()
-		for _, p := range paths {
-			if strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml") {
-				info["active_config_path"] = p
-				break
-			}
-		}
-
-		b, err := json.MarshalIndent(info, "", "  ")
-		if err != nil {
-			return "", err
-		}
-		return string(b), nil
-	})
-
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
 		Parameters: &genai.Schema{
@@ -87,11 +86,9 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return state.manageScratchpad(ctx, args)
-	}, ToolOptions{Serial: true})
+	}, m.manageScratchpad)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode.",
 		Parameters: &genai.Schema{
@@ -113,11 +110,9 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return state.manageConfig(ctx, args)
-	}, ToolOptions{Serial: true})
+	}, m.manageConfig)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "configure_ux_preferences",
 		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
 		Parameters: &genai.Schema{
@@ -136,19 +131,9 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"feature", "status"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		feature, _ := args["feature"].(string)
-		status, _ := args["status"].(string)
+	}, m.configureUXPreferences)
 
-		configArgs := map[string]interface{}{
-			"action": "set",
-			"key":    feature,
-			"value":  status,
-		}
-		return state.manageConfig(ctx, configArgs)
-	}, ToolOptions{Serial: true})
-
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.Register(&genai.FunctionDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &genai.Schema{
@@ -159,13 +144,13 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 					Description: "The action to perform: 'add', 'update', 'list', 'delete', 'clear'.",
 					Enum:        []string{"add", "update", "list", "delete", "clear"},
 				},
-				"content": {
-					Type:        genai.TypeString,
-					Description: "The task description (required for 'add').",
-				},
 				"task_id": {
 					Type:        genai.TypeNumber,
 					Description: "The ID of the task to update or delete.",
+				},
+				"content": {
+					Type:        genai.TypeString,
+					Description: "The task description (required for 'add').",
 				},
 				"status": {
 					Type:        genai.TypeString,
@@ -174,280 +159,305 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return state.manageTasks(ctx, args)
-	}, ToolOptions{Serial: true})
+	}, m.manageTasks)
+}
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
-		Name:        "rollback_last_turn",
-		Description: "Reverts the conversation history to the state before the current turn.",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		if hManager != nil {
-			hManager.Rollback()
-			return "Rollback successful. History restored to previous snapshot.", nil
+func (m *stateManager) initSessionInfo(configDir string) {
+	m.sessionInfo = SessionInfo{
+		Config: m.config,
+		Env: map[string]string{
+			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
+		},
+		Paths: map[string]string{
+			"config_dir":   configDir,
+			"scratch_file": m.scratchFile,
+			"tasks_file":   m.tasksFile,
+			"config_file":  m.configFile,
+		},
+	}
+}
+
+func (m *stateManager) loadConfig() {
+	if _, err := os.Stat(m.configFile); err == nil {
+		if data, err := os.ReadFile(m.configFile); err == nil {
+			_ = json.Unmarshal(data, &m.config)
 		}
-		return "Error: History manager not available for rollback.", nil
-	}, ToolOptions{Serial: true})
+	}
 }
 
-func (s *stateManager) getScratchpadPath() string {
-	return filepath.Join(s.homeDir, "output", s.mode, "scratchpad.md")
+func (m *stateManager) saveConfig() error {
+	data, err := json.MarshalIndent(m.config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fsutil.AtomicWrite(m.configFile, data, 0644)
 }
 
-func (s *stateManager) getTasksPath() string {
-	return filepath.Join(s.homeDir, "output", s.mode, "tasks.json")
+func (m *stateManager) loadScratchpad() {
+	if _, err := os.Stat(m.scratchFile); err == nil {
+		if data, err := os.ReadFile(m.scratchFile); err == nil {
+			m.scratchpad = string(data)
+		}
+	}
 }
 
-func (s *stateManager) getConfigPath() string {
-	return filepath.Join(s.homeDir, "output", s.mode, "config.json")
+func (m *stateManager) saveScratchpad() error {
+	return fsutil.AtomicWrite(m.scratchFile, []byte(m.scratchpad), 0644)
 }
 
-func (s *stateManager) manageConfig(ctx context.Context, args map[string]interface{}) (string, error) {
-	s.configMu.Lock()
-	defer s.configMu.Unlock()
+func (m *stateManager) loadTasks() {
+	if _, err := os.Stat(m.tasksFile); err == nil {
+		if data, err := os.ReadFile(m.tasksFile); err == nil {
+			var loaded []Task
+			if err := json.Unmarshal(data, &loaded); err == nil {
+				for _, t := range loaded {
+					m.tasks[t.ID] = t
+					if t.ID >= m.taskNextID {
+						m.taskNextID = t.ID + 1
+					}
+				}
+			}
+		}
+	}
+}
+
+func (m *stateManager) saveTasks() error {
+	var tasks []Task
+	for _, t := range m.tasks {
+		tasks = append(tasks, t)
+	}
+	// Sort by ID stable
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].ID < tasks[j].ID
+	})
+
+	data, err := json.MarshalIndent(tasks, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fsutil.AtomicWrite(m.tasksFile, data, 0644)
+}
+
+func (m *stateManager) getSessionInfo(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Refresh config in session info
+	m.sessionInfo.Config = m.config
+
+	data, err := json.MarshalIndent(m.sessionInfo, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (m *stateManager) manageScratchpad(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	action, _ := args["action"].(string)
+	content, _ := args["content"].(string)
+
+	switch action {
+	case "read":
+		if m.scratchpad == "" {
+			return "(Scratchpad is empty)", nil
+		}
+		return m.scratchpad, nil
+	case "write":
+		m.scratchpad = content
+		if err := m.saveScratchpad(); err != nil {
+			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+		}
+		return "Scratchpad updated.", nil
+	case "append":
+		if m.scratchpad != "" {
+			m.scratchpad += "\n"
+		}
+		m.scratchpad += content
+		if err := m.saveScratchpad(); err != nil {
+			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+		}
+		return "Content appended to scratchpad.", nil
+	case "clear":
+		m.scratchpad = ""
+		if err := m.saveScratchpad(); err != nil {
+			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+		}
+		return "Scratchpad cleared.", nil
+	default:
+		return "", fmt.Errorf("unknown action: %s", action)
+	}
+}
+
+func (m *stateManager) manageConfig(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	action, _ := args["action"].(string)
 	key, _ := args["key"].(string)
-	value, _ := args["value"].(string)
-
-	path := s.getConfigPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	config := make(map[string]string)
-	data, err := os.ReadFile(path)
-	if err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &config); err != nil {
-			func() {
-				s.sm.TerminalLock()
-				defer s.sm.TerminalUnlock()
-				fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			}()
-			_ = os.Rename(path, path+".bak")
-			config = make(map[string]string)
-		}
-	}
+	val, _ := args["value"].(string)
 
 	switch action {
 	case "set":
 		if key == "" {
-			return "Error: 'key' is required for 'set'", nil
+			return "", fmt.Errorf("key is required for set")
 		}
-		config[key] = value
-		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := AtomicWrite(path, newData, 0644); err != nil {
-			return "", err
+		m.config[key] = val
+		if err := m.saveConfig(); err != nil {
+			return "", fmt.Errorf("failed to save config: %w", err)
 		}
-		return fmt.Sprintf("Configuration '%s' set successfully.", key), nil
-
+		return fmt.Sprintf("Config set: %s = %s", key, val), nil
 	case "get":
 		if key == "" {
-			return "Error: 'key' is required for 'get'", nil
+			return "", fmt.Errorf("key is required for get")
 		}
-		val, ok := config[key]
-		if !ok {
-			return fmt.Sprintf("Configuration key '%s' not found.", key), nil
+		if v, ok := m.config[key]; ok {
+			return v, nil
 		}
-		return val, nil
-
-	case "list":
-		if len(config) == 0 {
-			return "No configuration found for this mode.", nil
-		}
-		var lines []string
-		for k, v := range config {
-			lines = append(lines, fmt.Sprintf("- %s: %s", k, v))
-		}
-		sort.Strings(lines)
-		return "Persistent Configuration:\n" + strings.Join(lines, "\n"), nil
-
+		return "", fmt.Errorf("key not found: %s", key)
 	case "delete":
 		if key == "" {
-			return "Error: 'key' is required for 'delete'", nil
+			return "", fmt.Errorf("key is required for delete")
 		}
-		if _, ok := config[key]; !ok {
-			return fmt.Sprintf("Key '%s' not found.", key), nil
+		delete(m.config, key)
+		if err := m.saveConfig(); err != nil {
+			return "", fmt.Errorf("failed to save config: %w", err)
 		}
-		delete(config, key)
-		newData, _ := json.MarshalIndent(config, "", "  ")
-		if err := AtomicWrite(path, newData, 0644); err != nil {
-			return "", err
+		return fmt.Sprintf("Config deleted: %s", key), nil
+	case "list":
+		var sb strings.Builder
+		for k, v := range m.config {
+			sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
 		}
-		return fmt.Sprintf("Configuration key '%s' deleted.", key), nil
+		if sb.Len() == 0 {
+			return "Configuration is empty.", nil
+		}
+		return sb.String(), nil
+	default:
+		return "", fmt.Errorf("unknown action: %s", action)
 	}
-
-	return "Invalid action", nil
 }
 
-func (s *stateManager) manageScratchpad(ctx context.Context, args map[string]interface{}) (string, error) {
-	s.scratchpadMu.Lock()
-	defer s.scratchpadMu.Unlock()
+func (m *stateManager) configureUXPreferences(ctx context.Context, args map[string]interface{}) (string, error) {
+	feature, _ := args["feature"].(string)
+	status, _ := args["status"].(string)
+
+	if feature != "smart_suggestions" {
+		return "", fmt.Errorf("unsupported feature: %s", feature)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.config[feature] = status
+	if err := m.saveConfig(); err != nil {
+		return "", fmt.Errorf("failed to save preference: %w", err)
+	}
+
+	return fmt.Sprintf("UX Preference updated: %s = %s", feature, status), nil
+}
+
+func (m *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
+	status, _ := args["status"].(string)
 
-	path := s.getScratchpadPath()
-
-	// Ensure directory exists
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-
-	switch action {
-	case "read":
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "[Scratchpad does not exist yet]", nil
-		}
-		if len(data) == 0 {
-			return "[Scratchpad is empty]", nil
-		}
-		return string(data), nil
-
-	case "write":
-		err := AtomicWrite(path, []byte(content), 0644)
-		if err != nil {
-			return "", fmt.Errorf("failed to write scratchpad: %w", err)
-		}
-		return "Scratchpad overwritten.", nil
-
-	case "append":
-		existing, _ := os.ReadFile(path)
-		var newContent []byte
-		if len(existing) > 0 {
-			newContent = append(existing, '\n')
-			newContent = append(newContent, []byte(content)...)
-		} else {
-			newContent = []byte(content)
-		}
-		err := AtomicWrite(path, newContent, 0644)
-		if err != nil {
-			return "", fmt.Errorf("failed to append to scratchpad: %w", err)
-		}
-		return "Content appended to scratchpad.", nil
-
-	case "clear":
-		_ = AtomicWrite(path, []byte(""), 0644)
-		return "Scratchpad cleared.", nil
-	}
-
-	return "Invalid action", nil
-}
-
-func (s *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (string, error) {
-	s.taskMu.Lock()
-	defer s.taskMu.Unlock()
-	action, _ := args["action"].(string)
-
-	path := s.getTasksPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", fmt.Errorf("failed to create tasks directory: %w", err)
-	}
-
-	// Load existing tasks
-	var tasks []Task
-	data, err := os.ReadFile(path)
-	if err == nil && len(data) > 0 {
-		if err := json.Unmarshal(data, &tasks); err != nil {
-			func() {
-				s.sm.TerminalLock()
-				defer s.sm.TerminalUnlock()
-				fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			}()
-			_ = os.Rename(path, path+".bak")
-			tasks = []Task{}
-		}
+	var taskID float64 = -1
+	if v, ok := args["task_id"].(float64); ok {
+		taskID = v
 	}
 
 	switch action {
 	case "add":
-		content, _ := args["content"].(string)
 		if content == "" {
-			return "Error: 'content' is required for 'add'", nil
+			return "", fmt.Errorf("content is required for add")
 		}
-		nextID := 1
-		for _, t := range tasks {
-			if t.ID >= nextID {
-				nextID = t.ID + 1
-			}
+		t := Task{
+			ID:        m.taskNextID,
+			Content:   content,
+			Status:    "pending",
+			CreatedAt: time.Now(),
 		}
-		tasks = append(tasks, Task{ID: nextID, Content: content, Status: "pending"})
-		if err := saveTasks(path, tasks); err != nil {
-			return "", err
+		m.tasks[m.taskNextID] = t
+		m.taskNextID++
+		if err := m.saveTasks(); err != nil {
+			return "", fmt.Errorf("failed to save tasks: %w", err)
 		}
-		return fmt.Sprintf("Task added with ID: %d", nextID), nil
-
-	case "list":
-		statusFilter, _ := args["status"].(string)
-		var lines []string
-		for _, t := range tasks {
-			if statusFilter == "" || t.Status == statusFilter {
-				lines = append(lines, fmt.Sprintf("[%d] [%s] %s", t.ID, t.Status, t.Content))
-			}
-		}
-		if len(lines) == 0 {
-			return "No tasks found.", nil
-		}
-		sort.Strings(lines)
-		return "Current Tasks:\n" + strings.Join(lines, "\n"), nil
+		return fmt.Sprintf("Task added with ID %.0f", t.ID), nil
 
 	case "update":
-		idFloat, _ := args["task_id"].(float64)
-		id := int(idFloat)
-		content, _ := args["content"].(string)
-		status, _ := args["status"].(string)
-		found := false
-		for i, t := range tasks {
-			if t.ID == id {
-				if content != "" {
-					tasks[i].Content = content
-				}
-				if status != "" {
-					tasks[i].Status = status
-				}
-				found = true
-				break
-			}
+		if taskID == -1 {
+			return "", fmt.Errorf("task_id is required for update")
 		}
-		if !found {
-			return fmt.Sprintf("Error: Task ID %d not found.", id), nil
+		t, ok := m.tasks[taskID]
+		if !ok {
+			return "", fmt.Errorf("task not found: %.0f", taskID)
 		}
-		if err := saveTasks(path, tasks); err != nil {
-			return "", err
+		if content != "" {
+			t.Content = content
 		}
-		return fmt.Sprintf("Task %d updated.", id), nil
+		if status != "" {
+			t.Status = status
+		}
+		m.tasks[taskID] = t
+		if err := m.saveTasks(); err != nil {
+			return "", fmt.Errorf("failed to save tasks: %w", err)
+		}
+		return fmt.Sprintf("Task %.0f updated", taskID), nil
 
 	case "delete":
-		idFloat, _ := args["task_id"].(float64)
-		id := int(idFloat)
-		newTasks := []Task{}
-		found := false
-		for _, t := range tasks {
-			if t.ID == id {
-				found = true
+		if taskID == -1 {
+			return "", fmt.Errorf("task_id is required for delete")
+		}
+		if _, ok := m.tasks[taskID]; !ok {
+			return "", fmt.Errorf("task not found: %.0f", taskID)
+		}
+		delete(m.tasks, taskID)
+		if err := m.saveTasks(); err != nil {
+			return "", fmt.Errorf("failed to save tasks: %w", err)
+		}
+		return fmt.Sprintf("Task %.0f deleted", taskID), nil
+
+	case "list":
+		var list []Task
+		for _, t := range m.tasks {
+			if status != "" && t.Status != status {
 				continue
 			}
-			newTasks = append(newTasks, t)
+			list = append(list, t)
 		}
-		if !found {
-			return fmt.Sprintf("Error: Task ID %d not found.", id), nil
+		sort.Slice(list, func(i, j int) bool {
+			return list[i].ID < list[j].ID
+		})
+
+		if len(list) == 0 {
+			return "No tasks found.", nil
 		}
-		if err := saveTasks(path, newTasks); err != nil {
-			return "", err
+
+		var sb strings.Builder
+		sb.WriteString("Tasks:\n")
+		for _, t := range list {
+			icon := "[ ]"
+			if t.Status == "completed" {
+				icon = "[x]"
+			}
+			sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", t.ID, icon, t.Content, t.Status))
 		}
-		return fmt.Sprintf("Task %d deleted.", id), nil
+		return sb.String(), nil
 
 	case "clear":
-		if err := saveTasks(path, []Task{}); err != nil {
-			return "", err
+		m.tasks = make(map[float64]Task)
+		if err := m.saveTasks(); err != nil {
+			return "", fmt.Errorf("failed to save tasks: %w", err)
 		}
 		return "All tasks cleared.", nil
-	}
 
-	return "Invalid action", nil
-}
-
-func saveTasks(path string, tasks []Task) error {
-	data, err := json.MarshalIndent(tasks, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal tasks: %w", err)
+	default:
+		return "", fmt.Errorf("unknown action: %s", action)
 	}
-	return AtomicWrite(path, data, 0644)
 }

@@ -183,7 +183,7 @@ func (a *App) Run(args []string) error {
 	tools.RegisterGitTools(registry, a.sm)
 	tools.RegisterDevTools(registry, a.sm)
 	tools.RegisterTeamsTools(registry, a.sm)
-	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode, a.sm)
+	tools.RegisterStateTools(registry, a.sm, modeDir)
 	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode)
 	tools.RegisterMediaTools(registry, a.sm, client)
 

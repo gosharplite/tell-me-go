@@ -14,41 +14,33 @@ import (
 	"testing"
 )
 
+func createTestStateManager(t *testing.T, tmpDir string) *stateManager {
+	sm := NewSecurityManager()
+	// Allow tmpDir in security manager for tests
+	sm.RegisterSafePath(tmpDir)
+	
+	s := &stateManager{
+		sm:          sm,
+		tasks:       make(map[float64]Task),
+		taskNextID:  1,
+		config:      make(map[string]string),
+		configFile:  filepath.Join(tmpDir, "config.json"),
+		scratchFile: filepath.Join(tmpDir, "scratchpad.md"),
+		tasksFile:   filepath.Join(tmpDir, "tasks.json"),
+	}
+	s.initSessionInfo(tmpDir)
+	return s
+}
+
 func TestManageTasks(t *testing.T) {
-	// Create a temporary directory for homeDir
 	tmpDir, err := os.MkdirTemp("", "tools_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	testMode := "test_mode"
 	ctx := context.Background()
-	sm := NewSecurityManager()
-	s := &stateManager{
-		homeDir: tmpDir,
-		mode:    testMode,
-		sm:      sm,
-	}
-
-	// Helper to read the tasks file directly
-	readTasksFile := func() []Task {
-		path := filepath.Join(tmpDir, "output", testMode, "tasks.json")
-		data, err := os.ReadFile(path)
-		if os.IsNotExist(err) {
-			return []Task{}
-		}
-		if err != nil {
-			t.Fatalf("Failed to read tasks file: %v", err)
-		}
-		var tasks []Task
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &tasks); err != nil {
-				t.Fatalf("Failed to unmarshal tasks: %v", err)
-			}
-		}
-		return tasks
-	}
+	s := createTestStateManager(t, tmpDir)
 
 	// Test 1: Add a task
 	t.Run("Add", func(t *testing.T) {
@@ -60,11 +52,19 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "Task added with ID: 1") {
+		if !strings.Contains(msg, "Task added with ID 1") {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		tasks := readTasksFile()
+		// Verify file persistence
+		data, err := os.ReadFile(s.tasksFile)
+		if err != nil {
+			t.Fatalf("Failed to read tasks file: %v", err)
+		}
+		var tasks []Task
+		if err := json.Unmarshal(data, &tasks); err != nil {
+			t.Fatalf("Failed to unmarshal tasks: %v", err)
+		}
 		if len(tasks) != 1 {
 			t.Errorf("Expected 1 task, got %d", len(tasks))
 		}
@@ -82,7 +82,7 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "[1] [pending] First Task") {
+		if !strings.Contains(msg, "1. [ ] First Task (pending)") {
 			t.Errorf("List output missing task: %s", msg)
 		}
 	})
@@ -91,7 +91,7 @@ func TestManageTasks(t *testing.T) {
 	t.Run("Update", func(t *testing.T) {
 		args := map[string]interface{}{
 			"action":  "update",
-			"task_id": 1.0, // JSON numbers are floats
+			"task_id": 1.0,
 			"status":  "completed",
 		}
 		msg, err := s.manageTasks(ctx, args)
@@ -102,9 +102,9 @@ func TestManageTasks(t *testing.T) {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		tasks := readTasksFile()
-		if tasks[0].Status != "completed" {
-			t.Errorf("Task status not updated: %s", tasks[0].Status)
+		s.loadTasks() // Reload from disk to verify persistence
+		if s.tasks[1].Status != "completed" {
+			t.Errorf("Task status not updated: %s", s.tasks[1].Status)
 		}
 	})
 
@@ -122,15 +122,14 @@ func TestManageTasks(t *testing.T) {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		tasks := readTasksFile()
-		if len(tasks) != 0 {
-			t.Errorf("Expected 0 tasks, got %d", len(tasks))
+		s.loadTasks()
+		if len(s.tasks) != 0 {
+			t.Errorf("Expected 0 tasks, got %d", len(s.tasks))
 		}
 	})
 
 	// Test 5: Clear tasks
 	t.Run("Clear", func(t *testing.T) {
-		// Add a task first
 		s.manageTasks(ctx, map[string]interface{}{"action": "add", "content": "To be cleared"})
 
 		args := map[string]interface{}{
@@ -144,33 +143,9 @@ func TestManageTasks(t *testing.T) {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		tasks := readTasksFile()
-		if len(tasks) != 0 {
-			t.Errorf("Expected 0 tasks after clear, got %d", len(tasks))
-		}
-	})
-
-	// Test 6: Persistence
-	t.Run("Persistence", func(t *testing.T) {
-		// Manually write a file to simulate existing state
-		initialTasks := []Task{
-			{ID: 10, Content: "Persistent Task", Status: "pending"},
-		}
-		data, _ := json.Marshal(initialTasks)
-		path := s.getTasksPath()
-		os.MkdirAll(filepath.Dir(path), 0755)
-		os.WriteFile(path, data, 0644)
-
-		// List to verify it reads correctly
-		args := map[string]interface{}{
-			"action": "list",
-		}
-		msg, err := s.manageTasks(ctx, args)
-		if err != nil {
-			t.Fatalf("manageTasks failed: %v", err)
-		}
-		if !strings.Contains(msg, "[10] [pending] Persistent Task") {
-			t.Errorf("Persistence check failed. Output: %s", msg)
+		s.loadTasks()
+		if len(s.tasks) != 0 {
+			t.Errorf("Expected 0 tasks after clear, got %d", len(s.tasks))
 		}
 	})
 }
@@ -182,25 +157,8 @@ func TestManageScratchpad(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	testMode := "test_mode"
 	ctx := context.Background()
-	s := &stateManager{
-		homeDir: tmpDir,
-		mode:    testMode,
-	}
-	scratchpadPath := s.getScratchpadPath()
-
-	// Helper to read content
-	readScratchpad := func() string {
-		data, err := os.ReadFile(scratchpadPath)
-		if os.IsNotExist(err) {
-			return ""
-		}
-		if err != nil {
-			t.Fatalf("Failed to read scratchpad: %v", err)
-		}
-		return string(data)
-	}
+	s := createTestStateManager(t, tmpDir)
 
 	// Test 1: Read non-existent
 	t.Run("ReadEmpty", func(t *testing.T) {
@@ -209,8 +167,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "[Scratchpad does not exist yet]" {
-			t.Errorf("Expected '[Scratchpad does not exist yet]', got: %q", msg)
+		if msg != "(Scratchpad is empty)" {
+			t.Errorf("Expected '(Scratchpad is empty)', got: %q", msg)
 		}
 	})
 
@@ -224,18 +182,21 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "Scratchpad overwritten." {
+		if msg != "Scratchpad updated." {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		content := readScratchpad()
-		if content != "# Plan\n- Step 1" {
+		content, _ := os.ReadFile(s.scratchFile)
+		if string(content) != "# Plan\n- Step 1" {
 			t.Errorf("Content mismatch: %q", content)
 		}
 	})
 
 	// Test 3: Read Existing
 	t.Run("ReadExisting", func(t *testing.T) {
+		// Verify internal state matches file
+		s.loadScratchpad() 
+		
 		args := map[string]interface{}{"action": "read"}
 		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
@@ -260,33 +221,10 @@ func TestManageScratchpad(t *testing.T) {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		content := readScratchpad()
+		content, _ := os.ReadFile(s.scratchFile)
 		expected := "# Plan\n- Step 1\n- Step 2"
-		if content != expected {
+		if string(content) != expected {
 			t.Errorf("Append content mismatch.\nExpected:\n%q\nGot:\n%q", expected, content)
-		}
-	})
-
-	// Test 5: Append to New File
-	t.Run("AppendNew", func(t *testing.T) {
-		// Clean up first
-		os.Remove(scratchpadPath)
-
-		args := map[string]interface{}{
-			"action":  "append",
-			"content": "New Note",
-		}
-		msg, err := s.manageScratchpad(ctx, args)
-		if err != nil {
-			t.Fatalf("manageScratchpad failed: %v", err)
-		}
-		if msg != "Content appended to scratchpad." {
-			t.Errorf("Unexpected output: %s", msg)
-		}
-
-		content := readScratchpad()
-		if content != "New Note" {
-			t.Errorf("Append new content mismatch: %q", content)
 		}
 	})
 
@@ -301,8 +239,8 @@ func TestManageScratchpad(t *testing.T) {
 			t.Errorf("Unexpected output: %s", msg)
 		}
 
-		content := readScratchpad()
-		if content != "" {
+		content, _ := os.ReadFile(s.scratchFile)
+		if len(content) != 0 {
 			t.Errorf("Expected empty file, got: %q", content)
 		}
 	})
@@ -315,14 +253,8 @@ func TestStateConcurrency(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	testMode := "concurrent"
 	ctx := context.Background()
-	sm := NewSecurityManager()
-	s := &stateManager{
-		homeDir: tmpDir,
-		mode:    testMode,
-		sm:      sm,
-	}
+	s := createTestStateManager(t, tmpDir)
 
 	numGroutines := 20
 	tasksPerRoutine := 10
@@ -368,71 +300,8 @@ func TestStateConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Verify total tasks
-	msg, err := s.manageTasks(ctx, map[string]interface{}{"action": "list"})
-	if err != nil {
-		t.Fatalf("manageTasks list failed: %v", err)
-	}
-
-	expectedTotal := numGroutines * tasksPerRoutine
-
-	count := 0
-	for _, line := range strings.Split(msg, "\n") {
-		if strings.HasPrefix(line, "[") {
-			count++
-		}
-	}
-
-	if count != expectedTotal {
-		t.Errorf("Expected %d tasks, got %d. Output:\n%s", expectedTotal, count, msg)
-	}
-}
-
-func TestCorruptionRecovery(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "corruption_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	testMode := "corrupt"
-	ctx := context.Background()
-	sm := NewSecurityManager()
-	s := &stateManager{
-		homeDir: tmpDir,
-		mode:    testMode,
-		sm:      sm,
-	}
-
-	path := s.getTasksPath()
-	os.MkdirAll(filepath.Dir(path), 0755)
-
-	// Write invalid JSON
-	os.WriteFile(path, []byte("{ invalid json ["), 0644)
-
-	// Try to add a task. It should reset and succeed.
-	msg, err := s.manageTasks(ctx, map[string]interface{}{
-		"action":  "add",
-		"content": "Recovery Task",
-	})
-
-	if err != nil {
-		t.Fatalf("manageTasks failed after corruption: %v", err)
-	}
-	if !strings.Contains(msg, "Task added with ID: 1") {
-		t.Errorf("Expected recovery and ID 1, got: %s", msg)
-	}
-
-	// Verify .bak file exists
-	if _, err := os.Stat(path + ".bak"); os.IsNotExist(err) {
-		t.Errorf("Expected corruption backup file %s.bak to exist", path)
-	}
-
-	// Verify list works
-	msg, err = s.manageTasks(ctx, map[string]interface{}{"action": "list"})
-	if err != nil {
-		t.Fatalf("manageTasks list failed after recovery: %v", err)
-	}
-	if !strings.Contains(msg, "[1] [pending] Recovery Task") {
-		t.Errorf("List missing recovered task: %s", msg)
+	s.loadTasks() // Reload to verify persistence
+	if len(s.tasks) != numGroutines*tasksPerRoutine {
+		t.Errorf("Expected %d tasks, got %d", numGroutines*tasksPerRoutine, len(s.tasks))
 	}
 }

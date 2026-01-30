@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
@@ -94,11 +94,6 @@ func (m *Manager) Save() error {
 }
 
 func (m *Manager) saveLocked() error {
-	dir := filepath.Dir(m.FilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create history directory: %w", err)
-	}
-
 	// Clean up history: remove empty parts or parts with no content.
 	// If a message would become empty, we add a placeholder to prevent API errors (400 INVALID_ARGUMENT).
 	for _, content := range m.Contents {
@@ -120,13 +115,8 @@ func (m *Manager) saveLocked() error {
 		return fmt.Errorf("failed to marshal history: %w", err)
 	}
 
-	tmpFile := m.FilePath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp history file: %w", err)
-	}
-
-	if err := os.Rename(tmpFile, m.FilePath); err != nil {
-		return fmt.Errorf("failed to rename history file: %w", err)
+	if err := fsutil.AtomicWrite(m.FilePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to save history file: %w", err)
 	}
 
 	return nil
@@ -235,20 +225,24 @@ func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) err
 		return fmt.Errorf("invalid range: [%d, %d] for history length %d", start, end, len(m.Contents))
 	}
 
-	// 1. Perform replacement
+	// 1. Create candidate slice
 	head := m.Contents[:start]
 	tail := m.Contents[end:]
 
-	m.Contents = append(append([]*types.Content{}, head...), newContents...)
-	m.Contents = append(m.Contents, tail...)
+	candidate := make([]*types.Content, 0, len(head)+len(newContents)+len(tail))
+	candidate = append(candidate, head...)
+	candidate = append(candidate, newContents...)
+	candidate = append(candidate, tail...)
 
-	// 2. Validate role alternation for the entire history
-	for i := 1; i < len(m.Contents); i++ {
-		if m.Contents[i].Role == m.Contents[i-1].Role {
+	// 2. Validate role alternation for the entire candidate history
+	for i := 1; i < len(candidate); i++ {
+		if candidate[i].Role == candidate[i-1].Role {
 			return fmt.Errorf("role alternation violation at index %d after replacement", i)
 		}
 	}
 
+	// 3. Commit change
+	m.Contents = candidate
 	return nil
 }
 

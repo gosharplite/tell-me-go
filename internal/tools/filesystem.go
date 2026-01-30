@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"google.golang.org/genai"
 )
 
@@ -471,7 +472,7 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 		return "", fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err = AtomicWrite(path, []byte(content), 0644)
+	err = fsutil.AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
@@ -515,7 +516,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	}
 
 	newContent := strings.Replace(content, oldText, newText, 1)
-	err = AtomicWrite(path, []byte(newContent), 0644)
+	err = fsutil.AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
 		return "", err
 	}
@@ -543,6 +544,13 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir
@@ -615,6 +623,13 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 		if err != nil {
 			return nil
 		}
+		
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir
