@@ -16,7 +16,7 @@ import (
 	"google.golang.org/genai"
 )
 
-func (a *Agent) handleToolExecution(respContent *types.Content, turn int) error {
+func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int) error {
 	var functionCalls []*types.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
@@ -37,7 +37,7 @@ func (a *Agent) handleToolExecution(respContent *types.Content, turn int) error 
 	}
 
 	a.logToolCalls(functionCalls, turn)
-	responseParts := a.executeToolsConcurrently(functionCalls)
+	responseParts := a.executeToolsConcurrently(ctx, functionCalls)
 
 	a.history.AddContent(&types.Content{
 		Role:  "user",
@@ -77,7 +77,7 @@ func (a *Agent) logToolCalls(calls []*types.FunctionCall, turn int) {
 	}
 }
 
-func (a *Agent) executeToolsConcurrently(calls []*types.FunctionCall) []*types.Part {
+func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.FunctionCall) []*types.Part {
 	results := make([]*types.Part, len(calls))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, a.maxConcurrentTools)
@@ -89,16 +89,16 @@ func (a *Agent) executeToolsConcurrently(calls []*types.FunctionCall) []*types.P
 			// we wait for all previously dispatched parallel tools to finish before executing
 			// the serial tool.
 			wg.Wait()
-			results[i] = a.processToolResult(fc.Name, a.executeTool(fc))
+			results[i] = a.processToolResult(fc.Name, a.executeTool(ctx, fc))
 		} else {
 			// Parallel Execution:
 			wg.Add(1)
+			sem <- struct{}{} // Acquire semaphore BEFORE spawning goroutine
 			go func(idx int, call *types.FunctionCall) {
 				defer wg.Done()
-				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				results[idx] = a.processToolResult(call.Name, a.executeTool(call))
+				results[idx] = a.processToolResult(call.Name, a.executeTool(ctx, call))
 			}(i, fc)
 		}
 	}
@@ -112,16 +112,15 @@ func (a *Agent) isSerialTool(name string) bool {
 	return a.registry.IsSerial(name)
 }
 
-func (a *Agent) executeTool(call *types.FunctionCall) string {
+func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall) string {
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
 	if a.registry.IsLongRunning(call.Name) {
-		ctx = context.Background()
-		cancel = func() {}
+		ctx, cancel = context.WithCancel(parentCtx)
 	} else {
-		ctx, cancel = context.WithTimeout(context.Background(), a.toolTimeout)
+		ctx, cancel = context.WithTimeout(parentCtx, a.toolTimeout)
 	}
 	defer cancel()
 
@@ -137,7 +136,10 @@ func (a *Agent) executeTool(call *types.FunctionCall) string {
 
 	select {
 	case <-ctx.Done():
-		return fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)
+		}
+		return fmt.Sprintf("Error: %v", ctx.Err())
 	case res := <-resChan:
 		return res
 	}

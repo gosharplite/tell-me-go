@@ -132,9 +132,7 @@ func (c *Client) RefreshAuth() error {
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
-func (c *Client) SendChat(history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
-	ctx := context.Background()
-
+func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
 	// 0. Defensive check: Ensure all content objects have at least one part.
 	// Vertex AI returns 400 INVALID_ARGUMENT if a content object has an empty parts list.
 	for _, h := range history {

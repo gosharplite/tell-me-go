@@ -89,7 +89,7 @@ func (a *Agent) performSummarization(ctx context.Context, subset []*types.Conten
 	})
 
 	// Use the same client but with no tools for summarization
-	respContent, _, err := a.client.SendChat(summarizerInput, nil)
+	respContent, _, err := a.client.SendChat(ctx, summarizerInput, nil)
 	if err != nil {
 		return "", fmt.Errorf("summarization request failed: %w", err)
 	}

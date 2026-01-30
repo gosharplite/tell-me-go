@@ -29,7 +29,7 @@ var (
 
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
-	Chat(prompt string) error
+	Chat(ctx context.Context, prompt string) error
 	SetLogFile(path string)
 	SetUIOptions(showThoughts, showTools bool)
 	SetRawOutput(raw bool)
@@ -172,7 +172,7 @@ func (a *Agent) refreshLimits() {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(prompt string) error {
+func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	a.history.AddContent(&types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
@@ -198,7 +198,7 @@ func (a *Agent) Chat(prompt string) error {
 		// Trigger auto-summarization at 90% of the limit to provide a safety buffer.
 		if tokens > int(float64(a.maxHistoryTokens)*0.9) {
 			// Try auto-summarization before giving up
-			if err := a.autoSummarize(context.Background()); err == nil {
+			if err := a.autoSummarize(ctx); err == nil {
 				contents = a.history.GetContents()
 				tokens = a.estimatePayloadTokens(contents)
 			}
@@ -218,7 +218,7 @@ func (a *Agent) Chat(prompt string) error {
 		a.logTurnStatus(currentTurns, tokens, nil, false)
 
 		// 3. Send Chat Request
-		respContent, metrics, err := a.sendChat(apiContents)
+		respContent, metrics, err := a.sendChat(ctx, apiContents)
 		if metrics != nil {
 			a.logUsage(metrics)
 		}
@@ -232,7 +232,7 @@ func (a *Agent) Chat(prompt string) error {
 		a.saveHistory() // SAVE 1: Capture model's response/tool calls
 
 		// 5. Handle Tool Execution
-		if err := a.handleToolExecution(respContent, turn); err != nil {
+		if err := a.handleToolExecution(ctx, respContent, turn); err != nil {
 			return err
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
@@ -298,9 +298,9 @@ func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, curr
 	return apiContents
 }
 
-func (a *Agent) sendChat(apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
+func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
 	toolsSDK := a.registry.ToToolSDK()
-	respContent, metrics, err := a.client.SendChat(apiContents, toolsSDK)
+	respContent, metrics, err := a.client.SendChat(ctx, apiContents, toolsSDK)
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
@@ -311,7 +311,7 @@ func (a *Agent) sendChat(apiContents []*types.Content) (*types.Content, *types.M
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}
 		// Retry
-		respContent, metrics, err = a.client.SendChat(apiContents, a.registry.ToToolSDK())
+		respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.ToToolSDK())
 	}
 	return respContent, metrics, err
 }

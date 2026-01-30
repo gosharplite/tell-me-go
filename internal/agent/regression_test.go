@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -19,7 +20,7 @@ type MockClient struct {
 	ResponseText string
 }
 
-func (m *MockClient) SendChat(history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
 	// Simulate an empty response if specifically requested
 	if m.ResponseText == "EMPTY" {
 		return &types.Content{Role: "model", Parts: []*types.Part{}}, &types.Metrics{}, nil

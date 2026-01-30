@@ -168,7 +168,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	a := New(client, hManager, registry, sm)
-	err = a.Chat("Hello")
+	err = a.Chat(context.Background(), "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	a.SetConcurrency(1, 1)                // 1 second timeout
 	a.toolTimeout = 50 * time.Millisecond // Overwrite with short timeout
 
-	_ = a.Chat("Run slow tool")
+	_ = a.Chat(context.Background(), "Run slow tool")
 
 	contents := hManager.GetContents()
 	if len(contents) >= 3 {
@@ -281,7 +281,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	a := New(client, hManager, registry, sm)
-	_ = a.Chat("Generate an image")
+	_ = a.Chat(context.Background(), "Generate an image")
 
 	contents := hManager.GetContents()
 	foundImage := false
@@ -357,7 +357,7 @@ func TestAgentToolLoop(t *testing.T) {
 	a := New(client, hManager, registry, sm)
 
 	// Execute Chat
-	err = a.Chat("What's the weather?")
+	err = a.Chat(context.Background(), "What's the weather?")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	a := New(client, hManager, registry, sm)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
-	err = a.Chat("Run tool")
+	err = a.Chat(context.Background(), "Run tool")
 	if err != ErrMaxTurnsReached {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
@@ -427,9 +427,63 @@ func TestAgent_Chat_APIError(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	a := New(client, hManager, registry, sm)
-	err = a.Chat("Hello")
+	err = a.Chat(context.Background(), "Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")
+	}
+}
+
+func TestAgent_Chat_ContextCancellation(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	registry := tools.NewRegistry()
+
+	// Tool that takes some time
+	registry.Register(&genai.FunctionDeclaration{
+		Name: "long_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		select {
+		case <-time.After(1 * time.Second):
+			return "Success", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{
+					{FunctionCall: &genai.FunctionCall{Name: "long_tool"}},
+				}}},
+			},
+		}
+		json.NewEncoder(w).Encode(apiResp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel the context after a short delay
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	err = a.Chat(ctx, "Run long tool")
+	if err == nil {
+		t.Error("Expected error due to context cancellation, got nil")
+	}
+	if err != context.Canceled && !strings.Contains(err.Error(), "canceled") {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
 	}
 }
 

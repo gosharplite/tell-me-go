@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -65,6 +66,9 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
 	args = a.sanitizeArgs(args)
 
@@ -149,7 +153,7 @@ func (a *App) Run(args []string) error {
 		return nil
 	}
 
-	pricing := tools.GetPricing(context.Background(), a.sm, filepath.Join(homeDir, "output"))
+	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
 	if data, err := os.ReadFile(persistentConfigPath); err == nil {
@@ -193,7 +197,7 @@ func (a *App) Run(args []string) error {
 	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
-	if err := chatAgent.Chat(prompt); err != nil {
+	if err := chatAgent.Chat(ctx, prompt); err != nil {
 		return fmt.Errorf("error: %v", err)
 	}
 

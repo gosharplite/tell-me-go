@@ -5,6 +5,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -82,7 +83,10 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(prompt string) error                             { m.capturedPrompt = prompt; return nil }
+func (m *mockChatter) Chat(ctx context.Context, prompt string) error {
+	m.capturedPrompt = prompt
+	return nil
+}
 func (m *mockChatter) SetLogFile(path string)                               {}
 func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)            {}
 func (m *mockChatter) SetRawOutput(raw bool)                                {}
