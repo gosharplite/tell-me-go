@@ -101,21 +101,6 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 	}, m.askUser, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
-		Name:        "read_url",
-		Description: "Fetches the content of a specific URL.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
-				"url": {
-					Type:        genai.TypeString,
-					Description: "The URL to fetch.",
-				},
-			},
-			Required: []string{"url"},
-		},
-	}, m.readURL)
-
-	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches the content of a specific URL and cleans it into readable documentation.",
 		Parameters: &genai.Schema{
@@ -524,7 +509,7 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 	return strings.TrimSpace(response), nil
 }
 
-func (m *systemManager) readURL(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
 	url, ok := args["url"].(string)
 	if !ok || url == "" {
 		return "", fmt.Errorf("url argument is required")
@@ -552,19 +537,7 @@ func (m *systemManager) readURL(ctx context.Context, args map[string]interface{}
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	out := string(body)
-	if len(out) > 50000 {
-		out = out[:50000] + "\n... (truncated due to size limit)"
-	}
-
-	return out, nil
-}
-
-func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
-	content, err := m.readURL(ctx, args)
-	if err != nil {
-		return "", err
-	}
+	content := string(body)
 
 	// Basic HTML stripping
 	// 1. Remove script and style tags and their contents
