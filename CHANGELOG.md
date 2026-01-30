@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.60.0] - 2026-04-18
+### Added
+- **Refactoring Tools**: Introduced `move_definition` for safe, AST-based movement of Go symbols (structs, interfaces, functions) and their associated methods between files.
+- **Dynamic Pricing**: Updated the `estimate_cost` tool and local pricing engine to support tiered input pricing (Standard vs. Premium at 128k tokens) for Gemini models.
+
+### Changed
+- **Tool Clarity**: Performed a comprehensive refinement of tool descriptions across the `filesystem`, `intelligence`, `git`, `dev`, and `system` toolsets. This distinguishes between AST-based (precise) and Regex/Text-based (broad) search mechanisms to prevent AI misinterpretation.
+- **Git Integration**: Optimized `git_commit` and `git_create_branch` descriptions to emphasize their roles in the development workflow.
+- **Version Stabilization**: Finalized release v1.60.0.
+
 ## [1.59.0] - 2026-01-30
 
 ### Fixed
