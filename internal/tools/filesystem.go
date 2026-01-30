@@ -18,11 +18,13 @@ import (
 
 type fileSystemManager struct {
 	sm *SecurityManager
+	bm *BackupManager
 }
 
 // RegisterFileSystemTools adds file-related tools to the registry.
 func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
-	m := &fileSystemManager{sm: sm}
+	bm := NewBackupManager(sm, 10)
+	m := &fileSystemManager{sm: sm, bm: bm}
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_files",
@@ -202,6 +204,20 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 			Required: []string{"file1", "file2"},
 		},
 	}, m.getFileDiff)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "undo_file_change",
+		Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"n": {
+					Type:        genai.TypeInteger,
+					Description: "Number of changes to revert (default 1).",
+				},
+			},
+		},
+	}, m.undoFileChange)
 }
 
 func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -432,6 +448,8 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 		return "Action denied by user.", nil
 	}
 
+	m.bm.Snapshot(path, "WRITE")
+
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -460,6 +478,8 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	if !m.sm.ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
 		return "Action denied by user.", nil
 	}
+
+	m.bm.Snapshot(path, "REPLACE")
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -704,4 +724,12 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 	}
 
 	return out, nil
+}
+
+func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]interface{}) (string, error) {
+	n := 1
+	if val, ok := args["n"].(float64); ok {
+		n = int(val)
+	}
+	return m.bm.Undo(n)
 }
