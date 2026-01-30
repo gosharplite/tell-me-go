@@ -79,7 +79,7 @@ type Bar struct{}
 	// We need to ensure the global cache is used or inject it.
 	// Since we are modifying grepDefinitionsGo to use the global cache,
 	// we can just run it.
-	
+
 	// Reset global cache for test if accessible, or just rely on it working.
 	// We can't easily reset a private global from here unless we add a helper.
 	// But it shouldn't matter for correctness.

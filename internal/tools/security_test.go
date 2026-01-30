@@ -28,7 +28,6 @@ func TestReadSingleKey_NoTerminal(t *testing.T) {
 	}
 }
 
-
 func TestIsPathSafe_SymlinkRace(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "security_test")
 	if err != nil {
