@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -24,6 +26,55 @@ import (
 type intelligenceManager struct {
 	sm *SecurityManager
 }
+
+// Global AST Cache to improve performance of AST-based tools
+type cachedFile struct {
+	file    *ast.File
+	modTime time.Time
+}
+
+type astCache struct {
+	mu    sync.Mutex
+	files map[string]cachedFile
+	fset  *token.FileSet
+}
+
+func newASTCache() *astCache {
+	return &astCache{
+		files: make(map[string]cachedFile),
+		fset:  token.NewFileSet(),
+	}
+}
+
+func (c *astCache) get(path string) (*ast.File, *token.FileSet, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, c.fset, err
+	}
+
+	entry, ok := c.files[path]
+	if ok && entry.modTime.Equal(info.ModTime()) {
+		return entry.file, c.fset, nil
+	}
+
+	// Re-parse or first parse
+	f, err := parser.ParseFile(c.fset, path, nil, parser.ParseComments)
+	if err != nil {
+		return nil, c.fset, err
+	}
+
+	c.files[path] = cachedFile{
+		file:    f,
+		modTime: info.ModTime(),
+	}
+
+	return f, c.fset, nil
+}
+
+var globalASTCache = newASTCache()
 
 // RegisterIntelligenceTools adds AST-based tools to the registry.
 func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
@@ -216,7 +267,6 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 func grepDefinitionsGo(path, query string) ([]string, error) {
 	var results []string
-	fset := token.NewFileSet()
 	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
@@ -224,7 +274,7 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
 			return nil // Skip files with syntax errors but track them
@@ -263,8 +313,7 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 }
 
 func getFileSkeletonGo(filePath string) (string, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	f, _, err := globalASTCache.get(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse Go file: %w", err)
 	}
@@ -703,14 +752,13 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	}
 
 	var results []string
-	fset := token.NewFileSet()
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -899,7 +947,6 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	var results []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
@@ -917,7 +964,7 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -953,7 +1000,6 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	type interfaceInfo struct {
 		methods []string
 		path    string
@@ -971,7 +1017,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -1004,7 +1050,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -1069,14 +1115,13 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	var sb strings.Builder
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -1119,7 +1164,10 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 							if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 								return nil
 							}
-							ff, _ := parser.ParseFile(fset, p, nil, 0)
+							ff, _, _ := globalASTCache.get(p)
+							if ff == nil {
+								return nil
+							}
 							for _, d := range ff.Decls {
 								if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
 									recvType := exprToString(fd.Recv.List[0].Type)
