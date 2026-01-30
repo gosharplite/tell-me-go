@@ -36,8 +36,8 @@ All tools interacting with the local filesystem must verify that the requested p
 ### 2. User Confirmation Handshakes
 The assistant must never perform destructive or high-risk actions without explicit user approval.
 
-*   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`, `remove_readpath`.
-*   **System Tools**: `execute_command`.
+*   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`, `remove_readpath`, `rename_symbol`, `move_definition`.
+*   **System Tools**: `execute_command`, `pipe_commands`, `git_commit`, `git_create_branch`.
 *   **Mechanism**: Use `tools.ConfirmDestructiveAction(action, target, detail)`.
     - **UI Standard**: The prompt and details must be printed to `os.Stderr` using high-visibility colors (Yellow/Red).
     - **Bypass for Tests**: Use the `TELL_ME_MOCK_ANSWER` environment variable to automate confirmations in E2E tests.

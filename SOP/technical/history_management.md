@@ -44,9 +44,10 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 #### 4. Pruning Logic
 To prevent the payload from exceeding the model's context window or the user's budget:
 - **Turn Limit**: Defined by `MAX_HISTORY_TURNS` in the config.
-- **Action**: When the limit is reached, the oldest pairs (one `user` and one `model` message) must be removed until the count is within limits.
+- **Action**: When the limit is reached, the history is pruned aggressively to remove the oldest **50%** of turns.
+- **Why**: This strategy creates a stable cache prefix for Gemini Context Caching, ensuring the next 50% of turns benefit from cached tokens, significantly reducing latency and cost compared to a rolling window (FIFO) approach.
 - **Consistency**: Ensure the pruning logic always removes an even number of messages to maintain `user` -> `model` role alternation starting from index 0.
-- **System Notice**: If history is pruned, a notification should be added to the scratchpad or logged.
+- **System Notice**: If history is pruned (especially major pruning), an urgent notification is injected into the model's volatile context instructing it to consult `manage_scratchpad` to recover lost context.
 
 #### 5. Volatile vs. Persistent Context
 The history manager must distinguish between data that belongs in the permanent session record and data that is temporary for safety.

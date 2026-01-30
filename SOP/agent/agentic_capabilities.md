@@ -22,7 +22,16 @@ To define the standards for implementing and executing tools (function calling) 
 
 #### 1. Tool Definition (Schema)
 Every tool must be defined using a standard JSON schema that matches the Gemini API requirements.
-- **Location**: Tool definitions are registered within the `internal/tools` package using the `Register*Tools` functions (e.g., `RegisterFileSystemTools`).
+- **Location**: Tool definitions are registered within the `internal/tools` package.
+- **Categories**:
+    - **FileSystem**: `list_files`, `read_file`, `write_file`, `replace_text`, etc.
+    - **Intelligence (AST)**: `find_usages`, `get_type_info`, `semantic_diff`, `rename_symbol`, etc.
+    - **Git**: `get_git_status`, `git_commit`, `get_git_diff`, etc.
+    - **Dev**: `run_tests`, `run_linter`, `go_tidy`, etc.
+    - **State**: `manage_tasks`, `manage_scratchpad`, `manage_config`, `configure_ux_preferences`.
+    - **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `bypass_confirmation`.
+    - **Media**: `create_image`, `read_image`.
+    - **External**: `send_teams_message`.
 - **Validation**: Every tool must have a `description` and a clear `parameters` schema using `genai.FunctionDeclaration`.
 
 #### 2. The Orchestration Loop

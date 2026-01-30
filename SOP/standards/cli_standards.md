@@ -97,6 +97,12 @@ To prevent "Agentic Amnesia" and ensure the reliability of long-running or multi
 - **Mandatory Verification**: After updating the state, the agent **MUST** list the tasks or read the scratchpad to verify the write was successful and the state is consistent.
 - **Tool Error Handling**: If a state-management tool (Task/Scratchpad) returns an error (e.g., "failed to parse"), this MUST be treated as a **blocking failure**. The agent must stop and fix the underlying file corruption before proceeding.
 
+#### 10. UX Preferences & Smart Suggestions
+To improve discoverability and workflow efficiency, the tool supports configurable UX enhancements.
+- **Smart Suggestions**: When enabled (`configure_ux_preferences feature='smart_suggestions' status='on'`), the AI automatically appends 2-3 context-aware follow-up command suggestions to the end of every response.
+- **Persistence**: These preferences are stored in the mode-scoped config (e.g., `vertex_config.json`) and persist across sessions.
+- **System Prompt Injection**: If enabled, the system prompt is dynamically updated to instruct the model to provide these suggestions.
+
 ---
 
 ### Verification
