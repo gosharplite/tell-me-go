@@ -122,7 +122,7 @@ func (a *App) Run(args []string) error {
 	}
 	tools.LoadBypassState()
 	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
-	tools.RegisterSafePath(*configPath)
+	tools.RegisterReadOnlyPath(*configPath)
 
 	if *newSession {
 		timestamp := time.Now().Format("20060102_150405")
