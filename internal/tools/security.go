@@ -98,25 +98,28 @@ func (sm *SecurityManager) TerminalUnlock() {
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
 func readSingleKey(ctx context.Context) (string, error) {
+	// Check context before terminal check
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
 	// Support for E2E mocking of user input
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
 	}
 
-	// Try to open /dev/tty for interaction to avoid consuming Stdin if possible
-	// However, term.MakeRaw typically works on Stdin's FD.
 	fd := int(os.Stdin.Fd())
-	isTerm := term.IsTerminal(fd)
-
-	var state *term.State
-	if isTerm {
-		var err error
-		state, err = term.MakeRaw(fd)
-		if err != nil {
-			return "", err
-		}
-		defer term.Restore(fd, state)
+	if !term.IsTerminal(fd) {
+		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
 	}
+
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", err
+	}
+	defer term.Restore(fd, state)
 
 	type result struct {
 		b   byte
@@ -140,7 +143,7 @@ func readSingleKey(ctx context.Context) (string, error) {
 		if res.err != nil {
 			return "", res.err
 		}
-		if isTerm && res.b == 3 { // Ctrl+C
+		if res.b == 3 { // Ctrl+C (ETX)
 			return "", fmt.Errorf("interrupted")
 		}
 		return strings.ToLower(string(res.b)), nil

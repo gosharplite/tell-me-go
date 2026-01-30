@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -372,7 +373,10 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 
 		// Read first 1024 bytes to check if binary
 		buf := make([]byte, 1024)
-		n, _ := file.Read(buf)
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			return nil // Skip file on error
+		}
 		if isBinary(buf[:n]) {
 			return nil
 		}

@@ -1,10 +1,33 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestReadSingleKey_NoTerminal(t *testing.T) {
+	// Ensure TELL_ME_MOCK_ANSWER is not set
+	oldMock := os.Getenv("TELL_ME_MOCK_ANSWER")
+	os.Setenv("TELL_ME_MOCK_ANSWER", "")
+	defer os.Setenv("TELL_ME_MOCK_ANSWER", oldMock)
+
+	// Since we are running in a test, Stdin is likely not a terminal
+	ctx := context.Background()
+	_, err := readSingleKey(ctx)
+
+	if err == nil {
+		t.Fatal("expected error when reading single key without terminal, but got nil")
+	}
+
+	expected := "confirmation required but not running in a terminal"
+	if !strings.Contains(err.Error(), expected) {
+		t.Errorf("expected error message to contain %q, got %q", expected, err.Error())
+	}
+}
+
 
 func TestIsPathSafe_SymlinkRace(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "security_test")
