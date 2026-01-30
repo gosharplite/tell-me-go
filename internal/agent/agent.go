@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -37,6 +38,7 @@ type Chatter interface {
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
+	SetMainConfigPath(path string)
 }
 
 // Agent represents the chat orchestration logic.
@@ -56,6 +58,7 @@ type Agent struct {
 	showTools            bool
 	rawOutput            bool
 	persistentConfigPath string
+	mainConfigPath       string
 	startTime            time.Time
 }
 
@@ -145,13 +148,35 @@ func (a *Agent) SetPersistentConfigPath(path string) {
 	a.persistentConfigPath = path
 }
 
+// SetMainConfigPath sets the path to the main YAML configuration file.
+func (a *Agent) SetMainConfigPath(path string) {
+	a.mainConfigPath = path
+}
+
 // AgentConfig defines the structure for persistent session configuration.
 type AgentConfig struct {
 	MaxHistoryTokens int `json:"MAX_HISTORY_TOKENS"`
 	MaxToolTurns     int `json:"MAX_TOOL_TURNS"`
+	MaxHistoryTurns  int `json:"MAX_HISTORY_TURNS"`
 }
 
 func (a *Agent) refreshLimits() {
+	// 1. Reload from main YAML config if available
+	if a.mainConfigPath != "" {
+		if cfg, err := config.Load(a.mainConfigPath); err == nil {
+			if cfg.MaxHistoryTokens > 0 {
+				a.maxHistoryTokens = cfg.MaxHistoryTokens
+			}
+			if cfg.MaxToolTurns > 0 {
+				a.maxToolTurns = cfg.MaxToolTurns
+			}
+			if cfg.MaxHistoryTurns > 0 {
+				a.maxHistoryTurns = cfg.MaxHistoryTurns
+			}
+		}
+	}
+
+	// 2. Override with persistent session config if available
 	if a.persistentConfigPath == "" {
 		return
 	}
@@ -169,18 +194,14 @@ func (a *Agent) refreshLimits() {
 		if cfg.MaxToolTurns > 0 {
 			a.maxToolTurns = cfg.MaxToolTurns
 		}
-		return
+		if cfg.MaxHistoryTurns > 0 {
+			a.maxHistoryTurns = cfg.MaxHistoryTurns
+		}
 	}
 
 	// Fallback to map[string]interface{} for mixed types and log warning
 	var pCfg map[string]interface{}
 	if err := json.Unmarshal(data, &pCfg); err != nil {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
-				time.Now().Format("15:04:05"), err)
-		}()
 		return
 	}
 
@@ -202,6 +223,16 @@ func (a *Agent) refreshLimits() {
 		case string:
 			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
 				a.maxToolTurns = limit
+			}
+		}
+	}
+	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
+		switch v := val.(type) {
+		case float64:
+			a.maxHistoryTurns = int(v)
+		case string:
+			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
+				a.maxHistoryTurns = limit
 			}
 		}
 	}
