@@ -431,7 +431,7 @@ func writeFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err := os.WriteFile(path, []byte(content), 0644)
+	err := AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
@@ -449,7 +449,7 @@ func replaceText(args map[string]interface{}) (string, error) {
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Replace:\n%s\nWith:\n%s", oldText, newText)
+	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
 	if !ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
 		return "Action denied by user.", nil
 	}
@@ -464,7 +464,7 @@ func replaceText(args map[string]interface{}) (string, error) {
 	}
 
 	newContent := strings.Replace(string(content), oldText, newText, 1)
-	err = os.WriteFile(path, []byte(newContent), 0644)
+	err = AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
 		return "", err
 	}

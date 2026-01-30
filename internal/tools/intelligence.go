@@ -187,6 +187,7 @@ func RegisterIntelligenceTools(r *Registry) {
 func grepDefinitionsGo(path, query string) ([]string, error) {
 	var results []string
 	fset := token.NewFileSet()
+	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
@@ -195,7 +196,8 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 
 		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
-			return nil // Skip files with syntax errors
+			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
+			return nil // Skip files with syntax errors but track them
 		}
 
 		for _, decl := range f.Decls {
@@ -222,6 +224,10 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 		}
 		return nil
 	})
+
+	if len(results) == 0 && len(parseErrors) > 0 {
+		return nil, fmt.Errorf("failed to parse Go files:\n%s", strings.Join(parseErrors, "\n"))
+	}
 
 	return results, err
 }
@@ -275,6 +281,14 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
+	if err := IsPathWritable(path); err != nil {
+		return "", err
+	}
+
+	if !ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
+		return "Action denied by user.", nil
+	}
+
 	totalFiles := 0
 	totalChanges := 0
 
@@ -306,7 +320,7 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 			if err := format.Node(&buf, fset, f); err != nil {
 				return fmt.Errorf("failed to format %s: %w", filePath, err)
 			}
-			if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+			if err := AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 		}
@@ -324,6 +338,10 @@ func listTodos(args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -580,6 +598,10 @@ func findUsages(args map[string]interface{}) (string, error) {
 		path = "."
 	}
 
+	if err := IsPathSafe(path); err != nil {
+		return "", err
+	}
+
 	fset := token.NewFileSet()
 	var results []string
 
@@ -618,6 +640,10 @@ func listImplementations(args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	fset := token.NewFileSet()
@@ -730,6 +756,10 @@ func getTypeInfo(args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	fset := token.NewFileSet()
