@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"google.golang.org/genai"
 )
 
 var (
@@ -59,7 +61,7 @@ type Agent struct {
 
 // New creates a new Agent.
 func New(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
-	return &Agent{
+	a := &Agent{
 		client:             client,
 		history:            hManager,
 		registry:           registry,
@@ -73,6 +75,25 @@ func New(client *api.Client, hManager *history.Manager, registry *tools.Registry
 		rawOutput:          false,
 		startTime:          time.Now(),
 	}
+	a.registerInternalTools()
+	return a
+}
+
+func (a *Agent) registerInternalTools() {
+	a.registry.Register(&genai.FunctionDeclaration{
+		Name:        "summarize_history",
+		Description: "Summarizes a specified number of older conversation turns to free up context space.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"turns": {
+					Type:        genai.TypeNumber,
+					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
+				},
+			},
+			Required: []string{"turns"},
+		},
+	}, a.summarizeHistory)
 }
 
 // SetUIOptions sets the UI visibility options.
@@ -175,8 +196,17 @@ func (a *Agent) Chat(prompt string) error {
 
 		// 1. Safety Check: MAX_HISTORY_TOKENS
 		if tokens > a.maxHistoryTokens {
-			a.handleLimitExceeded(tokens)
-			return ErrContextLimitExceeded
+			// Try auto-summarization before giving up
+			if err := a.autoSummarize(context.Background()); err == nil {
+				contents = a.history.GetContents()
+				tokens = a.estimatePayloadTokens(contents)
+			}
+
+			// If still over limit or summarization failed, handle as fatal
+			if tokens > a.maxHistoryTokens {
+				a.handleLimitExceeded(tokens)
+				return ErrContextLimitExceeded
+			}
 		}
 
 		// Calculate current turns

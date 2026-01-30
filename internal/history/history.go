@@ -225,6 +225,33 @@ func (m *Manager) GetContents() []*types.Content {
 	return contents
 }
 
+// ReplaceRange replaces a range of history entries with new content.
+// It ensures that role alternation is preserved if the caller provides alternating content.
+func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if start < 0 || end > len(m.Contents) || start > end {
+		return fmt.Errorf("invalid range: [%d, %d] for history length %d", start, end, len(m.Contents))
+	}
+
+	// 1. Perform replacement
+	head := m.Contents[:start]
+	tail := m.Contents[end:]
+
+	m.Contents = append(append([]*types.Content{}, head...), newContents...)
+	m.Contents = append(m.Contents, tail...)
+
+	// 2. Validate role alternation for the entire history
+	for i := 1; i < len(m.Contents); i++ {
+		if m.Contents[i].Role == m.Contents[i-1].Role {
+			return fmt.Errorf("role alternation violation at index %d after replacement", i)
+		}
+	}
+
+	return nil
+}
+
 // GetPath returns the file path of the history file.
 func (m *Manager) GetPath() string {
 	return m.FilePath

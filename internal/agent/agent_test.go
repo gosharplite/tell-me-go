@@ -25,7 +25,8 @@ import (
 
 func TestAgent_Setters(t *testing.T) {
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, nil, sm)
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
 	a.SetUIOptions(false, false)
 	if a.showThoughts || a.showTools {
 		t.Error("SetUIOptions failed")
@@ -51,7 +52,8 @@ func TestAgent_LogUsage(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "usage.log")
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, nil, sm)
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
 	a.SetLogFile(logFile)
 
 	metrics := &types.Metrics{
@@ -436,7 +438,8 @@ func TestAgent_RefreshLimits(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.json")
 
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, nil, sm)
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
 	a.SetLimits(10, 1000, 20)
 
 	// Set the config path
