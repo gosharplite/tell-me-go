@@ -195,14 +195,15 @@ func (a *Agent) Chat(prompt string) error {
 		tokens := a.estimatePayloadTokens(contents)
 
 		// 1. Safety Check: MAX_HISTORY_TOKENS
-		if tokens > a.maxHistoryTokens {
+		// Trigger auto-summarization at 90% of the limit to provide a safety buffer.
+		if tokens > int(float64(a.maxHistoryTokens)*0.9) {
 			// Try auto-summarization before giving up
 			if err := a.autoSummarize(context.Background()); err == nil {
 				contents = a.history.GetContents()
 				tokens = a.estimatePayloadTokens(contents)
 			}
 
-			// If still over limit or summarization failed, handle as fatal
+			// After summarization, if we are still over the hard limit, abort.
 			if tokens > a.maxHistoryTokens {
 				a.handleLimitExceeded(tokens)
 				return ErrContextLimitExceeded
