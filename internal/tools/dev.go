@@ -84,19 +84,37 @@ func runTests(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("command argument is required")
 	}
 
-	// Safety check: restricted to known test patterns
-	safeTestPatterns := `^(\./.*run_tests\.sh|pytest|npm\s+test|go\s+test|cargo\s+test|make\s+test)`
-	matched, _ := regexp.MatchString(safeTestPatterns, command)
-	if !matched {
-		return "", fmt.Errorf("security violation: command '%s' is not a recognized test command", command)
+	// Safety check: block shell metacharacters to prevent command chaining
+	if strings.ContainsAny(command, ";|&><`$") {
+		return "", fmt.Errorf("security violation: command contains forbidden shell characters")
+	}
+
+	// Split command into parts to avoid shell interpretation
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("invalid command")
+	}
+
+	baseCmd := parts[0]
+	// Safety check: restricted to known test tools
+	allowedTools := map[string]bool{
+		"go":     true,
+		"pytest": true,
+		"npm":    true,
+		"cargo":  true,
+		"make":   true,
+	}
+
+	if !allowedTools[baseCmd] && !strings.HasSuffix(baseCmd, "run_tests.sh") {
+		return "", fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
 	}
 
 	TerminalMutex.Lock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
 	TerminalMutex.Unlock()
 
-	// Execute the command
-	cmd := exec.Command("sh", "-c", command)
+	// Execute the command directly without shell wrapper
+	cmd := exec.Command(parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
 
 	outStr := string(output)
