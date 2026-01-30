@@ -28,8 +28,7 @@ func TestBackupManager(t *testing.T) {
 	}
 
 	// 3. Undo modification
-	msg, err := bm.Undo(1)
-	if err != nil {
+	if _, err := bm.Undo(1); err != nil {
 		t.Fatalf("Undo failed: %v", err)
 	}
 	content, _ := os.ReadFile(filePath)
@@ -38,12 +37,10 @@ func TestBackupManager(t *testing.T) {
 	}
 
 	// 4. Undo creation
-	msg, err = bm.Undo(1)
-	if err != nil {
+	if _, err := bm.Undo(1); err != nil {
 		t.Fatalf("Undo failed: %v", err)
 	}
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		t.Errorf("Expected file to be removed, but it exists")
 	}
-	_ = msg
 }

@@ -26,9 +26,14 @@ func (a *Agent) logUsage(m *types.Metrics) {
 	}
 
 	timestamp := time.Now().Format("15:04:05")
+	durationStr := fmt.Sprintf("%.2fs", m.Duration)
+	if m.ToolDuration > 3.0 {
+		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
+	}
+
 	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s / 15.2s]
-	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs / %.2fs]\n",
-		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, m.Duration, time.Since(a.startTime).Seconds())
+	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%s / %.2fs]\n",
+		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, time.Since(a.startTime).Seconds())
 
 	// Append to log file
 	f, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -83,8 +88,13 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPost
 		}
 
 		totalDuration := time.Since(a.startTime).Seconds()
-		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%.2fs%s / %.2fs%s]%s\n",
-			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, m.Duration, gray, totalDuration, gray, reset)
+		durationStr := fmt.Sprintf("%.2fs", m.Duration)
+		if m.ToolDuration > 3.0 {
+			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
+		}
+
+		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
 	}
 }
 

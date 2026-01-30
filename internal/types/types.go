@@ -22,4 +22,5 @@ type Metrics struct {
 	ThinkingTokens int32
 	SearchQueries  int
 	Duration       float64
+	ToolDuration   float64
 }
