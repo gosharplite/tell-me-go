@@ -30,7 +30,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
-		Description: "Executes a shell command on the local system.",
+		Description: "Executes a single shell command without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -57,7 +57,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "pipe_commands",
-		Description: "Executes a sequence of commands, piping the output of each to the next.",
+		Description: "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -102,7 +102,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
-		Description: "Fetches the content of a specific URL and cleans it into readable documentation.",
+		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -144,7 +144,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_safepath",
-		Description: "Adds a directory or file to the allowed boundaries for AI access. This is a persistent configuration.",
+		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{

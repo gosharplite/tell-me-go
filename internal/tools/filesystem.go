@@ -28,7 +28,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_files",
-		Description: "Lists files and directories in the specified path.",
+		Description: "Returns a shallow list of filenames and directory names in a specific path. Useful for confirming file existence before reading.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -75,7 +75,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "search_files",
-		Description: "Searches for a text pattern in files within a directory (recursive).",
+		Description: "Performs a recursive regex search for a text pattern within a specific subdirectory. Use this when the search scope is restricted to a known module or folder.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -117,7 +117,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_file",
-		Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go').",
+		Description: "Finds files based on name patterns using filepath.Match (e.g., '*.go'). Useful for locating specific configuration or source files by name.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -136,7 +136,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "grep_definitions",
-		Description: "Searches for code definitions (functions, classes, structs) within files.",
+		Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -154,7 +154,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_skeleton",
-		Description: "Returns the skeleton (function signatures, classes, structs, and docstrings) of a source code file, omitting function bodies.",
+		Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -188,7 +188,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_diff",
-		Description: "Compares two files and returns their differences.",
+		Description: "Generates a standard unified diff between two arbitrary file paths on disk. Does not require Git history.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{

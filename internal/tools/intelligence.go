@@ -31,7 +31,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_usages",
-		Description: "Identify all references to a specific symbol across the project.",
+		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -64,7 +64,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_type_info",
-		Description: "Provide a deep dive into a specific type (fields, methods, implementations).",
+		Description: "Provides a detailed structural breakdown of a Go type, including fields, and all associated methods. Use this to understand internal state and behavior.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -88,7 +88,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "search_usages_globally",
-		Description: "Searches for a string or symbol usage across all file types in the project, with smart exclusions.",
+		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -103,7 +103,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "semantic_diff",
-		Description: "Provides a summarized, logical view of changes between the current state and a commit/branch, focusing on function and structural changes.",
+		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -155,7 +155,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "go_doc",
-		Description: "Runs 'go doc' to retrieve documentation for a package or symbol.",
+		Description: "Retrieves the official Go documentation and comments for a symbol or package. Best for understanding the intended usage of a library.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{

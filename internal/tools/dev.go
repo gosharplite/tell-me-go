@@ -23,7 +23,7 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_tests",
-		Description: "Executes project tests (Go, Python, NPM, etc.) and returns the truncated output.",
+		Description: "Executes project tests using authorized tools (go, pytest, npm, cargo, make). Returns 'PASS' or truncated failure logs. Shell metacharacters are forbidden for security.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
@@ -57,7 +57,7 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_linter",
-		Description: "Runs 'staticcheck' or 'golangci-lint' on the project.",
+		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
 	}, m.runLinter, ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
