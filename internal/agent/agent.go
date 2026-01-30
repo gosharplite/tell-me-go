@@ -153,13 +153,6 @@ func (a *Agent) SetMainConfigPath(path string) {
 	a.mainConfigPath = path
 }
 
-// AgentConfig defines the structure for persistent session configuration.
-type AgentConfig struct {
-	MaxHistoryTokens int `json:"MAX_HISTORY_TOKENS"`
-	MaxToolTurns     int `json:"MAX_TOOL_TURNS"`
-	MaxHistoryTurns  int `json:"MAX_HISTORY_TURNS"`
-}
-
 func (a *Agent) refreshLimits() {
 	// 1. Reload from main YAML config if available
 	if a.mainConfigPath != "" {
@@ -185,23 +178,16 @@ func (a *Agent) refreshLimits() {
 		return
 	}
 
-	// Try unmarshaling into the struct first
-	var cfg AgentConfig
-	if err := json.Unmarshal(data, &cfg); err == nil {
-		if cfg.MaxHistoryTokens > 0 {
-			a.maxHistoryTokens = cfg.MaxHistoryTokens
-		}
-		if cfg.MaxToolTurns > 0 {
-			a.maxToolTurns = cfg.MaxToolTurns
-		}
-		if cfg.MaxHistoryTurns > 0 {
-			a.maxHistoryTurns = cfg.MaxHistoryTurns
-		}
-	}
-
-	// Fallback to map[string]interface{} for mixed types and log warning
+	// Use map parsing directly for flexibility (handles string/int types)
+	// and to catch JSON errors that might otherwise be silent.
 	var pCfg map[string]interface{}
 	if err := json.Unmarshal(data, &pCfg); err != nil {
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
+				time.Now().Format("15:04:05"), err)
+		}()
 		return
 	}
 
