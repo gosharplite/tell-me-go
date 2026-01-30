@@ -10,6 +10,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.59.0] - 2026-01-30
+
+### Fixed
+- **Testing**: Removed unused `msg` variable in `internal/tools/backup_test.go` to resolve a linter warning (SA4006).
+
+### Changed
+- **Maintenance**: Promoted to v1.59.0 following the refined public release procedure.
+
 ## [1.58.0] - 2026-01-30
 
 ### Added
