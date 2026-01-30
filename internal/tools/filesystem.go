@@ -451,7 +451,11 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	}
 
 	// Confirmation Gate
-	if !m.sm.ConfirmDestructiveAction("WRITE FILE", path, content) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", path, content)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -463,7 +467,7 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 		return "", fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err := AtomicWrite(path, []byte(content), 0644)
+	err = AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
@@ -482,7 +486,11 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 
 	// Confirmation Gate
 	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
-	if !m.sm.ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", path, detail)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 

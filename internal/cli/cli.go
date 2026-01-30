@@ -66,9 +66,6 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
 	args = a.sanitizeArgs(args)
 
@@ -152,6 +149,9 @@ func (a *App) Run(args []string) error {
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
 

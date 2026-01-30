@@ -315,7 +315,11 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		return "", err
 	}
 
-	if !m.sm.ConfirmDestructiveAction("MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath)) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath))
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -560,14 +564,18 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 		return "", err
 	}
 
-	if !m.sm.ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName))
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
 	totalFiles := 0
 	totalChanges := 0
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}

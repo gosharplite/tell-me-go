@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -96,7 +97,7 @@ func (sm *SecurityManager) TerminalUnlock() {
 }
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
-func readSingleKey() (string, error) {
+func readSingleKey(ctx context.Context) (string, error) {
 	// Support for E2E mocking of user input
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
@@ -105,32 +106,45 @@ func readSingleKey() (string, error) {
 	// Try to open /dev/tty for interaction to avoid consuming Stdin if possible
 	// However, term.MakeRaw typically works on Stdin's FD.
 	fd := int(os.Stdin.Fd())
+	isTerm := term.IsTerminal(fd)
 
-	// Check if Stdin is a terminal
-	if !term.IsTerminal(fd) {
-		// If not a terminal, we can't switch to raw mode.
-		// Just read one byte from stdin directly.
-		b := make([]byte, 1)
-		_, err := os.Stdin.Read(b)
+	var state *term.State
+	if isTerm {
+		var err error
+		state, err = term.MakeRaw(fd)
 		if err != nil {
 			return "", err
 		}
-		return strings.ToLower(string(b)), nil
+		defer term.Restore(fd, state)
 	}
 
-	// Switch to raw mode
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		return "", err
+	type result struct {
+		b   byte
+		err error
 	}
-	defer term.Restore(fd, state)
+	resChan := make(chan result, 1)
+	go func() {
+		b := make([]byte, 1)
+		_, err := os.Stdin.Read(b)
+		if err != nil {
+			resChan <- result{0, err}
+		} else {
+			resChan <- result{b[0], nil}
+		}
+	}()
 
-	b := make([]byte, 1)
-	_, err = os.Stdin.Read(b)
-	if err != nil {
-		return "", err
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resChan:
+		if res.err != nil {
+			return "", res.err
+		}
+		if isTerm && res.b == 3 { // Ctrl+C
+			return "", fmt.Errorf("interrupted")
+		}
+		return strings.ToLower(string(res.b)), nil
 	}
-	return strings.ToLower(string(b)), nil
 }
 
 // logAudit writes a two-line audit entry to the commands log file.
@@ -150,7 +164,7 @@ func (sm *SecurityManager) logAudit(label1, val1, label2, val2 string) {
 }
 
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
-func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail string) bool {
+func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	sm.TerminalLock()
 	defer sm.TerminalUnlock()
 
@@ -162,7 +176,7 @@ func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail strin
 	if sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
 		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
-		return true
+		return true, nil
 	}
 
 	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
@@ -175,13 +189,16 @@ func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail strin
 	}
 	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
 
-	char, err := readSingleKey()
+	char, err := readSingleKey(ctx)
 	fmt.Fprintf(os.Stderr, "\n")
-	if err == nil && char == "y" {
-		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
-		return true
+	if err != nil {
+		return false, err
 	}
-	return false
+	if char == "y" {
+		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+		return true, nil
+	}
+	return false, nil
 }
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.

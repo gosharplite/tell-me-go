@@ -257,9 +257,12 @@ func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[str
 	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
 	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
 
-	char, err := readSingleKey()
+	char, err := readSingleKey(ctx)
 	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil || char != "y" {
+	if err != nil {
+		return "", err
+	}
+	if char != "y" {
 		return "Bypass mode denied by user.", nil
 	}
 
@@ -323,9 +326,12 @@ func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Removal denied by user.", nil
 		}
 		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
@@ -364,9 +370,12 @@ func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[str
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Removal denied by user.", nil
 		}
 		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
@@ -410,17 +419,23 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Access denied by user (first confirmation).", nil
 		}
 
 		// 2. Double Confirmation
 		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
-		char, err = readSingleKey()
+		char, err = readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
 		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
@@ -462,17 +477,23 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Access denied by user (first confirmation).", nil
 		}
 
 		// 2. Double Confirmation
 		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.\033[0m (y/N) ")
-		char, err = readSingleKey()
+		char, err = readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		if err != nil {
+			return "", err
+		}
+		if char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
 		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
@@ -500,13 +521,27 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 	fmt.Fprintf(os.Stderr, "\033[1;35m[AI Question] %s\033[0m\n", question)
 	fmt.Fprintf(os.Stderr, "Answer > ")
 
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read user response: %w", err)
+	type result struct {
+		s   string
+		err error
 	}
+	resChan := make(chan result, 1)
 
-	return strings.TrimSpace(response), nil
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		response, err := reader.ReadString('\n')
+		resChan <- result{response, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resChan:
+		if res.err != nil {
+			return "", fmt.Errorf("failed to read user response: %w", res.err)
+		}
+		return strings.TrimSpace(res.s), nil
+	}
 }
 
 func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -781,10 +816,13 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n") // New line after key hit
 
-		if err == nil && (char == "y") {
+		if err != nil {
+			return "", err
+		}
+		if char == "y" {
 			approved = true
 		}
 	}
@@ -924,9 +962,12 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this pipeline? (y/N) ")
 
-		char, err := readSingleKey()
+		char, err := readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
-		if err == nil && (char == "y") {
+		if err != nil {
+			return "", err
+		}
+		if char == "y" {
 			approved = true
 		}
 	}
