@@ -623,7 +623,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 		if err != nil {
 			return nil
 		}
-		
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

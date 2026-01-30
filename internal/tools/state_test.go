@@ -18,7 +18,7 @@ func createTestStateManager(t *testing.T, tmpDir string) *stateManager {
 	sm := NewSecurityManager()
 	// Allow tmpDir in security manager for tests
 	sm.RegisterSafePath(tmpDir)
-	
+
 	s := &stateManager{
 		sm:          sm,
 		tasks:       make(map[float64]Task),
@@ -195,8 +195,8 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 3: Read Existing
 	t.Run("ReadExisting", func(t *testing.T) {
 		// Verify internal state matches file
-		s.loadScratchpad() 
-		
+		s.loadScratchpad()
+
 		args := map[string]interface{}{"action": "read"}
 		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {

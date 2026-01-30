@@ -18,16 +18,16 @@ import (
 )
 
 type stateManager struct {
-	sm           *SecurityManager
-	mu           sync.RWMutex
-	tasks        map[float64]Task
-	taskNextID   float64
-	config       map[string]string
-	configFile   string
-	scratchpad   string
-	scratchFile  string
-	tasksFile    string
-	sessionInfo  SessionInfo
+	sm          *SecurityManager
+	mu          sync.RWMutex
+	tasks       map[float64]Task
+	taskNextID  float64
+	config      map[string]string
+	configFile  string
+	scratchpad  string
+	scratchFile string
+	tasksFile   string
+	sessionInfo SessionInfo
 }
 
 // SessionInfo holds metadata about the current execution environment.
