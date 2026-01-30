@@ -10,6 +10,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.0] - 2026-01-30
+### Fixed
+- **Testing**: Updated `mockChatter` in `internal/cli/cli_test.go` to implement the full `agent.Chatter` interface, resolving a compilation error during release verification.
+
+### Changed
+- **Maintenance**: Promoted to v1.62.0 following the refined public release procedure.
+
 ## [1.61.0] - 2026-01-30
 ### Changed
 - **Performance**: Implemented AST caching for intelligence tools. This significantly reduces file parsing overhead when running multiple AST-based queries (e.g., `find_usages`, `get_type_info`) in the same session.
