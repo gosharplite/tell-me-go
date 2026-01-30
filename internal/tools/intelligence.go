@@ -137,7 +137,7 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"old_name", "new_name"},
 		},
-	}, m.renameSymbol, ToolOptions{Serial: true})
+	}, m.renameSymbol, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_todos",

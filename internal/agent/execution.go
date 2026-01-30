@@ -113,11 +113,11 @@ func (a *Agent) isSerialTool(name string) bool {
 }
 
 func (a *Agent) executeTool(call *api.FunctionCall) string {
-	// Execute with timeout (exclude interactive tools)
+	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
-	if call.Name == "ask_user" || call.Name == "execute_command" || call.Name == "pipe_commands" {
+	if a.registry.IsLongRunning(call.Name) {
 		ctx = context.Background()
 		cancel = func() {}
 	} else {

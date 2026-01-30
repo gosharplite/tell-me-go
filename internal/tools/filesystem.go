@@ -111,7 +111,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"filepath", "old_text", "new_text"},
 		},
-	}, m.replaceText, ToolOptions{Serial: true})
+	}, m.replaceText, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_file",
@@ -182,7 +182,7 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"filepath", "content"},
 		},
-	}, m.writeFile, ToolOptions{Serial: true})
+	}, m.writeFile, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_diff",

@@ -34,14 +34,14 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"command"},
 		},
-	}, m.runTests, ToolOptions{Serial: true})
+	}, m.runTests, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, m.goTidy, ToolOptions{Serial: true})
+	}, m.goTidy, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "get_coverage",
 		Description: "Runs Go tests with coverage and returns the summary.",
 		Parameters: &genai.Schema{
@@ -53,14 +53,14 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 				},
 			},
 		},
-	}, m.getCoverage)
+	}, m.getCoverage, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_linter",
 		Description: "Runs 'staticcheck' or 'golangci-lint' on the project.",
-	}, m.runLinter)
+	}, m.runLinter, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_benchmark",
 		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
 		Parameters: &genai.Schema{
@@ -76,12 +76,12 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 				},
 			},
 		},
-	}, m.runBenchmark)
+	}, m.runBenchmark, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
-	}, m.checkVulnerabilities)
+	}, m.checkVulnerabilities, ToolOptions{LongRunning: true})
 }
 
 func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (string, error) {

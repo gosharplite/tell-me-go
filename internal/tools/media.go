@@ -47,7 +47,7 @@ func RegisterMediaTools(r *Registry, sm *SecurityManager, client *api.Client) {
 			},
 			Required: []string{"prompt"},
 		},
-	}, m.createImage, ToolOptions{Serial: true})
+	}, m.createImage, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_image",

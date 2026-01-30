@@ -22,6 +22,15 @@ func TestIsSafeCommand(t *testing.T) {
 		{"cat \"/etc/passwd\"", false},
 		{"grep pattern file.txt", true},
 		{"grep pattern /etc/passwd", false},
+		{"go test ./...", true},
+		{"go build .", true},
+		{"go mod tidy", true},
+		{"go run main.go", true},
+		{"go get github.com/foo/bar", true},
+		{"go install github.com/foo/bar", true},
+		{"go vet ./...", true},
+		{"go fmt ./...", true},
+		{"go clean", false}, // Not in whitelist
 	}
 
 	for _, tt := range tests {
@@ -39,7 +48,7 @@ func TestSplitCommand(t *testing.T) {
 	}{
 		{"ls -la", []string{"ls", "-la"}},
 		{"grep \"hello world\" file.txt", []string{"grep", "hello world", "file.txt"}},
-		{"echo \"\"", []string{"echo"}}, // current implementation might skip empty quoted string if it doesn't write anything to builder
+		{"echo \"\"", []string{"echo", ""}},
 		{"echo \"   \"", []string{"echo", "   "}},
 		{"", nil},
 	}

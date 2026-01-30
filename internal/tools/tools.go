@@ -8,8 +8,8 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
 	"google.golang.org/genai"
+	"os"
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
@@ -17,7 +17,8 @@ type ToolFunc func(ctx context.Context, args map[string]interface{}) (string, er
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {
-	Serial bool // If true, the agent waits for this tool to finish before running others.
+	Serial      bool // If true, the agent waits for this tool to finish before running others.
+	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
 }
 
 // toolEntry stores a tool's definition, handler, and execution options.
@@ -74,6 +75,14 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 func (r *Registry) IsSerial(name string) bool {
 	if entry, ok := r.entries[name]; ok {
 		return entry.options.Serial
+	}
+	return false
+}
+
+// IsLongRunning returns true if the tool is configured as long-running (no timeout).
+func (r *Registry) IsLongRunning(name string) bool {
+	if entry, ok := r.entries[name]; ok {
+		return entry.options.LongRunning
 	}
 	return false
 }

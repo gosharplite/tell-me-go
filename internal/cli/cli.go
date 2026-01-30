@@ -149,7 +149,6 @@ func (a *App) Run(args []string) error {
 		return nil
 	}
 
-
 	pricing := tools.GetPricing(context.Background(), filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)

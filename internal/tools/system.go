@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/shlex"
 	"google.golang.org/genai"
 )
 
@@ -52,7 +53,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"command"},
 		},
-	}, m.executeCommand, ToolOptions{Serial: true})
+	}, m.executeCommand, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "pipe_commands",
@@ -82,7 +83,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"commands"},
 		},
-	}, m.pipeCommands, ToolOptions{Serial: true})
+	}, m.pipeCommands, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
@@ -97,7 +98,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"question"},
 		},
-	}, m.askUser, ToolOptions{Serial: true})
+	}, m.askUser, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_url",
@@ -173,7 +174,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, m.registerSafePathTool, ToolOptions{Serial: true})
+	}, m.registerSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_safepaths",
@@ -193,7 +194,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, m.removeSafePathTool, ToolOptions{Serial: true})
+	}, m.removeSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_readpath",
@@ -212,7 +213,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_readpaths",
@@ -232,17 +233,17 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, m.bypassConfirmationTool, ToolOptions{Serial: true})
+	}, m.bypassConfirmationTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, m.revokeBypassTool, ToolOptions{Serial: true})
+	}, m.revokeBypassTool, ToolOptions{Serial: true, LongRunning: true})
 }
 
 func (m *systemManager) revokeBypassTool(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -648,25 +649,9 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 }
 
 func splitCommand(cmd string) []string {
-	var parts []string
-	var current strings.Builder
-	inQuotes := false
-	for _, r := range cmd {
-		if r == '"' {
-			inQuotes = !inQuotes
-			continue
-		}
-		if r == ' ' && !inQuotes {
-			if current.Len() > 0 {
-				parts = append(parts, current.String())
-				current.Reset()
-			}
-			continue
-		}
-		current.WriteRune(r)
-	}
-	if current.Len() > 0 {
-		parts = append(parts, current.String())
+	parts, err := shlex.Split(cmd)
+	if err != nil {
+		return nil
 	}
 	return parts
 }
@@ -732,6 +717,8 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		}
 		allowedGo := map[string]bool{
 			"test": true, "list": true, "help": true, "version": true, "env": true,
+			"build": true, "run": true, "install": true, "get": true, "mod": true,
+			"vet": true, "fmt": true,
 		}
 		if !allowedGo[sub] {
 			return false
@@ -752,6 +739,10 @@ func (m *systemManager) isSafeCommand(command string) bool {
 		arg := parts[i]
 		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
 			// Skip empty args and simple flags like -la
+			continue
+		}
+		// Special case for Go's recursive package pattern
+		if arg == "./..." || arg == "..." {
 			continue
 		}
 		// If it's a flag with a path like --config=path
