@@ -89,7 +89,14 @@ func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.Fun
 			// we wait for all previously dispatched parallel tools to finish before executing
 			// the serial tool.
 			wg.Wait()
-			results[i] = a.processToolResult(fc.Name, a.executeTool(ctx, fc))
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						results[i] = a.processToolResult(fc.Name, fmt.Sprintf("Error: Panic detected: %v", r))
+					}
+				}()
+				results[i] = a.processToolResult(fc.Name, a.executeTool(ctx, fc))
+			}()
 		} else {
 			// Parallel Execution:
 			wg.Add(1)
@@ -97,6 +104,12 @@ func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.Fun
 			go func(idx int, call *types.FunctionCall) {
 				defer wg.Done()
 				defer func() { <-sem }()
+				// Add recovery
+				defer func() {
+					if r := recover(); r != nil {
+						results[idx] = a.processToolResult(call.Name, fmt.Sprintf("Error: Panic detected: %v", r))
+					}
+				}()
 
 				results[idx] = a.processToolResult(call.Name, a.executeTool(ctx, call))
 			}(i, fc)
@@ -126,6 +139,11 @@ func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall)
 
 	resChan := make(chan string, 1)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				resChan <- fmt.Sprintf("Error: Panic detected: %v", r)
+			}
+		}()
 		result, err := a.registry.Execute(ctx, call.Name, call.Args)
 		if err != nil {
 			resChan <- fmt.Sprintf("Error: %v", err)
