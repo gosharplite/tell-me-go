@@ -85,6 +85,36 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 			Required: []string{"filepath"},
 		},
 	}, m.getGitBlame)
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "git_commit",
+		Description: "Commits staged changes with a message.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"message": {
+					Type:        genai.TypeString,
+					Description: "The commit message.",
+				},
+			},
+			Required: []string{"message"},
+		},
+	}, m.gitCommit, ToolOptions{Serial: true})
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "git_create_branch",
+		Description: "Creates and checks out a new git branch.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"name": {
+					Type:        genai.TypeString,
+					Description: "The name of the new branch.",
+				},
+			},
+			Required: []string{"name"},
+		},
+	}, m.gitCreateBranch, ToolOptions{Serial: true})
 }
 
 func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
@@ -135,6 +165,32 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 	}
 
 	return runGitCommand(ctx, "blame", "-w", path)
+}
+
+func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
+	message, _ := args["message"].(string)
+	if message == "" {
+		return "", fmt.Errorf("message is required")
+	}
+
+	if !m.sm.ConfirmDestructiveAction("GIT COMMIT", "current staged changes", message) {
+		return "Action denied by user.", nil
+	}
+
+	return runGitCommand(ctx, "commit", "-m", message)
+}
+
+func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (string, error) {
+	name, _ := args["name"].(string)
+	if name == "" {
+		return "", fmt.Errorf("branch name is required")
+	}
+
+	if !m.sm.ConfirmDestructiveAction("GIT CREATE BRANCH", name, "") {
+		return "Action denied by user.", nil
+	}
+
+	return runGitCommand(ctx, "checkout", "-b", name)
 }
 
 func runGitCommand(ctx context.Context, args ...string) (string, error) {
