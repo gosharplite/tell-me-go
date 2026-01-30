@@ -275,6 +275,9 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
+		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
+		a.refreshLimits()
+
 		a.logTurnStatus(currentTurns, tokens, metrics, true)
 		if metrics != nil {
 			a.logUsage(metrics)

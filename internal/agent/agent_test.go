@@ -499,7 +499,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 	// Set the config path
 	a.SetPersistentConfigPath(configPath)
 
-	// Create config file
+	// Create config file with string values
 	configContent := `{"MAX_HISTORY_TOKENS": "5000", "MAX_TOOL_TURNS": "15"}`
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
