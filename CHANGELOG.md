@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.61.0] - 2026-04-18
+## [1.61.0] - 2026-01-30
 ### Changed
 - **Performance**: Implemented AST caching for intelligence tools. This significantly reduces file parsing overhead when running multiple AST-based queries (e.g., `find_usages`, `get_type_info`) in the same session.
 - **Refactor**: Integrated `fsutil.AtomicWrite` into `history.ReplaceRange` to ensure data integrity during history updates.
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refactoring Tools**: Fixed import handling in `move_definition` using `golang.org/x/tools/imports` to ensure moved code compiles correctly.
 - **Agent Stability**: Fixed a state synchronization issue by refreshing limits immediately after tool execution.
 
-## [1.60.0] - 2026-04-18
+## [1.60.0] - 2026-01-30
 ### Added
 - **Refactoring Tools**: Introduced `move_definition` for safe, AST-based movement of Go symbols (structs, interfaces, functions) and their associated methods between files.
 - **Dynamic Pricing**: Updated the `estimate_cost` tool and local pricing engine to support tiered input pricing (Standard vs. Premium at 128k tokens) for Gemini models.
