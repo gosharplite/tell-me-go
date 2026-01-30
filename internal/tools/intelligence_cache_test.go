@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,14 +77,6 @@ type Bar struct{}
 		t.Fatal(err)
 	}
 
-	// We need to ensure the global cache is used or inject it.
-	// Since we are modifying grepDefinitionsGo to use the global cache,
-	// we can just run it.
-
-	// Reset global cache for test if accessible, or just rely on it working.
-	// We can't easily reset a private global from here unless we add a helper.
-	// But it shouldn't matter for correctness.
-
 	results, err := grepDefinitionsGo(tmpDir, "Foo")
 	if err != nil {
 		t.Fatalf("grepDefinitionsGo failed: %v", err)
@@ -91,5 +84,34 @@ type Bar struct{}
 
 	if len(results) != 1 {
 		t.Errorf("Expected 1 result, got %d", len(results))
+	}
+}
+
+func TestASTCacheEviction(t *testing.T) {
+	cache := newASTCache()
+	cache.maxSize = 2 // Small limit
+
+	tmpDir := t.TempDir()
+
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("file%d.go", i)
+		path := filepath.Join(tmpDir, name)
+		content := fmt.Sprintf("package main\nfunc F%d(){}", i)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _, err := cache.get(path)
+		if err != nil {
+			t.Fatalf("Failed to get %s: %v", name, err)
+		}
+	}
+
+	cache.mu.Lock()
+	size := len(cache.files)
+	cache.mu.Unlock()
+
+	if size > 2 {
+		t.Errorf("Cache size %d exceeds max limit 2", size)
 	}
 }

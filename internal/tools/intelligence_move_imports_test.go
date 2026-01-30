@@ -33,7 +33,7 @@ func Mover() {
 
 	sm := NewSecurityManager()
 	sm.RegisterSafePath(testDataDir)
-	
+
 	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
 	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 
@@ -55,7 +55,7 @@ func Mover() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	content := string(dstContent)
 	t.Logf("Destination Content:\n%s", content)
 

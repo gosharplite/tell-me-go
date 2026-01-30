@@ -35,36 +35,52 @@ type cachedFile struct {
 }
 
 type astCache struct {
-	mu    sync.Mutex
-	files map[string]cachedFile
-	fset  *token.FileSet
+	mu      sync.Mutex
+	files   map[string]cachedFile
+	fset    *token.FileSet
+	maxSize int
 }
 
 func newASTCache() *astCache {
 	return &astCache{
-		files: make(map[string]cachedFile),
-		fset:  token.NewFileSet(),
+		files:   make(map[string]cachedFile),
+		fset:    token.NewFileSet(),
+		maxSize: 1000,
 	}
 }
 
 func (c *astCache) get(path string) (*ast.File, *token.FileSet, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	// 1. Stat the file (I/O) - outside lock
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, c.fset, err
 	}
 
+	// 2. Fast path: Check cache
+	c.mu.Lock()
 	entry, ok := c.files[path]
 	if ok && entry.modTime.Equal(info.ModTime()) {
+		c.mu.Unlock()
 		return entry.file, c.fset, nil
 	}
+	c.mu.Unlock()
 
-	// Re-parse or first parse
+	// 3. Slow path: Parse without holding lock
 	f, err := parser.ParseFile(c.fset, path, nil, parser.ParseComments)
 	if err != nil {
 		return nil, c.fset, err
+	}
+
+	// 4. Update cache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Eviction policy
+	if len(c.files) >= c.maxSize {
+		for k := range c.files {
+			delete(c.files, k)
+			break
+		}
 	}
 
 	c.files[path] = cachedFile{
