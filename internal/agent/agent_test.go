@@ -430,3 +430,30 @@ func TestAgent_Chat_APIError(t *testing.T) {
 		t.Error("Expected error on API failure, got nil")
 	}
 }
+
+func TestAgent_RefreshLimits(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	sm := tools.NewSecurityManager()
+	a := New(nil, nil, nil, sm)
+	a.SetLimits(10, 1000, 20)
+
+	// Set the config path
+	a.SetPersistentConfigPath(configPath)
+
+	// Create config file
+	configContent := `{"MAX_HISTORY_TOKENS": "5000", "MAX_TOOL_TURNS": "15"}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	a.refreshLimits()
+
+	if a.maxHistoryTokens != 5000 {
+		t.Errorf("expected maxHistoryTokens 5000, got %d", a.maxHistoryTokens)
+	}
+	if a.maxToolTurns != 15 {
+		t.Errorf("expected maxToolTurns 15, got %d", a.maxToolTurns)
+	}
+}

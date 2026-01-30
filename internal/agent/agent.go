@@ -4,8 +4,10 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +34,7 @@ type Chatter interface {
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
+	SetPersistentConfigPath(path string)
 }
 
 // Agent represents the chat orchestration logic.
@@ -50,6 +53,7 @@ type Agent struct {
 	showThoughts       bool
 	showTools          bool
 	rawOutput          bool
+	persistentConfigPath string
 	startTime          time.Time
 }
 
@@ -115,6 +119,37 @@ func (a *Agent) SetPrunedTurns(n int) {
 	a.prunedTurns = n
 }
 
+// SetPersistentConfigPath sets the path to the persistent session configuration.
+func (a *Agent) SetPersistentConfigPath(path string) {
+	a.persistentConfigPath = path
+}
+
+func (a *Agent) refreshLimits() {
+	if a.persistentConfigPath == "" {
+		return
+	}
+	data, err := os.ReadFile(a.persistentConfigPath)
+	if err != nil {
+		return
+	}
+	var pCfg map[string]string
+	if err := json.Unmarshal(data, &pCfg); err != nil {
+		return
+	}
+
+	// Allow overriding core limits dynamically
+	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
+		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
+			a.maxHistoryTokens = limit
+		}
+	}
+	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
+		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
+			a.maxToolTurns = limit
+		}
+	}
+}
+
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(prompt string) error {
 	a.history.AddContent(&types.Content{
@@ -124,6 +159,7 @@ func (a *Agent) Chat(prompt string) error {
 	a.saveHistory() // Persist initial user prompt immediately
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
+		a.refreshLimits()
 		contents := a.history.GetContents()
 
 		// 0. Enforce history turn limit

@@ -185,6 +185,7 @@ func (a *App) Run(args []string) error {
 
 	// 6. Execute Agent
 	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
+	chatAgent.SetPersistentConfigPath(persistentConfigPath)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetRawOutput(opts.rawOutput)
