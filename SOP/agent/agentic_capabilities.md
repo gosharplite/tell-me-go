@@ -31,11 +31,12 @@ The CLI must transition from a "One-Shot" call to a "Multi-Turn" loop when tools
 2.  **Detect Function Call**: Check if the `candidates[0].content.parts` contains one or more `functionCall` items.
 3.  **Parallel Execution**:
     - Multiple `functionCall` parts should be executed in parallel using goroutines and a worker pool (semaphore) to limit concurrency (e.g., `maxConcurrentTools`).
+    - **Resource Safety**: The semaphore token MUST be acquired **before** spawning the goroutine to prevent resource exhaustion from an unbounded number of goroutines.
     - **UI Sequencing**: To prevent log interleaving during interactive prompts, all `[Tool Action]` headers must be printed sequentially to `stderr` **before** the parallel goroutines are started.
     - Map the `functionCall.name` to a local Go function.
     - Parse arguments based on the schema.
     - Execute the function and capture the output (success or error).
-    - **Timeouts**: Apply a `context.WithTimeout` (default 30s) to non-interactive tools. Interactive tools (e.g., `ask_user`, `execute_command`) are exempt from timeouts.
+    - **Context & Timeouts**: Tool execution MUST respect the parent `context.Context` (propagated from the CLI entry point). Apply a `context.WithTimeout` (default 30s) as a child context for non-interactive tools. Interactive tools (e.g., `ask_user`, `execute_command`) are exempt from timeouts but MUST still respect the parent context cancellation (e.g., on `SIGINT`).
 4.  **Update History**: 
     - **CRITICAL**: Append the model's full `Content` to history, including all `parts` (e.g., `thought`, `thoughtSignature`, `functionCall`). Stripping reasoning parts will cause subsequent API calls to fail on Vertex AI.
     - Append the execution results as a `functionResponse` inside a `Content` with **Role: `user`** (as required by the GenAI SDK).
@@ -71,7 +72,7 @@ The agent must monitor resource limits during the orchestration loop to allow th
 - **Registry**: A central map or registry to link function names (strings) to Go implementation functions.
 - **Interface**:
     ```go
-    type ToolFunc func(args map[string]interface{}) (string, error)
+    type ToolFunc func(ctx context.Context, args map[string]interface{}) (string, error)
     ```
 
 ---
