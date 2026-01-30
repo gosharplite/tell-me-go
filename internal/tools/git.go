@@ -22,7 +22,7 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_status",
-		Description: "Retrieves the current status of the git repository.",
+		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
@@ -30,7 +30,7 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_diff",
-		Description: "Retrieves the git diff of the current repository.",
+		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 			Properties: map[string]*genai.Schema{
