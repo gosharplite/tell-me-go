@@ -103,6 +103,10 @@ func (r *Registry) ToToolSDK() []*genai.Tool {
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
 func AtomicWrite(path string, data []byte, perm os.FileMode) error {
+	if os.Getenv("TELL_ME_DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "\033[0;90m[Debug] AtomicWrite: %s (%d bytes)\033[0m\n", path, len(data))
+	}
+
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
