@@ -414,6 +414,22 @@ func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
 	return nil
 }
 
+// resolveSymlinks attempts to resolve all symlinks in a path. If the full path
+// cannot be resolved (e.g., because the file doesn't exist yet), it attempts
+// to resolve the parent directory.
+func (sm *SecurityManager) resolveSymlinks(path string) string {
+	// Try full path first
+	if realPath, err := filepath.EvalSymlinks(path); err == nil {
+		return realPath
+	}
+	// If it fails (likely file doesn't exist), resolve the parent directory
+	dir := filepath.Dir(path)
+	if realDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(realDir, filepath.Base(path))
+	}
+	return path // Fallback if parent also doesn't exist or other error
+}
+
 // IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
 func (sm *SecurityManager) IsPathSafe(path string) error {
 	if path == "" {
@@ -442,11 +458,8 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	}
 
 	// 1. Symlink Attack Mitigation:
-	// If the file exists, evaluate its real path to prevent symlink-based traversal.
-	// If it doesn't exist (e.g., for write_file), we proceed with the absolute path string.
-	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = realPath
-	}
+	// Use a robust resolver that handles non-existent leaf files by resolving the parent directory.
+	absPath = sm.resolveSymlinks(absPath)
 
 	// 2. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
@@ -530,9 +543,8 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = realPath
-	}
+	// Symlink Attack Mitigation:
+	absPath = sm.resolveSymlinks(absPath)
 
 	// 1. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)

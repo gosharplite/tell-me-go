@@ -568,7 +568,17 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 	totalChanges := 0
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+		if err != nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
@@ -881,7 +891,17 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	var results []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+		if err != nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
@@ -1191,6 +1211,13 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" || info.Name() == "output" {
 				return filepath.SkipDir

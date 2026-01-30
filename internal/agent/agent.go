@@ -145,6 +145,12 @@ func (a *Agent) SetPersistentConfigPath(path string) {
 	a.persistentConfigPath = path
 }
 
+// AgentConfig defines the structure for persistent session configuration.
+type AgentConfig struct {
+	MaxHistoryTokens int `json:"MAX_HISTORY_TOKENS"`
+	MaxToolTurns     int `json:"MAX_TOOL_TURNS"`
+}
+
 func (a *Agent) refreshLimits() {
 	if a.persistentConfigPath == "" {
 		return
@@ -153,20 +159,48 @@ func (a *Agent) refreshLimits() {
 	if err != nil {
 		return
 	}
-	var pCfg map[string]string
-	if err := json.Unmarshal(data, &pCfg); err != nil {
+
+	// Try unmarshaling into the struct first
+	var cfg AgentConfig
+	if err := json.Unmarshal(data, &cfg); err == nil {
+		if cfg.MaxHistoryTokens > 0 {
+			a.maxHistoryTokens = cfg.MaxHistoryTokens
+		}
+		if cfg.MaxToolTurns > 0 {
+			a.maxToolTurns = cfg.MaxToolTurns
+		}
 		return
 	}
 
-	// Allow overriding core limits dynamically
+	// Fallback to map[string]interface{} for mixed types and log warning
+	var pCfg map[string]interface{}
+	if err := json.Unmarshal(data, &pCfg); err != nil {
+		a.sm.TerminalLock()
+		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
+			time.Now().Format("15:04:05"), err)
+		a.sm.TerminalUnlock()
+		return
+	}
+
+	// Allow overriding core limits dynamically from map (handles both string and int if present)
 	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
-			a.maxHistoryTokens = limit
+		switch v := val.(type) {
+		case float64:
+			a.maxHistoryTokens = int(v)
+		case string:
+			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
+				a.maxHistoryTokens = limit
+			}
 		}
 	}
 	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
-			a.maxToolTurns = limit
+		switch v := val.(type) {
+		case float64:
+			a.maxToolTurns = int(v)
+		case string:
+			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
+				a.maxToolTurns = limit
+			}
 		}
 	}
 }

@@ -350,6 +350,13 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir

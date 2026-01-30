@@ -144,6 +144,7 @@ func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall)
 				resChan <- fmt.Sprintf("Error: Panic detected: %v", r)
 			}
 		}()
+		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
 		result, err := a.registry.Execute(ctx, call.Name, call.Args)
 		if err != nil {
 			resChan <- fmt.Sprintf("Error: %v", err)
@@ -199,7 +200,14 @@ func (a *Agent) injectBinaryData(parts []*types.Part) []*types.Part {
 			injectParts := strings.SplitN(p.Text, ":", 3)
 			p.Text = "" // Clear the marker
 			if len(injectParts) == 3 {
-				data, _ := base64.StdEncoding.DecodeString(injectParts[2])
+				data, err := base64.StdEncoding.DecodeString(injectParts[2])
+				if err != nil {
+					a.sm.TerminalLock()
+					fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to decode injected binary data: %v\033[0m\n",
+						time.Now().Format("15:04:05"), err)
+					a.sm.TerminalUnlock()
+					continue
+				}
 				finalParts = append(finalParts, &types.Part{
 					InlineData: &genai.Blob{
 						MIMEType: injectParts[1],
