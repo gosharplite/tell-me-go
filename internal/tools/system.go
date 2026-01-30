@@ -506,14 +506,16 @@ func (m *systemManager) readURL(ctx context.Context, args map[string]interface{}
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit reader to prevent DoS
+	limitReader := io.LimitReader(resp.Body, 50001)
+	body, err := io.ReadAll(limitReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	out := string(body)
 	if len(out) > 50000 {
-		out = out[:50000] + "\n... (truncated)"
+		out = out[:50000] + "\n... (truncated due to size limit)"
 	}
 
 	return out, nil
@@ -583,7 +585,9 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Limit reader to 5MB to prevent DoS
+	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
+	respBody, err := io.ReadAll(limitReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -595,14 +599,14 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, strings.Join(v, ", ")))
 	}
 	sb.WriteString("\nBody:\n")
-	sb.WriteString(string(respBody))
 
-	out := sb.String()
-	if len(out) > 10000 {
-		out = out[:10000] + "\n... (truncated)"
+	respBodyStr := string(respBody)
+	if len(respBodyStr) > 5*1024*1024 {
+		respBodyStr = respBodyStr[:5*1024*1024] + "\n... (truncated due to size limit)"
 	}
+	sb.WriteString(respBodyStr)
 
-	return out, nil
+	return sb.String(), nil
 }
 
 func (m *systemManager) isSafeCommand(command string) bool {
@@ -731,8 +735,13 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	// We use "sh -c" to allow for complex commands
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return "Error: Empty command", nil
+	}
+
+	// Direct binary execution (no shell)
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
 	// Stream output to stderr and capture it
 	var sb strings.Builder
