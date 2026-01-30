@@ -160,3 +160,41 @@ func TestHistoryManager_Prune(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoryManager_ReplaceRange(t *testing.T) {
+	t.Parallel()
+	m := NewManager("dummy.json")
+
+	// Setup: U1, M1, U2, M2
+	_ = m.AddEntry(genai.RoleUser, "U1")
+	_ = m.AddEntry(genai.RoleModel, "M1")
+	_ = m.AddEntry(genai.RoleUser, "U2")
+	_ = m.AddEntry(genai.RoleModel, "M2")
+
+	// Scenario 1: Replace M1 with NewM1 (valid)
+	newContents := []*types.Content{
+		{Role: genai.RoleModel, Parts: []*types.Part{{Text: "NewM1"}}},
+	}
+	if err := m.ReplaceRange(1, 2, newContents); err != nil {
+		t.Errorf("ReplaceRange valid failed: %v", err)
+	}
+	if m.Contents[1].Parts[0].Text != "NewM1" {
+		t.Errorf("ReplaceRange content mismatch")
+	}
+
+	// Scenario 2: Invalid Range
+	if err := m.ReplaceRange(-1, 0, nil); err == nil {
+		t.Error("ReplaceRange expected error for invalid range")
+	}
+
+	// Scenario 3: Role Violation (Replace M1 with U_New)
+	// Current state: U1, NewM1, U2, M2
+	// Try replace NewM1 (idx 1) with U_New
+	// Result would be: U1, U_New, U2, M2 -> Violation at idx 1 (U1, U_New)
+	badContents := []*types.Content{
+		{Role: genai.RoleUser, Parts: []*types.Part{{Text: "U_New"}}},
+	}
+	if err := m.ReplaceRange(1, 2, badContents); err == nil {
+		t.Error("ReplaceRange expected error for role violation")
+	}
+}

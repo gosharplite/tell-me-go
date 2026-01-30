@@ -115,9 +115,11 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return "", fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
+	}()
 
 	// Execute the command directly without shell wrapper
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
@@ -138,9 +140,11 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (string, error) {
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
+	}()
 
 	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
@@ -161,9 +165,11 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		path = p
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", path)
 	out, err := cmd.CombinedOutput()
@@ -191,9 +197,11 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (string, error) {
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
+	}()
 
 	// Try golangci-lint first, fallback to staticcheck
 	var cmd *exec.Cmd
@@ -228,9 +236,11 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		bench = b
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	out, err := cmd.CombinedOutput()
@@ -242,9 +252,11 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 }
 
 func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (string, error) {
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
+	}()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {
 		return "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest", nil

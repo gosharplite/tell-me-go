@@ -51,9 +51,11 @@ func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
 		fs.PrintDefaults()
 		return "", fmt.Errorf("empty prompt")
 	}
-	a.sm.TerminalLock()
-	fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
-	a.sm.TerminalUnlock()
+	func() {
+		a.sm.TerminalLock()
+		defer a.sm.TerminalUnlock()
+		fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
+	}()
 	return prompt, nil
 }
 

@@ -173,7 +173,11 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return "", fmt.Errorf("message is required")
 	}
 
-	if !m.sm.ConfirmDestructiveAction("GIT COMMIT", "current staged changes", message) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT COMMIT", "current staged changes", message)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -186,7 +190,11 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return "", fmt.Errorf("branch name is required")
 	}
 
-	if !m.sm.ConfirmDestructiveAction("GIT CREATE BRANCH", name, "") {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT CREATE BRANCH", name, "")
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 

@@ -50,7 +50,11 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	}
 
 	// Safety confirmation (unless bypassed)
-	if !m.sm.ConfirmDestructiveAction("send message to Teams", webhookURL, message) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, message)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action cancelled by user.", nil
 	}
 

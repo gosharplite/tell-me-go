@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"golang.org/x/term"
 )
 
@@ -77,7 +79,7 @@ func (sm *SecurityManager) SaveBypassState() {
 	if active {
 		val = "true"
 	}
-	_ = AtomicWrite(file, []byte(val), 0644)
+	_ = fsutil.AtomicWrite(file, []byte(val), 0644)
 }
 
 // SetCommandsLogFile sets the path for logging executed commands.
@@ -96,41 +98,57 @@ func (sm *SecurityManager) TerminalUnlock() {
 }
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
-func readSingleKey() (string, error) {
+func readSingleKey(ctx context.Context) (string, error) {
+	// Check context before terminal check
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
 	// Support for E2E mocking of user input
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
 	}
 
-	// Try to open /dev/tty for interaction to avoid consuming Stdin if possible
-	// However, term.MakeRaw typically works on Stdin's FD.
 	fd := int(os.Stdin.Fd())
-
-	// Check if Stdin is a terminal
 	if !term.IsTerminal(fd) {
-		// If not a terminal, we can't switch to raw mode.
-		// Just read one byte from stdin directly.
-		b := make([]byte, 1)
-		_, err := os.Stdin.Read(b)
-		if err != nil {
-			return "", err
-		}
-		return strings.ToLower(string(b)), nil
+		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
 	}
 
-	// Switch to raw mode
 	state, err := term.MakeRaw(fd)
 	if err != nil {
 		return "", err
 	}
 	defer term.Restore(fd, state)
 
-	b := make([]byte, 1)
-	_, err = os.Stdin.Read(b)
-	if err != nil {
-		return "", err
+	type result struct {
+		b   byte
+		err error
 	}
-	return strings.ToLower(string(b)), nil
+	resChan := make(chan result, 1)
+	go func() {
+		b := make([]byte, 1)
+		_, err := os.Stdin.Read(b)
+		if err != nil {
+			resChan <- result{0, err}
+		} else {
+			resChan <- result{b[0], nil}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resChan:
+		if res.err != nil {
+			return "", res.err
+		}
+		if res.b == 3 { // Ctrl+C (ETX)
+			return "", fmt.Errorf("interrupted")
+		}
+		return strings.ToLower(string(res.b)), nil
+	}
 }
 
 // logAudit writes a two-line audit entry to the commands log file.
@@ -150,7 +168,7 @@ func (sm *SecurityManager) logAudit(label1, val1, label2, val2 string) {
 }
 
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
-func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail string) bool {
+func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	sm.TerminalLock()
 	defer sm.TerminalUnlock()
 
@@ -162,7 +180,7 @@ func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail strin
 	if sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
 		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
-		return true
+		return true, nil
 	}
 
 	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
@@ -175,13 +193,16 @@ func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail strin
 	}
 	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
 
-	char, err := readSingleKey()
+	char, err := readSingleKey(ctx)
 	fmt.Fprintf(os.Stderr, "\n")
-	if err == nil && char == "y" {
-		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
-		return true
+	if err != nil {
+		return false, err
 	}
-	return false
+	if char == "y" {
+		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+		return true, nil
+	}
+	return false, nil
 }
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.
@@ -275,7 +296,7 @@ func (sm *SecurityManager) SaveSafePaths() error {
 		return fmt.Errorf("failed to marshal safe paths: %w", err)
 	}
 
-	return AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(file, data, 0644)
 }
 
 // SaveReadOnlyPaths writes persistent read-only paths to disk.
@@ -295,7 +316,7 @@ func (sm *SecurityManager) SaveReadOnlyPaths() error {
 		return fmt.Errorf("failed to marshal read-only paths: %w", err)
 	}
 
-	return AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(file, data, 0644)
 }
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.
@@ -414,6 +435,22 @@ func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
 	return nil
 }
 
+// resolveSymlinks attempts to resolve all symlinks in a path. If the full path
+// cannot be resolved (e.g., because the file doesn't exist yet), it attempts
+// to resolve the parent directory.
+func (sm *SecurityManager) resolveSymlinks(path string) string {
+	// Try full path first
+	if realPath, err := filepath.EvalSymlinks(path); err == nil {
+		return realPath
+	}
+	// If it fails (likely file doesn't exist), resolve the parent directory
+	dir := filepath.Dir(path)
+	if realDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(realDir, filepath.Base(path))
+	}
+	return path // Fallback if parent also doesn't exist or other error
+}
+
 // IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
 func (sm *SecurityManager) IsPathSafe(path string) error {
 	if path == "" {
@@ -442,11 +479,8 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	}
 
 	// 1. Symlink Attack Mitigation:
-	// If the file exists, evaluate its real path to prevent symlink-based traversal.
-	// If it doesn't exist (e.g., for write_file), we proceed with the absolute path string.
-	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = realPath
-	}
+	// Use a robust resolver that handles non-existent leaf files by resolving the parent directory.
+	absPath = sm.resolveSymlinks(absPath)
 
 	// 2. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
@@ -530,9 +564,8 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = realPath
-	}
+	// Symlink Attack Mitigation:
+	absPath = sm.resolveSymlinks(absPath)
 
 	// 1. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)

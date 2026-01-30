@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"google.golang.org/genai"
-	"os"
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
@@ -97,49 +96,4 @@ func (r *Registry) ToToolSDK() []*genai.Tool {
 			FunctionDeclarations: r.declarations,
 		},
 	}
-}
-
-// AtomicWrite writes data to a temporary file and then renames it to the target path.
-// This ensures that the target file is either fully updated or not updated at all.
-// It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
-func AtomicWrite(path string, data []byte, perm os.FileMode) error {
-	if os.Getenv("TELL_ME_DEBUG") == "true" {
-		fmt.Fprintf(os.Stderr, "\033[0;90m[Debug] AtomicWrite: %s (%d bytes)\033[0m\n", path, len(data))
-	}
-
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return fmt.Errorf("failed to open temp file: %w", err)
-	}
-
-	// Ensure cleanup of the temp file on failure
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmp)
-		}
-	}()
-
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Force flush to disk to prevent stale reads
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to sync temp file: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-
-	cleanup = false // Rename succeeded, no need to remove
-	return nil
 }

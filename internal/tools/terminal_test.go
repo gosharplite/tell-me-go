@@ -41,9 +41,11 @@ func TestTerminalMutexConcurrency(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
-				sm.TerminalLock()
-				fmt.Fprintf(os.Stderr, "[ID:%d][Iter:%d]\n", id, j)
-				sm.TerminalUnlock()
+				func() {
+					sm.TerminalLock()
+					defer sm.TerminalUnlock()
+					fmt.Fprintf(os.Stderr, "[ID:%d][Iter:%d]\n", id, j)
+				}()
 			}
 		}(i)
 	}

@@ -57,3 +57,54 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 		t.Errorf("content mismatch after replacement: %s", string(data))
 	}
 }
+
+func TestIsBinary(t *testing.T) {
+	if !isBinary([]byte{0}) {
+		t.Error("expected isBinary to return true for data with null byte")
+	}
+	if isBinary([]byte("text")) {
+		t.Error("expected isBinary to return false for plain text")
+	}
+}
+
+func TestSearchFiles_SkipsBinary(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "search_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	binaryPath := filepath.Join(tempDir, "binary.bin")
+	err = os.WriteFile(binaryPath, []byte{0, 1, 2, 3}, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	textPath := filepath.Join(tempDir, "text.txt")
+	err = os.WriteFile(textPath, []byte("hello world"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sm := NewSecurityManager()
+	m := &fileSystemManager{sm: sm}
+
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"path":  tempDir,
+		"query": "hello",
+	}
+
+	result, err := m.searchFiles(ctx, args)
+	if err != nil {
+		t.Fatalf("searchFiles failed: %v", err)
+	}
+
+	if !strings.Contains(result, "text.txt:1: hello world") {
+		t.Errorf("expected result to contain text file match, got %q", result)
+	}
+
+	if strings.Contains(result, "binary.bin") {
+		t.Error("expected result NOT to contain binary file match")
+	}
+}

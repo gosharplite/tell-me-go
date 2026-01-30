@@ -77,9 +77,11 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 		model = "imagen-3.0-generate-001"
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image using %s: %s (%s)\033[0m\n", model, prompt, aspectRatio)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image using %s: %s (%s)\033[0m\n", model, prompt, aspectRatio)
+	}()
 
 	// Append aspect ratio to prompt as guidance (Imagen 3 prompt engineering)
 	fullPrompt := fmt.Sprintf("%s. Aspect ratio %s.", prompt, aspectRatio)
@@ -131,9 +133,11 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 		return "", err
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", path)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", path)
+	}()
 
 	data, err := os.ReadFile(path)
 	if err != nil {

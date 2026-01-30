@@ -101,9 +101,11 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPost
 func (a *Agent) renderResponse(respContent *types.Content) {
 	for _, part := range respContent.Parts {
 		if a.showThoughts && part.Thought && part.Text != "" {
-			a.sm.TerminalLock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
-			a.sm.TerminalUnlock()
+			func() {
+				a.sm.TerminalLock()
+				defer a.sm.TerminalUnlock()
+				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			}()
 		}
 	}
 	for _, part := range respContent.Parts {

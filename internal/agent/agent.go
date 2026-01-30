@@ -145,6 +145,12 @@ func (a *Agent) SetPersistentConfigPath(path string) {
 	a.persistentConfigPath = path
 }
 
+// AgentConfig defines the structure for persistent session configuration.
+type AgentConfig struct {
+	MaxHistoryTokens int `json:"MAX_HISTORY_TOKENS"`
+	MaxToolTurns     int `json:"MAX_TOOL_TURNS"`
+}
+
 func (a *Agent) refreshLimits() {
 	if a.persistentConfigPath == "" {
 		return
@@ -153,20 +159,50 @@ func (a *Agent) refreshLimits() {
 	if err != nil {
 		return
 	}
-	var pCfg map[string]string
-	if err := json.Unmarshal(data, &pCfg); err != nil {
+
+	// Try unmarshaling into the struct first
+	var cfg AgentConfig
+	if err := json.Unmarshal(data, &cfg); err == nil {
+		if cfg.MaxHistoryTokens > 0 {
+			a.maxHistoryTokens = cfg.MaxHistoryTokens
+		}
+		if cfg.MaxToolTurns > 0 {
+			a.maxToolTurns = cfg.MaxToolTurns
+		}
 		return
 	}
 
-	// Allow overriding core limits dynamically
+	// Fallback to map[string]interface{} for mixed types and log warning
+	var pCfg map[string]interface{}
+	if err := json.Unmarshal(data, &pCfg); err != nil {
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
+				time.Now().Format("15:04:05"), err)
+		}()
+		return
+	}
+
+	// Allow overriding core limits dynamically from map (handles both string and int if present)
 	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
-			a.maxHistoryTokens = limit
+		switch v := val.(type) {
+		case float64:
+			a.maxHistoryTokens = int(v)
+		case string:
+			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
+				a.maxHistoryTokens = limit
+			}
 		}
 	}
 	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		if limit, err := strconv.Atoi(val); err == nil && limit > 0 {
-			a.maxToolTurns = limit
+		switch v := val.(type) {
+		case float64:
+			a.maxToolTurns = int(v)
+		case string:
+			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
+				a.maxToolTurns = limit
+			}
 		}
 	}
 }
@@ -239,6 +275,9 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
+		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
+		a.refreshLimits()
+
 		a.logTurnStatus(currentTurns, tokens, metrics, true)
 		if metrics != nil {
 			a.logUsage(metrics)
@@ -254,10 +293,12 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 func (a *Agent) saveHistory() {
 	if err := a.history.Save(); err != nil {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
-			time.Now().Format("15:04:05"), err)
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
+				time.Now().Format("15:04:05"), err)
+		}()
 	}
 }
 
@@ -295,10 +336,12 @@ func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, curr
 		})
 		apiContents[lastIdx] = cloned
 
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
-			time.Now().Format("15:04:05"))
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
+				time.Now().Format("15:04:05"))
+		}()
 	}
 	return apiContents
 }
@@ -309,9 +352,11 @@ func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*ty
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+		}()
 		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}

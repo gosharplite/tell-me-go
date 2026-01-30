@@ -29,10 +29,12 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 	}
 
 	if turn >= a.maxToolTurns {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
-			time.Now().Format("15:04:05"), a.maxToolTurns)
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
+				time.Now().Format("15:04:05"), a.maxToolTurns)
+		}()
 		return ErrMaxTurnsReached
 	}
 
@@ -89,7 +91,14 @@ func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.Fun
 			// we wait for all previously dispatched parallel tools to finish before executing
 			// the serial tool.
 			wg.Wait()
-			results[i] = a.processToolResult(fc.Name, a.executeTool(ctx, fc))
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						results[i] = a.processToolResult(fc.Name, fmt.Sprintf("Error: Panic detected: %v", r))
+					}
+				}()
+				results[i] = a.processToolResult(fc.Name, a.executeTool(ctx, fc))
+			}()
 		} else {
 			// Parallel Execution:
 			wg.Add(1)
@@ -97,6 +106,12 @@ func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.Fun
 			go func(idx int, call *types.FunctionCall) {
 				defer wg.Done()
 				defer func() { <-sem }()
+				// Add recovery
+				defer func() {
+					if r := recover(); r != nil {
+						results[idx] = a.processToolResult(call.Name, fmt.Sprintf("Error: Panic detected: %v", r))
+					}
+				}()
 
 				results[idx] = a.processToolResult(call.Name, a.executeTool(ctx, call))
 			}(i, fc)
@@ -126,6 +141,12 @@ func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall)
 
 	resChan := make(chan string, 1)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				resChan <- fmt.Sprintf("Error: Panic detected: %v", r)
+			}
+		}()
+		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
 		result, err := a.registry.Execute(ctx, call.Name, call.Args)
 		if err != nil {
 			resChan <- fmt.Sprintf("Error: %v", err)
@@ -181,7 +202,16 @@ func (a *Agent) injectBinaryData(parts []*types.Part) []*types.Part {
 			injectParts := strings.SplitN(p.Text, ":", 3)
 			p.Text = "" // Clear the marker
 			if len(injectParts) == 3 {
-				data, _ := base64.StdEncoding.DecodeString(injectParts[2])
+				data, err := base64.StdEncoding.DecodeString(injectParts[2])
+				if err != nil {
+					func() {
+						a.sm.TerminalLock()
+						defer a.sm.TerminalUnlock()
+						fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to decode injected binary data: %v\033[0m\n",
+							time.Now().Format("15:04:05"), err)
+					}()
+					continue
+				}
 				finalParts = append(finalParts, &types.Part{
 					InlineData: &genai.Blob{
 						MIMEType: injectParts[1],

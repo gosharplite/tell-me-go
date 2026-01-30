@@ -7,12 +7,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"google.golang.org/genai"
 )
 
@@ -350,6 +352,13 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir
@@ -365,7 +374,10 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 
 		// Read first 1024 bytes to check if binary
 		buf := make([]byte, 1024)
-		n, _ := file.Read(buf)
+		n, err := file.Read(buf)
+		if err != nil && err != io.EOF {
+			return nil // Skip file on error
+		}
 		if isBinary(buf[:n]) {
 			return nil
 		}
@@ -444,7 +456,11 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	}
 
 	// Confirmation Gate
-	if !m.sm.ConfirmDestructiveAction("WRITE FILE", path, content) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", path, content)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -456,7 +472,7 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 		return "", fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err := AtomicWrite(path, []byte(content), 0644)
+	err = fsutil.AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
@@ -475,7 +491,11 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 
 	// Confirmation Gate
 	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
-	if !m.sm.ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", path, detail)
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -496,7 +516,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	}
 
 	newContent := strings.Replace(content, oldText, newText, 1)
-	err = AtomicWrite(path, []byte(newContent), 0644)
+	err = fsutil.AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
 		return "", err
 	}
@@ -524,6 +544,13 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir
@@ -596,6 +623,13 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
 				return filepath.SkipDir

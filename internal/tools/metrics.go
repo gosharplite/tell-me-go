@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"google.golang.org/genai"
 )
 
@@ -168,7 +169,7 @@ func (m *metricsManager) recordCost(outputDir string, mode string, record Sessio
 
 	// 5. Write back atomically
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
-		_ = AtomicWrite(historyPath, bytes, 0644)
+		_ = fsutil.AtomicWrite(historyPath, bytes, 0644)
 	}
 }
 
@@ -258,7 +259,7 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) Pric
 			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
 				// Save to cache atomically
 				if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
-					_ = AtomicWrite(cachePath, bytes, 0644)
+					_ = fsutil.AtomicWrite(cachePath, bytes, 0644)
 				}
 				useCache = true
 			}

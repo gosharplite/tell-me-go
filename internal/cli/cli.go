@@ -66,9 +66,6 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
 	args = a.sanitizeArgs(args)
 
@@ -153,6 +150,9 @@ func (a *App) Run(args []string) error {
 		return nil
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
@@ -183,7 +183,7 @@ func (a *App) Run(args []string) error {
 	tools.RegisterGitTools(registry, a.sm)
 	tools.RegisterDevTools(registry, a.sm)
 	tools.RegisterTeamsTools(registry, a.sm)
-	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode, a.sm)
+	tools.RegisterStateTools(registry, a.sm, modeDir)
 	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode)
 	tools.RegisterMediaTools(registry, a.sm, client)
 

@@ -17,13 +17,82 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"golang.org/x/tools/imports"
 	"google.golang.org/genai"
 )
 
 type intelligenceManager struct {
 	sm *SecurityManager
 }
+
+// Global AST Cache to improve performance of AST-based tools
+type cachedFile struct {
+	file    *ast.File
+	modTime time.Time
+}
+
+type astCache struct {
+	mu      sync.Mutex
+	files   map[string]cachedFile
+	fset    *token.FileSet
+	maxSize int
+}
+
+func newASTCache() *astCache {
+	return &astCache{
+		files:   make(map[string]cachedFile),
+		fset:    token.NewFileSet(),
+		maxSize: 1000,
+	}
+}
+
+func (c *astCache) get(path string) (*ast.File, *token.FileSet, error) {
+	// 1. Stat the file (I/O) - outside lock
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, c.fset, err
+	}
+
+	// 2. Fast path: Check cache
+	c.mu.Lock()
+	entry, ok := c.files[path]
+	if ok && entry.modTime.Equal(info.ModTime()) {
+		c.mu.Unlock()
+		return entry.file, c.fset, nil
+	}
+	c.mu.Unlock()
+
+	// 3. Slow path: Parse without holding lock
+	f, err := parser.ParseFile(c.fset, path, nil, parser.ParseComments)
+	if err != nil {
+		return nil, c.fset, err
+	}
+
+	// 4. Update cache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Eviction policy
+	if len(c.files) >= c.maxSize {
+		for k := range c.files {
+			delete(c.files, k)
+			break
+		}
+	}
+
+	c.files[path] = cachedFile{
+		file:    f,
+		modTime: info.ModTime(),
+	}
+
+	return f, c.fset, nil
+}
+
+var globalASTCache = newASTCache()
 
 // RegisterIntelligenceTools adds AST-based tools to the registry.
 func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
@@ -216,7 +285,6 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 func grepDefinitionsGo(path, query string) ([]string, error) {
 	var results []string
-	fset := token.NewFileSet()
 	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
@@ -224,7 +292,7 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
 			return nil // Skip files with syntax errors but track them
@@ -263,8 +331,7 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 }
 
 func getFileSkeletonGo(filePath string) (string, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+	f, _, err := globalASTCache.get(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse Go file: %w", err)
 	}
@@ -315,7 +382,11 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		return "", err
 	}
 
-	if !m.sm.ConfirmDestructiveAction("MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath)) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath))
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
@@ -460,74 +531,8 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
 		return "", fmt.Errorf("failed to format source file: %w", err)
 	}
-	if err := AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
+	if err := fsutil.AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
 		return "", err
-	}
-
-	// Update destination file
-	// We need to handle imports from movedDecls.
-	// This is complex. For now, let's just append and let the user fix imports,
-	// OR try a naive import copy.
-
-	// Collect imports used in movedDecls
-	neededImports := make(map[string]*ast.ImportSpec)
-	for _, decl := range movedDecls {
-		ast.Inspect(decl, func(n ast.Node) bool {
-			if sel, ok := n.(*ast.SelectorExpr); ok {
-				if x, ok := sel.X.(*ast.Ident); ok {
-					// Check if x.Name is an imported package in src
-					for _, imp := range srcFile.Imports {
-						pkgName := ""
-						if imp.Name != nil {
-							pkgName = imp.Name.Name
-						} else {
-							// Infer from path
-							path := strings.Trim(imp.Path.Value, "\"")
-							parts := strings.Split(path, "/")
-							pkgName = parts[len(parts)-1]
-						}
-						if pkgName == x.Name {
-							neededImports[imp.Path.Value] = imp
-						}
-					}
-				}
-			}
-			return true
-		})
-	}
-
-	// Add missing imports to dstFile
-	for path, spec := range neededImports {
-		found := false
-		for _, imp := range dstFile.Imports {
-			if imp.Path.Value == path {
-				found = true
-				break
-			}
-		}
-		if !found {
-			// Add to dstFile
-			newImp := &ast.ImportSpec{
-				Path: spec.Path,
-				Name: spec.Name,
-			}
-			// Find or create GenDecl for imports
-			added := false
-			for _, d := range dstFile.Decls {
-				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
-					gd.Specs = append(gd.Specs, newImp)
-					added = true
-					break
-				}
-			}
-			if !added {
-				newGd := &ast.GenDecl{
-					Tok:   token.IMPORT,
-					Specs: []ast.Spec{newImp},
-				}
-				dstFile.Decls = append([]ast.Decl{newGd}, dstFile.Decls...)
-			}
-		}
 	}
 
 	dstFile.Decls = append(dstFile.Decls, movedDecls...)
@@ -536,8 +541,19 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
 		return "", fmt.Errorf("failed to format destination file: %w", err)
 	}
-	if err := AtomicWrite(dstPath, dstBuf.Bytes(), 0644); err != nil {
+
+	formatted, err := imports.Process(dstPath, dstBuf.Bytes(), nil)
+	if err != nil {
+		// Fallback to raw formatted content if imports.Process fails
+		formatted = dstBuf.Bytes()
+	}
+
+	if err := fsutil.AtomicWrite(dstPath, formatted, 0644); err != nil {
 		return "", err
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
 	}
 
 	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
@@ -560,15 +576,29 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 		return "", err
 	}
 
-	if !m.sm.ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName))
+	if err != nil {
+		return "", err
+	}
+	if !approved {
 		return "Action denied by user.", nil
 	}
 
 	totalFiles := 0
 	totalChanges := 0
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
@@ -595,7 +625,7 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 			if err := format.Node(&buf, fset, f); err != nil {
 				return fmt.Errorf("failed to format %s: %w", filePath, err)
 			}
-			if err := AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
+			if err := fsutil.AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 		}
@@ -663,9 +693,11 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 
 func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
@@ -683,14 +715,13 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	}
 
 	var results []string
-	fset := token.NewFileSet()
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -743,9 +774,11 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 }
 
 func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
@@ -877,15 +910,24 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	var results []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+		if err != nil {
 			return nil
 		}
 
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if info.IsDir() || filepath.Ext(filePath) != ".go" {
+			return nil
+		}
+
+		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -921,7 +963,6 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	type interfaceInfo struct {
 		methods []string
 		path    string
@@ -939,7 +980,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -972,7 +1013,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, 0)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -1037,14 +1078,13 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 		return "", err
 	}
 
-	fset := token.NewFileSet()
 	var sb strings.Builder
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+		f, _, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -1087,7 +1127,10 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 							if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 								return nil
 							}
-							ff, _ := parser.ParseFile(fset, p, nil, 0)
+							ff, _, _ := globalASTCache.get(p)
+							if ff == nil {
+								return nil
+							}
 							for _, d := range ff.Decls {
 								if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
 									recvType := exprToString(fd.Recv.List[0].Type)
@@ -1191,6 +1234,13 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 		if err != nil {
 			return nil
 		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if info.IsDir() {
 			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" || info.Name() == "output" {
 				return filepath.SkipDir

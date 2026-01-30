@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 // FileSnapshot represents a single file state in history.
@@ -97,7 +99,7 @@ func (b *BackupManager) Undo(n int) (string, error) {
 			}
 			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
 		} else {
-			if err := AtomicWrite(snap.Path, snap.Content, 0644); err != nil {
+			if err := fsutil.AtomicWrite(snap.Path, snap.Content, 0644); err != nil {
 				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Restored %s", snap.Path))

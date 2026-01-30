@@ -23,7 +23,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `configure_ux_preferences`, `get_session_info`, and `rollback_last_turn`.
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `configure_ux_preferences`, and `get_session_info`.
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `vertex_tasks.json`, `vertex_scratchpad.md`, `vertex_config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
         *   **Smart Suggestions**: `configure_ux_preferences` enables a "Smart Suggestions" UI where the AI intelligently suggests 2-3 context-aware follow-up commands at the end of every response. This state is persistent and automatically injected into the AI's System Prompt.
