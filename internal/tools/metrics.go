@@ -50,7 +50,6 @@ type SessionCostRecord struct {
 type metricsManager struct {
 	sm        *SecurityManager
 	metricsMu sync.Mutex
-	pricingMu sync.Mutex
 	logFile   string
 	model     string
 	mode      string
@@ -219,12 +218,10 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
-var globalPricingMu sync.Mutex
-
 // GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func GetPricing(ctx context.Context, outputDir string) PricingData {
-	globalPricingMu.Lock()
-	defer globalPricingMu.Unlock()
+func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) PricingData {
+	sm.pricingMu.Lock()
+	defer sm.pricingMu.Unlock()
 
 	globalDir := outputDir
 	// If outputDir is a mode-specific directory (not containing global_prices.json), use parent
@@ -243,7 +240,7 @@ func GetPricing(ctx context.Context, outputDir string) PricingData {
 	if info, err := os.Stat(cachePath); err == nil {
 		if time.Since(info.ModTime()) < 24*time.Hour {
 			if content, err := os.ReadFile(cachePath); err == nil {
-				if err := json.Unmarshal(content, &data); err != nil {
+				if err := json.Unmarshal(content, &data); err == nil {
 					useCache = true
 				}
 			}
@@ -309,17 +306,13 @@ func GetPricing(ctx context.Context, outputDir string) PricingData {
 	return data
 }
 
-func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
-	return GetPricing(ctx, filepath.Dir(m.logFile))
-}
-
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
 	if err := m.sm.IsPathSafe(m.logFile); err != nil {
 		return "", err
 	}
 
 	outputDir := filepath.Dir(m.logFile)
-	pricing := m.GetPricing(ctx)
+	pricing := GetPricing(ctx, m.sm, outputDir)
 
 	f, err := os.Open(m.logFile)
 	if err != nil {

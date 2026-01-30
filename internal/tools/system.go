@@ -312,7 +312,7 @@ func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// Confirmation Gate
@@ -353,7 +353,7 @@ func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[str
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// Confirmation Gate
@@ -396,7 +396,7 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// 1. Confirmation
@@ -448,7 +448,7 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// 1. Confirmation

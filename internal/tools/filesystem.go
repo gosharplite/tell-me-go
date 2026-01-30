@@ -481,16 +481,21 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 
 	m.bm.Snapshot(path, "REPLACE")
 
-	content, err := os.ReadFile(path)
+	contentBytes, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read file: %w", err)
 	}
+	content := string(contentBytes)
 
-	if !strings.Contains(string(content), oldText) {
+	count := strings.Count(content, oldText)
+	if count == 0 {
 		return "", fmt.Errorf("old_text not found in file")
 	}
+	if count > 1 {
+		return "", fmt.Errorf("old_text found %d times. Please provide more context (including surrounding lines) to uniquely identify the replacement target", count)
+	}
 
-	newContent := strings.Replace(string(content), oldText, newText, 1)
+	newContent := strings.Replace(content, oldText, newText, 1)
 	err = AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
 		return "", err

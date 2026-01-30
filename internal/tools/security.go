@@ -28,6 +28,7 @@ type SecurityManager struct {
 	bypassConfirmations bool   // Skip all interactive confirmations
 	bypassMu            sync.RWMutex
 	terminalMu          sync.Mutex
+	pricingMu           sync.Mutex
 }
 
 // NewSecurityManager initializes a new SecurityManager.
