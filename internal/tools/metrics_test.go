@@ -25,7 +25,11 @@ func TestRecordCost(t *testing.T) {
 	os.MkdirAll(modeDir, 0755)
 
 	logFile := filepath.Join(modeDir, "tokens.log")
+	sm := NewSecurityManager()
+	sm.RegisterSafePath(tmpDir)
+
 	m := &metricsManager{
+		sm:      sm,
 		logFile: logFile,
 		model:   "gemini-test",
 		mode:    "testmode",
@@ -128,6 +132,7 @@ func TestRecordCost(t *testing.T) {
 		os.WriteFile(filepath.Join(retentionDir, "config.json"), configData, 0644)
 
 		mRetention := &metricsManager{
+			sm:      sm,
 			logFile: filepath.Join(retentionDir, "tokens.log"),
 			model:   "gemini-test",
 			mode:    "retentionmode",
@@ -175,7 +180,11 @@ func TestGetCostSummary(t *testing.T) {
 	os.MkdirAll(modeDir, 0755)
 	logFile := filepath.Join(modeDir, "tokens.log")
 
+	sm := NewSecurityManager()
+	sm.RegisterSafePath(tmpDir)
+
 	m := &metricsManager{
+		sm:      sm,
 		logFile: logFile,
 		model:   "gemini-test",
 		mode:    "testmode",
@@ -244,7 +253,11 @@ func TestEstimateCostIntegration(t *testing.T) {
 		t.Fatalf("Failed to write log file: %v", err)
 	}
 
+	sm := NewSecurityManager()
+	sm.RegisterSafePath(tmpDir)
+
 	m := &metricsManager{
+		sm:      sm,
 		logFile: logPath,
 		model:   "gemini-2.0-flash-001",
 		mode:    "testmode",

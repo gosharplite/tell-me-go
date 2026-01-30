@@ -23,6 +23,7 @@ type stateManager struct {
 	configMu     sync.Mutex
 	homeDir      string
 	mode         string
+	sm           *SecurityManager
 }
 
 // Task represents a single item in the task manager, matching the Bash version's schema.
@@ -33,10 +34,11 @@ type Task struct {
 }
 
 // RegisterStateTools adds scratchpad, task management, and session info tools.
-func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string) {
+func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string, sm *SecurityManager) {
 	state := &stateManager{
 		homeDir: homeDir,
 		mode:    mode,
+		sm:      sm,
 	}
 
 	r.Register(&genai.FunctionDeclaration{
@@ -45,14 +47,14 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		info := map[string]interface{}{
 			"home_dir":           homeDir,
-			"safe_paths":         GetSafePaths(),
-			"bypass_active":      IsBypassActive(),
+			"safe_paths":         sm.GetSafePaths(),
+			"bypass_active":      sm.IsBypassActive(),
 			"history_file":       hManager.GetPath(),
 			"active_config_path": "", // Will be filled if found in safe paths
 		}
 
 		// Try to identify the config path from safe paths (usually the 2nd one registered in main.go)
-		paths := GetSafePaths()
+		paths := sm.GetSafePaths()
 		for _, p := range paths {
 			if strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml") {
 				info["active_config_path"] = p
@@ -216,9 +218,9 @@ func (s *stateManager) manageConfig(ctx context.Context, args map[string]interfa
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
-			TerminalMutex.Lock()
+			s.sm.TerminalLock()
 			fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			TerminalMutex.Unlock()
+			s.sm.TerminalUnlock()
 			_ = os.Rename(path, path+".bak")
 			config = make(map[string]string)
 		}
@@ -342,9 +344,9 @@ func (s *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &tasks); err != nil {
-			TerminalMutex.Lock()
+			s.sm.TerminalLock()
 			fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			TerminalMutex.Unlock()
+			s.sm.TerminalUnlock()
 			_ = os.Rename(path, path+".bak")
 			tasks = []Task{}
 		}

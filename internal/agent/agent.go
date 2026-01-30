@@ -44,6 +44,7 @@ type Agent struct {
 	client             *api.Client
 	history            *history.Manager
 	registry           *tools.Registry
+	sm                 *tools.SecurityManager
 	logFile            string
 	maxToolTurns       int
 	maxHistoryTokens   int
@@ -58,11 +59,12 @@ type Agent struct {
 }
 
 // New creates a new Agent.
-func New(client *api.Client, hManager *history.Manager, registry *tools.Registry) *Agent {
+func New(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
 	return &Agent{
 		client:             client,
 		history:            hManager,
 		registry:           registry,
+		sm:                 sm,
 		maxToolTurns:       10,
 		maxHistoryTokens:   120000,
 		maxConcurrentTools: 5,
@@ -144,8 +146,8 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *api.Metrics, isPostCa
 	reset := "\033[0m"
 	timestamp := time.Now().Format("15:04:05")
 
-	tools.TerminalMutex.Lock()
-	defer tools.TerminalMutex.Unlock()
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
 
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := reset
@@ -344,16 +346,16 @@ func (a *Agent) Chat(prompt string) error {
 
 func (a *Agent) saveHistory() {
 	if err := a.history.Save(); err != nil {
-		tools.TerminalMutex.Lock()
+		a.sm.TerminalLock()
 		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
 			time.Now().Format("15:04:05"), err)
-		tools.TerminalMutex.Unlock()
+		a.sm.TerminalUnlock()
 	}
 }
 
 func (a *Agent) handleLimitExceeded(tokens int) {
-	tools.TerminalMutex.Lock()
-	defer tools.TerminalMutex.Unlock()
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
 
 	fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Safety Error] Payload estimate (%d tokens) exceeds limit (%d)!\033[0m\n",
 		time.Now().Format("15:04:05"), tokens, a.maxHistoryTokens)
@@ -396,10 +398,10 @@ func (a *Agent) prepareAPIContents(contents []*api.Content, turn, tokens, curren
 		})
 		apiContents[lastIdx] = cloned
 
-		tools.TerminalMutex.Lock()
+		a.sm.TerminalLock()
 		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
 			time.Now().Format("15:04:05"))
-		tools.TerminalMutex.Unlock()
+		a.sm.TerminalUnlock()
 	}
 	return apiContents
 }
@@ -410,9 +412,9 @@ func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		tools.TerminalMutex.Lock()
+		a.sm.TerminalLock()
 		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-		tools.TerminalMutex.Unlock()
+		a.sm.TerminalUnlock()
 		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}
@@ -425,9 +427,9 @@ func (a *Agent) sendChat(apiContents []*api.Content) (*api.Content, *api.Metrics
 func (a *Agent) renderResponse(respContent *api.Content) {
 	for _, part := range respContent.Parts {
 		if a.showThoughts && part.Thought && part.Text != "" {
-			tools.TerminalMutex.Lock()
+			a.sm.TerminalLock()
 			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
-			tools.TerminalMutex.Unlock()
+			a.sm.TerminalUnlock()
 		}
 	}
 	for _, part := range respContent.Parts {
@@ -466,10 +468,10 @@ func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
 	}
 
 	if turn >= a.maxToolTurns {
-		tools.TerminalMutex.Lock()
+		a.sm.TerminalLock()
 		fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
 			time.Now().Format("15:04:05"), a.maxToolTurns)
-		tools.TerminalMutex.Unlock()
+		a.sm.TerminalUnlock()
 		return ErrMaxTurnsReached
 	}
 
@@ -484,8 +486,8 @@ func (a *Agent) handleToolExecution(respContent *api.Content, turn int) error {
 }
 
 func (a *Agent) logToolCalls(calls []*api.FunctionCall, turn int) {
-	tools.TerminalMutex.Lock()
-	defer tools.TerminalMutex.Unlock()
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
 
 	var names []string
 	for _, fc := range calls {

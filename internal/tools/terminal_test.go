@@ -34,14 +34,16 @@ func TestTerminalMutexConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
+	sm := NewSecurityManager()
+
 	// Stress test the mutex by having many goroutines write to stderr
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
-				TerminalMutex.Lock()
+				sm.TerminalLock()
 				fmt.Fprintf(os.Stderr, "[ID:%d][Iter:%d]\n", id, j)
-				TerminalMutex.Unlock()
+				sm.TerminalUnlock()
 			}
 		}(i)
 	}

@@ -9,6 +9,8 @@ import (
 )
 
 func TestRunTestsVulnerability(t *testing.T) {
+	sm := NewSecurityManager()
+	m := &devManager{sm: sm}
 	tests := []struct {
 		name    string
 		command string
@@ -38,7 +40,7 @@ func TestRunTestsVulnerability(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runTests(context.Background(), map[string]interface{}{"command": tt.command})
+			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("runTests() error = %v, wantErr %v", err, tt.wantErr)
 			}

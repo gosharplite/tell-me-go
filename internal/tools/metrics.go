@@ -48,6 +48,7 @@ type SessionCostRecord struct {
 }
 
 type metricsManager struct {
+	sm        *SecurityManager
 	metricsMu sync.Mutex
 	pricingMu sync.Mutex
 	logFile   string
@@ -56,8 +57,9 @@ type metricsManager struct {
 }
 
 // RegisterMetricsTools adds tools for usage and cost analysis.
-func RegisterMetricsTools(r *Registry, logFile string, model string, mode string) {
+func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, model string, mode string) {
 	m := &metricsManager{
+		sm:      sm,
 		logFile: logFile,
 		model:   model,
 		mode:    mode,
@@ -87,8 +89,9 @@ func RegisterMetricsTools(r *Registry, logFile string, model string, mode string
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger.
-func RecordSessionCost(logFile, model, mode, sessionID string) error {
+func RecordSessionCost(sm *SecurityManager, logFile, model, mode, sessionID string) error {
 	m := &metricsManager{
+		sm:      sm,
 		logFile: logFile,
 		model:   model,
 		mode:    mode,
@@ -216,12 +219,13 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
-// GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
-	m.pricingMu.Lock()
-	defer m.pricingMu.Unlock()
+var globalPricingMu sync.Mutex
 
-	outputDir := filepath.Dir(m.logFile)
+// GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
+func GetPricing(ctx context.Context, outputDir string) PricingData {
+	globalPricingMu.Lock()
+	defer globalPricingMu.Unlock()
+
 	globalDir := outputDir
 	// If outputDir is a mode-specific directory (not containing global_prices.json), use parent
 	if _, err := os.Stat(filepath.Join(outputDir, "global_prices.json")); os.IsNotExist(err) {
@@ -239,7 +243,7 @@ func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
 	if info, err := os.Stat(cachePath); err == nil {
 		if time.Since(info.ModTime()) < 24*time.Hour {
 			if content, err := os.ReadFile(cachePath); err == nil {
-				if err := json.Unmarshal(content, &data); err == nil {
+				if err := json.Unmarshal(content, &data); err != nil {
 					useCache = true
 				}
 			}
@@ -305,8 +309,12 @@ func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
 	return data
 }
 
+func (m *metricsManager) GetPricing(ctx context.Context) PricingData {
+	return GetPricing(ctx, filepath.Dir(m.logFile))
+}
+
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
-	if err := IsPathSafe(m.logFile); err != nil {
+	if err := m.sm.IsPathSafe(m.logFile); err != nil {
 		return "", err
 	}
 

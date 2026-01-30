@@ -105,7 +105,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
 		return mock
 	}
 	app.ClientFactory = func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {

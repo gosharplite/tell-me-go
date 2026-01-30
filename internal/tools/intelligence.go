@@ -21,8 +21,14 @@ import (
 	"google.golang.org/genai"
 )
 
+type intelligenceManager struct {
+	sm *SecurityManager
+}
+
 // RegisterIntelligenceTools adds AST-based tools to the registry.
-func RegisterIntelligenceTools(r *Registry) {
+func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
+	m := &intelligenceManager{sm: sm}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_usages",
 		Description: "Identify all references to a specific symbol across the project.",
@@ -40,7 +46,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"query"},
 		},
-	}, findUsages)
+	}, m.findUsages)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_implementations",
@@ -54,7 +60,7 @@ func RegisterIntelligenceTools(r *Registry) {
 				},
 			},
 		},
-	}, listImplementations)
+	}, m.listImplementations)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_type_info",
@@ -73,12 +79,12 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"typename"},
 		},
-	}, getTypeInfo)
+	}, m.getTypeInfo)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
-	}, getProjectSummary)
+	}, m.getProjectSummary)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "search_usages_globally",
@@ -93,7 +99,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"query"},
 		},
-	}, searchUsagesGlobally)
+	}, m.searchUsagesGlobally)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "semantic_diff",
@@ -108,7 +114,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"target"},
 		},
-	}, semanticDiff)
+	}, m.semanticDiff)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rename_symbol",
@@ -131,7 +137,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"old_name", "new_name"},
 		},
-	}, renameSymbol, ToolOptions{Serial: true})
+	}, m.renameSymbol, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_todos",
@@ -145,7 +151,7 @@ func RegisterIntelligenceTools(r *Registry) {
 				},
 			},
 		},
-	}, listTodos)
+	}, m.listTodos)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "go_doc",
@@ -160,7 +166,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"symbol"},
 		},
-	}, goDoc)
+	}, m.goDoc)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "analyze_complexity",
@@ -175,12 +181,12 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, analyzeComplexity)
+	}, m.analyzeComplexity)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
-	}, getPackageGraph)
+	}, m.getPackageGraph)
 }
 
 // AST-based helpers for existing tools
@@ -274,7 +280,7 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	return sb.String(), nil
 }
 
-func renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
 	oldName, _ := args["old_name"].(string)
 	newName, _ := args["new_name"].(string)
 	path, ok := args["path"].(string)
@@ -282,11 +288,11 @@ func renameSymbol(ctx context.Context, args map[string]interface{}) (string, err
 		path = "."
 	}
 
-	if err := IsPathWritable(path); err != nil {
+	if err := m.sm.IsPathWritable(path); err != nil {
 		return "", err
 	}
 
-	if !ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
+	if !m.sm.ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
 		return "Action denied by user.", nil
 	}
 
@@ -335,13 +341,13 @@ func renameSymbol(ctx context.Context, args map[string]interface{}) (string, err
 	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
 }
 
-func listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -387,11 +393,11 @@ func listTodos(ctx context.Context, args map[string]interface{}) (string, error)
 	return strings.Join(results, "\n"), nil
 }
 
-func goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
@@ -402,9 +408,9 @@ func goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["path"].(string)
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -468,10 +474,10 @@ func analyzeComplexity(ctx context.Context, args map[string]interface{}) (string
 	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
 }
 
-func getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
+func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
@@ -592,14 +598,14 @@ func exprToString(expr ast.Expr) string {
 
 // New Intelligence Tools Implementation
 
-func findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -637,13 +643,13 @@ func findUsages(ctx context.Context, args map[string]interface{}) (string, error
 	return strings.Join(results, "\n"), nil
 }
 
-func listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -752,14 +758,14 @@ func listImplementations(ctx context.Context, args map[string]interface{}) (stri
 	return sb.String(), nil
 }
 
-func getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
 	typename, _ := args["typename"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -841,7 +847,7 @@ func getTypeInfo(ctx context.Context, args map[string]interface{}) (string, erro
 	return sb.String(), nil
 }
 
-func getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -905,7 +911,7 @@ func getProjectSummary(ctx context.Context, args map[string]interface{}) (string
 	return sb.String(), nil
 }
 
-func searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	re, err := regexp.Compile(query)
 	if err != nil {
@@ -969,7 +975,7 @@ func searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (str
 	return out, nil
 }
 
-func semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	target, _ := args["target"].(string)
 
 	// Get stat summary

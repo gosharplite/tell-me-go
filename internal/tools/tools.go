@@ -19,7 +19,8 @@ import (
 	"google.golang.org/genai"
 )
 
-var (
+// SecurityManager encapsulates all security-related state and path validation logic.
+type SecurityManager struct {
 	safePaths           []string
 	safePathsMu         sync.RWMutex
 	safePathsFile       string // Path to persistent safe paths config
@@ -30,42 +31,47 @@ var (
 	commandsLogFile     string // Path to log executed commands
 	bypassConfirmations bool   // Skip all interactive confirmations
 	bypassMu            sync.RWMutex
-	TerminalMutex       sync.Mutex
-)
+	terminalMu          sync.Mutex
+}
+
+// NewSecurityManager initializes a new SecurityManager.
+func NewSecurityManager() *SecurityManager {
+	return &SecurityManager{}
+}
 
 // SetBypassFile sets the file where persistent bypass state is stored.
-func SetBypassFile(path string) {
-	bypassMu.Lock()
-	defer bypassMu.Unlock()
-	bypassFile = path
+func (sm *SecurityManager) SetBypassFile(path string) {
+	sm.bypassMu.Lock()
+	defer sm.bypassMu.Unlock()
+	sm.bypassFile = path
 }
 
 // LoadBypassState reads the persistent bypass state from disk.
-func LoadBypassState() {
-	bypassMu.Lock()
-	defer bypassMu.Unlock()
-	if bypassFile == "" {
+func (sm *SecurityManager) LoadBypassState() {
+	sm.bypassMu.Lock()
+	defer sm.bypassMu.Unlock()
+	if sm.bypassFile == "" {
 		return
 	}
-	data, err := os.ReadFile(bypassFile)
+	data, err := os.ReadFile(sm.bypassFile)
 	if err == nil {
-		bypassConfirmations = strings.TrimSpace(string(data)) == "true"
+		sm.bypassConfirmations = strings.TrimSpace(string(data)) == "true"
 	}
 }
 
 // IsBypassActive returns the current state of bypass_confirmation.
-func IsBypassActive() bool {
-	bypassMu.RLock()
-	defer bypassMu.RUnlock()
-	return bypassConfirmations
+func (sm *SecurityManager) IsBypassActive() bool {
+	sm.bypassMu.RLock()
+	defer sm.bypassMu.RUnlock()
+	return sm.bypassConfirmations
 }
 
 // SaveBypassState writes the persistent bypass state to disk.
-func SaveBypassState() {
-	bypassMu.RLock()
-	file := bypassFile
-	active := bypassConfirmations
-	bypassMu.RUnlock()
+func (sm *SecurityManager) SaveBypassState() {
+	sm.bypassMu.RLock()
+	file := sm.bypassFile
+	active := sm.bypassConfirmations
+	sm.bypassMu.RUnlock()
 
 	if file == "" {
 		return
@@ -78,8 +84,18 @@ func SaveBypassState() {
 }
 
 // SetCommandsLogFile sets the path for logging executed commands.
-func SetCommandsLogFile(path string) {
-	commandsLogFile = path
+func (sm *SecurityManager) SetCommandsLogFile(path string) {
+	sm.commandsLogFile = path
+}
+
+// TerminalLock locks the terminal for exclusive access.
+func (sm *SecurityManager) TerminalLock() {
+	sm.terminalMu.Lock()
+}
+
+// TerminalUnlock unlocks the terminal.
+func (sm *SecurityManager) TerminalUnlock() {
+	sm.terminalMu.Unlock()
 }
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
@@ -121,12 +137,12 @@ func readSingleKey() (string, error) {
 }
 
 // logAudit writes a two-line audit entry to the commands log file.
-func logAudit(label1, val1, label2, val2 string) {
-	if commandsLogFile == "" {
+func (sm *SecurityManager) logAudit(label1, val1, label2, val2 string) {
+	if sm.commandsLogFile == "" {
 		return
 	}
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	f, err := os.OpenFile(commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(sm.commandsLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
 		return
@@ -137,18 +153,18 @@ func logAudit(label1, val1, label2, val2 string) {
 }
 
 // ConfirmDestructiveAction prompts the user for confirmation before performing a destructive tool action.
-func ConfirmDestructiveAction(action, target, detail string) bool {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (sm *SecurityManager) ConfirmDestructiveAction(action, target, detail string) bool {
+	sm.TerminalLock()
+	defer sm.TerminalUnlock()
 
 	detailLog := detail
 	if len(detailLog) > 500 {
 		detailLog = detailLog[:500] + "... (truncated)"
 	}
 
-	if IsBypassActive() {
+	if sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
-		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
+		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
 		return true
 	}
 
@@ -165,31 +181,31 @@ func ConfirmDestructiveAction(action, target, detail string) bool {
 	char, err := readSingleKey()
 	fmt.Fprintf(os.Stderr, "\n")
 	if err == nil && char == "y" {
-		logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
+		sm.logAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
 		return true
 	}
 	return false
 }
 
 // SetSafePathsFile sets the file where persistent safe paths are stored.
-func SetSafePathsFile(path string) {
-	safePathsMu.Lock()
-	defer safePathsMu.Unlock()
-	safePathsFile = path
+func (sm *SecurityManager) SetSafePathsFile(path string) {
+	sm.safePathsMu.Lock()
+	defer sm.safePathsMu.Unlock()
+	sm.safePathsFile = path
 }
 
 // SetReadOnlyPathsFile sets the file where persistent read-only paths are stored.
-func SetReadOnlyPathsFile(path string) {
-	readOnlyPathsMu.Lock()
-	defer readOnlyPathsMu.Unlock()
-	readOnlyPathsFile = path
+func (sm *SecurityManager) SetReadOnlyPathsFile(path string) {
+	sm.readOnlyPathsMu.Lock()
+	defer sm.readOnlyPathsMu.Unlock()
+	sm.readOnlyPathsFile = path
 }
 
 // LoadSafePaths reads persistent safe paths from disk.
-func LoadSafePaths() error {
-	safePathsMu.RLock()
-	file := safePathsFile
-	safePathsMu.RUnlock()
+func (sm *SecurityManager) LoadSafePaths() error {
+	sm.safePathsMu.RLock()
+	file := sm.safePathsFile
+	sm.safePathsMu.RUnlock()
 
 	if file == "" {
 		return nil
@@ -210,16 +226,16 @@ func LoadSafePaths() error {
 	}
 
 	for _, p := range paths {
-		RegisterSafePath(p)
+		sm.RegisterSafePath(p)
 	}
 	return nil
 }
 
 // LoadReadOnlyPaths reads persistent read-only paths from disk.
-func LoadReadOnlyPaths() error {
-	readOnlyPathsMu.RLock()
-	file := readOnlyPathsFile
-	readOnlyPathsMu.RUnlock()
+func (sm *SecurityManager) LoadReadOnlyPaths() error {
+	sm.readOnlyPathsMu.RLock()
+	file := sm.readOnlyPathsFile
+	sm.readOnlyPathsMu.RUnlock()
 
 	if file == "" {
 		return nil
@@ -240,18 +256,18 @@ func LoadReadOnlyPaths() error {
 	}
 
 	for _, p := range paths {
-		RegisterReadOnlyPath(p)
+		sm.RegisterReadOnlyPath(p)
 	}
 	return nil
 }
 
 // SaveSafePaths writes persistent safe paths to disk.
-func SaveSafePaths() error {
-	safePathsMu.RLock()
-	file := safePathsFile
-	paths := make([]string, len(safePaths))
-	copy(paths, safePaths)
-	safePathsMu.RUnlock()
+func (sm *SecurityManager) SaveSafePaths() error {
+	sm.safePathsMu.RLock()
+	file := sm.safePathsFile
+	paths := make([]string, len(sm.safePaths))
+	copy(paths, sm.safePaths)
+	sm.safePathsMu.RUnlock()
 
 	if file == "" {
 		return nil
@@ -266,12 +282,12 @@ func SaveSafePaths() error {
 }
 
 // SaveReadOnlyPaths writes persistent read-only paths to disk.
-func SaveReadOnlyPaths() error {
-	readOnlyPathsMu.RLock()
-	file := readOnlyPathsFile
-	paths := make([]string, len(readOnlyPaths))
-	copy(paths, readOnlyPaths)
-	readOnlyPathsMu.RUnlock()
+func (sm *SecurityManager) SaveReadOnlyPaths() error {
+	sm.readOnlyPathsMu.RLock()
+	file := sm.readOnlyPathsFile
+	paths := make([]string, len(sm.readOnlyPaths))
+	copy(paths, sm.readOnlyPaths)
+	sm.readOnlyPathsMu.RUnlock()
 
 	if file == "" {
 		return nil
@@ -286,7 +302,7 @@ func SaveReadOnlyPaths() error {
 }
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.
-func RegisterSafePath(path string) {
+func (sm *SecurityManager) RegisterSafePath(path string) {
 	if path == "" {
 		return
 	}
@@ -294,20 +310,20 @@ func RegisterSafePath(path string) {
 	if err != nil {
 		return
 	}
-	safePathsMu.Lock()
-	defer safePathsMu.Unlock()
+	sm.safePathsMu.Lock()
+	defer sm.safePathsMu.Unlock()
 
 	// Check for duplicates
-	for _, p := range safePaths {
+	for _, p := range sm.safePaths {
 		if p == abs {
 			return
 		}
 	}
-	safePaths = append(safePaths, abs)
+	sm.safePaths = append(sm.safePaths, abs)
 }
 
 // RegisterReadOnlyPath adds a directory or file to the list of allowed boundaries for read-only access.
-func RegisterReadOnlyPath(path string) {
+func (sm *SecurityManager) RegisterReadOnlyPath(path string) {
 	if path == "" {
 		return
 	}
@@ -315,49 +331,49 @@ func RegisterReadOnlyPath(path string) {
 	if err != nil {
 		return
 	}
-	readOnlyPathsMu.Lock()
-	defer readOnlyPathsMu.Unlock()
+	sm.readOnlyPathsMu.Lock()
+	defer sm.readOnlyPathsMu.Unlock()
 
 	// Check for duplicates
-	for _, p := range readOnlyPaths {
+	for _, p := range sm.readOnlyPaths {
 		if p == abs {
 			return
 		}
 	}
-	readOnlyPaths = append(readOnlyPaths, abs)
+	sm.readOnlyPaths = append(sm.readOnlyPaths, abs)
 }
 
 // GetSafePaths returns a copy of the currently registered safe paths.
-func GetSafePaths() []string {
-	safePathsMu.RLock()
-	defer safePathsMu.RUnlock()
-	paths := make([]string, len(safePaths))
-	copy(paths, safePaths)
+func (sm *SecurityManager) GetSafePaths() []string {
+	sm.safePathsMu.RLock()
+	defer sm.safePathsMu.RUnlock()
+	paths := make([]string, len(sm.safePaths))
+	copy(paths, sm.safePaths)
 	return paths
 }
 
 // GetReadOnlyPaths returns a copy of the currently registered read-only paths.
-func GetReadOnlyPaths() []string {
-	readOnlyPathsMu.RLock()
-	defer readOnlyPathsMu.RUnlock()
-	paths := make([]string, len(readOnlyPaths))
-	copy(paths, readOnlyPaths)
+func (sm *SecurityManager) GetReadOnlyPaths() []string {
+	sm.readOnlyPathsMu.RLock()
+	defer sm.readOnlyPathsMu.RUnlock()
+	paths := make([]string, len(sm.readOnlyPaths))
+	copy(paths, sm.readOnlyPaths)
 	return paths
 }
 
 // RemoveSafePath removes a path from the authorized list.
-func RemoveSafePath(path string) error {
+func (sm *SecurityManager) RemoveSafePath(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	safePathsMu.Lock()
-	defer safePathsMu.Unlock()
+	sm.safePathsMu.Lock()
+	defer sm.safePathsMu.Unlock()
 
 	newPaths := []string{}
 	found := false
-	for _, p := range safePaths {
+	for _, p := range sm.safePaths {
 		if p == abs {
 			found = true
 			continue
@@ -369,23 +385,23 @@ func RemoveSafePath(path string) error {
 		return fmt.Errorf("path '%s' not found in authorized list", abs)
 	}
 
-	safePaths = newPaths
+	sm.safePaths = newPaths
 	return nil
 }
 
 // RemoveReadOnlyPath removes a path from the read-only authorized list.
-func RemoveReadOnlyPath(path string) error {
+func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
 
-	readOnlyPathsMu.Lock()
-	defer readOnlyPathsMu.Unlock()
+	sm.readOnlyPathsMu.Lock()
+	defer sm.readOnlyPathsMu.Unlock()
 
 	newPaths := []string{}
 	found := false
-	for _, p := range readOnlyPaths {
+	for _, p := range sm.readOnlyPaths {
 		if p == abs {
 			found = true
 			continue
@@ -397,12 +413,12 @@ func RemoveReadOnlyPath(path string) error {
 		return fmt.Errorf("path '%s' not found in read-only authorized list", abs)
 	}
 
-	readOnlyPaths = newPaths
+	sm.readOnlyPaths = newPaths
 	return nil
 }
 
 // IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
-func IsPathSafe(path string) error {
+func (sm *SecurityManager) IsPathSafe(path string) error {
 	if path == "" {
 		return nil
 	}
@@ -452,25 +468,25 @@ func IsPathSafe(path string) error {
 	}
 
 	// 4. Allow paths within explicitly registered safe paths
-	safePathsMu.RLock()
-	defer safePathsMu.RUnlock()
+	sm.safePathsMu.RLock()
+	defer sm.safePathsMu.RUnlock()
 
 	// CRITICAL: Block access to the safePathsFile itself for the AI
-	if safePathsFile != "" {
-		absSafeFile, err := filepath.Abs(safePathsFile)
+	if sm.safePathsFile != "" {
+		absSafeFile, err := filepath.Abs(sm.safePathsFile)
 		if err == nil && absPath == absSafeFile {
 			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
 		}
 	}
 
-	if readOnlyPathsFile != "" {
-		absReadSafeFile, err := filepath.Abs(readOnlyPathsFile)
+	if sm.readOnlyPathsFile != "" {
+		absReadSafeFile, err := filepath.Abs(sm.readOnlyPathsFile)
 		if err == nil && absPath == absReadSafeFile {
 			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
 		}
 	}
 
-	for _, sp := range safePaths {
+	for _, sp := range sm.safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
 			return nil
@@ -478,10 +494,10 @@ func IsPathSafe(path string) error {
 	}
 
 	// 5. Allow paths within explicitly registered read-only paths
-	readOnlyPathsMu.RLock()
-	defer readOnlyPathsMu.RUnlock()
+	sm.readOnlyPathsMu.RLock()
+	defer sm.readOnlyPathsMu.RUnlock()
 
-	for _, rop := range readOnlyPaths {
+	for _, rop := range sm.readOnlyPaths {
 		relReadSafe, err := filepath.Rel(rop, absPath)
 		if err == nil && !strings.HasPrefix(relReadSafe, "..") && !filepath.IsAbs(relReadSafe) {
 			return nil
@@ -493,7 +509,7 @@ func IsPathSafe(path string) error {
 
 // IsPathWritable checks if a path is within the writable boundaries (CWD, Temp, or registered safe paths).
 // It does NOT include read-only paths.
-func IsPathWritable(path string) error {
+func (sm *SecurityManager) IsPathWritable(path string) error {
 	if path == "" {
 		return nil
 	}
@@ -538,24 +554,24 @@ func IsPathWritable(path string) error {
 	}
 
 	// 3. Allow paths within explicitly registered safe paths
-	safePathsMu.RLock()
-	defer safePathsMu.RUnlock()
+	sm.safePathsMu.RLock()
+	defer sm.safePathsMu.RUnlock()
 
-	if safePathsFile != "" {
-		absSafeFile, err := filepath.Abs(safePathsFile)
+	if sm.safePathsFile != "" {
+		absSafeFile, err := filepath.Abs(sm.safePathsFile)
 		if err == nil && absPath == absSafeFile {
 			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
 		}
 	}
 
-	if readOnlyPathsFile != "" {
-		absReadSafeFile, err := filepath.Abs(readOnlyPathsFile)
+	if sm.readOnlyPathsFile != "" {
+		absReadSafeFile, err := filepath.Abs(sm.readOnlyPathsFile)
 		if err == nil && absPath == absReadSafeFile {
 			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
 		}
 	}
 
-	for _, sp := range safePaths {
+	for _, sp := range sm.safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
 			return nil

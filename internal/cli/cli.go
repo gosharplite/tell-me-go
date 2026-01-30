@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -30,10 +31,11 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
+	sm      *tools.SecurityManager
 }
 
 // New creates a new App instance with default IO and factories.
@@ -46,14 +48,17 @@ func New(version string) *App {
 		homeDir = "."
 	}
 
+	sm := tools.NewSecurityManager()
+
 	return &App{
 		Version: version,
 		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
-			return agent.New(client, hManager, registry)
+		sm:      sm,
+		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
+			return agent.New(client, hManager, registry, sm)
 		},
 		ClientFactory: func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -109,26 +114,26 @@ func (a *App) Run(args []string) error {
 	bypassPath := filepath.Join(modeDir, "bypass.log")
 	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
-	// 5. Initialize Components
-	tools.SetSafePathsFile(safePathsPath)
-	tools.SetReadOnlyPathsFile(readPathsPath)
-	tools.SetBypassFile(bypassPath)
-	tools.SetCommandsLogFile(commandsLogPath)
-	if err := tools.LoadSafePaths(); err != nil {
+		// 5. Initialize Components
+	a.sm.SetSafePathsFile(safePathsPath)
+	a.sm.SetReadOnlyPathsFile(readPathsPath)
+	a.sm.SetBypassFile(bypassPath)
+	a.sm.SetCommandsLogFile(commandsLogPath)
+	if err := a.sm.LoadSafePaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
 	}
-	if err := tools.LoadReadOnlyPaths(); err != nil {
+	if err := a.sm.LoadReadOnlyPaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent read-only paths: %v", err)
 	}
-	tools.LoadBypassState()
-	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
-	tools.RegisterReadOnlyPath(*configPath)
+	a.sm.LoadBypassState()
+	a.sm.RegisterSafePath(filepath.Join(homeDir, "output"))
+	a.sm.RegisterReadOnlyPath(*configPath)
 
 	if *newSession {
 		timestamp := time.Now().Format("20060102_150405")
 		// Record cost with a unique ID including the timestamp before archiving
 		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, uniqueID)
+		_ = tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, uniqueID)
 		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
 		a.cleanupOldBackups(homeDir, cfg.Mode)
 	}
@@ -156,7 +161,7 @@ func (a *App) Run(args []string) error {
 		return nil
 	}
 
-	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
+	pricing := tools.GetPricing(context.Background(), filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
 	if data, err := os.ReadFile(persistentConfigPath); err == nil {
@@ -179,19 +184,19 @@ func (a *App) Run(args []string) error {
 		return fmt.Errorf("error creating client: %v", err)
 	}
 
-	registry := tools.NewRegistry()
-	tools.RegisterFileSystemTools(registry)
-	tools.RegisterIntelligenceTools(registry)
-	tools.RegisterSystemTools(registry)
-	tools.RegisterGitTools(registry)
-	tools.RegisterDevTools(registry)
-	tools.RegisterTeamsTools(registry)
-	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode)
-	tools.RegisterMetricsTools(registry, logPath, cfg.Model, cfg.Mode)
-	tools.RegisterMediaTools(registry, client)
+		registry := tools.NewRegistry()
+	tools.RegisterFileSystemTools(registry, a.sm)
+	tools.RegisterIntelligenceTools(registry, a.sm)
+	tools.RegisterSystemTools(registry, a.sm)
+	tools.RegisterGitTools(registry, a.sm)
+	tools.RegisterDevTools(registry, a.sm)
+	tools.RegisterTeamsTools(registry, a.sm)
+	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode, a.sm)
+	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode)
+	tools.RegisterMediaTools(registry, a.sm, client)
 
 	// 6. Execute Agent
-	chatAgent := a.AgentFactory(client, hManager, registry)
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetRawOutput(*rawOutput)
@@ -209,7 +214,7 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 8. Record session cost
-	if err := tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, ""); err != nil {
+	if err := tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, ""); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 
@@ -253,9 +258,9 @@ func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
 		fs.PrintDefaults()
 		return "", fmt.Errorf("empty prompt")
 	}
-	tools.TerminalMutex.Lock()
+	a.sm.TerminalLock()
 	fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
-	tools.TerminalMutex.Unlock()
+	a.sm.TerminalUnlock()
 	return prompt, nil
 }
 
@@ -321,9 +326,9 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 		if _, err := os.Stat(f); err == nil {
 			if !backupCreated {
 				if err := os.MkdirAll(backupDir, 0755); err != nil {
-					tools.TerminalMutex.Lock()
+					a.sm.TerminalLock()
 					fmt.Fprintf(a.Stderr, "Error creating backup directory: %v\n", err)
-					tools.TerminalMutex.Unlock()
+					a.sm.TerminalUnlock()
 					return
 				}
 				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
@@ -331,9 +336,9 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
-				tools.TerminalMutex.Lock()
+				a.sm.TerminalLock()
 				fmt.Fprintf(a.Stderr, "Error archiving %s: %v\n", f, err)
-				tools.TerminalMutex.Unlock()
+				a.sm.TerminalUnlock()
 			}
 		}
 	}
@@ -382,9 +387,9 @@ func (a *App) cleanupOldBackups(homeDir, mode string) {
 		if folderTime.Before(cutoff) {
 			path := filepath.Join(backupBaseDir, entry.Name())
 			if err := os.RemoveAll(path); err != nil {
-				tools.TerminalMutex.Lock()
+				a.sm.TerminalLock()
 				fmt.Fprintf(a.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
-				tools.TerminalMutex.Unlock()
+				a.sm.TerminalUnlock()
 			}
 		}
 	}

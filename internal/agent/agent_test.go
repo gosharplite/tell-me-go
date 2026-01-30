@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,7 +23,8 @@ import (
 )
 
 func TestAgent_Setters(t *testing.T) {
-	a := New(nil, nil, nil)
+	sm := tools.NewSecurityManager()
+	a := New(nil, nil, nil, sm)
 	a.SetUIOptions(false, false)
 	if a.showThoughts || a.showTools {
 		t.Error("SetUIOptions failed")
@@ -47,7 +49,8 @@ func TestAgent_Setters(t *testing.T) {
 func TestAgent_LogUsage(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "usage.log")
-	a := New(nil, nil, nil)
+	sm := tools.NewSecurityManager()
+	a := New(nil, nil, nil, sm)
 	a.SetLogFile(logFile)
 
 	metrics := &api.Metrics{
@@ -80,9 +83,12 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 		Name:        "test_tool",
 		Description: "A test tool",
 		Parameters:  &genai.Schema{Type: genai.TypeObject},
-	}, nil)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return "ok", nil
+	})
 
-	a := New(nil, nil, registry)
+	sm := tools.NewSecurityManager()
+	a := New(nil, nil, registry, sm)
 
 	contents := []*api.Content{
 		{
@@ -157,7 +163,8 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	err = a.Chat("Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -176,7 +183,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	// Tool that hangs
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "slow_tool",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		time.Sleep(200 * time.Millisecond)
 		return "Too late", nil
 	})
@@ -210,7 +217,8 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	a.SetConcurrency(1, 1)                // 1 second timeout
 	a.toolTimeout = 50 * time.Millisecond // Overwrite with short timeout
 
@@ -234,7 +242,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "gen_image",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		// MULTI_MODAL_IMAGE|mime|b64|msg
 		return "MULTI_MODAL_IMAGE|image/png|iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==|Image generated", nil
 	})
@@ -268,7 +276,8 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	_ = a.Chat("Generate an image")
 
 	contents := hManager.GetContents()
@@ -295,7 +304,7 @@ func TestAgentToolLoop(t *testing.T) {
 	registry.Register(&genai.FunctionDeclaration{
 		Name:       "get_weather",
 		Parameters: &genai.Schema{Type: genai.TypeObject},
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		return "Sunny", nil
 	})
 
@@ -341,7 +350,8 @@ func TestAgentToolLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 
 	// Execute Chat
 	err = a.Chat("What's the weather?")
@@ -363,7 +373,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "infinite_tool",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		return "Keep going", nil
 	})
 
@@ -385,7 +395,8 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
 	err = a.Chat("Run tool")
@@ -411,7 +422,8 @@ func TestAgent_Chat_APIError(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	err = a.Chat("Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")

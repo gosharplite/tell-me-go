@@ -12,15 +12,21 @@ import (
 	"google.golang.org/genai"
 )
 
+type gitManager struct {
+	sm *SecurityManager
+}
+
 // RegisterGitTools adds Git-related tools to the registry.
-func RegisterGitTools(r *Registry) {
+func RegisterGitTools(r *Registry, sm *SecurityManager) {
+	m := &gitManager{sm: sm}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the current status of the git repository.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, getGitStatus)
+	}, m.getGitStatus)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_diff",
@@ -34,7 +40,7 @@ func RegisterGitTools(r *Registry) {
 				},
 			},
 		},
-	}, getGitDiff)
+	}, m.getGitDiff)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_log",
@@ -48,7 +54,7 @@ func RegisterGitTools(r *Registry) {
 				},
 			},
 		},
-	}, getGitLog)
+	}, m.getGitLog)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_commit",
@@ -63,7 +69,7 @@ func RegisterGitTools(r *Registry) {
 			},
 			Required: []string{"hash"},
 		},
-	}, getGitCommit)
+	}, m.getGitCommit)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_blame",
@@ -78,14 +84,14 @@ func RegisterGitTools(r *Registry) {
 			},
 			Required: []string{"filepath"},
 		},
-	}, getGitBlame)
+	}, m.getGitBlame)
 }
 
-func getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
 	return runGitCommand(ctx, "status", "--short")
 }
 
-func getGitDiff(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	staged, _ := args["staged"].(bool)
 	if staged {
 		return runGitCommand(ctx, "diff", "--staged")
@@ -93,7 +99,7 @@ func getGitDiff(ctx context.Context, args map[string]interface{}) (string, error
 	return runGitCommand(ctx, "diff")
 }
 
-func getGitLog(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (string, error) {
 	limit := 10
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
@@ -101,7 +107,7 @@ func getGitLog(ctx context.Context, args map[string]interface{}) (string, error)
 	return runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 }
 
-func getGitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
 	hash, ok := args["hash"].(string)
 	if !ok || hash == "" {
 		return "", fmt.Errorf("hash argument is required")
@@ -118,13 +124,13 @@ func getGitCommit(ctx context.Context, args map[string]interface{}) (string, err
 	return out, nil
 }
 
-func getGitBlame(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 

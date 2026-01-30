@@ -8,6 +8,8 @@ import (
 )
 
 func TestIsSafeCommand(t *testing.T) {
+	sm := NewSecurityManager()
+	m := &systemManager{sm: sm}
 	tests := []struct {
 		cmd  string
 		want bool
@@ -23,7 +25,7 @@ func TestIsSafeCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := isSafeCommand(tt.cmd)
+		got := m.isSafeCommand(tt.cmd)
 		if got != tt.want {
 			t.Errorf("isSafeCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
 		}

@@ -19,8 +19,14 @@ import (
 	"google.golang.org/genai"
 )
 
+type systemManager struct {
+	sm *SecurityManager
+}
+
 // RegisterSystemTools adds system-related tools to the registry.
-func RegisterSystemTools(r *Registry) {
+func RegisterSystemTools(r *Registry, sm *SecurityManager) {
+	m := &systemManager{sm: sm}
+
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
 		Description: "Executes a shell command on the local system.",
@@ -38,7 +44,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"command"},
 		},
-	}, executeCommand, ToolOptions{Serial: true})
+	}, m.executeCommand, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
@@ -53,7 +59,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"question"},
 		},
-	}, askUser, ToolOptions{Serial: true})
+	}, m.askUser, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_url",
@@ -68,7 +74,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"url"},
 		},
-	}, readURL)
+	}, m.readURL)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
@@ -83,7 +89,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"url"},
 		},
-	}, readExternalDocs)
+	}, m.readExternalDocs)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "http_request",
@@ -110,7 +116,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, httpRequest)
+	}, m.httpRequest)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_safepath",
@@ -129,12 +135,12 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, registerSafePathTool, ToolOptions{Serial: true})
+	}, m.registerSafePathTool, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
-	}, listSafePathsTool)
+	}, m.listSafePathsTool)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_safepath",
@@ -149,7 +155,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, removeSafePathTool, ToolOptions{Serial: true})
+	}, m.removeSafePathTool, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_readpath",
@@ -168,12 +174,12 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, registerReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
-	}, listReadOnlyPathsTool)
+	}, m.listReadOnlyPathsTool)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_readpath",
@@ -188,38 +194,38 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, removeReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, bypassConfirmationTool, ToolOptions{Serial: true})
+	}, m.bypassConfirmationTool, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, revokeBypassTool, ToolOptions{Serial: true})
+	}, m.revokeBypassTool, ToolOptions{Serial: true})
 }
 
-func revokeBypassTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) revokeBypassTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
-	bypassMu.Lock()
-	bypassConfirmations = false
-	bypassMu.Unlock()
+	m.sm.bypassMu.Lock()
+	m.sm.bypassConfirmations = false
+	m.sm.bypassMu.Unlock()
 
-	SaveBypassState()
+	m.sm.SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
-	logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
+	m.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return "Interactive security prompts have been re-enabled.", nil
 }
 
-func bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		return "Bypass mode is already enabled.", nil
 	}
 
@@ -233,18 +239,18 @@ func bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (s
 		return "Bypass mode denied by user.", nil
 	}
 
-	bypassMu.Lock()
-	bypassConfirmations = true
-	bypassMu.Unlock()
+	m.sm.bypassMu.Lock()
+	m.sm.bypassConfirmations = true
+	m.sm.bypassMu.Unlock()
 
-	SaveBypassState()
+	m.sm.SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
-	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
+	m.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return "All future confirmations in this session will be bypassed. This setting is now persistent for this session name.", nil
 }
 
-func listSafePathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	paths := GetSafePaths()
+func (m *systemManager) listSafePathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	paths := m.sm.GetSafePaths()
 	if len(paths) == 0 {
 		return "No additional safe paths are currently registered.", nil
 	}
@@ -257,8 +263,8 @@ func listSafePathsTool(ctx context.Context, args map[string]interface{}) (string
 	return sb.String(), nil
 }
 
-func listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	paths := GetReadOnlyPaths()
+func (m *systemManager) listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	paths := m.sm.GetReadOnlyPaths()
 	if len(paths) == 0 {
 		return "No additional read-only paths are currently registered.", nil
 	}
@@ -271,9 +277,9 @@ func listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (st
 	return sb.String(), nil
 }
 
-func removeSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -286,9 +292,9 @@ func removeSafePathTool(ctx context.Context, args map[string]interface{}) (strin
 	}
 
 	// Confirmation Gate
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
@@ -298,23 +304,23 @@ func removeSafePathTool(ctx context.Context, args map[string]interface{}) (strin
 		if err != nil || char != "y" {
 			return "Removal denied by user.", nil
 		}
-		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
+		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
-	if err := RemoveSafePath(absPath); err != nil {
+	if err := m.sm.RemoveSafePath(absPath); err != nil {
 		return fmt.Sprintf("Error: %v", err), nil
 	}
 
-	if err := SaveSafePaths(); err != nil {
+	if err := m.sm.SaveSafePaths(); err != nil {
 		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath), nil
 }
 
-func removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -327,9 +333,9 @@ func removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (s
 	}
 
 	// Confirmation Gate
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of read-only authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
@@ -339,23 +345,23 @@ func removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (s
 		if err != nil || char != "y" {
 			return "Removal denied by user.", nil
 		}
-		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
+		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
-	if err := RemoveReadOnlyPath(absPath); err != nil {
+	if err := m.sm.RemoveReadOnlyPath(absPath); err != nil {
 		return fmt.Sprintf("Error: %v", err), nil
 	}
 
-	if err := SaveReadOnlyPaths(); err != nil {
+	if err := m.sm.SaveReadOnlyPaths(); err != nil {
 		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath), nil
 }
 
-func registerSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) registerSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
@@ -370,9 +376,9 @@ func registerSafePathTool(ctx context.Context, args map[string]interface{}) (str
 	}
 
 	// 1. Confirmation
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
 		if reason != "" {
@@ -393,21 +399,21 @@ func registerSafePathTool(ctx context.Context, args map[string]interface{}) (str
 		if err != nil || char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
-		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
-	RegisterSafePath(absPath)
-	if err := SaveSafePaths(); err != nil {
+	m.sm.RegisterSafePath(absPath)
+	if err := m.sm.SaveSafePaths(); err != nil {
 		return fmt.Sprintf("Path authorized but failed to persist: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath), nil
 }
 
-func registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
@@ -422,9 +428,9 @@ func registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) 
 	}
 
 	// 1. Confirmation
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Read-only authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent READ-ONLY access to:\033[0m %s\n", absPath)
 		if reason != "" {
@@ -445,21 +451,21 @@ func registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) 
 		if err != nil || char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
-		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
-	RegisterReadOnlyPath(absPath)
-	if err := SaveReadOnlyPaths(); err != nil {
+	m.sm.RegisterReadOnlyPath(absPath)
+	if err := m.sm.SaveReadOnlyPaths(); err != nil {
 		return fmt.Sprintf("Path authorized for reading but failed to persist: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath), nil
 }
 
-func askUser(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	question, ok := args["question"].(string)
 	if !ok || question == "" {
@@ -479,7 +485,7 @@ func askUser(ctx context.Context, args map[string]interface{}) (string, error) {
 	return strings.TrimSpace(response), nil
 }
 
-func readURL(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *systemManager) readURL(ctx context.Context, args map[string]interface{}) (string, error) {
 	url, ok := args["url"].(string)
 	if !ok || url == "" {
 		return "", fmt.Errorf("url argument is required")
@@ -513,8 +519,8 @@ func readURL(ctx context.Context, args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
-	content, err := readURL(ctx, args)
+func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
+	content, err := m.readURL(ctx, args)
 	if err != nil {
 		return "", err
 	}
@@ -543,14 +549,14 @@ func readExternalDocs(ctx context.Context, args map[string]interface{}) (string,
 	return content, nil
 }
 
-func httpRequest(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *systemManager) httpRequest(ctx context.Context, args map[string]interface{}) (string, error) {
 	method, _ := args["method"].(string)
 	url, _ := args["url"].(string)
 	bodyStr, _ := args["body"].(string)
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	var reqBody io.Reader
 	if bodyStr != "" {
@@ -599,7 +605,7 @@ func httpRequest(ctx context.Context, args map[string]interface{}) (string, erro
 	return out, nil
 }
 
-func isSafeCommand(command string) bool {
+func (m *systemManager) isSafeCommand(command string) bool {
 	// Whitelist of allowed base commands (strict exact match)
 	safeCommands := map[string]bool{
 		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
@@ -664,7 +670,7 @@ func isSafeCommand(command string) bool {
 			// Skip empty args and simple flags like -la
 			continue
 		}
-		if err := IsPathSafe(arg); err != nil {
+		if err := m.sm.IsPathSafe(arg); err != nil {
 			fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
 			return false
 		}
@@ -673,9 +679,9 @@ func isSafeCommand(command string) bool {
 	return true
 }
 
-func executeCommand(ctx context.Context, args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) executeCommand(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
@@ -687,8 +693,8 @@ func executeCommand(ctx context.Context, args map[string]interface{}) (string, e
 	approved := false
 
 	// 1. Check for Auto-Approval (Safe read-only commands or bypass enabled)
-	safe := isSafeCommand(command)
-	if IsBypassActive() {
+	safe := m.isSafeCommand(command)
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
 		approved = true
 	} else if safe {
@@ -716,10 +722,10 @@ func executeCommand(ctx context.Context, args map[string]interface{}) (string, e
 
 	// 2.5 Log command execution if log file is set
 	logSuffix := ""
-	if bypassConfirmations {
+	if m.sm.IsBypassActive() {
 		logSuffix = " (auto-approved via bypass_confirmation)"
 	}
-	logAudit("REASON", reason, "COMMAND", command+logSuffix)
+	m.sm.logAudit("REASON", reason, "COMMAND", command+logSuffix)
 
 	// 3. Execution
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")

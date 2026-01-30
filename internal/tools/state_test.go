@@ -24,9 +24,11 @@ func TestManageTasks(t *testing.T) {
 
 	testMode := "test_mode"
 	ctx := context.Background()
+	sm := NewSecurityManager()
 	s := &stateManager{
 		homeDir: tmpDir,
 		mode:    testMode,
+		sm:      sm,
 	}
 
 	// Helper to read the tasks file directly
@@ -315,9 +317,11 @@ func TestStateConcurrency(t *testing.T) {
 
 	testMode := "concurrent"
 	ctx := context.Background()
+	sm := NewSecurityManager()
 	s := &stateManager{
 		homeDir: tmpDir,
 		mode:    testMode,
+		sm:      sm,
 	}
 
 	numGroutines := 20
@@ -392,9 +396,11 @@ func TestCorruptionRecovery(t *testing.T) {
 
 	testMode := "corrupt"
 	ctx := context.Background()
+	sm := NewSecurityManager()
 	s := &stateManager{
 		homeDir: tmpDir,
 		mode:    testMode,
+		sm:      sm,
 	}
 
 	path := s.getTasksPath()

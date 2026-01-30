@@ -77,7 +77,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// Note: We can't easily mock the client here without an interface in agent.go
 	// But we can check if the Agent struct handles the limit.
 
-	a := New(client, h, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, h, registry, sm)
 	a.SetLimits(10, 120000, 2) // Limit history to 2 turns
 
 	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
