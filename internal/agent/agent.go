@@ -219,9 +219,6 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 		// 3. Send Chat Request
 		respContent, metrics, err := a.sendChat(ctx, apiContents)
-		if metrics != nil {
-			a.logUsage(metrics)
-		}
 		if err != nil {
 			return err
 		}
@@ -232,12 +229,20 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		a.saveHistory() // SAVE 1: Capture model's response/tool calls
 
 		// 5. Handle Tool Execution
-		if err := a.handleToolExecution(ctx, respContent, turn); err != nil {
+		toolStart := time.Now()
+		err = a.handleToolExecution(ctx, respContent, turn)
+		if metrics != nil {
+			metrics.ToolDuration = time.Since(toolStart).Seconds()
+		}
+		if err != nil {
 			return err
 		}
 		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
 		a.logTurnStatus(currentTurns, tokens, metrics, true)
+		if metrics != nil {
+			a.logUsage(metrics)
+		}
 
 		if !a.hasToolCalls(respContent) {
 			break

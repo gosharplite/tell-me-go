@@ -10,22 +10,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.58.0] - 2026-02-13
+## [1.58.0] - 2026-01-30
+
+### Added
+- **Observability**: Implemented Task Execution Latency tracking. The metrics log now displays `AI_Time+Tool_Time` (e.g., `10.96s+7s`) if tool execution takes longer than 3 seconds, providing better visibility into long-running tasks.
 
 ### Changed
 - **Maintenance**: Promoted to v1.58.0 following the refined public release procedure.
 
-## [1.57.0] - 2026-02-12
+## [1.57.0] - 2026-01-30
 
 ### Changed
 - **Maintenance**: Promoted to v1.57.0 following the refined public release procedure.
 
-## [1.56.0] - 2026-02-12
+## [1.56.0] - 2026-01-30
 
 ### Changed
 - **Maintenance**: Promoted to v1.56.0 following the refined public release procedure.
 
-## [1.55.0] - 2026-02-12
+## [1.55.0] - 2026-01-30
 
 ### Fixed
 - **CLI**: Ensured the application exits immediately after displaying history with the `-l` flag, preventing unintended prompt processing.
@@ -34,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Maintenance**: Promoted to v1.55.0 following the refined public release procedure.
 
-## [1.54.0] - 2026-02-12
+## [1.54.0] - 2026-01-30
 
 ### Added
 - **CLI**: Restructured output directory to use mode-specific subdirectories (e.g., `output/vertex/`) for better isolation and organization.
@@ -45,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Maintenance**: Promoted to v1.54.0 following the refined public release procedure.
 
-## [1.53.0] - 2026-02-12
+## [1.53.0] - 2026-01-30
 
 ### Added
 - **Observability**: Added total session duration to the post-turn metrics log for better performance tracking.
@@ -54,13 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **UX**: Refined tool descriptions to be more neutral and concise, minimizing instructional bias and preventing potential system prompt leaks.
 - **Maintenance**: Promoted to v1.53.0 following the refined public release procedure.
 
-## [1.52.0] - 2026-02-12
+## [1.52.0] - 2026-01-30
 
 ### Changed
 - **Architecture**: Refactored `internal/cli` to improve testability and added comprehensive unit tests for the CLI package.
 - **Maintenance**: Promoted to v1.52.0 following the refined public release procedure.
 
-## [1.51.0] - 2026-02-04
+## [1.51.0] - 2026-01-30
 
 ### Added
 - **Logging**: Implemented a two-phase logging approach for turn status. Pre-call logs show estimated payload and turn count, while post-call logs show actual metrics and final token counts.
@@ -72,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Maintenance**: Promoted to v1.51.0 following the refined public release procedure.
 
-## [1.50.0] - 2026-02-04
+## [1.50.0] - 2026-01-30
 
 ### Added
 - **History**: Implemented incremental history saving. The agent now persists history to disk after every significant state change (user prompt, model response, tool results).
@@ -82,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: Refined history persistence to log warnings on failure instead of silently suppressing them.
 - **Maintenance**: Promoted to v1.50.0 following the refined public release procedure.
 
-## [1.49.0] - 2026-02-04
+## [1.49.0] - 2026-01-30
 
 ### Added
 - **CLI**: Added `-r` flag for raw text output. This allows displaying history and chat responses without Markdown rendering, improving compatibility with plain-text environments and scripts.
@@ -92,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: Updated `README.md` to document the new `-r` flag and provided examples for raw history and prompt output.
 - **Maintenance**: Promoted to v1.49.0 following the refined public release procedure.
 
-## [1.48.0] - 2026-02-04
+## [1.48.0] - 2026-01-30
 
 ### Changed
 - **Refactor**: Re-engineered the tool registry to encapsulate tool execution behavior (serial vs. parallel) within tool definitions, fully adhering to the Open-Closed Principle (OCP).
@@ -102,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Testing**: Added `internal/tools/tools_test.go` for comprehensive verification of tool registration and property logic.
 - **Version Bump**: Promoted to v1.48.0.
 
-## [1.47.0] - 2026-02-04
+## [1.47.0] - 2026-01-30
 
 ### Changed
 - **Documentation**: Updated Public Release SOP with mandatory workspace integrity checks and sequential task initialization to prevent process amnesia.
@@ -422,13 +425,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.15.0.
 
-## [1.14.1] - 2026-05-28
+## [1.14.1] - 2026-01-28
 
 ### Changed
 - **Documentation**: Updated `SOP/lifecycle/public_release.md` with explicit branch synchronization and verification steps.
 - **Version Bump**: Promoted to v1.14.1.
 
-## [1.14.0] - 2026-05-28
+## [1.14.0] - 2026-01-28
 
 ### Added
 - **CLI**: Improved `stdin` handling. The tool now correctly detects piped input even when a prompt argument is provided, merging them with a newline.
@@ -437,7 +440,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.14.0.
 
-## [1.13.6] - 2026-05-27
+## [1.13.6] - 2026-01-27
 
 ### Fixed
 - **Security**: Hardened `isSafeCommand` and `checkPathSafety` to prevent security bypasses via un-anchored regex, absolute paths, or paths embedded in flags.
@@ -448,7 +451,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.13.6.
 
-## [1.13.5] - 2026-05-27
+## [1.13.5] - 2026-01-27
 
 ### Added
 - **Safety**: Implemented binary file detection in `search_files`, `search_usages_globally`, and `list_todos` to avoid payload overflow from non-text files.
@@ -459,31 +462,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.13.5.
 
-## [1.13.4] - 2026-05-27
+## [1.13.4] - 2026-01-27
 
 ### Changed
 - **Documentation**: Updated `README.md` to include information about **Command Safety** (path-based validation) in the Safety Guardrails section.
 - **Version Bump**: Promoted to v1.13.4.
 
-## [1.13.3] - 2026-05-27
+## [1.13.3] - 2026-01-27
 
 ### Changed
 - **CLI UI**: Changed the command text color in the `execute_command` confirmation prompt from yellow to default white for better readability.
 - **Version Bump**: Promoted to v1.13.3.
 
-## [1.13.2] - 2026-05-27
+## [1.13.2] - 2026-01-27
 
 ### Changed
 - **CLI UI**: Aligned colors in the `execute_command` confirmation prompt. "Execute Command:" now uses cyan, and the actual command uses yellow for better visual hierarchy and consistency.
 - **Version Bump**: Promoted to v1.13.2.
 
-## [1.13.1] - 2026-05-27
+## [1.13.1] - 2026-01-27
 
 ### Changed
 - **CLI UI**: Changed the "Executing... (Output shown below)" message color to dark-grey for better visual consistency.
 - **Version Bump**: Promoted to v1.13.1.
 
-## [1.13.0] - 2026-05-27
+## [1.13.0] - 2026-01-27
 
 ### Added
 - **Security**: Implemented path-based safety validation for whitelisted commands in `execute_command`. Commands like `cat`, `grep`, and `ls` now require manual user confirmation if they attempt to access files outside the current working directory or system temp folders.
@@ -492,7 +495,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI UI**: Changed the "Execute Command" prompt color to bold white for better visibility during safety gates.
 - **Version Bump**: Promoted to v1.13.0.
 
-## [1.12.9] - 2026-05-26
+## [1.12.9] - 2026-01-26
 
 ### Changed
 - **Media Tools**: 
@@ -500,25 +503,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Refined `read_image` documentation for better clarity on vision analysis.
 - **Version Bump**: Promoted to v1.12.9.
 
-## [1.12.8] - 2026-05-25
+## [1.12.8] - 2026-01-25
 
 ### Changed
 - **CLI UI**: Removed the echoing of the user's input prompt. Replaced it with a cleaner "Input captured. Processing..." message to reduce terminal noise, especially for multi-line inputs.
 - **Version Bump**: Promoted to v1.12.8.
 
-## [1.12.7] - 2026-05-24
+## [1.12.7] - 2026-01-24
 
 ### Changed
 - **Payload UI**: Changed the payload token warning color from light-grey to **red** when exceeding 90% of `MAX_HISTORY_TOKENS` for higher urgency visibility.
 - **Version Bump**: Promoted to v1.12.7.
 
-## [1.12.6] - 2026-05-23
+## [1.12.6] - 2026-01-23
 
 ### Changed
 - **Payload UI**: Added conditional coloring for the payload token estimate. The token count is now displayed in light-grey when it exceeds 90% of the `MAX_HISTORY_TOKENS` limit, providing a visual warning of approaching context limits.
 - **Version Bump**: Promoted to v1.12.6.
 
-## [1.12.5] - 2026-05-22
+## [1.12.5] - 2026-01-22
 
 ### Changed
 - **Metrics UI**: Refined turn-by-turn metrics logging with conditional coloring.
@@ -526,13 +529,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Hits and Misses are highlighted in light-grey when Misses (M) exceed Hits (H) for better visibility of cache efficiency.
 - **Version Bump**: Promoted to v1.12.5.
 
-## [1.12.4] - 2026-05-21
+## [1.12.4] - 2026-01-21
 
 ### Changed
 - **State Tools**: Removed the "session" scope from `manage_scratchpad` and `manage_tasks`. These tools now operate exclusively on global files to simplify persistent context management.
 - **Version Bump**: Promoted to v1.12.4.
 
-## [1.12.3] - 2026-05-20
+## [1.12.3] - 2026-01-20
 
 ### Removed
 - **Video Suite**: Removed the `create_video` tool and underlying `GenerateVideos` API logic to streamline the media package.
@@ -541,13 +544,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.12.3.
 
-## [1.12.2] - 2026-05-15
+## [1.12.2] - 2026-01-15
 
 ### Changed
 - **UI/UX**: Refactored Markdown rendering to rely entirely on the `glamour` library, improving visual consistency and robustness for complex outputs like nested code blocks.
 - **Version Bump**: Promoted to v1.12.2.
 
-## [1.12.1] - 2026-05-10
+## [1.12.1] - 2026-01-10
 
 ### Added
 - **Safety Documentation**: Added `SOP/lifecycle/self_update_safety.md` to define protocols for agentic self-modification.
@@ -557,7 +560,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation**: Updated `README.md` and `agentic_capabilities.md` with detailed descriptions of parallel tool execution and multi-modal handling.
 - **Version Bump**: Promoted to v1.12.1.
 
-## [1.12.0] - 2026-04-18
+## [1.12.0] - 2026-01-18
 
 ### Added
 - **Video Suite**: Integrated Veo 2.0 generation capabilities via `create_video` tool.
@@ -567,29 +570,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Version Bump**: Promoted to v1.12.0.
 
-## [1.11.0] - 2026-04-10
+## [1.11.0] - 2026-01-10
 
 ### Added
 - **Image Suite**: Integrated Imagen 3 generation via `create_image`.
 - **Vision Support**: Enhanced multi-modal capabilities for analyzing local images via `read_image`.
 
-## [1.9.0] - 2026-04-05
+## [1.9.0] - 2026-01-05
 
 ### Added
 - **Performance & Security Tools**: Added `run_benchmark`, `check_vulnerabilities`, and `get_package_graph`.
 - **Complexity Analysis**: Added `analyze_complexity` for Go functions.
 
-## [1.7.0] - 2026-03-25
+## [1.7.0] - 2026-01-25
 
 ### Added
 - **Documentation & Networking**: Added `go_doc` for symbol documentation and `http_request` for custom API interactions.
 
-## [1.6.0] - 2026-03-15
+## [1.6.0] - 2026-01-15
 
 ### Added
 - **Refactoring & Testing Suite**: Added `rename_symbol`, `get_coverage`, `run_linter`, and `list_todos`.
 
-## [1.5.0] - 2026-03-01
+## [1.5.0] - 2026-01-01
 
 ### Added
 - **Advanced Intelligence**: Added `search_usages_globally`, `semantic_diff`, and `manage_tasks` (global scope).
