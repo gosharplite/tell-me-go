@@ -29,10 +29,12 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 	}
 
 	if turn >= a.maxToolTurns {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
-			time.Now().Format("15:04:05"), a.maxToolTurns)
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
+				time.Now().Format("15:04:05"), a.maxToolTurns)
+		}()
 		return ErrMaxTurnsReached
 	}
 
@@ -202,10 +204,12 @@ func (a *Agent) injectBinaryData(parts []*types.Part) []*types.Part {
 			if len(injectParts) == 3 {
 				data, err := base64.StdEncoding.DecodeString(injectParts[2])
 				if err != nil {
-					a.sm.TerminalLock()
-					fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to decode injected binary data: %v\033[0m\n",
-						time.Now().Format("15:04:05"), err)
-					a.sm.TerminalUnlock()
+					func() {
+						a.sm.TerminalLock()
+						defer a.sm.TerminalUnlock()
+						fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to decode injected binary data: %v\033[0m\n",
+							time.Now().Format("15:04:05"), err)
+					}()
 					continue
 				}
 				finalParts = append(finalParts, &types.Part{

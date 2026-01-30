@@ -568,9 +568,11 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 	url, _ := args["url"].(string)
 	bodyStr, _ := args["body"].(string)
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
+	}()
 
 	var reqBody io.Reader
 	if bodyStr != "" {

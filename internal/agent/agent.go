@@ -175,10 +175,12 @@ func (a *Agent) refreshLimits() {
 	// Fallback to map[string]interface{} for mixed types and log warning
 	var pCfg map[string]interface{}
 	if err := json.Unmarshal(data, &pCfg); err != nil {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
-			time.Now().Format("15:04:05"), err)
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
+				time.Now().Format("15:04:05"), err)
+		}()
 		return
 	}
 
@@ -288,10 +290,12 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 func (a *Agent) saveHistory() {
 	if err := a.history.Save(); err != nil {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
-			time.Now().Format("15:04:05"), err)
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
+				time.Now().Format("15:04:05"), err)
+		}()
 	}
 }
 
@@ -329,10 +333,12 @@ func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, curr
 		})
 		apiContents[lastIdx] = cloned
 
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
-			time.Now().Format("15:04:05"))
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
+				time.Now().Format("15:04:05"))
+		}()
 	}
 	return apiContents
 }
@@ -343,9 +349,11 @@ func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*ty
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		a.sm.TerminalLock()
-		fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-		a.sm.TerminalUnlock()
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+		}()
 		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}

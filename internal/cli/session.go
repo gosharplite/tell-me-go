@@ -20,9 +20,11 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 		if _, err := os.Stat(f); err == nil {
 			if !backupCreated {
 				if err := os.MkdirAll(backupDir, 0755); err != nil {
-					a.sm.TerminalLock()
-					fmt.Fprintf(a.Stderr, "Error creating backup directory: %v\n", err)
-					a.sm.TerminalUnlock()
+					func() {
+						a.sm.TerminalLock()
+						defer a.sm.TerminalUnlock()
+						fmt.Fprintf(a.Stderr, "Error creating backup directory: %v\n", err)
+					}()
 					return
 				}
 				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
@@ -30,9 +32,11 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))
 			if err := os.Rename(f, dest); err != nil {
-				a.sm.TerminalLock()
-				fmt.Fprintf(a.Stderr, "Error archiving %s: %v\n", f, err)
-				a.sm.TerminalUnlock()
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(a.Stderr, "Error archiving %s: %v\n", f, err)
+				}()
 			}
 		}
 	}
@@ -81,9 +85,11 @@ func (a *App) cleanupOldBackups(homeDir, mode string) {
 		if folderTime.Before(cutoff) {
 			path := filepath.Join(backupBaseDir, entry.Name())
 			if err := os.RemoveAll(path); err != nil {
-				a.sm.TerminalLock()
-				fmt.Fprintf(a.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
-				a.sm.TerminalUnlock()
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(a.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+				}()
 			}
 		}
 	}

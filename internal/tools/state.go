@@ -218,9 +218,11 @@ func (s *stateManager) manageConfig(ctx context.Context, args map[string]interfa
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
-			s.sm.TerminalLock()
-			fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			s.sm.TerminalUnlock()
+			func() {
+				s.sm.TerminalLock()
+				defer s.sm.TerminalUnlock()
+				fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			}()
 			_ = os.Rename(path, path+".bak")
 			config = make(map[string]string)
 		}
@@ -344,9 +346,11 @@ func (s *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &tasks); err != nil {
-			s.sm.TerminalLock()
-			fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			s.sm.TerminalUnlock()
+			func() {
+				s.sm.TerminalLock()
+				defer s.sm.TerminalUnlock()
+				fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
+			}()
 			_ = os.Rename(path, path+".bak")
 			tasks = []Task{}
 		}

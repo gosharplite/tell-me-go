@@ -76,10 +76,12 @@ func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{
 }
 
 func (a *Agent) performSummarization(ctx context.Context, subset []*types.Content) (string, error) {
-	a.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [System] Summarizing %d history entries to free up context...\033[0m\n",
-		time.Now().Format("15:04:05"), len(subset))
-	a.sm.TerminalUnlock()
+	func() {
+		a.sm.TerminalLock()
+		defer a.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [System] Summarizing %d history entries to free up context...\033[0m\n",
+			time.Now().Format("15:04:05"), len(subset))
+	}()
 
 	// Construct summarization payload
 	summarizerInput := append([]*types.Content{}, subset...)

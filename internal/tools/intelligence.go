@@ -673,9 +673,11 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 
 func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
@@ -753,9 +755,11 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 }
 
 func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
+	}()
 
 	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
