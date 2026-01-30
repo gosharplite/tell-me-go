@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,11 +16,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/shlex"
 	"google.golang.org/genai"
 )
 
+type systemManager struct {
+	sm *SecurityManager
+}
+
 // RegisterSystemTools adds system-related tools to the registry.
-func RegisterSystemTools(r *Registry) {
+func RegisterSystemTools(r *Registry, sm *SecurityManager) {
+	m := &systemManager{sm: sm}
+
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "execute_command",
 		Description: "Executes a shell command on the local system.",
@@ -34,10 +42,48 @@ func RegisterSystemTools(r *Registry) {
 					Type:        genai.TypeString,
 					Description: "A short explanation of why this command needs to be executed.",
 				},
+				"output_file": {
+					Type:        genai.TypeString,
+					Description: "Optional: Redirect output to this file.",
+				},
+				"append": {
+					Type:        genai.TypeBoolean,
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
 			},
 			Required: []string{"command"},
 		},
-	}, executeCommand, ToolOptions{Serial: true})
+	}, m.executeCommand, ToolOptions{Serial: true, LongRunning: true})
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "pipe_commands",
+		Description: "Executes a sequence of commands, piping the output of each to the next.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"commands": {
+					Type: genai.TypeArray,
+					Items: &genai.Schema{
+						Type: genai.TypeString,
+					},
+					Description: "The sequence of commands to pipe (e.g., ['ls -la', 'grep .go']).",
+				},
+				"reason": {
+					Type:        genai.TypeString,
+					Description: "A short explanation of why this pipeline needs to be executed.",
+				},
+				"output_file": {
+					Type:        genai.TypeString,
+					Description: "Optional: Redirect the final output to this file.",
+				},
+				"append": {
+					Type:        genai.TypeBoolean,
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
+			},
+			Required: []string{"commands"},
+		},
+	}, m.pipeCommands, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "ask_user",
@@ -52,22 +98,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"question"},
 		},
-	}, askUser, ToolOptions{Serial: true})
-
-	r.Register(&genai.FunctionDeclaration{
-		Name:        "read_url",
-		Description: "Fetches the content of a specific URL.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
-				"url": {
-					Type:        genai.TypeString,
-					Description: "The URL to fetch.",
-				},
-			},
-			Required: []string{"url"},
-		},
-	}, readURL)
+	}, m.askUser, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_external_docs",
@@ -82,7 +113,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"url"},
 		},
-	}, readExternalDocs)
+	}, m.readExternalDocs)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "http_request",
@@ -109,7 +140,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, httpRequest)
+	}, m.httpRequest)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_safepath",
@@ -128,12 +159,12 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, registerSafePathTool, ToolOptions{Serial: true})
+	}, m.registerSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
-	}, listSafePathsTool)
+	}, m.listSafePathsTool)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_safepath",
@@ -148,7 +179,7 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, removeSafePathTool, ToolOptions{Serial: true})
+	}, m.removeSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "register_readpath",
@@ -167,12 +198,12 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, registerReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
-	}, listReadOnlyPathsTool)
+	}, m.listReadOnlyPathsTool)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "remove_readpath",
@@ -187,38 +218,38 @@ func RegisterSystemTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, removeReadOnlyPathTool, ToolOptions{Serial: true})
+	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, bypassConfirmationTool, ToolOptions{Serial: true})
+	}, m.bypassConfirmationTool, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, revokeBypassTool, ToolOptions{Serial: true})
+	}, m.revokeBypassTool, ToolOptions{Serial: true, LongRunning: true})
 }
 
-func revokeBypassTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) revokeBypassTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
-	bypassMu.Lock()
-	bypassConfirmations = false
-	bypassMu.Unlock()
+	m.sm.bypassMu.Lock()
+	m.sm.bypassConfirmations = false
+	m.sm.bypassMu.Unlock()
 
-	SaveBypassState()
+	m.sm.SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
-	logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
+	m.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return "Interactive security prompts have been re-enabled.", nil
 }
 
-func bypassConfirmationTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		return "Bypass mode is already enabled.", nil
 	}
 
@@ -232,18 +263,18 @@ func bypassConfirmationTool(args map[string]interface{}) (string, error) {
 		return "Bypass mode denied by user.", nil
 	}
 
-	bypassMu.Lock()
-	bypassConfirmations = true
-	bypassMu.Unlock()
+	m.sm.bypassMu.Lock()
+	m.sm.bypassConfirmations = true
+	m.sm.bypassMu.Unlock()
 
-	SaveBypassState()
+	m.sm.SaveBypassState()
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
-	logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
+	m.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return "All future confirmations in this session will be bypassed. This setting is now persistent for this session name.", nil
 }
 
-func listSafePathsTool(args map[string]interface{}) (string, error) {
-	paths := GetSafePaths()
+func (m *systemManager) listSafePathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	paths := m.sm.GetSafePaths()
 	if len(paths) == 0 {
 		return "No additional safe paths are currently registered.", nil
 	}
@@ -256,8 +287,8 @@ func listSafePathsTool(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func listReadOnlyPathsTool(args map[string]interface{}) (string, error) {
-	paths := GetReadOnlyPaths()
+func (m *systemManager) listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	paths := m.sm.GetReadOnlyPaths()
 	if len(paths) == 0 {
 		return "No additional read-only paths are currently registered.", nil
 	}
@@ -270,9 +301,9 @@ func listReadOnlyPathsTool(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func removeSafePathTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -281,13 +312,13 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// Confirmation Gate
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
@@ -297,23 +328,23 @@ func removeSafePathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Removal denied by user.", nil
 		}
-		logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
+		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
-	if err := RemoveSafePath(absPath); err != nil {
+	if err := m.sm.RemoveSafePath(absPath); err != nil {
 		return fmt.Sprintf("Error: %v", err), nil
 	}
 
-	if err := SaveSafePaths(); err != nil {
+	if err := m.sm.SaveSafePaths(); err != nil {
 		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath), nil
 }
 
-func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	if path == "" {
@@ -322,13 +353,13 @@ func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// Confirmation Gate
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of read-only authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
+		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
@@ -338,23 +369,23 @@ func removeReadOnlyPathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Removal denied by user.", nil
 		}
-		logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
+		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
 	}
 
-	if err := RemoveReadOnlyPath(absPath); err != nil {
+	if err := m.sm.RemoveReadOnlyPath(absPath); err != nil {
 		return fmt.Sprintf("Error: %v", err), nil
 	}
 
-	if err := SaveReadOnlyPaths(); err != nil {
+	if err := m.sm.SaveReadOnlyPaths(); err != nil {
 		return fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath), nil
 }
 
-func registerSafePathTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) registerSafePathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
@@ -365,13 +396,13 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// 1. Confirmation
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
 		if reason != "" {
@@ -392,21 +423,21 @@ func registerSafePathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
-		logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
-	RegisterSafePath(absPath)
-	if err := SaveSafePaths(); err != nil {
+	m.sm.RegisterSafePath(absPath)
+	if err := m.sm.SaveSafePaths(); err != nil {
 		return fmt.Sprintf("Path authorized but failed to persist: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath), nil
 }
 
-func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
@@ -417,13 +448,13 @@ func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %v", err)
+		return "", fmt.Errorf("invalid path: %w", err)
 	}
 
 	// 1. Confirmation
-	if IsBypassActive() {
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Read-only authorization auto-approved.\033[0m\n")
-		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
+		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
 		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent READ-ONLY access to:\033[0m %s\n", absPath)
 		if reason != "" {
@@ -444,21 +475,21 @@ func registerReadOnlyPathTool(args map[string]interface{}) (string, error) {
 		if err != nil || char != "y" {
 			return "Access denied by user (double confirmation).", nil
 		}
-		logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
 	}
 
 	// Register and Persist
-	RegisterReadOnlyPath(absPath)
-	if err := SaveReadOnlyPaths(); err != nil {
+	m.sm.RegisterReadOnlyPath(absPath)
+	if err := m.sm.SaveReadOnlyPaths(); err != nil {
 		return fmt.Sprintf("Path authorized for reading but failed to persist: %v", err), nil
 	}
 
 	return fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath), nil
 }
 
-func askUser(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	question, ok := args["question"].(string)
 	if !ok || question == "" {
@@ -478,7 +509,7 @@ func askUser(args map[string]interface{}) (string, error) {
 	return strings.TrimSpace(response), nil
 }
 
-func readURL(args map[string]interface{}) (string, error) {
+func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (string, error) {
 	url, ok := args["url"].(string)
 	if !ok || url == "" {
 		return "", fmt.Errorf("url argument is required")
@@ -488,7 +519,8 @@ func readURL(args map[string]interface{}) (string, error) {
 		Timeout: 30 * time.Second,
 	}
 
-	resp, err := client.Get(url)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -498,24 +530,14 @@ func readURL(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit reader to prevent DoS
+	limitReader := io.LimitReader(resp.Body, 50001)
+	body, err := io.ReadAll(limitReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	out := string(body)
-	if len(out) > 50000 {
-		out = out[:50000] + "\n... (truncated)"
-	}
-
-	return out, nil
-}
-
-func readExternalDocs(args map[string]interface{}) (string, error) {
-	content, err := readURL(args)
-	if err != nil {
-		return "", err
-	}
+	content := string(body)
 
 	// Basic HTML stripping
 	// 1. Remove script and style tags and their contents
@@ -541,21 +563,21 @@ func readExternalDocs(args map[string]interface{}) (string, error) {
 	return content, nil
 }
 
-func httpRequest(args map[string]interface{}) (string, error) {
+func (m *systemManager) httpRequest(ctx context.Context, args map[string]interface{}) (string, error) {
 	method, _ := args["method"].(string)
 	url, _ := args["url"].(string)
 	bodyStr, _ := args["body"].(string)
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	var reqBody io.Reader
 	if bodyStr != "" {
 		reqBody = strings.NewReader(bodyStr)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -575,7 +597,9 @@ func httpRequest(args map[string]interface{}) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Limit reader to 5MB to prevent DoS
+	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
+	respBody, err := io.ReadAll(limitReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -587,26 +611,35 @@ func httpRequest(args map[string]interface{}) (string, error) {
 		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, strings.Join(v, ", ")))
 	}
 	sb.WriteString("\nBody:\n")
-	sb.WriteString(string(respBody))
 
-	out := sb.String()
-	if len(out) > 10000 {
-		out = out[:10000] + "\n... (truncated)"
+	respBodyStr := string(respBody)
+	if len(respBodyStr) > 5*1024*1024 {
+		respBodyStr = respBodyStr[:5*1024*1024] + "\n... (truncated due to size limit)"
 	}
+	sb.WriteString(respBodyStr)
 
-	return out, nil
+	return sb.String(), nil
 }
 
-func isSafeCommand(command string) bool {
+func splitCommand(cmd string) ([]string, error) {
+	parts, err := shlex.Split(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return parts, nil
+}
+
+func (m *systemManager) isSafeCommand(command string) bool {
 	// Whitelist of allowed base commands (strict exact match)
 	safeCommands := map[string]bool{
 		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
 		"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
+		"go": true, // Adding go to whitelist but it will still need path checks
 	}
 
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
+	parts, err := splitCommand(command)
+	if err != nil || len(parts) == 0 {
 		return false
 	}
 	base := parts[0]
@@ -622,7 +655,6 @@ func isSafeCommand(command string) bool {
 		for i := 1; i < len(parts); i++ {
 			if strings.HasPrefix(parts[i], "-") {
 				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
-				// Note: git -Cpath is also valid, but parts[i] would be "-Cpath" and start with "-".
 				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
 					i++
 				}
@@ -646,7 +678,27 @@ func isSafeCommand(command string) bool {
 		}
 	}
 
-	// 3. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	// 3. Specialized check for 'go': Only allow read-only or build/test subcommands
+	if base == "go" {
+		sub := ""
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				continue
+			}
+			sub = parts[i]
+			break
+		}
+		allowedGo := map[string]bool{
+			"test": true, "list": true, "help": true, "version": true, "env": true,
+			"build": true, "run": true, "install": true, "get": true, "mod": true,
+			"vet": true, "fmt": true,
+		}
+		if !allowedGo[sub] {
+			return false
+		}
+	}
+
+	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
 	// We are extremely strict here to prevent shell injection.
 	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
 	for _, char := range unsafeChars {
@@ -655,25 +707,37 @@ func isSafeCommand(command string) bool {
 		}
 	}
 
-	// 3. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
 	for i := 1; i < len(parts); i++ {
-		arg := strings.Trim(parts[i], "\"'")
+		arg := parts[i]
 		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
 			// Skip empty args and simple flags like -la
 			continue
 		}
-		if err := IsPathSafe(arg); err != nil {
-			fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
-			return false
+		// Special case for Go's recursive package pattern
+		if arg == "./..." || arg == "..." {
+			continue
+		}
+		// If it's a flag with a path like --config=path
+		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
+			arg = strings.SplitN(arg, "=", 2)[1]
+		}
+
+		if err := m.sm.IsPathSafe(arg); err != nil {
+			// Some args might not be paths, but we try to check them anyway if they look like paths
+			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
+				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
+				return false
+			}
 		}
 	}
 
 	return true
 }
 
-func executeCommand(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
-	defer TerminalMutex.Unlock()
+func (m *systemManager) executeCommand(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
 
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
@@ -681,12 +745,20 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	}
 
 	reason, _ := args["reason"].(string)
+	outputFile, _ := args["output_file"].(string)
+	appendMode, _ := args["append"].(bool)
+
+	if outputFile != "" {
+		if err := m.sm.IsPathWritable(outputFile); err != nil {
+			return "", err
+		}
+	}
 
 	approved := false
 
 	// 1. Check for Auto-Approval (Safe read-only commands or bypass enabled)
-	safe := isSafeCommand(command)
-	if IsBypassActive() {
+	safe := m.isSafeCommand(command)
+	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
 		approved = true
 	} else if safe {
@@ -697,6 +769,13 @@ func executeCommand(args map[string]interface{}) (string, error) {
 		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: \033[0m%s\n", command)
 		if reason != "" {
 			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		if outputFile != "" {
+			redir := ">"
+			if appendMode {
+				redir = ">>"
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect: %s %s\033[0m\n", redir, outputFile)
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
@@ -714,23 +793,47 @@ func executeCommand(args map[string]interface{}) (string, error) {
 
 	// 2.5 Log command execution if log file is set
 	logSuffix := ""
-	if bypassConfirmations {
+	if m.sm.IsBypassActive() {
 		logSuffix = " (auto-approved via bypass_confirmation)"
 	}
-	logAudit("REASON", reason, "COMMAND", command+logSuffix)
+	m.sm.logAudit("REASON", reason, "COMMAND", command+logSuffix)
 
 	// 3. Execution
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	// We use "sh -c" to allow for complex commands
-	cmd := exec.Command("sh", "-c", command)
+	parts, err := splitCommand(command)
+	if err != nil {
+		return fmt.Sprintf("Error parsing command: %v", err), nil
+	}
+	if len(parts) == 0 {
+		return "Error: Empty command", nil
+	}
+
+	// Direct binary execution (no shell)
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
 	// Stream output to stderr and capture it
 	var sb strings.Builder
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	multi := io.MultiReader(stdout, stderr)
+
+	var file *os.File
+	if outputFile != "" {
+		flags := os.O_CREATE | os.O_WRONLY
+		if appendMode {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		var err error
+		file, err = os.OpenFile(outputFile, flags, 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer file.Close()
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Sprintf("Command failed to start: %v", err), nil
@@ -741,9 +844,12 @@ func executeCommand(args map[string]interface{}) (string, error) {
 		line := scanner.Text()
 		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
 		sb.WriteString(line + "\n")
+		if file != nil {
+			file.WriteString(line + "\n")
+		}
 	}
 
-	err := cmd.Wait()
+	err = cmd.Wait()
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	output := sb.String()
@@ -756,4 +862,179 @@ func executeCommand(args map[string]interface{}) (string, error) {
 	}
 
 	return fmt.Sprintf("Exit Code: 0\nOutput:\n%s", output), nil
+}
+
+func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
+
+	rawCommands, ok := args["commands"].([]interface{})
+	if !ok || len(rawCommands) < 2 {
+		return "", fmt.Errorf("at least two commands are required for piping")
+	}
+
+	commands := make([]string, len(rawCommands))
+	for i, c := range rawCommands {
+		cmdStr, ok := c.(string)
+		if !ok || cmdStr == "" {
+			return "", fmt.Errorf("invalid command at index %d", i)
+		}
+		commands[i] = cmdStr
+	}
+
+	reason, _ := args["reason"].(string)
+	outputFile, _ := args["output_file"].(string)
+	appendMode, _ := args["append"].(bool)
+
+	if outputFile != "" {
+		if err := m.sm.IsPathWritable(outputFile); err != nil {
+			return "", err
+		}
+	}
+
+	// Safety check
+	allSafe := true
+	for _, cmd := range commands {
+		if !m.isSafeCommand(cmd) {
+			allSafe = false
+			break
+		}
+	}
+
+	approved := false
+	if m.sm.IsBypassActive() {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Pipeline auto-approved (bypass_confirmation enabled).\033[0m\n")
+		approved = true
+	} else if allSafe {
+		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe pipeline detected.\033[0m\n")
+		approved = true
+	} else {
+		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Pipeline: \033[0m%s\n", strings.Join(commands, " | "))
+		if reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		}
+		if outputFile != "" {
+			redir := ">"
+			if appendMode {
+				redir = ">>"
+			}
+			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect Final Output: %s %s\033[0m\n", redir, outputFile)
+		}
+		fmt.Fprintf(os.Stderr, "⚠️  Execute this pipeline? (y/N) ")
+
+		char, err := readSingleKey()
+		fmt.Fprintf(os.Stderr, "\n")
+		if err == nil && (char == "y") {
+			approved = true
+		}
+	}
+
+	if !approved {
+		return "User denied execution of pipeline.", nil
+	}
+
+	m.sm.logAudit("REASON", reason, "PIPELINE", strings.Join(commands, " | "))
+
+	fmt.Fprintf(os.Stderr, "\033[90mExecuting Pipeline... (Output shown below)\033[0m\n")
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	cmds := make([]*exec.Cmd, len(commands))
+	for i, cmdStr := range commands {
+		parts, err := splitCommand(cmdStr)
+		if err != nil {
+			return fmt.Sprintf("Error parsing command at index %d: %v", i, err), nil
+		}
+		if len(parts) == 0 {
+			return fmt.Sprintf("Error: Empty command at index %d", i), nil
+		}
+		cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+	}
+
+	// Track pipes to ensure they are closed on startup failure
+	var pipes []io.Closer
+	defer func() {
+		for _, p := range pipes {
+			_ = p.Close()
+		}
+	}()
+
+	// Setup pipes
+	for i := 0; i < len(cmds)-1; i++ {
+		pipe, err := cmds[i].StdoutPipe()
+		if err != nil {
+			return "", fmt.Errorf("failed to create pipe for command %d: %w", i, err)
+		}
+		pipes = append(pipes, pipe)
+		cmds[i+1].Stdin = pipe
+	}
+
+	var sb strings.Builder
+	// Capture stderr of all commands to a single multi-reader if possible, or just the last command's stdout
+	// For simplicity, we'll stream only the last command's stdout/stderr, but we should capture errors from others.
+	lastCmd := cmds[len(cmds)-1]
+	stdout, _ := lastCmd.StdoutPipe()
+	stderr, _ := lastCmd.StderrPipe()
+	multi := io.MultiReader(stdout, stderr)
+	// These pipes are also managed by the cmd, but we add them to our closer just in case of start failure
+	pipes = append(pipes, stdout, stderr)
+
+	var file *os.File
+	if outputFile != "" {
+		flags := os.O_CREATE | os.O_WRONLY
+		if appendMode {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		var err error
+		file, err = os.OpenFile(outputFile, flags, 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer file.Close()
+	}
+
+	// Start all commands
+	for i := 0; i < len(cmds); i++ {
+		if err := cmds[i].Start(); err != nil {
+			return fmt.Sprintf("Command %d (%s) failed to start: %v", i, commands[i], err), nil
+		}
+	}
+
+	// After all commands started successfully, Wait() will eventually close the pipes.
+	// We clear the pipes slice so the deferred Close() calls don't interfere with Wait().
+	pipes = nil
+
+	// Stream output of the last command
+	scanner := bufio.NewScanner(multi)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
+		sb.WriteString(line + "\n")
+		if file != nil {
+			file.WriteString(line + "\n")
+		}
+	}
+
+	// Wait for all commands in reverse order
+	var lastErr error
+	for i := len(cmds) - 1; i >= 0; i-- {
+		err := cmds[i].Wait()
+		if err != nil && i == len(cmds)-1 {
+			lastErr = err
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	output := sb.String()
+	if len(output) > 50000 {
+		output = output[:50000] + "\n... (truncated)"
+	}
+
+	if lastErr != nil {
+		return fmt.Sprintf("Pipeline failed at last command. Exit Code: 1\nOutput:\n%s", output), nil
+	}
+
+	return fmt.Sprintf("Pipeline completed successfully. Exit Code: 0\nOutput:\n%s", output), nil
 }

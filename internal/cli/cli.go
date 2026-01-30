@@ -4,18 +4,16 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
@@ -30,10 +28,11 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
+	sm      *tools.SecurityManager
 }
 
 // New creates a new App instance with default IO and factories.
@@ -46,14 +45,17 @@ func New(version string) *App {
 		homeDir = "."
 	}
 
+	sm := tools.NewSecurityManager()
+
 	return &App{
 		Version: version,
 		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
-			return agent.New(client, hManager, registry)
+		sm:      sm,
+		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
+			return agent.New(client, hManager, registry, sm)
 		},
 		ClientFactory: func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -64,32 +66,27 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
 	args = a.sanitizeArgs(args)
 
-	// 2. Define and Parse Flags
-	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
-	fs.SetOutput(a.Stderr)
-
-	configPath := fs.String("c", "configs/vertex.yaml", "Path to the configuration file")
-	newSession := fs.Bool("new", false, "Start a new session")
-	showVersion := fs.Bool("v", false, "Show version information")
-	lastN := fs.Int("l", 0, "Show the last N messages from history")
-	rawOutput := fs.Bool("r", false, "Show raw output (without markdown rendering)")
-
-	if err := fs.Parse(args[1:]); err != nil {
+	// 2. Parse Flags
+	opts, fs, err := a.parseFlags(args[1:])
+	if err != nil {
 		return err
 	}
 
-	if *showVersion {
+	if opts.showVersion {
 		fmt.Fprintf(a.Stdout, "tell-me-go version %s\n", a.Version)
 		return nil
 	}
 
 	// 2. Load Config
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(opts.configPath)
 	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %v", *configPath, err)
+		return fmt.Errorf("error loading config [%s]: %v", opts.configPath, err)
 	}
 
 	// 3. Initialize Paths
@@ -110,25 +107,25 @@ func (a *App) Run(args []string) error {
 	persistentConfigPath := filepath.Join(modeDir, "config.json")
 
 	// 5. Initialize Components
-	tools.SetSafePathsFile(safePathsPath)
-	tools.SetReadOnlyPathsFile(readPathsPath)
-	tools.SetBypassFile(bypassPath)
-	tools.SetCommandsLogFile(commandsLogPath)
-	if err := tools.LoadSafePaths(); err != nil {
+	a.sm.SetSafePathsFile(safePathsPath)
+	a.sm.SetReadOnlyPathsFile(readPathsPath)
+	a.sm.SetBypassFile(bypassPath)
+	a.sm.SetCommandsLogFile(commandsLogPath)
+	if err := a.sm.LoadSafePaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
 	}
-	if err := tools.LoadReadOnlyPaths(); err != nil {
+	if err := a.sm.LoadReadOnlyPaths(); err != nil {
 		log.Printf("Warning: Failed to load persistent read-only paths: %v", err)
 	}
-	tools.LoadBypassState()
-	tools.RegisterSafePath(filepath.Join(homeDir, "output"))
-	tools.RegisterReadOnlyPath(*configPath)
+	a.sm.LoadBypassState()
+	a.sm.RegisterSafePath(filepath.Join(homeDir, "output"))
+	a.sm.RegisterReadOnlyPath(opts.configPath)
 
-	if *newSession {
+	if opts.newSession {
 		timestamp := time.Now().Format("20060102_150405")
 		// Record cost with a unique ID including the timestamp before archiving
 		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, uniqueID)
+		_ = tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, uniqueID)
 		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
 		a.cleanupOldBackups(homeDir, cfg.Mode)
 	}
@@ -141,22 +138,22 @@ func (a *App) Run(args []string) error {
 	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
 	pruned := hManager.Prune(cfg.MaxHistoryTurns)
 
-	if *lastN > 0 {
-		a.showHistory(hManager, *lastN, *rawOutput)
+	if opts.lastN > 0 {
+		a.showHistory(hManager, opts.lastN, opts.rawOutput)
 	}
 
 	// 4. Handle Prompt
-	prompt, err := a.capturePrompt(fs, *lastN)
+	prompt, err := a.capturePrompt(fs, opts.lastN)
 	if err != nil {
 		return err
 	}
 
 	// If the user only requested history (-l), exit after displaying it.
-	if prompt == "" && *lastN > 0 {
+	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
 
-	pricing := tools.GetPricing(filepath.Join(homeDir, "output"))
+	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
 
 	// Load persistent config to augment system prompt (e.g., smart_suggestions)
 	if data, err := os.ReadFile(persistentConfigPath); err == nil {
@@ -180,26 +177,27 @@ func (a *App) Run(args []string) error {
 	}
 
 	registry := tools.NewRegistry()
-	tools.RegisterFileSystemTools(registry)
-	tools.RegisterIntelligenceTools(registry)
-	tools.RegisterSystemTools(registry)
-	tools.RegisterGitTools(registry)
-	tools.RegisterDevTools(registry)
-	tools.RegisterTeamsTools(registry)
-	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode)
-	tools.RegisterMetricsTools(registry, logPath, cfg.Model, cfg.Mode)
-	tools.RegisterMediaTools(registry, client)
+	tools.RegisterFileSystemTools(registry, a.sm)
+	tools.RegisterIntelligenceTools(registry, a.sm)
+	tools.RegisterSystemTools(registry, a.sm)
+	tools.RegisterGitTools(registry, a.sm)
+	tools.RegisterDevTools(registry, a.sm)
+	tools.RegisterTeamsTools(registry, a.sm)
+	tools.RegisterStateTools(registry, homeDir, hManager, cfg.Mode, a.sm)
+	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode)
+	tools.RegisterMediaTools(registry, a.sm, client)
 
 	// 6. Execute Agent
-	chatAgent := a.AgentFactory(client, hManager, registry)
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
+	chatAgent.SetPersistentConfigPath(persistentConfigPath)
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
-	chatAgent.SetRawOutput(*rawOutput)
+	chatAgent.SetRawOutput(opts.rawOutput)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
-	if err := chatAgent.Chat(prompt); err != nil {
+	if err := chatAgent.Chat(ctx, prompt); err != nil {
 		return fmt.Errorf("error: %v", err)
 	}
 
@@ -209,213 +207,9 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 8. Record session cost
-	if err := tools.RecordSessionCost(logPath, cfg.Model, cfg.Mode, ""); err != nil {
+	if err := tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, ""); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 
 	return nil
-}
-
-func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
-	prompt := strings.Join(fs.Args(), " ")
-	var isTerminal bool
-	if f, ok := a.Stdin.(*os.File); ok {
-		stat, _ := f.Stat()
-		isTerminal = (stat.Mode() & os.ModeCharDevice) != 0
-	} else {
-		isTerminal = false // Assume non-terminal for non-file readers (like buffers in tests)
-	}
-
-	if !isTerminal {
-		b, err := io.ReadAll(a.Stdin)
-		if err == nil && len(b) > 0 {
-			if prompt != "" {
-				prompt = prompt + "\n" + string(b)
-			} else {
-				prompt = string(b)
-			}
-		}
-	} else if prompt == "" && lastN == 0 {
-		fmt.Fprintln(a.Stdout, "\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
-		b, err := io.ReadAll(a.Stdin)
-		if err == nil {
-			prompt = string(b)
-		}
-	}
-
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		if lastN > 0 {
-			return "", nil // Valid case if just showing history
-		}
-		fmt.Fprintln(a.Stderr, "Usage: tell-me-go [flags] <prompt>")
-		fs.SetOutput(a.Stderr)
-		fs.PrintDefaults()
-		return "", fmt.Errorf("empty prompt")
-	}
-	tools.TerminalMutex.Lock()
-	fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
-	tools.TerminalMutex.Unlock()
-	return prompt, nil
-}
-
-func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
-	contents := hManager.GetContents()
-	if len(contents) == 0 {
-		fmt.Fprintln(a.Stdout, "No history found.")
-		return
-	}
-
-	if n > len(contents) {
-		n = len(contents)
-	}
-
-	start := len(contents) - n
-	var r *glamour.TermRenderer
-	if !raw {
-		r, _ = glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithEmoji(),
-		)
-	}
-
-	for i := start; i < len(contents); i++ {
-		c := contents[i]
-		roleColor := "\033[1;34m" // Blue for User
-		if c.Role != "user" {
-			roleColor = "\033[1;35m" // Magenta for Model
-		}
-		fmt.Fprintf(a.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
-		for _, p := range c.Parts {
-			if p.Text != "" {
-				if raw || r == nil {
-					fmt.Fprint(a.Stdout, p.Text)
-					if !strings.HasSuffix(p.Text, "\n") {
-						fmt.Fprintln(a.Stdout)
-					}
-				} else {
-					out, err := r.Render(p.Text)
-					if err != nil {
-						fmt.Fprintln(a.Stdout, p.Text)
-					} else {
-						fmt.Fprint(a.Stdout, out)
-					}
-				}
-			}
-			if p.FunctionCall != nil {
-				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Call] %s\033[0m\n", p.FunctionCall.Name)
-			}
-			if p.FunctionResponse != nil {
-				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Response] %s\033[0m\n", p.FunctionResponse.Name)
-			}
-		}
-		fmt.Fprintln(a.Stdout)
-	}
-}
-
-func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesToMove ...string) {
-	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
-
-	backupCreated := false
-	for _, f := range filesToMove {
-		if _, err := os.Stat(f); err == nil {
-			if !backupCreated {
-				if err := os.MkdirAll(backupDir, 0755); err != nil {
-					tools.TerminalMutex.Lock()
-					fmt.Fprintf(a.Stderr, "Error creating backup directory: %v\n", err)
-					tools.TerminalMutex.Unlock()
-					return
-				}
-				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
-				backupCreated = true
-			}
-			dest := filepath.Join(backupDir, filepath.Base(f))
-			if err := os.Rename(f, dest); err != nil {
-				tools.TerminalMutex.Lock()
-				fmt.Fprintf(a.Stderr, "Error archiving %s: %v\n", f, err)
-				tools.TerminalMutex.Unlock()
-			}
-		}
-	}
-}
-
-func (a *App) cleanupOldBackups(homeDir, mode string) {
-	backupBaseDir := filepath.Join(homeDir, "output", "backups")
-	entries, err := os.ReadDir(backupBaseDir)
-	if err != nil {
-		return // Likely doesn't exist yet
-	}
-
-	retentionDays := 30
-	configPath := filepath.Join(homeDir, "output", mode, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg map[string]string
-		if err := json.Unmarshal(data, &cfg); err == nil {
-			if val, ok := cfg["backup_retention_days"]; ok {
-				if days, err := strconv.Atoi(val); err == nil {
-					retentionDays = days
-				}
-			}
-		}
-	}
-
-	if retentionDays <= 0 {
-		return // 0 or negative means keep forever
-	}
-
-	cutoff := time.Now().AddDate(0, 0, -retentionDays)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		// Format: YYYYMMDD_HHMMSS (15 chars)
-		if len(entry.Name()) < 15 {
-			continue
-		}
-
-		folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
-		if err != nil {
-			continue
-		}
-
-		if folderTime.Before(cutoff) {
-			path := filepath.Join(backupBaseDir, entry.Name())
-			if err := os.RemoveAll(path); err != nil {
-				tools.TerminalMutex.Lock()
-				fmt.Fprintf(a.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
-				tools.TerminalMutex.Unlock()
-			}
-		}
-	}
-}
-
-func (a *App) sanitizeArgs(args []string) []string {
-	if len(args) < 2 {
-		return args
-	}
-
-	processed := args[1:]
-	for i, arg := range processed {
-		if arg == "-l" {
-			// If -l is the last argument or the next argument is not a number,
-			// it means the user didn't provide a specific count for -l.
-			isNextNum := false
-			if i+1 < len(processed) {
-				if _, err := strconv.Atoi(processed[i+1]); err == nil {
-					isNextNum = true
-				}
-			}
-
-			if !isNextNum {
-				// Insert "1" after "-l" to satisfy the integer flag
-				newArgs := make([]string, 0, len(args)+1)
-				newArgs = append(newArgs, args[:i+2]...)
-				newArgs = append(newArgs, "1")
-				newArgs = append(newArgs, args[i+2:]...)
-				return newArgs
-			}
-		}
-	}
-	return args
 }

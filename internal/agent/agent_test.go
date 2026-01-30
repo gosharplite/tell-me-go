@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,11 +19,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
 func TestAgent_Setters(t *testing.T) {
-	a := New(nil, nil, nil)
+	sm := tools.NewSecurityManager()
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
 	a.SetUIOptions(false, false)
 	if a.showThoughts || a.showTools {
 		t.Error("SetUIOptions failed")
@@ -47,10 +51,12 @@ func TestAgent_Setters(t *testing.T) {
 func TestAgent_LogUsage(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "usage.log")
-	a := New(nil, nil, nil)
+	sm := tools.NewSecurityManager()
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
 	a.SetLogFile(logFile)
 
-	metrics := &api.Metrics{
+	metrics := &types.Metrics{
 		CachedTokens:   100,
 		PromptTokens:   150,
 		ResponseTokens: 50,
@@ -80,17 +86,20 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 		Name:        "test_tool",
 		Description: "A test tool",
 		Parameters:  &genai.Schema{Type: genai.TypeObject},
-	}, nil)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return "ok", nil
+	})
 
-	a := New(nil, nil, registry)
+	sm := tools.NewSecurityManager()
+	a := New(nil, nil, registry, sm)
 
-	contents := []*api.Content{
+	contents := []*types.Content{
 		{
 			Role: "user",
-			Parts: []*api.Part{
+			Parts: []*types.Part{
 				{Text: "Hello world"},
-				{FunctionCall: &api.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
-				{FunctionResponse: &api.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
+				{FunctionCall: &types.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
+				{FunctionResponse: &types.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
 			},
 		},
 	}
@@ -157,8 +166,9 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
-	err = a.Chat("Hello")
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
+	err = a.Chat(context.Background(), "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -176,7 +186,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	// Tool that hangs
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "slow_tool",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		time.Sleep(200 * time.Millisecond)
 		return "Too late", nil
 	})
@@ -210,11 +220,12 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	a.SetConcurrency(1, 1)                // 1 second timeout
 	a.toolTimeout = 50 * time.Millisecond // Overwrite with short timeout
 
-	_ = a.Chat("Run slow tool")
+	_ = a.Chat(context.Background(), "Run slow tool")
 
 	contents := hManager.GetContents()
 	if len(contents) >= 3 {
@@ -234,7 +245,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "gen_image",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		// MULTI_MODAL_IMAGE|mime|b64|msg
 		return "MULTI_MODAL_IMAGE|image/png|iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==|Image generated", nil
 	})
@@ -268,8 +279,9 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
-	_ = a.Chat("Generate an image")
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
+	_ = a.Chat(context.Background(), "Generate an image")
 
 	contents := hManager.GetContents()
 	foundImage := false
@@ -295,7 +307,7 @@ func TestAgentToolLoop(t *testing.T) {
 	registry.Register(&genai.FunctionDeclaration{
 		Name:       "get_weather",
 		Parameters: &genai.Schema{Type: genai.TypeObject},
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		return "Sunny", nil
 	})
 
@@ -341,10 +353,11 @@ func TestAgentToolLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 
 	// Execute Chat
-	err = a.Chat("What's the weather?")
+	err = a.Chat(context.Background(), "What's the weather?")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -363,7 +376,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "infinite_tool",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		return "Keep going", nil
 	})
 
@@ -385,10 +398,11 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
-	err = a.Chat("Run tool")
+	err = a.Chat(context.Background(), "Run tool")
 	if err != ErrMaxTurnsReached {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
@@ -411,9 +425,92 @@ func TestAgent_Chat_APIError(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	a := New(client, hManager, registry)
-	err = a.Chat("Hello")
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
+	err = a.Chat(context.Background(), "Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")
+	}
+}
+
+func TestAgent_Chat_ContextCancellation(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	registry := tools.NewRegistry()
+
+	// Tool that takes some time
+	registry.Register(&genai.FunctionDeclaration{
+		Name: "long_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		select {
+		case <-time.After(1 * time.Second):
+			return "Success", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{
+					{FunctionCall: &genai.FunctionCall{Name: "long_tool"}},
+				}}},
+			},
+		}
+		json.NewEncoder(w).Encode(apiResp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	sm := tools.NewSecurityManager()
+	a := New(client, hManager, registry, sm)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel the context after a short delay
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	err = a.Chat(ctx, "Run long tool")
+	if err == nil {
+		t.Error("Expected error due to context cancellation, got nil")
+	}
+	if err != context.Canceled && !strings.Contains(err.Error(), "canceled") {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
+	}
+}
+
+func TestAgent_RefreshLimits(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	sm := tools.NewSecurityManager()
+	registry := tools.NewRegistry()
+	a := New(nil, nil, registry, sm)
+	a.SetLimits(10, 1000, 20)
+
+	// Set the config path
+	a.SetPersistentConfigPath(configPath)
+
+	// Create config file
+	configContent := `{"MAX_HISTORY_TOKENS": "5000", "MAX_TOOL_TURNS": "15"}`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	a.refreshLimits()
+
+	if a.maxHistoryTokens != 5000 {
+		t.Errorf("expected maxHistoryTokens 5000, got %d", a.maxHistoryTokens)
+	}
+	if a.maxToolTurns != 15 {
+		t.Errorf("expected maxToolTurns 15, got %d", a.maxToolTurns)
 	}
 }

@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,10 @@ import (
 
 func TestIntelligenceTools(t *testing.T) {
 	tmpDir := t.TempDir()
+
+	sm := NewSecurityManager()
+	sm.RegisterSafePath(tmpDir)
+	m := &intelligenceManager{sm: sm}
 
 	// Create a dummy Go file
 	goCode := `
@@ -36,8 +41,9 @@ func Helper() int { return 42 }
 	}
 
 	t.Run("grep_definitions", func(t *testing.T) {
+		fsM := &fileSystemManager{sm: sm}
 		args := map[string]interface{}{"path": tmpDir}
-		res, err := grepDefinitions(args)
+		res, err := fsM.grepDefinitions(context.Background(), args)
 		if err != nil {
 			t.Fatalf("grepDefinitions failed: %v", err)
 		}
@@ -47,8 +53,9 @@ func Helper() int { return 42 }
 	})
 
 	t.Run("get_file_skeleton", func(t *testing.T) {
+		fsM := &fileSystemManager{sm: sm}
 		args := map[string]interface{}{"filepath": filePath}
-		res, err := getFileSkeleton(args)
+		res, err := fsM.getFileSkeleton(context.Background(), args)
 		if err != nil {
 			t.Fatalf("getFileSkeleton failed: %v", err)
 		}
@@ -59,7 +66,7 @@ func Helper() int { return 42 }
 
 	t.Run("find_usages", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir, "query": "MyStruct"}
-		res, err := findUsages(args)
+		res, err := m.findUsages(context.Background(), args)
 		if err != nil {
 			t.Fatalf("findUsages failed: %v", err)
 		}
@@ -70,7 +77,7 @@ func Helper() int { return 42 }
 
 	t.Run("getTypeInfo", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir, "typename": "MyStruct"}
-		res, err := getTypeInfo(args)
+		res, err := m.getTypeInfo(context.Background(), args)
 		if err != nil {
 			t.Fatalf("getTypeInfo failed: %v", err)
 		}
@@ -81,7 +88,7 @@ func Helper() int { return 42 }
 
 	t.Run("listImplementations", func(t *testing.T) {
 		args := map[string]interface{}{"path": tmpDir}
-		res, err := listImplementations(args)
+		res, err := m.listImplementations(context.Background(), args)
 		if err != nil {
 			t.Fatalf("listImplementations failed: %v", err)
 		}
@@ -91,6 +98,8 @@ func Helper() int { return 42 }
 	})
 
 	t.Run("renameSymbol", func(t *testing.T) {
+		os.Setenv("TELL_ME_MOCK_ANSWER", "y")
+		defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 		// Setup specific file for renaming to test AST logic vs Text replacement
 		renameCode := `package test
 
@@ -111,7 +120,7 @@ var ref = OldFunction
 			"new_name": "NewFunction",
 		}
 
-		res, err := renameSymbol(args)
+		res, err := m.renameSymbol(context.Background(), args)
 		if err != nil {
 			t.Fatalf("renameSymbol failed: %v", err)
 		}

@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +23,13 @@ func TestManageTasks(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testMode := "test_mode"
+	ctx := context.Background()
+	sm := NewSecurityManager()
+	s := &stateManager{
+		homeDir: tmpDir,
+		mode:    testMode,
+		sm:      sm,
+	}
 
 	// Helper to read the tasks file directly
 	readTasksFile := func() []Task {
@@ -48,7 +56,7 @@ func TestManageTasks(t *testing.T) {
 			"action":  "add",
 			"content": "First Task",
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -70,7 +78,7 @@ func TestManageTasks(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "list",
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -86,7 +94,7 @@ func TestManageTasks(t *testing.T) {
 			"task_id": 1.0, // JSON numbers are floats
 			"status":  "completed",
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -106,7 +114,7 @@ func TestManageTasks(t *testing.T) {
 			"action":  "delete",
 			"task_id": 1.0,
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -123,12 +131,12 @@ func TestManageTasks(t *testing.T) {
 	// Test 5: Clear tasks
 	t.Run("Clear", func(t *testing.T) {
 		// Add a task first
-		manageTasks(map[string]interface{}{"action": "add", "content": "To be cleared"}, tmpDir, testMode)
+		s.manageTasks(ctx, map[string]interface{}{"action": "add", "content": "To be cleared"})
 
 		args := map[string]interface{}{
 			"action": "clear",
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -142,14 +150,14 @@ func TestManageTasks(t *testing.T) {
 		}
 	})
 
-	// Test 6: Persistence (New instance/call loads existing)
+	// Test 6: Persistence
 	t.Run("Persistence", func(t *testing.T) {
 		// Manually write a file to simulate existing state
 		initialTasks := []Task{
 			{ID: 10, Content: "Persistent Task", Status: "pending"},
 		}
 		data, _ := json.Marshal(initialTasks)
-		path := filepath.Join(tmpDir, "output", testMode, "tasks.json")
+		path := s.getTasksPath()
 		os.MkdirAll(filepath.Dir(path), 0755)
 		os.WriteFile(path, data, 0644)
 
@@ -157,7 +165,7 @@ func TestManageTasks(t *testing.T) {
 		args := map[string]interface{}{
 			"action": "list",
 		}
-		msg, err := manageTasks(args, tmpDir, testMode)
+		msg, err := s.manageTasks(ctx, args)
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
@@ -175,7 +183,12 @@ func TestManageScratchpad(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testMode := "test_mode"
-	scratchpadPath := filepath.Join(tmpDir, "output", testMode, "scratchpad.md")
+	ctx := context.Background()
+	s := &stateManager{
+		homeDir: tmpDir,
+		mode:    testMode,
+	}
+	scratchpadPath := s.getScratchpadPath()
 
 	// Helper to read content
 	readScratchpad := func() string {
@@ -192,7 +205,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 1: Read non-existent
 	t.Run("ReadEmpty", func(t *testing.T) {
 		args := map[string]interface{}{"action": "read"}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -207,7 +220,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "write",
 			"content": "# Plan\n- Step 1",
 		}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -224,7 +237,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 3: Read Existing
 	t.Run("ReadExisting", func(t *testing.T) {
 		args := map[string]interface{}{"action": "read"}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -239,7 +252,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "append",
 			"content": "- Step 2",
 		}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -263,7 +276,7 @@ func TestManageScratchpad(t *testing.T) {
 			"action":  "append",
 			"content": "New Note",
 		}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -280,7 +293,7 @@ func TestManageScratchpad(t *testing.T) {
 	// Test 6: Clear
 	t.Run("Clear", func(t *testing.T) {
 		args := map[string]interface{}{"action": "clear"}
-		msg, err := manageScratchpad(args, tmpDir, testMode)
+		msg, err := s.manageScratchpad(ctx, args)
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
@@ -303,6 +316,14 @@ func TestStateConcurrency(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testMode := "concurrent"
+	ctx := context.Background()
+	sm := NewSecurityManager()
+	s := &stateManager{
+		homeDir: tmpDir,
+		mode:    testMode,
+		sm:      sm,
+	}
+
 	numGroutines := 20
 	tasksPerRoutine := 10
 
@@ -314,29 +335,29 @@ func TestStateConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < tasksPerRoutine; j++ {
 				content := fmt.Sprintf("Task from %d index %d", routineID, j)
-				_, err := manageTasks(map[string]interface{}{
+				_, err := s.manageTasks(ctx, map[string]interface{}{
 					"action":  "add",
 					"content": content,
-				}, tmpDir, testMode)
+				})
 				if err != nil {
 					t.Errorf("manageTasks add failed: %v", err)
 				}
 
 				// Also do some scratchpad appends
-				_, err = manageScratchpad(map[string]interface{}{
+				_, err = s.manageScratchpad(ctx, map[string]interface{}{
 					"action":  "append",
 					"content": fmt.Sprintf("Log from %d-%d", routineID, j),
-				}, tmpDir, testMode)
+				})
 				if err != nil {
 					t.Errorf("manageScratchpad append failed: %v", err)
 				}
 
 				// Also do config sets
-				_, err = manageConfig(map[string]interface{}{
+				_, err = s.manageConfig(ctx, map[string]interface{}{
 					"action": "set",
 					"key":    fmt.Sprintf("key-%d-%d", routineID, j),
 					"value":  "val",
-				}, tmpDir, testMode)
+				})
 				if err != nil {
 					t.Errorf("manageConfig set failed: %v", err)
 				}
@@ -347,7 +368,7 @@ func TestStateConcurrency(t *testing.T) {
 	wg.Wait()
 
 	// Verify total tasks
-	msg, err := manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
+	msg, err := s.manageTasks(ctx, map[string]interface{}{"action": "list"})
 	if err != nil {
 		t.Fatalf("manageTasks list failed: %v", err)
 	}
@@ -374,17 +395,25 @@ func TestCorruptionRecovery(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	testMode := "corrupt"
-	path := getTasksPath(tmpDir, testMode)
+	ctx := context.Background()
+	sm := NewSecurityManager()
+	s := &stateManager{
+		homeDir: tmpDir,
+		mode:    testMode,
+		sm:      sm,
+	}
+
+	path := s.getTasksPath()
 	os.MkdirAll(filepath.Dir(path), 0755)
 
 	// Write invalid JSON
 	os.WriteFile(path, []byte("{ invalid json ["), 0644)
 
 	// Try to add a task. It should reset and succeed.
-	msg, err := manageTasks(map[string]interface{}{
+	msg, err := s.manageTasks(ctx, map[string]interface{}{
 		"action":  "add",
 		"content": "Recovery Task",
-	}, tmpDir, testMode)
+	})
 
 	if err != nil {
 		t.Fatalf("manageTasks failed after corruption: %v", err)
@@ -399,7 +428,10 @@ func TestCorruptionRecovery(t *testing.T) {
 	}
 
 	// Verify list works
-	msg, err = manageTasks(map[string]interface{}{"action": "list"}, tmpDir, testMode)
+	msg, err = s.manageTasks(ctx, map[string]interface{}{"action": "list"})
+	if err != nil {
+		t.Fatalf("manageTasks list failed after recovery: %v", err)
+	}
 	if !strings.Contains(msg, "[1] [pending] Recovery Task") {
 		t.Errorf("List missing recovered task: %s", msg)
 	}

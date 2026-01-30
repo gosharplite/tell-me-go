@@ -5,6 +5,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -82,13 +83,17 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(prompt string) error                             { m.capturedPrompt = prompt; return nil }
+func (m *mockChatter) Chat(ctx context.Context, prompt string) error {
+	m.capturedPrompt = prompt
+	return nil
+}
 func (m *mockChatter) SetLogFile(path string)                               {}
 func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)            {}
 func (m *mockChatter) SetRawOutput(raw bool)                                {}
 func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
+func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output
@@ -105,7 +110,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
 		return mock
 	}
 	app.ClientFactory = func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {

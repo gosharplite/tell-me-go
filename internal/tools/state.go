@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,11 +17,14 @@ import (
 	"google.golang.org/genai"
 )
 
-var (
+type stateManager struct {
 	taskMu       sync.Mutex
 	scratchpadMu sync.Mutex
 	configMu     sync.Mutex
-)
+	homeDir      string
+	mode         string
+	sm           *SecurityManager
+}
 
 // Task represents a single item in the task manager, matching the Bash version's schema.
 type Task struct {
@@ -30,23 +34,27 @@ type Task struct {
 }
 
 // RegisterStateTools adds scratchpad, task management, and session info tools.
-func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string) {
-	// We pass homeDir to closures so the tool functions know where to look.
+func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, mode string, sm *SecurityManager) {
+	state := &stateManager{
+		homeDir: homeDir,
+		mode:    mode,
+		sm:      sm,
+	}
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		info := map[string]interface{}{
 			"home_dir":           homeDir,
-			"safe_paths":         GetSafePaths(),
-			"bypass_active":      IsBypassActive(),
+			"safe_paths":         sm.GetSafePaths(),
+			"bypass_active":      sm.IsBypassActive(),
 			"history_file":       hManager.GetPath(),
 			"active_config_path": "", // Will be filled if found in safe paths
 		}
 
 		// Try to identify the config path from safe paths (usually the 2nd one registered in main.go)
-		paths := GetSafePaths()
+		paths := sm.GetSafePaths()
 		for _, p := range paths {
 			if strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml") {
 				info["active_config_path"] = p
@@ -79,8 +87,8 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return manageScratchpad(args, homeDir, mode)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return state.manageScratchpad(ctx, args)
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
@@ -105,8 +113,8 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return manageConfig(args, homeDir, mode)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return state.manageConfig(ctx, args)
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
@@ -128,7 +136,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"feature", "status"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		feature, _ := args["feature"].(string)
 		status, _ := args["status"].(string)
 
@@ -137,7 +145,7 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			"key":    feature,
 			"value":  status,
 		}
-		return manageConfig(configArgs, homeDir, mode)
+		return state.manageConfig(ctx, configArgs)
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
@@ -166,14 +174,14 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 			},
 			Required: []string{"action"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return manageTasks(args, homeDir, mode)
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+		return state.manageTasks(ctx, args)
 	}, ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rollback_last_turn",
 		Description: "Reverts the conversation history to the state before the current turn.",
-	}, func(args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
 		if hManager != nil {
 			hManager.Rollback()
 			return "Rollback successful. History restored to previous snapshot.", nil
@@ -182,26 +190,26 @@ func RegisterStateTools(r *Registry, homeDir string, hManager *history.Manager, 
 	}, ToolOptions{Serial: true})
 }
 
-func getScratchpadPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", mode, "scratchpad.md")
+func (s *stateManager) getScratchpadPath() string {
+	return filepath.Join(s.homeDir, "output", s.mode, "scratchpad.md")
 }
 
-func getTasksPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", mode, "tasks.json")
+func (s *stateManager) getTasksPath() string {
+	return filepath.Join(s.homeDir, "output", s.mode, "tasks.json")
 }
 
-func getConfigPath(homeDir, mode string) string {
-	return filepath.Join(homeDir, "output", mode, "config.json")
+func (s *stateManager) getConfigPath() string {
+	return filepath.Join(s.homeDir, "output", s.mode, "config.json")
 }
 
-func manageConfig(args map[string]interface{}, homeDir, mode string) (string, error) {
-	configMu.Lock()
-	defer configMu.Unlock()
+func (s *stateManager) manageConfig(ctx context.Context, args map[string]interface{}) (string, error) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 	action, _ := args["action"].(string)
 	key, _ := args["key"].(string)
 	value, _ := args["value"].(string)
 
-	path := getConfigPath(homeDir, mode)
+	path := s.getConfigPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", fmt.Errorf("failed to create config directory: %w", err)
 	}
@@ -210,9 +218,9 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &config); err != nil {
-			TerminalMutex.Lock()
+			s.sm.TerminalLock()
 			fmt.Fprintf(os.Stderr, "Warning: Config file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			TerminalMutex.Unlock()
+			s.sm.TerminalUnlock()
 			_ = os.Rename(path, path+".bak")
 			config = make(map[string]string)
 		}
@@ -269,13 +277,13 @@ func manageConfig(args map[string]interface{}, homeDir, mode string) (string, er
 	return "Invalid action", nil
 }
 
-func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string, error) {
-	scratchpadMu.Lock()
-	defer scratchpadMu.Unlock()
+func (s *stateManager) manageScratchpad(ctx context.Context, args map[string]interface{}) (string, error) {
+	s.scratchpadMu.Lock()
+	defer s.scratchpadMu.Unlock()
 	action, _ := args["action"].(string)
 	content, _ := args["content"].(string)
 
-	path := getScratchpadPath(homeDir, mode)
+	path := s.getScratchpadPath()
 
 	// Ensure directory exists
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
@@ -321,12 +329,12 @@ func manageScratchpad(args map[string]interface{}, homeDir, mode string) (string
 	return "Invalid action", nil
 }
 
-func manageTasks(args map[string]interface{}, homeDir, mode string) (string, error) {
-	taskMu.Lock()
-	defer taskMu.Unlock()
+func (s *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (string, error) {
+	s.taskMu.Lock()
+	defer s.taskMu.Unlock()
 	action, _ := args["action"].(string)
 
-	path := getTasksPath(homeDir, mode)
+	path := s.getTasksPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return "", fmt.Errorf("failed to create tasks directory: %w", err)
 	}
@@ -336,9 +344,9 @@ func manageTasks(args map[string]interface{}, homeDir, mode string) (string, err
 	data, err := os.ReadFile(path)
 	if err == nil && len(data) > 0 {
 		if err := json.Unmarshal(data, &tasks); err != nil {
-			TerminalMutex.Lock()
+			s.sm.TerminalLock()
 			fmt.Fprintf(os.Stderr, "Warning: Tasks file %s is corrupted. Renaming to .bak and resetting.\n", path)
-			TerminalMutex.Unlock()
+			s.sm.TerminalUnlock()
 			_ = os.Rename(path, path+".bak")
 			tasks = []Task{}
 		}

@@ -4,24 +4,16 @@
 package api
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
-// Metrics represents the token usage and timing for a single API turn.
-type Metrics struct {
-	Timestamp      string
-	CachedTokens   int32
-	PromptTokens   int32
-	ResponseTokens int32
-	TotalTokens    int32
-	ThinkingTokens int32
-	SearchQueries  int
-	Duration       float64
-}
+// Metrics alias for backward compatibility during migration
+type Metrics = types.Metrics
 
 // GetMetrics extracts metrics from a GenAI response.
-func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *Metrics {
-	m := &Metrics{
+func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *types.Metrics {
+	m := &types.Metrics{
 		Duration: duration,
 	}
 

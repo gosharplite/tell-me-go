@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,8 +14,13 @@ import (
 	"google.golang.org/genai"
 )
 
+type teamsManager struct {
+	sm *SecurityManager
+}
+
 // RegisterTeamsTools adds Teams-related tools to the registry.
-func RegisterTeamsTools(r *Registry) {
+func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
+	m := &teamsManager{sm: sm}
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
@@ -32,10 +38,10 @@ func RegisterTeamsTools(r *Registry) {
 			},
 			Required: []string{"webhook_url", "message"},
 		},
-	}, sendTeamsMessage, ToolOptions{Serial: true})
+	}, m.sendTeamsMessage, ToolOptions{Serial: true})
 }
 
-func sendTeamsMessage(args map[string]interface{}) (string, error) {
+func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (string, error) {
 	webhookURL, _ := args["webhook_url"].(string)
 	message, _ := args["message"].(string)
 
@@ -44,7 +50,7 @@ func sendTeamsMessage(args map[string]interface{}) (string, error) {
 	}
 
 	// Safety confirmation (unless bypassed)
-	if !ConfirmDestructiveAction("send message to Teams", webhookURL, message) {
+	if !m.sm.ConfirmDestructiveAction("send message to Teams", webhookURL, message) {
 		return "Action cancelled by user.", nil
 	}
 
@@ -66,7 +72,9 @@ func sendTeamsMessage(args map[string]interface{}) (string, error) {
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send message: %w", err)
 	}

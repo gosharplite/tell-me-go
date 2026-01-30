@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,7 +100,7 @@ MAX_HISTORY_TURNS: 10
 		if r.Session == "tokens.log" && r.TotalCost == 1.2345 {
 			originalPreserved = true
 		}
-		if filepath.HasPrefix(r.Session, "backup/") && filepath.Base(r.Session) == "tokens.log" {
+		if strings.HasPrefix(r.Session, "backup/") && filepath.Base(r.Session) == "tokens.log" {
 			hasBackup = true
 		}
 	}

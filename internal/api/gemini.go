@@ -13,14 +13,15 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
-// Re-export types from genai for easier migration and consistency.
-type Content = genai.Content
-type Part = genai.Part
-type FunctionCall = genai.FunctionCall
-type FunctionResponse = genai.FunctionResponse
+// Re-export types from types package for easier migration and consistency.
+type Content = types.Content
+type Part = types.Part
+type FunctionCall = types.FunctionCall
+type FunctionResponse = types.FunctionResponse
 
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
@@ -32,7 +33,7 @@ type Client struct {
 	thinkingLevel     string
 	thinkingBudgets   map[string]int
 	useSearch         bool
-	systemInstruction *genai.Content
+	systemInstruction *types.Content
 	backend           genai.Backend
 }
 
@@ -49,9 +50,9 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 	}
 
 	if systemInstruction != "" {
-		c.systemInstruction = &genai.Content{
+		c.systemInstruction = &types.Content{
 			Role:  "system",
-			Parts: []*genai.Part{{Text: systemInstruction}},
+			Parts: []*types.Part{{Text: systemInstruction}},
 		}
 	}
 
@@ -131,14 +132,12 @@ func (c *Client) RefreshAuth() error {
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
-func (c *Client) SendChat(history []*Content, tools []*genai.Tool) (*Content, *Metrics, error) {
-	ctx := context.Background()
-
+func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
 	// 0. Defensive check: Ensure all content objects have at least one part.
 	// Vertex AI returns 400 INVALID_ARGUMENT if a content object has an empty parts list.
 	for _, h := range history {
 		if len(h.Parts) == 0 {
-			h.Parts = []*genai.Part{{Text: "[empty]"}}
+			h.Parts = []*types.Part{{Text: "[empty]"}}
 		}
 	}
 

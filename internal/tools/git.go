@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -11,15 +12,21 @@ import (
 	"google.golang.org/genai"
 )
 
+type gitManager struct {
+	sm *SecurityManager
+}
+
 // RegisterGitTools adds Git-related tools to the registry.
-func RegisterGitTools(r *Registry) {
+func RegisterGitTools(r *Registry, sm *SecurityManager) {
+	m := &gitManager{sm: sm}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the current status of the git repository.",
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, getGitStatus)
+	}, m.getGitStatus)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_diff",
@@ -33,7 +40,7 @@ func RegisterGitTools(r *Registry) {
 				},
 			},
 		},
-	}, getGitDiff)
+	}, m.getGitDiff)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_log",
@@ -47,7 +54,7 @@ func RegisterGitTools(r *Registry) {
 				},
 			},
 		},
-	}, getGitLog)
+	}, m.getGitLog)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_commit",
@@ -62,7 +69,7 @@ func RegisterGitTools(r *Registry) {
 			},
 			Required: []string{"hash"},
 		},
-	}, getGitCommit)
+	}, m.getGitCommit)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_git_blame",
@@ -77,36 +84,66 @@ func RegisterGitTools(r *Registry) {
 			},
 			Required: []string{"filepath"},
 		},
-	}, getGitBlame)
+	}, m.getGitBlame)
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "git_commit",
+		Description: "Commits staged changes with a message.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"message": {
+					Type:        genai.TypeString,
+					Description: "The commit message.",
+				},
+			},
+			Required: []string{"message"},
+		},
+	}, m.gitCommit, ToolOptions{Serial: true})
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "git_create_branch",
+		Description: "Creates and checks out a new git branch.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"name": {
+					Type:        genai.TypeString,
+					Description: "The name of the new branch.",
+				},
+			},
+			Required: []string{"name"},
+		},
+	}, m.gitCreateBranch, ToolOptions{Serial: true})
 }
 
-func getGitStatus(args map[string]interface{}) (string, error) {
-	return runGitCommand("status", "--short")
+func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
+	return runGitCommand(ctx, "status", "--short")
 }
 
-func getGitDiff(args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	staged, _ := args["staged"].(bool)
 	if staged {
-		return runGitCommand("diff", "--staged")
+		return runGitCommand(ctx, "diff", "--staged")
 	}
-	return runGitCommand("diff")
+	return runGitCommand(ctx, "diff")
 }
 
-func getGitLog(args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (string, error) {
 	limit := 10
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	return runGitCommand("log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	return runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 }
 
-func getGitCommit(args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
 	hash, ok := args["hash"].(string)
 	if !ok || hash == "" {
 		return "", fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
-	out, err := runGitCommand("show", "--stat", "--patch", hash)
+	out, err := runGitCommand(ctx, "show", "--stat", "--patch", hash)
 	if err != nil {
 		return out, err
 	}
@@ -117,21 +154,47 @@ func getGitCommit(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func getGitBlame(args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
-	return runGitCommand("blame", "-w", path)
+	return runGitCommand(ctx, "blame", "-w", path)
 }
 
-func runGitCommand(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
+	message, _ := args["message"].(string)
+	if message == "" {
+		return "", fmt.Errorf("message is required")
+	}
+
+	if !m.sm.ConfirmDestructiveAction("GIT COMMIT", "current staged changes", message) {
+		return "Action denied by user.", nil
+	}
+
+	return runGitCommand(ctx, "commit", "-m", message)
+}
+
+func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (string, error) {
+	name, _ := args["name"].(string)
+	if name == "" {
+		return "", fmt.Errorf("branch name is required")
+	}
+
+	if !m.sm.ConfirmDestructiveAction("GIT CREATE BRANCH", name, "") {
+		return "Action denied by user.", nil
+	}
+
+	return runGitCommand(ctx, "checkout", "-b", name)
+}
+
+func runGitCommand(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("git command failed: %w", err)

@@ -106,4 +106,5 @@ func New() *Config {
 ### Best Practices
 - **Flat is Better**: Avoid deep nesting (e.g., `internal/api/gemini/v1/client`). Keep the hierarchy as flat as possible.
 - **Main is for Wiring**: Use `main.go` only to instantiate dependencies and "wire" them together.
+- **Context Propagation**: Always propagate `context.Context` from the entry point (`cli.Run`) down to all leaf operations (API calls, tool execution, DB/File I/O). Respect context cancellation to allow for graceful shutdown on user signals (SIGINT).
 - **Standard Library First**: Prefer Go's standard library over external dependencies (e.g., `encoding/json` over `easyjson`).

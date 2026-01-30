@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -20,8 +21,14 @@ import (
 	"google.golang.org/genai"
 )
 
+type intelligenceManager struct {
+	sm *SecurityManager
+}
+
 // RegisterIntelligenceTools adds AST-based tools to the registry.
-func RegisterIntelligenceTools(r *Registry) {
+func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
+	m := &intelligenceManager{sm: sm}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_usages",
 		Description: "Identify all references to a specific symbol across the project.",
@@ -39,7 +46,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"query"},
 		},
-	}, findUsages)
+	}, m.findUsages)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_implementations",
@@ -53,7 +60,7 @@ func RegisterIntelligenceTools(r *Registry) {
 				},
 			},
 		},
-	}, listImplementations)
+	}, m.listImplementations)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_type_info",
@@ -72,12 +79,12 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"typename"},
 		},
-	}, getTypeInfo)
+	}, m.getTypeInfo)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
-	}, getProjectSummary)
+	}, m.getProjectSummary)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "search_usages_globally",
@@ -92,7 +99,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"query"},
 		},
-	}, searchUsagesGlobally)
+	}, m.searchUsagesGlobally)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "semantic_diff",
@@ -107,7 +114,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"target"},
 		},
-	}, semanticDiff)
+	}, m.semanticDiff)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "rename_symbol",
@@ -130,7 +137,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"old_name", "new_name"},
 		},
-	}, renameSymbol, ToolOptions{Serial: true})
+	}, m.renameSymbol, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_todos",
@@ -144,7 +151,7 @@ func RegisterIntelligenceTools(r *Registry) {
 				},
 			},
 		},
-	}, listTodos)
+	}, m.listTodos)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "go_doc",
@@ -159,7 +166,7 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"symbol"},
 		},
-	}, goDoc)
+	}, m.goDoc)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "analyze_complexity",
@@ -174,12 +181,35 @@ func RegisterIntelligenceTools(r *Registry) {
 			},
 			Required: []string{"path"},
 		},
-	}, analyzeComplexity)
+	}, m.analyzeComplexity)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
-	}, getPackageGraph)
+	}, m.getPackageGraph)
+
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
+		Name:        "move_definition",
+		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"symbol": {
+					Type:        genai.TypeString,
+					Description: "The name of the symbol to move.",
+				},
+				"src_file": {
+					Type:        genai.TypeString,
+					Description: "The source file path.",
+				},
+				"dst_file": {
+					Type:        genai.TypeString,
+					Description: "The destination file path.",
+				},
+			},
+			Required: []string{"symbol", "src_file", "dst_file"},
+		},
+	}, m.moveDefinition, ToolOptions{Serial: true})
 }
 
 // AST-based helpers for existing tools
@@ -187,6 +217,7 @@ func RegisterIntelligenceTools(r *Registry) {
 func grepDefinitionsGo(path, query string) ([]string, error) {
 	var results []string
 	fset := token.NewFileSet()
+	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
@@ -195,7 +226,8 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 
 		f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 		if err != nil {
-			return nil // Skip files with syntax errors
+			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
+			return nil // Skip files with syntax errors but track them
 		}
 
 		for _, decl := range f.Decls {
@@ -222,6 +254,10 @@ func grepDefinitionsGo(path, query string) ([]string, error) {
 		}
 		return nil
 	})
+
+	if len(results) == 0 && len(parseErrors) > 0 {
+		return nil, fmt.Errorf("failed to parse Go files:\n%s", strings.Join(parseErrors, "\n"))
+	}
 
 	return results, err
 }
@@ -267,12 +303,265 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	return sb.String(), nil
 }
 
-func renameSymbol(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (string, error) {
+	symbol, _ := args["symbol"].(string)
+	srcPath, _ := args["src_file"].(string)
+	dstPath, _ := args["dst_file"].(string)
+
+	if err := m.sm.IsPathWritable(srcPath); err != nil {
+		return "", err
+	}
+	if err := m.sm.IsPathWritable(dstPath); err != nil {
+		return "", err
+	}
+
+	if !m.sm.ConfirmDestructiveAction("MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath)) {
+		return "Action denied by user.", nil
+	}
+
+	fset := token.NewFileSet()
+	srcFile, err := parser.ParseFile(fset, srcPath, nil, parser.ParseComments)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse source file: %w", err)
+	}
+
+	dstFile, err := parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Try to infer package name from directory
+			pkgName := filepath.Base(filepath.Dir(dstPath))
+			// If it's the same directory as src, use src package name
+			if filepath.Dir(dstPath) == filepath.Dir(srcPath) {
+				pkgName = srcFile.Name.Name
+			}
+			content := fmt.Sprintf("package %s\n", pkgName)
+			if err := os.WriteFile(dstPath, []byte(content), 0644); err != nil {
+				return "", fmt.Errorf("failed to create destination file: %w", err)
+			}
+			dstFile, err = parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+			if err != nil {
+				return "", fmt.Errorf("failed to parse newly created destination file: %w", err)
+			}
+		} else {
+			return "", fmt.Errorf("failed to parse destination file: %w", err)
+		}
+	}
+
+	// Check for name collision in destination
+	for _, decl := range dstFile.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == symbol {
+					return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+				}
+				if vs, ok := spec.(*ast.ValueSpec); ok {
+					for _, name := range vs.Names {
+						if name.Name == symbol {
+							return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+						}
+					}
+				}
+			}
+		case *ast.FuncDecl:
+			if d.Name.Name == symbol {
+				return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+			}
+		}
+	}
+
+	var movedDecls []ast.Decl
+	var newSrcDecls []ast.Decl
+	srcPackageName := srcFile.Name.Name
+	dstPackageName := dstFile.Name.Name
+
+	// Identify what to move
+	for _, decl := range srcFile.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.IMPORT {
+				newSrcDecls = append(newSrcDecls, d)
+				continue
+			}
+			var keptSpecs []ast.Spec
+			var movingSpecs []ast.Spec
+			for _, spec := range d.Specs {
+				match := false
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name.Name == symbol {
+						match = true
+					}
+				case *ast.ValueSpec:
+					for _, name := range s.Names {
+						if name.Name == symbol {
+							match = true
+							break
+						}
+					}
+				}
+
+				if match {
+					movingSpecs = append(movingSpecs, spec)
+				} else {
+					keptSpecs = append(keptSpecs, spec)
+				}
+			}
+
+			if len(movingSpecs) > 0 {
+				movedGenDecl := &ast.GenDecl{
+					Tok:   d.Tok,
+					Specs: movingSpecs,
+				}
+				if len(movingSpecs) > 1 {
+					movedGenDecl.Lparen = d.Lparen
+					movedGenDecl.Rparen = d.Rparen
+				}
+				movedDecls = append(movedDecls, movedGenDecl)
+			}
+			if len(keptSpecs) > 0 {
+				d.Specs = keptSpecs
+				if len(keptSpecs) == 1 {
+					d.Lparen = 0
+					d.Rparen = 0
+				}
+				newSrcDecls = append(newSrcDecls, d)
+			}
+
+		case *ast.FuncDecl:
+			shouldMove := false
+			if d.Name.Name == symbol {
+				shouldMove = true
+			} else if d.Recv != nil {
+				// Move methods of the symbol if symbol is a type
+				recvType := exprToString(d.Recv.List[0].Type)
+				if strings.TrimPrefix(recvType, "*") == symbol {
+					shouldMove = true
+				}
+			}
+
+			if shouldMove {
+				movedDecls = append(movedDecls, d)
+			} else {
+				newSrcDecls = append(newSrcDecls, d)
+			}
+		default:
+			newSrcDecls = append(newSrcDecls, decl)
+		}
+	}
+
+	if len(movedDecls) == 0 {
+		return fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath), nil
+	}
+
+	// Update source file
+	srcFile.Decls = newSrcDecls
+	var srcBuf bytes.Buffer
+	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
+		return "", fmt.Errorf("failed to format source file: %w", err)
+	}
+	if err := AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+
+	// Update destination file
+	// We need to handle imports from movedDecls.
+	// This is complex. For now, let's just append and let the user fix imports,
+	// OR try a naive import copy.
+
+	// Collect imports used in movedDecls
+	neededImports := make(map[string]*ast.ImportSpec)
+	for _, decl := range movedDecls {
+		ast.Inspect(decl, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				if x, ok := sel.X.(*ast.Ident); ok {
+					// Check if x.Name is an imported package in src
+					for _, imp := range srcFile.Imports {
+						pkgName := ""
+						if imp.Name != nil {
+							pkgName = imp.Name.Name
+						} else {
+							// Infer from path
+							path := strings.Trim(imp.Path.Value, "\"")
+							parts := strings.Split(path, "/")
+							pkgName = parts[len(parts)-1]
+						}
+						if pkgName == x.Name {
+							neededImports[imp.Path.Value] = imp
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	// Add missing imports to dstFile
+	for path, spec := range neededImports {
+		found := false
+		for _, imp := range dstFile.Imports {
+			if imp.Path.Value == path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Add to dstFile
+			newImp := &ast.ImportSpec{
+				Path: spec.Path,
+				Name: spec.Name,
+			}
+			// Find or create GenDecl for imports
+			added := false
+			for _, d := range dstFile.Decls {
+				if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+					gd.Specs = append(gd.Specs, newImp)
+					added = true
+					break
+				}
+			}
+			if !added {
+				newGd := &ast.GenDecl{
+					Tok:   token.IMPORT,
+					Specs: []ast.Spec{newImp},
+				}
+				dstFile.Decls = append([]ast.Decl{newGd}, dstFile.Decls...)
+			}
+		}
+	}
+
+	dstFile.Decls = append(dstFile.Decls, movedDecls...)
+
+	var dstBuf bytes.Buffer
+	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
+		return "", fmt.Errorf("failed to format destination file: %w", err)
+	}
+	if err := AtomicWrite(dstPath, dstBuf.Bytes(), 0644); err != nil {
+		return "", err
+	}
+
+	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
+	if srcPackageName != dstPackageName {
+		resultMsg += " Note: Package names differ. References across the project were NOT updated. Please update them manually or use rename_symbol if applicable."
+	}
+
+	return resultMsg, nil
+}
+
+func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
 	oldName, _ := args["old_name"].(string)
 	newName, _ := args["new_name"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := m.sm.IsPathWritable(path); err != nil {
+		return "", err
+	}
+
+	if !m.sm.ConfirmDestructiveAction("RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName)) {
+		return "Action denied by user.", nil
 	}
 
 	totalFiles := 0
@@ -306,7 +595,7 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 			if err := format.Node(&buf, fset, f); err != nil {
 				return fmt.Errorf("failed to format %s: %w", filePath, err)
 			}
-			if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+			if err := AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 		}
@@ -320,10 +609,14 @@ func renameSymbol(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
 }
 
-func listTodos(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -368,13 +661,13 @@ func listTodos(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func goDoc(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
 	symbol, _ := args["symbol"].(string)
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
-	cmd := exec.Command("go", "doc", symbol)
+	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out)), nil
@@ -383,9 +676,9 @@ func goDoc(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func analyzeComplexity(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["path"].(string)
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -449,12 +742,12 @@ func analyzeComplexity(args map[string]interface{}) (string, error) {
 	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
 }
 
-func getPackageGraph(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
+func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
-	cmd := exec.Command("go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
+	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out)), nil
@@ -465,7 +758,7 @@ func getPackageGraph(args map[string]interface{}) (string, error) {
 	sb.WriteString("Internal Package Dependency Graph:\n")
 
 	// Get module name to filter for internal imports
-	modCmd := exec.Command("go", "list", "-m")
+	modCmd := exec.CommandContext(ctx, "go", "list", "-m")
 	modOut, _ := modCmd.Output()
 	modName := strings.TrimSpace(string(modOut))
 
@@ -573,11 +866,15 @@ func exprToString(expr ast.Expr) string {
 
 // New Intelligence Tools Implementation
 
-func findUsages(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	fset := token.NewFileSet()
@@ -614,10 +911,14 @@ func findUsages(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func listImplementations(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	fset := token.NewFileSet()
@@ -725,11 +1026,15 @@ func listImplementations(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getTypeInfo(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
 	typename, _ := args["typename"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
+	}
+
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return "", err
 	}
 
 	fset := token.NewFileSet()
@@ -810,7 +1115,7 @@ func getTypeInfo(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getProjectSummary(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -860,7 +1165,7 @@ func getProjectSummary(args map[string]interface{}) (string, error) {
 		return "", err
 	}
 
-	sb.WriteString(fmt.Sprintf("\nFile Counts:\n"))
+	sb.WriteString("\nFile Counts:\n")
 	for ext, count := range fileCounts {
 		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, count))
 	}
@@ -874,7 +1179,7 @@ func getProjectSummary(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func searchUsagesGlobally(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, _ := args["query"].(string)
 	re, err := regexp.Compile(query)
 	if err != nil {
@@ -938,17 +1243,17 @@ func searchUsagesGlobally(args map[string]interface{}) (string, error) {
 	return out, nil
 }
 
-func semanticDiff(args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	target, _ := args["target"].(string)
 
 	// Get stat summary
-	statOut, err := exec.Command("git", "diff", "--stat", target).CombinedOutput()
+	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git diff --stat failed: %s", string(statOut))
 	}
 
 	// Get summary of changes
-	summaryOut, err := exec.Command("git", "diff", "--summary", target).CombinedOutput()
+	summaryOut, err := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
 	}
@@ -961,7 +1266,7 @@ func semanticDiff(args map[string]interface{}) (string, error) {
 	sb.WriteString(string(summaryOut))
 
 	// Try to extract changed Go functions if it's a small diff
-	funcDiff, err := exec.Command("git", "diff", "-U0", "--no-color", target).CombinedOutput()
+	funcDiff, err := exec.CommandContext(ctx, "git", "diff", "-U0", "--no-color", target).CombinedOutput()
 	if err == nil {
 		sb.WriteString("\nLogical Changes (Functions):\n")
 		lines := strings.Split(string(funcDiff), "\n")

@@ -17,8 +17,15 @@ import (
 	"google.golang.org/genai"
 )
 
+type mediaManager struct {
+	sm     *SecurityManager
+	client *api.Client
+}
+
 // RegisterMediaTools adds image and media-related tools to the registry.
-func RegisterMediaTools(r *Registry, client *api.Client) {
+func RegisterMediaTools(r *Registry, sm *SecurityManager, client *api.Client) {
+	m := &mediaManager{sm: sm, client: client}
+
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
@@ -40,9 +47,7 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 			},
 			Required: []string{"prompt"},
 		},
-	}, func(args map[string]interface{}) (string, error) {
-		return createImage(args, client)
-	}, ToolOptions{Serial: true})
+	}, m.createImage, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_image",
@@ -57,10 +62,10 @@ func RegisterMediaTools(r *Registry, client *api.Client) {
 			},
 			Required: []string{"filepath"},
 		},
-	}, readImage)
+	}, m.readImage)
 }
 
-func createImage(args map[string]interface{}, client *api.Client) (string, error) {
+func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (string, error) {
 	prompt, _ := args["prompt"].(string)
 	aspectRatio, _ := args["aspect_ratio"].(string)
 	if aspectRatio == "" {
@@ -72,18 +77,18 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 		model = "imagen-3.0-generate-001"
 	}
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Generating image using %s: %s (%s)\033[0m\n", model, prompt, aspectRatio)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	// Append aspect ratio to prompt as guidance (Imagen 3 prompt engineering)
 	fullPrompt := fmt.Sprintf("%s. Aspect ratio %s.", prompt, aspectRatio)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	// Use specified model
-	images, err := client.GenerateImages(ctx, model, fullPrompt, "image/png")
+	images, err := m.client.GenerateImages(ctx, model, fullPrompt, "image/png")
 	if err != nil {
 		return fmt.Sprintf("Error generating image: %v", err), nil
 	}
@@ -120,15 +125,15 @@ func createImage(args map[string]interface{}, client *api.Client) (string, error
 	return fmt.Sprintf("Image generated successfully and saved to: %s", outPath), nil
 }
 
-func readImage(args map[string]interface{}) (string, error) {
+func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", path)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {

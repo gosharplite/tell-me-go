@@ -4,17 +4,23 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"google.golang.org/genai"
 )
 
+type devManager struct {
+	sm *SecurityManager
+}
+
 // RegisterDevTools adds developer-related tools to the registry.
-func RegisterDevTools(r *Registry) {
+func RegisterDevTools(r *Registry, sm *SecurityManager) {
+	m := &devManager{sm: sm}
+
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_tests",
 		Description: "Executes project tests (Go, Python, NPM, etc.) and returns the truncated output.",
@@ -28,14 +34,14 @@ func RegisterDevTools(r *Registry) {
 			},
 			Required: []string{"command"},
 		},
-	}, runTests, ToolOptions{Serial: true})
+	}, m.runTests, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, goTidy, ToolOptions{Serial: true})
+	}, m.goTidy, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "get_coverage",
 		Description: "Runs Go tests with coverage and returns the summary.",
 		Parameters: &genai.Schema{
@@ -47,14 +53,14 @@ func RegisterDevTools(r *Registry) {
 				},
 			},
 		},
-	}, getCoverage)
+	}, m.getCoverage, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_linter",
 		Description: "Runs 'staticcheck' or 'golangci-lint' on the project.",
-	}, runLinter)
+	}, m.runLinter, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "run_benchmark",
 		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
 		Parameters: &genai.Schema{
@@ -70,33 +76,51 @@ func RegisterDevTools(r *Registry) {
 				},
 			},
 		},
-	}, runBenchmark)
+	}, m.runBenchmark, ToolOptions{LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
-	}, checkVulnerabilities)
+	}, m.checkVulnerabilities, ToolOptions{LongRunning: true})
 }
 
-func runTests(args map[string]interface{}) (string, error) {
+func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (string, error) {
 	command, ok := args["command"].(string)
 	if !ok || command == "" {
 		return "", fmt.Errorf("command argument is required")
 	}
 
-	// Safety check: restricted to known test patterns
-	safeTestPatterns := `^(\./.*run_tests\.sh|pytest|npm\s+test|go\s+test|cargo\s+test|make\s+test)`
-	matched, _ := regexp.MatchString(safeTestPatterns, command)
-	if !matched {
-		return "", fmt.Errorf("security violation: command '%s' is not a recognized test command", command)
+	// Safety check: block shell metacharacters to prevent command chaining
+	if strings.ContainsAny(command, ";|&><`$") {
+		return "", fmt.Errorf("security violation: command contains forbidden shell characters")
 	}
 
-	TerminalMutex.Lock()
-	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
-	TerminalMutex.Unlock()
+	// Split command into parts to avoid shell interpretation
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("invalid command")
+	}
 
-	// Execute the command
-	cmd := exec.Command("sh", "-c", command)
+	baseCmd := parts[0]
+	// Safety check: restricted to known test tools
+	allowedTools := map[string]bool{
+		"go":     true,
+		"pytest": true,
+		"npm":    true,
+		"cargo":  true,
+		"make":   true,
+	}
+
+	if !allowedTools[baseCmd] && !strings.HasSuffix(baseCmd, "run_tests.sh") {
+		return "", fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
+	}
+
+	m.sm.TerminalLock()
+	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
+	m.sm.TerminalUnlock()
+
+	// Execute the command directly without shell wrapper
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
 
 	outStr := string(output)
@@ -113,17 +137,17 @@ func runTests(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("FAIL:\n%s", outStr), nil
 }
 
-func goTidy(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
+func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
-	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("go mod tidy failed: %s", string(out))
 	}
 
-	fmtCmd := exec.Command("go", "fmt", "./...")
+	fmtCmd := exec.CommandContext(ctx, "go", "fmt", "./...")
 	if out, err := fmtCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("go fmt failed: %s", string(out))
 	}
@@ -131,17 +155,17 @@ func goTidy(args map[string]interface{}) (string, error) {
 	return "Success: Project tidied and formatted.", nil
 }
 
-func getCoverage(args map[string]interface{}) (string, error) {
+func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}) (string, error) {
 	path := "./..."
 	if p, ok := args["path"].(string); ok && p != "" {
 		path = p
 	}
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
-	cmd := exec.Command("go", "test", "-coverprofile=coverage.out", path)
+	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", path)
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -149,7 +173,7 @@ func getCoverage(args map[string]interface{}) (string, error) {
 	}
 
 	// Get summary
-	summaryCmd := exec.Command("go", "tool", "cover", "-func=coverage.out")
+	summaryCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func=coverage.out")
 	summaryOut, err := summaryCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Failed to generate coverage summary: %v", err), nil
@@ -166,17 +190,17 @@ func getCoverage(args map[string]interface{}) (string, error) {
 	return string(summaryOut), nil
 }
 
-func runLinter(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
+func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	// Try golangci-lint first, fallback to staticcheck
 	var cmd *exec.Cmd
 	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		cmd = exec.Command("golangci-lint", "run")
+		cmd = exec.CommandContext(ctx, "golangci-lint", "run")
 	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		cmd = exec.Command("staticcheck", "./...")
+		cmd = exec.CommandContext(ctx, "staticcheck", "./...")
 	} else {
 		return "Error: No supported linter found (golangci-lint or staticcheck).", nil
 	}
@@ -194,7 +218,7 @@ func runLinter(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func runBenchmark(args map[string]interface{}) (string, error) {
+func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (string, error) {
 	path := "./..."
 	if p, ok := args["path"].(string); ok && p != "" {
 		path = p
@@ -204,11 +228,11 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 		bench = b
 	}
 
-	TerminalMutex.Lock()
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
-	cmd := exec.Command("go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
+	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Benchmark failed:\n%s", string(out)), nil
@@ -217,16 +241,16 @@ func runBenchmark(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func checkVulnerabilities(args map[string]interface{}) (string, error) {
-	TerminalMutex.Lock()
+func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (string, error) {
+	m.sm.TerminalLock()
 	fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
-	TerminalMutex.Unlock()
+	m.sm.TerminalUnlock()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {
 		return "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest", nil
 	}
 
-	cmd := exec.Command("govulncheck", "./...")
+	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {

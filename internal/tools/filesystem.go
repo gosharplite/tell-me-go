@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,8 +16,16 @@ import (
 	"google.golang.org/genai"
 )
 
+type fileSystemManager struct {
+	sm *SecurityManager
+	bm *BackupManager
+}
+
 // RegisterFileSystemTools adds file-related tools to the registry.
-func RegisterFileSystemTools(r *Registry) {
+func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
+	bm := NewBackupManager(sm, 10)
+	m := &fileSystemManager{sm: sm, bm: bm}
+
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "list_files",
 		Description: "Lists files and directories in the specified path.",
@@ -29,7 +38,7 @@ func RegisterFileSystemTools(r *Registry) {
 				},
 			},
 		},
-	}, listFiles)
+	}, m.listFiles)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_tree",
@@ -47,7 +56,7 @@ func RegisterFileSystemTools(r *Registry) {
 				},
 			},
 		},
-	}, getTree)
+	}, m.getTree)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "read_file",
@@ -62,7 +71,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath"},
 		},
-	}, readFile)
+	}, m.readFile)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "search_files",
@@ -81,7 +90,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"query"},
 		},
-	}, searchFiles)
+	}, m.searchFiles)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "replace_text",
@@ -104,7 +113,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath", "old_text", "new_text"},
 		},
-	}, replaceText, ToolOptions{Serial: true})
+	}, m.replaceText, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "find_file",
@@ -123,7 +132,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"pattern"},
 		},
-	}, findFile)
+	}, m.findFile)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "grep_definitions",
@@ -141,7 +150,7 @@ func RegisterFileSystemTools(r *Registry) {
 				},
 			},
 		},
-	}, grepDefinitions)
+	}, m.grepDefinitions)
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_skeleton",
@@ -156,7 +165,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath"},
 		},
-	}, getFileSkeleton)
+	}, m.getFileSkeleton)
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name:        "write_file",
@@ -175,7 +184,7 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"filepath", "content"},
 		},
-	}, writeFile, ToolOptions{Serial: true})
+	}, m.writeFile, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&genai.FunctionDeclaration{
 		Name:        "get_file_diff",
@@ -194,16 +203,30 @@ func RegisterFileSystemTools(r *Registry) {
 			},
 			Required: []string{"file1", "file2"},
 		},
-	}, getFileDiff)
+	}, m.getFileDiff)
+
+	r.Register(&genai.FunctionDeclaration{
+		Name:        "undo_file_change",
+		Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
+		Parameters: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"n": {
+					Type:        genai.TypeInteger,
+					Description: "Number of changes to revert (default 1).",
+				},
+			},
+		},
+	}, m.undoFileChange)
 }
 
-func listFiles(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -225,13 +248,13 @@ func listFiles(args map[string]interface{}) (string, error) {
 	return sb.String(), nil
 }
 
-func getTree(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -280,13 +303,13 @@ func buildTree(path, indent string, depth, maxDepth int, sb *strings.Builder) er
 	return nil
 }
 
-func readFile(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) readFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -302,13 +325,13 @@ func readFile(args map[string]interface{}) (string, error) {
 	return string(content), nil
 }
 
-func searchFiles(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -391,18 +414,18 @@ func isBinary(data []byte) bool {
 	return false
 }
 
-func getFileDiff(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getFileDiff(ctx context.Context, args map[string]interface{}) (string, error) {
 	file1, _ := args["file1"].(string)
 	file2, _ := args["file2"].(string)
 
-	if err := IsPathSafe(file1); err != nil {
+	if err := m.sm.IsPathSafe(file1); err != nil {
 		return "", err
 	}
-	if err := IsPathSafe(file2); err != nil {
+	if err := m.sm.IsPathSafe(file2); err != nil {
 		return "", err
 	}
 
-	cmd := exec.Command("diff", "-u", file1, file2)
+	cmd := exec.CommandContext(ctx, "diff", "-u", file1, file2)
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {
@@ -412,18 +435,20 @@ func getFileDiff(args map[string]interface{}) (string, error) {
 	return string(out), nil
 }
 
-func writeFile(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	content, _ := args["content"].(string)
 
-	if err := IsPathWritable(path); err != nil {
+	if err := m.sm.IsPathWritable(path); err != nil {
 		return "", err
 	}
 
 	// Confirmation Gate
-	if !ConfirmDestructiveAction("WRITE FILE", path, content) {
+	if !m.sm.ConfirmDestructiveAction("WRITE FILE", path, content) {
 		return "Action denied by user.", nil
 	}
+
+	m.bm.Snapshot(path, "WRITE")
 
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(path)
@@ -431,7 +456,7 @@ func writeFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err := os.WriteFile(path, []byte(content), 0644)
+	err := AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
@@ -439,32 +464,39 @@ func writeFile(args map[string]interface{}) (string, error) {
 	return "File written successfully.", nil
 }
 
-func replaceText(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, _ := args["filepath"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
 
-	if err := IsPathWritable(path); err != nil {
+	if err := m.sm.IsPathWritable(path); err != nil {
 		return "", err
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Replace:\n%s\nWith:\n%s", oldText, newText)
-	if !ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
+	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
+	if !m.sm.ConfirmDestructiveAction("REPLACE TEXT", path, detail) {
 		return "Action denied by user.", nil
 	}
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
+	m.bm.Snapshot(path, "REPLACE")
 
-	if !strings.Contains(string(content), oldText) {
+	contentBytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %w", err)
+	}
+	content := string(contentBytes)
+
+	count := strings.Count(content, oldText)
+	if count == 0 {
 		return "", fmt.Errorf("old_text not found in file")
 	}
+	if count > 1 {
+		return "", fmt.Errorf("old_text found %d times. Please provide more context (including surrounding lines) to uniquely identify the replacement target", count)
+	}
 
-	newContent := strings.Replace(string(content), oldText, newText, 1)
-	err = os.WriteFile(path, []byte(newContent), 0644)
+	newContent := strings.Replace(content, oldText, newText, 1)
+	err = AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
 		return "", err
 	}
@@ -472,13 +504,13 @@ func replaceText(args map[string]interface{}) (string, error) {
 	return "File updated successfully.", nil
 }
 
-func findFile(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -521,13 +553,13 @@ func findFile(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func grepDefinitions(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -620,13 +652,13 @@ func grepDefinitions(args map[string]interface{}) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
-func getFileSkeleton(args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
 		return "", fmt.Errorf("filepath argument is required")
 	}
 
-	if err := IsPathSafe(path); err != nil {
+	if err := m.sm.IsPathSafe(path); err != nil {
 		return "", err
 	}
 
@@ -697,4 +729,12 @@ func getFileSkeleton(args map[string]interface{}) (string, error) {
 	}
 
 	return out, nil
+}
+
+func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]interface{}) (string, error) {
+	n := 1
+	if val, ok := args["n"].(float64); ok {
+		n = int(val)
+	}
+	return m.bm.Undo(n)
 }
