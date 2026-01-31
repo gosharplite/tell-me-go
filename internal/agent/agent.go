@@ -228,29 +228,39 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 			IsPostCall:       false,
 		})
 
-		// 2. Send Chat Request (Streaming)
-		streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-		metrics, err := a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-			streamCh <- c
-		})
-		respContent := finalize()
+		// 2. Send Chat Request (Streaming or Non-streaming)
+		var metrics *types.Metrics
+		var respContent *types.Content
 
-		// Handle 401 Unauthorized for streaming
-		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-			func() {
-				a.sm.TerminalLock()
-				defer a.sm.TerminalUnlock()
-				fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-			}()
-			if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
-				// Finalize the failed stream before retrying to prevent goroutine leak
-				_ = finalize()
-				// Retry streaming
-				streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-				metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-					streamCh <- c
-				})
-				respContent = finalize()
+		if os.Getenv("TELL_ME_NO_STREAM") == "true" {
+			respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver())
+			if err == nil {
+				a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
+			}
+		} else {
+			streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+			metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+				streamCh <- c
+			})
+			respContent = finalize()
+
+			// Handle 401 Unauthorized for streaming
+			if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+				}()
+				if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
+					// Finalize the failed stream before retrying to prevent goroutine leak
+					_ = finalize()
+					// Retry streaming
+					streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+					metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+						streamCh <- c
+					})
+					respContent = finalize()
+				}
 			}
 		}
 

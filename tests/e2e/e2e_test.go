@@ -251,17 +251,16 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		
-		response := `{
-			"candidates": [{
-				"content": {
-					"role": "model",
-					"parts": [{"text": "I have listed the files."}]
-				}
-			}]
-		}`
-		// For Vertex AI, it expects an array of responses for streaming.
-		// But it decodes it chunk by chunk.
-		fmt.Fprintf(w, "[%s]", response)
+		var body struct {
+			Contents []interface{} `json:"contents"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+
+		response := `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"list_files","args":{"path":"."}}}]}}]}`
+		if len(body.Contents) > 1 {
+			response = `{"candidates":[{"content":{"role":"model","parts":[{"text":"I have listed the files."}]}}]}`
+		}
+		fmt.Fprint(w, response)
 	}))
 	defer server.Close()
 
@@ -269,6 +268,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "list the files")
@@ -324,6 +324,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 		"TELL_ME_MOCK_ANSWER=y",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI
@@ -401,6 +402,7 @@ func TestWriteFileDenial(t *testing.T) {
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
 		"TELL_ME_MOCK_ANSWER=n",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI
@@ -465,6 +467,7 @@ func TestSecurityGate(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read /etc/passwd")
@@ -522,6 +525,7 @@ func TestSymlinkAttack(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read evil_link")
@@ -571,6 +575,7 @@ func TestManageTasks(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI
@@ -638,6 +643,7 @@ func TestManageScratchpad(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI
