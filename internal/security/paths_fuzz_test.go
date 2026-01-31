@@ -79,7 +79,7 @@ func FuzzValidatePath(f *testing.F) {
 
 		inCWD, _ := policy.checkBoundary(absValidated, cwd)
 		inTemp, _ := policy.checkBoundary(absValidated, temp)
-		
+
 		inSafe := false
 		for _, sp := range policy.GetPaths(true) {
 			if ok, _ := policy.checkBoundary(absValidated, sp); ok {

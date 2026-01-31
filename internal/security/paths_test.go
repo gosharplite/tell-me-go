@@ -113,7 +113,7 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 	tmp := t.TempDir()
 	realDir := filepath.Join(tmp, "real")
 	linkDir := filepath.Join(tmp, "link")
-	
+
 	if err := os.Mkdir(realDir, 0755); err != nil {
 		t.Fatal(err)
 	}
