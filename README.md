@@ -155,7 +155,27 @@ MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback
 
 # --- Authentication ---
 KEY_FILE: "" # Optional: Path to Service Account JSON key.
+
+# --- Model Specific Overrides ---
+MODELS:
+  gemini-2.0-flash:
+    MAX_THINKING_BUDGET: 24576
+    CONTEXT_WINDOW: 1048576
+  gemini-1.5-pro:
+    MAX_THINKING_BUDGET: 0
+    CONTEXT_WINDOW: 2097152
+  gemini-3-flash-preview:
+    MAX_THINKING_BUDGET: 32768
+    CONTEXT_WINDOW: 1048576
+  gemini-3-pro-preview:
+    MAX_THINKING_BUDGET: 65536
+    CONTEXT_WINDOW: 2097152
 ```
+
+### 🧠 Model-Specific Overrides
+The `MODELS` section allows you to define hard technical limits for different model generations.
+*   **`MAX_THINKING_BUDGET`**: Automatically clamps the `THINKING_BUDGET` to the model's supported maximum to prevent API errors.
+*   **`CONTEXT_WINDOW`**: Provides the baseline for the agent's payload tracking and safety rollback logic.
 
 ### 🧠 Strategic Memory Management
 To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
