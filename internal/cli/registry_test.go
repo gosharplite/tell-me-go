@@ -27,13 +27,13 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	reg := app.setupRegistry(nil, cfg, paths, pricingOverrides)
 
 	declarations := reg.GetDeclarations()
-	
+
 	expectedTools := []string{
-		"estimate_cost", 
-		"get_cost_summary", 
+		"estimate_cost",
+		"get_cost_summary",
 		"verify_release_readiness",
 	}
-	
+
 	for _, expected := range expectedTools {
 		found := false
 		for _, decl := range declarations {

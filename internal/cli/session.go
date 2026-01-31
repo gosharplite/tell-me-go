@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
 	"github.com/gosharplite/tell-me-go/internal/tools/files"
@@ -112,7 +113,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	framework.RegisterPolicy(reg, a.sm)
 	framework.RegisterMetrics(reg, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
 	dev.RegisterRelease(reg, a.sm)
-	media.Register(reg, a.sm, client)
+	media.Register(reg, a.sm, mediasvc.NewService(client))
 
 	return reg
 }

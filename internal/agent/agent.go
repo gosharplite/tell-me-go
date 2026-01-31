@@ -82,9 +82,9 @@ type Agent struct {
 }
 
 // New creates a new Agent.
-func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager) *Agent {
+func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) *Agent {
 	renderer := NewStdUIRenderer(sm)
-	gw := gateway.NewResilientClient(client, renderer)
+	gw := gateway.NewResilientClient(client, disableStreaming)
 	strategy := NewContextStrategy(reg)
 	executor := NewToolExecutor(reg, sm, renderer)
 	ctxManager := NewContextManager(strategy, hManager, gw, renderer)
@@ -134,13 +134,13 @@ func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
 	a.executor.SetShowTools(showTools)
-	a.gateway.SetOptions(showThoughts, a.rawOutput)
+	a.engine.SetUIOptions(showThoughts, a.rawOutput)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
 func (a *Agent) SetRawOutput(raw bool) {
 	a.rawOutput = raw
-	a.gateway.SetOptions(a.showThoughts, raw)
+	a.engine.SetUIOptions(a.showThoughts, raw)
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -183,7 +183,6 @@ func (a *Agent) SetRenderer(renderer UIRenderer) {
 		a.renderer = renderer
 		a.executor.renderer = renderer
 		a.engine.renderer = renderer
-		a.gateway.SetRenderer(renderer)
 	}
 }
 

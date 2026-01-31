@@ -21,7 +21,7 @@ func TestBackupManager_Undo(t *testing.T) {
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "test.txt")
-	
+
 	// 1. Snapshot new file creation
 	bm.Snapshot(path, "WRITE")
 	os.WriteFile(path, []byte("v1"), 0644)

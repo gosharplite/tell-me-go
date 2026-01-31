@@ -129,7 +129,11 @@ func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*ty
 		Parts: []*types.Part{{Text: SummarizationPrompt}},
 	})
 
-	respContent, _, err := cm.Gateway.Generate(ctx, summarizerInput, nil, cm.History.GetResolver())
+	respCh, finalize := cm.Gateway.Generate(ctx, summarizerInput, nil, cm.History.GetResolver())
+	// Drain the channel; we don't stream summarization to the UI.
+	for range respCh {
+	}
+	respContent, _, err := finalize()
 	if err != nil {
 		return "", fmt.Errorf("summarization request failed: %w", err)
 	}

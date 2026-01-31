@@ -11,6 +11,6 @@ import (
 
 // LLMGateway defines the interface for resilient AI model interactions.
 type LLMGateway interface {
-	// Generate handles auth retries and establishes the stream.
-	Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
+	// Generate handles auth retries and returns a content stream and a finalizer.
+	Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error))
 }

@@ -14,24 +14,33 @@ import (
 
 // TurnEngine manages the "Think -> Act -> Observe" cycle.
 type TurnEngine struct {
-	ctxManager  *ContextManager
-	gateway     gateway.LLMGateway
-	executor    *ToolExecutor
-	renderer    UIRenderer
-	registry    ToolRegistry
-	logFile     string
-	OnTurnStart func()
+	ctxManager   *ContextManager
+	gateway      gateway.LLMGateway
+	executor     *ToolExecutor
+	renderer     UIRenderer
+	registry     ToolRegistry
+	logFile      string
+	showThoughts bool
+	rawOutput    bool
+	OnTurnStart  func()
 }
 
 // NewTurnEngine creates a new TurnEngine.
 func NewTurnEngine(gw gateway.LLMGateway, ex *ToolExecutor, cm *ContextManager, r UIRenderer, reg ToolRegistry) *TurnEngine {
 	return &TurnEngine{
-		gateway:    gw,
-		executor:   ex,
-		ctxManager: cm,
-		renderer:   r,
-		registry:   reg,
+		gateway:      gw,
+		executor:     ex,
+		ctxManager:   cm,
+		renderer:     r,
+		registry:     reg,
+		showThoughts: true,
 	}
+}
+
+// SetUIOptions updates the UI options for generation.
+func (e *TurnEngine) SetUIOptions(showThoughts, rawOutput bool) {
+	e.showThoughts = showThoughts
+	e.rawOutput = rawOutput
 }
 
 // SetLogFile sets the path for usage logging.
@@ -64,7 +73,15 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		e.logTurnStatus(currentTurns, tokens, nil, false, startTime)
 
 		// 2. Generate Response
-		respContent, metrics, err := e.gateway.Generate(ctx, apiContents, e.registry.GetDeclarations(), e.ctxManager.History.GetResolver())
+		respCh, finalize := e.gateway.Generate(ctx, apiContents, e.registry.GetDeclarations(), e.ctxManager.History.GetResolver())
+
+		uiCh, uiFinalize := e.renderer.StreamResponse(ctx, e.showThoughts, e.rawOutput)
+		for c := range respCh {
+			uiCh <- c
+		}
+		_ = uiFinalize()
+
+		respContent, metrics, err := finalize()
 		if err != nil {
 			return err
 		}

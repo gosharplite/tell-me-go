@@ -21,9 +21,9 @@ func TestCommandValidator(t *testing.T) {
 		{"ls -la", true},
 		{"rm -rf /", false},
 		{"ls; rm -rf /", false},
-		{"ls | grep foo", false}, 
+		{"ls | grep foo", false},
 		{"cat /etc/passwd", true},
-		{"cat /etc/shadow", true}, 
+		{"cat /etc/shadow", true},
 		{"git status", true},
 		{"git push", false},
 	}

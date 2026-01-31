@@ -28,7 +28,8 @@ type Config struct {
 	ShowTools          bool                   `yaml:"SHOW_TOOLS"`
 	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
-	Models             map[string]ModelConfig `yaml:"MODELS"`               // Model-specific overrides
+	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
+	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
 }
 
 // ModelConfig defines capabilities and limits for a specific model.
@@ -55,6 +56,10 @@ func Load(path string) (*Config, error) {
 	cfg.ToolTimeoutSeconds = 30
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
+
+	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
+		cfg.DisableStreaming = true
+	}
 
 	decoder := yaml.NewDecoder(f)
 	if err := decoder.Decode(&cfg); err != nil {

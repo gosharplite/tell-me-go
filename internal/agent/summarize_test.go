@@ -48,7 +48,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	}
 
 	sm := tools.NewSecurityManager()
-	a := New(client, hManager, registry, sm)
+	a := New(client, hManager, registry, sm, false)
 
 	t.Setenv("TELL_ME_NO_STREAM", "true")
 

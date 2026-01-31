@@ -30,7 +30,7 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *tools.SecurityManager) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing types.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
@@ -68,8 +68,8 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager) agent.Chatter {
-			return agent.New(client, hManager, reg, sm)
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming)
 		},
 		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -171,7 +171,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
-	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming)
 	a.configureAgent(chatAgent, cfg, opts, paths, pruned)
 
 	// 7. Execute & Finalize

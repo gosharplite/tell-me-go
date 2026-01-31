@@ -5,154 +5,122 @@ package gateway
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// UI defines the subset of UI interactions needed by the gateway.
-type UI interface {
-	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
-	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
-	LogSystemMessage(msg string, level string)
-}
-
-// ResilientClient wraps an LLMClient with retry logic and UI streaming.
+// ResilientClient wraps an LLMClient with retry logic.
 type ResilientClient struct {
-	client       types.LLMClient
-	renderer     UI
-	showThoughts bool
-	rawOutput    bool
+	client           types.LLMClient
+	disableStreaming bool
 }
 
 // NewResilientClient creates a new ResilientClient.
-func NewResilientClient(client types.LLMClient, renderer UI) *ResilientClient {
+func NewResilientClient(client types.LLMClient, disableStreaming bool) *ResilientClient {
 	return &ResilientClient{
-		client:   client,
-		renderer: renderer,
+		client:           client,
+		disableStreaming: disableStreaming,
 	}
 }
 
-// SetRenderer updates the UI renderer.
-func (r *ResilientClient) SetRenderer(renderer UI) {
-	r.renderer = renderer
-}
-
-// SetOptions updates the UI options for generation.
-func (r *ResilientClient) SetOptions(showThoughts, rawOutput bool) {
-	r.showThoughts = showThoughts
-	r.rawOutput = rawOutput
-}
-
-// Generate handles the LLM interaction logic, including streaming and auth retries.
-func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
-		respContent, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
-		if err == nil {
-			r.renderer.RenderResponse(respContent, r.showThoughts, r.rawOutput)
-		}
-		return respContent, metrics, err
+func (r *ResilientClient) classifyError(err error) (isAuth bool, isRetryable bool) {
+	if err == nil {
+		return false, false
 	}
 
-	streamCh, finalize := r.renderer.StreamResponse(ctx, r.showThoughts, r.rawOutput)
-	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, func(c *types.Content) {
-		streamCh <- c
-	})
-	respContent := finalize()
-
-	// Handle 401 Unauthorized for streaming
-	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		r.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
-		if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
-			// Finalize the failed stream before retrying to prevent goroutine leak
-			_ = finalize()
-			// Retry streaming
-			streamCh, finalize = r.renderer.StreamResponse(ctx, r.showThoughts, r.rawOutput)
-			metrics, err = r.client.StreamChat(ctx, input, tools, resolver, func(c *types.Content) {
-				streamCh <- c
-			})
-			respContent = finalize()
+	if s, ok := status.FromError(err); ok {
+		switch s.Code() {
+		case codes.Unauthenticated:
+			return true, false
+		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded:
+			return false, true
 		}
 	}
-	return respContent, metrics, err
+
+	// Fallback to string matching for non-GRPC errors (e.g. from SDK's HTTP layer)
+	msg := strings.ToUpper(err.Error())
+	isAuth = strings.Contains(msg, "401") || strings.Contains(msg, "UNAUTHENTICATED")
+	isRetryable = strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
+		strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") ||
+		strings.Contains(msg, "504") || strings.Contains(msg, "GATEWAY_TIMEOUT")
+
+	return isAuth, isRetryable
 }
 
-// GenerateImage implements types.AgentGateway.
-func (r *ResilientClient) GenerateImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	var a struct {
-		Prompt      string `json:"prompt"`
-		AspectRatio string `json:"aspect_ratio"`
-		Model       string `json:"model"`
+// Generate handles the LLM interaction logic, returning a stream and a finalizer.
+func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+	outCh := make(chan *types.Content, 100)
+
+	type result struct {
+		content *types.Content
+		metrics *types.Metrics
+		err     error
 	}
-	if err := types.UnmarshalArgs(args, &a); err != nil {
-		return types.ToolResult{}, err
+	resCh := make(chan result, 1)
+
+	go func() {
+		var finalContent *types.Content
+		var finalMetrics *types.Metrics
+		var finalErr error
+
+		for attempt := 0; attempt < 3; attempt++ {
+			if r.disableStreaming {
+				finalContent, finalMetrics, finalErr = r.client.SendChat(ctx, input, tools, resolver)
+				if finalErr == nil {
+					outCh <- finalContent
+					break
+				}
+			} else {
+				finalContent = &types.Content{Role: "model"}
+				callback := func(c *types.Content) {
+					for _, p := range c.Parts {
+						finalContent.AddPart(p)
+					}
+					outCh <- c
+				}
+				finalMetrics, finalErr = r.client.StreamChat(ctx, input, tools, resolver, callback)
+				if finalErr == nil {
+					break
+				}
+			}
+
+			isAuth, isRetryable := r.classifyError(finalErr)
+			if isAuth {
+				if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
+					continue // Immediate retry after auth refresh
+				}
+			}
+
+			if isRetryable && attempt < 2 {
+				wait := time.Duration(1<<attempt) * time.Second
+				select {
+				case <-ctx.Done():
+					finalErr = ctx.Err()
+					attempt = 3 // break
+				case <-time.After(wait):
+					continue
+				}
+			} else {
+				break
+			}
+		}
+
+		close(outCh)
+		resCh <- result{finalContent, finalMetrics, finalErr}
+	}()
+
+	finalize := func() (*types.Content, *types.Metrics, error) {
+		select {
+		case res := <-resCh:
+			return res.content, res.metrics, res.err
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
 	}
 
-	if a.Model == "" {
-		a.Model = "imagen-3.0-generate-001"
-	}
-
-	// Aspect ratio is handled by the prompt or specific API parameters in the future.
-	// For now we just pass it to the prompt if not empty.
-	prompt := a.Prompt
-	if a.AspectRatio != "" {
-		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, a.AspectRatio)
-	}
-
-	images, err := r.client.GenerateImages(ctx, a.Model, prompt, "image/png")
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	result := types.ToolResult{
-		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), a.Prompt),
-	}
-	for i, data := range images {
-		result.BinaryData = append(result.BinaryData, types.BinaryData{
-			MIMEType: "image/png",
-			Data:     data,
-		})
-		// Auto-save to assets/generated
-		filename := fmt.Sprintf("assets/generated/image_%d_%d.png", time.Now().Unix(), i)
-		_ = os.MkdirAll("assets/generated", 0755)
-		_ = os.WriteFile(filename, data, 0644)
-		result.Text += fmt.Sprintf("\nSaved to %s", filename)
-	}
-
-	return result, nil
-}
-
-// ReadImage implements types.AgentGateway (though it could be handled locally).
-func (r *ResilientClient) ReadImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	var a struct {
-		Filepath string `json:"filepath"`
-	}
-	if err := types.UnmarshalArgs(args, &a); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	data, err := os.ReadFile(a.Filepath)
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	mimeType := "image/png"
-	if strings.HasSuffix(strings.ToLower(a.Filepath), ".jpg") || strings.HasSuffix(strings.ToLower(a.Filepath), ".jpeg") {
-		mimeType = "image/jpeg"
-	} else if strings.HasSuffix(strings.ToLower(a.Filepath), ".webp") {
-		mimeType = "image/webp"
-	}
-
-	return types.ToolResult{
-		Text: fmt.Sprintf("Successfully read image from %s", a.Filepath),
-		BinaryData: []types.BinaryData{
-			{
-				MIMEType: mimeType,
-				Data:     data,
-			},
-		},
-	}, nil
+	return outCh, finalize
 }

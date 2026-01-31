@@ -208,7 +208,7 @@ func (r *StdUIRenderer) processStream(ctx context.Context, ch <-chan *types.Cont
 				return
 			}
 			for _, part := range content.Parts {
-				r.mergePart(state.aggregated, part)
+				state.aggregated.AddPart(part)
 				r.renderStreamPart(state, part)
 			}
 		}
@@ -308,29 +308,6 @@ func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
 		lines++
 	}
 	return lines
-}
-
-func (r *StdUIRenderer) mergePart(dst *types.Content, src *types.Part) {
-	// If it's a function call/response, just append
-	if src.FunctionCall != nil || src.FunctionResponse != nil || src.InlineData != nil {
-		dst.Parts = append(dst.Parts, src)
-		return
-	}
-
-	// For text/thought, try to append to last part if same type
-	if len(dst.Parts) > 0 {
-		last := dst.Parts[len(dst.Parts)-1]
-		if last.Thought == src.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
-			last.Text += src.Text
-			return
-		}
-	}
-
-	// Otherwise append new part
-	dst.Parts = append(dst.Parts, &types.Part{
-		Text:    src.Text,
-		Thought: src.Thought,
-	})
 }
 
 func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool) {

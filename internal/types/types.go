@@ -236,3 +236,31 @@ type AgentGateway interface {
 }
 
 var ErrNotImplemented = fmt.Errorf("not implemented")
+
+// AddPart merges a new part into the content, appending or joining text parts as appropriate.
+func (c *Content) AddPart(p *Part) {
+	if p == nil {
+		return
+	}
+
+	// If it's a function call/response, just append
+	if p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+		c.Parts = append(c.Parts, p)
+		return
+	}
+
+	// For text/thought, try to append to last part if same type
+	if len(c.Parts) > 0 {
+		last := c.Parts[len(c.Parts)-1]
+		if last.Thought == p.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
+			last.Text += p.Text
+			return
+		}
+	}
+
+	// Otherwise append new part
+	c.Parts = append(c.Parts, &Part{
+		Text:    p.Text,
+		Thought: p.Thought,
+	})
+}
