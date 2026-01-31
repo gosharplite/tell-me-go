@@ -88,7 +88,7 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 	strategy := NewContextStrategy(reg)
 	executor := NewToolExecutor(reg, sm, renderer)
 	ctxManager := NewContextManager(strategy, hManager, gw, renderer)
-	engine := NewTurnEngine(gw, executor, ctxManager, renderer, reg)
+	engine := NewTurnEngine(gw, executor, ctxManager, reg)
 
 	a := &Agent{
 		gateway:       gw,
@@ -106,7 +106,26 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 		rawOutput:     false,
 		startTime:     time.Now(),
 	}
-	a.engine.OnTurnStart = a.refreshLimits
+	a.engine.Hooks.OnTurnStart = func(turn int) {
+		a.refreshLimits()
+	}
+	a.engine.Hooks.OnPrepare = func(tokens, currentTurns int) {
+		a.logTurnStatus(currentTurns, tokens, nil, false)
+	}
+	a.engine.Hooks.OnStream = func(ctx context.Context, respCh <-chan *types.Content) {
+		uiCh, uiFinalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+		for c := range respCh {
+			uiCh <- c
+		}
+		_ = uiFinalize()
+	}
+	a.engine.Hooks.OnComplete = func(state *TurnState) {
+		a.logTurnStatus(state.CurrentTurns, state.Tokens, state.Metrics, true)
+		if state.Metrics != nil {
+			a.renderer.LogUsage(state.Metrics, a.logFile, a.startTime)
+		}
+	}
+
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
 	return a
@@ -138,13 +157,11 @@ func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
 	a.executor.SetShowTools(showTools)
-	a.engine.SetUIOptions(showThoughts, a.rawOutput)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
 func (a *Agent) SetRawOutput(raw bool) {
 	a.rawOutput = raw
-	a.engine.SetUIOptions(a.showThoughts, raw)
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -161,7 +178,6 @@ func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
 // SetLogFile sets the path for usage logging.
 func (a *Agent) SetLogFile(path string) {
 	a.logFile = path
-	a.engine.SetLogFile(path)
 }
 
 // SetPrunedTurns informs the agent how many turns were removed during startup.
@@ -186,7 +202,6 @@ func (a *Agent) SetRenderer(renderer UIRenderer) {
 	if renderer != nil {
 		a.renderer = renderer
 		a.executor.renderer = renderer
-		a.engine.renderer = renderer
 	}
 }
 
@@ -194,6 +209,20 @@ func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.strategy.SetLimits(maxTokens, maxTurns, maxHistTurns)
+}
+
+func (a *Agent) logTurnStatus(currentTurns, tokens int, metrics *types.Metrics, isPost bool) {
+	maxTokens, _, maxHistTurns := a.strategy.GetLimits()
+	a.renderer.LogTurnStatus(TurnStatus{
+		Timestamp:        time.Now(),
+		CurrentTurns:     currentTurns,
+		MaxHistoryTurns:  maxHistTurns,
+		Tokens:           tokens,
+		MaxHistoryTokens: maxTokens,
+		Metrics:          metrics,
+		IsPostCall:       isPost,
+		StartTime:        a.startTime,
+	})
 }
 
 // Chat runs the multi-turn orchestration loop.
