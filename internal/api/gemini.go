@@ -127,57 +127,7 @@ func (c *Client) RefreshAuth() error {
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
 func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	// 0. Defensive check: Ensure all content objects have at least one part.
-	// Vertex AI returns 400 INVALID_ARGUMENT if a content object has an empty parts list.
-	for _, h := range history {
-		if len(h.Parts) == 0 {
-			h.Parts = []*types.Part{{Text: "[empty]"}}
-		}
-	}
-
-	// Add Search tool if requested
-	var activeTools []*genai.Tool
-	activeTools = append(activeTools, toSDKTool(tools)...)
-	if c.useSearch {
-		activeTools = append(activeTools, &genai.Tool{
-			GoogleSearch: &genai.GoogleSearch{},
-		})
-	}
-
-	config := &genai.GenerateContentConfig{
-		Tools:             activeTools,
-		SystemInstruction: c.systemInstruction.ToSDK(resolver),
-	}
-
-	// Apply Thinking Config
-	if c.thinkingLevel != "" || c.thinkingBudget > 0 {
-		config.ThinkingConfig = &genai.ThinkingConfig{
-			IncludeThoughts: true,
-		}
-
-		actualBudget := c.thinkingBudget
-		if actualBudget > 0 {
-			maxBudget := c.maxThinkingBudget
-			if maxBudget > 0 && actualBudget > maxBudget {
-				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
-				actualBudget = maxBudget
-			}
-		}
-
-		// If ThinkingBudget is set, use it (takes precedence for compatibility).
-		// If ONLY ThinkingLevel is set, use that.
-		// Note: Vertex AI currently does not support both together.
-		if actualBudget > 0 {
-			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(actualBudget))
-		} else if c.thinkingLevel != "" {
-			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
-		}
-	}
-
-	sdkHistory := make([]*genai.Content, len(history))
-	for i, h := range history {
-		sdkHistory[i] = h.ToSDK(resolver)
-	}
+	config, sdkHistory := c.prepareRequest(history, tools, resolver)
 
 	startTime := time.Now()
 	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, sdkHistory, config)
@@ -213,9 +163,8 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 	return types.FromSDKContent(candidate.Content), metrics, nil
 }
 
-// StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
-func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-	// 0. Defensive check: Ensure all content objects have at least one part.
+func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+	// Defensive check: Ensure all content objects have at least one part.
 	for _, h := range history {
 		if len(h.Parts) == 0 {
 			h.Parts = []*types.Part{{Text: "[empty]"}}
@@ -262,6 +211,13 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 	for i, h := range history {
 		sdkHistory[i] = h.ToSDK(resolver)
 	}
+
+	return config, sdkHistory
+}
+
+// StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
+func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	config, sdkHistory := c.prepareRequest(history, tools, resolver)
 
 	startTime := time.Now()
 	iter := c.sdkClient.Models.GenerateContentStream(ctx, c.model, sdkHistory, config)
