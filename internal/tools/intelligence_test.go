@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 func TestIntelligenceTools(t *testing.T) {
@@ -41,7 +43,7 @@ func Helper() int { return 42 }
 	}
 
 	t.Run("grep_definitions", func(t *testing.T) {
-		fsM := &fileSystemManager{sm: sm}
+		fsM := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 		args := map[string]interface{}{"path": tmpDir}
 		res, err := fsM.grepDefinitions(context.Background(), args)
 		if err != nil {
@@ -53,7 +55,7 @@ func Helper() int { return 42 }
 	})
 
 	t.Run("get_file_skeleton", func(t *testing.T) {
-		fsM := &fileSystemManager{sm: sm}
+		fsM := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 		args := map[string]interface{}{"filepath": filePath}
 		res, err := fsM.getFileSkeleton(context.Background(), args)
 		if err != nil {

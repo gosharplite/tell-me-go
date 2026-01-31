@@ -126,7 +126,7 @@ func (c *Client) RefreshAuth() error {
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
-func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
 	// 0. Defensive check: Ensure all content objects have at least one part.
 	// Vertex AI returns 400 INVALID_ARGUMENT if a content object has an empty parts list.
 	for _, h := range history {
@@ -137,7 +137,7 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 
 	// Add Search tool if requested
 	var activeTools []*genai.Tool
-	activeTools = append(activeTools, tools...)
+	activeTools = append(activeTools, toSDKTool(tools)...)
 	if c.useSearch {
 		if c.backend == genai.BackendVertexAI {
 			activeTools = append(activeTools, &genai.Tool{
@@ -225,6 +225,45 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 	}
 
 	return types.FromSDKContent(candidate.Content), metrics, nil
+}
+
+func toSDKTool(declarations []*types.ToolDeclaration) []*genai.Tool {
+	if len(declarations) == 0 {
+		return nil
+	}
+	sdkDecls := make([]*genai.FunctionDeclaration, len(declarations))
+	for i, d := range declarations {
+		sdkDecls[i] = &genai.FunctionDeclaration{
+			Name:        d.Name,
+			Description: d.Description,
+			Parameters:  toSDKSchema(d.Parameters),
+		}
+	}
+	return []*genai.Tool{
+		{
+			FunctionDeclarations: sdkDecls,
+		},
+	}
+}
+
+func toSDKSchema(s *types.Schema) *genai.Schema {
+	if s == nil {
+		return nil
+	}
+	res := &genai.Schema{
+		Type:        genai.Type(s.Type),
+		Description: s.Description,
+		Required:    s.Required,
+		Enum:        s.Enum,
+		Items:       toSDKSchema(s.Items),
+	}
+	if s.Properties != nil {
+		res.Properties = make(map[string]*genai.Schema)
+		for k, v := range s.Properties {
+			res.Properties[k] = toSDKSchema(v)
+		}
+	}
+	return res
 }
 
 // GenerateImages calls the Imagen model to generate images from a prompt.

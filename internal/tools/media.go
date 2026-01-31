@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type mediaManager struct {
@@ -25,22 +24,22 @@ type mediaManager struct {
 func RegisterMediaTools(r *Registry, sm *SecurityManager, client types.LLMClient) {
 	m := &mediaManager{sm: sm, client: client}
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"prompt": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Detailed description of the image to generate.",
 				},
 				"aspect_ratio": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Aspect ratio (e.g., '1:1', '4:3', '16:9'). Default '1:1'.",
 				},
 				"model": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The model to use for generation (e.g., 'imagen-3.0-generate-001', 'imagen-3.0-fast-001').",
 				},
 			},
@@ -48,14 +47,14 @@ func RegisterMediaTools(r *Registry, sm *SecurityManager, client types.LLMClient
 		},
 	}, m.createImage, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "read_image",
 		Description: "Reads a local image file for vision analysis.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"filepath": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The path to the image file (e.g., './assets/screenshot.png').",
 				},
 			},
@@ -65,13 +64,22 @@ func RegisterMediaTools(r *Registry, sm *SecurityManager, client types.LLMClient
 }
 
 func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	prompt, _ := args["prompt"].(string)
-	aspectRatio, _ := args["aspect_ratio"].(string)
+	var params struct {
+		Prompt      string `json:"prompt"`
+		AspectRatio string `json:"aspect_ratio"`
+		Model       string `json:"model"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	prompt := params.Prompt
+	aspectRatio := params.AspectRatio
 	if aspectRatio == "" {
 		aspectRatio = "1:1"
 	}
 
-	model, _ := args["model"].(string)
+	model := params.Model
 	if model == "" {
 		model = "imagen-3.0-generate-001"
 	}
@@ -127,7 +135,14 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 }
 
 func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path, _ := args["filepath"].(string)
+	var params struct {
+		FilePath string `json:"filepath"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.FilePath
 	if err := m.sm.IsPathSafe(path); err != nil {
 		return types.ToolResult{}, err
 	}

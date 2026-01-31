@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -28,7 +30,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	sm.RegisterSafePath(tmpDir)
 	sm.bypassConfirmations = true // Avoid interactive prompts
 
-	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1)}
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -87,7 +89,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := NewSecurityManager()
-	m := &fileSystemManager{sm: sm}
+	m := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 
 	ctx := context.Background()
 	args := map[string]interface{}{

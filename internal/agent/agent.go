@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 var (
@@ -105,14 +104,14 @@ func New(client types.LLMClient, hManager *history.Manager, registry *tools.Regi
 }
 
 func (a *Agent) registerInternalTools() {
-	a.registry.Register(&genai.FunctionDeclaration{
+	a.registry.Register(&types.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"turns": {
-					Type:        genai.TypeNumber,
+					Type:        "NUMBER",
 					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
 				},
 			},
@@ -346,9 +345,9 @@ func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, curr
 }
 
 func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
-	toolsSDK := a.registry.ToToolSDK()
+	decls := a.registry.GetDeclarations()
 	resolver := a.history.GetResolver()
-	respContent, metrics, err := a.client.SendChat(ctx, apiContents, toolsSDK, resolver)
+	respContent, metrics, err := a.client.SendChat(ctx, apiContents, decls, resolver)
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
@@ -361,7 +360,7 @@ func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*ty
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}
 		// Retry
-		respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.ToToolSDK(), resolver)
+		respContent, metrics, err = a.client.SendChat(ctx, apiContents, decls, resolver)
 	}
 	return respContent, metrics, err
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type gitManager struct {
@@ -21,50 +20,50 @@ type gitManager struct {
 func RegisterGitTools(r *Registry, sm *SecurityManager) {
 	m := &gitManager{sm: sm}
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
+		Parameters: &types.Schema{
+			Type: "OBJECT",
 		},
 	}, m.getGitStatus)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_diff",
 		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"staged": {
-					Type:        genai.TypeBoolean,
+					Type:        "BOOLEAN",
 					Description: "If true, shows staged changes.",
 				},
 			},
 		},
 	}, m.getGitDiff)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_log",
 		Description: "Retrieves the git commit log.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"limit": {
-					Type:        genai.TypeInteger,
+					Type:        "INTEGER",
 					Description: "Number of commits to show (default: 10).",
 				},
 			},
 		},
 	}, m.getGitLog)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_commit",
 		Description: "Shows the full details (diff and metadata) of a specific commit hash.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"hash": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The commit hash to inspect.",
 				},
 			},
@@ -72,14 +71,14 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.getGitCommit)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_blame",
 		Description: "Shows who changed which lines in a file.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"filepath": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The path to the file.",
 				},
 			},
@@ -87,14 +86,14 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.getGitBlame)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "git_commit",
 		Description: "Commits staged changes with a message.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"message": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The commit message.",
 				},
 			},
@@ -102,14 +101,14 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.gitCommit, ToolOptions{Serial: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "git_create_branch",
 		Description: "Creates and checks out a new git branch.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"name": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The name of the new branch.",
 				},
 			},
@@ -124,10 +123,16 @@ func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface
 }
 
 func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	staged, _ := args["staged"].(bool)
+	var params struct {
+		Staged bool `json:"staged"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
 	var res string
 	var err error
-	if staged {
+	if params.Staged {
 		res, err = runGitCommand(ctx, "diff", "--staged")
 	} else {
 		res, err = runGitCommand(ctx, "diff")
@@ -136,17 +141,31 @@ func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}
 }
 
 func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	limit := 10
-	if l, ok := args["limit"].(float64); ok {
-		limit = int(l)
+	var params struct {
+		Limit int `json:"limit"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 10
 	}
 	res, err := runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 	return types.ToolResult{Text: res}, err
 }
 
 func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	hash, ok := args["hash"].(string)
-	if !ok || hash == "" {
+	var params struct {
+		Hash string `json:"hash"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	hash := params.Hash
+	if hash == "" {
 		return types.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
@@ -162,8 +181,15 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 }
 
 func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path, ok := args["filepath"].(string)
-	if !ok || path == "" {
+	var params struct {
+		FilePath string `json:"filepath"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.FilePath
+	if path == "" {
 		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
@@ -176,7 +202,14 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 }
 
 func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	message, _ := args["message"].(string)
+	var params struct {
+		Message string `json:"message"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	message := params.Message
 	if message == "" {
 		return types.ToolResult{}, fmt.Errorf("message is required")
 	}
@@ -194,7 +227,14 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 }
 
 func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	name, _ := args["name"].(string)
+	var params struct {
+		Name string `json:"name"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	name := params.Name
 	if name == "" {
 		return types.ToolResult{}, fmt.Errorf("branch name is required")
 	}

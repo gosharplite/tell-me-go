@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int) error {
@@ -46,7 +45,7 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 		responseParts = append(responseParts, a.processToolResult(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &types.Part{
-				InlineData: &genai.Blob{
+				InlineData: &types.Blob{
 					MIMEType: b.MIMEType,
 					Data:     b.Data,
 				},

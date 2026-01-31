@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type teamsManager struct {
@@ -22,18 +21,18 @@ type teamsManager struct {
 // RegisterTeamsTools adds Teams-related tools to the registry.
 func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
 	m := &teamsManager{sm: sm}
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"webhook_url": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The Power Automate workflow URL (must start with https://).",
 				},
 				"message": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The message to send to the channel.",
 				},
 			},
@@ -43,8 +42,16 @@ func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
 }
 
 func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	webhookURL, _ := args["webhook_url"].(string)
-	message, _ := args["message"].(string)
+	var params struct {
+		WebhookURL string `json:"webhook_url"`
+		Message    string `json:"message"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	webhookURL := params.WebhookURL
+	message := params.Message
 
 	if webhookURL == "" || message == "" {
 		return types.ToolResult{}, fmt.Errorf("webhook_url and message are required")

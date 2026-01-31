@@ -18,7 +18,6 @@ import (
 
 	"github.com/google/shlex"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type systemManager struct {
@@ -29,26 +28,26 @@ type systemManager struct {
 func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 	m := &systemManager{sm: sm}
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "execute_command",
 		Description: "Executes a single shell command without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"command": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The shell command to execute (e.g., 'ls -la', 'go test ./...').",
 				},
 				"reason": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "A short explanation of why this command needs to be executed.",
 				},
 				"output_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Optional: Redirect output to this file.",
 				},
 				"append": {
-					Type:        genai.TypeBoolean,
+					Type:        "BOOLEAN",
 					Description: "Optional: If output_file is set, append to it instead of overwriting.",
 				},
 			},
@@ -56,29 +55,29 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.executeCommand, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "pipe_commands",
 		Description: "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"commands": {
-					Type: genai.TypeArray,
-					Items: &genai.Schema{
-						Type: genai.TypeString,
+					Type: "ARRAY",
+					Items: &types.Schema{
+						Type: "STRING",
 					},
 					Description: "The sequence of commands to pipe (e.g., ['ls -la', 'grep .go']).",
 				},
 				"reason": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "A short explanation of why this pipeline needs to be executed.",
 				},
 				"output_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Optional: Redirect the final output to this file.",
 				},
 				"append": {
-					Type:        genai.TypeBoolean,
+					Type:        "BOOLEAN",
 					Description: "Optional: If output_file is set, append to it instead of overwriting.",
 				},
 			},
@@ -86,14 +85,14 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.pipeCommands, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "ask_user",
 		Description: "Asks the user a specific question to clarify requirements or request confirmation.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"question": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The question to ask the user.",
 				},
 			},
@@ -101,14 +100,14 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.askUser, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"url": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The documentation URL to fetch.",
 				},
 			},
@@ -116,26 +115,26 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.readExternalDocs)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "http_request",
 		Description: "Executes a custom HTTP request.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"method": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "HTTP method (GET, POST, PUT, DELETE, etc.).",
 				},
 				"url": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The target URL.",
 				},
 				"headers": {
-					Type:        genai.TypeObject,
+					Type:        "OBJECT",
 					Description: "HTTP headers as a map of strings.",
 				},
 				"body": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Request body content.",
 				},
 			},
@@ -143,18 +142,18 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.httpRequest)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "register_safepath",
 		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The absolute or relative path to authorize.",
 				},
 				"reason": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Reason why this path needs to be authorized.",
 				},
 			},
@@ -162,19 +161,19 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.registerSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
 	}, m.listSafePathsTool)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "remove_safepath",
 		Description: "Removes a directory or file from the authorized boundaries.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The path to remove from authorized boundaries.",
 				},
 			},
@@ -182,18 +181,18 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.removeSafePathTool, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "register_readpath",
 		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The absolute or relative path to authorize for reading.",
 				},
 				"reason": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Reason why this path needs to be authorized.",
 				},
 			},
@@ -201,19 +200,19 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
 	}, m.listReadOnlyPathsTool)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "remove_readpath",
 		Description: "Removes a directory or file from the read-only authorized boundaries.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The path to remove from read-only authorized boundaries.",
 				},
 			},
@@ -221,12 +220,12 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
 	}, m.bypassConfirmationTool, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
 	}, m.revokeBypassTool, ToolOptions{Serial: true, LongRunning: true})
@@ -309,7 +308,14 @@ func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	path, _ := args["path"].(string)
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
 	if path == "" {
 		return types.ToolResult{}, fmt.Errorf("path argument is required")
 	}
@@ -353,7 +359,14 @@ func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[str
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	path, _ := args["path"].(string)
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
 	if path == "" {
 		return types.ToolResult{}, fmt.Errorf("path argument is required")
 	}
@@ -397,8 +410,16 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	path, _ := args["path"].(string)
-	reason, _ := args["reason"].(string)
+	var params struct {
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	reason := params.Reason
 
 	if path == "" {
 		return types.ToolResult{}, fmt.Errorf("path argument is required")
@@ -455,8 +476,16 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	path, _ := args["path"].(string)
-	reason, _ := args["reason"].(string)
+	var params struct {
+		Path   string `json:"path"`
+		Reason string `json:"reason"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	reason := params.Reason
 
 	if path == "" {
 		return types.ToolResult{}, fmt.Errorf("path argument is required")
@@ -513,8 +542,15 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	question, ok := args["question"].(string)
-	if !ok || question == "" {
+	var params struct {
+		Question string `json:"question"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	question := params.Question
+	if question == "" {
 		return types.ToolResult{}, fmt.Errorf("question argument is required")
 	}
 
@@ -546,8 +582,15 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 }
 
 func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	url, ok := args["url"].(string)
-	if !ok || url == "" {
+	var params struct {
+		URL string `json:"url"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	url := params.URL
+	if url == "" {
 		return types.ToolResult{}, fmt.Errorf("url argument is required")
 	}
 
@@ -600,9 +643,19 @@ func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]in
 }
 
 func (m *systemManager) httpRequest(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	method, _ := args["method"].(string)
-	url, _ := args["url"].(string)
-	bodyStr, _ := args["body"].(string)
+	var params struct {
+		Method  string            `json:"method"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+		Body    string            `json:"body"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	method := params.Method
+	url := params.URL
+	bodyStr := params.Body
 
 	func() {
 		m.sm.TerminalLock()
@@ -620,12 +673,8 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 		return types.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if headers, ok := args["headers"].(map[string]interface{}); ok {
-		for k, v := range headers {
-			if val, ok := v.(string); ok {
-				req.Header.Set(k, val)
-			}
-		}
+	for k, v := range params.Headers {
+		req.Header.Set(k, v)
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -659,132 +708,28 @@ func (m *systemManager) httpRequest(ctx context.Context, args map[string]interfa
 	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func splitCommand(cmd string) ([]string, error) {
-	parts, err := shlex.Split(cmd)
-	if err != nil {
-		return nil, err
-	}
-	return parts, nil
-}
-
-func (m *systemManager) isSafeCommand(command string) bool {
-	// Whitelist of allowed base commands (strict exact match)
-	safeCommands := map[string]bool{
-		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
-		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-		"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
-		"go": true, // Adding go to whitelist but it will still need path checks
-	}
-
-	parts, err := splitCommand(command)
-	if err != nil || len(parts) == 0 {
-		return false
-	}
-	base := parts[0]
-
-	// 1. Check against whitelist
-	if !safeCommands[base] {
-		return false
-	}
-
-	// 2. Specialized Check for 'git': Only allow read-only subcommands
-	if base == "git" {
-		sub := ""
-		for i := 1; i < len(parts); i++ {
-			if strings.HasPrefix(parts[i], "-") {
-				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
-				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
-					i++
-				}
-				continue
-			}
-			sub = parts[i]
-			break
-		}
-
-		if sub == "" {
-			return false
-		}
-
-		readOnlyGit := map[string]bool{
-			"status": true, "log": true, "diff": true, "branch": true,
-			"show": true, "blame": true, "ls-files": true, "rev-parse": true,
-			"tag": true, "remote": true, "describe": true,
-		}
-		if !readOnlyGit[sub] {
-			return false
-		}
-	}
-
-	// 3. Specialized check for 'go': Only allow read-only or build/test subcommands
-	if base == "go" {
-		sub := ""
-		for i := 1; i < len(parts); i++ {
-			if strings.HasPrefix(parts[i], "-") {
-				continue
-			}
-			sub = parts[i]
-			break
-		}
-		allowedGo := map[string]bool{
-			"test": true, "list": true, "help": true, "version": true, "env": true,
-			"build": true, "run": true, "install": true, "get": true, "mod": true,
-			"vet": true, "fmt": true,
-		}
-		if !allowedGo[sub] {
-			return false
-		}
-	}
-
-	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
-	// We are extremely strict here to prevent shell injection.
-	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
-	for _, char := range unsafeChars {
-		if strings.Contains(command, char) {
-			return false
-		}
-	}
-
-	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	for i := 1; i < len(parts); i++ {
-		arg := parts[i]
-		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
-			// Skip empty args and simple flags like -la
-			continue
-		}
-		// Special case for Go's recursive package pattern
-		if arg == "./..." || arg == "..." {
-			continue
-		}
-		// If it's a flag with a path like --config=path
-		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
-			arg = strings.SplitN(arg, "=", 2)[1]
-		}
-
-		if err := m.sm.IsPathSafe(arg); err != nil {
-			// Some args might not be paths, but we try to check them anyway if they look like paths
-			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
-				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
 func (m *systemManager) executeCommand(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	command, ok := args["command"].(string)
-	if !ok || command == "" {
+	var params struct {
+		Command    string `json:"command"`
+		Reason     string `json:"reason"`
+		OutputFile string `json:"output_file"`
+		Append     bool   `json:"append"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	command := params.Command
+	if command == "" {
 		return types.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
-	reason, _ := args["reason"].(string)
-	outputFile, _ := args["output_file"].(string)
-	appendMode, _ := args["append"].(bool)
+	reason := params.Reason
+	outputFile := params.OutputFile
+	appendMode := params.Append
 
 	if outputFile != "" {
 		if err := m.sm.IsPathWritable(outputFile); err != nil {
@@ -909,23 +854,24 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
 
-	rawCommands, ok := args["commands"].([]interface{})
-	if !ok || len(rawCommands) < 2 {
+	var params struct {
+		Commands   []string `json:"commands"`
+		Reason     string   `json:"reason"`
+		OutputFile string   `json:"output_file"`
+		Append     bool     `json:"append"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	commands := params.Commands
+	if len(commands) < 2 {
 		return types.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
 	}
 
-	commands := make([]string, len(rawCommands))
-	for i, c := range rawCommands {
-		cmdStr, ok := c.(string)
-		if !ok || cmdStr == "" {
-			return types.ToolResult{}, fmt.Errorf("invalid command at index %d", i)
-		}
-		commands[i] = cmdStr
-	}
-
-	reason, _ := args["reason"].(string)
-	outputFile, _ := args["output_file"].(string)
-	appendMode, _ := args["append"].(bool)
+	reason := params.Reason
+	outputFile := params.OutputFile
+	appendMode := params.Append
 
 	if outputFile != "" {
 		if err := m.sm.IsPathWritable(outputFile); err != nil {
@@ -1081,4 +1027,118 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	}
 
 	return types.ToolResult{Text: fmt.Sprintf("Pipeline completed successfully. Exit Code: 0\nOutput:\n%s", output)}, nil
+}
+
+func splitCommand(cmd string) ([]string, error) {
+	parts, err := shlex.Split(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return parts, nil
+}
+
+func (m *systemManager) isSafeCommand(command string) bool {
+	// Whitelist of allowed base commands (strict exact match)
+	safeCommands := map[string]bool{
+		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
+		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
+		"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
+		"go": true, // Adding go to whitelist but it will still need path checks
+	}
+
+	parts, err := splitCommand(command)
+	if err != nil || len(parts) == 0 {
+		return false
+	}
+	base := parts[0]
+
+	// 1. Check against whitelist
+	if !safeCommands[base] {
+		return false
+	}
+
+	// 2. Specialized Check for 'git': Only allow read-only subcommands
+	if base == "git" {
+		sub := ""
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
+				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
+					i++
+				}
+				continue
+			}
+			sub = parts[i]
+			break
+		}
+
+		if sub == "" {
+			return false
+		}
+
+		readOnlyGit := map[string]bool{
+			"status": true, "log": true, "diff": true, "branch": true,
+			"show": true, "blame": true, "ls-files": true, "rev-parse": true,
+			"tag": true, "remote": true, "describe": true,
+		}
+		if !readOnlyGit[sub] {
+			return false
+		}
+	}
+
+	// 3. Specialized check for 'go': Only allow read-only or build/test subcommands
+	if base == "go" {
+		sub := ""
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], "-") {
+				continue
+			}
+			sub = parts[i]
+			break
+		}
+		allowedGo := map[string]bool{
+			"test": true, "list": true, "help": true, "version": true, "env": true,
+			"build": true, "run": true, "install": true, "get": true, "mod": true,
+			"vet": true, "fmt": true,
+		}
+		if !allowedGo[sub] {
+			return false
+		}
+	}
+
+	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	// We are extremely strict here to prevent shell injection.
+	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
+	for _, char := range unsafeChars {
+		if strings.Contains(command, char) {
+			return false
+		}
+	}
+
+	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	for i := 1; i < len(parts); i++ {
+		arg := parts[i]
+		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
+			// Skip empty args and simple flags like -la
+			continue
+		}
+		// Special case for Go's recursive package pattern
+		if arg == "./..." || arg == "..." {
+			continue
+		}
+		// If it's a flag with a path like --config=path
+		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
+			arg = strings.SplitN(arg, "=", 2)[1]
+		}
+
+		if err := m.sm.IsPathSafe(arg); err != nil {
+			// Some args might not be paths, but we try to check them anyway if they look like paths
+			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
+				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
+				return false
+			}
+		}
+	}
+
+	return true
 }

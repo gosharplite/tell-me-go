@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type devManager struct {
@@ -22,14 +21,14 @@ type devManager struct {
 func RegisterDevTools(r *Registry, sm *SecurityManager) {
 	m := &devManager{sm: sm}
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "run_tests",
 		Description: "Executes project tests using authorized tools (go, pytest, npm, cargo, make). Returns 'PASS' or truncated failure logs. Shell metacharacters are forbidden for security.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"command": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The test command to execute (e.g., 'go test ./...', 'npm test').",
 				},
 			},
@@ -37,57 +36,64 @@ func RegisterDevTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.runTests, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
 	}, m.goTidy, ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "get_coverage",
 		Description: "Runs Go tests with coverage and returns the summary.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The package path to test (default './...')",
 				},
 			},
 		},
 	}, m.getCoverage, ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "run_linter",
 		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
 	}, m.runLinter, ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "run_benchmark",
 		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The package path to benchmark (default './...')",
 				},
 				"bench": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Regex for benchmarks to run (default '.')",
 				},
 			},
 		},
 	}, m.runBenchmark, ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
 	}, m.checkVulnerabilities, ToolOptions{LongRunning: true})
 }
 
 func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	command, ok := args["command"].(string)
-	if !ok || command == "" {
+	var params struct {
+		Command string `json:"command"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	command := params.Command
+	if command == "" {
 		return types.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
@@ -161,9 +167,16 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 }
 
 func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path := "./..."
-	if p, ok := args["path"].(string); ok && p != "" {
-		path = p
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "./..."
 	}
 
 	func() {
@@ -228,13 +241,21 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 }
 
 func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path := "./..."
-	if p, ok := args["path"].(string); ok && p != "" {
-		path = p
+	var params struct {
+		Path  string `json:"path"`
+		Bench string `json:"bench"`
 	}
-	bench := "."
-	if b, ok := args["bench"].(string); ok && b != "" {
-		bench = b
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "./..."
+	}
+	bench := params.Bench
+	if bench == "" {
+		bench = "."
 	}
 
 	func() {

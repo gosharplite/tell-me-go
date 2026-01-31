@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 // Manager handles loading, saving, and manipulating conversation history.
@@ -152,7 +151,7 @@ func (m *Manager) addContentLocked(content *types.Content) error {
 		if lastRole == content.Role {
 			return fmt.Errorf("role alternation violation: last role was %s, cannot add another %s", lastRole, content.Role)
 		}
-	} else if content.Role != genai.RoleUser {
+	} else if content.Role != "user" {
 		// First message must be user
 		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
 	}

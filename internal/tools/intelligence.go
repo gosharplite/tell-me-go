@@ -23,7 +23,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"golang.org/x/tools/imports"
-	"google.golang.org/genai"
 )
 
 type intelligenceManager struct {
@@ -99,18 +98,18 @@ var globalASTCache = newASTCache()
 func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 	m := &intelligenceManager{sm: sm}
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"query": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The symbol name to find.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
@@ -118,32 +117,32 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.findUsages)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_implementations",
 		Description: "Map the relationship between interfaces and structs in the codebase.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
 		},
 	}, m.listImplementations)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_type_info",
 		Description: "Provides a detailed structural breakdown of a Go type, including fields, and all associated methods. Use this to understand internal state and behavior.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"typename": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The name of the type to inspect.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search for the type (defaults to '.')",
 				},
 			},
@@ -151,19 +150,19 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.getTypeInfo)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
 	}, m.getProjectSummary)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "search_usages_globally",
 		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"query": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The string or regex to search for.",
 				},
 			},
@@ -171,14 +170,14 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.searchUsagesGlobally)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "semantic_diff",
 		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"target": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The git target (commit hash, branch name, or 'HEAD~1') to compare against.",
 				},
 			},
@@ -186,22 +185,22 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.semanticDiff)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "rename_symbol",
 		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"old_name": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The current name of the symbol.",
 				},
 				"new_name": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The new name for the symbol.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
@@ -209,28 +208,28 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.renameSymbol, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_todos",
 		Description: "Scans the project for TODO, FIXME, or BUG comments.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to scan (defaults to '.')",
 				},
 			},
 		},
 	}, m.listTodos)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "go_doc",
 		Description: "Retrieves the official Go documentation and comments for a symbol or package. Best for understanding the intended usage of a library.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"symbol": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The package or symbol to get documentation for (e.g., 'fmt.Println', './internal/tools').",
 				},
 			},
@@ -238,14 +237,14 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.goDoc)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "analyze_complexity",
 		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The file or directory to analyze.",
 				},
 			},
@@ -253,27 +252,27 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.analyzeComplexity)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
 	}, m.getPackageGraph)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "move_definition",
 		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"symbol": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The name of the symbol to move.",
 				},
 				"src_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The source file path.",
 				},
 				"dst_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The destination file path.",
 				},
 			},
@@ -372,9 +371,18 @@ func getFileSkeletonGo(filePath string) (string, error) {
 }
 
 func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	symbol, _ := args["symbol"].(string)
-	srcPath, _ := args["src_file"].(string)
-	dstPath, _ := args["dst_file"].(string)
+	var params struct {
+		Symbol  string `json:"symbol"`
+		SrcFile string `json:"src_file"`
+		DstFile string `json:"dst_file"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	symbol := params.Symbol
+	srcPath := params.SrcFile
+	dstPath := params.DstFile
 
 	if err := m.sm.IsPathWritable(srcPath); err != nil {
 		return types.ToolResult{}, err
@@ -566,10 +574,19 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 }
 
 func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	oldName, _ := args["old_name"].(string)
-	newName, _ := args["new_name"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+	var params struct {
+		OldName string `json:"old_name"`
+		NewName string `json:"new_name"`
+		Path    string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	oldName := params.OldName
+	newName := params.NewName
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
@@ -641,8 +658,15 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 }
 
 func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
@@ -693,7 +717,14 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 }
 
 func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	symbol, _ := args["symbol"].(string)
+	var params struct {
+		Symbol string `json:"symbol"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	symbol := params.Symbol
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -710,7 +741,14 @@ func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interfa
 }
 
 func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path, _ := args["path"].(string)
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
 	if err := m.sm.IsPathSafe(path); err != nil {
 		return types.ToolResult{}, err
 	}
@@ -901,9 +939,17 @@ func exprToString(expr ast.Expr) string {
 // New Intelligence Tools Implementation
 
 func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	query, _ := args["query"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+	var params struct {
+		Query string `json:"query"`
+		Path  string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	query := params.Query
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
@@ -955,8 +1001,15 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 }
 
 func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
@@ -1069,9 +1122,17 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 }
 
 func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	typename, _ := args["typename"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+	var params struct {
+		Typename string `json:"typename"`
+		Path     string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	typename := params.Typename
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
@@ -1224,7 +1285,14 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 }
 
 func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	query, _ := args["query"].(string)
+	var params struct {
+		Query string `json:"query"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	query := params.Query
 	re, err := regexp.Compile(query)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
@@ -1295,7 +1363,14 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 }
 
 func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	target, _ := args["target"].(string)
+	var params struct {
+		Target string `json:"target"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	target := params.Target
 
 	// Get stat summary
 	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()

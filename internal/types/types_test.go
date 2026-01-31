@@ -49,7 +49,7 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 	assetData := []byte("image-data")
 	p := &Part{
 		AssetID: assetID,
-		InlineData: &genai.Blob{
+		InlineData: &Blob{
 			MIMEType: "image/png",
 		},
 	}

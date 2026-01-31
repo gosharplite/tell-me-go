@@ -51,10 +51,10 @@ func TestAgent_Setters(t *testing.T) {
 
 func TestAgent_EstimatePayloadTokens(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
-		Parameters:  &genai.Schema{Type: genai.TypeObject},
+		Parameters:  &types.Schema{Type: "OBJECT"},
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		return types.ToolResult{Text: "ok"}, nil
 	})
@@ -153,7 +153,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	registry := tools.NewRegistry()
 
 	// Tool that hangs
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name: "slow_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		time.Sleep(200 * time.Millisecond)
@@ -212,7 +212,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	registry := tools.NewRegistry()
 
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name: "gen_image",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
@@ -278,9 +278,9 @@ func TestAgentToolLoop(t *testing.T) {
 	registry := tools.NewRegistry()
 
 	// Register a dummy tool
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name:       "get_weather",
-		Parameters: &genai.Schema{Type: genai.TypeObject},
+		Parameters: &types.Schema{Type: "OBJECT"},
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		return types.ToolResult{Text: "Sunny"}, nil
 	})
@@ -348,7 +348,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	registry := tools.NewRegistry()
 
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name: "infinite_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		return types.ToolResult{Text: "Keep going"}, nil
@@ -413,7 +413,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	registry := tools.NewRegistry()
 
 	// Tool that takes some time
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name: "long_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		select {

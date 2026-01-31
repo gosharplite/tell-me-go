@@ -7,10 +7,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
@@ -24,32 +24,32 @@ type ToolOptions struct {
 
 // toolEntry stores a tool's definition, handler, and execution options.
 type toolEntry struct {
-	declaration *genai.FunctionDeclaration
+	declaration *types.ToolDeclaration
 	handler     ToolFunc
 	options     ToolOptions
 }
 
 // Registry maintains a mapping between function names and their Go implementations.
 type Registry struct {
-	declarations []*genai.FunctionDeclaration
+	declarations []*types.ToolDeclaration
 	entries      map[string]toolEntry
 }
 
 // NewRegistry initializes an empty tool registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		declarations: make([]*genai.FunctionDeclaration, 0),
+		declarations: make([]*types.ToolDeclaration, 0),
 		entries:      make(map[string]toolEntry),
 	}
 }
 
 // Register adds a new tool to the registry with default options.
-func (r *Registry) Register(def *genai.FunctionDeclaration, handler ToolFunc) {
+func (r *Registry) Register(def *types.ToolDeclaration, handler ToolFunc) {
 	r.RegisterWithOptions(def, handler, ToolOptions{})
 }
 
 // RegisterWithOptions adds a new tool to the registry with specific options.
-func (r *Registry) RegisterWithOptions(def *genai.FunctionDeclaration, handler ToolFunc, opts ToolOptions) {
+func (r *Registry) RegisterWithOptions(def *types.ToolDeclaration, handler ToolFunc, opts ToolOptions) {
 	r.declarations = append(r.declarations, def)
 	r.entries[def.Name] = toolEntry{
 		declaration: def,
@@ -59,7 +59,7 @@ func (r *Registry) RegisterWithOptions(def *genai.FunctionDeclaration, handler T
 }
 
 // GetDeclarations returns the list of function declarations.
-func (r *Registry) GetDeclarations() []*genai.FunctionDeclaration {
+func (r *Registry) GetDeclarations() []*types.ToolDeclaration {
 	return r.declarations
 }
 
@@ -88,14 +88,11 @@ func (r *Registry) IsLongRunning(name string) bool {
 	return false
 }
 
-// ToToolSDK converts declarations into the format expected by the GenAI SDK.
-func (r *Registry) ToToolSDK() []*genai.Tool {
-	if len(r.declarations) == 0 {
-		return nil
+// UnmarshalArgs helper converts map[string]interface{} to a target struct.
+func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
+	b, err := json.Marshal(args)
+	if err != nil {
+		return err
 	}
-	return []*genai.Tool{
-		{
-			FunctionDeclarations: r.declarations,
-		},
-	}
+	return json.Unmarshal(b, target)
 }

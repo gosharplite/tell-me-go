@@ -15,7 +15,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 type stateManager struct {
@@ -64,24 +63,24 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 	m.loadTasks()
 	m.initSessionInfo(configDir)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, m.getSessionInfo)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The operation to perform: 'read', 'write' (overwrite), 'append', or 'clear'.",
 					Enum:        []string{"read", "write", "append", "clear"},
 				},
 				"content": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The text content to write or append. Required for 'write' and 'append' actions.",
 				},
 			},
@@ -89,23 +88,23 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.manageScratchpad)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The operation to perform: 'set', 'get', 'list', 'delete'.",
 					Enum:        []string{"set", "get", "list", "delete"},
 				},
 				"key": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The configuration key (e.g., 'teams_webhook_url').",
 				},
 				"value": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The value to store (required for 'set').",
 				},
 			},
@@ -113,19 +112,19 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.manageConfig)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "configure_ux_preferences",
 		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"feature": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The UX feature to configure.",
 					Enum:        []string{"smart_suggestions"},
 				},
 				"status": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Whether the feature is 'on' or 'off'.",
 					Enum:        []string{"on", "off"},
 				},
@@ -134,27 +133,27 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.configureUXPreferences)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The action to perform: 'add', 'update', 'list', 'delete', 'clear'.",
 					Enum:        []string{"add", "update", "list", "delete", "clear"},
 				},
 				"task_id": {
-					Type:        genai.TypeNumber,
+					Type:        "NUMBER",
 					Description: "The ID of the task to update or delete.",
 				},
 				"content": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The task description (required for 'add').",
 				},
 				"status": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The new status (e.g., 'completed', 'pending') for 'update' or filter for 'list'.",
 				},
 			},

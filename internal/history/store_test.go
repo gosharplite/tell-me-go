@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 func TestJSONLStore_LargeLine(t *testing.T) {
@@ -22,7 +21,7 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
 	largeText := strings.Repeat("A", 200*1024)
 	largeContent := &types.Content{
-		Role:  genai.RoleUser,
+		Role:  "user",
 		Parts: []*types.Part{{Text: largeText}},
 	}
 
@@ -54,9 +53,9 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 
 	data := []byte("fake-image-data")
 	content := &types.Content{
-		Role: genai.RoleUser,
+		Role: "user",
 		Parts: []*types.Part{
-			{InlineData: &genai.Blob{MIMEType: "image/png", Data: data}},
+			{InlineData: &types.Blob{MIMEType: "image/png", Data: data}},
 		},
 	}
 
