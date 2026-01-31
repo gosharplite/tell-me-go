@@ -5,7 +5,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -96,10 +95,10 @@ func (cm *ContextManager) PrepareContents(ctx context.Context, turn int) ([]*typ
 
 	// 1. Enforce history turn limit
 	if cm.maxHistoryTurns > 0 && len(contents) > cm.maxHistoryTurns*2 {
-		pruned := cm.history.Prune(cm.maxHistoryTurns)
+		pruned, newContents := cm.history.Prune(cm.maxHistoryTurns)
 		if pruned > 0 {
 			cm.prunedTurns += pruned
-			contents = cm.history.GetContents()
+			contents = newContents
 		}
 	}
 
@@ -130,7 +129,7 @@ func (cm *ContextManager) EstimateTokens(contents []*types.Content) int {
 	for _, decl := range cm.registry.GetDeclarations() {
 		charCount += len(decl.Name) + len(decl.Description)
 		if decl.Parameters != nil {
-			charCount += 100
+			charCount += 200 // Heuristic for parameter definitions
 		}
 	}
 	for _, c := range contents {
@@ -140,20 +139,55 @@ func (cm *ContextManager) EstimateTokens(contents []*types.Content) int {
 			}
 			if p.FunctionCall != nil {
 				charCount += len(p.FunctionCall.Name)
-				if b, err := json.Marshal(p.FunctionCall.Args); err == nil {
-					charCount += len(b)
-				}
+				charCount += cm.estimateMapSize(p.FunctionCall.Args)
 			}
 			if p.FunctionResponse != nil {
 				charCount += len(p.FunctionResponse.Name)
-				if b, err := json.Marshal(p.FunctionResponse.Response); err == nil {
-					charCount += len(b)
-				}
+				charCount += cm.estimateMapSize(p.FunctionResponse.Response)
+			}
+			if p.InlineData != nil {
+				charCount += 50 // Minimal tokens for blob reference
 			}
 		}
 	}
-	charCount += 1000
+	charCount += 1000 // Base overhead
 	return int(float64(charCount) / 3.2)
+}
+
+func (cm *ContextManager) estimateMapSize(m map[string]interface{}) int {
+	if m == nil {
+		return 0
+	}
+	size := 0
+	for k, v := range m {
+		size += len(k)
+		size += cm.estimateValueSize(v)
+	}
+	return size
+}
+
+func (cm *ContextManager) estimateValueSize(v interface{}) int {
+	if v == nil {
+		return 4
+	}
+	switch val := v.(type) {
+	case string:
+		return len(val)
+	case float64, int, int64:
+		return 10
+	case bool:
+		return 5
+	case map[string]interface{}:
+		return cm.estimateMapSize(val)
+	case []interface{}:
+		size := 0
+		for _, item := range val {
+			size += cm.estimateValueSize(item)
+		}
+		return size
+	default:
+		return 20
+	}
 }
 
 func (cm *ContextManager) injectWarnings(contents []*types.Content, turn, tokens, currentTurns int) []*types.Content {

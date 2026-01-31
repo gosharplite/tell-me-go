@@ -153,11 +153,11 @@ func TestHistoryManager_Prune(t *testing.T) {
 				_ = m2.AddContent(&types.Content{Role: c.Role, Parts: c.Parts})
 			}
 
-			m2.Prune(tt.maxTurns)
-			if len(m2.GetContents()) != tt.wantLen {
-				t.Errorf("Prune(%d) got %d messages, want %d", tt.maxTurns, len(m2.GetContents()), tt.wantLen)
+			_, contents := m2.Prune(tt.maxTurns)
+			if len(contents) != tt.wantLen {
+				t.Errorf("Prune(%d) got %d messages, want %d", tt.maxTurns, len(contents), tt.wantLen)
 			}
-			if tt.wantLen > 0 && m2.GetContents()[0].Role != "user" {
+			if tt.wantLen > 0 && contents[0].Role != "user" {
 				t.Errorf("Prune(%d) first message is not 'user'", tt.maxTurns)
 			}
 		})

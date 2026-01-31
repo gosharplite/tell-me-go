@@ -123,7 +123,7 @@ func (a *App) Run(args []string) error {
 	if err := hManager.Load(); err != nil {
 		return fmt.Errorf("error loading history: %v", err)
 	}
-	pruned := hManager.Prune(cfg.MaxHistoryTurns)
+	pruned, _ := hManager.Prune(cfg.MaxHistoryTurns)
 
 	if opts.lastN > 0 {
 		a.showHistory(hManager, opts.lastN, opts.rawOutput)

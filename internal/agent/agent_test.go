@@ -35,7 +35,7 @@ func TestAgent_Setters(t *testing.T) {
 	}
 
 	a.SetConcurrency(10, 60)
-	if a.maxConcurrentTools != 10 || a.toolTimeout != 60*time.Second {
+	if a.executor.maxConcurrentTools != 10 || a.executor.toolTimeout != 60*time.Second {
 		t.Error("SetConcurrency failed")
 	}
 
@@ -137,7 +137,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, registry, sm)
-	a.toolTimeout = 50 * time.Millisecond // Short timeout
+	a.executor.toolTimeout = 50 * time.Millisecond // Short timeout
 
 	_ = a.Chat(context.Background(), "Run slow tool")
 

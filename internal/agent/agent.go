@@ -44,7 +44,9 @@ type UIRenderer interface {
 	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
 	LogTurnStatus(status TurnStatus)
 	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+	LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool)
 	LogToolResult(name string, result types.ToolResult, showTools bool)
+	LogSystemMessage(msg string, level string)
 }
 
 // TurnStatus contains the data needed for rendering turn status.
@@ -68,9 +70,8 @@ type Agent struct {
 	renderer             UIRenderer
 	configWatcher        *ConfigWatcher
 	contextManager       *ContextManager
+	executor             *ToolExecutor
 	logFile              string
-	maxConcurrentTools   int
-	toolTimeout          time.Duration
 	showThoughts         bool
 	showTools            bool
 	rawOutput            bool
@@ -81,20 +82,20 @@ type Agent struct {
 
 // New creates a new Agent.
 func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
+	renderer := NewStdUIRenderer(sm)
 	a := &Agent{
-		client:             client,
-		history:            hManager,
-		registry:           registry,
-		sm:                 sm,
-		renderer:           NewStdUIRenderer(sm),
-		configWatcher:      NewConfigWatcher(120000, 10, 20),
-		contextManager:     NewContextManager(client, hManager, registry, sm),
-		maxConcurrentTools: 5,
-		toolTimeout:        30 * time.Second,
-		showThoughts:       true,
-		showTools:          true,
-		rawOutput:          false,
-		startTime:          time.Now(),
+		client:         client,
+		history:        hManager,
+		registry:       registry,
+		sm:             sm,
+		renderer:       renderer,
+		configWatcher:  NewConfigWatcher(120000, 10, 20),
+		contextManager: NewContextManager(client, hManager, registry, sm),
+		executor:       NewToolExecutor(registry, sm, hManager, renderer),
+		showThoughts:   true,
+		showTools:      true,
+		rawOutput:      false,
+		startTime:      time.Now(),
 	}
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
@@ -122,6 +123,7 @@ func (a *Agent) registerInternalTools() {
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
+	a.executor.SetShowTools(showTools)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
@@ -137,12 +139,7 @@ func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 
 // SetConcurrency sets the parallel execution limits for the agent.
 func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
-	if maxConcurrent > 0 {
-		a.maxConcurrentTools = maxConcurrent
-	}
-	if timeoutSeconds > 0 {
-		a.toolTimeout = time.Duration(timeoutSeconds) * time.Second
-	}
+	a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
 }
 
 // SetLogFile sets the path for usage logging.
@@ -171,6 +168,7 @@ func (a *Agent) SetMainConfigPath(path string) {
 func (a *Agent) SetRenderer(renderer UIRenderer) {
 	if renderer != nil {
 		a.renderer = renderer
+		a.executor.renderer = renderer
 	}
 }
 
@@ -243,11 +241,7 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 			// Handle 401 Unauthorized for streaming
 			if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-				func() {
-					a.sm.TerminalLock()
-					defer a.sm.TerminalUnlock()
-					fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-				}()
+				a.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
 				if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
 					// Finalize the failed stream before retrying to prevent goroutine leak
 					_ = finalize()
@@ -272,7 +266,8 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 		// 4. Handle Tool Execution
 		toolStart := time.Now()
-		err = a.handleToolExecution(ctx, respContent, turn)
+		_, maxToolTurns, _ := a.contextManager.GetLimits()
+		err = a.executor.Execute(ctx, respContent, turn, maxToolTurns)
 		if metrics != nil {
 			metrics.ToolDuration = time.Since(toolStart).Seconds()
 		}
@@ -306,10 +301,7 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 }
 
 func (a *Agent) reportHistoryError(err error) {
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
-	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history entry: %v\033[0m\n",
-		time.Now().Format("15:04:05"), err)
+	a.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
 }
 
 func (a *Agent) hasToolCalls(content *types.Content) bool {

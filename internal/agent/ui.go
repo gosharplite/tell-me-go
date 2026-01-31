@@ -306,6 +306,37 @@ func (r *StdUIRenderer) mergePart(dst *types.Content, src *types.Part) {
 	})
 }
 
+func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool) {
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+
+	var names []string
+	for _, fc := range calls {
+		names = append(names, fc.Name)
+	}
+
+	cyan := "\033[0;36m"
+	reset := "\033[0m"
+
+	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
+		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxTurns, strings.Join(names, ", "), reset)
+
+	if showTools {
+		for _, fc := range calls {
+			var argParts []string
+			for k, v := range fc.Args {
+				valStr := fmt.Sprintf("%v", v)
+				if len(valStr) > 60 {
+					valStr = valStr[:57] + "..."
+				}
+				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
+			}
+			fmt.Fprintf(r.stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
+				time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
+		}
+	}
+}
+
 func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, showTools bool) {
 	if !showTools {
 		return
@@ -332,6 +363,29 @@ func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, show
 		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
 			cyan, timestamp, name, b.MIMEType, len(b.Data), reset)
 	}
+}
+
+func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+
+	color := "\033[0;90m" // Gray
+	prefix := "System"
+
+	switch level {
+	case "error":
+		color = "\033[0;31m" // Red
+		prefix = "Error"
+	case "warn":
+		color = "\033[0;90m" // Gray for consistency with previous reportHistoryError
+		prefix = "Warning"
+	case "info":
+		color = "\033[0;36m" // Cyan
+		prefix = "Info"
+	}
+
+	fmt.Fprintf(r.stderr, "%s[%s] [%s] %s\033[0m\n",
+		color, time.Now().Format("15:04:05"), prefix, msg)
 }
 
 func (r *StdUIRenderer) renderMarkdown(text string) {

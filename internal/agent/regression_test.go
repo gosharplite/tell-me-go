@@ -142,7 +142,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// We simulate the Chat call's internal pruning logic
 	contents := h.GetContents()
 	if len(contents) > 2*2 { // Limit is 2 turns
-		pruned := h.Prune(2)
+		pruned, _ := h.Prune(2)
 		if pruned == 0 {
 			t.Error("Expected history to be pruned")
 		}

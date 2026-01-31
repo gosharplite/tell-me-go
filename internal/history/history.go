@@ -181,15 +181,12 @@ func (m *Manager) Rollback() {
 }
 
 // Prune reduces the history when it exceeds maxTurns.
-// To improve cache efficiency, it doesn't just prune 1 turn;
-// it prunes down to 50% of maxTurns to allow for a stable cache prefix
-// during the next 50% of the conversation.
-// Returns the number of turns removed.
-func (m *Manager) Prune(maxTurns int) int {
+// Returns the number of turns removed and the new contents.
+func (m *Manager) Prune(maxTurns int) (int, []*types.Content) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if maxTurns <= 0 {
-		return 0
+		return 0, m.contentsLocked()
 	}
 	maxMessages := maxTurns * 2
 	if len(m.Contents) > maxMessages {
@@ -205,10 +202,16 @@ func (m *Manager) Prune(maxTurns int) int {
 		if removeCount > 0 && removeCount < len(m.Contents) {
 			m.Contents = m.Contents[removeCount:]
 			m.saveLocked() // Persist pruning
-			return removeCount / 2
+			return removeCount / 2, m.contentsLocked()
 		}
 	}
-	return 0
+	return 0, m.contentsLocked()
+}
+
+func (m *Manager) contentsLocked() []*types.Content {
+	contents := make([]*types.Content, len(m.Contents))
+	copy(contents, m.Contents)
+	return contents
 }
 
 // GetContents returns the current history contents.
