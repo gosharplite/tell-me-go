@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"golang.org/x/term"
 )
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
@@ -147,9 +148,10 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	aggregated := &types.Content{Role: "model"}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	
-	// Track state for incremental rendering
+
+	// Track state for incremental rendering and cleanup
 	thoughtActive := false
+	var totalText strings.Builder
 
 	go func() {
 		defer wg.Done()
@@ -193,6 +195,7 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 						}
 						// For text, we stream it raw to terminal
 						fmt.Print(part.Text)
+						totalText.WriteString(part.Text)
 					}
 
 					if part.InlineData != nil {
@@ -217,10 +220,43 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		once.Do(func() {
 			close(ch)
 			wg.Wait()
-			// If not raw output, we might want to "cleanup" the output by rendering markdown at the end.
-			// But since we already printed raw text, this might look messy.
-			// For now, we'll just return the aggregated content.
 			if !rawOutput {
+				fullText := totalText.String()
+				if fullText != "" {
+					// 1. Calculate how many lines the raw text occupied to "clear" it
+					width, _, err := term.GetSize(int(os.Stdout.Fd()))
+					if err != nil {
+						width = 80 // Fallback
+					}
+
+					lines := 0
+					currentLineLen := 0
+					for _, r := range fullText {
+						if r == '\n' {
+							lines++
+							currentLineLen = 0
+						} else {
+							currentLineLen++
+							if currentLineLen >= width {
+								lines++
+								currentLineLen = 0
+							}
+						}
+					}
+					// If there was any text remaining on the last line, it counts as a line
+					if currentLineLen > 0 {
+						lines++
+					}
+
+					// 2. Move cursor up and clear from there
+					if lines > 0 {
+						// \033[A moves cursor up, \r moves to start, \033[J clears to end of screen
+						fmt.Printf("\r\033[%dA\033[J", lines)
+					}
+
+					// 3. Render pretty version
+					r.renderMarkdown(fullText)
+				}
 				fmt.Println() // Ensure we end on a new line
 			}
 		})
