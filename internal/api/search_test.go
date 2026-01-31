@@ -6,14 +6,12 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -67,8 +65,9 @@ func TestSearchToolSelection(t *testing.T) {
 					capturer.Set(tools)
 				}
 				if strings.Contains(r.URL.Path, "streamGenerateContent") {
-					w.Header().Set("Content-Type", "application/json")
-					fmt.Fprint(w, `[{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}]`)
+					// Just return 200 OK to satisfy the request. 
+					// The SDK might complain about empty stream but we capture tools.
+					w.WriteHeader(http.StatusOK)
 				} else {
 					w.Write([]byte(`{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}`))
 				}
@@ -93,10 +92,10 @@ func TestSearchToolSelection(t *testing.T) {
 			capturer.Set(nil)
 
 			// Test StreamChat
-			_, _ = client.StreamChat(context.Background(), nil, nil, nil, func(c *types.Content) {})
-			
-			// Give a small window for the stream request to be processed if it was asynchronous, 
-			// though here it's called synchronously.
+			_, err = client.StreamChat(context.Background(), nil, nil, nil, func(c *types.Content) {})
+			if err != nil {
+				t.Fatalf("StreamChat failed: %v", err)
+			}
 			verifyTools(t, capturer.Get(), tt.expectSearch, "StreamChat")
 		})
 	}
@@ -104,12 +103,6 @@ func TestSearchToolSelection(t *testing.T) {
 
 func verifyTools(t *testing.T, capturedTools []interface{}, expectSearch bool, method string) {
 	t.Helper()
-	// Wait a bit if needed for async captures, though current implementation is sync.
-	// For robustness in future refactors of Client.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) && len(capturedTools) == 0 && expectSearch {
-		time.Sleep(10 * time.Millisecond)
-	}
 
 	foundSearch := false
 	foundRetrieval := false
