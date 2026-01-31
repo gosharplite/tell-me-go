@@ -92,3 +92,97 @@ func TestOSFileSystem(t *testing.T) {
 		}
 	})
 }
+
+func TestIsBinary(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"text", []byte("hello world"), false},
+		{"binary_start", []byte{0x00, 0x01, 0x02}, true},
+		{"binary_middle", []byte("hello\x00world"), true},
+		{"empty", []byte{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsBinary(tt.data); got != tt.want {
+				t.Errorf("IsBinary() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOSFileSystem_ContextCancellation(t *testing.T) {
+	fs := &OSFileSystem{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+	_ = os.WriteFile(path, []byte("data"), 0644)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	t.Run("ReadDir cancelled", func(t *testing.T) {
+		if _, err := fs.ReadDir(ctx, "."); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("ReadFile cancelled", func(t *testing.T) {
+		if _, err := fs.ReadFile(ctx, path); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("MkdirAll cancelled", func(t *testing.T) {
+		if err := fs.MkdirAll(ctx, filepath.Join(tmpDir, "new"), 0755); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("Stat cancelled", func(t *testing.T) {
+		if _, err := fs.Stat(ctx, path); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("Open cancelled", func(t *testing.T) {
+		if _, err := fs.Open(ctx, path); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("OpenFile cancelled", func(t *testing.T) {
+		if _, err := fs.OpenFile(ctx, path, os.O_RDONLY, 0644); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("Remove cancelled", func(t *testing.T) {
+		if err := fs.Remove(ctx, path); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("Walk cancelled", func(t *testing.T) {
+		if err := fs.Walk(ctx, tmpDir, func(path string, info os.FileInfo, err error) error {
+			return nil
+		}); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+}
+
+func TestOSFileSystem_OpenFile(t *testing.T) {
+	fs := &OSFileSystem{}
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "openfile.txt")
+	ctx := context.Background()
+
+	f, err := fs.OpenFile(ctx, path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write([]byte("hello")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("file should exist: %v", err)
+	}
+}

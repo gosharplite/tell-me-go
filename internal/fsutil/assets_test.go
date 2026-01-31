@@ -92,3 +92,12 @@ func TestAssetStore(t *testing.T) {
 		}
 	})
 }
+
+func TestAssetStore_WithFileSystem(t *testing.T) {
+	tmpDir := t.TempDir()
+	fs := &OSFileSystem{}
+	store := NewAssetStore(tmpDir).WithFileSystem(fs)
+	if store.fs != fs {
+		t.Error("WithFileSystem failed to set filesystem")
+	}
+}
