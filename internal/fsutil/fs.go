@@ -64,7 +64,6 @@ func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, 
 	return os.OpenFile(name, flag, perm)
 }
 
-
 func (f *OSFileSystem) Remove(name string) error {
 	return os.Remove(name)
 }
