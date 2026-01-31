@@ -34,7 +34,7 @@ func TestContextStrategy_EstimateValueSize(t *testing.T) {
 		{"float", 123.45, 10},
 		{"bool", true, 5},
 		{"nil", nil, 4},
-		{"slice", []interface{}{1, "a"}, 11}, // 10 + 1
+		{"slice", []interface{}{1, "a"}, 11},             // 10 + 1
 		{"map", map[string]interface{}{"key": "val"}, 6}, // "key"(3) + "val"(3)
 		{"nested", map[string]any{"s": []any{1, 2}}, 21}, // "s" (1) + (10+10)
 		{"deeply_nested", map[string]any{

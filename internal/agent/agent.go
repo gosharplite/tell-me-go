@@ -123,6 +123,10 @@ func (a *Agent) registerInternalTools() {
 					Type:        "NUMBER",
 					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
 				},
+				"focus": {
+					Type:        "STRING",
+					Description: "Optional: Specific aspects to focus on in the summary (e.g., 'architecture decisions').",
+				},
 			},
 			Required: []string{"turns"},
 		},

@@ -100,7 +100,7 @@ func (cm *ContextManager) AutoSummarize(ctx context.Context) error {
 		msgsToSummarize = 2
 	}
 
-	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize])
+	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize], "")
 	if err != nil {
 		return err
 	}
@@ -120,13 +120,17 @@ func (cm *ContextManager) AutoSummarize(ctx context.Context) error {
 }
 
 // PerformSummarization calls the LLM to compress a subset of history.
-func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*types.Content) (string, error) {
+func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*types.Content, focus string) (string, error) {
 	cm.Renderer.LogSystemMessage(fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)), "info")
 
 	summarizerInput := append([]*types.Content{}, subset...)
+	prompt := SummarizationPrompt
+	if focus != "" {
+		prompt += fmt.Sprintf("\nFocus: %s", focus)
+	}
 	summarizerInput = append(summarizerInput, &types.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: SummarizationPrompt}},
+		Parts: []*types.Part{{Text: prompt}},
 	})
 
 	respCh, finalize := cm.Gateway.Generate(ctx, summarizerInput, nil, cm.History.GetResolver())
@@ -149,6 +153,7 @@ func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*ty
 func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
+		Focus string  `json:"focus"`
 	}
 	if err := types.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -156,23 +161,24 @@ func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[str
 
 	targetTurns := int(params.Turns)
 	if targetTurns <= 0 {
-		return types.ToolResult{}, fmt.Errorf("invalid 'turns' parameter")
+		return types.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
+	}
+
+	contents := cm.History.GetContents()
+	// We must leave at least the last turn (2 messages) and the current prompt
+	// to maintain context continuity.
+	maxSummarizable := (len(contents) - 2) / 2
+	if targetTurns > maxSummarizable {
+		targetTurns = maxSummarizable
+	}
+
+	if targetTurns <= 0 {
+		return types.ToolResult{Text: "History is too short to summarize yet."}, nil
 	}
 
 	msgsToSummarize := targetTurns * 2
-	contents := cm.History.GetContents()
 
-	if msgsToSummarize >= len(contents) {
-		msgsToSummarize = len(contents) - 1
-	}
-	if msgsToSummarize%2 != 0 {
-		msgsToSummarize--
-	}
-	if msgsToSummarize <= 0 {
-		return types.ToolResult{Text: "No history to summarize."}, nil
-	}
-
-	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize])
+	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize], params.Focus)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
