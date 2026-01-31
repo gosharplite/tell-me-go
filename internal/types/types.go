@@ -22,6 +22,7 @@ type Part struct {
 	FunctionCall     *genai.FunctionCall `json:"function_call,omitempty"`
 	FunctionResponse *genai.FunctionResponse `json:"function_response,omitempty"`
 	Thought          bool              `json:"thought,omitempty"`
+	ThoughtSignature []byte            `json:"thought_signature,omitempty"`
 	AssetID          string            `json:"asset_id,omitempty"` // Local reference for persistence
 }
 
@@ -53,6 +54,7 @@ func (p *Part) ToSDK() *genai.Part {
 		FunctionCall:     p.FunctionCall,
 		FunctionResponse: p.FunctionResponse,
 		Thought:          p.Thought,
+		ThoughtSignature: p.ThoughtSignature,
 	}
 }
 
@@ -81,6 +83,7 @@ func FromSDKPart(p *genai.Part) *Part {
 		FunctionCall:     p.FunctionCall,
 		FunctionResponse: p.FunctionResponse,
 		Thought:          p.Thought,
+		ThoughtSignature: p.ThoughtSignature,
 	}
 }
 

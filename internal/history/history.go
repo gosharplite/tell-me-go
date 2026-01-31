@@ -108,7 +108,7 @@ func (m *Manager) cleanLocked() {
 func (m *Manager) cleanContentLocked(content *types.Content) {
 	var cleanParts []*types.Part
 	for _, p := range content.Parts {
-		if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
+		if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought && len(p.ThoughtSignature) == 0 {
 			continue
 		}
 		cleanParts = append(cleanParts, p)
