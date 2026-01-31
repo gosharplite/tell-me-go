@@ -101,6 +101,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	tools.RegisterStateTools(registry, a.sm, paths.modeDir)
 	tools.RegisterMetricsTools(registry, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
 	tools.RegisterMediaTools(registry, a.sm, client)
+	tools.RegisterReleaseTools(registry, a.sm)
 	return registry
 }
 
