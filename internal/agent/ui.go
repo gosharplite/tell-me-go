@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -19,12 +20,24 @@ import (
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
 type StdUIRenderer struct {
-	sm *tools.SecurityManager
+	sm     *tools.SecurityManager
+	stdout io.Writer
+	stderr io.Writer
 }
 
 // NewStdUIRenderer creates a new StdUIRenderer.
 func NewStdUIRenderer(sm *tools.SecurityManager) *StdUIRenderer {
-	return &StdUIRenderer{sm: sm}
+	return &StdUIRenderer{
+		sm:     sm,
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+	}
+}
+
+// SetWriters allows overriding the output writers (primarily for testing).
+func (r *StdUIRenderer) SetWriters(stdout, stderr io.Writer) {
+	r.stdout = stdout
+	r.stderr = stderr
 }
 
 func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime time.Time) {
@@ -73,10 +86,10 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 		}
 
 		if isActual {
-			fmt.Fprintf(os.Stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
+			fmt.Fprintf(r.stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
 				gray, timestamp, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		} else {
-			fmt.Fprintf(os.Stderr, "%s[%s] [Turn (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
+			fmt.Fprintf(r.stderr, "%s[%s] [Turn (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
 				gray, timestamp, reset, status.CurrentTurns, gray, status.MaxHistoryTurns, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		}
 	}
@@ -108,7 +121,7 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 		}
 
-		fmt.Fprintf(os.Stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
 			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
 	}
 }
@@ -117,16 +130,16 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			r.sm.TerminalLock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
 			r.sm.TerminalUnlock()
 		}
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
 			if rawOutput {
-				fmt.Print(part.Text)
+				fmt.Fprint(r.stdout, part.Text)
 				if !strings.HasSuffix(part.Text, "\n") {
-					fmt.Println()
+					fmt.Fprintln(r.stdout)
 				}
 			} else {
 				r.renderMarkdown(part.Text)
@@ -135,7 +148,7 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 
 		if part.InlineData != nil {
 			r.sm.TerminalLock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
 				time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
 			r.sm.TerminalUnlock()
 		}
@@ -163,7 +176,7 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 				if !ok {
 					if thoughtActive {
 						r.sm.TerminalLock()
-						fmt.Fprintf(os.Stderr, "\033[0m\n")
+						fmt.Fprintf(r.stderr, "\033[0m\n")
 						r.sm.TerminalUnlock()
 					}
 					return
@@ -177,36 +190,36 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 					if part.Thought {
 						if !thoughtActive && showThoughts {
 							r.sm.TerminalLock()
-							fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05"))
+							fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05"))
 							r.sm.TerminalUnlock()
 							thoughtActive = true
 						}
 						if showThoughts {
 							r.sm.TerminalLock()
-							fmt.Fprintf(os.Stderr, "\033[0;90m%s\033[0m", part.Text)
+							fmt.Fprintf(r.stderr, "\033[0;90m%s\033[0m", part.Text)
 							r.sm.TerminalUnlock()
 						}
 					} else if part.Text != "" {
 						if thoughtActive {
 							r.sm.TerminalLock()
-							fmt.Fprintf(os.Stderr, "\033[0m\n") // Close thinking block
+							fmt.Fprintf(r.stderr, "\033[0m\n") // Close thinking block
 							r.sm.TerminalUnlock()
 							thoughtActive = false
 						}
 						// For text, we stream it raw to terminal
-						fmt.Print(part.Text)
+						fmt.Fprint(r.stdout, part.Text)
 						totalText.WriteString(part.Text)
 					}
 
 					if part.InlineData != nil {
 						if thoughtActive {
 							r.sm.TerminalLock()
-							fmt.Fprintf(os.Stderr, "\033[0m\n")
+							fmt.Fprintf(r.stderr, "\033[0m\n")
 							r.sm.TerminalUnlock()
 							thoughtActive = false
 						}
 						r.sm.TerminalLock()
-						fmt.Fprintf(os.Stderr, "\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+						fmt.Fprintf(r.stderr, "\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
 							time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
 						r.sm.TerminalUnlock()
 					}
@@ -224,9 +237,12 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 				fullText := totalText.String()
 				if fullText != "" {
 					// 1. Calculate how many lines the raw text occupied to "clear" it
-					width, _, err := term.GetSize(int(os.Stdout.Fd()))
-					if err != nil {
-						width = 80 // Fallback
+					// Try to get terminal size, if possible
+					width := 80
+					if f, ok := r.stdout.(*os.File); ok {
+						if w, _, err := term.GetSize(int(f.Fd())); err == nil {
+							width = w
+						}
 					}
 
 					lines := 0
@@ -251,13 +267,13 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 					// 2. Move cursor up and clear from there
 					if lines > 0 {
 						// \033[A moves cursor up, \r moves to start, \033[J clears to end of screen
-						fmt.Printf("\r\033[%dA\033[J", lines)
+						fmt.Fprintf(r.stdout, "\r\033[%dA\033[J", lines)
 					}
 
 					// 3. Render pretty version
 					r.renderMarkdown(fullText)
 				}
-				fmt.Println() // Ensure we end on a new line
+				fmt.Fprintln(r.stdout) // Ensure we end on a new line
 			}
 		})
 		return aggregated
@@ -306,11 +322,11 @@ func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, show
 		}
 		// Clean up newlines for a compact log
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		fmt.Fprintf(os.Stderr, "%s[%s] [Tool Result] %s: %s%s\n", cyan, timestamp, name, snippet, reset)
+		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: %s%s\n", cyan, timestamp, name, snippet, reset)
 	}
 
 	for _, b := range result.BinaryData {
-		fmt.Fprintf(os.Stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
 			cyan, timestamp, name, b.MIMEType, len(b.Data), reset)
 	}
 }
@@ -323,8 +339,8 @@ func (r *StdUIRenderer) renderMarkdown(text string) {
 
 	out, err := renderer.Render(text)
 	if err != nil {
-		fmt.Print(text)
+		fmt.Fprint(r.stdout, text)
 	} else {
-		fmt.Print(out)
+		fmt.Fprint(r.stdout, out)
 	}
 }
