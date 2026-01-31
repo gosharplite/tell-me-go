@@ -1372,17 +1372,9 @@ func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]
 
 	target := params.Target
 
-	// Get stat summary
-	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("git diff --stat failed: %s", string(statOut))
-	}
-
-	// Get summary of changes
-	summaryOut, err := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
-	}
+	// 1. Get stats and summary as before
+	statOut, _ := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
+	summaryOut, _ := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
 
 	var sb strings.Builder
 	sb.WriteString("Semantic Diff Summary:\n\n")
@@ -1391,24 +1383,140 @@ func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]
 	sb.WriteString("\nChange Summary:\n")
 	sb.WriteString(string(summaryOut))
 
-	// Try to extract changed Go functions if it's a small diff
-	funcDiff, err := exec.CommandContext(ctx, "git", "diff", "-U0", "--no-color", target).CombinedOutput()
-	if err == nil {
-		sb.WriteString("\nLogical Changes (Functions):\n")
-		lines := strings.Split(string(funcDiff), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "@@") {
-				// git diff -U0 includes function name in the hunk header
-				parts := strings.SplitN(line, "@@", 3)
-				if len(parts) >= 3 {
-					funcName := strings.TrimSpace(parts[2])
-					if funcName != "" {
-						sb.WriteString(fmt.Sprintf("  - %s\n", funcName))
-					}
+	// 2. Logical Analysis
+	sb.WriteString("\nLogical Code Changes:\n")
+
+	// Get list of changed .go files
+	filesOut, err := exec.CommandContext(ctx, "git", "diff", "--name-only", target).CombinedOutput()
+	if err != nil {
+		return types.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
+	}
+
+	changedFiles := strings.Split(strings.TrimSpace(string(filesOut)), "\n")
+	fset := token.NewFileSet()
+
+	for _, relPath := range changedFiles {
+		if filepath.Ext(relPath) != ".go" || strings.Contains(relPath, "vendor/") {
+			continue
+		}
+
+		// Get current AST
+		currAST, _, err := globalASTCache.get(relPath)
+		if err != nil {
+			continue // Skip unparsable current files
+		}
+
+		// Get target AST (base)
+		var baseAST *ast.File
+		baseContent, err := exec.CommandContext(ctx, "git", "show", target+":"+relPath).Output()
+		if err == nil {
+			baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
+		}
+
+		var changes []string
+		if baseAST == nil {
+			// Entirely new file
+			for _, d := range currAST.Decls {
+				key := getDeclKey(d)
+				if key != "unknown" {
+					changes = append(changes, "Added: "+key)
 				}
+			}
+		} else {
+			changes = compareASTs(baseAST, currAST)
+		}
+		if len(changes) > 0 {
+			sb.WriteString(fmt.Sprintf("\n[%s]\n", relPath))
+			for _, ch := range changes {
+				sb.WriteString(fmt.Sprintf("  - %s\n", ch))
 			}
 		}
 	}
 
 	return types.ToolResult{Text: sb.String()}, nil
+}
+
+func compareASTs(base, curr *ast.File) []string {
+	var changes []string
+
+	baseDecls := map[string]ast.Decl{}
+	for _, d := range base.Decls {
+		baseDecls[getDeclKey(d)] = d
+	}
+
+	currDecls := map[string]ast.Decl{}
+	for _, d := range curr.Decls {
+		currDecls[getDeclKey(d)] = d
+	}
+
+	// Find Added and Modified
+	var keys []string
+	for k := range currDecls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		currDecl := currDecls[k]
+		if baseDecl, ok := baseDecls[k]; !ok {
+			changes = append(changes, "Added: "+k)
+		} else {
+			if !isDeclEqual(baseDecl, currDecl) {
+				changes = append(changes, "Modified: "+k)
+			}
+		}
+	}
+
+	// Find Deleted
+	var baseKeys []string
+	for k := range baseDecls {
+		baseKeys = append(baseKeys, k)
+	}
+	sort.Strings(baseKeys)
+
+	for _, k := range baseKeys {
+		if _, ok := currDecls[k]; !ok {
+			changes = append(changes, "Deleted: "+k)
+		}
+	}
+
+	return changes
+}
+
+func getDeclKey(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		name := d.Name.Name
+		if d.Recv != nil && len(d.Recv.List) > 0 {
+			recv := exprToString(d.Recv.List[0].Type)
+			return fmt.Sprintf("func (%s) %s", recv, name)
+		}
+		return "func " + name
+	case *ast.GenDecl:
+		if d.Tok == token.TYPE && len(d.Specs) > 0 {
+			if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
+				return "type " + ts.Name.Name
+			}
+		}
+		if d.Tok == token.CONST && len(d.Specs) > 0 {
+			return "const block"
+		}
+		if d.Tok == token.VAR && len(d.Specs) > 0 {
+			return "var block"
+		}
+	}
+	return "unknown"
+}
+
+func isDeclEqual(a, b ast.Decl) bool {
+	// Crude but effective for semantic diff: compare formatted strings
+	fset := token.NewFileSet()
+	var bufA, bufB bytes.Buffer
+	if err := format.Node(&bufA, fset, a); err != nil {
+		return false
+	}
+	if err := format.Node(&bufB, fset, b); err != nil {
+		return false
+	}
+	return bufA.String() == bufB.String()
 }
