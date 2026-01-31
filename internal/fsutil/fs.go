@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 )
 
-// ReadSeekCloser combines io.Reader, io.Seeker, and io.Closer.
-type ReadSeekCloser interface {
+// File combines common file operations.
+type File interface {
 	io.Reader
+	io.Writer
 	io.Seeker
 	io.Closer
 }
@@ -23,8 +24,8 @@ type FileSystem interface {
 	WriteFile(name string, data []byte, perm os.FileMode) error
 	MkdirAll(path string, perm os.FileMode) error
 	Stat(name string) (os.FileInfo, error)
-	Open(name string) (ReadSeekCloser, error)
-	OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error)
+	Open(name string) (File, error)
+	OpenFile(name string, flag int, perm os.FileMode) (File, error)
 	Remove(name string) error
 	Walk(root string, fn WalkFunc) error
 }
@@ -55,11 +56,11 @@ func (f *OSFileSystem) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
 
-func (f *OSFileSystem) Open(name string) (ReadSeekCloser, error) {
+func (f *OSFileSystem) Open(name string) (File, error) {
 	return os.Open(name)
 }
 
-func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
+func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	return os.OpenFile(name, flag, perm)
 }
 

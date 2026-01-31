@@ -918,7 +918,7 @@ func (m *fileSystemManager) appendText(ctx context.Context, args map[string]inte
 
 	m.bm.Snapshot(resolvedPath, "APPEND")
 
-	// Use OpenFile with O_APPEND which we added to the interface
+	// Use OpenFile with O_APPEND
 	f, err := m.fs.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to open file: %w", err)
@@ -927,6 +927,10 @@ func (m *fileSystemManager) appendText(ctx context.Context, args map[string]inte
 
 	if _, err := f.Write([]byte(content)); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to append: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return types.ToolResult{}, fmt.Errorf("failed to close file (data may be lost): %w", err)
 	}
 
 	return types.ToolResult{Text: "Text appended successfully."}, nil
