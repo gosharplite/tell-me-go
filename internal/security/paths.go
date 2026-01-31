@@ -34,10 +34,6 @@ func NewPathPolicy() *PathPolicy {
 // If writable=true, it checks CWD, Temp, and SafePaths.
 // If writable=false, it ALSO checks ReadOnlyPaths.
 func (p *PathPolicy) ValidatePath(path string, writable bool) (string, error) {
-	if path == "" {
-		return "", nil
-	}
-
 	// 1. Hardened Sanitation
 	path = filepath.Clean(path)
 	if parts := strings.SplitN(path, "=", 2); len(parts) == 2 {
