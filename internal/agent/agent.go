@@ -65,11 +65,8 @@ type Agent struct {
 	sm                   *tools.SecurityManager
 	renderer             UIRenderer
 	configWatcher        *ConfigWatcher
+	contextManager       *ContextManager
 	logFile              string
-	maxToolTurns         int
-	maxHistoryTokens     int
-	maxHistoryTurns      int
-	prunedTurns          int
 	maxConcurrentTools   int
 	toolTimeout          time.Duration
 	showThoughts         bool
@@ -89,9 +86,7 @@ func New(client types.LLMClient, hManager *history.Manager, registry *tools.Regi
 		sm:                 sm,
 		renderer:           NewStdUIRenderer(sm),
 		configWatcher:      NewConfigWatcher(120000, 10, 20),
-		maxToolTurns:       10,
-		maxHistoryTokens:   120000,
-		maxHistoryTurns:    20,
+		contextManager:     NewContextManager(client, hManager, registry, sm),
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		showThoughts:       true,
@@ -117,7 +112,7 @@ func (a *Agent) registerInternalTools() {
 			},
 			Required: []string{"turns"},
 		},
-	}, a.summarizeHistory)
+	}, a.contextManager.SummarizeHistoryTool)
 }
 
 // SetUIOptions sets the UI visibility options.
@@ -133,16 +128,7 @@ func (a *Agent) SetRawOutput(raw bool) {
 
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
-	if toolTurns > 0 {
-		a.maxToolTurns = toolTurns
-	}
-	if historyTokens > 0 {
-		a.maxHistoryTokens = historyTokens
-	}
-	if historyTurns > 0 {
-		a.maxHistoryTurns = historyTurns
-	}
-	// Also sync to config watcher
+	a.contextManager.SetLimits(historyTokens, toolTurns, historyTurns)
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 }
 
@@ -163,7 +149,7 @@ func (a *Agent) SetLogFile(path string) {
 
 // SetPrunedTurns informs the agent how many turns were removed during startup.
 func (a *Agent) SetPrunedTurns(n int) {
-	a.prunedTurns = n
+	a.contextManager.SetPrunedTurns(n)
 }
 
 // SetPersistentConfigPath sets the path to the persistent session configuration.
@@ -187,7 +173,8 @@ func (a *Agent) SetRenderer(renderer UIRenderer) {
 
 func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
-	a.maxHistoryTokens, a.maxToolTurns, a.maxHistoryTurns = a.configWatcher.GetLimits()
+	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
+	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
 }
 
 // Chat runs the multi-turn orchestration loop.
@@ -197,63 +184,40 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		Parts: []*types.Part{{Text: prompt}},
 	})
 
-	for turn := 0; turn <= a.maxToolTurns; turn++ {
+	_, maxTurns, _ := a.contextManager.GetLimits()
+
+	for turn := 0; turn <= maxTurns; turn++ {
 		a.refreshLimits()
-		contents := a.history.GetContents()
 
-		// 0. Enforce history turn limit
-		if a.maxHistoryTurns > 0 && len(contents) > a.maxHistoryTurns*2 {
-			pruned := a.history.Prune(a.maxHistoryTurns)
-			if pruned > 0 {
-				a.prunedTurns += pruned
-				contents = a.history.GetContents()
-			}
+		// 1. Prepare API Contents (includes pruning, summarization, and safety warnings)
+		apiContents, tokens, currentTurns, err := a.contextManager.PrepareContents(ctx, turn)
+		if err != nil {
+			return err
 		}
 
-		tokens := a.estimatePayloadTokens(contents)
+		maxTokens, _, maxHistTurns := a.contextManager.GetLimits()
 
-		// 1. Safety Check: MAX_HISTORY_TOKENS
-		// Trigger auto-summarization at 90% of the limit to provide a safety buffer.
-		if tokens > int(float64(a.maxHistoryTokens)*0.9) {
-			// Try auto-summarization before giving up
-			if err := a.autoSummarize(ctx); err == nil {
-				contents = a.history.GetContents()
-				tokens = a.estimatePayloadTokens(contents)
-			}
-
-			// After summarization, if we are still over the hard limit, abort.
-			if tokens > a.maxHistoryTokens {
-				a.handleLimitExceeded(tokens)
-				return ErrContextLimitExceeded
-			}
-		}
-
-		// Calculate current turns
-		currentTurns := len(contents) / 2
-
-		// 2. Prepare API Contents with warnings
-		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
 		a.renderer.LogTurnStatus(TurnStatus{
 			Timestamp:        time.Now(),
 			CurrentTurns:     currentTurns,
-			MaxHistoryTurns:  a.maxHistoryTurns,
+			MaxHistoryTurns:  maxHistTurns,
 			Tokens:           tokens,
-			MaxHistoryTokens: a.maxHistoryTokens,
+			MaxHistoryTokens: maxTokens,
 			IsPostCall:       false,
 		})
 
-		// 3. Send Chat Request
+		// 2. Send Chat Request
 		respContent, metrics, err := a.sendChat(ctx, apiContents)
 		if err != nil {
 			return err
 		}
 
-		// 4. Render Output
+		// 3. Render Output
 		a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
 		a.history.AddContent(respContent)
 		a.saveHistory() // SAVE 1: Capture model's response/tool calls
 
-		// 5. Handle Tool Execution
+		// 4. Handle Tool Execution
 		toolStart := time.Now()
 		err = a.handleToolExecution(ctx, respContent, turn)
 		if metrics != nil {
@@ -266,13 +230,14 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
 		a.refreshLimits()
+		maxTokens, _, maxHistTurns = a.contextManager.GetLimits()
 
 		a.renderer.LogTurnStatus(TurnStatus{
 			Timestamp:        time.Now(),
 			CurrentTurns:     currentTurns,
-			MaxHistoryTurns:  a.maxHistoryTurns,
+			MaxHistoryTurns:  maxHistTurns,
 			Tokens:           tokens,
-			MaxHistoryTokens: a.maxHistoryTokens,
+			MaxHistoryTokens: maxTokens,
 			Metrics:          metrics,
 			IsPostCall:       true,
 			StartTime:        a.startTime,
@@ -298,50 +263,6 @@ func (a *Agent) saveHistory() {
 				time.Now().Format("15:04:05"), err)
 		}()
 	}
-}
-
-func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, currentTurns int) []*types.Content {
-	apiContents := make([]*types.Content, len(contents))
-	copy(apiContents, contents)
-
-	warning := a.getTurnWarning(turn)
-	if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
-		if warning != "" {
-			warning += "\n" + tokenWarning
-		} else {
-			warning = tokenWarning
-		}
-	}
-	if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
-		if warning != "" {
-			warning += "\n" + turnWarning
-		} else {
-			warning = turnWarning
-		}
-	}
-
-	if warning != "" && len(apiContents) > 0 {
-		lastIdx := len(apiContents) - 1
-		orig := apiContents[lastIdx]
-		// Clone only the content that receives the warning
-		cloned := &types.Content{
-			Role:  orig.Role,
-			Parts: make([]*types.Part, len(orig.Parts)),
-		}
-		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &types.Part{
-			Text: "\n\n" + warning,
-		})
-		apiContents[lastIdx] = cloned
-
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
-				time.Now().Format("15:04:05"))
-		}()
-	}
-	return apiContents
 }
 
 func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {

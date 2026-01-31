@@ -34,7 +34,8 @@ func TestAgent_Setters(t *testing.T) {
 	}
 
 	a.SetLimits(5, 1000, 20)
-	if a.maxToolTurns != 5 || a.maxHistoryTokens != 1000 || a.maxHistoryTurns != 20 {
+	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
 		t.Error("SetLimits failed")
 	}
 
@@ -49,7 +50,7 @@ func TestAgent_Setters(t *testing.T) {
 	}
 }
 
-func TestAgent_EstimatePayloadTokens(t *testing.T) {
+func TestAgent_EstimateTokens(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(&types.ToolDeclaration{
 		Name:        "test_tool",
@@ -73,7 +74,7 @@ func TestAgent_EstimatePayloadTokens(t *testing.T) {
 		},
 	}
 
-	tokens := a.estimatePayloadTokens(contents)
+	tokens := a.contextManager.EstimateTokens(contents)
 	if tokens <= 0 {
 		t.Errorf("expected positive token estimate, got %d", tokens)
 	}
@@ -481,11 +482,12 @@ func TestAgent_RefreshLimits(t *testing.T) {
 
 	a.refreshLimits()
 
-	if a.maxHistoryTokens != 5000 {
-		t.Errorf("expected maxHistoryTokens 5000, got %d", a.maxHistoryTokens)
+	maxTokens, maxTurns, _ := a.contextManager.GetLimits()
+	if maxTokens != 5000 {
+		t.Errorf("expected maxHistoryTokens 5000, got %d", maxTokens)
 	}
-	if a.maxToolTurns != 15 {
-		t.Errorf("expected maxToolTurns 15, got %d", a.maxToolTurns)
+	if maxTurns != 15 {
+		t.Errorf("expected maxToolTurns 15, got %d", maxTurns)
 	}
 }
 
@@ -509,13 +511,14 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 
 	a.refreshLimits()
 
-	if a.maxHistoryTokens != 200000 {
-		t.Errorf("expected maxHistoryTokens 200000, got %d", a.maxHistoryTokens)
+	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	if maxTokens != 200000 {
+		t.Errorf("expected maxHistoryTokens 200000, got %d", maxTokens)
 	}
-	if a.maxToolTurns != 25 {
-		t.Errorf("expected maxToolTurns 25, got %d", a.maxToolTurns)
+	if maxTurns != 25 {
+		t.Errorf("expected maxToolTurns 25, got %d", maxTurns)
 	}
-	if a.maxHistoryTurns != 30 {
-		t.Errorf("expected maxHistoryTurns 30, got %d", a.maxHistoryTurns)
+	if maxHistTurns != 30 {
+		t.Errorf("expected maxHistoryTurns 30, got %d", maxHistTurns)
 	}
 }

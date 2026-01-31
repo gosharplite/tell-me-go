@@ -26,12 +26,14 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 		return nil
 	}
 
-	if turn >= a.maxToolTurns {
+	_, maxToolTurns, _ := a.contextManager.GetLimits()
+
+	if turn >= maxToolTurns {
 		func() {
 			a.sm.TerminalLock()
 			defer a.sm.TerminalUnlock()
 			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
-				time.Now().Format("15:04:05"), a.maxToolTurns)
+				time.Now().Format("15:04:05"), maxToolTurns)
 		}()
 		return ErrMaxTurnsReached
 	}
@@ -72,8 +74,10 @@ func (a *Agent) logToolCalls(calls []*types.FunctionCall, turn int) {
 	cyan := "\033[0;36m"
 	reset := "\033[0m"
 
+	_, maxToolTurns, _ := a.contextManager.GetLimits()
+
 	fmt.Fprintf(os.Stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, a.maxToolTurns, strings.Join(names, ", "), reset)
+		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxToolTurns, strings.Join(names, ", "), reset)
 
 	if a.showTools {
 		for _, fc := range calls {
