@@ -128,4 +128,3 @@ func (s *JSONLStore) prepareForStorage(c *types.Content) *types.Content {
 
 	return clone
 }
-

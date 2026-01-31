@@ -65,7 +65,7 @@ func TestSearchToolSelection(t *testing.T) {
 					capturer.Set(tools)
 				}
 				if strings.Contains(r.URL.Path, "streamGenerateContent") {
-					// Just return 200 OK to satisfy the request. 
+					// Just return 200 OK to satisfy the request.
 					// The SDK might complain about empty stream but we capture tools.
 					w.WriteHeader(http.StatusOK)
 				} else {

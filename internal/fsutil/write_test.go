@@ -86,7 +86,7 @@ func TestAtomicWrite(t *testing.T) {
 					t.Errorf("failed to stat file: %v", err)
 					return
 				}
-				// Note: permission check might be tricky on some systems/umasks, 
+				// Note: permission check might be tricky on some systems/umasks,
 				// but let's at least check the bits we can.
 				if info.Mode().Perm() != tt.perm {
 					t.Logf("AtomicWrite() perm got = %o, want %o (umask might affect this)", info.Mode().Perm(), tt.perm)

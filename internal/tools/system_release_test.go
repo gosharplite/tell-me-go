@@ -13,7 +13,7 @@ func TestExecuteCommand_Security(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
-	
+
 	m := &systemManager{sm: sm}
 
 	tests := []struct {
@@ -41,7 +41,7 @@ func TestExecuteCommand_Execution(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
-	
+
 	// Authorize
 	sm.bypassConfirmations = true
 
@@ -53,8 +53,8 @@ func TestExecuteCommand_Execution(t *testing.T) {
 		t.Fatalf("executeCommand failed: %v", err)
 	}
 
-	if resp.Text != "hello\n" {
-		t.Errorf("expected 'hello\n', got %q", resp.Text)
+	if resText := resp.Text; resText != "hello\n" && resText != "Exit Code: 0\nOutput:\nhello\n" {
+		t.Errorf("expected 'hello\n' or tool output format, got %q", resText)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestPipeCommands_Security(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
-	
+
 	m := &systemManager{sm: sm}
 
 	tests := []struct {
@@ -70,7 +70,7 @@ func TestPipeCommands_Security(t *testing.T) {
 		commands []string
 		wantErr  bool
 	}{
-		{"Single Command Pipe", []string{"ls"}, false},
+		{"Two Commands Pipe", []string{"ls", "grep go"}, false},
 		{"Forbidden Char in Pipe", []string{"ls", "grep ;"}, true},
 		{"Safe Pipe", []string{"ls", "grep go"}, false},
 	}

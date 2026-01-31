@@ -12,7 +12,7 @@ import (
 
 func setupGitRepo(t *testing.T) string {
 	tmpDir := t.TempDir()
-	
+
 	runCmd := func(name string, args ...string) {
 		cmd := exec.Command(name, args...)
 		cmd.Dir = tmpDir
@@ -24,13 +24,13 @@ func setupGitRepo(t *testing.T) string {
 	runCmd("git", "init")
 	runCmd("git", "config", "user.email", "test@example.com")
 	runCmd("git", "config", "user.name", "Test User")
-	
+
 	return tmpDir
 }
 
 func TestGitManager(t *testing.T) {
 	tmpDir := setupGitRepo(t)
-	
+
 	// Change working directory to tmpDir for git commands
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
@@ -76,13 +76,13 @@ func TestGitManager(t *testing.T) {
 	t.Run("gitCommit and getGitLog", func(t *testing.T) {
 		// Stage file
 		exec.Command("git", "add", "test.txt").Run()
-		
+
 		// In bypass mode, it should not ask for confirmation
 		_, err := m.gitCommit(ctx, map[string]interface{}{"message": "initial commit"})
 		if err != nil {
 			t.Fatalf("gitCommit failed: %v", err)
 		}
-		
+
 		logRes, err := m.getGitLog(ctx, map[string]interface{}{"limit": 1})
 		if err != nil {
 			t.Fatalf("getGitLog failed: %v", err)
@@ -91,7 +91,7 @@ func TestGitManager(t *testing.T) {
 			t.Error("expected non-empty log")
 		}
 	})
-	
+
 	t.Run("getGitDiff", func(t *testing.T) {
 		os.WriteFile("test.txt", []byte("changed"), 0644)
 		res, err := m.getGitDiff(ctx, map[string]interface{}{"staged": false})

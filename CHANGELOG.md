@@ -10,6 +10,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.0] - 2026-02-15
+### Added
+- **Testing**: Added unit tests for `execute_command` and `pipe_commands` in `internal/tools/system_release_test.go`, significantly bridging the coverage gap for system-level tools.
+### Fixed
+- **Testing**: Resolved a race condition in `internal/history/history_test.go` by replacing hardcoded file paths with `t.TempDir()`, ensuring stable parallel test execution.
+### Changed
+- **Maintenance**: Promoted to v1.64.0 following the refined public release procedure.
+
 ## [1.63.0] - 2026-01-30
 ### Added
 - **CLI**: The application now automatically seeds the mode-scoped `config.json` with core limits (`MAX_TURNS`, `MAX_HISTORY_TURNS`, `MAX_HISTORY_TOKENS`) if it doesn't exist. This improves discoverability of configurable parameters for new users.

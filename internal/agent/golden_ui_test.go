@@ -73,7 +73,7 @@ func verifyGolden(t *testing.T, goldenFile, actual string) {
 	// Normalize timestamps for determinism
 	reTime := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
 	actual = reTime.ReplaceAllString(actual, "[TIME]")
-	
+
 	// Normalize durations which might vary slightly due to time.Since
 	reDuration := regexp.MustCompile(`\d+\.\d+s`)
 	actual = reDuration.ReplaceAllString(actual, "[DUR]s")

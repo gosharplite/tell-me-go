@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 

@@ -317,7 +317,7 @@ func (a *Agent) showSmartSuggestions(ctx context.Context) {
 
 	// 2. Generate suggestions
 	suggestionPrompt := &types.Content{
-		Role: "user",
+		Role:  "user",
 		Parts: []*types.Part{{Text: "Based on our conversation, suggest 2-3 short, actionable follow-up commands I might want to run next (e.g., 'run tests', 'list files', 'check git status'). Respond ONLY with a bulleted list of commands."}},
 	}
 

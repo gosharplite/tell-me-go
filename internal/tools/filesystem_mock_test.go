@@ -13,10 +13,10 @@ import (
 
 type mockFileSystem struct {
 	fsutil.OSFileSystem // Fallback to real OS for some methods if needed
-	readDirFunc   func(name string) ([]os.DirEntry, error)
-	readFileFunc  func(name string) ([]byte, error)
-	writeFileFunc func(name string, data []byte, perm os.FileMode) error
-	mkdirAllFunc  func(path string, perm os.FileMode) error
+	readDirFunc         func(name string) ([]os.DirEntry, error)
+	readFileFunc        func(name string) ([]byte, error)
+	writeFileFunc       func(name string, data []byte, perm os.FileMode) error
+	mkdirAllFunc        func(path string, perm os.FileMode) error
 }
 
 func (m *mockFileSystem) ReadDir(name string) ([]os.DirEntry, error) {

@@ -250,7 +250,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 	// 1. Setup Mock Server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		var body struct {
 			Contents []interface{} `json:"contents"`
 		}

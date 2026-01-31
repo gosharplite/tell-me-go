@@ -4,8 +4,8 @@
 package tools
 
 import (
-	"testing"
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"testing"
 )
 
 func TestToolRegistryIntegrity(t *testing.T) {
@@ -70,7 +70,7 @@ func validateSchema(t *testing.T, toolName, propName string, s *types.Schema) {
 	if s.Type == "" {
 		t.Errorf("Tool %s: property %s has empty type", toolName, propName)
 	}
-	
+
 	// Valid Types according to GenAI spec (subset)
 	validTypes := map[string]bool{
 		"STRING":  true,
@@ -91,7 +91,7 @@ func validateSchema(t *testing.T, toolName, propName string, s *types.Schema) {
 		// Some objects might be empty but usually they should have properties in tool definitions
 		t.Errorf("Tool %s: property %s is an OBJECT but missing Properties", toolName, propName)
 	}
-	
+
 	for subPropName, subProp := range s.Properties {
 		validateSchema(t, toolName, propName+"."+subPropName, subProp)
 	}

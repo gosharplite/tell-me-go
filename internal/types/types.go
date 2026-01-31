@@ -83,8 +83,8 @@ func (p *Part) ToSDK(resolver AssetResolver) *genai.Part {
 		return nil
 	}
 	res := &genai.Part{
-		Text:    p.Text,
-		Thought: p.Thought,
+		Text:             p.Text,
+		Thought:          p.Thought,
 		ThoughtSignature: p.ThoughtSignature,
 	}
 

@@ -115,7 +115,7 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "malformed.jsonl")
-	
+
 	// Write one good line and one bad line
 	content := `{"Role":"user", "Parts":[{"Text":"hello"}]}` + "\n" + `{"Role":"model", "Parts":` + "\n"
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {

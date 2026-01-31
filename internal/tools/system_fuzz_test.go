@@ -4,8 +4,8 @@
 package tools
 
 import (
-	"testing"
 	"strings"
+	"testing"
 )
 
 func FuzzIsSafeCommand(f *testing.F) {
@@ -32,7 +32,7 @@ func FuzzIsSafeCommand(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, cmd string) {
 		isSafe := m.isSafeCommand(cmd)
-		
+
 		// 0. Negative assertions: Known unsafe patterns must be rejected
 		unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
 		for _, char := range unsafeChars {
@@ -51,7 +51,7 @@ func FuzzIsSafeCommand(f *testing.F) {
 				t.Errorf("Command %q marked safe but failed to split: %v", cmd, err)
 				return
 			}
-			
+
 			if len(parts) == 0 {
 				t.Errorf("Command %q marked safe but has no parts", cmd)
 				return
@@ -67,7 +67,7 @@ func FuzzIsSafeCommand(f *testing.F) {
 			if !safeCommands[base] {
 				t.Errorf("Command %q marked safe but base %q not in whitelist", cmd, base)
 			}
-			
+
 			// 3. Go specific sub-checks: run/build/install/mod must be rejected
 			if base == "go" {
 				sub := ""

@@ -1026,11 +1026,11 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 					if pos.Line > 0 && pos.Line <= len(lines) {
 						lineContent = strings.TrimSpace(lines[pos.Line-1])
 					}
-					
+
 					// This is a bit limited because we don't have parent links in AST by default
 					// But we can check if it's likely a decl if we were to use a custom visitor or just report it.
 					// For now, including the line content helps the user distinguish.
-					
+
 					results = append(results, fmt.Sprintf("%s:%d:%d: %s", filePath, pos.Line, pos.Column, lineContent))
 				}
 			}

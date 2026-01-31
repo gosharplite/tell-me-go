@@ -184,7 +184,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 			}
 			// Second call: return final text
 			return &types.Content{
-				Role: "model",
+				Role:  "model",
 				Parts: []*types.Part{{Text: "I see the cat image."}},
 			}, &types.Metrics{}, nil
 		},
@@ -227,4 +227,3 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 		t.Error("InlineData was not injected into history")
 	}
 }
-
