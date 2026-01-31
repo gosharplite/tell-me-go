@@ -5,15 +5,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -35,6 +32,17 @@ type App struct {
 	// Internal properties for better testability
 	homeDir string
 	sm      *tools.SecurityManager
+}
+
+type sessionPaths struct {
+	modeDir              string
+	historyPath          string
+	logPath              string
+	commandsLogPath      string
+	safePathsPath        string
+	readPathsPath        string
+	bypassPath           string
+	persistentConfigPath string
 }
 
 // New creates a new App instance with default IO and factories.
@@ -69,80 +77,36 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
-	// 1. Pre-process args to handle "-l" as a boolean flag that defaults to "-l 1"
+	// 1. Parse Flags & Load Config
 	args = a.sanitizeArgs(args)
-
-	// 2. Parse Flags
 	opts, fs, err := a.parseFlags(args[1:])
 	if err != nil {
 		return err
 	}
-
 	if opts.showVersion {
 		fmt.Fprintf(a.Stdout, "tell-me-go version %s\n", a.Version)
 		return nil
 	}
 
-	// 2. Load Config
 	cfg, err := config.Load(opts.configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config [%s]: %v", opts.configPath, err)
 	}
 
-	// 3. Initialize Paths
-	homeDir := a.homeDir
-
-	sessionName := cfg.Mode
-	modeDir := filepath.Join(homeDir, "output", sessionName)
-	if err := os.MkdirAll(modeDir, 0755); err != nil {
-		return fmt.Errorf("failed to create session directory [%s]: %v", modeDir, err)
+	// 2. Initialize Paths & Persistent Config
+	paths, err := a.initPaths(cfg)
+	if err != nil {
+		return err
 	}
 
-	historyPath := filepath.Join(modeDir, "history.json")
-	logPath := filepath.Join(modeDir, "tokens.log")
-	commandsLogPath := filepath.Join(modeDir, "commands.log")
-	safePathsPath := filepath.Join(modeDir, "safepaths.json")
-	readPathsPath := filepath.Join(modeDir, "readpaths.json")
-	bypassPath := filepath.Join(modeDir, "bypass.log")
-	persistentConfigPath := filepath.Join(modeDir, "config.json")
-
-	// Ensure core limits are present in persistent config for human discoverability
-	pCfg := make(map[string]string)
-	if data, err := os.ReadFile(persistentConfigPath); err == nil {
-		_ = json.Unmarshal(data, &pCfg)
-	}
-	updated := false
-	seedLimit := func(key string, val int) {
-		if _, ok := pCfg[key]; !ok {
-			pCfg[key] = fmt.Sprintf("%d", val)
-			updated = true
-		}
-	}
-	seedLimit("MAX_HISTORY_TOKENS", cfg.MaxHistoryTokens)
-	seedLimit("MAX_TOOL_TURNS", cfg.MaxToolTurns)
-	seedLimit("MAX_HISTORY_TURNS", cfg.MaxHistoryTurns)
-	if updated {
-		if data, err := json.MarshalIndent(pCfg, "", "  "); err == nil {
-			_ = os.WriteFile(persistentConfigPath, data, 0644)
-		}
+	pCfg, err := a.loadPersistentConfig(paths, cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load/update persistent config: %v", err)
 	}
 
-	// 5. Initialize Components
-	a.sm.SetSafePathsFile(safePathsPath)
-	a.sm.SetReadOnlyPathsFile(readPathsPath)
-	a.sm.SetBypassFile(bypassPath)
-	a.sm.SetCommandsLogFile(commandsLogPath)
-	if err := a.sm.LoadSafePaths(); err != nil {
-		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
-	}
-	if err := a.sm.LoadReadOnlyPaths(); err != nil {
-		log.Printf("Warning: Failed to load persistent read-only paths: %v", err)
-	}
-	a.sm.LoadBypassState()
-	a.sm.RegisterSafePath(filepath.Join(homeDir, "output"))
-	a.sm.RegisterReadOnlyPath(opts.configPath)
+	// 3. Initialize Security & Session
+	a.setupSecurity(paths, opts, cfg)
 
-	// Prepare pricing overrides
 	pricingOverrides := make(map[string]types.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
@@ -151,43 +115,35 @@ func (a *App) Run(args []string) error {
 	}
 
 	if opts.newSession {
-		timestamp := time.Now().Format("20060102_150405")
-		// Record cost with a unique ID including the timestamp before archiving
-		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
-		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
-		a.cleanupOldBackups(homeDir, cfg.Mode)
+		a.handleNewSession(paths, cfg, pricingOverrides)
 	}
 
-	hManager := history.NewManager(historyPath)
+	// 4. Initialize History
+	hManager := history.NewManager(paths.historyPath)
 	if err := hManager.Load(); err != nil {
 		return fmt.Errorf("error loading history: %v", err)
 	}
-	// Proactively prune history immediately after loading to ensure cache efficiency.
-	// We prune down to 50% of the limit to provide a stable cache prefix for the next turns.
 	pruned := hManager.Prune(cfg.MaxHistoryTurns)
 
 	if opts.lastN > 0 {
 		a.showHistory(hManager, opts.lastN, opts.rawOutput)
 	}
 
-	// 4. Handle Prompt
+	// 5. Handle Prompt
 	prompt, err := a.capturePrompt(fs, opts.lastN)
 	if err != nil {
 		return err
 	}
-
-	// If the user only requested history (-l), exit after displaying it.
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
 
+	// 6. Setup Agent & Client
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(homeDir, "output"))
+	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
 
-	// Apply smart_suggestions from the already loaded pCfg
 	if pCfg["smart_suggestions"] == "on" {
 		cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
 	}
@@ -199,57 +155,21 @@ func (a *App) Run(args []string) error {
 		return fmt.Errorf("error creating client: %v", err)
 	}
 
-	registry := tools.NewRegistry()
-	tools.RegisterFileSystemTools(registry, a.sm)
-	tools.RegisterIntelligenceTools(registry, a.sm)
-	tools.RegisterSystemTools(registry, a.sm)
-	tools.RegisterGitTools(registry, a.sm)
-	tools.RegisterDevTools(registry, a.sm)
-	tools.RegisterTeamsTools(registry, a.sm)
-	tools.RegisterStateTools(registry, a.sm, modeDir)
-	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode, pricingOverrides)
-	tools.RegisterMediaTools(registry, a.sm, client)
+	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
-	// 6. Execute Agent
 	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
-	chatAgent.SetPersistentConfigPath(persistentConfigPath)
-	chatAgent.SetMainConfigPath(opts.configPath)
-	chatAgent.SetLogFile(logPath)
-	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
-	chatAgent.SetRawOutput(opts.rawOutput)
+	a.configureAgent(chatAgent, cfg, opts, paths, pruned)
 
-	// Resolve model-specific limits
-	maxTokens := cfg.MaxHistoryTokens
-	if mCfg, ok := cfg.Models[cfg.Model]; ok && mCfg.ContextWindow > 0 {
-		if maxTokens > mCfg.ContextWindow {
-			maxTokens = mCfg.ContextWindow
-		}
-	} else {
-		for k, v := range cfg.Models {
-			if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
-				if maxTokens > v.ContextWindow {
-					maxTokens = v.ContextWindow
-				}
-				break
-			}
-		}
-	}
-
-	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
-	chatAgent.SetPrunedTurns(pruned)
-	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
-
+	// 7. Execute & Finalize
 	if err := chatAgent.Chat(ctx, prompt); err != nil {
 		return fmt.Errorf("error: %v", err)
 	}
 
-	// 7. Save History
 	if err := hManager.Save(); err != nil {
 		return fmt.Errorf("error saving history: %v", err)
 	}
 
-	// 8. Record session cost
-	if err := tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := tools.RecordSessionCost(a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

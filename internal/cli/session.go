@@ -6,11 +6,132 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
+
+func (a *App) initPaths(cfg *config.Config) (*sessionPaths, error) {
+	modeDir := filepath.Join(a.homeDir, "output", cfg.Mode)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create session directory [%s]: %v", modeDir, err)
+	}
+
+	return &sessionPaths{
+		modeDir:              modeDir,
+		historyPath:          filepath.Join(modeDir, "history.json"),
+		logPath:              filepath.Join(modeDir, "tokens.log"),
+		commandsLogPath:      filepath.Join(modeDir, "commands.log"),
+		safePathsPath:        filepath.Join(modeDir, "safepaths.json"),
+		readPathsPath:        filepath.Join(modeDir, "readpaths.json"),
+		bypassPath:           filepath.Join(modeDir, "bypass.log"),
+		persistentConfigPath: filepath.Join(modeDir, "config.json"),
+	}, nil
+}
+
+func (a *App) loadPersistentConfig(paths *sessionPaths, cfg *config.Config) (map[string]string, error) {
+	pCfg := make(map[string]string)
+	if data, err := os.ReadFile(paths.persistentConfigPath); err == nil {
+		_ = json.Unmarshal(data, &pCfg)
+	}
+
+	updated := false
+	seedLimit := func(key string, val int) {
+		if _, ok := pCfg[key]; !ok {
+			pCfg[key] = fmt.Sprintf("%d", val)
+			updated = true
+		}
+	}
+	seedLimit("MAX_HISTORY_TOKENS", cfg.MaxHistoryTokens)
+	seedLimit("MAX_TOOL_TURNS", cfg.MaxToolTurns)
+	seedLimit("MAX_HISTORY_TURNS", cfg.MaxHistoryTurns)
+
+	if updated {
+		if data, err := json.MarshalIndent(pCfg, "", "  "); err == nil {
+			_ = os.WriteFile(paths.persistentConfigPath, data, 0644)
+		}
+	}
+	return pCfg, nil
+}
+
+func (a *App) setupSecurity(paths *sessionPaths, opts *cliOptions, cfg *config.Config) {
+	a.sm.SetSafePathsFile(paths.safePathsPath)
+	a.sm.SetReadOnlyPathsFile(paths.readPathsPath)
+	a.sm.SetBypassFile(paths.bypassPath)
+	a.sm.SetCommandsLogFile(paths.commandsLogPath)
+
+	if err := a.sm.LoadSafePaths(); err != nil {
+		log.Printf("Warning: Failed to load persistent safe paths: %v", err)
+	}
+	if err := a.sm.LoadReadOnlyPaths(); err != nil {
+		log.Printf("Warning: Failed to load persistent read-only paths: %v", err)
+	}
+	a.sm.LoadBypassState()
+
+	a.sm.RegisterSafePath(filepath.Join(a.homeDir, "output"))
+	a.sm.RegisterReadOnlyPath(opts.configPath)
+}
+
+func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingOverrides map[string]types.ModelPricing) {
+	timestamp := time.Now().Format("20060102_150405")
+	// Record cost with a unique ID including the timestamp before archiving
+	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.logPath))
+	_ = tools.RecordSessionCost(a.sm, paths.logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
+	a.archiveSessionFilesWithTimestamp(a.homeDir, timestamp, paths.historyPath, paths.logPath, paths.commandsLogPath)
+	a.cleanupOldBackups(a.homeDir, cfg.Mode)
+}
+
+func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]types.ModelPricing) *tools.Registry {
+	registry := tools.NewRegistry()
+	tools.RegisterFileSystemTools(registry, a.sm)
+	tools.RegisterIntelligenceTools(registry, a.sm)
+	tools.RegisterSystemTools(registry, a.sm)
+	tools.RegisterGitTools(registry, a.sm)
+	tools.RegisterDevTools(registry, a.sm)
+	tools.RegisterTeamsTools(registry, a.sm)
+	tools.RegisterStateTools(registry, a.sm, paths.modeDir)
+	tools.RegisterMetricsTools(registry, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
+	tools.RegisterMediaTools(registry, a.sm, client)
+	return registry
+}
+
+func (a *App) configureAgent(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int) {
+	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
+	chatAgent.SetMainConfigPath(opts.configPath)
+	chatAgent.SetLogFile(paths.logPath)
+	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
+	chatAgent.SetRawOutput(opts.rawOutput)
+
+	// Resolve model-specific limits
+	maxTokens := cfg.MaxHistoryTokens
+	if mCfg, ok := cfg.Models[cfg.Model]; ok && mCfg.ContextWindow > 0 {
+		if maxTokens > mCfg.ContextWindow {
+			maxTokens = mCfg.ContextWindow
+		}
+	} else {
+		for k, v := range cfg.Models {
+			if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
+				if maxTokens > v.ContextWindow {
+					maxTokens = v.ContextWindow
+				}
+				break
+			}
+		}
+	}
+
+	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
+	chatAgent.SetPrunedTurns(pruned)
+	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
+}
 
 func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesToMove ...string) {
 	backupDir := filepath.Join(homeDir, "output", "backups", timestamp)
