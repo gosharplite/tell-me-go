@@ -131,6 +131,43 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 				r.renderMarkdown(part.Text)
 			}
 		}
+
+		if part.InlineData != nil {
+			func() {
+				r.sm.TerminalLock()
+				defer r.sm.TerminalUnlock()
+				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+					time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
+			}()
+		}
+	}
+}
+
+func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, showTools bool) {
+	if !showTools {
+		return
+	}
+
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+
+	cyan := "\033[0;36m"
+	reset := "\033[0m"
+	timestamp := time.Now().Format("15:04:05")
+
+	if result.Text != "" {
+		snippet := result.Text
+		if len(snippet) > 200 {
+			snippet = snippet[:197] + "..."
+		}
+		// Clean up newlines for a compact log
+		snippet = strings.ReplaceAll(snippet, "\n", " ")
+		fmt.Fprintf(os.Stderr, "%s[%s] [Tool Result] %s: %s%s\n", cyan, timestamp, name, snippet, reset)
+	}
+
+	for _, b := range result.BinaryData {
+		fmt.Fprintf(os.Stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+			cyan, timestamp, name, b.MIMEType, len(b.Data), reset)
 	}
 }
 

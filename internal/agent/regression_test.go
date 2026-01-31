@@ -33,6 +33,21 @@ func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, too
 
 func (m *MockClient) RefreshAuth() error { return nil }
 
+// MockLLMClient is a flexible mock for testing.
+type MockLLMClient struct {
+	SendChatFn func(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error)
+}
+
+func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+	return m.SendChatFn(ctx, history, tools)
+}
+
+func (m *MockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
+
+func (m *MockLLMClient) RefreshAuth() error { return nil }
+
 func TestAgent_EmptyPartProtection(t *testing.T) {
 	// This test verifies that the history manager and API client don't crash
 	// when a message has no parts.
@@ -99,3 +114,79 @@ func TestAgent_InLoopPruning(t *testing.T) {
 		t.Errorf("History not pruned correctly, got %d messages", len(h.GetContents()))
 	}
 }
+
+func TestAgent_MultiModalFlow(t *testing.T) {
+	// Setup
+	registry := tools.NewRegistry()
+	registry.Register(&genai.FunctionDeclaration{
+		Name: "get_image",
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{
+			Text: "Image of a cat",
+			BinaryData: []types.BinaryData{
+				{MIMEType: "image/png", Data: []byte("fake-png-data")},
+			},
+		}, nil
+	})
+
+	h := history.NewManager(t.TempDir() + "/history.json")
+	sm := tools.NewSecurityManager()
+
+	// Mock client that triggers the tool
+	mockClient := &MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+			// First call: trigger tool
+			if len(history) == 1 {
+				return &types.Content{
+					Role: "model",
+					Parts: []*types.Part{
+						{FunctionCall: &types.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+					},
+				}, &types.Metrics{}, nil
+			}
+			// Second call: return final text
+			return &types.Content{
+				Role: "model",
+				Parts: []*types.Part{{Text: "I see the cat image."}},
+			}, &types.Metrics{}, nil
+		},
+	}
+
+	a := New(mockClient, h, registry, sm)
+	err := a.Chat(context.Background(), "Show me a cat")
+	if err != nil {
+		t.Fatalf("Chat failed: %v", err)
+	}
+
+	// Verify history
+	contents := h.GetContents()
+	// Turns:
+	// 0: User "Show me a cat"
+	// 1: Model ToolCall "get_image"
+	// 2: User ToolResponse + InlineData
+	// 3: Model "I see the cat image."
+
+	if len(contents) != 4 {
+		t.Fatalf("Expected 4 messages in history, got %d", len(contents))
+	}
+
+	toolResponseTurn := contents[2]
+	if toolResponseTurn.Role != genai.RoleUser {
+		t.Errorf("Expected role 'user' for tool response, got %s", toolResponseTurn.Role)
+	}
+
+	hasInlineData := false
+	for _, p := range toolResponseTurn.Parts {
+		if p.InlineData != nil {
+			hasInlineData = true
+			if p.InlineData.MIMEType != "image/png" {
+				t.Errorf("Unexpected MIME type: %s", p.InlineData.MIMEType)
+			}
+		}
+	}
+
+	if !hasInlineData {
+		t.Error("InlineData was not injected into history")
+	}
+}
+

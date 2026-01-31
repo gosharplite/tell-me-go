@@ -43,6 +43,7 @@ type UIRenderer interface {
 	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
 	LogTurnStatus(status TurnStatus)
 	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+	LogToolResult(name string, result types.ToolResult, showTools bool)
 }
 
 // TurnStatus contains the data needed for rendering turn status.

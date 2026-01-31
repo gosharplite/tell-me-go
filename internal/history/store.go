@@ -4,7 +4,6 @@
 package history
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -43,17 +42,13 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 	defer f.Close()
 
 	var contents []*types.Content
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
+	decoder := json.NewDecoder(f)
+	for decoder.More() {
 		var content types.Content
-		if err := json.Unmarshal(scanner.Bytes(), &content); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal JSONL line: %w", err)
+		if err := decoder.Decode(&content); err != nil {
+			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
 		contents = append(contents, &content)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read JSONL file: %w", err)
 	}
 
 	return contents, nil

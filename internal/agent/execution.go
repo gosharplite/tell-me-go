@@ -38,7 +38,21 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 	}
 
 	a.logToolCalls(functionCalls, turn)
-	responseParts := a.executeToolsConcurrently(ctx, functionCalls)
+	trs := a.executeToolsConcurrentResults(ctx, functionCalls)
+
+	var responseParts []*types.Part
+	for i, tr := range trs {
+		a.renderer.LogToolResult(functionCalls[i].Name, tr, a.showTools)
+		responseParts = append(responseParts, a.processToolResult(functionCalls[i].Name, tr))
+		for _, b := range tr.BinaryData {
+			responseParts = append(responseParts, &types.Part{
+				InlineData: &genai.Blob{
+					MIMEType: b.MIMEType,
+					Data:     b.Data,
+				},
+			})
+		}
+	}
 
 	a.history.AddContent(&types.Content{
 		Role:  "user",
@@ -87,7 +101,7 @@ func (a *Agent) processToolResult(name string, result types.ToolResult) *types.P
 	}
 }
 
-func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.FunctionCall) []*types.Part {
+func (a *Agent) executeToolsConcurrentResults(ctx context.Context, calls []*types.FunctionCall) []types.ToolResult {
 	trs := make([]types.ToolResult, len(calls))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, a.maxConcurrentTools)
@@ -119,21 +133,7 @@ func (a *Agent) executeToolsConcurrently(ctx context.Context, calls []*types.Fun
 		}
 	}
 	wg.Wait()
-
-	var finalParts []*types.Part
-	for i, tr := range trs {
-		finalParts = append(finalParts, a.processToolResult(calls[i].Name, tr))
-		for _, b := range tr.BinaryData {
-			finalParts = append(finalParts, &types.Part{
-				InlineData: &genai.Blob{
-					MIMEType: b.MIMEType,
-					Data:     b.Data,
-				},
-			})
-		}
-	}
-
-	return finalParts
+	return trs
 }
 
 func (a *Agent) isSerialTool(name string) bool {

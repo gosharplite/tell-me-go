@@ -35,13 +35,13 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "panic_tool"},
 		}
 
-		results := a.executeToolsConcurrently(context.Background(), calls)
+		results := a.executeToolsConcurrentResults(context.Background(), calls)
 
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 
-		res := results[0].FunctionResponse.Response["result"].(string)
+		res := results[0].Text
 		if !strings.Contains(res, "Panic detected: intentional parallel panic") {
 			t.Errorf("expected panic error message, got: %s", res)
 		}
@@ -52,13 +52,13 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "serial_panic_tool"},
 		}
 
-		results := a.executeToolsConcurrently(context.Background(), calls)
+		results := a.executeToolsConcurrentResults(context.Background(), calls)
 
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
 
-		res := results[0].FunctionResponse.Response["result"].(string)
+		res := results[0].Text
 		if !strings.Contains(res, "Panic detected: intentional serial panic") {
 			t.Errorf("expected panic error message, got: %s", res)
 		}
