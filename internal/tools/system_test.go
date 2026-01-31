@@ -9,7 +9,7 @@ import (
 
 func TestIsSafeCommand(t *testing.T) {
 	sm := NewSecurityManager()
-	m := newSystemManager(sm)
+	v := NewCommandValidator(sm)
 	tests := []struct {
 		cmd  string
 		want bool
@@ -34,7 +34,7 @@ func TestIsSafeCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got, _ := m.validator.IsSafe(tt.cmd)
+		got, _ := v.IsSafe(tt.cmd)
 		if got != tt.want {
 			t.Errorf("isSafeCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
 		}
@@ -42,7 +42,7 @@ func TestIsSafeCommand(t *testing.T) {
 }
 
 func TestSplitCommand(t *testing.T) {
-	m := newSystemManager(nil)
+	v := NewCommandValidator(nil)
 	tests := []struct {
 		cmd      string
 		expected []string
@@ -57,7 +57,7 @@ func TestSplitCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got, err := m.validator.Split(tt.cmd)
+		got, err := v.Split(tt.cmd)
 		if (err != nil) != tt.wantErr {
 			t.Errorf("splitCommand(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
 			continue

@@ -80,7 +80,7 @@ func TestStreamResponse(t *testing.T) {
 		}
 
 		finalize()
-		
+
 		if !bytes.Contains(stderr.Bytes(), []byte("[Media] image/png")) {
 			t.Errorf("expected stderr to contain '[Media] image/png', got %q", stderr.String())
 		}

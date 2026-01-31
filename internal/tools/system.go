@@ -4,36 +4,15 @@
 package tools
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
-
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-type systemManager struct {
-	sm        *SecurityManager
-	validator *CommandValidator
-	executor  *ProcessExecutor
-}
-
-func newSystemManager(sm *SecurityManager) *systemManager {
-	return &systemManager{
-		sm:        sm,
-		validator: NewCommandValidator(sm),
-		executor:  NewProcessExecutor(),
-	}
-}
-
 // RegisterSystemTools adds system-related tools to the registry.
 func RegisterSystemTools(r *Registry, sm *SecurityManager) {
-	m := newSystemManager(sm)
+	shell := NewShellTool(sm)
+	net := &NetworkTool{sm: sm}
+	policy := &PolicyTool{sm: sm}
+	interaction := &InteractionTool{sm: sm}
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "execute_command",
@@ -60,7 +39,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"command"},
 		},
-	}, m.executeCommand, ToolOptions{Serial: true, LongRunning: true})
+	}, shell.ExecuteCommand, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "pipe_commands",
@@ -90,7 +69,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"commands"},
 		},
-	}, m.pipeCommands, ToolOptions{Serial: true, LongRunning: true})
+	}, shell.PipeCommands, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "ask_user",
@@ -105,7 +84,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"question"},
 		},
-	}, m.askUser, ToolOptions{Serial: true, LongRunning: true})
+	}, interaction.AskUser, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "read_external_docs",
@@ -120,7 +99,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"url"},
 		},
-	}, m.readExternalDocs)
+	}, net.ReadExternalDocs)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "http_request",
@@ -150,7 +129,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, m.httpRequest)
+	}, net.HttpRequest)
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "register_safepath",
@@ -169,12 +148,12 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, m.registerSafePathTool, ToolOptions{Serial: true, LongRunning: true})
+	}, policy.RegisterSafePath, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
-	}, m.listSafePathsTool)
+	}, policy.ListSafePaths)
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "remove_safepath",
@@ -189,7 +168,7 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, m.removeSafePathTool, ToolOptions{Serial: true, LongRunning: true})
+	}, policy.RemoveSafePath, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "register_readpath",
@@ -208,12 +187,12 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, m.registerReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
+	}, policy.RegisterReadPath, ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
-	}, m.listReadOnlyPathsTool)
+	}, policy.ListReadPaths)
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "remove_readpath",
@@ -228,688 +207,15 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, m.removeReadOnlyPathTool, ToolOptions{Serial: true, LongRunning: true})
+	}, policy.RemoveReadPath, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, m.bypassConfirmationTool, ToolOptions{Serial: true, LongRunning: true})
+	}, policy.BypassConfirmation, ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, m.revokeBypassTool, ToolOptions{Serial: true, LongRunning: true})
-}
-
-func (m *systemManager) revokeBypassTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	m.sm.bypassMu.Lock()
-	m.sm.bypassConfirmations = false
-	m.sm.bypassMu.Unlock()
-
-	m.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
-	m.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
-	return types.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
-}
-
-func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	if m.sm.IsBypassActive() {
-		return types.ToolResult{Text: "Bypass mode is already enabled."}, nil
-	}
-
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.\033[0m\n")
-	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
-	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
-
-	char, err := m.sm.readSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-	if char != "y" {
-		return types.ToolResult{Text: "Bypass mode denied by user."}, nil
-	}
-
-	m.sm.bypassMu.Lock()
-	m.sm.bypassConfirmations = true
-	m.sm.bypassMu.Unlock()
-
-	m.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
-	m.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
-	return types.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
-}
-
-func (m *systemManager) listSafePathsTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	paths := m.sm.GetSafePaths()
-	if len(paths) == 0 {
-		return types.ToolResult{Text: "No additional safe paths are currently registered."}, nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Currently authorized safe paths:\n")
-	for _, p := range paths {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
-	}
-	return types.ToolResult{Text: sb.String()}, nil
-}
-
-func (m *systemManager) listReadOnlyPathsTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	paths := m.sm.GetReadOnlyPaths()
-	if len(paths) == 0 {
-		return types.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Currently authorized read-only paths:\n")
-	for _, p := range paths {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
-	}
-	return types.ToolResult{Text: sb.String()}, nil
-}
-
-func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Path string `json:"path"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	path := params.Path
-	if path == "" {
-		return types.ToolResult{}, fmt.Errorf("path argument is required")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid path: %w", err)
-	}
-
-	// Confirmation Gate
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
-		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
-	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
-		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Removal denied by user."}, nil
-		}
-		m.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
-	}
-
-	if err := m.sm.RemoveSafePath(absPath); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
-	}
-
-	if err := m.sm.SaveSafePaths(ctx); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath)}, nil
-}
-
-func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Path string `json:"path"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	path := params.Path
-	if path == "" {
-		return types.ToolResult{}, fmt.Errorf("path argument is required")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid path: %w", err)
-	}
-
-	// Confirmation Gate
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of read-only authorization auto-approved.\033[0m\n")
-		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
-	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
-		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Removal denied by user."}, nil
-		}
-		m.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
-	}
-
-	if err := m.sm.RemoveReadOnlyPath(absPath); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
-	}
-
-	if err := m.sm.SaveReadOnlyPaths(ctx); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath)}, nil
-}
-
-func (m *systemManager) registerSafePathTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Path   string `json:"path"`
-		Reason string `json:"reason"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	path := params.Path
-	reason := params.Reason
-
-	if path == "" {
-		return types.ToolResult{}, fmt.Errorf("path argument is required")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid path: %w", err)
-	}
-
-	// 1. Confirmation
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
-		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
-	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
-		}
-		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Access denied by user (first confirmation)."}, nil
-		}
-
-		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
-		char, err = m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Access denied by user (double confirmation)."}, nil
-		}
-		m.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
-	}
-
-	// Register and Persist
-	m.sm.RegisterSafePath(absPath)
-	if err := m.sm.SaveSafePaths(ctx); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath)}, nil
-}
-
-func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Path   string `json:"path"`
-		Reason string `json:"reason"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	path := params.Path
-	reason := params.Reason
-
-	if path == "" {
-		return types.ToolResult{}, fmt.Errorf("path argument is required")
-	}
-
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid path: %w", err)
-	}
-
-	// 1. Confirmation
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Read-only authorization auto-approved.\033[0m\n")
-		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
-	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent READ-ONLY access to:\033[0m %s\n", absPath)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
-		}
-		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Access denied by user (first confirmation)."}, nil
-		}
-
-		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.\033[0m (y/N) ")
-		char, err = m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char != "y" {
-			return types.ToolResult{Text: "Access denied by user (double confirmation)."}, nil
-		}
-		m.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
-	}
-
-	// Register and Persist
-	m.sm.RegisterReadOnlyPath(absPath)
-	if err := m.sm.SaveReadOnlyPaths(ctx); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath)}, nil
-}
-
-func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Question string `json:"question"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	question := params.Question
-	if question == "" {
-		return types.ToolResult{}, fmt.Errorf("question argument is required")
-	}
-
-	// Tell-me style: Question in magenta, followed by "Answer > " prompt
-	fmt.Fprintf(os.Stderr, "\033[1;35m[AI Question] %s\033[0m\n", question)
-	fmt.Fprintf(os.Stderr, "Answer > ")
-
-	s, err := m.sm.readLine(ctx)
-	if err != nil {
-		if err == io.EOF {
-			return types.ToolResult{Text: "User closed input (EOF)."}, nil
-		}
-		return types.ToolResult{}, fmt.Errorf("failed to read user response: %w", err)
-	}
-
-	return types.ToolResult{Text: strings.TrimSpace(s)}, nil
-}
-
-func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	var params struct {
-		URL string `json:"url"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	url := params.URL
-	if url == "" {
-		return types.ToolResult{}, fmt.Errorf("url argument is required")
-	}
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-	resp, err := client.Do(req)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return types.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Limit reader to prevent DoS
-	limitReader := io.LimitReader(resp.Body, 50001)
-	body, err := io.ReadAll(limitReader)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	content := string(body)
-
-	// Basic HTML stripping
-	// 1. Remove script and style tags and their contents
-	reStyle := regexp.MustCompile(`(?s)<style.*?>.*?</style>`)
-	reScript := regexp.MustCompile(`(?s)<script.*?>.*?</script>`)
-	content = reStyle.ReplaceAllString(content, "")
-	content = reScript.ReplaceAllString(content, "")
-
-	// 2. Remove all other HTML tags
-	reTags := regexp.MustCompile(`<.*?>`)
-	content = reTags.ReplaceAllString(content, " ")
-
-	// 3. Clean up whitespace
-	reSpace := regexp.MustCompile(`\n\s*\n`)
-	content = reSpace.ReplaceAllString(content, "\n\n")
-	content = strings.Join(strings.Fields(content), " ")
-
-	// Truncate to avoid huge inputs
-	if len(content) > 10000 {
-		content = content[:10000] + "\n... (truncated)"
-	}
-
-	return types.ToolResult{Text: content}, nil
-}
-
-func (m *systemManager) httpRequest(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	var params struct {
-		Method  string            `json:"method"`
-		URL     string            `json:"url"`
-		Headers map[string]string `json:"headers"`
-		Body    string            `json:"body"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	method := params.Method
-	url := params.URL
-	bodyStr := params.Body
-
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] HTTP %s %s\033[0m\n", method, url)
-	}()
-
-	var reqBody io.Reader
-	if bodyStr != "" {
-		reqBody = strings.NewReader(bodyStr)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	for k, v := range params.Headers {
-		req.Header.Set(k, v)
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Limit reader to 5MB to prevent DoS
-	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
-	respBody, err := io.ReadAll(limitReader)
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Status: %s\n", resp.Status))
-	sb.WriteString("Headers:\n")
-	for k, v := range resp.Header {
-		sb.WriteString(fmt.Sprintf("  %s: %s\n", k, strings.Join(v, ", ")))
-	}
-	sb.WriteString("\nBody:\n")
-
-	respBodyStr := string(respBody)
-	if len(respBodyStr) > 5*1024*1024 {
-		respBodyStr = respBodyStr[:5*1024*1024] + "\n... (truncated due to size limit)"
-	}
-	sb.WriteString(respBodyStr)
-
-	return types.ToolResult{Text: sb.String()}, nil
-}
-
-func (m *systemManager) executeCommand(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Command    string `json:"command"`
-		Reason     string `json:"reason"`
-		OutputFile string `json:"output_file"`
-		Append     bool   `json:"append"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	command := params.Command
-	if command == "" {
-		return types.ToolResult{}, fmt.Errorf("command argument is required")
-	}
-
-	outputFile := params.OutputFile
-	if outputFile != "" {
-		resolvedFile, err := m.sm.IsPathWritable(outputFile)
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		outputFile = resolvedFile
-	}
-
-	// 1. Validate
-	safe, _ := m.validator.IsSafe(command)
-	approved := false
-
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
-		approved = true
-	} else if safe {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe command detected.\033[0m\n")
-		approved = true
-	} else {
-		// 2. Authorize
-		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: \033[0m%s\n", command)
-		if params.Reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", params.Reason)
-		}
-		if outputFile != "" {
-			redir := ">"
-			if params.Append {
-				redir = ">>"
-			}
-			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect: %s %s\033[0m\n", redir, outputFile)
-		}
-		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char == "y" {
-			approved = true
-		}
-	}
-
-	if !approved {
-		return types.ToolResult{Text: fmt.Sprintf("User denied execution of command: %s", command)}, nil
-	}
-
-	m.sm.logAudit("REASON", params.Reason, "COMMAND", command)
-
-	// 3. Execute
-	parts, err := m.validator.Split(command)
-	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
-	}
-
-	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
-
-	res, err := m.executor.RunCommand(ctx, parts, ExecutionConfig{
-		OutputFile: outputFile,
-		Append:     params.Append,
-		Feedback:   os.Stderr,
-	})
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
-
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	output := res.Output
-	if len(output) > 50000 {
-		output = output[:50000] + "\n... (truncated)"
-	}
-
-	return types.ToolResult{
-		Text: fmt.Sprintf("Exit Code: %d\nOutput:\n%s", res.ExitCode, output),
-	}, nil
-}
-
-func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	m.sm.TerminalLock()
-	defer m.sm.TerminalUnlock()
-
-	var params struct {
-		Commands   []string `json:"commands"`
-		Reason     string   `json:"reason"`
-		OutputFile string   `json:"output_file"`
-		Append     bool     `json:"append"`
-	}
-	if err := UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	commands := params.Commands
-	if len(commands) < 2 {
-		return types.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
-	}
-
-	outputFile := params.OutputFile
-	if outputFile != "" {
-		resolvedFile, err := m.sm.IsPathWritable(outputFile)
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		outputFile = resolvedFile
-	}
-
-	// 1. Validate
-	allSafe := true
-	for _, cmd := range commands {
-		if safe, _ := m.validator.IsSafe(cmd); !safe {
-			allSafe = false
-			break
-		}
-	}
-
-	approved := false
-	if m.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Pipeline auto-approved (bypass_confirmation enabled).\033[0m\n")
-		approved = true
-	} else if allSafe {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe pipeline detected.\033[0m\n")
-		approved = true
-	} else {
-		// 2. Authorize
-		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Pipeline: \033[0m%s\n", strings.Join(commands, " | "))
-		if params.Reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", params.Reason)
-		}
-		if outputFile != "" {
-			redir := ">"
-			if params.Append {
-				redir = ">>"
-			}
-			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect Final Output: %s %s\033[0m\n", redir, outputFile)
-		}
-		fmt.Fprintf(os.Stderr, "⚠️  Execute this pipeline? (y/N) ")
-
-		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return types.ToolResult{}, err
-		}
-		if char == "y" {
-			approved = true
-		}
-	}
-
-	if !approved {
-		return types.ToolResult{Text: "User denied execution of pipeline."}, nil
-	}
-
-	m.sm.logAudit("REASON", params.Reason, "PIPELINE", strings.Join(commands, " | "))
-
-	// 3. Execute
-	pipedParts := make([][]string, len(commands))
-	for i, cmdStr := range commands {
-		parts, err := m.validator.Split(cmdStr)
-		if err != nil {
-			return types.ToolResult{Text: fmt.Sprintf("Error parsing command at index %d: %v", i, err)}, nil
-		}
-		pipedParts[i] = parts
-	}
-
-	fmt.Fprintf(os.Stderr, "\033[90mExecuting Pipeline... (Output shown below)\033[0m\n")
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
-
-	res, err := m.executor.RunPipeline(ctx, pipedParts, ExecutionConfig{
-		OutputFile: outputFile,
-		Append:     params.Append,
-		Feedback:   os.Stderr,
-	})
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
-
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	finalRes := res.Output
-	if len(finalRes) > 50000 {
-		finalRes = finalRes[:50000] + "\n... (truncated)"
-	}
-
-	return types.ToolResult{
-		Text: fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, finalRes),
-	}, nil
+	}, policy.RevokeBypass, ToolOptions{Serial: true, LongRunning: true})
 }

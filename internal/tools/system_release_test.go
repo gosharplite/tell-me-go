@@ -14,7 +14,7 @@ func TestExecuteCommand_Security(t *testing.T) {
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
 
-	m := newSystemManager(sm)
+	shell := NewShellTool(sm)
 
 	tests := []struct {
 		name    string
@@ -29,7 +29,7 @@ func TestExecuteCommand_Security(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := map[string]interface{}{"command": tt.command}
-			_, err := m.executeCommand(context.Background(), args)
+			_, err := shell.ExecuteCommand(context.Background(), args)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("executeCommand() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -45,10 +45,10 @@ func TestExecuteCommand_Execution(t *testing.T) {
 	// Authorize
 	sm.bypassConfirmations = true
 
-	m := newSystemManager(sm)
+	shell := NewShellTool(sm)
 
 	args := map[string]interface{}{"command": "echo hello"}
-	resp, err := m.executeCommand(context.Background(), args)
+	resp, err := shell.ExecuteCommand(context.Background(), args)
 	if err != nil {
 		t.Fatalf("executeCommand failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPipeCommands_Security(t *testing.T) {
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
 
-	m := newSystemManager(sm)
+	shell := NewShellTool(sm)
 
 	tests := []struct {
 		name     string
@@ -78,7 +78,7 @@ func TestPipeCommands_Security(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			args := map[string]interface{}{"commands": tt.commands}
-			_, err := m.pipeCommands(context.Background(), args)
+			_, err := shell.PipeCommands(context.Background(), args)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("pipeCommands() error = %v, wantErr %v", err, tt.wantErr)
 			}
