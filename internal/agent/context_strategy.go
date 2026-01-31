@@ -84,7 +84,7 @@ func (cs *ContextStrategy) EstimateTokens(contents []*types.Content) int {
 				charCount += cs.estimateMapSize(p.FunctionResponse.Response)
 			}
 			if p.InlineData != nil {
-				charCount += 50 // Minimal tokens for blob reference
+				charCount += 160 // Heuristic for blob (roughly 50 tokens)
 			}
 		}
 	}
