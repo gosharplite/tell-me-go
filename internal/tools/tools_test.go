@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -40,16 +41,16 @@ func TestRegistry_SerialProperty(t *testing.T) {
 func TestRegistry_Execute(t *testing.T) {
 	r := NewRegistry()
 	ctx := context.Background()
-	r.Register(&genai.FunctionDeclaration{Name: "test"}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return "success", nil
+	r.Register(&genai.FunctionDeclaration{Name: "test"}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{Text: "success"}, nil
 	})
 
 	res, err := r.Execute(ctx, "test", nil)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
-	if res != "success" {
-		t.Errorf("expected success, got %s", res)
+	if res.Text != "success" {
+		t.Errorf("expected success, got %s", res.Text)
 	}
 
 	_, err = r.Execute(ctx, "unknown", nil)

@@ -17,12 +17,12 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional parallel panic")
 	})
 	registry.RegisterWithOptions(&genai.FunctionDeclaration{
 		Name: "serial_panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional serial panic")
 	}, tools.ToolOptions{Serial: true})
 

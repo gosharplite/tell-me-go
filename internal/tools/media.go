@@ -5,7 +5,6 @@ package tools
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,17 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
 type mediaManager struct {
 	sm     *SecurityManager
-	client *api.Client
+	client types.LLMClient
 }
 
 // RegisterMediaTools adds image and media-related tools to the registry.
-func RegisterMediaTools(r *Registry, sm *SecurityManager, client *api.Client) {
+func RegisterMediaTools(r *Registry, sm *SecurityManager, client types.LLMClient) {
 	m := &mediaManager{sm: sm, client: client}
 
 	r.RegisterWithOptions(&genai.FunctionDeclaration{
@@ -65,7 +64,7 @@ func RegisterMediaTools(r *Registry, sm *SecurityManager, client *api.Client) {
 	}, m.readImage)
 }
 
-func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	prompt, _ := args["prompt"].(string)
 	aspectRatio, _ := args["aspect_ratio"].(string)
 	if aspectRatio == "" {
@@ -92,17 +91,17 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 	// Use specified model
 	images, err := m.client.GenerateImages(ctx, model, fullPrompt, "image/png")
 	if err != nil {
-		return fmt.Sprintf("Error generating image: %v", err), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error generating image: %v", err)}, nil
 	}
 
 	if len(images) == 0 {
-		return "Error: No images were generated.", nil
+		return types.ToolResult{Text: "Error: No images were generated."}, nil
 	}
 
 	// Create directory
 	outDir := "assets/generated"
 	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Sprintf("Error creating output directory: %v", err), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error creating output directory: %v", err)}, nil
 	}
 
 	// Save first image
@@ -121,16 +120,16 @@ func (m *mediaManager) createImage(ctx context.Context, args map[string]interfac
 	outPath := filepath.Join(outDir, filename)
 
 	if err := os.WriteFile(outPath, images[0], 0644); err != nil {
-		return fmt.Sprintf("Error saving image: %v", err), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error saving image: %v", err)}, nil
 	}
 
-	return fmt.Sprintf("Image generated successfully and saved to: %s", outPath), nil
+	return types.ToolResult{Text: fmt.Sprintf("Image generated successfully and saved to: %s", outPath)}, nil
 }
 
-func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, _ := args["filepath"].(string)
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	func() {
@@ -141,17 +140,22 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Sprintf("Error reading file: %v", err), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error reading file: %v", err)}, nil
 	}
 
 	// Detect MIME type
 	mimeType := http.DetectContentType(data)
 	if !strings.HasPrefix(mimeType, "image/") {
-		return fmt.Sprintf("Error: File is not a supported image (detected: %s)", mimeType), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error: File is not a supported image (detected: %s)", mimeType)}, nil
 	}
 
-	b64Data := base64.StdEncoding.EncodeToString(data)
-
-	// Special prefix that the agent will catch
-	return fmt.Sprintf("MULTI_MODAL_IMAGE|%s|%s|Successfully read image %s. You can now see it.", mimeType, b64Data, path), nil
+	return types.ToolResult{
+		Text: fmt.Sprintf("Successfully read image %s. You can now see it.", path),
+		BinaryData: []types.BinaryData{
+			{
+				MIMEType: mimeType,
+				Data:     data,
+			},
+		},
+	}, nil
 }

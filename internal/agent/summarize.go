@@ -26,10 +26,10 @@ Discard:
 The output must be a single summary that will replace these turns in the history.
 `
 
-func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{}) (string, error) {
+func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	targetTurns, ok := args["turns"].(float64)
 	if !ok || targetTurns <= 0 {
-		return "", fmt.Errorf("invalid or missing 'turns' parameter")
+		return types.ToolResult{}, fmt.Errorf("invalid or missing 'turns' parameter")
 	}
 
 	msgsToSummarize := int(targetTurns) * 2
@@ -40,7 +40,7 @@ func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{
 		msgsToSummarize = len(contents) - 1
 	}
 	if msgsToSummarize <= 0 {
-		return "No history to summarize.", nil
+		return types.ToolResult{Text: "No history to summarize."}, nil
 	}
 
 	// Adjust to even number to keep turns intact
@@ -49,12 +49,12 @@ func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{
 	}
 
 	if msgsToSummarize <= 0 {
-		return "No full turns to summarize.", nil
+		return types.ToolResult{Text: "No full turns to summarize."}, nil
 	}
 
 	summary, err := a.performSummarization(ctx, contents[:msgsToSummarize])
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	newMsgs := []*types.Content{
@@ -69,10 +69,10 @@ func (a *Agent) summarizeHistory(ctx context.Context, args map[string]interface{
 	}
 
 	if err := a.history.ReplaceRange(0, msgsToSummarize, newMsgs); err != nil {
-		return "", fmt.Errorf("failed to update history with summary: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", msgsToSummarize/2), nil
+	return types.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", msgsToSummarize/2)}, nil
 }
 
 func (a *Agent) performSummarization(ctx context.Context, subset []*types.Content) (string, error) {

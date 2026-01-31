@@ -8,11 +8,13 @@ package tools
 import (
 	"context"
 	"fmt"
+
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc func(ctx context.Context, args map[string]interface{}) (string, error)
+type ToolFunc func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error)
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {
@@ -62,10 +64,10 @@ func (r *Registry) GetDeclarations() []*genai.FunctionDeclaration {
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
-func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (types.ToolResult, error) {
 	entry, ok := r.entries[name]
 	if !ok {
-		return "", fmt.Errorf("tool not found: %s", name)
+		return types.ToolResult{}, fmt.Errorf("tool not found: %s", name)
 	}
 	return entry.handler(ctx, args)
 }

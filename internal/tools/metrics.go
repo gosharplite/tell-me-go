@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -71,8 +72,9 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return m.EstimateCost(ctx, true, "") // Records to ledger with default ID
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
+		return types.ToolResult{Text: res}, err
 	})
 
 	r.Register(&genai.FunctionDeclaration{
@@ -81,10 +83,11 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 		Parameters: &genai.Schema{
 			Type: genai.TypeObject,
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
-		return m.getCostSummary(ctx)
+		res, err := m.getCostSummary(ctx)
+		return types.ToolResult{Text: res}, err
 	})
 }
 

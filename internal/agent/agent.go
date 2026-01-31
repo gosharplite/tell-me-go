@@ -5,15 +5,11 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -39,14 +35,36 @@ type Chatter interface {
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
 	SetMainConfigPath(path string)
+	SetRenderer(renderer UIRenderer)
+}
+
+// UIRenderer defines the interface for UI feedback.
+type UIRenderer interface {
+	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
+	LogTurnStatus(status TurnStatus)
+	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+}
+
+// TurnStatus contains the data needed for rendering turn status.
+type TurnStatus struct {
+	Timestamp        time.Time
+	CurrentTurns     int
+	MaxHistoryTurns  int
+	Tokens           int
+	MaxHistoryTokens int
+	Metrics          *types.Metrics
+	IsPostCall       bool
+	StartTime        time.Time
 }
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client               *api.Client
+	client               types.LLMClient
 	history              *history.Manager
 	registry             *tools.Registry
 	sm                   *tools.SecurityManager
+	renderer             UIRenderer
+	configWatcher        *ConfigWatcher
 	logFile              string
 	maxToolTurns         int
 	maxHistoryTokens     int
@@ -63,14 +81,17 @@ type Agent struct {
 }
 
 // New creates a new Agent.
-func New(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
+func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
 	a := &Agent{
 		client:             client,
 		history:            hManager,
 		registry:           registry,
 		sm:                 sm,
+		renderer:           NewStdUIRenderer(sm),
+		configWatcher:      NewConfigWatcher(120000, 10, 20),
 		maxToolTurns:       10,
 		maxHistoryTokens:   120000,
+		maxHistoryTurns:    20,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		showThoughts:       true,
@@ -121,6 +142,8 @@ func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	if historyTurns > 0 {
 		a.maxHistoryTurns = historyTurns
 	}
+	// Also sync to config watcher
+	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 }
 
 // SetConcurrency sets the parallel execution limits for the agent.
@@ -146,82 +169,25 @@ func (a *Agent) SetPrunedTurns(n int) {
 // SetPersistentConfigPath sets the path to the persistent session configuration.
 func (a *Agent) SetPersistentConfigPath(path string) {
 	a.persistentConfigPath = path
+	a.configWatcher.SetPaths(a.mainConfigPath, path)
 }
 
 // SetMainConfigPath sets the path to the main YAML configuration file.
 func (a *Agent) SetMainConfigPath(path string) {
 	a.mainConfigPath = path
+	a.configWatcher.SetPaths(path, a.persistentConfigPath)
+}
+
+// SetRenderer sets a custom UI renderer.
+func (a *Agent) SetRenderer(renderer UIRenderer) {
+	if renderer != nil {
+		a.renderer = renderer
+	}
 }
 
 func (a *Agent) refreshLimits() {
-	// 1. Reload from main YAML config if available
-	if a.mainConfigPath != "" {
-		if cfg, err := config.Load(a.mainConfigPath); err == nil {
-			if cfg.MaxHistoryTokens > 0 {
-				a.maxHistoryTokens = cfg.MaxHistoryTokens
-			}
-			if cfg.MaxToolTurns > 0 {
-				a.maxToolTurns = cfg.MaxToolTurns
-			}
-			if cfg.MaxHistoryTurns > 0 {
-				a.maxHistoryTurns = cfg.MaxHistoryTurns
-			}
-		}
-	}
-
-	// 2. Override with persistent session config if available
-	if a.persistentConfigPath == "" {
-		return
-	}
-	data, err := os.ReadFile(a.persistentConfigPath)
-	if err != nil {
-		return
-	}
-
-	// Use map parsing directly for flexibility (handles string/int types)
-	// and to catch JSON errors that might otherwise be silent.
-	var pCfg map[string]interface{}
-	if err := json.Unmarshal(data, &pCfg); err != nil {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
-				time.Now().Format("15:04:05"), err)
-		}()
-		return
-	}
-
-	// Allow overriding core limits dynamically from map (handles both string and int if present)
-	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxHistoryTokens = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxHistoryTokens = limit
-			}
-		}
-	}
-	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxToolTurns = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxToolTurns = limit
-			}
-		}
-	}
-	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxHistoryTurns = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxHistoryTurns = limit
-			}
-		}
-	}
+	a.configWatcher.Refresh()
+	a.maxHistoryTokens, a.maxToolTurns, a.maxHistoryTurns = a.configWatcher.GetLimits()
 }
 
 // Chat runs the multi-turn orchestration loop.
@@ -230,7 +196,6 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
 	})
-	a.saveHistory() // Persist initial user prompt immediately
 
 	for turn := 0; turn <= a.maxToolTurns; turn++ {
 		a.refreshLimits()
@@ -268,7 +233,14 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 		// 2. Prepare API Contents with warnings
 		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
-		a.logTurnStatus(currentTurns, tokens, nil, false)
+		a.renderer.LogTurnStatus(TurnStatus{
+			Timestamp:        time.Now(),
+			CurrentTurns:     currentTurns,
+			MaxHistoryTurns:  a.maxHistoryTurns,
+			Tokens:           tokens,
+			MaxHistoryTokens: a.maxHistoryTokens,
+			IsPostCall:       false,
+		})
 
 		// 3. Send Chat Request
 		respContent, metrics, err := a.sendChat(ctx, apiContents)
@@ -277,7 +249,7 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		// 4. Render Output
-		a.renderResponse(respContent)
+		a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
 		a.history.AddContent(respContent)
 		a.saveHistory() // SAVE 1: Capture model's response/tool calls
 
@@ -295,9 +267,18 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
 		a.refreshLimits()
 
-		a.logTurnStatus(currentTurns, tokens, metrics, true)
+		a.renderer.LogTurnStatus(TurnStatus{
+			Timestamp:        time.Now(),
+			CurrentTurns:     currentTurns,
+			MaxHistoryTurns:  a.maxHistoryTurns,
+			Tokens:           tokens,
+			MaxHistoryTokens: a.maxHistoryTokens,
+			Metrics:          metrics,
+			IsPostCall:       true,
+			StartTime:        a.startTime,
+		})
 		if metrics != nil {
-			a.logUsage(metrics)
+			a.renderer.LogUsage(metrics, a.logFile, a.startTime)
 		}
 
 		if !a.hasToolCalls(respContent) {

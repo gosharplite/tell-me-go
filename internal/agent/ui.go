@@ -10,11 +10,22 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-func (a *Agent) logUsage(m *types.Metrics) {
-	if a.logFile == "" || m == nil {
+// StdUIRenderer implements UIRenderer using standard output/error and Glamour.
+type StdUIRenderer struct {
+	sm *tools.SecurityManager
+}
+
+// NewStdUIRenderer creates a new StdUIRenderer.
+func NewStdUIRenderer(sm *tools.SecurityManager) *StdUIRenderer {
+	return &StdUIRenderer{sm: sm}
+}
+
+func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime time.Time) {
+	if logFile == "" || m == nil {
 		return
 	}
 
@@ -33,10 +44,10 @@ func (a *Agent) logUsage(m *types.Metrics) {
 
 	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s / 15.2s]
 	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%s / %.2fs]\n",
-		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, time.Since(a.startTime).Seconds())
+		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, time.Since(startTime).Seconds())
 
 	// Append to log file
-	f, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
@@ -44,33 +55,34 @@ func (a *Agent) logUsage(m *types.Metrics) {
 	_, _ = f.WriteString(logLine)
 }
 
-func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPostCall bool) {
+func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
-	timestamp := time.Now().Format("15:04:05")
+	timestamp := status.Timestamp.Format("15:04:05")
 
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
 
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := reset
-		if float64(tks) > float64(a.maxHistoryTokens)*0.9 {
+		if float64(tks) > float64(status.MaxHistoryTokens)*0.9 {
 			tokenColor = "\033[0;31m" // Red if > 90%
 		}
 
 		if isActual {
 			fmt.Fprintf(os.Stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
-				gray, timestamp, tokenColor, tks, gray, a.maxHistoryTokens, reset)
+				gray, timestamp, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		} else {
 			fmt.Fprintf(os.Stderr, "%s[%s] [Turn (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
-				gray, timestamp, reset, currentTurns, gray, a.maxHistoryTurns, tokenColor, tks, gray, a.maxHistoryTokens, reset)
+				gray, timestamp, reset, status.CurrentTurns, gray, status.MaxHistoryTurns, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		}
 	}
 
-	if !isPostCall {
+	if !status.IsPostCall {
 		// 1. Print Payload Status (Pre-call estimate)
-		printSystemLine(tokens, false)
-	} else if m != nil {
+		printSystemLine(status.Tokens, false)
+	} else if status.Metrics != nil {
+		m := status.Metrics
 		// 2. Re-print Payload Status (Post-call actual)
 		printSystemLine(int(m.PromptTokens), true)
 
@@ -87,7 +99,7 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPost
 			hColor = reset
 		}
 
-		totalDuration := time.Since(a.startTime).Seconds()
+		totalDuration := time.Since(status.StartTime).Seconds()
 		durationStr := fmt.Sprintf("%.2fs", m.Duration)
 		if m.ToolDuration > 3.0 {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
@@ -98,37 +110,37 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, m *types.Metrics, isPost
 	}
 }
 
-func (a *Agent) renderResponse(respContent *types.Content) {
+func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts, rawOutput bool) {
 	for _, part := range respContent.Parts {
-		if a.showThoughts && part.Thought && part.Text != "" {
+		if showThoughts && part.Thought && part.Text != "" {
 			func() {
-				a.sm.TerminalLock()
-				defer a.sm.TerminalUnlock()
+				r.sm.TerminalLock()
+				defer r.sm.TerminalUnlock()
 				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
 			}()
 		}
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
-			if a.rawOutput {
+			if rawOutput {
 				fmt.Print(part.Text)
 				if !strings.HasSuffix(part.Text, "\n") {
 					fmt.Println()
 				}
 			} else {
-				a.renderMarkdown(part.Text)
+				r.renderMarkdown(part.Text)
 			}
 		}
 	}
 }
 
-func (a *Agent) renderMarkdown(text string) {
-	r, _ := glamour.NewTermRenderer(
+func (r *StdUIRenderer) renderMarkdown(text string) {
+	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
 
-	out, err := r.Render(text)
+	out, err := renderer.Render(text)
 	if err != nil {
 		fmt.Print(text)
 	} else {

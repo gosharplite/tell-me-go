@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -117,88 +118,97 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 	}, m.gitCreateBranch, ToolOptions{Serial: true})
 }
 
-func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (string, error) {
-	return runGitCommand(ctx, "status", "--short")
+func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	res, err := runGitCommand(ctx, "status", "--short")
+	return types.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	staged, _ := args["staged"].(bool)
+	var res string
+	var err error
 	if staged {
-		return runGitCommand(ctx, "diff", "--staged")
+		res, err = runGitCommand(ctx, "diff", "--staged")
+	} else {
+		res, err = runGitCommand(ctx, "diff")
 	}
-	return runGitCommand(ctx, "diff")
+	return types.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	limit := 10
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
 	}
-	return runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	res, err := runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	return types.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	hash, ok := args["hash"].(string)
 	if !ok || hash == "" {
-		return "", fmt.Errorf("hash argument is required")
+		return types.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
 	out, err := runGitCommand(ctx, "show", "--stat", "--patch", hash)
 	if err != nil {
-		return out, err
+		return types.ToolResult{Text: out}, err
 	}
 	lines := strings.Split(out, "\n")
 	if len(lines) > 300 {
-		return strings.Join(lines[:300], "\n") + "\n... (Output truncated) ...", nil
+		return types.ToolResult{Text: strings.Join(lines[:300], "\n") + "\n... (Output truncated) ..."}, nil
 	}
-	return out, nil
+	return types.ToolResult{Text: out}, nil
 }
 
-func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
-		return "", fmt.Errorf("filepath argument is required")
+		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
-	return runGitCommand(ctx, "blame", "-w", path)
+	res, err := runGitCommand(ctx, "blame", "-w", path)
+	return types.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	message, _ := args["message"].(string)
 	if message == "" {
-		return "", fmt.Errorf("message is required")
+		return types.ToolResult{}, fmt.Errorf("message is required")
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT COMMIT", "current staged changes", message)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	return runGitCommand(ctx, "commit", "-m", message)
+	res, err := runGitCommand(ctx, "commit", "-m", message)
+	return types.ToolResult{Text: res}, err
 }
 
-func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	name, _ := args["name"].(string)
 	if name == "" {
-		return "", fmt.Errorf("branch name is required")
+		return types.ToolResult{}, fmt.Errorf("branch name is required")
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT CREATE BRANCH", name, "")
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	return runGitCommand(ctx, "checkout", "-b", name)
+	res, err := runGitCommand(ctx, "checkout", "-b", name)
+	return types.ToolResult{Text: res}, err
 }
 
 func runGitCommand(ctx context.Context, args ...string) (string, error) {

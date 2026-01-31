@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -41,21 +42,21 @@ func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
 	}, m.sendTeamsMessage, ToolOptions{Serial: true})
 }
 
-func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	webhookURL, _ := args["webhook_url"].(string)
 	message, _ := args["message"].(string)
 
 	if webhookURL == "" || message == "" {
-		return "", fmt.Errorf("webhook_url and message are required")
+		return types.ToolResult{}, fmt.Errorf("webhook_url and message are required")
 	}
 
 	// Safety confirmation (unless bypassed)
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, message)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action cancelled by user.", nil
+		return types.ToolResult{Text: "Action cancelled by user."}, nil
 	}
 
 	payload := map[string]interface{}{
@@ -72,7 +73,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -80,13 +81,13 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send message: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to send message: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return fmt.Sprintf("Successfully sent message to Teams. Status: %s", resp.Status), nil
+		return types.ToolResult{Text: fmt.Sprintf("Successfully sent message to Teams. Status: %s", resp.Status)}, nil
 	}
 
-	return fmt.Sprintf("Failed to send message to Teams. Status: %s", resp.Status), nil
+	return types.ToolResult{Text: fmt.Sprintf("Failed to send message to Teams. Status: %s", resp.Status)}, nil
 }

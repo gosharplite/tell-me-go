@@ -100,11 +100,11 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 		t.Fatalf("searchFiles failed: %v", err)
 	}
 
-	if !strings.Contains(result, "text.txt:1: hello world") {
-		t.Errorf("expected result to contain text file match, got %q", result)
+	if !strings.Contains(result.Text, "text.txt:1: hello world") {
+		t.Errorf("expected result to contain text file match, got %q", result.Text)
 	}
 
-	if strings.Contains(result, "binary.bin") {
+	if strings.Contains(result.Text, "binary.bin") {
 		t.Error("expected result NOT to contain binary file match")
 	}
 }

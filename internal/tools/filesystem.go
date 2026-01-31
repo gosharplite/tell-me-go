@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -222,19 +223,19 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 	}, m.undoFileChange)
 }
 
-func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to list directory: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to list directory: %w", err)
 	}
 
 	var sb strings.Builder
@@ -247,17 +248,17 @@ func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]inter
 		sb.WriteString(fmt.Sprintf("[%s] %s\n", typeStr, entry.Name()))
 	}
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	maxDepth := 2
@@ -268,9 +269,9 @@ func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interfa
 	var sb strings.Builder
 	err := buildTree(path, "", 0, maxDepth, &sb)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
 func buildTree(path, indent string, depth, maxDepth int, sb *strings.Builder) error {
@@ -305,46 +306,46 @@ func buildTree(path, indent string, depth, maxDepth int, sb *strings.Builder) er
 	return nil
 }
 
-func (m *fileSystemManager) readFile(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) readFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
-		return "", fmt.Errorf("filepath argument is required")
+		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	if len(content) > 100000 {
-		return string(content[:100000]) + "\n... (truncated)", nil
+		return types.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
 	}
 
-	return string(content), nil
+	return types.ToolResult{Text: string(content)}, nil
 }
 
-func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	query, ok := args["query"].(string)
 	if !ok || query == "" {
-		return "", fmt.Errorf("query argument is required")
+		return types.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
+		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
@@ -403,18 +404,18 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 	})
 
 	if err != nil && err.Error() != "too many results" {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return "No matches found.", nil
+		return types.ToolResult{Text: "No matches found."}, nil
 	}
 
 	out := strings.Join(results, "\n")
 	if err != nil && err.Error() == "too many results" {
 		out += "\n... (truncated)"
 	}
-	return out, nil
+	return types.ToolResult{Text: out}, nil
 }
 
 func isBinary(data []byte) bool {
@@ -426,42 +427,42 @@ func isBinary(data []byte) bool {
 	return false
 }
 
-func (m *fileSystemManager) getFileDiff(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getFileDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	file1, _ := args["file1"].(string)
 	file2, _ := args["file2"].(string)
 
 	if err := m.sm.IsPathSafe(file1); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if err := m.sm.IsPathSafe(file2); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	cmd := exec.CommandContext(ctx, "diff", "-u", file1, file2)
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {
-		return "Files are identical.", nil
+		return types.ToolResult{Text: "Files are identical."}, nil
 	}
 
-	return string(out), nil
+	return types.ToolResult{Text: string(out)}, nil
 }
 
-func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, _ := args["filepath"].(string)
 	content, _ := args["content"].(string)
 
 	if err := m.sm.IsPathWritable(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	// Confirmation Gate
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", path, content)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	m.bm.Snapshot(path, "WRITE")
@@ -469,74 +470,74 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directories: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to create directories: %w", err)
 	}
 
 	err = fsutil.AtomicWrite(path, []byte(content), 0644)
 	if err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to write file: %w", err)
 	}
 
-	return "File written successfully.", nil
+	return types.ToolResult{Text: "File written successfully."}, nil
 }
 
-func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, _ := args["filepath"].(string)
 	oldText, _ := args["old_text"].(string)
 	newText, _ := args["new_text"].(string)
 
 	if err := m.sm.IsPathWritable(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	// Confirmation Gate
 	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", path, detail)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	m.bm.Snapshot(path, "REPLACE")
 
 	contentBytes, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
 	content := string(contentBytes)
 
 	count := strings.Count(content, oldText)
 	if count == 0 {
-		return "", fmt.Errorf("old_text not found in file")
+		return types.ToolResult{}, fmt.Errorf("old_text not found in file")
 	}
 	if count > 1 {
-		return "", fmt.Errorf("old_text found %d times. Please provide more context (including surrounding lines) to uniquely identify the replacement target", count)
+		return types.ToolResult{}, fmt.Errorf("old_text found %d times. Please provide more context (including surrounding lines) to uniquely identify the replacement target", count)
 	}
 
 	newContent := strings.Replace(content, oldText, newText, 1)
 	err = fsutil.AtomicWrite(path, []byte(newContent), 0644)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
-	return "File updated successfully.", nil
+	return types.ToolResult{Text: "File updated successfully."}, nil
 }
 
-func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	pattern, ok := args["pattern"].(string)
 	if !ok || pattern == "" {
-		return "", fmt.Errorf("pattern argument is required")
+		return types.ToolResult{}, fmt.Errorf("pattern argument is required")
 	}
 
 	var results []string
@@ -570,24 +571,24 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return "No files found matching pattern.", nil
+		return types.ToolResult{Text: "No files found matching pattern."}, nil
 	}
 
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	query, _ := args["query"].(string)
@@ -612,7 +613,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 		var err error
 		reQuery, err = regexp.Compile("(?i)" + query)
 		if err != nil {
-			return "", fmt.Errorf("invalid query regex: %w", err)
+			return types.ToolResult{}, fmt.Errorf("invalid query regex: %w", err)
 		}
 	}
 
@@ -676,37 +677,37 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return "No definitions found.", nil
+		return types.ToolResult{Text: "No definitions found."}, nil
 	}
 
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["filepath"].(string)
 	if !ok || path == "" {
-		return "", fmt.Errorf("filepath argument is required")
+		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if filepath.Ext(path) == ".go" {
 		skeleton, err := getFileSkeletonGo(path)
 		if err == nil {
-			return skeleton, nil
+			return types.ToolResult{Text: skeleton}, nil
 		}
 		// Fallback to heuristic if AST fails
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	defer file.Close()
 
@@ -759,16 +760,17 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 
 	out := sb.String()
 	if out == "" {
-		return "Could not extract skeleton or file has no recognized definitions.", nil
+		return types.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
 	}
 
-	return out, nil
+	return types.ToolResult{Text: out}, nil
 }
 
-func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	n := 1
 	if val, ok := args["n"].(float64); ok {
 		n = int(val)
 	}
-	return m.bm.Undo(n)
+	res, err := m.bm.Undo(n)
+	return types.ToolResult{Text: res}, err
 }

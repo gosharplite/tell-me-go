@@ -5,12 +5,9 @@
 package history
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
@@ -18,6 +15,7 @@ import (
 // Manager handles loading, saving, and manipulating conversation history.
 type Manager struct {
 	mu       sync.RWMutex
+	store    Store
 	FilePath string
 	Contents []*types.Content
 	backup   []*types.Content // Keep a copy of the state before the current user prompt
@@ -26,28 +24,29 @@ type Manager struct {
 // NewManager creates a new history manager for the given file path.
 func NewManager(filePath string) *Manager {
 	return &Manager{
+		store:    NewJSONLStore(filePath),
 		FilePath: filePath,
 		Contents: []*types.Content{},
 	}
+}
+
+// SetStore allows injecting a custom store.
+func (m *Manager) SetStore(store Store) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.store = store
 }
 
 // Load reads the history from the file system.
 func (m *Manager) Load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, err := os.Stat(m.FilePath); os.IsNotExist(err) {
-		m.Contents = []*types.Content{}
-		return nil
-	}
 
-	data, err := os.ReadFile(m.FilePath)
+	contents, err := m.store.Load()
 	if err != nil {
-		return fmt.Errorf("failed to read history file: %w", err)
+		return err
 	}
-
-	if err := json.Unmarshal(data, &m.Contents); err != nil {
-		return fmt.Errorf("failed to parse history JSON: %w", err)
-	}
+	m.Contents = contents
 
 	m.repairLocked()
 	return nil
@@ -94,49 +93,56 @@ func (m *Manager) Save() error {
 }
 
 func (m *Manager) saveLocked() error {
+	m.cleanLocked()
+	return m.store.Save(m.Contents)
+}
+
+func (m *Manager) cleanLocked() {
 	// Clean up history: remove empty parts or parts with no content.
 	// If a message would become empty, we add a placeholder to prevent API errors (400 INVALID_ARGUMENT).
 	for _, content := range m.Contents {
-		var cleanParts []*types.Part
-		for _, p := range content.Parts {
-			if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
-				continue
-			}
-			cleanParts = append(cleanParts, p)
+		m.cleanContentLocked(content)
+	}
+}
+
+func (m *Manager) cleanContentLocked(content *types.Content) {
+	var cleanParts []*types.Part
+	for _, p := range content.Parts {
+		if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
+			continue
 		}
-		if len(cleanParts) == 0 {
-			cleanParts = append(cleanParts, &types.Part{Text: "[empty response]"})
-		}
-		content.Parts = cleanParts
+		cleanParts = append(cleanParts, p)
 	}
-
-	data, err := json.MarshalIndent(m.Contents, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal history: %w", err)
+	if len(cleanParts) == 0 {
+		cleanParts = append(cleanParts, &types.Part{Text: "[empty response]"})
 	}
-
-	if err := fsutil.AtomicWrite(m.FilePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to save history file: %w", err)
-	}
-
-	return nil
+	content.Parts = cleanParts
 }
 
 // AddEntry appends a new text message to the history.
 func (m *Manager) AddEntry(role, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.addContentLocked(&types.Content{
+	content := &types.Content{
 		Role:  role,
 		Parts: []*types.Part{{Text: text}},
-	})
+	}
+	if err := m.addContentLocked(content); err != nil {
+		return err
+	}
+	m.cleanContentLocked(content)
+	return m.store.Append(content)
 }
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
 func (m *Manager) AddContent(content *types.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.addContentLocked(content)
+	if err := m.addContentLocked(content); err != nil {
+		return err
+	}
+	m.cleanContentLocked(content)
+	return m.store.Append(content)
 }
 
 func (m *Manager) addContentLocked(content *types.Content) error {
@@ -199,6 +205,7 @@ func (m *Manager) Prune(maxTurns int) int {
 
 		if removeCount > 0 && removeCount < len(m.Contents) {
 			m.Contents = m.Contents[removeCount:]
+			m.saveLocked() // Persist pruning
 			return removeCount / 2
 		}
 	}
@@ -243,7 +250,7 @@ func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) err
 
 	// 3. Commit change
 	m.Contents = candidate
-	return nil
+	return m.saveLocked() // Persist replacement
 }
 
 // GetPath returns the file path of the history file.

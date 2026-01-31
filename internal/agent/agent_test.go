@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -48,46 +49,14 @@ func TestAgent_Setters(t *testing.T) {
 	}
 }
 
-func TestAgent_LogUsage(t *testing.T) {
-	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "usage.log")
-	sm := tools.NewSecurityManager()
-	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm)
-	a.SetLogFile(logFile)
-
-	metrics := &types.Metrics{
-		CachedTokens:   100,
-		PromptTokens:   150,
-		ResponseTokens: 50,
-		TotalTokens:    200,
-		ThinkingTokens: 10,
-		SearchQueries:  1,
-		Duration:       1.2,
-	}
-
-	a.logUsage(metrics)
-
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("failed to read log file: %v", err)
-	}
-
-	// The log logic calculates miss = PromptTokens - CachedTokens = 150 - 100 = 50
-	// So it should contain "M: 50"
-	if !strings.Contains(string(data), "M: 50") {
-		t.Errorf("log output mismatch: %s", string(data))
-	}
-}
-
 func TestAgent_EstimatePayloadTokens(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(&genai.FunctionDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
 		Parameters:  &genai.Schema{Type: genai.TypeObject},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return "ok", nil
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{Text: "ok"}, nil
 	})
 
 	sm := tools.NewSecurityManager()
@@ -186,9 +155,9 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	// Tool that hangs
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "slow_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		time.Sleep(200 * time.Millisecond)
-		return "Too late", nil
+		return types.ToolResult{Text: "Too late"}, nil
 	})
 
 	callCount := 0
@@ -245,9 +214,14 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "gen_image",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		// MULTI_MODAL_IMAGE|mime|b64|msg
-		return "MULTI_MODAL_IMAGE|image/png|iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==|Image generated", nil
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
+		return types.ToolResult{
+			Text: "Image generated",
+			BinaryData: []types.BinaryData{
+				{MIMEType: "image/png", Data: data},
+			},
+		}, nil
 	})
 
 	callCount := 0
@@ -307,8 +281,8 @@ func TestAgentToolLoop(t *testing.T) {
 	registry.Register(&genai.FunctionDeclaration{
 		Name:       "get_weather",
 		Parameters: &genai.Schema{Type: genai.TypeObject},
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return "Sunny", nil
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{Text: "Sunny"}, nil
 	})
 
 	callCount := 0
@@ -376,8 +350,8 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "infinite_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
-		return "Keep going", nil
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{Text: "Keep going"}, nil
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -441,12 +415,12 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	// Tool that takes some time
 	registry.Register(&genai.FunctionDeclaration{
 		Name: "long_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		select {
 		case <-time.After(1 * time.Second):
-			return "Success", nil
+			return types.ToolResult{Text: "Success"}, nil
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return types.ToolResult{}, ctx.Err()
 		}
 	})
 

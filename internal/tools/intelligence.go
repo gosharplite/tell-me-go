@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"golang.org/x/tools/imports"
 	"google.golang.org/genai"
 )
@@ -370,30 +371,30 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	return sb.String(), nil
 }
 
-func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	symbol, _ := args["symbol"].(string)
 	srcPath, _ := args["src_file"].(string)
 	dstPath, _ := args["dst_file"].(string)
 
 	if err := m.sm.IsPathWritable(srcPath); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if err := m.sm.IsPathWritable(dstPath); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath))
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	fset := token.NewFileSet()
 	srcFile, err := parser.ParseFile(fset, srcPath, nil, parser.ParseComments)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse source file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to parse source file: %w", err)
 	}
 
 	dstFile, err := parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
@@ -407,14 +408,14 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 			}
 			content := fmt.Sprintf("package %s\n", pkgName)
 			if err := os.WriteFile(dstPath, []byte(content), 0644); err != nil {
-				return "", fmt.Errorf("failed to create destination file: %w", err)
+				return types.ToolResult{}, fmt.Errorf("failed to create destination file: %w", err)
 			}
 			dstFile, err = parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
 			if err != nil {
-				return "", fmt.Errorf("failed to parse newly created destination file: %w", err)
+				return types.ToolResult{}, fmt.Errorf("failed to parse newly created destination file: %w", err)
 			}
 		} else {
-			return "", fmt.Errorf("failed to parse destination file: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to parse destination file: %w", err)
 		}
 	}
 
@@ -424,19 +425,19 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == symbol {
-					return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+					return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 				}
 				if vs, ok := spec.(*ast.ValueSpec); ok {
 					for _, name := range vs.Names {
 						if name.Name == symbol {
-							return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+							return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 						}
 					}
 				}
 			}
 		case *ast.FuncDecl:
 			if d.Name.Name == symbol {
-				return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+				return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 			}
 		}
 	}
@@ -522,24 +523,24 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	if len(movedDecls) == 0 {
-		return fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath), nil
+		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath)}, nil
 	}
 
 	// Update source file
 	srcFile.Decls = newSrcDecls
 	var srcBuf bytes.Buffer
 	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
-		return "", fmt.Errorf("failed to format source file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to format source file: %w", err)
 	}
 	if err := fsutil.AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	dstFile.Decls = append(dstFile.Decls, movedDecls...)
 
 	var dstBuf bytes.Buffer
 	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
-		return "", fmt.Errorf("failed to format destination file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to format destination file: %w", err)
 	}
 
 	formatted, err := imports.Process(dstPath, dstBuf.Bytes(), nil)
@@ -549,11 +550,11 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	if err := fsutil.AtomicWrite(dstPath, formatted, 0644); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
+		return types.ToolResult{}, fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
 	}
 
 	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
@@ -561,10 +562,10 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		resultMsg += " Note: Package names differ. References across the project were NOT updated. Please update them manually or use rename_symbol if applicable."
 	}
 
-	return resultMsg, nil
+	return types.ToolResult{Text: resultMsg}, nil
 }
 
-func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	oldName, _ := args["old_name"].(string)
 	newName, _ := args["new_name"].(string)
 	path, ok := args["path"].(string)
@@ -573,15 +574,15 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 	}
 
 	if err := m.sm.IsPathWritable(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName))
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	totalFiles := 0
@@ -633,20 +634,20 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 	})
 
 	if totalChanges == 0 {
-		return fmt.Sprintf("Symbol '%s' not found.", oldName), nil
+		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found.", oldName)}, nil
 	}
 
-	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
+	return types.ToolResult{Text: fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles)}, err
 }
 
-func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -683,15 +684,15 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No TODOs, FIXMEs, or BUGs found.", nil
+		return types.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
 	}
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	symbol, _ := args["symbol"].(string)
 	func() {
 		m.sm.TerminalLock()
@@ -702,16 +703,16 @@ func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interfa
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out)), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
 	}
 
-	return string(out), nil
+	return types.ToolResult{Text: string(out)}, nil
 }
 
-func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, _ := args["path"].(string)
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var results []string
@@ -752,10 +753,10 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No Go functions found to analyze.", nil
+		return types.ToolResult{Text: "No Go functions found to analyze."}, nil
 	}
 
 	// Sort by complexity descending
@@ -770,10 +771,10 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 		results = append(results[:100], "... (truncated)")
 	}
 
-	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -783,7 +784,7 @@ func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[stri
 	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out)), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out))}, nil
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -821,7 +822,7 @@ func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[stri
 		}
 	}
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {
@@ -899,7 +900,7 @@ func exprToString(expr ast.Expr) string {
 
 // New Intelligence Tools Implementation
 
-func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	query, _ := args["query"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
@@ -907,7 +908,7 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var results []string
@@ -945,22 +946,22 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No usages found.", nil
+		return types.ToolResult{Text: "No usages found."}, nil
 	}
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	type interfaceInfo struct {
@@ -1062,12 +1063,12 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 	}
 
 	if sb.Len() == 0 {
-		return "No interface implementations found.", nil
+		return types.ToolResult{Text: "No interface implementations found."}, nil
 	}
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	typename, _ := args["typename"].(string)
 	path, ok := args["path"].(string)
 	if !ok || path == "" {
@@ -1075,7 +1076,7 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var sb strings.Builder
@@ -1150,15 +1151,15 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if sb.Len() == 0 {
-		return "Type not found.", nil
+		return types.ToolResult{Text: "Type not found."}, nil
 	}
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -1205,7 +1206,7 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	sb.WriteString("\nFile Counts:\n")
@@ -1219,14 +1220,14 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	}
 	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	query, _ := args["query"].(string)
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
+		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
@@ -1279,33 +1280,33 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 	})
 
 	if err != nil && err.Error() != "too many results" {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return "No matches found.", nil
+		return types.ToolResult{Text: "No matches found."}, nil
 	}
 
 	out := strings.Join(results, "\n")
 	if err != nil && err.Error() == "too many results" {
 		out += "\n... (truncated)"
 	}
-	return out, nil
+	return types.ToolResult{Text: out}, nil
 }
 
-func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	target, _ := args["target"].(string)
 
 	// Get stat summary
 	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git diff --stat failed: %s", string(statOut))
+		return types.ToolResult{}, fmt.Errorf("git diff --stat failed: %s", string(statOut))
 	}
 
 	// Get summary of changes
 	summaryOut, err := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
+		return types.ToolResult{}, fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
 	}
 
 	var sb strings.Builder
@@ -1334,5 +1335,5 @@ func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]
 		}
 	}
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
