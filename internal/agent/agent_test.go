@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -278,7 +279,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
 	err := a.Chat(context.Background(), "Run tool")
-	if err != ErrMaxTurnsReached {
+	if !errors.Is(err, ErrMaxTurnsReached) {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
 }
@@ -350,8 +351,8 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error due to context cancellation, got nil")
 		}
-		if err != context.Canceled {
-			t.Errorf("Expected context.Canceled, got: %v", err)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Expected error wrapping context.Canceled, got: %v", err)
 		}
 	})
 }
