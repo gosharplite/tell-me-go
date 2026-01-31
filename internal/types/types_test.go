@@ -10,6 +10,14 @@ import (
 	"google.golang.org/genai"
 )
 
+type mockResolver struct {
+	resolveFunc func(assetID string) ([]byte, error)
+}
+
+func (m *mockResolver) Resolve(assetID string) ([]byte, error) {
+	return m.resolveFunc(assetID)
+}
+
 func TestPart_Conversion(t *testing.T) {
 	signature := []byte("test-signature")
 	sdkPart := &genai.Part{
@@ -30,9 +38,46 @@ func TestPart_Conversion(t *testing.T) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
 	}
 
-	backToSDK := internalPart.ToSDK()
+	backToSDK := internalPart.ToSDK(nil)
 	if !reflect.DeepEqual(backToSDK, sdkPart) {
 		t.Errorf("roundtrip failed: expected %+v, got %+v", sdkPart, backToSDK)
+	}
+}
+
+func TestPart_ToSDK_LazyHydration(t *testing.T) {
+	assetID := "test-asset"
+	assetData := []byte("image-data")
+	p := &Part{
+		AssetID: assetID,
+		InlineData: &genai.Blob{
+			MIMEType: "image/png",
+		},
+	}
+
+	resolver := &mockResolver{
+		resolveFunc: func(id string) ([]byte, error) {
+			if id == assetID {
+				return assetData, nil
+			}
+			return nil, nil
+		},
+	}
+
+	sdkPart := p.ToSDK(resolver)
+
+	if sdkPart.InlineData == nil {
+		t.Fatal("expected InlineData to be populated")
+	}
+	if !reflect.DeepEqual(sdkPart.InlineData.Data, assetData) {
+		t.Errorf("expected data %v, got %v", assetData, sdkPart.InlineData.Data)
+	}
+	if sdkPart.InlineData.MIMEType != "image/png" {
+		t.Errorf("expected MIMEType image/png, got %s", sdkPart.InlineData.MIMEType)
+	}
+
+	// Verify original Part was NOT mutated
+	if len(p.InlineData.Data) != 0 {
+		t.Error("original Part should not have been mutated")
 	}
 }
 
@@ -48,7 +93,7 @@ func TestContent_ToSDK(t *testing.T) {
 		},
 	}
 
-	sdkContent := content.ToSDK()
+	sdkContent := content.ToSDK(nil)
 	if sdkContent.Role != content.Role {
 		t.Errorf("expected role %s, got %s", content.Role, sdkContent.Role)
 	}

@@ -347,7 +347,8 @@ func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, curr
 
 func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
 	toolsSDK := a.registry.ToToolSDK()
-	respContent, metrics, err := a.client.SendChat(ctx, apiContents, toolsSDK)
+	resolver := a.history.GetResolver()
+	respContent, metrics, err := a.client.SendChat(ctx, apiContents, toolsSDK, resolver)
 
 	// Handle 401 Unauthorized
 	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
@@ -360,7 +361,7 @@ func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*ty
 			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
 		}
 		// Retry
-		respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.ToToolSDK())
+		respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.ToToolSDK(), resolver)
 	}
 	return respContent, metrics, err
 }

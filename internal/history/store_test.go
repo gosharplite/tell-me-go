@@ -85,7 +85,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 		t.Error("Assets directory is empty")
 	}
 
-	// 4. Load and verify hydration
+	// 4. Load and verify NO eager hydration
 	loaded, err := store.Load()
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
@@ -93,8 +93,22 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	if len(loaded) != 1 || loaded[0].Parts[0].InlineData == nil {
 		t.Fatal("Failed to load content or parts")
 	}
-	if string(loaded[0].Parts[0].InlineData.Data) != "fake-image-data" {
-		t.Errorf("Data not hydrated correctly: got %s", string(loaded[0].Parts[0].InlineData.Data))
+	if len(loaded[0].Parts[0].InlineData.Data) != 0 {
+		t.Error("Data should not be eagerly hydrated")
+	}
+
+	// 5. Verify manual hydration via Resolve
+	assetID := loaded[0].Parts[0].AssetID
+	if assetID == "" {
+		t.Fatal("AssetID should not be empty")
+	}
+
+	resolvedData, err := store.Resolve(assetID)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if string(resolvedData) != "fake-image-data" {
+		t.Errorf("Resolved data mismatch: got %s", string(resolvedData))
 	}
 }
 

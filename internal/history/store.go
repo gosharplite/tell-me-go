@@ -11,7 +11,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 // Store defines the interface for history persistence.
@@ -56,23 +55,15 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
 
-		// Hydrate binary data from AssetStore
-		for _, p := range content.Parts {
-			if p.AssetID != "" && (p.InlineData == nil || len(p.InlineData.Data) == 0) {
-				data, err := s.assetStore.Get(p.AssetID)
-				if err == nil {
-					if p.InlineData == nil {
-						p.InlineData = &genai.Blob{}
-					}
-					p.InlineData.Data = data
-				}
-			}
-		}
-
 		contents = append(contents, &content)
 	}
 
 	return contents, nil
+}
+
+// Resolve implements types.AssetResolver.
+func (s *JSONLStore) Resolve(assetID string) ([]byte, error) {
+	return s.assetStore.Get(assetID)
 }
 
 // Save overwrites the entire history file (compaction/snapshot).

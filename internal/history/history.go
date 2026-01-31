@@ -257,3 +257,13 @@ func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) err
 func (m *Manager) GetPath() string {
 	return m.FilePath
 }
+
+// GetResolver returns an AssetResolver from the underlying store.
+func (m *Manager) GetResolver() types.AssetResolver {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if r, ok := m.store.(types.AssetResolver); ok {
+		return r
+	}
+	return nil
+}

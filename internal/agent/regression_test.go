@@ -20,7 +20,7 @@ type MockClient struct {
 	ResponseText string
 }
 
-func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
 	// Simulate an empty response if specifically requested
 	if m.ResponseText == "EMPTY" {
 		return &types.Content{Role: "model", Parts: []*types.Part{}}, &types.Metrics{}, nil
@@ -32,14 +32,17 @@ func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, too
 }
 
 func (m *MockClient) RefreshAuth() error { return nil }
+func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
 
 // MockLLMClient is a flexible mock for testing.
 type MockLLMClient struct {
-	SendChatFn func(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error)
+	SendChatFn func(ctx context.Context, history []*types.Content, tools []*genai.Tool, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
 }
 
-func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
-	return m.SendChatFn(ctx, history, tools)
+func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+	return m.SendChatFn(ctx, history, tools, resolver)
 }
 
 func (m *MockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
@@ -134,7 +137,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	// Mock client that triggers the tool
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*genai.Tool, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
 			// First call: trigger tool
 			if len(history) == 1 {
 				return &types.Content{
