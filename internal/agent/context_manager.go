@@ -39,7 +39,6 @@ type ContextManager struct {
 	maxToolTurns     int
 	maxHistoryTurns  int
 	prunedTurns      int
-	smartSuggestions bool
 }
 
 // NewContextManager creates a new context manager.
@@ -52,13 +51,7 @@ func NewContextManager(client types.LLMClient, history *history.Manager, registr
 		maxHistoryTokens: 120000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
-		smartSuggestions: false,
 	}
-}
-
-// SetSmartSuggestions sets the smart suggestions preference.
-func (cm *ContextManager) SetSmartSuggestions(enabled bool) {
-	cm.smartSuggestions = enabled
 }
 
 // SetLimits updates the operational limits.
@@ -207,14 +200,6 @@ func (cm *ContextManager) injectWarnings(contents []*types.Content, turn, tokens
 			warning += "\n" + turnWarning
 		} else {
 			warning = turnWarning
-		}
-	}
-	if cm.smartSuggestions {
-		suggestionInstr := "[UX PREFERENCE: smart_suggestions is ENABLED. You MUST conclude every final response (when no more tools are needed) by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. Format them as a clear bulleted list at the very end of your message.]"
-		if warning != "" {
-			warning += "\n" + suggestionInstr
-		} else {
-			warning = suggestionInstr
 		}
 	}
 

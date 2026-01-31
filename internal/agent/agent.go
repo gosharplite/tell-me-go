@@ -5,7 +5,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -176,15 +175,6 @@ func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
-
-	if a.persistentConfigPath != "" {
-		if data, err := os.ReadFile(a.persistentConfigPath); err == nil {
-			var config map[string]string
-			if err := json.Unmarshal(data, &config); err == nil {
-				a.contextManager.SetSmartSuggestions(config["smart_suggestions"] == "on")
-			}
-		}
-	}
 }
 
 // Chat runs the multi-turn orchestration loop.

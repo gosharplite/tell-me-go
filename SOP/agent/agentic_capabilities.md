@@ -28,7 +28,7 @@ Every tool must be defined using a standard JSON schema that matches the Gemini 
     - **Intelligence (AST)**: `find_usages`, `get_type_info`, `semantic_diff`, `rename_symbol`, etc.
     - **Git**: `get_git_status`, `git_commit`, `get_git_diff`, etc.
     - **Dev**: `run_tests`, `run_linter`, `go_tidy`, etc.
-    - **State**: `manage_tasks`, `manage_scratchpad`, `manage_config`, `configure_ux_preferences`.
+    - **State**: `manage_tasks`, `manage_scratchpad`, `manage_config`.
     - **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `bypass_confirmation`.
     - **Media**: `create_image`, `read_image`.
     - **External**: `send_teams_message`.

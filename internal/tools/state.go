@@ -113,27 +113,6 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 	}, m.manageConfig)
 
 	r.Register(&types.ToolDeclaration{
-		Name:        "configure_ux_preferences",
-		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
-		Parameters: &types.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
-				"feature": {
-					Type:        "STRING",
-					Description: "The UX feature to configure.",
-					Enum:        []string{"smart_suggestions"},
-				},
-				"status": {
-					Type:        "STRING",
-					Description: "Whether the feature is 'on' or 'off'.",
-					Enum:        []string{"on", "off"},
-				},
-			},
-			Required: []string{"feature", "status"},
-		},
-	}, m.configureUXPreferences)
-
-	r.Register(&types.ToolDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &types.Schema{
@@ -338,25 +317,6 @@ func (m *stateManager) manageConfig(ctx context.Context, args map[string]interfa
 	default:
 		return types.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
-}
-
-func (m *stateManager) configureUXPreferences(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	feature, _ := args["feature"].(string)
-	status, _ := args["status"].(string)
-
-	if feature != "smart_suggestions" {
-		return types.ToolResult{}, fmt.Errorf("unsupported feature: %s", feature)
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.config[feature] = status
-	if err := m.saveConfig(ctx); err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to save preference: %w", err)
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("UX Preference updated: %s = %s", feature, status)}, nil
 }
 
 func (m *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
