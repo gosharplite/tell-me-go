@@ -20,9 +20,11 @@ import (
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
 type StdUIRenderer struct {
-	sm     *tools.SecurityManager
-	stdout io.Writer
-	stderr io.Writer
+	sm       *tools.SecurityManager
+	stdout   io.Writer
+	stderr   io.Writer
+	now      func() time.Time
+	renderer *glamour.TermRenderer
 }
 
 // streamState holds the transient state for a single response stream.
@@ -36,10 +38,16 @@ type streamState struct {
 
 // NewStdUIRenderer creates a new StdUIRenderer.
 func NewStdUIRenderer(sm *tools.SecurityManager) *StdUIRenderer {
+	tr, _ := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithEmoji(),
+	)
 	return &StdUIRenderer{
-		sm:     sm,
-		stdout: os.Stdout,
-		stderr: os.Stderr,
+		sm:       sm,
+		stdout:   os.Stdout,
+		stderr:   os.Stderr,
+		now:      time.Now,
+		renderer: tr,
 	}
 }
 
@@ -61,7 +69,7 @@ func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime tim
 		percent = int((int64(newTokens) * 100) / int64(m.TotalTokens))
 	}
 
-	timestamp := time.Now().Format("15:04:05")
+	timestamp := r.now().Format("15:04:05")
 	durationStr := fmt.Sprintf("%.2fs", m.Duration)
 	if m.ToolDuration > 3.0 {
 		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
@@ -69,7 +77,7 @@ func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime tim
 
 	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s / 15.2s]
 	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%s / %.2fs]\n",
-		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, time.Since(startTime).Seconds())
+		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, r.now().Sub(startTime).Seconds())
 
 	// Append to log file
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -126,7 +134,7 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 			hColor = reset
 		}
 
-		totalDuration := time.Since(status.StartTime).Seconds()
+		totalDuration := r.now().Sub(status.StartTime).Seconds()
 		durationStr := fmt.Sprintf("%.2fs", m.Duration)
 		if m.ToolDuration > 3.0 {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
@@ -142,7 +150,7 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			r.sm.TerminalLock()
-			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", r.now().Format("15:04:05"), part.Text)
 			r.sm.TerminalUnlock()
 		}
 	}
@@ -161,7 +169,7 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 		if part.InlineData != nil {
 			r.sm.TerminalLock()
 			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
-				time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
+				r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
 			r.sm.TerminalUnlock()
 		}
 	}
@@ -229,7 +237,7 @@ func (r *StdUIRenderer) renderStreamPart(state *streamState, part *types.Part) {
 
 func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *types.Part) {
 	if !state.thoughtActive && state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05")))
+		r.safePrintStderr(fmt.Sprintf("\033[0;90m[%s] [Thinking]\n", r.now().Format("15:04:05")))
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
@@ -247,7 +255,7 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *types.Part) {
 func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *types.Part) {
 	r.closeThinking(state)
 	r.safePrintStderr(fmt.Sprintf("\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
-		time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data)))
+		r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data)))
 }
 
 func (r *StdUIRenderer) closeThinking(state *streamState) {
@@ -290,18 +298,21 @@ func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
 }
 
 func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
+	if width <= 0 {
+		width = 80 // Fallback
+	}
 	lines := 0
 	currentLineLen := 0
-	for _, r := range text {
-		if r == '\n' {
+	for _, runeValue := range text {
+		if runeValue == '\n' {
 			lines++
 			currentLineLen = 0
-		} else {
-			currentLineLen++
-			if currentLineLen >= width {
-				lines++
-				currentLineLen = 0
-			}
+			continue
+		}
+		currentLineLen++
+		if currentLineLen >= width {
+			lines++
+			currentLineLen = 0
 		}
 	}
 	if currentLineLen > 0 {
@@ -323,7 +334,7 @@ func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns 
 	reset := "\033[0m"
 
 	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxTurns, strings.Join(names, ", "), reset)
+		cyan, r.now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxTurns, strings.Join(names, ", "), reset)
 
 	if showTools {
 		for _, fc := range calls {
@@ -336,7 +347,7 @@ func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns 
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
 			fmt.Fprintf(r.stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
-				time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
+				r.now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
 		}
 	}
 }
@@ -351,7 +362,7 @@ func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, show
 
 	cyan := "\033[0;36m"
 	reset := "\033[0m"
-	timestamp := time.Now().Format("15:04:05")
+	timestamp := r.now().Format("15:04:05")
 
 	if result.Text != "" {
 		snippet := result.Text
@@ -389,17 +400,12 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 	}
 
 	fmt.Fprintf(r.stderr, "%s[%s] [%s] %s\033[0m\n",
-		color, time.Now().Format("15:04:05"), prefix, msg)
+		color, r.now().Format("15:04:05"), prefix, msg)
 }
 
 func (r *StdUIRenderer) renderMarkdown(text string) {
-	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithEmoji(),
-	)
-
 	fmt.Fprintf(r.stdout, "\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
-	out, err := renderer.Render(text)
+	out, err := r.renderer.Render(text)
 	if err != nil {
 		fmt.Fprint(r.stdout, text)
 	} else {
