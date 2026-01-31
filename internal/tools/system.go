@@ -736,9 +736,11 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	appendMode := params.Append
 
 	if outputFile != "" {
-		if err := m.sm.IsPathWritable(outputFile); err != nil {
+		resolvedFile, err := m.sm.IsPathWritable(outputFile)
+		if err != nil {
 			return types.ToolResult{}, err
 		}
+		outputFile = resolvedFile
 	}
 
 	approved := false
@@ -890,9 +892,11 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	appendMode := params.Append
 
 	if outputFile != "" {
-		if err := m.sm.IsPathWritable(outputFile); err != nil {
+		resolvedFile, err := m.sm.IsPathWritable(outputFile)
+		if err != nil {
 			return types.ToolResult{}, err
 		}
+		outputFile = resolvedFile
 	}
 
 	// Safety check
@@ -1201,7 +1205,7 @@ func (m *systemManager) isSafeCommand(command string) bool {
 			arg = strings.SplitN(arg, "=", 2)[1]
 		}
 
-		if err := m.sm.IsPathSafe(arg); err != nil {
+		if _, err := m.sm.IsPathSafe(arg); err != nil {
 			// Some args might not be paths, but we try to check them anyway if they look like paths
 			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
 				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)

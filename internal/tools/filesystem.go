@@ -236,17 +236,18 @@ func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]inter
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	entries, err := m.fs.ReadDir(path)
+	entries, err := m.fs.ReadDir(resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to list directory: %w", err)
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Contents of %s:\n", path))
+	sb.WriteString(fmt.Sprintf("Contents of %s:\n", resolvedPath))
 	for _, entry := range entries {
 		typeStr := "f"
 		if entry.IsDir() {
@@ -272,7 +273,8 @@ func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interfa
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -282,7 +284,7 @@ func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interfa
 	}
 
 	var sb strings.Builder
-	err := buildTree(m.fs, path, "", 0, maxDepth, &sb)
+	err = buildTree(m.fs, resolvedPath, "", 0, maxDepth, &sb)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -334,11 +336,12 @@ func (m *fileSystemManager) readFile(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	content, err := m.fs.ReadFile(path)
+	content, err := m.fs.ReadFile(resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -364,7 +367,8 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -379,7 +383,7 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 	}
 
 	var results []string
-	err = m.fs.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -469,14 +473,16 @@ func (m *fileSystemManager) getFileDiff(ctx context.Context, args map[string]int
 	file1 := params.File1
 	file2 := params.File2
 
-	if err := m.sm.IsPathSafe(file1); err != nil {
+	resolved1, err := m.sm.IsPathSafe(file1)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
-	if err := m.sm.IsPathSafe(file2); err != nil {
+	resolved2, err := m.sm.IsPathSafe(file2)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	cmd := exec.CommandContext(ctx, "diff", "-u", file1, file2)
+	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {
@@ -498,12 +504,13 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	path := params.FilePath
 	content := params.Content
 
-	if err := m.sm.IsPathWritable(path); err != nil {
+	resolvedPath, err := m.sm.IsPathWritable(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	// Confirmation Gate
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", path, content)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", resolvedPath, content)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -511,15 +518,15 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	m.bm.Snapshot(path, "WRITE")
+	m.bm.Snapshot(resolvedPath, "WRITE")
 
 	// Create parent directories if they don't exist
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(resolvedPath)
 	if err := m.fs.MkdirAll(dir, 0755); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err = m.fs.WriteFile(path, []byte(content), 0644)
+	err = m.fs.WriteFile(resolvedPath, []byte(content), 0644)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to write file: %w", err)
 	}
@@ -541,13 +548,14 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	oldText := params.OldText
 	newText := params.NewText
 
-	if err := m.sm.IsPathWritable(path); err != nil {
+	resolvedPath, err := m.sm.IsPathWritable(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	// Confirmation Gate
 	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", path, detail)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", resolvedPath, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -555,9 +563,9 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	m.bm.Snapshot(path, "REPLACE")
+	m.bm.Snapshot(resolvedPath, "REPLACE")
 
-	contentBytes, err := m.fs.ReadFile(path)
+	contentBytes, err := m.fs.ReadFile(resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -572,7 +580,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	}
 
 	newContent := strings.Replace(content, oldText, newText, 1)
-	err = m.fs.WriteFile(path, []byte(newContent), 0644)
+	err = m.fs.WriteFile(resolvedPath, []byte(newContent), 0644)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -594,7 +602,8 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -604,7 +613,7 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 	}
 
 	var results []string
-	err := m.fs.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -658,14 +667,15 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	query := params.Query
 
 	// Attempt AST-based search for Go files first
-	astResults, err := grepDefinitionsGo(path, query)
+	astResults, err := grepDefinitionsGo(resolvedPath, query)
 	if err != nil {
 		// Fallback to regex if AST fails for some reason
 	}
@@ -691,7 +701,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	var results []string
 	results = append(results, astResults...)
 
-	err = m.fs.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -771,19 +781,20 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	if filepath.Ext(path) == ".go" {
-		skeleton, err := getFileSkeletonGo(path)
+	if filepath.Ext(resolvedPath) == ".go" {
+		skeleton, err := getFileSkeletonGo(resolvedPath)
 		if err == nil {
 			return types.ToolResult{Text: skeleton}, nil
 		}
 		// Fallback to heuristic if AST fails
 	}
 
-	file, err := m.fs.Open(path)
+	file, err := m.fs.Open(resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

@@ -273,11 +273,12 @@ func (m *metricsManager) getModelPricing(modelName string, pricing types.Pricing
 }
 
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
-	if err := m.sm.IsPathSafe(m.logFile); err != nil {
+	resolvedLog, err := m.sm.IsPathSafe(m.logFile)
+	if err != nil {
 		return "", err
 	}
 
-	outputDir := filepath.Dir(m.logFile)
+	outputDir := filepath.Dir(resolvedLog)
 	pricing := GetPricing(ctx, m.sm, outputDir)
 
 	// Apply overrides from config
@@ -285,7 +286,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	f, err := os.Open(m.logFile)
+	f, err := os.Open(resolvedLog)
 	if err != nil {
 		return "Error: Log file not found. Ensure you have made at least one request.", nil
 	}

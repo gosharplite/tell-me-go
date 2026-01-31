@@ -99,7 +99,7 @@ func (a *App) Run(args []string) error {
 		return err
 	}
 
-	pCfg, err := a.loadPersistentConfig(paths, cfg)
+	_, err = a.loadPersistentConfig(paths, cfg)
 	if err != nil {
 		log.Printf("Warning: Failed to load/update persistent config: %v", err)
 	}
@@ -143,10 +143,6 @@ func (a *App) Run(args []string) error {
 	defer stop()
 
 	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
-
-	if pCfg["smart_suggestions"] == "on" {
-		cfg.Person += "\n\nUX Preference: smart_suggestions is ENABLED. You MUST conclude every response by suggesting 2 to 3 context-aware follow-up commands (tool calls or workflow actions) relevant to the current conversation state. If the AI detects a repeating command pattern, it should increase the suggestion count."
-	}
 
 	hManager.Snapshot()
 

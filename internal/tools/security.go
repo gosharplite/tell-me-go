@@ -452,9 +452,10 @@ func (sm *SecurityManager) resolveSymlinks(path string) string {
 }
 
 // IsPathSafe checks if a path is within the allowed boundaries (CWD, Temp, or registered Home/Config paths).
-func (sm *SecurityManager) IsPathSafe(path string) error {
+// It returns the resolved absolute path if safe, or an error otherwise.
+func (sm *SecurityManager) IsPathSafe(path string) (string, error) {
 	if path == "" {
-		return nil
+		return "", nil
 	}
 
 	// 0. Hardened Sanitation: Explicitly clean the path first to resolve '..' and '.'
@@ -470,12 +471,12 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	// 1. Symlink Attack Mitigation:
@@ -485,7 +486,7 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	// 2. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
 	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
-		return nil
+		return absPath, nil
 	}
 
 	// 3. Allow paths within the System Temp Directory
@@ -494,7 +495,7 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	if err == nil {
 		relTemp, err := filepath.Rel(absTemp, absPath)
 		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
-			return nil
+			return absPath, nil
 		}
 	}
 
@@ -506,21 +507,21 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	if sm.safePathsFile != "" {
 		absSafeFile, err := filepath.Abs(sm.safePathsFile)
 		if err == nil && absPath == absSafeFile {
-			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
+			return "", fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
 		}
 	}
 
 	if sm.readOnlyPathsFile != "" {
 		absReadSafeFile, err := filepath.Abs(sm.readOnlyPathsFile)
 		if err == nil && absPath == absReadSafeFile {
-			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
+			return "", fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
 		}
 	}
 
 	for _, sp := range sm.safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
-			return nil
+			return absPath, nil
 		}
 	}
 
@@ -531,18 +532,19 @@ func (sm *SecurityManager) IsPathSafe(path string) error {
 	for _, rop := range sm.readOnlyPaths {
 		relReadSafe, err := filepath.Rel(rop, absPath)
 		if err == nil && !strings.HasPrefix(relReadSafe, "..") && !filepath.IsAbs(relReadSafe) {
-			return nil
+			return absPath, nil
 		}
 	}
 
-	return fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered paths)", path)
+	return "", fmt.Errorf("security violation: path '%s' is outside allowed boundaries (CWD, Temp, or registered paths)", path)
 }
 
 // IsPathWritable checks if a path is within the writable boundaries (CWD, Temp, or registered safe paths).
 // It does NOT include read-only paths.
-func (sm *SecurityManager) IsPathWritable(path string) error {
+// It returns the resolved absolute path if writable, or an error otherwise.
+func (sm *SecurityManager) IsPathWritable(path string) (string, error) {
 	if path == "" {
-		return nil
+		return "", nil
 	}
 
 	path = filepath.Clean(path)
@@ -556,12 +558,12 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	// Symlink Attack Mitigation:
@@ -570,7 +572,7 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 	// 1. Allow paths within the Current Working Directory
 	rel, err := filepath.Rel(cwd, absPath)
 	if err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
-		return nil
+		return absPath, nil
 	}
 
 	// 2. Allow paths within the System Temp Directory
@@ -579,7 +581,7 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 	if err == nil {
 		relTemp, err := filepath.Rel(absTemp, absPath)
 		if err == nil && !strings.HasPrefix(relTemp, "..") && !filepath.IsAbs(relTemp) {
-			return nil
+			return absPath, nil
 		}
 	}
 
@@ -590,23 +592,23 @@ func (sm *SecurityManager) IsPathWritable(path string) error {
 	if sm.safePathsFile != "" {
 		absSafeFile, err := filepath.Abs(sm.safePathsFile)
 		if err == nil && absPath == absSafeFile {
-			return fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
+			return "", fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
 		}
 	}
 
 	if sm.readOnlyPathsFile != "" {
 		absReadSafeFile, err := filepath.Abs(sm.readOnlyPathsFile)
 		if err == nil && absPath == absReadSafeFile {
-			return fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
+			return "", fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
 		}
 	}
 
 	for _, sp := range sm.safePaths {
 		relSafe, err := filepath.Rel(sp, absPath)
 		if err == nil && !strings.HasPrefix(relSafe, "..") && !filepath.IsAbs(relSafe) {
-			return nil
+			return absPath, nil
 		}
 	}
 
-	return fmt.Errorf("security violation: path '%s' is not in a writable boundary (read-only or unregistered)", path)
+	return "", fmt.Errorf("security violation: path '%s' is not in a writable boundary (read-only or unregistered)", path)
 }

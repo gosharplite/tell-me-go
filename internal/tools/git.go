@@ -190,11 +190,12 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	res, err := runGitCommand(ctx, "blame", "-w", path)
+	res, err := runGitCommand(ctx, "blame", "-w", resolvedPath)
 	return types.ToolResult{Text: res}, err
 }
 

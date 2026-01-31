@@ -74,7 +74,6 @@ type Agent struct {
 	showThoughts         bool
 	showTools            bool
 	rawOutput            bool
-	smartSuggestions     bool
 	persistentConfigPath string
 	mainConfigPath       string
 	startTime            time.Time
@@ -95,7 +94,6 @@ func New(client types.LLMClient, hManager *history.Manager, registry *tools.Regi
 		showThoughts:       true,
 		showTools:          true,
 		rawOutput:          false,
-		smartSuggestions:   false,
 		startTime:          time.Now(),
 	}
 	a.registerInternalTools()
@@ -181,12 +179,11 @@ func (a *Agent) refreshLimits() {
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
 
-	// Refresh smart suggestions preference
 	if a.persistentConfigPath != "" {
 		if data, err := os.ReadFile(a.persistentConfigPath); err == nil {
 			var config map[string]string
 			if err := json.Unmarshal(data, &config); err == nil {
-				a.smartSuggestions = (config["smart_suggestions"] == "on")
+				a.contextManager.SetSmartSuggestions(config["smart_suggestions"] == "on")
 			}
 		}
 	}
@@ -302,46 +299,10 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		if !a.hasToolCalls(respContent) {
-			a.showSmartSuggestions(ctx)
 			break
 		}
 	}
 	return nil
-}
-
-func (a *Agent) showSmartSuggestions(ctx context.Context) {
-	// 1. Check if enabled in config (cached)
-	if !a.smartSuggestions {
-		return
-	}
-
-	// 2. Generate suggestions
-	suggestionPrompt := &types.Content{
-		Role:  "user",
-		Parts: []*types.Part{{Text: "Based on our conversation, suggest 2-3 short, actionable follow-up commands I might want to run next (e.g., 'run tests', 'list files', 'check git status'). Respond ONLY with a bulleted list of commands."}},
-	}
-
-	history := a.history.GetContents()
-	// Use only last few turns for suggestions to save tokens and time
-	if len(history) > 6 {
-		history = history[len(history)-6:]
-	}
-	input := append(history, suggestionPrompt)
-
-	// Use SendChat (non-streaming) for suggestions
-	resp, _, err := a.client.SendChat(ctx, input, nil, nil)
-	if err != nil || len(resp.Parts) == 0 {
-		return
-	}
-
-	suggestions := resp.Parts[0].Text
-	if suggestions == "" {
-		return
-	}
-
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
-	fmt.Fprintf(os.Stderr, "\n\033[0;90mSuggested follow-ups:\n%s\033[0m\n", strings.TrimSpace(suggestions))
 }
 
 func (a *Agent) reportHistoryError(err error) {

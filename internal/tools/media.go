@@ -143,17 +143,18 @@ func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{
 	}
 
 	path := params.FilePath
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", path)
+		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Reading image for vision: %s\033[0m\n", resolvedPath)
 	}()
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Error reading file: %v", err)}, nil
 	}
