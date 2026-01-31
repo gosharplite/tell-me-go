@@ -18,6 +18,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
+// defPatterns defines regex patterns for detecting definitions in supported languages.
+var defPatterns = []string{
+	`^def\s+\w+`,            // Python function
+	`^class\s+\w+`,          // Python/JS class
+	`^function\s+`,          // JS function
+	`^const\s+\w+\s*=\s*\(`, // JS arrow function
+	`^\w+\(\)\s*\{`,         // Bash function
+}
+
+// fileProcessor is a callback function for processing a file during a walk.
+type fileProcessor func(filePath string) error
+
 func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
@@ -27,94 +39,24 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		return types.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
-	resolvedPath, err := m.sm.IsPathSafe(path)
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	query := params.Query
-	if query == "" {
+	if params.Query == "" {
 		return types.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
-	re, err := regexp.Compile(query)
+	re, err := regexp.Compile(params.Query)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
-	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		file, err := m.fs.Open(ctx, filePath)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		// Read first 1024 bytes to check if binary
-		buf := make([]byte, 1024)
-		n, err := file.Read(buf)
-		if err != nil && err != io.EOF {
-			return nil // Skip file on error
-		}
-		if fsutil.IsBinary(buf[:n]) {
-			return nil
-		}
-		file.Seek(0, 0)
-
-		scanner := bufio.NewScanner(file)
-		lineNum := 0
-		for scanner.Scan() {
-			lineNum++
-			line := scanner.Text()
-			if re.MatchString(line) {
-				trimmed := strings.TrimSpace(line)
-				if len(trimmed) > 500 {
-					trimmed = trimmed[:500] + " (truncated)"
-				}
-				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, trimmed))
-				if len(results) > 100 {
-					return fmt.Errorf("too many results")
-				}
-			}
-		}
-		return nil
-	})
-
-	if err != nil && err.Error() != "too many results" {
-		return types.ToolResult{}, err
+	processor := func(filePath string) error {
+		return m.scanFile(ctx, filePath, func(line string) bool {
+			return re.MatchString(line)
+		}, &results)
 	}
 
-	if len(results) == 0 {
-		return types.ToolResult{Text: "No matches found."}, nil
-	}
-
-	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
-		out += "\n... (truncated)"
-	}
-	return types.ToolResult{Text: out}, nil
+	err = m.walkAndProcess(ctx, params.Path, processor)
+	return m.formatSearchResults(results, err)
 }
 
 func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -126,59 +68,29 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
-	resolvedPath, err := m.sm.IsPathSafe(path)
-	if err != nil {
-		return types.ToolResult{}, err
-	}
-
-	pattern := params.Pattern
-	if pattern == "" {
+	if params.Pattern == "" {
 		return types.ToolResult{}, fmt.Errorf("pattern argument is required")
 	}
 
 	var results []string
-	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		matched, err := filepath.Match(pattern, info.Name())
+	processor := func(filePath string) error {
+		matched, err := filepath.Match(params.Pattern, filepath.Base(filePath))
 		if err != nil {
 			return err
 		}
-
 		if matched {
 			results = append(results, filePath)
 		}
 		return nil
-	})
+	}
 
-	if err != nil {
+	if err := m.walkAndProcess(ctx, params.Path, processor); err != nil {
 		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No files found matching pattern."}, nil
 	}
-
 	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
@@ -195,77 +107,32 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	if path == "" {
 		path = "."
 	}
-
 	resolvedPath, err := m.sm.IsPathSafe(path)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	query := params.Query
-
-	// Attempt AST-based search for Go files first
+	// 1. AST Search (Go files)
 	nav := &navigation.Manager{SP: m.sm}
-	astResults, err := nav.GrepDefinitionsGo(ctx, resolvedPath, query)
-	if err != nil {
-		// Fallback to regex if AST fails for some reason
-	}
+	results, _ := nav.GrepDefinitionsGo(ctx, resolvedPath, params.Query)
 
-	// Broad definition patterns for non-Go files
-	defPatterns := []string{
-		`^def\s+\w+`,            // Python function
-		`^class\s+\w+`,          // Python/JS class
-		`^function\s+`,          // JS function
-		`^const\s+\w+\s*=\s*\(`, // JS arrow function
-		`^\w+\(\)\s*\{`,         // Bash function
-	}
-
+	// 2. Prepare Regex for Fallback
 	var reQuery *regexp.Regexp
-	if query != "" {
-		var err error
-		reQuery, err = regexp.Compile("(?i)" + query)
+	if params.Query != "" {
+		reQuery, err = regexp.Compile("(?i)" + params.Query)
 		if err != nil {
 			return types.ToolResult{}, fmt.Errorf("invalid query regex: %w", err)
 		}
 	}
 
-	var results []string
-	results = append(results, astResults...)
-
-	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "node_modules" || info.Name() == "vendor" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Only check common source files, skip .go if we already handled them with AST (which we do by default now)
+	// 3. Fallback Walk (Non-Go files)
+	processor := func(filePath string) error {
 		ext := filepath.Ext(filePath)
-		if ext != ".py" && ext != ".js" && ext != ".sh" && ext != ".md" {
+		if ext == ".go" || !isSupportedDefExt(ext) {
 			return nil
 		}
 
-		file, err := m.fs.Open(ctx, filePath)
-		if err != nil {
-			return nil
-		}
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		lineNum := 0
-		for scanner.Scan() {
-			lineNum++
-			line := scanner.Text()
+		return m.scanFile(ctx, filePath, func(line string) bool {
 			isDef := false
 			for _, p := range defPatterns {
 				if matched, _ := regexp.MatchString(p, line); matched {
@@ -273,27 +140,127 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 					break
 				}
 			}
-
-			if isDef {
-				if reQuery == nil || reQuery.MatchString(line) {
-					trimmed := strings.TrimSpace(line)
-					if len(trimmed) > 500 {
-						trimmed = trimmed[:500] + " (truncated)"
-					}
-					results = append(results, fmt.Sprintf("%s:%d: %s", filePath, lineNum, trimmed))
-				}
+			if !isDef {
+				return false
 			}
-		}
-		return nil
-	})
+			return reQuery == nil || reQuery.MatchString(line)
+		}, &results)
+	}
 
-	if err != nil {
+	// We use resolvedPath here since we already checked safety
+	if err := m.walkAndProcess(ctx, resolvedPath, processor); err != nil {
 		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No definitions found."}, nil
 	}
-
 	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+}
+
+// --- Helper Methods ---
+
+// walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
+func (m *fileSystemManager) walkAndProcess(ctx context.Context, path string, fn fileProcessor) error {
+	// If path isn't absolute/resolved yet, check safety
+	if !filepath.IsAbs(path) {
+		if path == "" {
+			path = "."
+		}
+		var err error
+		path, err = m.sm.IsPathSafe(path)
+		if err != nil {
+			return err
+		}
+	}
+
+	return m.fs.Walk(ctx, path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip items we can't access
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if info.IsDir() {
+			if isIgnoredDir(info.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		return fn(filePath)
+	})
+}
+
+// scanFile opens a file, checks for binary content, and scans lines with a matcher function.
+func (m *fileSystemManager) scanFile(ctx context.Context, filePath string, matcher func(string) bool, results *[]string) error {
+	file, err := m.fs.Open(ctx, filePath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	if isBin, err := m.checkBinary(file); err != nil || isBin {
+		return nil
+	}
+
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		if matcher(line) {
+			*results = append(*results, formatMatch(filePath, lineNum, line))
+			if len(*results) > 100 {
+				return fmt.Errorf("too many results")
+			}
+		}
+	}
+	return nil
+}
+
+// checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.
+func (m *fileSystemManager) checkBinary(file fsutil.File) (bool, error) {
+	buf := make([]byte, 1024)
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		return false, err
+	}
+	return fsutil.IsBinary(buf[:n]), nil
+}
+
+func (m *fileSystemManager) formatSearchResults(results []string, err error) (types.ToolResult, error) {
+	if err != nil && err.Error() != "too many results" {
+		return types.ToolResult{}, err
+	}
+
+	if len(results) == 0 {
+		return types.ToolResult{Text: "No matches found."}, nil
+	}
+
+	out := strings.Join(results, "\n")
+	if err != nil && err.Error() == "too many results" {
+		out += "\n... (truncated)"
+	}
+	return types.ToolResult{Text: out}, nil
+}
+
+func isIgnoredDir(name string) bool {
+	return name == ".git" || name == "node_modules" || name == "vendor"
+}
+
+func isSupportedDefExt(ext string) bool {
+	return ext == ".py" || ext == ".js" || ext == ".sh" || ext == ".md"
+}
+
+func formatMatch(path string, lineNum int, text string) string {
+	trimmed := strings.TrimSpace(text)
+	if len(trimmed) > 500 {
+		trimmed = trimmed[:500] + " (truncated)"
+	}
+	return fmt.Sprintf("%s:%d: %s", path, lineNum, trimmed)
 }
