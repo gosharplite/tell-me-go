@@ -237,6 +237,101 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 	return types.FromSDKContent(candidate.Content), metrics, nil
 }
 
+// StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
+func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	// 0. Defensive check: Ensure all content objects have at least one part.
+	for _, h := range history {
+		if len(h.Parts) == 0 {
+			h.Parts = []*types.Part{{Text: "[empty]"}}
+		}
+	}
+
+	// Add Search tool
+	var activeTools []*genai.Tool
+	activeTools = append(activeTools, toSDKTool(tools)...)
+	if c.useSearch {
+		if c.backend == genai.BackendVertexAI {
+			activeTools = append(activeTools, &genai.Tool{
+				GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{},
+			})
+		} else {
+			activeTools = append(activeTools, &genai.Tool{
+				GoogleSearch: &genai.GoogleSearch{},
+			})
+		}
+	}
+
+	config := &genai.GenerateContentConfig{
+		Tools:             activeTools,
+		SystemInstruction: c.systemInstruction.ToSDK(resolver),
+	}
+
+	// Apply Thinking Config
+	if c.thinkingLevel != "" || c.thinkingBudget > 0 {
+		config.ThinkingConfig = &genai.ThinkingConfig{
+			IncludeThoughts: true,
+		}
+
+		actualBudget := c.thinkingBudget
+		if actualBudget > 0 {
+			maxBudget := 0
+			if val, ok := c.thinkingBudgets[c.model]; ok {
+				maxBudget = val
+			}
+			if maxBudget == 0 {
+				for k, v := range c.thinkingBudgets {
+					if k != "default" && strings.Contains(c.model, k) {
+						maxBudget = v
+						break
+					}
+				}
+			}
+			if maxBudget == 0 {
+				maxBudget = c.thinkingBudgets["default"]
+			}
+
+			if maxBudget > 0 && actualBudget > maxBudget {
+				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
+				actualBudget = maxBudget
+			}
+		}
+
+		if actualBudget > 0 {
+			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(actualBudget))
+		} else if c.thinkingLevel != "" {
+			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
+		}
+	}
+
+	sdkHistory := make([]*genai.Content, len(history))
+	for i, h := range history {
+		sdkHistory[i] = h.ToSDK(resolver)
+	}
+
+	startTime := time.Now()
+	iter := c.sdkClient.Models.GenerateContentStream(ctx, c.model, sdkHistory, config)
+
+	var lastMetrics *types.Metrics
+
+	for resp, err := range iter {
+		if err != nil {
+			return lastMetrics, err
+		}
+
+		duration := time.Since(startTime).Seconds()
+		lastMetrics = GetMetrics(resp, duration)
+
+		if len(resp.Candidates) > 0 {
+			candidate := resp.Candidates[0]
+			if candidate.Content != nil {
+				callback(types.FromSDKContent(candidate.Content))
+			}
+		}
+	}
+
+	return lastMetrics, nil
+}
+
 func toSDKTool(declarations []*types.ToolDeclaration) []*genai.Tool {
 	if len(declarations) == 0 {
 		return nil

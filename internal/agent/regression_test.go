@@ -30,6 +30,17 @@ func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, too
 	}, &types.Metrics{TotalTokens: 100}, nil
 }
 
+func (m *MockClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	if m.ResponseText == "EMPTY" {
+		return &types.Metrics{}, nil
+	}
+	callback(&types.Content{
+		Role:  "model",
+		Parts: []*types.Part{{Text: m.ResponseText}},
+	})
+	return &types.Metrics{TotalTokens: 100}, nil
+}
+
 func (m *MockClient) RefreshAuth() error { return nil }
 func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
@@ -37,18 +48,43 @@ func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, m
 
 // MockLLMClient is a flexible mock for testing.
 type MockLLMClient struct {
-	SendChatFn func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
+	SendChatFn    func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
+	StreamChatFn  func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error)
+	RefreshAuthFn func() error
 }
 
 func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	return m.SendChatFn(ctx, history, tools, resolver)
+	if m.SendChatFn != nil {
+		return m.SendChatFn(ctx, history, tools, resolver)
+	}
+	return nil, nil, fmt.Errorf("SendChatFn not implemented")
+}
+
+func (m *MockLLMClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	if m.StreamChatFn != nil {
+		return m.StreamChatFn(ctx, history, tools, resolver, callback)
+	}
+	// Fallback to SendChatFn if StreamChatFn is not provided
+	if m.SendChatFn != nil {
+		resp, metrics, err := m.SendChatFn(ctx, history, tools, resolver)
+		if err == nil {
+			callback(resp)
+		}
+		return metrics, err
+	}
+	return nil, fmt.Errorf("StreamChatFn and SendChatFn not implemented")
 }
 
 func (m *MockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
 
-func (m *MockLLMClient) RefreshAuth() error { return nil }
+func (m *MockLLMClient) RefreshAuth() error {
+	if m.RefreshAuthFn != nil {
+		return m.RefreshAuthFn()
+	}
+	return nil
+}
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
 	// This test verifies that the history manager and API client don't crash

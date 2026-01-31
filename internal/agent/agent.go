@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -40,6 +41,7 @@ type Chatter interface {
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
 	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
+	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
 	LogTurnStatus(status TurnStatus)
 	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
 	LogToolResult(name string, result types.ToolResult, showTools bool)
@@ -189,6 +191,11 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	_, maxTurns, _ := a.contextManager.GetLimits()
 
 	for turn := 0; turn <= maxTurns; turn++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		a.refreshLimits()
 
 		// 1. Prepare API Contents (includes pruning, summarization, and safety warnings)
@@ -208,14 +215,35 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 			IsPostCall:       false,
 		})
 
-		// 2. Send Chat Request
-		respContent, metrics, err := a.sendChat(ctx, apiContents)
+		// 2. Send Chat Request (Streaming)
+		streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+		metrics, err := a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+			streamCh <- c
+		})
+		respContent := finalize()
+
+		// Handle 401 Unauthorized for streaming
+		if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+			func() {
+				a.sm.TerminalLock()
+				defer a.sm.TerminalUnlock()
+				fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+			}()
+			if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
+				// Retry streaming
+				streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+				metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+					streamCh <- c
+				})
+				respContent = finalize()
+			}
+		}
+
 		if err != nil {
 			return err
 		}
 
-		// 3. Render Output
-		a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
+		// 3. Persist Response
 		if err := a.history.AddContent(respContent); err != nil {
 			a.reportHistoryError(err)
 		}
@@ -249,11 +277,57 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		if !a.hasToolCalls(respContent) {
+			a.showSmartSuggestions(ctx)
 			break
 		}
 	}
-
 	return nil
+}
+
+func (a *Agent) showSmartSuggestions(ctx context.Context) {
+	// 1. Check if enabled in config
+	if a.persistentConfigPath == "" {
+		return
+	}
+	data, err := os.ReadFile(a.persistentConfigPath)
+	if err != nil {
+		return
+	}
+	var config map[string]string
+	if err := json.Unmarshal(data, &config); err != nil {
+		return
+	}
+	if config["smart_suggestions"] != "on" {
+		return
+	}
+
+	// 2. Generate suggestions
+	suggestionPrompt := &types.Content{
+		Role: "user",
+		Parts: []*types.Part{{Text: "Based on our conversation, suggest 2-3 short, actionable follow-up commands I might want to run next (e.g., 'run tests', 'list files', 'check git status'). Respond ONLY with a bulleted list of commands."}},
+	}
+
+	history := a.history.GetContents()
+	// Use only last few turns for suggestions to save tokens and time
+	if len(history) > 6 {
+		history = history[len(history)-6:]
+	}
+	input := append(history, suggestionPrompt)
+
+	// Use SendChat (non-streaming) for suggestions
+	resp, _, err := a.client.SendChat(ctx, input, nil, nil)
+	if err != nil || len(resp.Parts) == 0 {
+		return
+	}
+
+	suggestions := resp.Parts[0].Text
+	if suggestions == "" {
+		return
+	}
+
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
+	fmt.Fprintf(os.Stderr, "\n\033[0;90mSuggested follow-ups:\n%s\033[0m\n", strings.TrimSpace(suggestions))
 }
 
 func (a *Agent) reportHistoryError(err error) {
@@ -261,27 +335,6 @@ func (a *Agent) reportHistoryError(err error) {
 	defer a.sm.TerminalUnlock()
 	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history entry: %v\033[0m\n",
 		time.Now().Format("15:04:05"), err)
-}
-
-func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
-	decls := a.registry.GetDeclarations()
-	resolver := a.history.GetResolver()
-	respContent, metrics, err := a.client.SendChat(ctx, apiContents, decls, resolver)
-
-	// Handle 401 Unauthorized
-	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-		}()
-		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
-			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
-		}
-		// Retry
-		respContent, metrics, err = a.client.SendChat(ctx, apiContents, decls, resolver)
-	}
-	return respContent, metrics, err
 }
 
 func (a *Agent) hasToolCalls(content *types.Content) bool {

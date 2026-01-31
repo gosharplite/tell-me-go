@@ -4,9 +4,11 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/glamour"
@@ -113,11 +115,9 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts, rawOutput bool) {
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
-			func() {
-				r.sm.TerminalLock()
-				defer r.sm.TerminalUnlock()
-				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
-			}()
+			r.sm.TerminalLock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", time.Now().Format("15:04:05"), part.Text)
+			r.sm.TerminalUnlock()
 		}
 	}
 	for _, part := range respContent.Parts {
@@ -133,14 +133,119 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 		}
 
 		if part.InlineData != nil {
-			func() {
-				r.sm.TerminalLock()
-				defer r.sm.TerminalUnlock()
-				fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
-					time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
-			}()
+			r.sm.TerminalLock()
+			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+				time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
+			r.sm.TerminalUnlock()
 		}
 	}
+}
+
+// StreamResponse provides a channel to stream content parts and a finalizer to get the aggregated content.
+func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content) {
+	ch := make(chan *types.Content, 100)
+	aggregated := &types.Content{Role: "model"}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	
+	// Track state for incremental rendering
+	thoughtActive := false
+
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case content, ok := <-ch:
+				if !ok {
+					if thoughtActive {
+						r.sm.TerminalLock()
+						fmt.Fprintf(os.Stderr, "\033[0m\n")
+						r.sm.TerminalUnlock()
+					}
+					return
+				}
+
+				for _, part := range content.Parts {
+					// Aggregate
+					r.mergePart(aggregated, part)
+
+					// Incremental Render
+					if part.Thought {
+						if !thoughtActive && showThoughts {
+							r.sm.TerminalLock()
+							fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05"))
+							r.sm.TerminalUnlock()
+							thoughtActive = true
+						}
+						if showThoughts {
+							r.sm.TerminalLock()
+							fmt.Fprintf(os.Stderr, "\033[0;90m%s\033[0m", part.Text)
+							r.sm.TerminalUnlock()
+						}
+					} else if part.Text != "" {
+						if thoughtActive {
+							r.sm.TerminalLock()
+							fmt.Fprintf(os.Stderr, "\033[0m\n") // Close thinking block
+							r.sm.TerminalUnlock()
+							thoughtActive = false
+						}
+						// For text, we stream it raw to terminal
+						fmt.Print(part.Text)
+					}
+
+					if part.InlineData != nil {
+						if thoughtActive {
+							r.sm.TerminalLock()
+							fmt.Fprintf(os.Stderr, "\033[0m\n")
+							r.sm.TerminalUnlock()
+							thoughtActive = false
+						}
+						r.sm.TerminalLock()
+						fmt.Fprintf(os.Stderr, "\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+							time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
+						r.sm.TerminalUnlock()
+					}
+				}
+			}
+		}
+	}()
+
+	return ch, func() *types.Content {
+		close(ch)
+		wg.Wait()
+		// If not raw output, we might want to "cleanup" the output by rendering markdown at the end.
+		// But since we already printed raw text, this might look messy.
+		// For now, we'll just return the aggregated content.
+		if !rawOutput {
+			fmt.Println() // Ensure we end on a new line
+		}
+		return aggregated
+	}
+}
+
+func (r *StdUIRenderer) mergePart(dst *types.Content, src *types.Part) {
+	// If it's a function call/response, just append
+	if src.FunctionCall != nil || src.FunctionResponse != nil || src.InlineData != nil {
+		dst.Parts = append(dst.Parts, src)
+		return
+	}
+
+	// For text/thought, try to append to last part if same type
+	if len(dst.Parts) > 0 {
+		last := dst.Parts[len(dst.Parts)-1]
+		if last.Thought == src.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
+			last.Text += src.Text
+			return
+		}
+	}
+
+	// Otherwise append new part
+	dst.Parts = append(dst.Parts, &types.Part{
+		Text:    src.Text,
+		Thought: src.Thought,
+	})
 }
 
 func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, showTools bool) {
