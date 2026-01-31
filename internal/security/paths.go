@@ -34,11 +34,12 @@ func NewPathPolicy() *PathPolicy {
 // If writable=true, it checks CWD, Temp, and SafePaths.
 // If writable=false, it ALSO checks ReadOnlyPaths.
 func (p *PathPolicy) ValidatePath(path string, writable bool) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
 	// 1. Hardened Sanitation
 	path = filepath.Clean(path)
-	if parts := strings.SplitN(path, "=", 2); len(parts) == 2 {
-		path = parts[1] // Handle flag-based paths
-	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -282,7 +283,9 @@ func (p *PathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	rel, err := filepath.Rel(absBoundary, target)
+	realBoundary := p.resolveSymlinks(absBoundary)
+
+	rel, err := filepath.Rel(realBoundary, target)
 	return err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel), nil
 }
 

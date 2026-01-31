@@ -56,6 +56,13 @@ func FuzzValidatePath(f *testing.F) {
 			return
 		}
 
+		if path == "" {
+			if validated != "" {
+				t.Errorf("ValidatePath(\"\") returned %q, want \"\"", validated)
+			}
+			return
+		}
+
 		// Success criteria:
 		// 1. The path must be absolute
 		if !filepath.IsAbs(validated) {

@@ -108,3 +108,31 @@ func TestPathPolicy_Persistence(t *testing.T) {
 		t.Errorf("Expected path %s not found in loaded paths %v", absTest, paths)
 	}
 }
+
+func TestPathPolicy_SymlinkBoundary(t *testing.T) {
+	tmp := t.TempDir()
+	realDir := filepath.Join(tmp, "real")
+	linkDir := filepath.Join(tmp, "link")
+	
+	if err := os.Mkdir(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", linkDir); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+
+	p := NewPathPolicy()
+	p.RegisterPath(linkDir, true)
+
+	// Target is in the real directory
+	target := filepath.Join(realDir, "test.txt")
+	if err := os.WriteFile(target, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should be valid even if we registered the link
+	_, err := p.ValidatePath(target, true)
+	if err != nil {
+		t.Errorf("ValidatePath failed for symlinked boundary: %v", err)
+	}
+}
