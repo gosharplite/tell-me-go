@@ -10,7 +10,7 @@ import (
 
 func FuzzIsSafeCommand(f *testing.F) {
 	sm := NewSecurityManager()
-	m := &systemManager{sm: sm}
+	m := newSystemManager(sm)
 
 	// Seed corpus with some safe and unsafe examples
 	f.Add("ls -la")
@@ -31,7 +31,7 @@ func FuzzIsSafeCommand(f *testing.F) {
 	f.Add("awk '{print $1}' /etc/shadow")
 
 	f.Fuzz(func(t *testing.T, cmd string) {
-		isSafe := m.isSafeCommand(cmd)
+		isSafe, _ := m.validator.IsSafe(cmd)
 
 		// 0. Negative assertions: Known unsafe patterns must be rejected
 		unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
@@ -46,7 +46,7 @@ func FuzzIsSafeCommand(f *testing.F) {
 
 		if isSafe {
 			// 1. Must be splitable by shlex
-			parts, err := splitCommand(cmd)
+			parts, err := m.validator.Split(cmd)
 			if err != nil {
 				t.Errorf("Command %q marked safe but failed to split: %v", cmd, err)
 				return

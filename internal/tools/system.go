@@ -4,30 +4,36 @@
 package tools
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/google/shlex"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type systemManager struct {
-	sm *SecurityManager
+	sm        *SecurityManager
+	validator *CommandValidator
+	executor  *ProcessExecutor
+}
+
+func newSystemManager(sm *SecurityManager) *systemManager {
+	return &systemManager{
+		sm:        sm,
+		validator: NewCommandValidator(sm),
+		executor:  NewProcessExecutor(),
+	}
 }
 
 // RegisterSystemTools adds system-related tools to the registry.
 func RegisterSystemTools(r *Registry, sm *SecurityManager) {
-	m := &systemManager{sm: sm}
+	m := newSystemManager(sm)
 
 	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "execute_command",
@@ -719,10 +725,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		return types.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
-	reason := params.Reason
 	outputFile := params.OutputFile
-	appendMode := params.Append
-
 	if outputFile != "" {
 		resolvedFile, err := m.sm.IsPathWritable(outputFile)
 		if err != nil {
@@ -731,10 +734,10 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		outputFile = resolvedFile
 	}
 
+	// 1. Validate
+	safe, _ := m.validator.IsSafe(command)
 	approved := false
 
-	// 1. Check for Auto-Approval (Safe read-only commands or bypass enabled)
-	safe := m.isSafeCommand(command)
 	if m.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Execution auto-approved (bypass_confirmation enabled).\033[0m\n")
 		approved = true
@@ -742,14 +745,14 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe command detected.\033[0m\n")
 		approved = true
 	} else {
-		// 2. Safety Confirmation Gate (Tell-me style)
+		// 2. Authorize
 		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Command: \033[0m%s\n", command)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		if params.Reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", params.Reason)
 		}
 		if outputFile != "" {
 			redir := ">"
-			if appendMode {
+			if params.Append {
 				redir = ">>"
 			}
 			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect: %s %s\033[0m\n", redir, outputFile)
@@ -757,8 +760,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
 		char, err := m.sm.readSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n") // New line after key hit
-
+		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
 		}
@@ -771,89 +773,36 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		return types.ToolResult{Text: fmt.Sprintf("User denied execution of command: %s", command)}, nil
 	}
 
-	// 2.5 Log command execution if log file is set
-	logSuffix := ""
-	if m.sm.IsBypassActive() {
-		logSuffix = " (auto-approved via bypass_confirmation)"
-	}
-	m.sm.logAudit("REASON", reason, "COMMAND", command+logSuffix)
+	m.sm.logAudit("REASON", params.Reason, "COMMAND", command)
 
-	// 3. Execution
-	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
-
-	parts, err := splitCommand(command)
+	// 3. Execute
+	parts, err := m.validator.Split(command)
 	if err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
 	}
-	if len(parts) == 0 {
-		return types.ToolResult{Text: "Error: Empty command"}, nil
-	}
 
-	// Direct binary execution (no shell)
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-
-	// Stream output to stderr and capture it
-	var sb strings.Builder
-	const maxCapture = 1024 * 1024 // 1MB Memory Cap
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	multi := io.MultiReader(stdout, stderr)
-
-	var file *os.File
-	if outputFile != "" {
-		flags := os.O_CREATE | os.O_WRONLY
-		if appendMode {
-			flags |= os.O_APPEND
-		} else {
-			flags |= os.O_TRUNC
-		}
-		var err error
-		file, err = os.OpenFile(outputFile, flags, 0644)
-		if err != nil {
-			return types.ToolResult{}, fmt.Errorf("failed to open output file: %w", err)
-		}
-		defer file.Close()
-	}
-
-	if err := cmd.Start(); err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Command failed to start: %v", err)}, nil
-	}
-
-	scanner := bufio.NewScanner(multi)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
-		if sb.Len() < maxCapture {
-			sb.WriteString(line + "\n")
-		}
-		if file != nil {
-			file.WriteString(line + "\n")
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		errNote := fmt.Sprintf("\n[Warning] Output read error: %v", err)
-		if err == bufio.ErrTooLong {
-			errNote = "\n[Warning] Output line too long for scanner; truncated."
-		}
-		fmt.Fprintln(os.Stderr, errNote)
-		sb.WriteString(errNote + "\n")
-	}
-
-	err = cmd.Wait()
+	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	output := sb.String()
+	res, err := m.executor.RunCommand(ctx, parts, ExecutionConfig{
+		OutputFile: outputFile,
+		Append:     params.Append,
+		Feedback:   os.Stderr,
+	})
+	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
+	output := res.Output
 	if len(output) > 50000 {
 		output = output[:50000] + "\n... (truncated)"
 	}
 
-	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Exit Code: 1\nError/Output:\n%s", output)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Exit Code: 0\nOutput:\n%s", output)}, nil
+	return types.ToolResult{
+		Text: fmt.Sprintf("Exit Code: %d\nOutput:\n%s", res.ExitCode, output),
+	}, nil
 }
 
 func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -875,10 +824,7 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
 	}
 
-	reason := params.Reason
 	outputFile := params.OutputFile
-	appendMode := params.Append
-
 	if outputFile != "" {
 		resolvedFile, err := m.sm.IsPathWritable(outputFile)
 		if err != nil {
@@ -887,10 +833,10 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		outputFile = resolvedFile
 	}
 
-	// Safety check
+	// 1. Validate
 	allSafe := true
 	for _, cmd := range commands {
-		if !m.isSafeCommand(cmd) {
+		if safe, _ := m.validator.IsSafe(cmd); !safe {
 			allSafe = false
 			break
 		}
@@ -904,13 +850,14 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe pipeline detected.\033[0m\n")
 		approved = true
 	} else {
+		// 2. Authorize
 		fmt.Fprintf(os.Stderr, "\033[0;36mExecute Pipeline: \033[0m%s\n", strings.Join(commands, " | "))
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		if params.Reason != "" {
+			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", params.Reason)
 		}
 		if outputFile != "" {
 			redir := ">"
-			if appendMode {
+			if params.Append {
 				redir = ">>"
 			}
 			fmt.Fprintf(os.Stderr, "\033[0;34mRedirect Final Output: %s %s\033[0m\n", redir, outputFile)
@@ -931,276 +878,39 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		return types.ToolResult{Text: "User denied execution of pipeline."}, nil
 	}
 
-	m.sm.logAudit("REASON", reason, "PIPELINE", strings.Join(commands, " | "))
+	m.sm.logAudit("REASON", params.Reason, "PIPELINE", strings.Join(commands, " | "))
+
+	// 3. Execute
+	pipedParts := make([][]string, len(commands))
+	for i, cmdStr := range commands {
+		parts, err := m.validator.Split(cmdStr)
+		if err != nil {
+			return types.ToolResult{Text: fmt.Sprintf("Error parsing command at index %d: %v", i, err)}, nil
+		}
+		pipedParts[i] = parts
+	}
 
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting Pipeline... (Output shown below)\033[0m\n")
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	cmds := make([]*exec.Cmd, len(commands))
-	var combinedStderr strings.Builder
-	var stderrPipes []io.Reader
-
-	for i, cmdStr := range commands {
-		parts, err := splitCommand(cmdStr)
-		if err != nil {
-			return types.ToolResult{Text: fmt.Sprintf("Error parsing command at index %d: %v", i, err)}, nil
-		}
-		if len(parts) == 0 {
-			return types.ToolResult{Text: fmt.Sprintf("Error: Empty command at index %d", i)}, nil
-		}
-		cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
-
-		// Capture stderr from every command in the pipeline
-		se, _ := cmds[i].StderrPipe()
-		stderrPipes = append(stderrPipes, se)
-	}
-
-	// Track pipes to ensure they are closed on startup failure
-	var pipes []io.Closer
-	for _, se := range stderrPipes {
-		pipes = append(pipes, se.(io.Closer))
-	}
-	defer func() {
-		for _, p := range pipes {
-			_ = p.Close()
-		}
-	}()
-
-	// Setup stdout/stdin pipes
-	for i := 0; i < len(cmds)-1; i++ {
-		pipe, err := cmds[i].StdoutPipe()
-		if err != nil {
-			return types.ToolResult{}, fmt.Errorf("failed to create pipe for command %d: %w", i, err)
-		}
-		pipes = append(pipes, pipe)
-		cmds[i+1].Stdin = pipe
-	}
-
-	var sb strings.Builder
-	// The last command's stdout is what we primarily capture for result
-	lastCmd := cmds[len(cmds)-1]
-	stdout, _ := lastCmd.StdoutPipe()
-	pipes = append(pipes, stdout)
-
-	var file *os.File
-	if outputFile != "" {
-		flags := os.O_CREATE | os.O_WRONLY
-		if appendMode {
-			flags |= os.O_APPEND
-		} else {
-			flags |= os.O_TRUNC
-		}
-		var err error
-		file, err = os.OpenFile(outputFile, flags, 0644)
-		if err != nil {
-			return types.ToolResult{}, fmt.Errorf("failed to open output file: %w", err)
-		}
-		defer file.Close()
-	}
-
-	// Start all commands
-	for i := 0; i < len(cmds); i++ {
-		if err := cmds[i].Start(); err != nil {
-			return types.ToolResult{Text: fmt.Sprintf("Command %d (%s) failed to start: %v", i, commands[i], err)}, nil
-		}
-	}
-
-	// Read all stderr pipes in parallel
-	var wg sync.WaitGroup
-	var stderrMu sync.Mutex
-	const maxTotalCapture = 1024 * 1024 // 1MB total buffer cap
-	for i, se := range stderrPipes {
-		wg.Add(1)
-		go func(idx int, r io.Reader) {
-			defer wg.Done()
-			scanner := bufio.NewScanner(r)
-			for scanner.Scan() {
-				line := scanner.Text()
-				stderrMu.Lock()
-				fmt.Fprintf(os.Stderr, "  \033[31m[%d] %s\033[0m\n", idx, line)
-				if combinedStderr.Len() < maxTotalCapture {
-					combinedStderr.WriteString(line + "\n")
-				}
-				stderrMu.Unlock()
-			}
-			if err := scanner.Err(); err != nil {
-				stderrMu.Lock()
-				msg := fmt.Sprintf("[Error reading stderr from pipe %d: %v]", idx, err)
-				fmt.Fprintln(os.Stderr, msg)
-				combinedStderr.WriteString(msg + "\n")
-				stderrMu.Unlock()
-			}
-		}(i, se)
-	}
-
-	// Stream stdout of the last command
-	stdoutScanner := bufio.NewScanner(stdout)
-	for stdoutScanner.Scan() {
-		line := stdoutScanner.Text()
-		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
-		if sb.Len() < maxTotalCapture {
-			sb.WriteString(line + "\n")
-		}
-		if file != nil {
-			file.WriteString(line + "\n")
-		}
-	}
-
-	if err := stdoutScanner.Err(); err != nil {
-		msg := fmt.Sprintf("\n[Warning] Stdout read error: %v", err)
-		if err == bufio.ErrTooLong {
-			msg = "\n[Warning] Stdout line too long for scanner; truncated."
-		}
-		fmt.Fprintln(os.Stderr, msg)
-		sb.WriteString(msg + "\n")
-	}
-
-	// Wait for all stderr to be read
-	wg.Wait()
-
-	// After all commands started successfully, Wait() will eventually close the pipes.
-	// We clear the pipes slice so the deferred Close() calls don't interfere with Wait().
-	pipes = nil
-
-	// Wait for all commands in reverse order
-	var lastErr error
-	for i := len(cmds) - 1; i >= 0; i-- {
-		err := cmds[i].Wait()
-		if err != nil && i == len(cmds)-1 {
-			lastErr = err
-		}
-	}
-
+	res, err := m.executor.RunPipeline(ctx, pipedParts, ExecutionConfig{
+		OutputFile: outputFile,
+		Append:     params.Append,
+		Feedback:   os.Stderr,
+	})
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
-	output := sb.String()
-	errStr := combinedStderr.String()
-
-	finalRes := output
-	if errStr != "" {
-		finalRes = fmt.Sprintf("Output:\n%s\nErrors:\n%s", output, errStr)
+	if err != nil {
+		return types.ToolResult{}, err
 	}
 
+	finalRes := res.Output
 	if len(finalRes) > 50000 {
 		finalRes = finalRes[:50000] + "\n... (truncated)"
 	}
 
-	if lastErr != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Pipeline failed at last command. Exit Code: 1\n%s", finalRes)}, nil
-	}
-
-	return types.ToolResult{Text: fmt.Sprintf("Pipeline completed successfully. Exit Code: 0\n%s", finalRes)}, nil
+	return types.ToolResult{
+		Text: fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, finalRes),
+	}, nil
 }
 
-func splitCommand(cmd string) ([]string, error) {
-	parts, err := shlex.Split(cmd)
-	if err != nil {
-		return nil, err
-	}
-	return parts, nil
-}
-
-func (m *systemManager) isSafeCommand(command string) bool {
-	// Whitelist of allowed base commands (strict exact match)
-	// Side-effect-free inspection tools only for auto-approval.
-	safeCommands := map[string]bool{
-		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
-		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-		"whoami": true, "diff": true, "git": true, "go": true,
-	}
-
-	parts, err := splitCommand(command)
-	if err != nil || len(parts) == 0 {
-		return false
-	}
-	base := parts[0]
-
-	// 1. Check against whitelist
-	if !safeCommands[base] {
-		return false
-	}
-
-	// 2. Specialized Check for 'git': Only allow read-only subcommands
-	if base == "git" {
-		sub := ""
-		for i := 1; i < len(parts); i++ {
-			if strings.HasPrefix(parts[i], "-") {
-				// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
-				if (parts[i] == "-C" || parts[i] == "-c") && i+1 < len(parts) {
-					i++
-				}
-				continue
-			}
-			sub = parts[i]
-			break
-		}
-
-		if sub == "" {
-			return false
-		}
-
-		readOnlyGit := map[string]bool{
-			"status": true, "log": true, "diff": true, "branch": true,
-			"show": true, "blame": true, "ls-files": true, "rev-parse": true,
-			"tag": true, "remote": true, "describe": true,
-		}
-		if !readOnlyGit[sub] {
-			return false
-		}
-	}
-
-	// 3. Specialized check for 'go': Only allow non-destructive subcommands
-	if base == "go" {
-		sub := ""
-		for i := 1; i < len(parts); i++ {
-			if strings.HasPrefix(parts[i], "-") {
-				continue
-			}
-			sub = parts[i]
-			break
-		}
-		allowedGo := map[string]bool{
-			"list": true, "help": true, "version": true, "env": true,
-			"vet": true,
-		}
-		if !allowedGo[sub] {
-			return false
-		}
-	}
-
-	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
-	// We are extremely strict here to prevent shell injection.
-	unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
-	for _, char := range unsafeChars {
-		if strings.Contains(command, char) {
-			return false
-		}
-	}
-
-	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	for i := 1; i < len(parts); i++ {
-		arg := parts[i]
-		if arg == "" || strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
-			// Skip empty args and simple flags like -la
-			continue
-		}
-		// Special case for Go's recursive package pattern
-		if arg == "./..." || arg == "..." {
-			continue
-		}
-		// If it's a flag with a path like --config=path
-		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
-			arg = strings.SplitN(arg, "=", 2)[1]
-		}
-
-		if _, err := m.sm.IsPathSafe(arg); err != nil {
-			// Some args might not be paths, but we try to check them anyway if they look like paths
-			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
-				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
-				return false
-			}
-		}
-	}
-
-	return true
-}

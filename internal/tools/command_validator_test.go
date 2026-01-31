@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-func TestIsSafeCommand(t *testing.T) {
+func TestCommandValidator_IsSafe(t *testing.T) {
 	sm := NewSecurityManager()
-	m := newSystemManager(sm)
+	v := NewCommandValidator(sm)
 	tests := []struct {
 		cmd  string
 		want bool
@@ -30,19 +30,19 @@ func TestIsSafeCommand(t *testing.T) {
 		{"go install github.com/foo/bar", false},
 		{"go vet ./...", true},
 		{"go fmt ./...", false},
-		{"go clean", false}, // Not in whitelist
+		{"go clean", false},
 	}
 
 	for _, tt := range tests {
-		got, _ := m.validator.IsSafe(tt.cmd)
+		got, _ := v.IsSafe(tt.cmd)
 		if got != tt.want {
-			t.Errorf("isSafeCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
+			t.Errorf("IsSafe(%q) = %v, want %v", tt.cmd, got, tt.want)
 		}
 	}
 }
 
-func TestSplitCommand(t *testing.T) {
-	m := newSystemManager(nil)
+func TestCommandValidator_Split(t *testing.T) {
+	v := &CommandValidator{}
 	tests := []struct {
 		cmd      string
 		expected []string
@@ -57,18 +57,18 @@ func TestSplitCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got, err := m.validator.Split(tt.cmd)
+		got, err := v.Split(tt.cmd)
 		if (err != nil) != tt.wantErr {
-			t.Errorf("splitCommand(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+			t.Errorf("Split(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
 			continue
 		}
 		if len(got) != len(tt.expected) {
-			t.Errorf("splitCommand(%q) length = %d, want %d", tt.cmd, len(got), len(tt.expected))
+			t.Errorf("Split(%q) length = %d, want %d", tt.cmd, len(got), len(tt.expected))
 			continue
 		}
 		for i := range got {
 			if got[i] != tt.expected[i] {
-				t.Errorf("splitCommand(%q)[%d] = %q, want %q", tt.cmd, i, got[i], tt.expected[i])
+				t.Errorf("Split(%q)[%d] = %q, want %q", tt.cmd, i, got[i], tt.expected[i])
 			}
 		}
 	}

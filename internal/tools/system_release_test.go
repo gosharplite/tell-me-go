@@ -14,7 +14,7 @@ func TestExecuteCommand_Security(t *testing.T) {
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
 
-	m := &systemManager{sm: sm}
+	m := newSystemManager(sm)
 
 	tests := []struct {
 		name    string
@@ -45,7 +45,7 @@ func TestExecuteCommand_Execution(t *testing.T) {
 	// Authorize
 	sm.bypassConfirmations = true
 
-	m := &systemManager{sm: sm}
+	m := newSystemManager(sm)
 
 	args := map[string]interface{}{"command": "echo hello"}
 	resp, err := m.executeCommand(context.Background(), args)
@@ -63,7 +63,7 @@ func TestPipeCommands_Security(t *testing.T) {
 	sm := NewSecurityManager()
 	sm.SetBypassFile(filepath.Join(tmpDir, "bypass.log"))
 
-	m := &systemManager{sm: sm}
+	m := newSystemManager(sm)
 
 	tests := []struct {
 		name     string
