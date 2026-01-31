@@ -89,13 +89,15 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 			fmt.Fprintf(r.stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
 				gray, timestamp, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		} else {
-			fmt.Fprintf(r.stderr, "%s[%s] [Turn (%s%d%s/%d)] Payload: ~%s%d%s/%d tokens%s\n",
-				gray, timestamp, reset, status.CurrentTurns, gray, status.MaxHistoryTurns, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
+			fmt.Fprintf(r.stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
+				gray, timestamp, tokenColor, tks, gray, status.MaxHistoryTokens, reset)
 		}
 	}
 
 	if !status.IsPostCall {
 		// 1. Print Payload Status (Pre-call estimate)
+		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
+		fmt.Fprintf(r.stderr, "%s╭─⠿ %sTurn %d/%d%s\n", gray, reset, status.CurrentTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
 	} else if status.Metrics != nil {
 		m := status.Metrics
@@ -123,6 +125,7 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 
 		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
 			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, gray)
 	}
 }
 
@@ -337,6 +340,7 @@ func (r *StdUIRenderer) renderMarkdown(text string) {
 		glamour.WithEmoji(),
 	)
 
+	fmt.Fprintf(r.stdout, "\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
 	out, err := renderer.Render(text)
 	if err != nil {
 		fmt.Fprint(r.stdout, text)
