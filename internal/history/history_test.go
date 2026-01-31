@@ -382,7 +382,7 @@ func (s *mockStore) Save(ctx context.Context, contents []*types.Content) error {
 func (s *mockStore) Append(ctx context.Context, content *types.Content) error  { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
-	m := NewManager("dummy")
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
 	m.SetStore(&mockStore{})
 	if m.GetResolver() != nil {
 		t.Error("expected nil resolver for mockStore")
@@ -398,7 +398,7 @@ func TestHistoryManager_Repair_Empty(t *testing.T) {
 }
 
 func TestHistoryManager_AddContent_Errors(t *testing.T) {
-	m := NewManager("dummy")
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
 	ctx := context.Background()
 
 	// 1. First message not user
