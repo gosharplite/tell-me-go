@@ -25,6 +25,15 @@ type StdUIRenderer struct {
 	stderr io.Writer
 }
 
+// streamState holds the transient state for a single response stream.
+type streamState struct {
+	aggregated    *types.Content
+	totalText     strings.Builder
+	thoughtActive bool
+	showThoughts  bool
+	rawOutput     bool
+}
+
 // NewStdUIRenderer creates a new StdUIRenderer.
 func NewStdUIRenderer(sm *tools.SecurityManager) *StdUIRenderer {
 	return &StdUIRenderer{
@@ -161,126 +170,144 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 // StreamResponse provides a channel to stream content parts and a finalizer to get the aggregated content.
 func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content) {
 	ch := make(chan *types.Content, 100)
-	aggregated := &types.Content{Role: "model"}
+	state := &streamState{
+		aggregated:   &types.Content{Role: "model"},
+		showThoughts: showThoughts,
+		rawOutput:    rawOutput,
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	// Track state for incremental rendering and cleanup
-	thoughtActive := false
-	var totalText strings.Builder
-
 	go func() {
 		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case content, ok := <-ch:
-				if !ok {
-					if thoughtActive {
-						r.sm.TerminalLock()
-						fmt.Fprintf(r.stderr, "\033[0m\n")
-						r.sm.TerminalUnlock()
-					}
-					return
-				}
-
-				for _, part := range content.Parts {
-					// Aggregate
-					r.mergePart(aggregated, part)
-
-					// Incremental Render
-					if part.Thought {
-						if !thoughtActive && showThoughts {
-							r.sm.TerminalLock()
-							fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05"))
-							r.sm.TerminalUnlock()
-							thoughtActive = true
-						}
-						if showThoughts {
-							r.sm.TerminalLock()
-							fmt.Fprintf(r.stderr, "\033[0;90m%s\033[0m", part.Text)
-							r.sm.TerminalUnlock()
-						}
-					} else if part.Text != "" {
-						if thoughtActive {
-							r.sm.TerminalLock()
-							fmt.Fprintf(r.stderr, "\033[0m\n") // Close thinking block
-							r.sm.TerminalUnlock()
-							thoughtActive = false
-						}
-						// For text, we stream it raw to terminal
-						fmt.Fprint(r.stdout, part.Text)
-						totalText.WriteString(part.Text)
-					}
-
-					if part.InlineData != nil {
-						if thoughtActive {
-							r.sm.TerminalLock()
-							fmt.Fprintf(r.stderr, "\033[0m\n")
-							r.sm.TerminalUnlock()
-							thoughtActive = false
-						}
-						r.sm.TerminalLock()
-						fmt.Fprintf(r.stderr, "\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
-							time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data))
-						r.sm.TerminalUnlock()
-					}
-				}
-			}
-		}
+		r.processStream(ctx, ch, state)
 	}()
 
 	var once sync.Once
-	return ch, func() *types.Content {
+	finalize := func() *types.Content {
 		once.Do(func() {
 			close(ch)
 			wg.Wait()
-			if !rawOutput {
-				fullText := totalText.String()
-				if fullText != "" {
-					// 1. Calculate how many lines the raw text occupied to "clear" it
-					// Try to get terminal size, if possible
-					width := 80
-					if f, ok := r.stdout.(*os.File); ok {
-						if w, _, err := term.GetSize(int(f.Fd())); err == nil {
-							width = w
-						}
-					}
-
-					lines := 0
-					currentLineLen := 0
-					for _, r := range fullText {
-						if r == '\n' {
-							lines++
-							currentLineLen = 0
-						} else {
-							currentLineLen++
-							if currentLineLen >= width {
-								lines++
-								currentLineLen = 0
-							}
-						}
-					}
-					// If there was any text remaining on the last line, it counts as a line
-					if currentLineLen > 0 {
-						lines++
-					}
-
-					// 2. Move cursor up and clear from there
-					if lines > 0 {
-						// \033[A moves cursor up, \r moves to start, \033[J clears to end of screen
-						fmt.Fprintf(r.stdout, "\r\033[%dA\033[J", lines)
-					}
-
-					// 3. Render pretty version
-					r.renderMarkdown(fullText)
-				}
-				fmt.Fprintln(r.stdout) // Ensure we end on a new line
-			}
+			r.finalizeOutput(state)
 		})
-		return aggregated
+		return state.aggregated
 	}
+
+	return ch, finalize
+}
+
+func (r *StdUIRenderer) processStream(ctx context.Context, ch <-chan *types.Content, state *streamState) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case content, ok := <-ch:
+			if !ok {
+				r.closeThinking(state)
+				return
+			}
+			for _, part := range content.Parts {
+				r.mergePart(state.aggregated, part)
+				r.renderStreamPart(state, part)
+			}
+		}
+	}
+}
+
+func (r *StdUIRenderer) renderStreamPart(state *streamState, part *types.Part) {
+	if part.Thought {
+		r.handleThoughtPart(state, part)
+	} else if part.Text != "" {
+		r.handleTextPart(state, part)
+	}
+
+	if part.InlineData != nil {
+		r.handleInlineDataPart(state, part)
+	}
+}
+
+func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *types.Part) {
+	if !state.thoughtActive && state.showThoughts {
+		r.safePrintStderr(fmt.Sprintf("\033[0;90m[%s] [Thinking]\n", time.Now().Format("15:04:05")))
+		state.thoughtActive = true
+	}
+	if state.showThoughts {
+		r.safePrintStderr(fmt.Sprintf("\033[0;90m%s\033[0m", part.Text))
+	}
+}
+
+func (r *StdUIRenderer) handleTextPart(state *streamState, part *types.Part) {
+	r.closeThinking(state)
+	// For text, we stream it raw to terminal
+	fmt.Fprint(r.stdout, part.Text)
+	state.totalText.WriteString(part.Text)
+}
+
+func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *types.Part) {
+	r.closeThinking(state)
+	r.safePrintStderr(fmt.Sprintf("\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
+		time.Now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data)))
+}
+
+func (r *StdUIRenderer) closeThinking(state *streamState) {
+	if state.thoughtActive {
+		r.safePrintStderr("\033[0m\n")
+		state.thoughtActive = false
+	}
+}
+
+func (r *StdUIRenderer) safePrintStderr(msg string) {
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+	fmt.Fprint(r.stderr, msg)
+}
+
+func (r *StdUIRenderer) finalizeOutput(state *streamState) {
+	if !state.rawOutput {
+		fullText := state.totalText.String()
+		if fullText != "" {
+			r.clearAndRenderMarkdown(fullText)
+		}
+		fmt.Fprintln(r.stdout)
+	}
+}
+
+func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
+	width := 80
+	if f, ok := r.stdout.(*os.File); ok {
+		if w, _, err := term.GetSize(int(f.Fd())); err == nil {
+			width = w
+		}
+	}
+
+	lines := r.calculateVisualLines(fullText, width)
+
+	if lines > 0 {
+		fmt.Fprintf(r.stdout, "\r\033[%dA\033[J", lines)
+	}
+	r.renderMarkdown(fullText)
+}
+
+func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
+	lines := 0
+	currentLineLen := 0
+	for _, r := range text {
+		if r == '\n' {
+			lines++
+			currentLineLen = 0
+		} else {
+			currentLineLen++
+			if currentLineLen >= width {
+				lines++
+				currentLineLen = 0
+			}
+		}
+	}
+	if currentLineLen > 0 {
+		lines++
+	}
+	return lines
 }
 
 func (r *StdUIRenderer) mergePart(dst *types.Content, src *types.Part) {
