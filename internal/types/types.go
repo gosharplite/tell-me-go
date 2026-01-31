@@ -14,7 +14,7 @@ import (
 // Shared API models to decouple internal packages from genai.
 
 type Content struct {
-	Role  string  `json:"role,omitempty"`
+	Role  string  `json:"role"`
 	Parts []*Part `json:"parts,omitempty"`
 }
 

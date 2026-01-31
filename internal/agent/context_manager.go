@@ -72,15 +72,47 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 
 		lastIdx := len(apiContents) - 1
 		orig := apiContents[lastIdx]
-		cloned := &types.Content{
-			Role:  orig.Role,
-			Parts: make([]*types.Part, len(orig.Parts)),
+
+		// Check if the last message contains function responses.
+		// Strict APIs (like Vertex AI) often reject mixing Text and FunctionResponse in the same Content.
+		hasFunctionResponse := false
+		for _, p := range orig.Parts {
+			if p.FunctionResponse != nil {
+				hasFunctionResponse = true
+				break
+			}
 		}
-		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &types.Part{
-			Text: "\n\n" + combined,
-		})
-		apiContents[lastIdx] = cloned
+
+		if hasFunctionResponse && len(apiContents) > 1 {
+			// Inject a volatile system turn BEFORE the last message (tool results) to maintain role alternation
+			// while keeping the warning separate from the structured tool output.
+			warningMsgs := []*types.Content{
+				{
+					Role:  "user",
+					Parts: []*types.Part{{Text: "System Notice:\n\n" + combined}},
+				},
+				{
+					Role:  "model",
+					Parts: []*types.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
+				},
+			}
+			newContents := make([]*types.Content, 0, len(apiContents)+2)
+			newContents = append(newContents, apiContents[:lastIdx]...)
+			newContents = append(newContents, warningMsgs...)
+			newContents = append(newContents, apiContents[lastIdx])
+			apiContents = newContents
+		} else {
+			// Safe to append to the last message (usually the user's primary prompt).
+			cloned := &types.Content{
+				Role:  orig.Role,
+				Parts: make([]*types.Part, len(orig.Parts)),
+			}
+			copy(cloned.Parts, orig.Parts)
+			cloned.Parts = append(cloned.Parts, &types.Part{
+				Text: "\n\n" + combined,
+			})
+			apiContents[lastIdx] = cloned
+		}
 
 		cm.Renderer.LogSystemMessage("Safety warning injected into volatile model context.", "info")
 	}
@@ -123,7 +155,34 @@ func (cm *ContextManager) AutoSummarize(ctx context.Context) error {
 func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*types.Content, focus string) (string, error) {
 	cm.Renderer.LogSystemMessage(fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)), "info")
 
-	summarizerInput := append([]*types.Content{}, subset...)
+	// Transform history to text-only to avoid INVALID_ARGUMENT (missing tool declarations)
+	// and to strip large binary payloads that aren't useful for textual summarization.
+	summarizerInput := make([]*types.Content, len(subset))
+	for i, c := range subset {
+		summarizerInput[i] = &types.Content{Role: c.Role}
+		for _, p := range c.Parts {
+			if p.Text != "" {
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{Text: p.Text})
+			}
+			if p.FunctionCall != nil {
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+					Text: fmt.Sprintf("[Model called tool: %s with args: %v]", p.FunctionCall.Name, p.FunctionCall.Args),
+				})
+			}
+			if p.FunctionResponse != nil {
+				res := p.FunctionResponse.Response["result"]
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+					Text: fmt.Sprintf("[Tool %s returned: %v]", p.FunctionResponse.Name, res),
+				})
+			}
+			if p.InlineData != nil {
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+					Text: fmt.Sprintf("[Binary Data: %s]", p.InlineData.MIMEType),
+				})
+			}
+		}
+	}
+
 	prompt := SummarizationPrompt
 	if focus != "" {
 		prompt += fmt.Sprintf("\nFocus: %s", focus)
