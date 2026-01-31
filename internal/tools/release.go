@@ -41,15 +41,29 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		`"client_email"`,
 		`AI_URL`,
 	}
-	
+
+	compiledPatterns := make([]*regexp.Regexp, len(secretPatterns))
+	for i, p := range secretPatterns {
+		compiledPatterns[i] = regexp.MustCompile(p)
+	}
+
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || strings.Contains(path, ".git") || strings.Contains(path, "vendor/") {
 			return nil
 		}
-		content, _ := os.ReadFile(path)
-		for _, pattern := range secretPatterns {
-			if matched, _ := regexp.MatchString(pattern, string(content)); matched {
-				report.WriteString(fmt.Sprintf("- [FAIL] Potential secret found in %s: pattern `%s`\n", path, pattern))
+		content, err := os.ReadFile(path)
+		if err != nil {
+			report.WriteString(fmt.Sprintf("- [WARN] Could not read %s: %v\n", path, err))
+			return nil
+		}
+		for _, re := range compiledPatterns {
+			if re.Match(content) {
+				report.WriteString(fmt.Sprintf("- [FAIL] Potential secret found in %s: pattern `%s`\n", path, re.String()))
 				secretsFound = true
 			}
 		}

@@ -320,11 +320,16 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 // AST-based helpers for existing tools
 
-func grepDefinitionsGo(path, query string) ([]string, error) {
+func grepDefinitionsGo(ctx context.Context, path, query string) ([]string, error) {
 	var results []string
 	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -590,18 +595,13 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		return types.ToolResult{}, fmt.Errorf("failed to format destination file: %w", err)
 	}
 
-	formatted, err := imports.Process(resolvedDst, dstBuf.Bytes(), nil)
-	if err != nil {
-		// Fallback to raw formatted content if imports.Process fails
-		formatted = dstBuf.Bytes()
+	formatted := dstBuf.Bytes()
+	if opt, err := imports.Process(resolvedDst, formatted, nil); err == nil {
+		formatted = opt
 	}
 
 	if err := fsutil.AtomicWrite(resolvedDst, formatted, 0644); err != nil {
 		return types.ToolResult{}, err
-	}
-
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
 	}
 
 	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, resolvedSrc, resolvedDst)
@@ -690,6 +690,10 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 		return nil
 	})
 
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
 	if totalChanges == 0 {
 		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found.", oldName)}, nil
 	}
@@ -719,6 +723,11 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 	var results []string
 
 	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			return nil
 		}
@@ -798,6 +807,11 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	var results []string
 
 	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1072,7 +1086,7 @@ func (m *intelligenceManager) findDefinitions(ctx context.Context, args map[stri
 		return types.ToolResult{}, err
 	}
 
-	results, err := grepDefinitionsGo(resolvedPath, params.Query)
+	results, err := grepDefinitionsGo(ctx, resolvedPath, params.Query)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -1102,6 +1116,11 @@ func (m *intelligenceManager) listSymbols(ctx context.Context, args map[string]i
 
 	var results []string
 	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1185,6 +1204,11 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 
 	// Phase 1: Collect all interfaces and structs
 	filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1223,6 +1247,11 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 
 	// Phase 2: Collect all methods for structs
 	filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1336,6 +1365,11 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 	var sb strings.Builder
 
 	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1379,6 +1413,11 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 						// Find methods
 						sb.WriteString("Methods (Receivers):\n")
 						filepath.Walk(resolvedPath, func(p string, i os.FileInfo, e error) error {
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							default:
+							}
 							if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 								return nil
 							}
@@ -1433,6 +1472,11 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	totalLOC := 0
 
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			return nil
 		}
@@ -1515,12 +1559,22 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 			return nil
 		}
 
-		content, err := os.ReadFile(path)
+		f, err := os.Open(path)
 		if err != nil {
 			return nil
 		}
+		defer f.Close()
 
-		if isBinary(content) {
+		// Read first 512 bytes for binary check
+		head := make([]byte, 512)
+		n, _ := f.Read(head)
+		if isBinary(head[:n]) {
+			return nil
+		}
+
+		// Read full content (reset seek or use ReadFile since we checked size)
+		content, err := os.ReadFile(path)
+		if err != nil {
 			return nil
 		}
 

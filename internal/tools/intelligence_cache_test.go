@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,7 +78,7 @@ type Bar struct{}
 		t.Fatal(err)
 	}
 
-	results, err := grepDefinitionsGo(tmpDir, "Foo")
+	results, err := grepDefinitionsGo(context.Background(), tmpDir, "Foo")
 	if err != nil {
 		t.Fatalf("grepDefinitionsGo failed: %v", err)
 	}

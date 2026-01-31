@@ -675,7 +675,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	query := params.Query
 
 	// Attempt AST-based search for Go files first
-	astResults, err := grepDefinitionsGo(resolvedPath, query)
+	astResults, err := grepDefinitionsGo(ctx, resolvedPath, query)
 	if err != nil {
 		// Fallback to regex if AST fails for some reason
 	}
