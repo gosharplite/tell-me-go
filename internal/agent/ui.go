@@ -212,15 +212,18 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		}
 	}()
 
+	var once sync.Once
 	return ch, func() *types.Content {
-		close(ch)
-		wg.Wait()
-		// If not raw output, we might want to "cleanup" the output by rendering markdown at the end.
-		// But since we already printed raw text, this might look messy.
-		// For now, we'll just return the aggregated content.
-		if !rawOutput {
-			fmt.Println() // Ensure we end on a new line
-		}
+		once.Do(func() {
+			close(ch)
+			wg.Wait()
+			// If not raw output, we might want to "cleanup" the output by rendering markdown at the end.
+			// But since we already printed raw text, this might look messy.
+			// For now, we'll just return the aggregated content.
+			if !rawOutput {
+				fmt.Println() // Ensure we end on a new line
+			}
+		})
 		return aggregated
 	}
 }

@@ -326,6 +326,16 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 			if candidate.Content != nil {
 				callback(types.FromSDKContent(candidate.Content))
 			}
+
+			if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
+				msg := string(candidate.FinishReason)
+				if candidate.FinishMessage != "" {
+					msg = fmt.Sprintf("%s - %s", msg, candidate.FinishMessage)
+				}
+				return lastMetrics, fmt.Errorf("stream interrupted (Finish Reason: %s)", msg)
+			}
+		} else if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
+			return lastMetrics, fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
 		}
 	}
 

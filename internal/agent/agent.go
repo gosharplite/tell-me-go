@@ -74,6 +74,7 @@ type Agent struct {
 	showThoughts         bool
 	showTools            bool
 	rawOutput            bool
+	smartSuggestions     bool
 	persistentConfigPath string
 	mainConfigPath       string
 	startTime            time.Time
@@ -94,9 +95,11 @@ func New(client types.LLMClient, hManager *history.Manager, registry *tools.Regi
 		showThoughts:       true,
 		showTools:          true,
 		rawOutput:          false,
+		smartSuggestions:   false,
 		startTime:          time.Now(),
 	}
 	a.registerInternalTools()
+	a.refreshLimits() // Initial load
 	return a
 }
 
@@ -177,6 +180,16 @@ func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
+
+	// Refresh smart suggestions preference
+	if a.persistentConfigPath != "" {
+		if data, err := os.ReadFile(a.persistentConfigPath); err == nil {
+			var config map[string]string
+			if err := json.Unmarshal(data, &config); err == nil {
+				a.smartSuggestions = (config["smart_suggestions"] == "on")
+			}
+		}
+	}
 }
 
 // Chat runs the multi-turn orchestration loop.
@@ -230,6 +243,8 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 				fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
 			}()
 			if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
+				// Finalize the failed stream before retrying to prevent goroutine leak
+				_ = finalize()
 				// Retry streaming
 				streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
 				metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
@@ -285,19 +300,8 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 }
 
 func (a *Agent) showSmartSuggestions(ctx context.Context) {
-	// 1. Check if enabled in config
-	if a.persistentConfigPath == "" {
-		return
-	}
-	data, err := os.ReadFile(a.persistentConfigPath)
-	if err != nil {
-		return
-	}
-	var config map[string]string
-	if err := json.Unmarshal(data, &config); err != nil {
-		return
-	}
-	if config["smart_suggestions"] != "on" {
+	// 1. Check if enabled in config (cached)
+	if !a.smartSuggestions {
 		return
 	}
 
