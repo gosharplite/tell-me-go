@@ -36,10 +36,12 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	// 1. Secret Scanning
 	report.WriteString("#### 1. Security Scan\n")
 	secretsFound := false
+	// Use fmt.Sprintf to prevent the scanner from matching its own source code
+	// and to prevent the Go compiler from constant-folding these into the binary.
 	secretPatterns := []string{
-		`"private_key"`,
-		`"client_email"`,
-		`AI_URL`,
+		fmt.Sprintf("%s_key\"", "\"private"),
+		fmt.Sprintf("%s_email\"", "\"client"),
+		fmt.Sprintf("AI_%s", "URL"),
 	}
 
 	compiledPatterns := make([]*regexp.Regexp, len(secretPatterns))
@@ -53,9 +55,17 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 			return ctx.Err()
 		default:
 		}
+		// Skip directories, git metadata, vendor files
 		if err != nil || info.IsDir() || strings.Contains(path, ".git") || strings.Contains(path, "vendor/") {
 			return nil
 		}
+
+		// Skip the binary itself and other potential binaries
+		base := filepath.Base(path)
+		if base == "tell-me-go" || isBinaryFile(path) {
+			return nil
+		}
+
 		content, err := os.ReadFile(path)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("- [WARN] Could not read %s: %v\n", path, err))
@@ -107,4 +117,20 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	}
 
 	return types.ToolResult{Text: report.String()}, nil
+}
+
+func isBinaryFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 1024)
+	n, _ := f.Read(buf)
+	for i := 0; i < n; i++ {
+		if buf[i] == 0 {
+			return true
+		}
+	}
+	return false
 }
