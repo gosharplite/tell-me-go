@@ -26,7 +26,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 	}, tools.ToolOptions{Serial: true})
 
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, registry, sm)
+	a := New(nil, nil, registry, sm, false)
 	a.executor.maxConcurrentTools = 2
 
 	t.Run("Parallel Panic", func(t *testing.T) {

@@ -192,6 +192,17 @@ func (m *Manager) Rollback(ctx context.Context) {
 	}
 }
 
+// Policy defines the limits for history management.
+type Policy struct {
+	MaxTurns int
+}
+
+// EnforcePolicy applies the given policy to the history.
+func (m *Manager) EnforcePolicy(ctx context.Context, p Policy) int {
+	pruned, _ := m.Prune(ctx, p.MaxTurns)
+	return pruned
+}
+
 // Prune reduces the history when it exceeds maxTurns.
 // Returns the number of turns removed and the new contents.
 func (m *Manager) Prune(ctx context.Context, maxTurns int) (int, []*types.Content) {

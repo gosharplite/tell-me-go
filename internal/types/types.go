@@ -5,6 +5,8 @@ package types
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"google.golang.org/genai"
 )
@@ -12,7 +14,7 @@ import (
 // Shared API models to decouple internal packages from genai.
 
 type Content struct {
-	Role  string  `json:"role,omitempty"`
+	Role  string  `json:"role"`
 	Parts []*Part `json:"parts,omitempty"`
 }
 
@@ -207,4 +209,58 @@ type ToolResult struct {
 type BinaryData struct {
 	MIMEType string
 	Data     []byte
+}
+
+// SecurityProvider defines the interface for path validation and destructive action confirmation.
+type SecurityProvider interface {
+	IsPathSafe(path string) (string, error)
+	IsPathWritable(path string) (string, error)
+	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
+	TerminalLock()
+	TerminalUnlock()
+}
+
+// UnmarshalArgs helper converts map[string]interface{} to a target struct.
+func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
+	b, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, target)
+}
+
+// AgentGateway defines the interface for high-level agent services available to tools.
+type AgentGateway interface {
+	GenerateImage(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+	ReadImage(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+}
+
+var ErrNotImplemented = fmt.Errorf("not implemented")
+
+// AddPart merges a new part into the content, appending or joining text parts as appropriate.
+func (c *Content) AddPart(p *Part) {
+	if p == nil {
+		return
+	}
+
+	// If it's a function call/response, just append
+	if p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+		c.Parts = append(c.Parts, p)
+		return
+	}
+
+	// For text/thought, try to append to last part if same type
+	if len(c.Parts) > 0 {
+		last := c.Parts[len(c.Parts)-1]
+		if last.Thought == p.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
+			last.Text += p.Text
+			return
+		}
+	}
+
+	// Otherwise append new part
+	c.Parts = append(c.Parts, &Part{
+		Text:    p.Text,
+		Thought: p.Thought,
+	})
 }

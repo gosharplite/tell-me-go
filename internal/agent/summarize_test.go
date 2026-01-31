@@ -20,55 +20,111 @@ import (
 )
 
 func TestAgent_SummarizeHistory(t *testing.T) {
-	tmpDir := t.TempDir()
-	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	ctx := context.Background()
-
-	// Fill history with some turns
-	for i := 1; i <= 5; i++ {
-		hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Turn User"}}})
-		hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Turn Model"}}})
+	tests := []struct {
+		name           string
+		turns          float64
+		historyTurns   int
+		expectedMsgs   int
+		expectedErr    bool
+		expectedResult string
+	}{
+		{
+			name:         "summarize some turns",
+			turns:        3,
+			historyTurns: 5,
+			expectedMsgs: 6, // 10 - 6 + 2 = 6
+		},
+		{
+			name:         "invalid turns zero",
+			turns:        0,
+			historyTurns: 5,
+			expectedErr:  true,
+		},
+		{
+			name:         "invalid turns negative",
+			turns:        -5,
+			historyTurns: 5,
+			expectedErr:  true,
+		},
+		{
+			name:           "clamp too many turns",
+			turns:          100,
+			historyTurns:   2, // 4 messages
+			expectedMsgs:   4, // (4-2)/2 = 1 turn. 4 - 2 + 2 = 4.
+			expectedResult: "Summarized the first 1 turns of history.",
+		},
+		{
+			name:           "history too short",
+			turns:          2,
+			historyTurns:   1, // 2 messages
+			expectedResult: "History is too short to summarize yet.",
+		},
+		{
+			name:         "with focus",
+			turns:        1,
+			historyTurns: 2,
+			expectedMsgs: 4, // 4 - 2 + 2 = 4
+		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiResp := genai.GenerateContentResponse{
-			Candidates: []*genai.Candidate{
-				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
-			},
-		}
-		json.NewEncoder(w).Encode(apiResp)
-	}))
-	defer server.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+			registry := tools.NewRegistry()
+			ctx := context.Background()
 
-	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
+			// Fill history with some turns
+			for i := 1; i <= tt.historyTurns; i++ {
+				hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Turn User"}}})
+				hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Turn Model"}}})
+			}
 
-	sm := tools.NewSecurityManager()
-	a := New(client, hManager, registry, sm)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				apiResp := genai.GenerateContentResponse{
+					Candidates: []*genai.Candidate{
+						{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
+					},
+				}
+				json.NewEncoder(w).Encode(apiResp)
+			}))
+			defer server.Close()
 
-	args := map[string]interface{}{
-		"turns": float64(3),
-	}
-	resp, err := a.contextManager.SummarizeHistoryTool(ctx, args)
-	if err != nil {
-		t.Fatalf("summarizeHistory failed: %v", err)
-	}
+			apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+			client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
 
-	t.Logf("Response: %s", resp)
+			sm := tools.NewSecurityManager()
+			a := New(client, hManager, registry, sm, true)
 
-	contents := hManager.GetContents()
-	// Initial: 10 messages (5 turns)
-	// Summarized 3 turns (6 messages) replaced by 2 messages.
-	// Remaining: 10 - 6 + 2 = 6 messages.
-	if len(contents) != 6 {
-		t.Errorf("expected 6 messages in history, got %d", len(contents))
-	}
+			args := map[string]interface{}{
+				"turns": tt.turns,
+			}
+			if tt.name == "with focus" {
+				args["focus"] = "refactoring"
+			}
+			resp, err := a.ctxManager.SummarizeHistoryTool(ctx, args)
 
-	if contents[0].Parts[0].Text != "System Summary of previous context:\n\nThis is a summary." {
-		t.Errorf("summary message mismatch: %s", contents[0].Parts[0].Text)
+			if (err != nil) != tt.expectedErr {
+				t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)
+			}
+
+			if tt.expectedErr {
+				return
+			}
+
+			if tt.expectedResult != "" && resp.Text != tt.expectedResult {
+				t.Errorf("expected result text %q, got %q", tt.expectedResult, resp.Text)
+			}
+
+			if tt.expectedMsgs > 0 {
+				contents := hManager.GetContents()
+				if len(contents) != tt.expectedMsgs {
+					t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
+				}
+			}
+		})
 	}
 }

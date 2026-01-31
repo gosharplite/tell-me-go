@@ -97,3 +97,57 @@ func TestAtomicWrite(t *testing.T) {
 		})
 	}
 }
+
+func TestAtomicWrite_CancellationCleanup(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "cancel.txt")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := AtomicWrite(ctx, path, []byte("data"), 0644)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+
+	// Verify no temp file left behind
+	tmpPath := path + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("temp file %s still exists after cancellation", tmpPath)
+	}
+}
+
+func TestAtomicWrite_RenameFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "target_dir")
+	err := os.MkdirAll(path, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err = AtomicWrite(ctx, path, []byte("data"), 0644)
+	if err == nil {
+		t.Fatal("expected error when renaming to a directory")
+	}
+
+	// Verify temp file was cleaned up
+	tmpPath := path + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("temp file %s still exists after rename failure", tmpPath)
+	}
+}
+
+func TestAtomicWrite_OpenFileFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "fail")
+	err := os.MkdirAll(path+".tmp", 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	err = AtomicWrite(ctx, path, []byte("data"), 0644)
+	if err == nil {
+		t.Fatal("expected error when temp path is a directory")
+	}
+}

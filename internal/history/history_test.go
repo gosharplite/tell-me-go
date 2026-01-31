@@ -5,10 +5,12 @@ package history
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
@@ -206,5 +208,209 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	}
 	if err := m.ReplaceRange(ctx, 1, 2, badContents); err == nil {
 		t.Error("ReplaceRange expected error for role violation")
+	}
+}
+
+func TestHistoryManager_RepairInterruptedTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "repair.json")
+	ctx := context.Background()
+
+	// Create a history that ends with a model call that has a function call
+	m := NewManager(historyFile)
+	m.Contents = append(m.Contents, &types.Content{
+		Role:  "user",
+		Parts: []*types.Part{{Text: "call tool"}},
+	})
+	m.Contents = append(m.Contents, &types.Content{
+		Role: "model",
+		Parts: []*types.Part{{
+			FunctionCall: &types.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"q": "123"}},
+		}},
+	})
+	_ = m.Save(ctx)
+
+	// Reload - this should trigger repairLocked
+	m2 := NewManager(historyFile)
+	if err := m2.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	contents := m2.GetContents()
+	if len(contents) != 3 {
+		t.Fatalf("expected 3 messages after repair, got %d", len(contents))
+	}
+	last := contents[2]
+	if last.Role != "user" {
+		t.Errorf("repaired message role should be 'user', got %s", last.Role)
+	}
+	if last.Parts[0].FunctionResponse == nil {
+		t.Error("repaired message should contain a FunctionResponse")
+	}
+}
+
+func TestHistoryManager_EnforcePolicy(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "policy.json")
+	m := NewManager(historyFile)
+	ctx := context.Background()
+
+	// Add 3 turns (6 messages)
+	for i := 1; i <= 3; i++ {
+		_ = m.AddEntry(ctx, "user", fmt.Sprintf("U%d", i))
+		_ = m.AddEntry(ctx, "model", fmt.Sprintf("M%d", i))
+	}
+
+	// Enforce policy: MaxTurns = 1 (should prune to 1 turn = 2 messages)
+	pruned := m.EnforcePolicy(ctx, Policy{MaxTurns: 1})
+	if pruned == 0 {
+		t.Error("expected turns to be pruned")
+	}
+
+	if len(m.GetContents()) != 2 {
+		t.Errorf("expected 2 messages after EnforcePolicy, got %d", len(m.GetContents()))
+	}
+}
+
+func TestHistoryManager_CleanContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "clean.json")
+	m := NewManager(historyFile)
+	// ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		content  *types.Content
+		wantText string
+		wantLen  int
+	}{
+		{
+			name: "remove empty parts",
+			content: &types.Content{
+				Role: "user",
+				Parts: []*types.Part{
+					{Text: "hello"},
+					{Text: ""},
+					{Text: "world"},
+				},
+			},
+			wantLen: 2,
+		},
+		{
+			name: "handle empty message",
+			content: &types.Content{
+				Role: "model",
+				Parts: []*types.Part{
+					{Text: ""},
+				},
+			},
+			wantText: "[empty response]",
+			wantLen:  1,
+		},
+		{
+			name: "preserve thoughts",
+			content: &types.Content{
+				Role: "model",
+				Parts: []*types.Part{
+					{Thought: true},
+					{ThoughtSignature: []byte("sig")},
+				},
+			},
+			wantLen: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m.mu.Lock()
+			m.cleanContentLocked(tt.content)
+			m.mu.Unlock()
+
+			if len(tt.content.Parts) != tt.wantLen {
+				t.Errorf("got %d parts, want %d", len(tt.content.Parts), tt.wantLen)
+			}
+			if tt.wantText != "" && tt.content.Parts[0].Text != tt.wantText {
+				t.Errorf("got text %q, want %q", tt.content.Parts[0].Text, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestHistoryManager_Interfaces(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "interfaces.json")
+	m := NewManager(historyFile)
+
+	if m.GetPath() != historyFile {
+		t.Errorf("GetPath() = %s, want %s", m.GetPath(), historyFile)
+	}
+
+	if m.GetResolver() == nil {
+		t.Error("GetResolver() should not be nil for JSONLStore")
+	}
+
+	fs := &fsutil.OSFileSystem{}
+	m.WithFileSystem(fs)
+	// Verify it reached the store
+	if s, ok := m.store.(*JSONLStore); ok {
+		if s.fs != fs {
+			t.Error("WithFileSystem did not propagate to store")
+		}
+	} else {
+		t.Error("store is not JSONLStore")
+	}
+
+	m.SetStore(m.store) // Coverage for SetStore
+}
+
+func TestHistoryManager_Repair_NoTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "repair_no_tool.json")
+	m := NewManager(historyFile)
+	m.Contents = append(m.Contents, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Hi"}}})
+	m.Contents = append(m.Contents, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Hello"}}})
+	m.repairLocked()
+	if len(m.Contents) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(m.Contents))
+	}
+}
+
+type mockStore struct{}
+
+func (s *mockStore) Load(ctx context.Context) ([]*types.Content, error)        { return nil, nil }
+func (s *mockStore) Save(ctx context.Context, contents []*types.Content) error { return nil }
+func (s *mockStore) Append(ctx context.Context, content *types.Content) error  { return nil }
+
+func TestHistoryManager_GetResolver_Nil(t *testing.T) {
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	m.SetStore(&mockStore{})
+	if m.GetResolver() != nil {
+		t.Error("expected nil resolver for mockStore")
+	}
+}
+
+func TestHistoryManager_Repair_Empty(t *testing.T) {
+	m := &Manager{}
+	m.repairLocked()
+	if len(m.Contents) != 0 {
+		t.Error("expected empty contents")
+	}
+}
+
+func TestHistoryManager_AddContent_Errors(t *testing.T) {
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	// 1. First message not user
+	err := m.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Hi"}}})
+	if err == nil {
+		t.Error("expected error for first message not being user")
+	}
+
+	// 2. Role alternation violation
+	_ = m.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "U1"}}})
+	err = m.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "U2"}}})
+	if err == nil {
+		t.Error("expected error for consecutive user roles")
 	}
 }

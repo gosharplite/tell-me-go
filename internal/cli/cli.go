@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -27,7 +30,7 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing types.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
@@ -56,6 +59,7 @@ func New(version string) *App {
 	}
 
 	sm := tools.NewSecurityManager()
+	sm.SetInputReader(os.Stdin)
 
 	return &App{
 		Version: version,
@@ -64,8 +68,8 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
-			return agent.New(client, hManager, registry, sm)
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming)
 		},
 		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -80,6 +84,20 @@ func (a *App) Run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	if err := a.run(ctx, args); err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(a.Stderr)
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (a *App) run(ctx context.Context, args []string) error {
+	// Sync security manager with current app stdin
+	a.sm.SetInputReader(a.Stdin)
+
 	// 1. Parse Flags & Load Config
 	args = a.sanitizeArgs(args)
 	opts, fs, err := a.parseFlags(args[1:])
@@ -93,7 +111,7 @@ func (a *App) Run(args []string) error {
 
 	cfg, err := config.Load(opts.configPath)
 	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %v", opts.configPath, err)
+		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
 	// 2. Initialize Paths & Persistent Config
@@ -124,7 +142,7 @@ func (a *App) Run(args []string) error {
 	// 4. Initialize History
 	hManager := history.NewManager(paths.historyPath)
 	if err := hManager.Load(ctx); err != nil {
-		return fmt.Errorf("error loading history: %v", err)
+		return fmt.Errorf("error loading history: %w", err)
 	}
 	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
 
@@ -133,7 +151,7 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 5. Handle Prompt
-	prompt, err := a.capturePrompt(fs, opts.lastN)
+	prompt, err := a.capturePrompt(ctx, fs, opts.lastN)
 	if err != nil {
 		return err
 	}
@@ -142,30 +160,30 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 6. Setup Agent & Client
-	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
+	pricing := framework.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
 
 	hManager.Snapshot()
 
 	client, err := a.ClientFactory(cfg, pricing)
 	if err != nil {
-		return fmt.Errorf("error creating client: %v", err)
+		return fmt.Errorf("error creating client: %w", err)
 	}
 
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
-	chatAgent := a.AgentFactory(client, hManager, registry, a.sm)
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming)
 	a.configureAgent(chatAgent, cfg, opts, paths, pruned)
 
 	// 7. Execute & Finalize
 	if err := chatAgent.Chat(ctx, prompt); err != nil {
-		return fmt.Errorf("error: %v", err)
+		return fmt.Errorf("error: %w", err)
 	}
 
 	if err := hManager.Save(ctx); err != nil {
-		return fmt.Errorf("error saving history: %v", err)
+		return fmt.Errorf("error saving history: %w", err)
 	}
 
-	if err := tools.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := framework.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

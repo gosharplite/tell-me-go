@@ -87,8 +87,8 @@ To prevent context leakage between different environments (e.g., "Development" v
     - `output/<MODE>/history.json`: Conversation history.
     - `output/<MODE>/config.json`: Persistent key-value settings.
     - `output/<MODE>/safepaths.json`: Authorized directory permissions.
-    - `output/<MODE>_tasks.json`: Persistent task list.
-    - `output/<MODE>_scratchpad.md`: Volatile working memory.
+    - `output/<MODE>/tasks.json`: Persistent task list.
+    - `output/<MODE>/scratchpad.md`: Persistent working memory (Scratchpad).
 - **Implementation**: The `internal/cli` package is responsible for resolving these paths during application startup based on the active config.
 
 ---

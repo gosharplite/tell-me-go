@@ -6,93 +6,52 @@
 package tools
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code"
+	"github.com/gosharplite/tell-me-go/internal/tools/dev"
+	"github.com/gosharplite/tell-me-go/internal/tools/files"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/tools/git"
+	"github.com/gosharplite/tell-me-go/internal/tools/media"
+	"github.com/gosharplite/tell-me-go/internal/tools/network"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/system"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-// ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error)
+// Registry is a type alias for backward compatibility during refactoring.
+// Deprecated: Use registry.Registry directly.
+type Registry = registry.Registry
 
-// ToolOptions defines execution behavior for a tool.
-type ToolOptions struct {
-	Serial      bool // If true, the agent waits for this tool to finish before running others.
-	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
-}
+// ToolFunc is a type alias for backward compatibility during refactoring.
+// Deprecated: Use registry.ToolFunc directly.
+type ToolFunc = registry.ToolFunc
 
-// toolEntry stores a tool's definition, handler, and execution options.
-type toolEntry struct {
-	declaration *types.ToolDeclaration
-	handler     ToolFunc
-	options     ToolOptions
-}
+// ToolOptions is a type alias for backward compatibility during refactoring.
+// Deprecated: Use registry.ToolOptions directly.
+type ToolOptions = registry.ToolOptions
 
-// Registry maintains a mapping between function names and their Go implementations.
-type Registry struct {
-	declarations []*types.ToolDeclaration
-	entries      map[string]toolEntry
+// UnmarshalArgs is a wrapper for backward compatibility during refactoring.
+// Deprecated: Use registry.UnmarshalArgs directly.
+func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
+	return registry.UnmarshalArgs(args, target)
 }
 
 // NewRegistry initializes an empty tool registry.
-func NewRegistry() *Registry {
-	return &Registry{
-		declarations: make([]*types.ToolDeclaration, 0),
-		entries:      make(map[string]toolEntry),
-	}
+// Deprecated: Use registry.New() directly.
+func NewRegistry() *registry.Registry {
+	return registry.New()
 }
 
-// Register adds a new tool to the registry with default options.
-func (r *Registry) Register(def *types.ToolDeclaration, handler ToolFunc) {
-	r.RegisterWithOptions(def, handler, ToolOptions{})
-}
-
-// RegisterWithOptions adds a new tool to the registry with specific options.
-func (r *Registry) RegisterWithOptions(def *types.ToolDeclaration, handler ToolFunc, opts ToolOptions) {
-	r.declarations = append(r.declarations, def)
-	r.entries[def.Name] = toolEntry{
-		declaration: def,
-		handler:     handler,
-		options:     opts,
-	}
-}
-
-// GetDeclarations returns the list of function declarations.
-func (r *Registry) GetDeclarations() []*types.ToolDeclaration {
-	return r.declarations
-}
-
-// Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
-func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (types.ToolResult, error) {
-	entry, ok := r.entries[name]
-	if !ok {
-		return types.ToolResult{}, fmt.Errorf("tool not found: %s", name)
-	}
-	return entry.handler(ctx, args)
-}
-
-// IsSerial returns true if the tool is configured for serial execution.
-func (r *Registry) IsSerial(name string) bool {
-	if entry, ok := r.entries[name]; ok {
-		return entry.options.Serial
-	}
-	return false
-}
-
-// IsLongRunning returns true if the tool is configured as long-running (no timeout).
-func (r *Registry) IsLongRunning(name string) bool {
-	if entry, ok := r.entries[name]; ok {
-		return entry.options.LongRunning
-	}
-	return false
-}
-
-// UnmarshalArgs helper converts map[string]interface{} to a target struct.
-func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
-	b, err := json.Marshal(args)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, target)
+// RegisterAll registers all available tools into the registry.
+func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir string, version string, gateway types.AgentGateway) {
+	files.Register(r, sm)
+	framework.RegisterState(r, sm, configDir)
+	framework.RegisterPolicy(r, sm)
+	system.Register(r, sm)
+	git.Register(r, sm)
+	dev.Register(r, sm)
+	code.Register(r, sm)
+	network.Register(r, sm)
+	media.Register(r, sm, gateway)
 }

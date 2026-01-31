@@ -135,7 +135,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// But we can check if the Agent struct handles the limit.
 
 	sm := tools.NewSecurityManager()
-	a := New(client, h, registry, sm)
+	a := New(client, h, registry, sm, false)
 	a.SetLimits(10, 120000, 2) // Limit history to 2 turns
 
 	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
@@ -192,7 +192,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, h, registry, sm)
+	a := New(mockClient, h, registry, sm, false)
 	err := a.Chat(context.Background(), "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)

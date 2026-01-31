@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -130,5 +131,65 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 	_, err := store.Load(ctx)
 	if err == nil {
 		t.Error("expected error for malformed JSONL, got nil")
+	}
+}
+
+func TestJSONLStore_WithFileSystem(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
+	fs := &fsutil.OSFileSystem{}
+	store := NewJSONLStore(filePath).WithFileSystem(fs)
+
+	if store.fs != fs {
+		t.Error("WithFileSystem failed to set filesystem on JSONLStore")
+	}
+}
+
+func TestJSONLStore_Append_Cancel(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "cancel.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := store.Append(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Hi"}}})
+	if err == nil {
+		t.Error("expected error for cancelled context")
+	}
+}
+
+func TestJSONLStore_Load_Cancel(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "cancel_load.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx := context.Background()
+	_ = store.Save(ctx, []*types.Content{{Role: "user", Parts: []*types.Part{{Text: "Hi"}}}})
+
+	ctx2, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := store.Load(ctx2)
+	if err == nil {
+		t.Error("expected error for cancelled context")
+	}
+}
+
+func TestJSONLStore_Save_Cancel(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "cancel_save.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	data := []byte("image")
+	content := &types.Content{
+		Role: "user",
+		Parts: []*types.Part{
+			{InlineData: &types.Blob{MIMEType: "image/png", Data: data}},
+		},
+	}
+
+	err := store.Save(ctx, []*types.Content{content})
+	if err == nil {
+		t.Error("expected error for cancelled context")
 	}
 }

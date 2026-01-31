@@ -24,7 +24,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, and `summarize_history`.
-        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `vertex_tasks.json`, `vertex_scratchpad.md`, `vertex_config.json`) to prevent conflicts when switching environments.
+        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/vertex/tasks.json`, `output/vertex/scratchpad.md`, `output/vertex/config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration**:
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
@@ -121,8 +121,8 @@ If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant wi
 
 ### Mode-Scoped State
 Tasks and Scratchpads are scoped to the active `MODE` defined in your configuration file.
-*   **Tasks**: stored in `output/<MODE>_tasks.json`
-*   **Scratchpad**: stored in `output/<MODE>_scratchpad.md`
+*   **Tasks**: stored in `output/<MODE>/tasks.json`
+*   **Scratchpad**: stored in `output/<MODE>/scratchpad.md`
 
 This allows you to maintain separate contexts (e.g., "Personal" vs "Work") simply by switching config files.
 

@@ -17,7 +17,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
+	"github.com/gosharplite/tell-me-go/internal/tools/code"
+	"github.com/gosharplite/tell-me-go/internal/tools/dev"
+	"github.com/gosharplite/tell-me-go/internal/tools/files"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/tools/git"
+	"github.com/gosharplite/tell-me-go/internal/tools/media"
+	"github.com/gosharplite/tell-me-go/internal/tools/network"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/system"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -86,24 +95,27 @@ func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingO
 	timestamp := time.Now().Format("20060102_150405")
 	// Record cost with a unique ID including the timestamp before archiving
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.logPath))
-	_ = tools.RecordSessionCost(context.Background(), a.sm, paths.logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
+	_ = framework.RecordSessionCost(context.Background(), a.sm, paths.logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
 	a.archiveSessionFilesWithTimestamp(a.homeDir, timestamp, paths.historyPath, paths.logPath, paths.commandsLogPath)
 	a.cleanupOldBackups(a.homeDir, cfg.Mode)
 }
 
-func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]types.ModelPricing) *tools.Registry {
-	registry := tools.NewRegistry()
-	tools.RegisterFileSystemTools(registry, a.sm)
-	tools.RegisterIntelligenceTools(registry, a.sm)
-	tools.RegisterSystemTools(registry, a.sm)
-	tools.RegisterGitTools(registry, a.sm)
-	tools.RegisterDevTools(registry, a.sm)
-	tools.RegisterTeamsTools(registry, a.sm)
-	tools.RegisterStateTools(registry, a.sm, paths.modeDir)
-	tools.RegisterMetricsTools(registry, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
-	tools.RegisterMediaTools(registry, a.sm, client)
-	tools.RegisterReleaseTools(registry, a.sm)
-	return registry
+func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]types.ModelPricing) *registry.Registry {
+	reg := registry.New()
+
+	files.Register(reg, a.sm)
+	code.Register(reg, a.sm)
+	system.Register(reg, a.sm)
+	git.Register(reg, a.sm)
+	dev.Register(reg, a.sm)
+	network.Register(reg, a.sm)
+	framework.RegisterState(reg, a.sm, paths.modeDir)
+	framework.RegisterPolicy(reg, a.sm)
+	framework.RegisterMetrics(reg, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
+	dev.RegisterRelease(reg, a.sm)
+	media.Register(reg, a.sm, mediasvc.NewService(client))
+
+	return reg
 }
 
 func (a *App) configureAgent(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int) {
@@ -150,7 +162,11 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 					}()
 					return
 				}
-				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
+				}()
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))

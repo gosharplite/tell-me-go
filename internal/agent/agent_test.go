@@ -22,14 +22,14 @@ import (
 func TestAgent_Setters(t *testing.T) {
 	sm := tools.NewSecurityManager()
 	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm)
+	a := New(nil, nil, registry, sm, false)
 	a.SetUIOptions(false, false)
 	if a.showThoughts || a.showTools {
 		t.Error("SetUIOptions failed")
 	}
 
 	a.SetLimits(5, 1000, 20)
-	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
 		t.Error("SetLimits failed")
 	}
@@ -56,7 +56,7 @@ func TestAgent_EstimateTokens(t *testing.T) {
 	})
 
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, registry, sm)
+	a := New(nil, nil, registry, sm, false)
 
 	contents := []*types.Content{
 		{
@@ -69,7 +69,7 @@ func TestAgent_EstimateTokens(t *testing.T) {
 		},
 	}
 
-	tokens := a.contextManager.EstimateTokens(contents)
+	tokens := a.strategy.EstimateTokens(contents)
 	if tokens <= 0 {
 		t.Errorf("expected positive token estimate, got %d", tokens)
 	}
@@ -96,7 +96,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 	err := a.Chat(context.Background(), "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -136,7 +136,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 	a.executor.toolTimeout = 50 * time.Millisecond // Short timeout
 
 	_ = a.Chat(context.Background(), "Run slow tool")
@@ -185,7 +185,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 	_ = a.Chat(context.Background(), "Generate an image")
 
 	contents := hManager.GetContents()
@@ -239,7 +239,7 @@ func TestAgentToolLoop(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 
 	// Execute Chat
 	err := a.Chat(context.Background(), "What's the weather?")
@@ -275,7 +275,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
 	err := a.Chat(context.Background(), "Run tool")
@@ -296,7 +296,7 @@ func TestAgent_Chat_APIError(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 	err := a.Chat(context.Background(), "Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")
@@ -332,7 +332,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm)
+	a := New(mockClient, hManager, registry, sm, false)
 
 	t.Run("CancelDuringToolExecution", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -363,7 +363,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm)
+	a := New(nil, nil, registry, sm, false)
 	a.SetLimits(10, 1000, 20)
 
 	// Set the config path
@@ -377,7 +377,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 
 	a.refreshLimits()
 
-	maxTokens, maxTurns, _ := a.contextManager.GetLimits()
+	maxTokens, maxTurns, _ := a.strategy.GetLimits()
 	if maxTokens != 5000 {
 		t.Errorf("expected maxHistoryTokens 5000, got %d", maxTokens)
 	}
@@ -392,7 +392,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm)
+	a := New(nil, nil, registry, sm, false)
 	a.SetLimits(10, 1000, 20)
 
 	// Set the main config path
@@ -406,7 +406,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 
 	a.refreshLimits()
 
-	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTokens != 200000 {
 		t.Errorf("expected maxHistoryTokens 200000, got %d", maxTokens)
 	}

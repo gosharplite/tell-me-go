@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -22,9 +22,8 @@ type toolExecResult struct {
 
 // ToolExecutor handles the execution of tools, including concurrency and serial locking.
 type ToolExecutor struct {
-	registry           *tools.Registry
+	registry           *registry.Registry
 	sm                 *tools.SecurityManager
-	history            *history.Manager
 	renderer           UIRenderer
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -32,11 +31,10 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *tools.Registry, sm *tools.SecurityManager, history *history.Manager, renderer UIRenderer) *ToolExecutor {
+func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, renderer UIRenderer) *ToolExecutor {
 	return &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
-		history:            history,
 		renderer:           renderer,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
@@ -58,7 +56,7 @@ func (e *ToolExecutor) SetShowTools(show bool) {
 }
 
 // Execute handles the execution of function calls from the model response.
-func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) error {
+func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) (*types.Content, error) {
 	var functionCalls []*types.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
@@ -67,12 +65,12 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	}
 
 	if len(functionCalls) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	if turn >= maxToolTurns {
 		e.renderer.LogSystemMessage(fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns), "error")
-		return ErrMaxTurnsReached
+		return nil, ErrMaxTurnsReached
 	}
 
 	e.renderer.LogToolCall(functionCalls, turn, maxToolTurns, e.showTools)
@@ -93,7 +91,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	for completedCount < len(functionCalls) {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case res := <-resChan:
 			trs[res.index] = res.tr
 			e.renderer.LogToolResult(res.name, res.tr, e.showTools)
@@ -115,13 +113,10 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 		}
 	}
 
-	if err := e.history.AddContent(ctx, &types.Content{
+	return &types.Content{
 		Role:  "user",
 		Parts: responseParts,
-	}); err != nil {
-		e.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
-	}
-	return nil
+	}, nil
 }
 
 func (e *ToolExecutor) processToolResult(name string, result types.ToolResult) *types.Part {

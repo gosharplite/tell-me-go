@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -113,7 +114,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter {
 		return mock
 	}
 	app.ClientFactory = func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
@@ -128,6 +129,18 @@ func TestRunCapturePrompt(t *testing.T) {
 
 	if mock.capturedPrompt != "hello world" {
 		t.Errorf("expected 'hello world', got %q", mock.capturedPrompt)
+	}
+}
+
+func TestCapturePromptContextCancellation(t *testing.T) {
+	app := New("test")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := app.capturePrompt(ctx, fs, 0)
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
 
