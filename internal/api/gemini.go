@@ -139,15 +139,9 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
 	if c.useSearch {
-		if c.backend == genai.BackendVertexAI {
-			activeTools = append(activeTools, &genai.Tool{
-				GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{},
-			})
-		} else {
-			activeTools = append(activeTools, &genai.Tool{
-				GoogleSearch: &genai.GoogleSearch{},
-			})
-		}
+		activeTools = append(activeTools, &genai.Tool{
+			GoogleSearch: &genai.GoogleSearch{},
+		})
 	}
 
 	config := &genai.GenerateContentConfig{
@@ -232,15 +226,9 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
 	if c.useSearch {
-		if c.backend == genai.BackendVertexAI {
-			activeTools = append(activeTools, &genai.Tool{
-				GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{},
-			})
-		} else {
-			activeTools = append(activeTools, &genai.Tool{
-				GoogleSearch: &genai.GoogleSearch{},
-			})
-		}
+		activeTools = append(activeTools, &genai.Tool{
+			GoogleSearch: &genai.GoogleSearch{},
+		})
 	}
 
 	config := &genai.GenerateContentConfig{
