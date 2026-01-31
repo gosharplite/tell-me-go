@@ -17,6 +17,7 @@ import (
 type ResilientClient struct {
 	client           types.LLMClient
 	disableStreaming bool
+	sleep            func(context.Context, time.Duration) error
 }
 
 // NewResilientClient creates a new ResilientClient.
@@ -24,6 +25,14 @@ func NewResilientClient(client types.LLMClient, disableStreaming bool) *Resilien
 	return &ResilientClient{
 		client:           client,
 		disableStreaming: disableStreaming,
+		sleep: func(ctx context.Context, d time.Duration) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(d):
+				return nil
+			}
+		},
 	}
 }
 
@@ -97,11 +106,10 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 
 			if isRetryable && attempt < 2 {
 				wait := time.Duration(1<<attempt) * time.Second
-				select {
-				case <-ctx.Done():
-					finalErr = ctx.Err()
+				if err := r.sleep(ctx, wait); err != nil {
+					finalErr = err
 					attempt = 3 // break
-				case <-time.After(wait):
+				} else {
 					continue
 				}
 			} else {
