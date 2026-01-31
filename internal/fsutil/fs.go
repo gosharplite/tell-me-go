@@ -24,6 +24,7 @@ type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	Stat(name string) (os.FileInfo, error)
 	Open(name string) (ReadSeekCloser, error)
+	OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error)
 	Remove(name string) error
 	Walk(root string, fn WalkFunc) error
 }
@@ -57,6 +58,11 @@ func (f *OSFileSystem) Stat(name string) (os.FileInfo, error) {
 func (f *OSFileSystem) Open(name string) (ReadSeekCloser, error) {
 	return os.Open(name)
 }
+
+func (f *OSFileSystem) OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
+	return os.OpenFile(name, flag, perm)
+}
+
 
 func (f *OSFileSystem) Remove(name string) error {
 	return os.Remove(name)

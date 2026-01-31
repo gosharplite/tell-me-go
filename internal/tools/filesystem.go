@@ -189,6 +189,25 @@ func RegisterFileSystemTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.writeFile, ToolOptions{Serial: true, LongRunning: true})
 
+	r.RegisterWithOptions(&types.ToolDeclaration{
+		Name:        "append_text",
+		Description: "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the file.",
+				},
+				"content": {
+					Type:        "STRING",
+					Description: "The text to append. Ensure you include a leading newline (\\n) if starting a new line.",
+				},
+			},
+			Required: []string{"filepath", "content"},
+		},
+	}, m.appendText, ToolOptions{Serial: true})
+
 	r.Register(&types.ToolDeclaration{
 		Name:        "get_file_diff",
 		Description: "Generates a standard unified diff between two arbitrary file paths on disk. Does not require Git history.",
@@ -869,4 +888,46 @@ func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]
 	}
 	res, err := m.bm.Undo(n)
 	return types.ToolResult{Text: res}, err
+}
+
+func (m *fileSystemManager) appendText(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		FilePath string `json:"filepath"`
+		Content  string `json:"content"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.FilePath
+	content := params.Content
+
+	resolvedPath, err := m.sm.IsPathWritable(path)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
+	// Confirmation Gate
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "APPEND TEXT", resolvedPath, content)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	if !approved {
+		return types.ToolResult{Text: "Action denied by user."}, nil
+	}
+
+	m.bm.Snapshot(resolvedPath, "APPEND")
+
+	// Use OpenFile with O_APPEND which we added to the interface
+	f, err := m.fs.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return types.ToolResult{}, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write([]byte(content)); err != nil {
+		return types.ToolResult{}, fmt.Errorf("failed to append: %w", err)
+	}
+
+	return types.ToolResult{Text: "Text appended successfully."}, nil
 }
