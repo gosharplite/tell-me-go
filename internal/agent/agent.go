@@ -178,6 +178,7 @@ func (a *Agent) refreshLimits() {
 }
 
 // Chat runs the multi-turn orchestration loop.
+// Refactored to coordinate high-level phases: Prepare -> Generate -> Persist -> Execute -> Log.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	if err := a.history.AddContent(ctx, &types.Content{
 		Role:  "user",
@@ -189,10 +190,8 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	_, maxTurns, _ := a.contextManager.GetLimits()
 
 	for turn := 0; turn <= maxTurns; turn++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		a.refreshLimits()
 
@@ -202,49 +201,10 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 			return err
 		}
 
-		maxTokens, _, maxHistTurns := a.contextManager.GetLimits()
+		a.logTurnStatus(currentTurns, tokens, nil, false)
 
-		a.renderer.LogTurnStatus(TurnStatus{
-			Timestamp:        time.Now(),
-			CurrentTurns:     currentTurns,
-			MaxHistoryTurns:  maxHistTurns,
-			Tokens:           tokens,
-			MaxHistoryTokens: maxTokens,
-			IsPostCall:       false,
-		})
-
-		// 2. Send Chat Request (Streaming or Non-streaming)
-		var metrics *types.Metrics
-		var respContent *types.Content
-
-		if os.Getenv("TELL_ME_NO_STREAM") == "true" {
-			respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver())
-			if err == nil {
-				a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
-			}
-		} else {
-			streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-			metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-				streamCh <- c
-			})
-			respContent = finalize()
-
-			// Handle 401 Unauthorized for streaming
-			if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-				a.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
-				if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
-					// Finalize the failed stream before retrying to prevent goroutine leak
-					_ = finalize()
-					// Retry streaming
-					streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-					metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-						streamCh <- c
-					})
-					respContent = finalize()
-				}
-			}
-		}
-
+		// 2. Generate Response (Stream/Non-stream + Auth Retry)
+		respContent, metrics, err := a.generateResponse(ctx, apiContents)
 		if err != nil {
 			return err
 		}
@@ -255,30 +215,14 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		// 4. Handle Tool Execution
-		toolStart := time.Now()
-		_, maxToolTurns, _ := a.contextManager.GetLimits()
-		err = a.executor.Execute(ctx, respContent, turn, maxToolTurns)
-		if metrics != nil {
-			metrics.ToolDuration = time.Since(toolStart).Seconds()
-		}
-		if err != nil {
+		if err := a.handleToolExecution(ctx, respContent, turn, metrics); err != nil {
 			return err
 		}
 
-		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
+		// Refresh limits to ensure tool updates (e.g., manage_config) are reflected immediately
 		a.refreshLimits()
-		maxTokens, _, maxHistTurns = a.contextManager.GetLimits()
+		a.logTurnStatus(currentTurns, tokens, metrics, true)
 
-		a.renderer.LogTurnStatus(TurnStatus{
-			Timestamp:        time.Now(),
-			CurrentTurns:     currentTurns,
-			MaxHistoryTurns:  maxHistTurns,
-			Tokens:           tokens,
-			MaxHistoryTokens: maxTokens,
-			Metrics:          metrics,
-			IsPostCall:       true,
-			StartTime:        a.startTime,
-		})
 		if metrics != nil {
 			a.renderer.LogUsage(metrics, a.logFile, a.startTime)
 		}
@@ -289,6 +233,68 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	}
 	return nil
 }
+
+// generateResponse handles the LLM interaction logic, including streaming and auth retries.
+func (a *Agent) generateResponse(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
+	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
+		respContent, metrics, err := a.client.SendChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver())
+		if err == nil {
+			a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
+		}
+		return respContent, metrics, err
+	}
+
+	streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+	metrics, err := a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+		streamCh <- c
+	})
+	respContent := finalize()
+
+	// Handle 401 Unauthorized for streaming
+	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+		a.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
+		if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
+			// Finalize the failed stream before retrying to prevent goroutine leak
+			_ = finalize()
+			// Retry streaming
+			streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+			metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+				streamCh <- c
+			})
+			respContent = finalize()
+		}
+	}
+	return respContent, metrics, err
+}
+
+// handleToolExecution delegates execution to the ToolExecutor and tracks timing.
+func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int, metrics *types.Metrics) error {
+	toolStart := time.Now()
+	_, maxToolTurns, _ := a.contextManager.GetLimits()
+
+	err := a.executor.Execute(ctx, respContent, turn, maxToolTurns)
+
+	if metrics != nil {
+		metrics.ToolDuration = time.Since(toolStart).Seconds()
+	}
+	return err
+}
+
+// logTurnStatus constructs the status object and logs it to the renderer.
+func (a *Agent) logTurnStatus(currentTurns, tokens int, metrics *types.Metrics, isPost bool) {
+	maxTokens, _, maxHistTurns := a.contextManager.GetLimits()
+	a.renderer.LogTurnStatus(TurnStatus{
+		Timestamp:        time.Now(),
+		CurrentTurns:     currentTurns,
+		MaxHistoryTurns:  maxHistTurns,
+		Tokens:           tokens,
+		MaxHistoryTokens: maxTokens,
+		Metrics:          metrics,
+		IsPostCall:       isPost,
+		StartTime:        a.startTime,
+	})
+}
+
 
 func (a *Agent) reportHistoryError(err error) {
 	a.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
