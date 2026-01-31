@@ -110,6 +110,8 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	network.Register(reg, a.sm)
 	framework.RegisterState(reg, a.sm, paths.modeDir)
 	framework.RegisterPolicy(reg, a.sm)
+	framework.RegisterMetrics(reg, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
+	dev.RegisterRelease(reg, a.sm)
 	media.Register(reg, a.sm, client)
 
 	return reg
