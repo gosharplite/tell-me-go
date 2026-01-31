@@ -842,6 +842,15 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		errNote := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+		if err == bufio.ErrTooLong {
+			errNote = "\n[Warning] Output line too long for scanner; truncated."
+		}
+		fmt.Fprintln(os.Stderr, errNote)
+		sb.WriteString(errNote + "\n")
+	}
+
 	err = cmd.Wait()
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
@@ -1007,7 +1016,7 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	// Read all stderr pipes in parallel
 	var wg sync.WaitGroup
 	var stderrMu sync.Mutex
-	const maxCapturePerPipe = (1024 * 1024) / 4 // 256KB per pipe to stay under ~1MB total
+	const maxTotalCapture = 1024 * 1024 // 1MB total buffer cap
 	for i, se := range stderrPipes {
 		wg.Add(1)
 		go func(idx int, r io.Reader) {
@@ -1017,9 +1026,16 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 				line := scanner.Text()
 				stderrMu.Lock()
 				fmt.Fprintf(os.Stderr, "  \033[31m[%d] %s\033[0m\n", idx, line)
-				if combinedStderr.Len() < 1024*1024 { // Cap total stderr at 1MB
+				if combinedStderr.Len() < maxTotalCapture {
 					combinedStderr.WriteString(line + "\n")
 				}
+				stderrMu.Unlock()
+			}
+			if err := scanner.Err(); err != nil {
+				stderrMu.Lock()
+				msg := fmt.Sprintf("[Error reading stderr from pipe %d: %v]", idx, err)
+				fmt.Fprintln(os.Stderr, msg)
+				combinedStderr.WriteString(msg + "\n")
 				stderrMu.Unlock()
 			}
 		}(i, se)
@@ -1027,16 +1043,24 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 
 	// Stream stdout of the last command
 	stdoutScanner := bufio.NewScanner(stdout)
-	const maxStdoutCapture = 1024 * 1024 // 1MB Cap
 	for stdoutScanner.Scan() {
 		line := stdoutScanner.Text()
 		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
-		if sb.Len() < maxStdoutCapture {
+		if sb.Len() < maxTotalCapture {
 			sb.WriteString(line + "\n")
 		}
 		if file != nil {
 			file.WriteString(line + "\n")
 		}
+	}
+
+	if err := stdoutScanner.Err(); err != nil {
+		msg := fmt.Sprintf("\n[Warning] Stdout read error: %v", err)
+		if err == bufio.ErrTooLong {
+			msg = "\n[Warning] Stdout line too long for scanner; truncated."
+		}
+		fmt.Fprintln(os.Stderr, msg)
+		sb.WriteString(msg + "\n")
 	}
 
 	// Wait for all stderr to be read
