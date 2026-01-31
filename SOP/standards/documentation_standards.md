@@ -39,15 +39,16 @@ Every project repository must have a `README.md` in the root that follows this s
     - *Example*: `// Load reads the configuration file from the disk.`
 
 #### 3. SOP Documentation
-SOPs must follow the structure defined in `SOP/lifecycle/sop_management.md`:
+SOPs must follow the structure defined in [SOP Management](../lifecycle/sop_management.md):
 - Title, Objective, Prerequisites, Step-by-Step, Templates, Verification, and Best Practices.
 
 #### 4. Maintenance and Updates
 - **Sync**: Documentation must be updated in the same commit as the feature it describes.
 - **Verification**: Check for broken links (relative paths) and formatting errors before committing.
 - **README Priority**: The `README.md` is the primary entry point for users. It **must** be verified as up-to-date (reflecting all current tools, flags, and config options) before any public release.
+- **Maintenance Loop**: Follow the [Documentation Maintenance and Verification](./documentation_maintenance.md) SOP for periodic audits and codebase synchronization.
 - **Config Sync**: The example configurations in `README.md` must be kept in strict sync with the actual files in the `configs/` directory. Any new YAML keys or logic changes must be reflected in both places.
-- **Review**: During a Public Release (see `SOP/lifecycle/public_release.md`), a full documentation audit is mandatory.
+- **Review**: During a [Public Release](../lifecycle/public_release.md), a full documentation audit is mandatory.
 
 ---
 
@@ -81,6 +82,6 @@ func NewManager(path string) *Manager {
 ### Best Practices
 - **Conciseness**: Avoid fluff. Be technical and direct.
 - **Visuals**: Use code blocks and ASCII/Markdown tables for clarity.
-- **Relative Links**: Always use relative links to other files within the repository (e.g., `[Git Workflow](./SOP/standards/git_workflow.md)`).
+- **Relative Links**: Always use relative links to other files within the repository (e.g., `[Git Workflow](./git_workflow.md)`).
 - **No Secrets**: Never include real API keys or sensitive data in examples.
-- **State Management Consistency**: When documenting or providing examples for SOPs, always include the "Task Initialization" and "State Verification" steps required by `SOP/standards/cli_standards.md`.
+- **State Management Consistency**: When documenting or providing examples for SOPs, always include the "Task Initialization" and "State Verification" steps required by [CLI Standards](./cli_standards.md).

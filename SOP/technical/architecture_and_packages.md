@@ -29,14 +29,17 @@ The project is organized into the following top-level directories:
     - `internal/config`: Configuration loading and YAML parsing.
     - `internal/api`: Communication logic using `google.golang.org/genai`.
     - `internal/history`: Session management and JSON persistence.
-    - `internal/cli`: Terminal UI, flag parsing, and command orchestration.
+    - `internal/cli`: Terminal UI, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic to ensure environment isolation.
     - `internal/auth`: Token management for Vertex AI.
     - `internal/tools`: Registry and implementation of executable functions.
+    - `internal/fsutil`: Filesystem utilities, including content-addressable **Asset Storage**.
+    - `internal/types`: Shared domain models and interfaces used to decouple packages from the external SDK.
 - **`configs/`**: Storage for default configuration templates (YAML).
     - `configs/vertex.yaml`: The primary configuration template.
 - **`SOP/`**: Project governance and process documentation.
 - **`assets/`**: Static assets like pricing data.
 - **`tests/`**: Integration and End-to-End tests.
+    - `tests/e2e`: Comprehensive testing of the CLI, Agent, and Tool interactions.
 
 #### 2. Package Naming and Visibility
 - **Naming**: Use short, lowercase, single-word names (e.g., `config`, not `config_loader`).
@@ -61,10 +64,12 @@ tell-me-go/
 │   ├── agent/            # High-level Agent Loop
 │   ├── api/              # Gemini Client Logic
 │   ├── auth/             # Token Management
-│   ├── cli/              # CLI logic and Flag Parsing
+│   ├── cli/              # CLI logic, Flag Parsing, and Mode Scoping
 │   ├── config/           # YAML/Env Loading
+│   ├── fsutil/           # Asset Storage and FS Helpers
 │   ├── history/          # Conversation Storage
-│   └── tools/            # Agent Tools
+│   ├── tools/            # Agent Tools
+│   └── types/            # Internal Domain Models
 ├── configs/
 │   └── vertex.yaml       # Vertex AI Template
 ├── tests/
@@ -73,6 +78,18 @@ tell-me-go/
 ├── go.mod
 └── go.sum
 ```
+
+#### 4. Mode-Scoped Storage
+To prevent context leakage between different environments (e.g., "Development" vs "Production"), the application implements **Mode-Scoped Storage**. 
+
+- **Mechanism**: All session data, persistent state, and logs are stored within subdirectories under `output/` named after the `MODE` variable in the configuration file.
+- **Paths Managed**:
+    - `output/<MODE>/history.json`: Conversation history.
+    - `output/<MODE>/config.json`: Persistent key-value settings.
+    - `output/<MODE>/safepaths.json`: Authorized directory permissions.
+    - `output/<MODE>_tasks.json`: Persistent task list.
+    - `output/<MODE>_scratchpad.md`: Volatile working memory.
+- **Implementation**: The `internal/cli` package is responsible for resolving these paths during application startup based on the active config.
 
 ---
 

@@ -64,7 +64,7 @@ Before any public release, perform a mandatory security scan:
 - **Config Sync Verification**: Ensure the `configs/` folder and its default YAML files are perfectly synchronized with the examples provided in `README.md`.
 - **License**: Verify `LICENSE` (MIT) is present in the root.
 - **SPDX Headers**: Ensure all Go source files (`*.go`), YAML files, and Markdown files (`*.md`) in the `SOP/` directory contain the standard SPDX-License-Identifier header.
-    - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in `SOP/lifecycle/self_update_safety.md`.
+    - **⚠️ CRITICAL**: Modifications to core entry points (in `cmd/`) **MUST** follow the safety procedures in [Self-Update Safety](./self_update_safety.md).
 - **SOP Sync**: Verify that the `SOP/` directory reflects the current project architecture.
 - **Version Stabilization**: **CRITICAL**. Update `cmd/tell-me-go/main.go` to remove the `-dev` suffix (e.g., change `1.56.0-dev` to `1.56.0`). Commit this change to `dev` with the message `Chore: Stabilize version for release v1.x.x`.
 
