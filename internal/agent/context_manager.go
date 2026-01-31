@@ -95,7 +95,7 @@ func (cm *ContextManager) PrepareContents(ctx context.Context, turn int) ([]*typ
 
 	// 1. Enforce history turn limit
 	if cm.maxHistoryTurns > 0 && len(contents) > cm.maxHistoryTurns*2 {
-		pruned, newContents := cm.history.Prune(cm.maxHistoryTurns)
+		pruned, newContents := cm.history.Prune(ctx, cm.maxHistoryTurns)
 		if pruned > 0 {
 			cm.prunedTurns += pruned
 			contents = newContents
@@ -112,7 +112,7 @@ func (cm *ContextManager) PrepareContents(ctx context.Context, turn int) ([]*typ
 		}
 
 		if tokens > cm.maxHistoryTokens {
-			cm.handleLimitExceeded(tokens)
+			cm.handleLimitExceeded(ctx, tokens)
 			return nil, 0, 0, ErrContextLimitExceeded
 		}
 	}
@@ -287,7 +287,7 @@ func (cm *ContextManager) getHistoryTurnWarning(currentTurns int) string {
 	return ""
 }
 
-func (cm *ContextManager) handleLimitExceeded(tokens int) {
+func (cm *ContextManager) handleLimitExceeded(ctx context.Context, tokens int) {
 	cm.sm.TerminalLock()
 	defer cm.sm.TerminalUnlock()
 
@@ -295,7 +295,7 @@ func (cm *ContextManager) handleLimitExceeded(tokens int) {
 		time.Now().Format("15:04:05"), tokens, cm.maxHistoryTokens)
 	fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Rolling back history. Please reduce context or start a new session.\033[0m\n",
 		time.Now().Format("15:04:05"))
-	cm.history.Rollback()
+	cm.history.Rollback(ctx)
 }
 
 // AutoSummarize triggers background compression of older history.
@@ -326,7 +326,7 @@ func (cm *ContextManager) AutoSummarize(ctx context.Context) error {
 		},
 	}
 
-	return cm.history.ReplaceRange(0, msgsToSummarize, newMsgs)
+	return cm.history.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs)
 }
 
 // PerformSummarization calls the LLM to compress a subset of history.
@@ -399,7 +399,7 @@ func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[str
 		},
 	}
 
-	if err := cm.history.ReplaceRange(0, msgsToSummarize, newMsgs); err != nil {
+	if err := cm.history.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
 	}
 

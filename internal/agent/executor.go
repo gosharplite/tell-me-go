@@ -115,7 +115,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 		}
 	}
 
-	if err := e.history.AddContent(&types.Content{
+	if err := e.history.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: responseParts,
 	}); err != nil {

@@ -189,7 +189,7 @@ func (a *Agent) refreshLimits() {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
-	if err := a.history.AddContent(&types.Content{
+	if err := a.history.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
 	}); err != nil {
@@ -260,7 +260,7 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		// 3. Persist Response
-		if err := a.history.AddContent(respContent); err != nil {
+		if err := a.history.AddContent(ctx, respContent); err != nil {
 			a.reportHistoryError(err)
 		}
 

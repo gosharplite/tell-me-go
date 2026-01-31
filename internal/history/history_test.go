@@ -4,6 +4,7 @@
 package history
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,31 +19,32 @@ func TestHistoryManager_Basic(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	m := NewManager(historyFile)
+	ctx := context.Background()
 
 	// Test AddEntry and Alternation
-	if err := m.AddEntry(genai.RoleModel, "fail"); err == nil {
+	if err := m.AddEntry(ctx, genai.RoleModel, "fail"); err == nil {
 		t.Error("expected error for first message being 'model'")
 	}
 
-	if err := m.AddEntry(genai.RoleUser, "Hello"); err != nil {
+	if err := m.AddEntry(ctx, genai.RoleUser, "Hello"); err != nil {
 		t.Errorf("failed to add user entry: %v", err)
 	}
 
-	if err := m.AddEntry(genai.RoleUser, "Hello again"); err == nil {
+	if err := m.AddEntry(ctx, genai.RoleUser, "Hello again"); err == nil {
 		t.Error("expected error for consecutive 'user' roles")
 	}
 
-	if err := m.AddEntry(genai.RoleModel, "Hi there"); err != nil {
+	if err := m.AddEntry(ctx, genai.RoleModel, "Hi there"); err != nil {
 		t.Errorf("failed to add model entry: %v", err)
 	}
 
 	// Test Save and Load
-	if err := m.Save(); err != nil {
+	if err := m.Save(ctx); err != nil {
 		t.Fatalf("failed to save history: %v", err)
 	}
 
 	m2 := NewManager(historyFile)
-	if err := m2.Load(); err != nil {
+	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("failed to load history: %v", err)
 	}
 
@@ -54,7 +56,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 func TestHistoryManager_Load_NonExistent(t *testing.T) {
 	t.Parallel()
 	m := NewManager("non-existent.json")
-	if err := m.Load(); err != nil {
+	ctx := context.Background()
+	if err := m.Load(ctx); err != nil {
 		t.Errorf("expected no error for non-existent file, got %v", err)
 	}
 	if len(m.Contents) != 0 {
@@ -71,7 +74,8 @@ func TestHistoryManager_Load_Corrupted(t *testing.T) {
 	}
 
 	m := NewManager(historyFile)
-	if err := m.Load(); err == nil {
+	ctx := context.Background()
+	if err := m.Load(ctx); err == nil {
 		t.Error("expected error for corrupted JSON, got nil")
 	}
 }
@@ -86,7 +90,8 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 	}
 
 	m := NewManager(filepath.Join(filePath, "history.json"))
-	if err := m.Save(); err == nil {
+	ctx := context.Background()
+	if err := m.Save(ctx); err == nil {
 		t.Error("expected error when directory creation fails, got nil")
 	}
 }
@@ -96,16 +101,17 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	m := NewManager(historyFile)
+	ctx := context.Background()
 
-	_ = m.AddEntry(genai.RoleUser, "Initial")
+	_ = m.AddEntry(ctx, genai.RoleUser, "Initial")
 	m.Snapshot()
 
-	_ = m.AddEntry(genai.RoleModel, "Response")
+	_ = m.AddEntry(ctx, genai.RoleModel, "Response")
 	if len(m.GetContents()) != 2 {
 		t.Errorf("expected 2 entries, got %d", len(m.GetContents()))
 	}
 
-	m.Rollback()
+	m.Rollback(ctx)
 	if len(m.GetContents()) != 1 {
 		t.Errorf("expected 1 entry after rollback, got %d", len(m.GetContents()))
 	}
@@ -115,7 +121,7 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 
 	// Rollback with no snapshot should do nothing (or at least not crash)
 	m3 := NewManager(filepath.Join(tmpDir, "m3.json"))
-	m3.Rollback()
+	m3.Rollback(ctx)
 }
 
 func TestHistoryManager_Prune(t *testing.T) {
@@ -123,14 +129,15 @@ func TestHistoryManager_Prune(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "prune.json")
 	m := NewManager(historyFile)
+	ctx := context.Background()
 
 	// Setup: 6 messages (3 turns)
-	_ = m.AddEntry("user", "U1")
-	_ = m.AddEntry("model", "M1")
-	_ = m.AddEntry("user", "U2")
-	_ = m.AddEntry("model", "M2")
-	_ = m.AddEntry("user", "U3")
-	_ = m.AddEntry("model", "M3")
+	_ = m.AddEntry(ctx, "user", "U1")
+	_ = m.AddEntry(ctx, "model", "M1")
+	_ = m.AddEntry(ctx, "user", "U2")
+	_ = m.AddEntry(ctx, "model", "M2")
+	_ = m.AddEntry(ctx, "user", "U3")
+	_ = m.AddEntry(ctx, "model", "M3")
 
 	tests := []struct {
 		name     string
@@ -150,10 +157,10 @@ func TestHistoryManager_Prune(t *testing.T) {
 			caseFile := filepath.Join(tmpDir, tt.name+".json")
 			m2 := NewManager(caseFile)
 			for _, c := range m.Contents {
-				_ = m2.AddContent(&types.Content{Role: c.Role, Parts: c.Parts})
+				_ = m2.AddContent(ctx, &types.Content{Role: c.Role, Parts: c.Parts})
 			}
 
-			_, contents := m2.Prune(tt.maxTurns)
+			_, contents := m2.Prune(ctx, tt.maxTurns)
 			if len(contents) != tt.wantLen {
 				t.Errorf("Prune(%d) got %d messages, want %d", tt.maxTurns, len(contents), tt.wantLen)
 			}
@@ -169,18 +176,19 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "replace.json")
 	m := NewManager(historyFile)
+	ctx := context.Background()
 
 	// Setup: U1, M1, U2, M2
-	_ = m.AddEntry("user", "U1")
-	_ = m.AddEntry("model", "M1")
-	_ = m.AddEntry("user", "U2")
-	_ = m.AddEntry("model", "M2")
+	_ = m.AddEntry(ctx, "user", "U1")
+	_ = m.AddEntry(ctx, "model", "M1")
+	_ = m.AddEntry(ctx, "user", "U2")
+	_ = m.AddEntry(ctx, "model", "M2")
 
 	// Scenario 1: Replace M1 with NewM1 (valid)
 	newContents := []*types.Content{
 		{Role: "model", Parts: []*types.Part{{Text: "NewM1"}}},
 	}
-	if err := m.ReplaceRange(1, 2, newContents); err != nil {
+	if err := m.ReplaceRange(ctx, 1, 2, newContents); err != nil {
 		t.Errorf("ReplaceRange valid failed: %v", err)
 	}
 	if m.Contents[1].Parts[0].Text != "NewM1" {
@@ -188,7 +196,7 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	}
 
 	// Scenario 2: Invalid Range
-	if err := m.ReplaceRange(-1, 0, nil); err == nil {
+	if err := m.ReplaceRange(ctx, -1, 0, nil); err == nil {
 		t.Error("ReplaceRange expected error for invalid range")
 	}
 
@@ -196,7 +204,7 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	badContents := []*types.Content{
 		{Role: "user", Parts: []*types.Part{{Text: "U_New"}}},
 	}
-	if err := m.ReplaceRange(1, 2, badContents); err == nil {
+	if err := m.ReplaceRange(ctx, 1, 2, badContents); err == nil {
 		t.Error("ReplaceRange expected error for role violation")
 	}
 }

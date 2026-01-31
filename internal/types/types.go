@@ -43,7 +43,7 @@ type FunctionResponse struct {
 
 // AssetResolver defines the interface for lazy hydration of binary assets.
 type AssetResolver interface {
-	Resolve(assetID string) ([]byte, error)
+	Resolve(ctx context.Context, assetID string) ([]byte, error)
 }
 
 // ToolDeclaration represents a function that can be called by the model.
@@ -64,7 +64,7 @@ type Schema struct {
 }
 
 // ToSDK converts internal Content to genai.Content.
-func (c *Content) ToSDK(resolver AssetResolver) *genai.Content {
+func (c *Content) ToSDK(ctx context.Context, resolver AssetResolver) *genai.Content {
 	if c == nil {
 		return nil
 	}
@@ -72,13 +72,13 @@ func (c *Content) ToSDK(resolver AssetResolver) *genai.Content {
 		Role: c.Role,
 	}
 	for _, p := range c.Parts {
-		res.Parts = append(res.Parts, p.ToSDK(resolver))
+		res.Parts = append(res.Parts, p.ToSDK(ctx, resolver))
 	}
 	return res
 }
 
 // ToSDK converts internal Part to genai.Part.
-func (p *Part) ToSDK(resolver AssetResolver) *genai.Part {
+func (p *Part) ToSDK(ctx context.Context, resolver AssetResolver) *genai.Part {
 	if p == nil {
 		return nil
 	}
@@ -111,7 +111,7 @@ func (p *Part) ToSDK(resolver AssetResolver) *genai.Part {
 
 	// Lazy hydration: if asset ID is present and data is missing, resolve it.
 	if p.AssetID != "" && resolver != nil && (res.InlineData == nil || len(res.InlineData.Data) == 0) {
-		data, err := resolver.Resolve(p.AssetID)
+		data, err := resolver.Resolve(ctx, p.AssetID)
 		if err == nil {
 			if res.InlineData == nil {
 				res.InlineData = &genai.Blob{}

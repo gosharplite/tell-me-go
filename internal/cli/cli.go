@@ -77,6 +77,9 @@ func New(version string) *App {
 
 // Run executes the application logic.
 func (a *App) Run(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	// 1. Parse Flags & Load Config
 	args = a.sanitizeArgs(args)
 	opts, fs, err := a.parseFlags(args[1:])
@@ -120,10 +123,10 @@ func (a *App) Run(args []string) error {
 
 	// 4. Initialize History
 	hManager := history.NewManager(paths.historyPath)
-	if err := hManager.Load(); err != nil {
+	if err := hManager.Load(ctx); err != nil {
 		return fmt.Errorf("error loading history: %v", err)
 	}
-	pruned, _ := hManager.Prune(cfg.MaxHistoryTurns)
+	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
 
 	if opts.lastN > 0 {
 		a.showHistory(hManager, opts.lastN, opts.rawOutput)
@@ -139,9 +142,6 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 6. Setup Agent & Client
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
 
 	hManager.Snapshot()
@@ -161,7 +161,7 @@ func (a *App) Run(args []string) error {
 		return fmt.Errorf("error: %v", err)
 	}
 
-	if err := hManager.Save(); err != nil {
+	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %v", err)
 	}
 

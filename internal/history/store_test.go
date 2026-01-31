@@ -4,6 +4,7 @@
 package history
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large_history.jsonl")
 	store := NewJSONLStore(filePath)
+	ctx := context.Background()
 
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
 	largeText := strings.Repeat("A", 200*1024)
@@ -26,12 +28,12 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	}
 
 	// Test Append
-	if err := store.Append(largeContent); err != nil {
+	if err := store.Append(ctx, largeContent); err != nil {
 		t.Fatalf("Append failed: %v", err)
 	}
 
 	// Test Load
-	contents, err := store.Load()
+	contents, err := store.Load(ctx)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -50,6 +52,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
 	store := NewJSONLStore(filePath)
+	ctx := context.Background()
 
 	data := []byte("fake-image-data")
 	content := &types.Content{
@@ -60,7 +63,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	}
 
 	// 1. Save
-	if err := store.Save([]*types.Content{content}); err != nil {
+	if err := store.Save(ctx, []*types.Content{content}); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -85,7 +88,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	}
 
 	// 4. Load and verify NO eager hydration
-	loaded, err := store.Load()
+	loaded, err := store.Load(ctx)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -102,7 +105,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 		t.Fatal("AssetID should not be empty")
 	}
 
-	resolvedData, err := store.Resolve(assetID)
+	resolvedData, err := store.Resolve(ctx, assetID)
 	if err != nil {
 		t.Fatalf("Resolve failed: %v", err)
 	}
@@ -123,7 +126,8 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 	}
 
 	store := NewJSONLStore(filePath)
-	_, err := store.Load()
+	ctx := context.Background()
+	_, err := store.Load(ctx)
 	if err == nil {
 		t.Error("expected error for malformed JSONL, got nil")
 	}

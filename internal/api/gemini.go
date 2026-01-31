@@ -127,7 +127,7 @@ func (c *Client) RefreshAuth() error {
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
 func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	config, sdkHistory := c.prepareRequest(history, tools, resolver)
+	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
 	startTime := time.Now()
 	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, sdkHistory, config)
@@ -163,7 +163,7 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 	return types.FromSDKContent(candidate.Content), metrics, nil
 }
 
-func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+func (c *Client) prepareRequest(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
 	// Add Search tool
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
@@ -175,7 +175,7 @@ func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDec
 
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
-		SystemInstruction: c.systemInstruction.ToSDK(resolver),
+		SystemInstruction: c.systemInstruction.ToSDK(ctx, resolver),
 	}
 
 	// Apply Thinking Config
@@ -202,7 +202,7 @@ func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDec
 
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
-		sdkHistory[i] = h.ToSDK(resolver)
+		sdkHistory[i] = h.ToSDK(ctx, resolver)
 		// Defensive check: Ensure all content objects have at least one part for the SDK.
 		if len(sdkHistory[i].Parts) == 0 {
 			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
@@ -214,7 +214,7 @@ func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDec
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
 func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-	config, sdkHistory := c.prepareRequest(history, tools, resolver)
+	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
 	startTime := time.Now()
 	iter := c.sdkClient.Models.GenerateContentStream(ctx, c.model, sdkHistory, config)
