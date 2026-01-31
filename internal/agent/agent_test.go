@@ -316,9 +316,11 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	sm := tools.NewSecurityManager()
 
 	// Tool that takes some time
+	running := make(chan struct{})
 	registry.Register(&types.ToolDeclaration{
 		Name: "long_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		close(running)
 		select {
 		case <-time.After(1 * time.Second):
 			return types.ToolResult{Text: "Success"}, nil
@@ -339,10 +341,15 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	a := New(mockClient, hManager, registry, sm)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel the context after a short delay
+	// Cancel the context after the tool starts running
 	go func() {
-		time.Sleep(100 * time.Millisecond)
-		cancel()
+		select {
+		case <-running:
+			cancel()
+		case <-time.After(500 * time.Millisecond):
+			// Fallback to prevent hang if tool never starts
+			cancel()
+		}
 	}()
 
 	err := a.Chat(ctx, "Run long tool")
