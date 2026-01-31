@@ -17,12 +17,6 @@ import (
 	"google.golang.org/genai"
 )
 
-// Re-export types from types package for easier migration and consistency.
-type Content = types.Content
-type Part = types.Part
-type FunctionCall = types.FunctionCall
-type FunctionResponse = types.FunctionResponse
-
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
 	sdkClient         *genai.Client
@@ -158,7 +152,7 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
-		SystemInstruction: c.systemInstruction,
+		SystemInstruction: c.systemInstruction.ToSDK(),
 	}
 
 	// Apply Thinking Config
@@ -194,8 +188,13 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 		}
 	}
 
+	sdkHistory := make([]*genai.Content, len(history))
+	for i, h := range history {
+		sdkHistory[i] = h.ToSDK()
+	}
+
 	startTime := time.Now()
-	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, history, config)
+	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, sdkHistory, config)
 	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
@@ -225,7 +224,7 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 		return nil, metrics, fmt.Errorf("empty response from api")
 	}
 
-	return candidate.Content, metrics, nil
+	return types.FromSDKContent(candidate.Content), metrics, nil
 }
 
 // GenerateImages calls the Imagen model to generate images from a prompt.

@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
+	"google.golang.org/genai"
 )
 
 // Store defines the interface for history persistence.
@@ -21,12 +23,17 @@ type Store interface {
 
 // JSONLStore implements Store using a JSON Lines file.
 type JSONLStore struct {
-	filePath string
+	filePath   string
+	assetStore *fsutil.AssetStore
 }
 
 // NewJSONLStore creates a new JSONLStore.
 func NewJSONLStore(filePath string) *JSONLStore {
-	return &JSONLStore{filePath: filePath}
+	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
+	return &JSONLStore{
+		filePath:   filePath,
+		assetStore: fsutil.NewAssetStore(assetDir),
+	}
 }
 
 // Load reads the history from the JSONL file.
@@ -48,6 +55,20 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 		if err := decoder.Decode(&content); err != nil {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
+
+		// Hydrate binary data from AssetStore
+		for _, p := range content.Parts {
+			if p.AssetID != "" && (p.InlineData == nil || len(p.InlineData.Data) == 0) {
+				data, err := s.assetStore.Get(p.AssetID)
+				if err == nil {
+					if p.InlineData == nil {
+						p.InlineData = &genai.Blob{}
+					}
+					p.InlineData.Data = data
+				}
+			}
+		}
+
 		contents = append(contents, &content)
 	}
 
@@ -58,7 +79,7 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 func (s *JSONLStore) Save(contents []*types.Content) error {
 	var data []byte
 	for _, c := range contents {
-		line, err := json.Marshal(c)
+		line, err := json.Marshal(s.prepareForStorage(c))
 		if err != nil {
 			return fmt.Errorf("failed to marshal content: %w", err)
 		}
@@ -77,7 +98,7 @@ func (s *JSONLStore) Append(content *types.Content) error {
 	}
 	defer f.Close()
 
-	line, err := json.Marshal(content)
+	line, err := json.Marshal(s.prepareForStorage(content))
 	if err != nil {
 		return err
 	}
@@ -86,3 +107,34 @@ func (s *JSONLStore) Append(content *types.Content) error {
 	_, err = f.Write(line)
 	return err
 }
+
+// prepareForStorage offloads binary data to AssetStore and returns a shallow clone for JSON marshaling.
+func (s *JSONLStore) prepareForStorage(c *types.Content) *types.Content {
+	if c == nil {
+		return nil
+	}
+
+	clone := &types.Content{
+		Role:  c.Role,
+		Parts: make([]*types.Part, len(c.Parts)),
+	}
+
+	for i, p := range c.Parts {
+		pClone := *p // Shallow copy
+
+		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
+			id, err := s.assetStore.Put(p.InlineData.Data)
+			if err == nil {
+				pClone.AssetID = id
+				// Null out data in the storage clone to save space
+				dataLessBlob := *p.InlineData
+				dataLessBlob.Data = nil
+				pClone.InlineData = &dataLessBlob
+			}
+		}
+		clone.Parts[i] = &pClone
+	}
+
+	return clone
+}
+

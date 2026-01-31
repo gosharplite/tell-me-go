@@ -46,6 +46,58 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	}
 }
 
+func TestJSONLStore_AssetExternalization(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "history.jsonl")
+	store := NewJSONLStore(filePath)
+
+	data := []byte("fake-image-data")
+	content := &types.Content{
+		Role: genai.RoleUser,
+		Parts: []*types.Part{
+			{InlineData: &genai.Blob{MIMEType: "image/png", Data: data}},
+		},
+	}
+
+	// 1. Save
+	if err := store.Save([]*types.Content{content}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// 2. Verify JSON file does NOT contain the raw data but has an AssetID
+	rawJSON, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonStr := string(rawJSON)
+	if strings.Contains(jsonStr, "fake-image-data") {
+		t.Error("JSON still contains raw binary data")
+	}
+	if !strings.Contains(jsonStr, "asset_id") {
+		t.Error("JSON missing asset_id")
+	}
+
+	// 3. Verify asset exists in assets directory
+	assetDir := filepath.Join(tmpDir, "assets")
+	files, _ := os.ReadDir(assetDir)
+	if len(files) == 0 {
+		t.Error("Assets directory is empty")
+	}
+
+	// 4. Load and verify hydration
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded) != 1 || loaded[0].Parts[0].InlineData == nil {
+		t.Fatal("Failed to load content or parts")
+	}
+	if string(loaded[0].Parts[0].InlineData.Data) != "fake-image-data" {
+		t.Errorf("Data not hydrated correctly: got %s", string(loaded[0].Parts[0].InlineData.Data))
+	}
+}
+
 func TestJSONLStore_MalformedLine(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
