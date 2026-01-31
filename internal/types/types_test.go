@@ -4,6 +4,7 @@
 package types
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -11,11 +12,11 @@ import (
 )
 
 type mockResolver struct {
-	resolveFunc func(assetID string) ([]byte, error)
+	resolveFunc func(ctx context.Context, assetID string) ([]byte, error)
 }
 
-func (m *mockResolver) Resolve(assetID string) ([]byte, error) {
-	return m.resolveFunc(assetID)
+func (m *mockResolver) Resolve(ctx context.Context, assetID string) ([]byte, error) {
+	return m.resolveFunc(ctx, assetID)
 }
 
 func TestPart_Conversion(t *testing.T) {
@@ -38,7 +39,7 @@ func TestPart_Conversion(t *testing.T) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
 	}
 
-	backToSDK := internalPart.ToSDK(nil)
+	backToSDK := internalPart.ToSDK(context.Background(), nil)
 	if !reflect.DeepEqual(backToSDK, sdkPart) {
 		t.Errorf("roundtrip failed: expected %+v, got %+v", sdkPart, backToSDK)
 	}
@@ -55,7 +56,7 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 	}
 
 	resolver := &mockResolver{
-		resolveFunc: func(id string) ([]byte, error) {
+		resolveFunc: func(ctx context.Context, id string) ([]byte, error) {
 			if id == assetID {
 				return assetData, nil
 			}
@@ -63,7 +64,7 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 		},
 	}
 
-	sdkPart := p.ToSDK(resolver)
+	sdkPart := p.ToSDK(context.Background(), resolver)
 
 	if sdkPart.InlineData == nil {
 		t.Fatal("expected InlineData to be populated")
@@ -93,7 +94,7 @@ func TestContent_ToSDK(t *testing.T) {
 		},
 	}
 
-	sdkContent := content.ToSDK(nil)
+	sdkContent := content.ToSDK(context.Background(), nil)
 	if sdkContent.Role != content.Role {
 		t.Errorf("expected role %s, got %s", content.Role, sdkContent.Role)
 	}

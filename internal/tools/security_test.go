@@ -60,7 +60,7 @@ func TestIsPathSafe_SymlinkRace(t *testing.T) {
 	targetPath := filepath.Join(linkPath, "newfile-that-does-not-exist")
 
 	// Current implementation should fail this test if vulnerable
-	err = sm.IsPathSafe(targetPath)
+	_, err = sm.IsPathSafe(targetPath)
 	if err == nil {
 		t.Errorf("IsPathSafe should have failed for path through symlink to external directory: %s", targetPath)
 	}
@@ -83,7 +83,7 @@ func TestIsPathSafe_ValidPath(t *testing.T) {
 	sm.RegisterSafePath(safeDir)
 
 	targetPath := filepath.Join(safeDir, "newfile")
-	err = sm.IsPathSafe(targetPath)
+	_, err = sm.IsPathSafe(targetPath)
 	if err != nil {
 		t.Errorf("IsPathSafe should have allowed valid path: %v", err)
 	}

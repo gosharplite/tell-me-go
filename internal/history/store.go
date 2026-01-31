@@ -4,6 +4,7 @@
 package history
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,15 +16,16 @@ import (
 
 // Store defines the interface for history persistence.
 type Store interface {
-	Load() ([]*types.Content, error)
-	Save(contents []*types.Content) error
-	Append(content *types.Content) error
+	Load(ctx context.Context) ([]*types.Content, error)
+	Save(ctx context.Context, contents []*types.Content) error
+	Append(ctx context.Context, content *types.Content) error
 }
 
 // JSONLStore implements Store using a JSON Lines file.
 type JSONLStore struct {
 	filePath   string
 	assetStore *fsutil.AssetStore
+	fs         fsutil.FileSystem
 }
 
 // NewJSONLStore creates a new JSONLStore.
@@ -32,16 +34,24 @@ func NewJSONLStore(filePath string) *JSONLStore {
 	return &JSONLStore{
 		filePath:   filePath,
 		assetStore: fsutil.NewAssetStore(assetDir),
+		fs:         fsutil.DefaultFileSystem,
 	}
 }
 
+// WithFileSystem sets the filesystem implementation.
+func (s *JSONLStore) WithFileSystem(fs fsutil.FileSystem) *JSONLStore {
+	s.fs = fs
+	s.assetStore.WithFileSystem(fs)
+	return s
+}
+
 // Load reads the history from the JSONL file.
-func (s *JSONLStore) Load() ([]*types.Content, error) {
-	if _, err := os.Stat(s.filePath); os.IsNotExist(err) {
+func (s *JSONLStore) Load(ctx context.Context) ([]*types.Content, error) {
+	if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
 		return []*types.Content{}, nil
 	}
 
-	f, err := os.Open(s.filePath)
+	f, err := s.fs.Open(ctx, s.filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +60,12 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 	var contents []*types.Content
 	decoder := json.NewDecoder(f)
 	for decoder.More() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		var content types.Content
 		if err := decoder.Decode(&content); err != nil {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
@@ -62,15 +78,19 @@ func (s *JSONLStore) Load() ([]*types.Content, error) {
 }
 
 // Resolve implements types.AssetResolver.
-func (s *JSONLStore) Resolve(assetID string) ([]byte, error) {
-	return s.assetStore.Get(assetID)
+func (s *JSONLStore) Resolve(ctx context.Context, assetID string) ([]byte, error) {
+	return s.assetStore.Get(ctx, assetID)
 }
 
 // Save overwrites the entire history file (compaction/snapshot).
-func (s *JSONLStore) Save(contents []*types.Content) error {
+func (s *JSONLStore) Save(ctx context.Context, contents []*types.Content) error {
 	var data []byte
 	for _, c := range contents {
-		line, err := json.Marshal(s.prepareForStorage(c))
+		prepared, err := s.prepareForStorage(ctx, c)
+		if err != nil {
+			return err
+		}
+		line, err := json.Marshal(prepared)
 		if err != nil {
 			return fmt.Errorf("failed to marshal content: %w", err)
 		}
@@ -78,31 +98,41 @@ func (s *JSONLStore) Save(contents []*types.Content) error {
 		data = append(data, '\n')
 	}
 
-	return fsutil.AtomicWrite(s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
 // Append appends a single content entry to the history file.
-func (s *JSONLStore) Append(content *types.Content) error {
-	f, err := os.OpenFile(s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (s *JSONLStore) Append(ctx context.Context, content *types.Content) error {
+	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	line, err := json.Marshal(s.prepareForStorage(content))
+	prepared, err := s.prepareForStorage(ctx, content)
+	if err != nil {
+		return err
+	}
+	line, err := json.Marshal(prepared)
 	if err != nil {
 		return err
 	}
 	line = append(line, '\n')
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
 	_, err = f.Write(line)
 	return err
 }
 
 // prepareForStorage offloads binary data to AssetStore and returns a shallow clone for JSON marshaling.
-func (s *JSONLStore) prepareForStorage(c *types.Content) *types.Content {
+func (s *JSONLStore) prepareForStorage(ctx context.Context, c *types.Content) (*types.Content, error) {
 	if c == nil {
-		return nil
+		return nil, nil
 	}
 
 	clone := &types.Content{
@@ -114,17 +144,18 @@ func (s *JSONLStore) prepareForStorage(c *types.Content) *types.Content {
 		pClone := *p // Shallow copy
 
 		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
-			id, err := s.assetStore.Put(p.InlineData.Data)
-			if err == nil {
-				pClone.AssetID = id
-				// Null out data in the storage clone to save space
-				dataLessBlob := *p.InlineData
-				dataLessBlob.Data = nil
-				pClone.InlineData = &dataLessBlob
+			id, err := s.assetStore.Put(ctx, p.InlineData.Data)
+			if err != nil {
+				return nil, err
 			}
+			pClone.AssetID = id
+			// Null out data in the storage clone to save space
+			dataLessBlob := *p.InlineData
+			dataLessBlob.Data = nil
+			pClone.InlineData = &dataLessBlob
 		}
 		clone.Parts[i] = &pClone
 	}
 
-	return clone
+	return clone, nil
 }

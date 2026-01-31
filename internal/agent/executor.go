@@ -6,11 +6,11 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -20,7 +20,45 @@ type toolExecResult struct {
 	tr    types.ToolResult
 }
 
-func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int) error {
+// ToolExecutor handles the execution of tools, including concurrency and serial locking.
+type ToolExecutor struct {
+	registry           *tools.Registry
+	sm                 *tools.SecurityManager
+	history            *history.Manager
+	renderer           UIRenderer
+	maxConcurrentTools int
+	toolTimeout        time.Duration
+	showTools          bool
+}
+
+// NewToolExecutor creates a new ToolExecutor.
+func NewToolExecutor(registry *tools.Registry, sm *tools.SecurityManager, history *history.Manager, renderer UIRenderer) *ToolExecutor {
+	return &ToolExecutor{
+		registry:           registry,
+		sm:                 sm,
+		history:            history,
+		renderer:           renderer,
+		maxConcurrentTools: 5,
+		toolTimeout:        30 * time.Second,
+		showTools:          true,
+	}
+}
+
+func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
+	if maxConcurrent > 0 {
+		e.maxConcurrentTools = maxConcurrent
+	}
+	if timeout > 0 {
+		e.toolTimeout = timeout
+	}
+}
+
+func (e *ToolExecutor) SetShowTools(show bool) {
+	e.showTools = show
+}
+
+// Execute handles the execution of function calls from the model response.
+func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) error {
 	var functionCalls []*types.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
@@ -32,19 +70,12 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 		return nil
 	}
 
-	_, maxToolTurns, _ := a.contextManager.GetLimits()
-
 	if turn >= maxToolTurns {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;31m[%s] [Error] Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.\033[0m\n",
-				time.Now().Format("15:04:05"), maxToolTurns)
-		}()
+		e.renderer.LogSystemMessage(fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns), "error")
 		return ErrMaxTurnsReached
 	}
 
-	a.logToolCalls(functionCalls, turn)
+	e.renderer.LogToolCall(functionCalls, turn, maxToolTurns, e.showTools)
 
 	resChan := make(chan toolExecResult, len(functionCalls))
 	var wg sync.WaitGroup
@@ -53,7 +84,7 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		a.executeToolsConcurrentStream(ctx, functionCalls, resChan)
+		e.executeToolsConcurrentStream(ctx, functionCalls, resChan)
 	}()
 
 	// Collect results as they arrive
@@ -65,7 +96,7 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 			return ctx.Err()
 		case res := <-resChan:
 			trs[res.index] = res.tr
-			a.renderer.LogToolResult(res.name, res.tr, a.showTools)
+			e.renderer.LogToolResult(res.name, res.tr, e.showTools)
 			completedCount++
 		}
 	}
@@ -73,7 +104,7 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 
 	var responseParts []*types.Part
 	for i, tr := range trs {
-		responseParts = append(responseParts, a.processToolResult(functionCalls[i].Name, tr))
+		responseParts = append(responseParts, e.processToolResult(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &types.Part{
 				InlineData: &types.Blob{
@@ -84,49 +115,16 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 		}
 	}
 
-	if err := a.history.AddContent(&types.Content{
+	if err := e.history.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: responseParts,
 	}); err != nil {
-		a.reportHistoryError(err)
+		e.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
 	}
 	return nil
 }
 
-func (a *Agent) logToolCalls(calls []*types.FunctionCall, turn int) {
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
-
-	var names []string
-	for _, fc := range calls {
-		names = append(names, fc.Name)
-	}
-
-	cyan := "\033[0;36m"
-	reset := "\033[0m"
-
-	_, maxToolTurns, _ := a.contextManager.GetLimits()
-
-	fmt.Fprintf(os.Stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		cyan, time.Now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxToolTurns, strings.Join(names, ", "), reset)
-
-	if a.showTools {
-		for _, fc := range calls {
-			var argParts []string
-			for k, v := range fc.Args {
-				valStr := fmt.Sprintf("%v", v)
-				if len(valStr) > 60 {
-					valStr = valStr[:57] + "..."
-				}
-				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
-			}
-			fmt.Fprintf(os.Stderr, "\033[0;36m[%s] [Tool Action] %s(%s)\033[0m\n",
-				time.Now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "))
-		}
-	}
-}
-
-func (a *Agent) processToolResult(name string, result types.ToolResult) *types.Part {
+func (e *ToolExecutor) processToolResult(name string, result types.ToolResult) *types.Part {
 	return &types.Part{
 		FunctionResponse: &types.FunctionResponse{
 			Name:     name,
@@ -135,12 +133,12 @@ func (a *Agent) processToolResult(name string, result types.ToolResult) *types.P
 	}
 }
 
-func (a *Agent) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
+func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, a.maxConcurrentTools)
+	sem := make(chan struct{}, e.maxConcurrentTools)
 
 	for i, fc := range calls {
-		if a.isSerialTool(fc.Name) {
+		if e.registry.IsSerial(fc.Name) {
 			// Wait for all previous tools to finish before starting serial tool
 			wg.Wait()
 			func() {
@@ -149,7 +147,7 @@ func (a *Agent) executeToolsConcurrentStream(ctx context.Context, calls []*types
 						resChan <- toolExecResult{index: i, name: fc.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
-				tr := a.executeTool(ctx, fc)
+				tr := e.executeTool(ctx, fc)
 				resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 			}()
 		} else {
@@ -163,7 +161,7 @@ func (a *Agent) executeToolsConcurrentStream(ctx context.Context, calls []*types
 						resChan <- toolExecResult{index: idx, name: call.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
-				tr := a.executeTool(ctx, call)
+				tr := e.executeTool(ctx, call)
 				resChan <- toolExecResult{index: idx, name: call.Name, tr: tr}
 			}(i, fc)
 		}
@@ -171,19 +169,15 @@ func (a *Agent) executeToolsConcurrentStream(ctx context.Context, calls []*types
 	wg.Wait()
 }
 
-func (a *Agent) isSerialTool(name string) bool {
-	return a.registry.IsSerial(name)
-}
-
-func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall) types.ToolResult {
+func (e *ToolExecutor) executeTool(parentCtx context.Context, call *types.FunctionCall) types.ToolResult {
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
-	if a.registry.IsLongRunning(call.Name) {
+	if e.registry.IsLongRunning(call.Name) {
 		ctx, cancel = context.WithCancel(parentCtx)
 	} else {
-		ctx, cancel = context.WithTimeout(parentCtx, a.toolTimeout)
+		ctx, cancel = context.WithTimeout(parentCtx, e.toolTimeout)
 	}
 	defer cancel()
 
@@ -199,14 +193,14 @@ func (a *Agent) executeTool(parentCtx context.Context, call *types.FunctionCall)
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
-		result, err := a.registry.Execute(ctx, call.Name, call.Args)
+		result, err := e.registry.Execute(ctx, call.Name, call.Args)
 		resChan <- res{tr: result, err: err}
 	}()
 
 	select {
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
-			return types.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", a.toolTimeout)}
+			return types.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", e.toolTimeout)}
 		}
 		return types.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
 	case r := <-resChan:

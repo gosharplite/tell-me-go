@@ -5,9 +5,11 @@
 package history
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -36,12 +38,22 @@ func (m *Manager) SetStore(store Store) {
 	m.store = store
 }
 
+// WithFileSystem sets the filesystem implementation for the default store.
+func (m *Manager) WithFileSystem(fs fsutil.FileSystem) *Manager {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.store.(*JSONLStore); ok {
+		s.WithFileSystem(fs)
+	}
+	return m
+}
+
 // Load reads the history from the file system.
-func (m *Manager) Load() error {
+func (m *Manager) Load(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	contents, err := m.store.Load()
+	contents, err := m.store.Load(ctx)
 	if err != nil {
 		return err
 	}
@@ -85,15 +97,15 @@ func (m *Manager) repairLocked() {
 }
 
 // Save writes the current history to the file system atomically.
-func (m *Manager) Save() error {
+func (m *Manager) Save(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.saveLocked()
+	return m.saveLocked(ctx)
 }
 
-func (m *Manager) saveLocked() error {
+func (m *Manager) saveLocked(ctx context.Context) error {
 	m.cleanLocked()
-	return m.store.Save(m.Contents)
+	return m.store.Save(ctx, m.Contents)
 }
 
 func (m *Manager) cleanLocked() {
@@ -119,7 +131,7 @@ func (m *Manager) cleanContentLocked(content *types.Content) {
 }
 
 // AddEntry appends a new text message to the history.
-func (m *Manager) AddEntry(role, text string) error {
+func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	content := &types.Content{
@@ -130,18 +142,18 @@ func (m *Manager) AddEntry(role, text string) error {
 		return err
 	}
 	m.cleanContentLocked(content)
-	return m.store.Append(content)
+	return m.store.Append(ctx, content)
 }
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
-func (m *Manager) AddContent(content *types.Content) error {
+func (m *Manager) AddContent(ctx context.Context, content *types.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.addContentLocked(content); err != nil {
 		return err
 	}
 	m.cleanContentLocked(content)
-	return m.store.Append(content)
+	return m.store.Append(ctx, content)
 }
 
 func (m *Manager) addContentLocked(content *types.Content) error {
@@ -171,25 +183,22 @@ func (m *Manager) Snapshot() {
 }
 
 // Rollback restores the history to the state before Snapshot was called.
-func (m *Manager) Rollback() {
+func (m *Manager) Rollback(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.backup != nil {
 		m.Contents = m.backup
-		m.saveLocked() // Persist the rollback
+		_ = m.saveLocked(ctx) // Persist the rollback
 	}
 }
 
 // Prune reduces the history when it exceeds maxTurns.
-// To improve cache efficiency, it doesn't just prune 1 turn;
-// it prunes down to 50% of maxTurns to allow for a stable cache prefix
-// during the next 50% of the conversation.
-// Returns the number of turns removed.
-func (m *Manager) Prune(maxTurns int) int {
+// Returns the number of turns removed and the new contents.
+func (m *Manager) Prune(ctx context.Context, maxTurns int) (int, []*types.Content) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if maxTurns <= 0 {
-		return 0
+		return 0, m.contentsLocked()
 	}
 	maxMessages := maxTurns * 2
 	if len(m.Contents) > maxMessages {
@@ -204,11 +213,17 @@ func (m *Manager) Prune(maxTurns int) int {
 
 		if removeCount > 0 && removeCount < len(m.Contents) {
 			m.Contents = m.Contents[removeCount:]
-			m.saveLocked() // Persist pruning
-			return removeCount / 2
+			_ = m.saveLocked(ctx) // Persist pruning
+			return removeCount / 2, m.contentsLocked()
 		}
 	}
-	return 0
+	return 0, m.contentsLocked()
+}
+
+func (m *Manager) contentsLocked() []*types.Content {
+	contents := make([]*types.Content, len(m.Contents))
+	copy(contents, m.Contents)
+	return contents
 }
 
 // GetContents returns the current history contents.
@@ -223,7 +238,7 @@ func (m *Manager) GetContents() []*types.Content {
 
 // ReplaceRange replaces a range of history entries with new content.
 // It ensures that role alternation is preserved if the caller provides alternating content.
-func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) error {
+func (m *Manager) ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -249,7 +264,7 @@ func (m *Manager) ReplaceRange(start, end int, newContents []*types.Content) err
 
 	// 3. Commit change
 	m.Contents = candidate
-	return m.saveLocked() // Persist replacement
+	return m.saveLocked(ctx) // Persist replacement
 }
 
 // GetPath returns the file path of the history file.

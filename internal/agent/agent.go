@@ -5,7 +5,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -44,7 +43,9 @@ type UIRenderer interface {
 	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
 	LogTurnStatus(status TurnStatus)
 	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+	LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool)
 	LogToolResult(name string, result types.ToolResult, showTools bool)
+	LogSystemMessage(msg string, level string)
 }
 
 // TurnStatus contains the data needed for rendering turn status.
@@ -68,13 +69,11 @@ type Agent struct {
 	renderer             UIRenderer
 	configWatcher        *ConfigWatcher
 	contextManager       *ContextManager
+	executor             *ToolExecutor
 	logFile              string
-	maxConcurrentTools   int
-	toolTimeout          time.Duration
 	showThoughts         bool
 	showTools            bool
 	rawOutput            bool
-	smartSuggestions     bool
 	persistentConfigPath string
 	mainConfigPath       string
 	startTime            time.Time
@@ -82,21 +81,20 @@ type Agent struct {
 
 // New creates a new Agent.
 func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
+	renderer := NewStdUIRenderer(sm)
 	a := &Agent{
-		client:             client,
-		history:            hManager,
-		registry:           registry,
-		sm:                 sm,
-		renderer:           NewStdUIRenderer(sm),
-		configWatcher:      NewConfigWatcher(120000, 10, 20),
-		contextManager:     NewContextManager(client, hManager, registry, sm),
-		maxConcurrentTools: 5,
-		toolTimeout:        30 * time.Second,
-		showThoughts:       true,
-		showTools:          true,
-		rawOutput:          false,
-		smartSuggestions:   false,
-		startTime:          time.Now(),
+		client:         client,
+		history:        hManager,
+		registry:       registry,
+		sm:             sm,
+		renderer:       renderer,
+		configWatcher:  NewConfigWatcher(120000, 10, 20),
+		contextManager: NewContextManager(client, hManager, registry, sm),
+		executor:       NewToolExecutor(registry, sm, hManager, renderer),
+		showThoughts:   true,
+		showTools:      true,
+		rawOutput:      false,
+		startTime:      time.Now(),
 	}
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
@@ -124,6 +122,7 @@ func (a *Agent) registerInternalTools() {
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
+	a.executor.SetShowTools(showTools)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
@@ -139,12 +138,7 @@ func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 
 // SetConcurrency sets the parallel execution limits for the agent.
 func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
-	if maxConcurrent > 0 {
-		a.maxConcurrentTools = maxConcurrent
-	}
-	if timeoutSeconds > 0 {
-		a.toolTimeout = time.Duration(timeoutSeconds) * time.Second
-	}
+	a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
 }
 
 // SetLogFile sets the path for usage logging.
@@ -173,6 +167,7 @@ func (a *Agent) SetMainConfigPath(path string) {
 func (a *Agent) SetRenderer(renderer UIRenderer) {
 	if renderer != nil {
 		a.renderer = renderer
+		a.executor.renderer = renderer
 	}
 }
 
@@ -180,21 +175,11 @@ func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
-
-	// Refresh smart suggestions preference
-	if a.persistentConfigPath != "" {
-		if data, err := os.ReadFile(a.persistentConfigPath); err == nil {
-			var config map[string]string
-			if err := json.Unmarshal(data, &config); err == nil {
-				a.smartSuggestions = (config["smart_suggestions"] == "on")
-			}
-		}
-	}
 }
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
-	if err := a.history.AddContent(&types.Content{
+	if err := a.history.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
 	}); err != nil {
@@ -246,11 +231,7 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 			// Handle 401 Unauthorized for streaming
 			if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-				func() {
-					a.sm.TerminalLock()
-					defer a.sm.TerminalUnlock()
-					fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-				}()
+				a.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
 				if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
 					// Finalize the failed stream before retrying to prevent goroutine leak
 					_ = finalize()
@@ -269,13 +250,14 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		// 3. Persist Response
-		if err := a.history.AddContent(respContent); err != nil {
+		if err := a.history.AddContent(ctx, respContent); err != nil {
 			a.reportHistoryError(err)
 		}
 
 		// 4. Handle Tool Execution
 		toolStart := time.Now()
-		err = a.handleToolExecution(ctx, respContent, turn)
+		_, maxToolTurns, _ := a.contextManager.GetLimits()
+		err = a.executor.Execute(ctx, respContent, turn, maxToolTurns)
 		if metrics != nil {
 			metrics.ToolDuration = time.Since(toolStart).Seconds()
 		}
@@ -302,53 +284,14 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		}
 
 		if !a.hasToolCalls(respContent) {
-			a.showSmartSuggestions(ctx)
 			break
 		}
 	}
 	return nil
 }
 
-func (a *Agent) showSmartSuggestions(ctx context.Context) {
-	// 1. Check if enabled in config (cached)
-	if !a.smartSuggestions {
-		return
-	}
-
-	// 2. Generate suggestions
-	suggestionPrompt := &types.Content{
-		Role:  "user",
-		Parts: []*types.Part{{Text: "Based on our conversation, suggest 2-3 short, actionable follow-up commands I might want to run next (e.g., 'run tests', 'list files', 'check git status'). Respond ONLY with a bulleted list of commands."}},
-	}
-
-	history := a.history.GetContents()
-	// Use only last few turns for suggestions to save tokens and time
-	if len(history) > 6 {
-		history = history[len(history)-6:]
-	}
-	input := append(history, suggestionPrompt)
-
-	// Use SendChat (non-streaming) for suggestions
-	resp, _, err := a.client.SendChat(ctx, input, nil, nil)
-	if err != nil || len(resp.Parts) == 0 {
-		return
-	}
-
-	suggestions := resp.Parts[0].Text
-	if suggestions == "" {
-		return
-	}
-
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
-	fmt.Fprintf(os.Stderr, "\n\033[0;90mSuggested follow-ups:\n%s\033[0m\n", strings.TrimSpace(suggestions))
-}
-
 func (a *Agent) reportHistoryError(err error) {
-	a.sm.TerminalLock()
-	defer a.sm.TerminalUnlock()
-	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history entry: %v\033[0m\n",
-		time.Now().Format("15:04:05"), err)
+	a.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
 }
 
 func (a *Agent) hasToolCalls(content *types.Content) bool {

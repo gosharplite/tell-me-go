@@ -23,11 +23,12 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	registry := tools.NewRegistry()
+	ctx := context.Background()
 
 	// Fill history with some turns
 	for i := 1; i <= 5; i++ {
-		hManager.AddContent(&types.Content{Role: "user", Parts: []*types.Part{{Text: "Turn User"}}})
-		hManager.AddContent(&types.Content{Role: "model", Parts: []*types.Part{{Text: "Turn Model"}}})
+		hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Turn User"}}})
+		hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Turn Model"}}})
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +53,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	args := map[string]interface{}{
 		"turns": float64(3),
 	}
-	resp, err := a.contextManager.SummarizeHistoryTool(context.Background(), args)
+	resp, err := a.contextManager.SummarizeHistoryTool(ctx, args)
 	if err != nil {
 		t.Fatalf("summarizeHistory failed: %v", err)
 	}

@@ -27,7 +27,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 
 	sm := tools.NewSecurityManager()
 	a := New(nil, nil, registry, sm)
-	a.maxConcurrentTools = 2
+	a.executor.maxConcurrentTools = 2
 
 	t.Run("Parallel Panic", func(t *testing.T) {
 		calls := []*types.FunctionCall{
@@ -35,7 +35,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		a.executor.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional parallel panic") {
@@ -49,7 +49,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		a.executor.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional serial panic") {

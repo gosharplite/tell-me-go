@@ -4,6 +4,7 @@
 package fsutil
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,15 +13,16 @@ import (
 func TestOSFileSystem(t *testing.T) {
 	fs := &OSFileSystem{}
 	tmpDir := t.TempDir()
+	ctx := context.Background()
 
 	t.Run("Write and Read File", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.txt")
 		data := []byte("content")
-		if err := fs.WriteFile(path, data, 0644); err != nil {
+		if err := fs.WriteFile(ctx, path, data, 0644); err != nil {
 			t.Fatalf("WriteFile failed: %v", err)
 		}
 
-		got, err := fs.ReadFile(path)
+		got, err := fs.ReadFile(ctx, path)
 		if err != nil {
 			t.Fatalf("ReadFile failed: %v", err)
 		}
@@ -30,7 +32,7 @@ func TestOSFileSystem(t *testing.T) {
 	})
 
 	t.Run("ReadDir", func(t *testing.T) {
-		entries, err := fs.ReadDir(tmpDir)
+		entries, err := fs.ReadDir(ctx, tmpDir)
 		if err != nil {
 			t.Fatalf("ReadDir failed: %v", err)
 		}
@@ -41,10 +43,10 @@ func TestOSFileSystem(t *testing.T) {
 
 	t.Run("MkdirAll and Stat", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "a/b/c")
-		if err := fs.MkdirAll(path, 0755); err != nil {
+		if err := fs.MkdirAll(ctx, path, 0755); err != nil {
 			t.Fatalf("MkdirAll failed: %v", err)
 		}
-		info, err := fs.Stat(path)
+		info, err := fs.Stat(ctx, path)
 		if err != nil {
 			t.Fatalf("Stat failed: %v", err)
 		}
@@ -55,7 +57,7 @@ func TestOSFileSystem(t *testing.T) {
 
 	t.Run("Open and Close", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.txt")
-		f, err := fs.Open(path)
+		f, err := fs.Open(ctx, path)
 		if err != nil {
 			t.Fatalf("Open failed: %v", err)
 		}
@@ -64,10 +66,10 @@ func TestOSFileSystem(t *testing.T) {
 
 	t.Run("Remove", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "test.txt")
-		if err := fs.Remove(path); err != nil {
+		if err := fs.Remove(ctx, path); err != nil {
 			t.Fatalf("Remove failed: %v", err)
 		}
-		_, err := fs.Stat(path)
+		_, err := fs.Stat(ctx, path)
 		if !os.IsNotExist(err) {
 			t.Error("expected file to be removed")
 		}
@@ -75,7 +77,7 @@ func TestOSFileSystem(t *testing.T) {
 
 	t.Run("Walk", func(t *testing.T) {
 		count := 0
-		err := fs.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+		err := fs.Walk(ctx, tmpDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}

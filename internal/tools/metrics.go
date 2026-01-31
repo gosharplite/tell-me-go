@@ -71,7 +71,7 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger.
-func RecordSessionCost(sm *SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]types.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm *SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]types.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -79,11 +79,11 @@ func RecordSessionCost(sm *SecurityManager, logPath, model, mode, sessionID stri
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
 	}
-	_, err := m.EstimateCost(context.Background(), true, sessionID)
+	_, err := m.EstimateCost(ctx, true, sessionID)
 	return err
 }
 
-func (m *metricsManager) recordCost(outputDir string, mode string, record SessionCostRecord) {
+func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record SessionCostRecord) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
@@ -152,7 +152,7 @@ func (m *metricsManager) recordCost(outputDir string, mode string, record Sessio
 
 	// 5. Write back atomically
 	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
-		_ = fsutil.AtomicWrite(historyPath, bytes, 0644)
+		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 	}
 }
 
@@ -242,7 +242,7 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) type
 			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
 				// Save to cache atomically
 				if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
-					_ = fsutil.AtomicWrite(cachePath, bytes, 0644)
+					_ = fsutil.AtomicWrite(ctx, cachePath, bytes, 0644)
 				}
 				useCache = true
 			}
@@ -273,11 +273,12 @@ func (m *metricsManager) getModelPricing(modelName string, pricing types.Pricing
 }
 
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
-	if err := m.sm.IsPathSafe(m.logFile); err != nil {
+	resolvedLog, err := m.sm.IsPathSafe(m.logFile)
+	if err != nil {
 		return "", err
 	}
 
-	outputDir := filepath.Dir(m.logFile)
+	outputDir := filepath.Dir(resolvedLog)
 	pricing := GetPricing(ctx, m.sm, outputDir)
 
 	// Apply overrides from config
@@ -285,7 +286,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	f, err := os.Open(m.logFile)
+	f, err := os.Open(resolvedLog)
 	if err != nil {
 		return "Error: Log file not found. Ensure you have made at least one request.", nil
 	}
@@ -336,7 +337,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		if sessionID == "" {
 			sessionID = filepath.Base(m.logFile)
 		}
-		m.recordCost(outputDir, m.mode, SessionCostRecord{
+		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
 			Session:   sessionID,
 			Model:     m.model,

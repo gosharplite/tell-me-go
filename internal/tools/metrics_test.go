@@ -62,7 +62,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.1234,
 		}
-		m.recordCost(modeDir, "testmode", record)
+		m.recordCost(context.Background(), modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 1 {
@@ -81,7 +81,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.5678,
 		}
-		m.recordCost(modeDir, "testmode", record)
+		m.recordCost(context.Background(), modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -100,7 +100,7 @@ func TestRecordCost(t *testing.T) {
 			Model:     "gemini-test",
 			TotalCost: 0.9999, // Updated cost
 		}
-		m.recordCost(modeDir, "testmode", record)
+		m.recordCost(context.Background(), modeDir, "testmode", record)
 
 		history := readHistory()
 		if len(history) != 2 {
@@ -153,8 +153,8 @@ func TestRecordCost(t *testing.T) {
 			TotalCost: 1.0,
 		}
 
-		mRetention.recordCost(retentionDir, "retentionmode", oldRecord)
-		mRetention.recordCost(retentionDir, "retentionmode", newRecord)
+		mRetention.recordCost(context.Background(), retentionDir, "retentionmode", oldRecord)
+		mRetention.recordCost(context.Background(), retentionDir, "retentionmode", newRecord)
 
 		history := readHistory()
 		// Session 'old.log' should be purged because of the 1-day retention policy

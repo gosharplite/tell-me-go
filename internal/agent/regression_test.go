@@ -92,20 +92,21 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 
 	tmpFile := t.TempDir() + "/history.json"
 	h := history.NewManager(tmpFile)
+	ctx := context.Background()
 
 	// Manually add a content with no parts (which previously caused 400 error)
-	_ = h.AddContent(&types.Content{
+	_ = h.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: []*types.Part{},
 	})
 
-	if err := h.Save(); err != nil {
+	if err := h.Save(ctx); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
 	// Reload and verify placeholder
 	h2 := history.NewManager(tmpFile)
-	_ = h2.Load()
+	_ = h2.Load(ctx)
 	if len(h2.Contents[0].Parts) == 0 {
 		t.Error("History manager failed to inject placeholder for empty parts")
 	} else if h2.Contents[0].Parts[0].Text != "[empty response]" {
@@ -119,12 +120,13 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	h := history.NewManager(t.TempDir() + "/history.json")
 	registry := tools.NewRegistry()
+	ctx := context.Background()
 
 	// Setup: Max 2 turns (4 messages)
 	// We start with 4 messages (2 turns)
 	for i := 1; i <= 2; i++ {
-		_ = h.AddEntry("user", fmt.Sprintf("U%d", i))
-		_ = h.AddEntry("model", fmt.Sprintf("M%d", i))
+		_ = h.AddEntry(ctx, "user", fmt.Sprintf("U%d", i))
+		_ = h.AddEntry(ctx, "model", fmt.Sprintf("M%d", i))
 	}
 
 	// Client returns a simple response
@@ -137,12 +139,12 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	a.SetLimits(10, 120000, 2) // Limit history to 2 turns
 
 	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
-	_ = h.AddEntry("user", "U3")
+	_ = h.AddEntry(ctx, "user", "U3")
 
 	// We simulate the Chat call's internal pruning logic
 	contents := h.GetContents()
 	if len(contents) > 2*2 { // Limit is 2 turns
-		pruned := h.Prune(2)
+		pruned, _ := h.Prune(ctx, 2)
 		if pruned == 0 {
 			t.Error("Expected history to be pruned")
 		}

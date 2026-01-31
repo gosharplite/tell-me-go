@@ -243,7 +243,7 @@ func (m *systemManager) revokeBypassTool(ctx context.Context, args map[string]in
 	m.sm.bypassConfirmations = false
 	m.sm.bypassMu.Unlock()
 
-	m.sm.SaveBypassState()
+	m.sm.SaveBypassState(ctx)
 	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
 	m.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return types.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
@@ -274,7 +274,7 @@ func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[str
 	m.sm.bypassConfirmations = true
 	m.sm.bypassMu.Unlock()
 
-	m.sm.SaveBypassState()
+	m.sm.SaveBypassState(ctx)
 	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
 	m.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return types.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
@@ -352,7 +352,7 @@ func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]
 		return types.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := m.sm.SaveSafePaths(); err != nil {
+	if err := m.sm.SaveSafePaths(ctx); err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -403,7 +403,7 @@ func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[str
 		return types.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := m.sm.SaveReadOnlyPaths(); err != nil {
+	if err := m.sm.SaveReadOnlyPaths(ctx); err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -469,7 +469,7 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 
 	// Register and Persist
 	m.sm.RegisterSafePath(absPath)
-	if err := m.sm.SaveSafePaths(); err != nil {
+	if err := m.sm.SaveSafePaths(ctx); err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
 	}
 
@@ -535,7 +535,7 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 
 	// Register and Persist
 	m.sm.RegisterReadOnlyPath(absPath)
-	if err := m.sm.SaveReadOnlyPaths(); err != nil {
+	if err := m.sm.SaveReadOnlyPaths(ctx); err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
 	}
 
@@ -736,9 +736,11 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	appendMode := params.Append
 
 	if outputFile != "" {
-		if err := m.sm.IsPathWritable(outputFile); err != nil {
+		resolvedFile, err := m.sm.IsPathWritable(outputFile)
+		if err != nil {
 			return types.ToolResult{}, err
 		}
+		outputFile = resolvedFile
 	}
 
 	approved := false
@@ -890,9 +892,11 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	appendMode := params.Append
 
 	if outputFile != "" {
-		if err := m.sm.IsPathWritable(outputFile); err != nil {
+		resolvedFile, err := m.sm.IsPathWritable(outputFile)
+		if err != nil {
 			return types.ToolResult{}, err
 		}
+		outputFile = resolvedFile
 	}
 
 	// Safety check
@@ -1201,7 +1205,7 @@ func (m *systemManager) isSafeCommand(command string) bool {
 			arg = strings.SplitN(arg, "=", 2)[1]
 		}
 
-		if err := m.sm.IsPathSafe(arg); err != nil {
+		if _, err := m.sm.IsPathSafe(arg); err != nil {
 			// Some args might not be paths, but we try to check them anyway if they look like paths
 			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
 				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)

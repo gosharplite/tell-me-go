@@ -5,6 +5,7 @@ package auth
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,14 +29,18 @@ func TestGetCachePath(t *testing.T) {
 	if path == "" {
 		t.Fatal("expected non-empty cache path")
 	}
-	if !strings.Contains(path, "tell_me_go_token_vertex_") {
+	if !strings.Contains(path, "tell-me-go-auth-") {
 		t.Errorf("expected path to contain prefix, got %s", path)
+	}
+	if !strings.HasSuffix(path, "token.txt") {
+		t.Errorf("expected path to end with token.txt, got %s", path)
 	}
 }
 
 func TestVertexAuth_Invalidate(t *testing.T) {
 	auth := &VertexAuth{Token: "some-token"}
 	cachePath := auth.getCachePath()
+	_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
 	_ = os.WriteFile(cachePath, []byte("some-token"), 0600)
 
 	auth.Invalidate()
@@ -53,6 +58,7 @@ func TestVertexAuth_GetToken(t *testing.T) {
 	t.Run("Use cached token", func(t *testing.T) {
 		auth := &VertexAuth{}
 		cachePath := auth.getCachePath()
+		_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
 		_ = os.WriteFile(cachePath, []byte("cached-token"), 0600)
 		defer os.Remove(cachePath)
 

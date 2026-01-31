@@ -180,3 +180,44 @@ func TestReadFile(t *testing.T) {
 		t.Errorf("got %s, want %s", res.Text, content)
 	}
 }
+
+func TestAppendText(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := NewSecurityManager()
+	sm.bypassConfirmations = true
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "append.txt")
+
+	// Initial write (via append to new file)
+	_, err := m.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "line 1\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify initial content
+	got, _ := os.ReadFile(path)
+	if string(got) != "line 1\n" {
+		t.Errorf("got %q, want %q", string(got), "line 1\n")
+	}
+
+	// Second append
+	_, err = m.appendText(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  "line 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify appended content
+	got, _ = os.ReadFile(path)
+	expected := "line 1\nline 2"
+	if string(got) != expected {
+		t.Errorf("got %q, want %q", string(got), expected)
+	}
+}

@@ -5,6 +5,7 @@
 package fsutil
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 // AtomicWrite writes data to a temporary file and then renames it to the target path.
 // This ensures that the target file is either fully updated or not updated at all.
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
-func AtomicWrite(path string, data []byte, perm os.FileMode) error {
+func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -32,6 +33,14 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 			_ = os.Remove(tmp)
 		}
 	}()
+
+	// Periodic check for cancellation
+	select {
+	case <-ctx.Done():
+		_ = f.Close()
+		return ctx.Err()
+	default:
+	}
 
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()

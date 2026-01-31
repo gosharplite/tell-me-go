@@ -320,11 +320,16 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 
 // AST-based helpers for existing tools
 
-func grepDefinitionsGo(path, query string) ([]string, error) {
+func grepDefinitionsGo(ctx context.Context, path, query string) ([]string, error) {
 	var results []string
 	var parseErrors []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -421,14 +426,16 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	srcPath := params.SrcFile
 	dstPath := params.DstFile
 
-	if err := m.sm.IsPathWritable(srcPath); err != nil {
+	resolvedSrc, err := m.sm.IsPathWritable(srcPath)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
-	if err := m.sm.IsPathWritable(dstPath); err != nil {
+	resolvedDst, err := m.sm.IsPathWritable(dstPath)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath))
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", resolvedSrc, fmt.Sprintf("%s -> %s", symbol, resolvedDst))
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -437,25 +444,25 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	fset := token.NewFileSet()
-	srcFile, err := parser.ParseFile(fset, srcPath, nil, parser.ParseComments)
+	srcFile, err := parser.ParseFile(fset, resolvedSrc, nil, parser.ParseComments)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to parse source file: %w", err)
 	}
 
-	dstFile, err := parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+	dstFile, err := parser.ParseFile(fset, resolvedDst, nil, parser.ParseComments)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Try to infer package name from directory
-			pkgName := filepath.Base(filepath.Dir(dstPath))
+			pkgName := filepath.Base(filepath.Dir(resolvedDst))
 			// If it's the same directory as src, use src package name
-			if filepath.Dir(dstPath) == filepath.Dir(srcPath) {
+			if filepath.Dir(resolvedDst) == filepath.Dir(resolvedSrc) {
 				pkgName = srcFile.Name.Name
 			}
 			content := fmt.Sprintf("package %s\n", pkgName)
-			if err := os.WriteFile(dstPath, []byte(content), 0644); err != nil {
+			if err := os.WriteFile(resolvedDst, []byte(content), 0644); err != nil {
 				return types.ToolResult{}, fmt.Errorf("failed to create destination file: %w", err)
 			}
-			dstFile, err = parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
+			dstFile, err = parser.ParseFile(fset, resolvedDst, nil, parser.ParseComments)
 			if err != nil {
 				return types.ToolResult{}, fmt.Errorf("failed to parse newly created destination file: %w", err)
 			}
@@ -470,19 +477,19 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == symbol {
-					return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+					return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, resolvedDst)
 				}
 				if vs, ok := spec.(*ast.ValueSpec); ok {
 					for _, name := range vs.Names {
 						if name.Name == symbol {
-							return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+							return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, resolvedDst)
 						}
 					}
 				}
 			}
 		case *ast.FuncDecl:
 			if d.Name.Name == symbol {
-				return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+				return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, resolvedDst)
 			}
 		}
 	}
@@ -568,7 +575,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	if len(movedDecls) == 0 {
-		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath)}, nil
+		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found in %s", symbol, resolvedSrc)}, nil
 	}
 
 	// Update source file
@@ -577,7 +584,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to format source file: %w", err)
 	}
-	if err := fsutil.AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
+	if err := fsutil.AtomicWrite(ctx, resolvedSrc, srcBuf.Bytes(), 0644); err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -588,21 +595,16 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		return types.ToolResult{}, fmt.Errorf("failed to format destination file: %w", err)
 	}
 
-	formatted, err := imports.Process(dstPath, dstBuf.Bytes(), nil)
-	if err != nil {
-		// Fallback to raw formatted content if imports.Process fails
-		formatted = dstBuf.Bytes()
+	formatted := dstBuf.Bytes()
+	if opt, err := imports.Process(resolvedDst, formatted, nil); err == nil {
+		formatted = opt
 	}
 
-	if err := fsutil.AtomicWrite(dstPath, formatted, 0644); err != nil {
+	if err := fsutil.AtomicWrite(ctx, resolvedDst, formatted, 0644); err != nil {
 		return types.ToolResult{}, err
 	}
 
-	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
-	}
-
-	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
+	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, resolvedSrc, resolvedDst)
 	if srcPackageName != dstPackageName {
 		resultMsg += " Note: Package names differ. References across the project were NOT updated. Please update them manually or use rename_symbol if applicable."
 	}
@@ -627,11 +629,12 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 		path = "."
 	}
 
-	if err := m.sm.IsPathWritable(path); err != nil {
+	resolvedPath, err := m.sm.IsPathWritable(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName))
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", resolvedPath, fmt.Sprintf("%s -> %s", oldName, newName))
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -642,7 +645,7 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 	totalFiles := 0
 	totalChanges := 0
 
-	err = filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -680,18 +683,22 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 			if err := format.Node(&buf, fset, f); err != nil {
 				return fmt.Errorf("failed to format %s: %w", filePath, err)
 			}
-			if err := fsutil.AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
+			if err := fsutil.AtomicWrite(ctx, filePath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 		}
 		return nil
 	})
 
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
 	if totalChanges == 0 {
 		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found.", oldName)}, nil
 	}
 
-	return types.ToolResult{Text: fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles)}, err
+	return types.ToolResult{Text: fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles)}, nil
 }
 
 func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -707,14 +714,20 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 	var results []string
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			return nil
 		}
@@ -786,13 +799,19 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	}
 
 	path := params.Path
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	var results []string
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -990,13 +1009,14 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	var results []string
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1061,11 +1081,12 @@ func (m *intelligenceManager) findDefinitions(ctx context.Context, args map[stri
 	if path == "" {
 		path = "."
 	}
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	results, err := grepDefinitionsGo(path, params.Query)
+	results, err := grepDefinitionsGo(ctx, resolvedPath, params.Query)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -1088,12 +1109,18 @@ func (m *intelligenceManager) listSymbols(ctx context.Context, args map[string]i
 	if path == "" {
 		path = "."
 	}
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	var results []string
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1153,7 +1180,8 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -1175,7 +1203,12 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 	structs := make(map[string]structInfo)
 
 	// Phase 1: Collect all interfaces and structs
-	filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1213,7 +1246,12 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 	})
 
 	// Phase 2: Collect all methods for structs
-	filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1319,13 +1357,19 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 		path = "."
 	}
 
-	if err := m.sm.IsPathSafe(path); err != nil {
+	resolvedPath, err := m.sm.IsPathSafe(path)
+	if err != nil {
 		return types.ToolResult{}, err
 	}
 
 	var sb strings.Builder
 
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
@@ -1368,7 +1412,12 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 
 						// Find methods
 						sb.WriteString("Methods (Receivers):\n")
-						filepath.Walk(path, func(p string, i os.FileInfo, e error) error {
+						filepath.Walk(resolvedPath, func(p string, i os.FileInfo, e error) error {
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							default:
+							}
 							if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 								return nil
 							}
@@ -1423,6 +1472,11 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	totalLOC := 0
 
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err != nil {
 			return nil
 		}
@@ -1505,12 +1559,22 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 			return nil
 		}
 
-		content, err := os.ReadFile(path)
+		f, err := os.Open(path)
 		if err != nil {
 			return nil
 		}
+		defer f.Close()
 
-		if isBinary(content) {
+		// Read first 512 bytes for binary check
+		head := make([]byte, 512)
+		n, _ := f.Read(head)
+		if isBinary(head[:n]) {
+			return nil
+		}
+
+		// Read full content (reset seek or use ReadFile since we checked size)
+		content, err := os.ReadFile(path)
+		if err != nil {
 			return nil
 		}
 

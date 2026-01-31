@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
@@ -19,19 +20,19 @@ type mockFileSystem struct {
 	mkdirAllFunc        func(path string, perm os.FileMode) error
 }
 
-func (m *mockFileSystem) ReadDir(name string) ([]os.DirEntry, error) {
+func (m *mockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
 	return m.readDirFunc(name)
 }
 
-func (m *mockFileSystem) ReadFile(name string) ([]byte, error) {
+func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	return m.readFileFunc(name)
 }
 
-func (m *mockFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
+func (m *mockFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
 	return m.writeFileFunc(name, data, perm)
 }
 
-func (m *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
+func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return m.mkdirAllFunc(path, perm)
 }
 
@@ -65,7 +66,8 @@ func TestListFiles_Mock(t *testing.T) {
 		t.Fatalf("listFiles failed: %v", err)
 	}
 
-	expected := "Contents of .:\n[f] file1.txt\n[d] dir1\n"
+	abs, _ := filepath.Abs(".")
+	expected := "Contents of " + abs + ":\n[f] file1.txt\n[d] dir1\n"
 	if result.Text != expected {
 		t.Errorf("expected %q, got %q", expected, result.Text)
 	}
@@ -75,7 +77,7 @@ func TestReadFile_Mock(t *testing.T) {
 	sm := NewSecurityManager()
 	mockFS := &mockFileSystem{
 		readFileFunc: func(name string) ([]byte, error) {
-			if name == "test.txt" {
+			if filepath.Base(name) == "test.txt" {
 				return []byte("mock content"), nil
 			}
 			return nil, os.ErrNotExist

@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,7 +72,7 @@ func (b *BackupManager) Snapshot(path string, action string) {
 }
 
 // Undo reverts the last N changes.
-func (b *BackupManager) Undo(n int) (string, error) {
+func (b *BackupManager) Undo(ctx context.Context, n int) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -88,7 +89,7 @@ func (b *BackupManager) Undo(n int) (string, error) {
 	for i := len(b.backups) - 1; i >= 0 && count < n; i-- {
 		snap := b.backups[i]
 
-		if err := b.sm.IsPathWritable(snap.Path); err != nil {
+		if _, err := b.sm.IsPathWritable(snap.Path); err != nil {
 			return "", fmt.Errorf("permission denied for %s: %w", snap.Path, err)
 		}
 
@@ -99,7 +100,7 @@ func (b *BackupManager) Undo(n int) (string, error) {
 			}
 			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
 		} else {
-			if err := fsutil.AtomicWrite(snap.Path, snap.Content, 0644); err != nil {
+			if err := fsutil.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
 				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Restored %s", snap.Path))

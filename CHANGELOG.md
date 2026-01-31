@@ -10,7 +10,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.64.0] - 2026-02-15
+## [1.65.0] - 2026-02-05
+### Removed
+- **UX**: Removed "Smart Suggestions" feature and the corresponding `configure_ux_preferences` tool. This simplifies the agent's toolbox and reduces system prompt overhead.
+- **Agent**: Removed `smart_suggestions` logic from the `ContextManager` and `Agent` orchestration, including the automatic injection of follow-up suggestions into the system prompt.
+
+## [1.64.0] - 2026-01-31
 ### Added
 - **Testing**: Added unit tests for `execute_command` and `pipe_commands` in `internal/tools/system_release_test.go`, significantly bridging the coverage gap for system-level tools.
 ### Fixed
@@ -179,9 +184,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Version Bump**: Promoted to v1.46.0.
 
 ## [1.45.0] - 2026-01-28
+### Changed
+- **Maintenance**: Promoted to v1.45.0 following the refined public release procedure.
 
 ## [1.44.0] - 2026-01-28
+### Changed
+- **Maintenance**: Promoted to v1.44.0 following the refined public release procedure.
 
+## [1.43.0] - 2026-01-28
 ### Added
 - **Financial Metrics**: Implemented lifecycle-based cost recording. The application now automatically calculates and appends the session cost to the daily ledger (`output/global_costs.json`) upon termination.
 
@@ -644,12 +654,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Refactoring & Testing Suite**: Added `rename_symbol`, `get_coverage`, `run_linter`, and `list_todos`.
 
-## [1.5.0] - 2026-01-01
+## [1.5.0] - 2026-01-26
 
 ### Added
 - **Advanced Intelligence**: Added `search_usages_globally`, `semantic_diff`, and `manage_tasks` (global scope).
 
-## [1.4.1] - 2026-02-15
+## [1.4.1] - 2026-01-26
 
 ### Added
 - **Enhanced Git & Testing**: Added `get_git_commit`, `get_git_blame`, and `run_tests` for automated test execution.
