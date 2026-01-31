@@ -29,7 +29,8 @@ verify_release_readiness
 #### 3. Version Stabilization
 1.  Update `Version` in `cmd/tell-me-go/main.go` (remove `-dev` suffix).
 2.  Run `go mod tidy`.
-3.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
+3.  **Note**: This project relies on Git history and tags for version tracking. A manual `CHANGELOG.md` is NOT maintained to ensure the Git log remains the single source of truth.
+4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
 
 #### 4. Git Tagging and Remote Synchronization
 1.  **Merge into main**:
