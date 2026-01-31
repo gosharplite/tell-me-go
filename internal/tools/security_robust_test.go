@@ -13,7 +13,7 @@ import (
 func TestSecurityManagerRobust(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSecurityManager()
-	
+
 	bypassFile := filepath.Join(tmpDir, "bypass.json")
 	safePathsFile := filepath.Join(tmpDir, "safepaths.json")
 	readOnlyPathsFile := filepath.Join(tmpDir, "readpaths.json")
@@ -25,7 +25,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 	sm.SetCommandsLogFile(logFile)
 
 	t.Run("Persistence_Bypass", func(t *testing.T) {
-		// Toggle bypass (assuming we can toggle it, usually via tools, 
+		// Toggle bypass (assuming we can toggle it, usually via tools,
 		// but let's check if there's a direct way or if we just test Load/Save)
 		// For now, testing Load/Save logic
 		sm.SaveBypassState()
@@ -40,13 +40,13 @@ func TestSecurityManagerRobust(t *testing.T) {
 		if err := sm.SaveSafePaths(); err != nil {
 			t.Fatalf("SaveSafePaths failed: %v", err)
 		}
-		
+
 		newSm := NewSecurityManager()
 		newSm.SetSafePathsFile(safePathsFile)
 		if err := newSm.LoadSafePaths(); err != nil {
 			t.Fatalf("LoadSafePaths failed: %v", err)
 		}
-		
+
 		found := false
 		for _, p := range newSm.GetSafePaths() {
 			if p == tmpDir {
@@ -62,7 +62,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 		sm.SaveReadOnlyPaths()
 		newSm.SetReadOnlyPathsFile(readOnlyPathsFile)
 		newSm.LoadReadOnlyPaths()
-		
+
 		foundRO := false
 		for _, p := range newSm.GetReadOnlyPaths() {
 			if p == "/etc" {
@@ -81,7 +81,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 		if err := sm.RemoveSafePath(p); err != nil {
 			t.Fatalf("RemoveSafePath failed: %v", err)
 		}
-		
+
 		ro := "/tmp/ro"
 		sm.RegisterReadOnlyPath(ro)
 		if err := sm.RemoveReadOnlyPath(ro); err != nil {
@@ -112,7 +112,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 		if _, err := sm.IsPathSafe("/var/log/syslog"); err != nil {
 			t.Errorf("Subpath of read-only path should be safe: %v", err)
 		}
-		
+
 		// Test writable vs read-only
 		if _, err := sm.IsPathWritable("/var/log/syslog"); err == nil {
 			t.Error("ReadOnly path should NOT be writable")

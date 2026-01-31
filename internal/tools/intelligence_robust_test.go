@@ -84,7 +84,7 @@ type MyInterface interface {
 				t.Errorf("Expected field/type %s not found in: %s", exp, res.Text)
 			}
 		}
-		
+
 		// Test interface type info
 		argsInterface := map[string]interface{}{"path": tmpDir, "typename": "MyInterface"}
 		resI, err := m.getTypeInfo(ctx, argsInterface)
@@ -177,12 +177,12 @@ func TestSemanticDiffLogic(t *testing.T) {
 	fset := token.NewFileSet()
 	baseCode := "package p\nfunc A() {}\nfunc B() { println(1) }\n"
 	currCode := "package p\nfunc A() { println(\"modified\") }\nfunc C() {}\n"
-	
+
 	baseAST, _ := parser.ParseFile(fset, "base.go", baseCode, parser.ParseComments)
 	currAST, _ := parser.ParseFile(fset, "curr.go", currCode, parser.ParseComments)
 
 	changes := compareASTs(baseAST, currAST)
-	
+
 	foundModifiedA := false
 	foundDeletedB := false
 	foundAddedC := false
