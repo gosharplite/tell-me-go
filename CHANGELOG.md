@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.65.0] - 2026-02-05
+## [1.65.0] - 2026-01-31
 ### Removed
 - **UX**: Removed "Smart Suggestions" feature and the corresponding `configure_ux_preferences` tool. This simplifies the agent's toolbox and reduces system prompt overhead.
 - **Agent**: Removed `smart_suggestions` logic from the `ContextManager` and `Agent` orchestration, including the automatic injection of follow-up suggestions into the system prompt.
