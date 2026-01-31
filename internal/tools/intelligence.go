@@ -118,6 +118,43 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 	}, m.findUsages)
 
 	r.Register(&types.ToolDeclaration{
+		Name:        "find_definitions",
+		Description: "Finds the exact declaration(s) of a symbol using AST.",
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
+				"query": {
+					Type:        "STRING",
+					Description: "The symbol name to find.",
+				},
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to search (defaults to '.')",
+				},
+			},
+			Required: []string{"query"},
+		},
+	}, m.findDefinitions)
+
+	r.Register(&types.ToolDeclaration{
+		Name:        "list_symbols",
+		Description: "Lists all top-level symbols (functions, types, constants, variables) in a package or directory.",
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to scan (defaults to '.')",
+				},
+				"exported_only": {
+					Type:        "BOOLEAN",
+					Description: "If true, only lists exported symbols.",
+				},
+			},
+		},
+	}, m.listSymbols)
+
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_implementations",
 		Description: "Map the relationship between interfaces and structs in the codebase.",
 		Parameters: &types.Schema{
@@ -960,7 +997,7 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	var results []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
@@ -970,20 +1007,31 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 		default:
 		}
 
-		if info.IsDir() || filepath.Ext(filePath) != ".go" {
-			return nil
-		}
-
 		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
+		}
+
+		// Read file lines for context
+		var lines []string
+		if content, err := os.ReadFile(filePath); err == nil {
+			lines = strings.Split(string(content), "\n")
 		}
 
 		ast.Inspect(f, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok {
 				if id.Name == query {
 					pos := fset.Position(id.Pos())
-					results = append(results, fmt.Sprintf("%s:%d:%d", filePath, pos.Line, pos.Column))
+					lineContent := ""
+					if pos.Line > 0 && pos.Line <= len(lines) {
+						lineContent = strings.TrimSpace(lines[pos.Line-1])
+					}
+					
+					// This is a bit limited because we don't have parent links in AST by default
+					// But we can check if it's likely a decl if we were to use a custom visitor or just report it.
+					// For now, including the line content helps the user distinguish.
+					
+					results = append(results, fmt.Sprintf("%s:%d:%d: %s", filePath, pos.Line, pos.Column, lineContent))
 				}
 			}
 			return true
@@ -996,6 +1044,98 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	}
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No usages found."}, nil
+	}
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+}
+
+func (m *intelligenceManager) findDefinitions(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Query string `json:"query"`
+		Path  string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	results, err := grepDefinitionsGo(path, params.Query)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	if len(results) == 0 {
+		return types.ToolResult{Text: "No definitions found."}, nil
+	}
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+}
+
+func (m *intelligenceManager) listSymbols(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Path         string `json:"path"`
+		ExportedOnly bool   `json:"exported_only"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	var results []string
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+			return nil
+		}
+		f, fset, err := globalASTCache.get(filePath)
+		if err != nil {
+			return nil
+		}
+
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if params.ExportedOnly && !ast.IsExported(d.Name.Name) {
+					continue
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, fset.Position(d.Pos()).Line, getFuncSignature(d)))
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch s := spec.(type) {
+					case *ast.TypeSpec:
+						if params.ExportedOnly && !ast.IsExported(s.Name.Name) {
+							continue
+						}
+						results = append(results, fmt.Sprintf("%s:%d: type %s", filePath, fset.Position(s.Pos()).Line, s.Name.Name))
+					case *ast.ValueSpec:
+						for _, name := range s.Names {
+							if params.ExportedOnly && !ast.IsExported(name.Name) {
+								continue
+							}
+							results = append(results, fmt.Sprintf("%s:%d: %s %s", filePath, fset.Position(name.Pos()).Line, d.Tok, name.Name))
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	if len(results) == 0 {
+		return types.ToolResult{Text: "No symbols found."}, nil
 	}
 	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
@@ -1017,14 +1157,19 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		return types.ToolResult{}, err
 	}
 
+	type methodSig struct {
+		name string
+		sig  string
+	}
+
 	type interfaceInfo struct {
-		methods []string
+		methods []methodSig
 		path    string
 	}
 	interfaces := make(map[string]interfaceInfo)
 
 	type structInfo struct {
-		methods []string
+		methods []methodSig
 		path    string
 	}
 	structs := make(map[string]structInfo)
@@ -1044,11 +1189,16 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 				for _, spec := range gd.Specs {
 					ts := spec.(*ast.TypeSpec)
 					if it, ok := ts.Type.(*ast.InterfaceType); ok {
-						var methods []string
+						var methods []methodSig
 						if it.Methods != nil {
 							for _, m := range it.Methods.List {
 								if len(m.Names) > 0 {
-									methods = append(methods, m.Names[0].Name)
+									if ft, ok := m.Type.(*ast.FuncType); ok {
+										methods = append(methods, methodSig{
+											name: m.Names[0].Name,
+											sig:  getFuncTypeSig(ft),
+										})
+									}
 								}
 							}
 						}
@@ -1076,7 +1226,10 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 				recvType := exprToString(fd.Recv.List[0].Type)
 				recvType = strings.TrimPrefix(recvType, "*")
 				if info, ok := structs[recvType]; ok {
-					info.methods = append(info.methods, fd.Name.Name)
+					info.methods = append(info.methods, methodSig{
+						name: fd.Name.Name,
+						sig:  getFuncTypeSig(fd.Type),
+					})
 					structs[recvType] = info
 				}
 			}
@@ -1096,7 +1249,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 			for _, im := range iinfo.methods {
 				found := false
 				for _, sm := range sinfo.methods {
-					if im == sm {
+					if im.name == sm.name && im.sig == sm.sig {
 						found = true
 						break
 					}
@@ -1119,6 +1272,36 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 		return types.ToolResult{Text: "No interface implementations found."}, nil
 	}
 	return types.ToolResult{Text: sb.String()}, nil
+}
+
+func getFuncTypeSig(f *ast.FuncType) string {
+	var sb strings.Builder
+	sb.WriteString("(")
+	if f.Params != nil {
+		for i, field := range f.Params.List {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(exprToString(field.Type))
+		}
+	}
+	sb.WriteString(")")
+	if f.Results != nil {
+		sb.WriteString(" ")
+		if len(f.Results.List) > 1 {
+			sb.WriteString("(")
+		}
+		for i, field := range f.Results.List {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(exprToString(field.Type))
+		}
+		if len(f.Results.List) > 1 {
+			sb.WriteString(")")
+		}
+	}
+	return sb.String()
 }
 
 func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
