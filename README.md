@@ -20,10 +20,10 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
         *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
     *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
-    *   **Intelligence (AST-Powered)**: `find_usages`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
+    *   **Intelligence (AST-Powered)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `configure_ux_preferences`, and `get_session_info`.
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `configure_ux_preferences`, `get_session_info`, and `summarize_history`.
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `vertex_tasks.json`, `vertex_scratchpad.md`, `vertex_config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
         *   **Smart Suggestions**: `configure_ux_preferences` enables a "Smart Suggestions" UI where the AI intelligently suggests 2-3 context-aware follow-up commands at the end of every response. This state is persistent and automatically injected into the AI's System Prompt.
@@ -136,27 +136,32 @@ MODE: "vertex"
 PERSON: "A helpful AI assistant using Google Vertex AI."
 AIMODEL: "gemini-2.0-flash-001"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+
+# --- Tools & Features ---
 USE_SEARCH: true
-THINKING_BUDGET: 0
-THINKING_LEVEL: ""  # Options: LOW, MEDIUM, HIGH
+THINKING_BUDGET: 0 # Max for gemini-2.5-flash is 24576
+THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
+SHOW_THOUGHTS: true
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5   # Maximum number of tools to execute in parallel
+TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
 
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
 MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback
 
-# --- UI & Execution ---
-SHOW_THOUGHTS: true        # Show model reasoning
-SHOW_TOOLS: true          # Show tool execution status logs
-MAX_CONCURRENT_TOOLS: 5    # Parallel tool execution limit
-TOOL_TIMEOUT: 30           # Individual tool timeout (seconds)
+# --- Authentication ---
+KEY_FILE: "" # Optional: Path to Service Account JSON key.
 ```
 
 ### 🧠 Strategic Memory Management
 To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
 
 1.  **`MAX_HISTORY_TOKENS` (Default: 120,000)**:
-    *   **The Price Cliff**: Gemini 1.5/2.0 pricing tiers jump at **128k tokens**. Staying below 120k ensures you always pay the "Standard" rate ($0.025 - $0.31/1M) and avoid the "Premium" rate ($0.075 - $1.25/1M).
+    *   **The Price Cliff**: Gemini 1.5/2.0 pricing tiers jump at **128k tokens**. Staying below 120k ensures you always pay the "Standard" rate ($0.15 - $1.25/1M) and avoid the "Premium" rate ($0.30 - $2.50/1M).
     *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
 
 2.  **`MAX_HISTORY_TURNS`**:

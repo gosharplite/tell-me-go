@@ -12,7 +12,7 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 
 ### Prerequisites
 - Go toolchain 1.24+.
-- `SOP/agent/agentic_capabilities.md` (defining tool execution).
+- [Agentic Capabilities](../agent/agentic_capabilities.md) (defining tool execution).
 
 ---
 
@@ -38,6 +38,8 @@ The assistant must never perform destructive or high-risk actions without explic
 
 *   **Destructive Tools**: `write_file`, `replace_text`, `remove_safepath`, `remove_readpath`, `rename_symbol`, `move_definition`.
 *   **System Tools**: `execute_command`, `pipe_commands`, `git_commit`, `git_create_branch`.
+    *   **Auto-Approval Whitelist**: Side-effect-free commands (e.g., `ls`, `grep`, `git status`) are strictly whitelisted and may bypass confirmation.
+    *   **Strict Blocking**: All other commands (especially those with shell operators `|`, `;`, `>`) trigger the confirmation gate.
 *   **Mechanism**: Use `tools.ConfirmDestructiveAction(action, target, detail)`.
     - **UI Standard**: The prompt and details must be printed to `os.Stderr` using high-visibility colors (Yellow/Red).
     - **Bypass for Tests**: Use the `TELL_ME_MOCK_ANSWER` environment variable to automate confirmations in E2E tests.

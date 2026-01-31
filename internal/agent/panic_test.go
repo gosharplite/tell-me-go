@@ -10,19 +10,18 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(&genai.FunctionDeclaration{
+	registry.Register(&types.ToolDeclaration{
 		Name: "panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional parallel panic")
 	})
-	registry.RegisterWithOptions(&genai.FunctionDeclaration{
+	registry.RegisterWithOptions(&types.ToolDeclaration{
 		Name: "serial_panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (string, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional serial panic")
 	}, tools.ToolOptions{Serial: true})
 
@@ -35,15 +34,12 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "panic_tool"},
 		}
 
-		results := a.executeToolsConcurrently(context.Background(), calls)
+		resChan := make(chan toolExecResult, len(calls))
+		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
-		if len(results) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(results))
-		}
-
-		res := results[0].FunctionResponse.Response["result"].(string)
-		if !strings.Contains(res, "Panic detected: intentional parallel panic") {
-			t.Errorf("expected panic error message, got: %s", res)
+		res := <-resChan
+		if !strings.Contains(res.tr.Text, "Panic detected: intentional parallel panic") {
+			t.Errorf("expected panic error message, got: %s", res.tr.Text)
 		}
 	})
 
@@ -52,15 +48,12 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "serial_panic_tool"},
 		}
 
-		results := a.executeToolsConcurrently(context.Background(), calls)
+		resChan := make(chan toolExecResult, len(calls))
+		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
-		if len(results) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(results))
-		}
-
-		res := results[0].FunctionResponse.Response["result"].(string)
-		if !strings.Contains(res, "Panic detected: intentional serial panic") {
-			t.Errorf("expected panic error message, got: %s", res)
+		res := <-resChan
+		if !strings.Contains(res.tr.Text, "Panic detected: intentional serial panic") {
+			t.Errorf("expected panic error message, got: %s", res.tr.Text)
 		}
 	})
 }

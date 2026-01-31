@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"golang.org/x/tools/imports"
-	"google.golang.org/genai"
 )
 
 type intelligenceManager struct {
@@ -98,18 +98,18 @@ var globalASTCache = newASTCache()
 func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 	m := &intelligenceManager{sm: sm}
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"query": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The symbol name to find.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
@@ -117,32 +117,69 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.findUsages)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
+		Name:        "find_definitions",
+		Description: "Finds the exact declaration(s) of a symbol using AST.",
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
+				"query": {
+					Type:        "STRING",
+					Description: "The symbol name to find.",
+				},
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to search (defaults to '.')",
+				},
+			},
+			Required: []string{"query"},
+		},
+	}, m.findDefinitions)
+
+	r.Register(&types.ToolDeclaration{
+		Name:        "list_symbols",
+		Description: "Lists all top-level symbols (functions, types, constants, variables) in a package or directory.",
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to scan (defaults to '.')",
+				},
+				"exported_only": {
+					Type:        "BOOLEAN",
+					Description: "If true, only lists exported symbols.",
+				},
+			},
+		},
+	}, m.listSymbols)
+
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_implementations",
 		Description: "Map the relationship between interfaces and structs in the codebase.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
 		},
 	}, m.listImplementations)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_type_info",
 		Description: "Provides a detailed structural breakdown of a Go type, including fields, and all associated methods. Use this to understand internal state and behavior.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"typename": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The name of the type to inspect.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search for the type (defaults to '.')",
 				},
 			},
@@ -150,19 +187,19 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.getTypeInfo)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
 	}, m.getProjectSummary)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "search_usages_globally",
 		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"query": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The string or regex to search for.",
 				},
 			},
@@ -170,14 +207,14 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.searchUsagesGlobally)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "semantic_diff",
 		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"target": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The git target (commit hash, branch name, or 'HEAD~1') to compare against.",
 				},
 			},
@@ -185,22 +222,22 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.semanticDiff)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "rename_symbol",
 		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"old_name": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The current name of the symbol.",
 				},
 				"new_name": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The new name for the symbol.",
 				},
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
 			},
@@ -208,28 +245,28 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.renameSymbol, ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "list_todos",
 		Description: "Scans the project for TODO, FIXME, or BUG comments.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The directory to scan (defaults to '.')",
 				},
 			},
 		},
 	}, m.listTodos)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "go_doc",
 		Description: "Retrieves the official Go documentation and comments for a symbol or package. Best for understanding the intended usage of a library.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"symbol": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The package or symbol to get documentation for (e.g., 'fmt.Println', './internal/tools').",
 				},
 			},
@@ -237,14 +274,14 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.goDoc)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "analyze_complexity",
 		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"path": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The file or directory to analyze.",
 				},
 			},
@@ -252,27 +289,27 @@ func RegisterIntelligenceTools(r *Registry, sm *SecurityManager) {
 		},
 	}, m.analyzeComplexity)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
 	}, m.getPackageGraph)
 
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "move_definition",
 		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"symbol": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The name of the symbol to move.",
 				},
 				"src_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The source file path.",
 				},
 				"dst_file": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The destination file path.",
 				},
 			},
@@ -370,30 +407,39 @@ func getFileSkeletonGo(filePath string) (string, error) {
 	return sb.String(), nil
 }
 
-func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (string, error) {
-	symbol, _ := args["symbol"].(string)
-	srcPath, _ := args["src_file"].(string)
-	dstPath, _ := args["dst_file"].(string)
+func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Symbol  string `json:"symbol"`
+		SrcFile string `json:"src_file"`
+		DstFile string `json:"dst_file"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	symbol := params.Symbol
+	srcPath := params.SrcFile
+	dstPath := params.DstFile
 
 	if err := m.sm.IsPathWritable(srcPath); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if err := m.sm.IsPathWritable(dstPath); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", srcPath, fmt.Sprintf("%s -> %s", symbol, dstPath))
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	fset := token.NewFileSet()
 	srcFile, err := parser.ParseFile(fset, srcPath, nil, parser.ParseComments)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse source file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to parse source file: %w", err)
 	}
 
 	dstFile, err := parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
@@ -407,14 +453,14 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 			}
 			content := fmt.Sprintf("package %s\n", pkgName)
 			if err := os.WriteFile(dstPath, []byte(content), 0644); err != nil {
-				return "", fmt.Errorf("failed to create destination file: %w", err)
+				return types.ToolResult{}, fmt.Errorf("failed to create destination file: %w", err)
 			}
 			dstFile, err = parser.ParseFile(fset, dstPath, nil, parser.ParseComments)
 			if err != nil {
-				return "", fmt.Errorf("failed to parse newly created destination file: %w", err)
+				return types.ToolResult{}, fmt.Errorf("failed to parse newly created destination file: %w", err)
 			}
 		} else {
-			return "", fmt.Errorf("failed to parse destination file: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to parse destination file: %w", err)
 		}
 	}
 
@@ -424,19 +470,19 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == symbol {
-					return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+					return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 				}
 				if vs, ok := spec.(*ast.ValueSpec); ok {
 					for _, name := range vs.Names {
 						if name.Name == symbol {
-							return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+							return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 						}
 					}
 				}
 			}
 		case *ast.FuncDecl:
 			if d.Name.Name == symbol {
-				return "", fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
+				return types.ToolResult{}, fmt.Errorf("symbol '%s' already exists in destination %s", symbol, dstPath)
 			}
 		}
 	}
@@ -522,24 +568,24 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	if len(movedDecls) == 0 {
-		return fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath), nil
+		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found in %s", symbol, srcPath)}, nil
 	}
 
 	// Update source file
 	srcFile.Decls = newSrcDecls
 	var srcBuf bytes.Buffer
 	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
-		return "", fmt.Errorf("failed to format source file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to format source file: %w", err)
 	}
 	if err := fsutil.AtomicWrite(srcPath, srcBuf.Bytes(), 0644); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	dstFile.Decls = append(dstFile.Decls, movedDecls...)
 
 	var dstBuf bytes.Buffer
 	if err := format.Node(&dstBuf, fset, dstFile); err != nil {
-		return "", fmt.Errorf("failed to format destination file: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to format destination file: %w", err)
 	}
 
 	formatted, err := imports.Process(dstPath, dstBuf.Bytes(), nil)
@@ -549,11 +595,11 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	}
 
 	if err := fsutil.AtomicWrite(dstPath, formatted, 0644); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
+		return types.ToolResult{}, fmt.Errorf("imports processing failed (file written unoptimized): %w", err)
 	}
 
 	resultMsg := fmt.Sprintf("Moved '%s' from %s to %s.", symbol, srcPath, dstPath)
@@ -561,27 +607,36 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		resultMsg += " Note: Package names differ. References across the project were NOT updated. Please update them manually or use rename_symbol if applicable."
 	}
 
-	return resultMsg, nil
+	return types.ToolResult{Text: resultMsg}, nil
 }
 
-func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (string, error) {
-	oldName, _ := args["old_name"].(string)
-	newName, _ := args["new_name"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		OldName string `json:"old_name"`
+		NewName string `json:"new_name"`
+		Path    string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	oldName := params.OldName
+	newName := params.NewName
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathWritable(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", path, fmt.Sprintf("%s -> %s", oldName, newName))
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action denied by user.", nil
+		return types.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	totalFiles := 0
@@ -633,20 +688,27 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 	})
 
 	if totalChanges == 0 {
-		return fmt.Sprintf("Symbol '%s' not found.", oldName), nil
+		return types.ToolResult{Text: fmt.Sprintf("Symbol '%s' not found.", oldName)}, nil
 	}
 
-	return fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles), err
+	return types.ToolResult{Text: fmt.Sprintf("Renamed %d occurrences of '%s' to '%s' in %d files.", totalChanges, oldName, newName, totalFiles)}, err
 }
 
-func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -683,16 +745,23 @@ func (m *intelligenceManager) listTodos(ctx context.Context, args map[string]int
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No TODOs, FIXMEs, or BUGs found.", nil
+		return types.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
 	}
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (string, error) {
-	symbol, _ := args["symbol"].(string)
+func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Symbol string `json:"symbol"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	symbol := params.Symbol
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -702,16 +771,23 @@ func (m *intelligenceManager) goDoc(ctx context.Context, args map[string]interfa
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out)), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
 	}
 
-	return string(out), nil
+	return types.ToolResult{Text: string(out)}, nil
 }
 
-func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, _ := args["path"].(string)
+func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var results []string
@@ -752,10 +828,10 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No Go functions found to analyze.", nil
+		return types.ToolResult{Text: "No Go functions found to analyze."}, nil
 	}
 
 	// Sort by complexity descending
@@ -770,10 +846,10 @@ func (m *intelligenceManager) analyzeComplexity(ctx context.Context, args map[st
 		results = append(results[:100], "... (truncated)")
 	}
 
-	return "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -783,7 +859,7 @@ func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[stri
 	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out)), nil
+		return types.ToolResult{Text: fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out))}, nil
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -821,7 +897,7 @@ func (m *intelligenceManager) getPackageGraph(ctx context.Context, args map[stri
 		}
 	}
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
 func getFuncSignature(f *ast.FuncDecl) string {
@@ -899,21 +975,29 @@ func exprToString(expr ast.Expr) string {
 
 // New Intelligence Tools Implementation
 
-func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (string, error) {
-	query, _ := args["query"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Query string `json:"query"`
+		Path  string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	query := params.Query
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var results []string
 
 	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
 
@@ -923,20 +1007,31 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 		default:
 		}
 
-		if info.IsDir() || filepath.Ext(filePath) != ".go" {
-			return nil
-		}
-
 		f, fset, err := globalASTCache.get(filePath)
 		if err != nil {
 			return nil
+		}
+
+		// Read file lines for context
+		var lines []string
+		if content, err := os.ReadFile(filePath); err == nil {
+			lines = strings.Split(string(content), "\n")
 		}
 
 		ast.Inspect(f, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok {
 				if id.Name == query {
 					pos := fset.Position(id.Pos())
-					results = append(results, fmt.Sprintf("%s:%d:%d", filePath, pos.Line, pos.Column))
+					lineContent := ""
+					if pos.Line > 0 && pos.Line <= len(lines) {
+						lineContent = strings.TrimSpace(lines[pos.Line-1])
+					}
+
+					// This is a bit limited because we don't have parent links in AST by default
+					// But we can check if it's likely a decl if we were to use a custom visitor or just report it.
+					// For now, including the line content helps the user distinguish.
+
+					results = append(results, fmt.Sprintf("%s:%d:%d: %s", filePath, pos.Line, pos.Column, lineContent))
 				}
 			}
 			return true
@@ -945,32 +1040,136 @@ func (m *intelligenceManager) findUsages(ctx context.Context, args map[string]in
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return "No usages found.", nil
+		return types.ToolResult{Text: "No usages found."}, nil
 	}
-	return strings.Join(results, "\n"), nil
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+func (m *intelligenceManager) findDefinitions(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Query string `json:"query"`
+		Path  string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	results, err := grepDefinitionsGo(path, params.Query)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	if len(results) == 0 {
+		return types.ToolResult{Text: "No definitions found."}, nil
+	}
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+}
+
+func (m *intelligenceManager) listSymbols(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Path         string `json:"path"`
+		ExportedOnly bool   `json:"exported_only"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+	if err := m.sm.IsPathSafe(path); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	var results []string
+	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
+			return nil
+		}
+		f, fset, err := globalASTCache.get(filePath)
+		if err != nil {
+			return nil
+		}
+
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if params.ExportedOnly && !ast.IsExported(d.Name.Name) {
+					continue
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, fset.Position(d.Pos()).Line, getFuncSignature(d)))
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					switch s := spec.(type) {
+					case *ast.TypeSpec:
+						if params.ExportedOnly && !ast.IsExported(s.Name.Name) {
+							continue
+						}
+						results = append(results, fmt.Sprintf("%s:%d: type %s", filePath, fset.Position(s.Pos()).Line, s.Name.Name))
+					case *ast.ValueSpec:
+						for _, name := range s.Names {
+							if params.ExportedOnly && !ast.IsExported(name.Name) {
+								continue
+							}
+							results = append(results, fmt.Sprintf("%s:%d: %s %s", filePath, fset.Position(name.Pos()).Line, d.Tok, name.Name))
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+	if len(results) == 0 {
+		return types.ToolResult{Text: "No symbols found."}, nil
+	}
+	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+}
+
+func (m *intelligenceManager) listImplementations(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Path string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
+	}
+
+	type methodSig struct {
+		name string
+		sig  string
 	}
 
 	type interfaceInfo struct {
-		methods []string
+		methods []methodSig
 		path    string
 	}
 	interfaces := make(map[string]interfaceInfo)
 
 	type structInfo struct {
-		methods []string
+		methods []methodSig
 		path    string
 	}
 	structs := make(map[string]structInfo)
@@ -990,11 +1189,16 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 				for _, spec := range gd.Specs {
 					ts := spec.(*ast.TypeSpec)
 					if it, ok := ts.Type.(*ast.InterfaceType); ok {
-						var methods []string
+						var methods []methodSig
 						if it.Methods != nil {
 							for _, m := range it.Methods.List {
 								if len(m.Names) > 0 {
-									methods = append(methods, m.Names[0].Name)
+									if ft, ok := m.Type.(*ast.FuncType); ok {
+										methods = append(methods, methodSig{
+											name: m.Names[0].Name,
+											sig:  getFuncTypeSig(ft),
+										})
+									}
 								}
 							}
 						}
@@ -1022,7 +1226,10 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 				recvType := exprToString(fd.Recv.List[0].Type)
 				recvType = strings.TrimPrefix(recvType, "*")
 				if info, ok := structs[recvType]; ok {
-					info.methods = append(info.methods, fd.Name.Name)
+					info.methods = append(info.methods, methodSig{
+						name: fd.Name.Name,
+						sig:  getFuncTypeSig(fd.Type),
+					})
 					structs[recvType] = info
 				}
 			}
@@ -1042,7 +1249,7 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 			for _, im := range iinfo.methods {
 				found := false
 				for _, sm := range sinfo.methods {
-					if im == sm {
+					if im.name == sm.name && im.sig == sm.sig {
 						found = true
 						break
 					}
@@ -1062,20 +1269,58 @@ func (m *intelligenceManager) listImplementations(ctx context.Context, args map[
 	}
 
 	if sb.Len() == 0 {
-		return "No interface implementations found.", nil
+		return types.ToolResult{Text: "No interface implementations found."}, nil
 	}
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (string, error) {
-	typename, _ := args["typename"].(string)
-	path, ok := args["path"].(string)
-	if !ok || path == "" {
+func getFuncTypeSig(f *ast.FuncType) string {
+	var sb strings.Builder
+	sb.WriteString("(")
+	if f.Params != nil {
+		for i, field := range f.Params.List {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(exprToString(field.Type))
+		}
+	}
+	sb.WriteString(")")
+	if f.Results != nil {
+		sb.WriteString(" ")
+		if len(f.Results.List) > 1 {
+			sb.WriteString("(")
+		}
+		for i, field := range f.Results.List {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(exprToString(field.Type))
+		}
+		if len(f.Results.List) > 1 {
+			sb.WriteString(")")
+		}
+	}
+	return sb.String()
+}
+
+func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Typename string `json:"typename"`
+		Path     string `json:"path"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	typename := params.Typename
+	path := params.Path
+	if path == "" {
 		path = "."
 	}
 
 	if err := m.sm.IsPathSafe(path); err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	var sb strings.Builder
@@ -1150,15 +1395,15 @@ func (m *intelligenceManager) getTypeInfo(ctx context.Context, args map[string]i
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if sb.Len() == 0 {
-		return "Type not found.", nil
+		return types.ToolResult{Text: "Type not found."}, nil
 	}
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -1205,7 +1450,7 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	})
 
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	sb.WriteString("\nFile Counts:\n")
@@ -1219,14 +1464,21 @@ func (m *intelligenceManager) getProjectSummary(ctx context.Context, args map[st
 	}
 	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (string, error) {
-	query, _ := args["query"].(string)
+func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Query string `json:"query"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	query := params.Query
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return "", fmt.Errorf("invalid regex: %w", err)
+		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
@@ -1279,34 +1531,33 @@ func (m *intelligenceManager) searchUsagesGlobally(ctx context.Context, args map
 	})
 
 	if err != nil && err.Error() != "too many results" {
-		return "", err
+		return types.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return "No matches found.", nil
+		return types.ToolResult{Text: "No matches found."}, nil
 	}
 
 	out := strings.Join(results, "\n")
 	if err != nil && err.Error() == "too many results" {
 		out += "\n... (truncated)"
 	}
-	return out, nil
+	return types.ToolResult{Text: out}, nil
 }
 
-func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (string, error) {
-	target, _ := args["target"].(string)
-
-	// Get stat summary
-	statOut, err := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git diff --stat failed: %s", string(statOut))
+func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		Target string `json:"target"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
 	}
 
-	// Get summary of changes
-	summaryOut, err := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git diff --summary failed: %s", string(summaryOut))
-	}
+	target := params.Target
+
+	// 1. Get stats and summary as before
+	statOut, _ := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
+	summaryOut, _ := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
 
 	var sb strings.Builder
 	sb.WriteString("Semantic Diff Summary:\n\n")
@@ -1315,24 +1566,140 @@ func (m *intelligenceManager) semanticDiff(ctx context.Context, args map[string]
 	sb.WriteString("\nChange Summary:\n")
 	sb.WriteString(string(summaryOut))
 
-	// Try to extract changed Go functions if it's a small diff
-	funcDiff, err := exec.CommandContext(ctx, "git", "diff", "-U0", "--no-color", target).CombinedOutput()
-	if err == nil {
-		sb.WriteString("\nLogical Changes (Functions):\n")
-		lines := strings.Split(string(funcDiff), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "@@") {
-				// git diff -U0 includes function name in the hunk header
-				parts := strings.SplitN(line, "@@", 3)
-				if len(parts) >= 3 {
-					funcName := strings.TrimSpace(parts[2])
-					if funcName != "" {
-						sb.WriteString(fmt.Sprintf("  - %s\n", funcName))
-					}
+	// 2. Logical Analysis
+	sb.WriteString("\nLogical Code Changes:\n")
+
+	// Get list of changed .go files
+	filesOut, err := exec.CommandContext(ctx, "git", "diff", "--name-only", target).CombinedOutput()
+	if err != nil {
+		return types.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
+	}
+
+	changedFiles := strings.Split(strings.TrimSpace(string(filesOut)), "\n")
+	fset := token.NewFileSet()
+
+	for _, relPath := range changedFiles {
+		if filepath.Ext(relPath) != ".go" || strings.Contains(relPath, "vendor/") {
+			continue
+		}
+
+		// Get current AST
+		currAST, _, err := globalASTCache.get(relPath)
+		if err != nil {
+			continue // Skip unparsable current files
+		}
+
+		// Get target AST (base)
+		var baseAST *ast.File
+		baseContent, err := exec.CommandContext(ctx, "git", "show", target+":"+relPath).Output()
+		if err == nil {
+			baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
+		}
+
+		var changes []string
+		if baseAST == nil {
+			// Entirely new file
+			for _, d := range currAST.Decls {
+				key := getDeclKey(d)
+				if key != "unknown" {
+					changes = append(changes, "Added: "+key)
 				}
+			}
+		} else {
+			changes = compareASTs(baseAST, currAST)
+		}
+		if len(changes) > 0 {
+			sb.WriteString(fmt.Sprintf("\n[%s]\n", relPath))
+			for _, ch := range changes {
+				sb.WriteString(fmt.Sprintf("  - %s\n", ch))
 			}
 		}
 	}
 
-	return sb.String(), nil
+	return types.ToolResult{Text: sb.String()}, nil
+}
+
+func compareASTs(base, curr *ast.File) []string {
+	var changes []string
+
+	baseDecls := map[string]ast.Decl{}
+	for _, d := range base.Decls {
+		baseDecls[getDeclKey(d)] = d
+	}
+
+	currDecls := map[string]ast.Decl{}
+	for _, d := range curr.Decls {
+		currDecls[getDeclKey(d)] = d
+	}
+
+	// Find Added and Modified
+	var keys []string
+	for k := range currDecls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		currDecl := currDecls[k]
+		if baseDecl, ok := baseDecls[k]; !ok {
+			changes = append(changes, "Added: "+k)
+		} else {
+			if !isDeclEqual(baseDecl, currDecl) {
+				changes = append(changes, "Modified: "+k)
+			}
+		}
+	}
+
+	// Find Deleted
+	var baseKeys []string
+	for k := range baseDecls {
+		baseKeys = append(baseKeys, k)
+	}
+	sort.Strings(baseKeys)
+
+	for _, k := range baseKeys {
+		if _, ok := currDecls[k]; !ok {
+			changes = append(changes, "Deleted: "+k)
+		}
+	}
+
+	return changes
+}
+
+func getDeclKey(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		name := d.Name.Name
+		if d.Recv != nil && len(d.Recv.List) > 0 {
+			recv := exprToString(d.Recv.List[0].Type)
+			return fmt.Sprintf("func (%s) %s", recv, name)
+		}
+		return "func " + name
+	case *ast.GenDecl:
+		if d.Tok == token.TYPE && len(d.Specs) > 0 {
+			if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
+				return "type " + ts.Name.Name
+			}
+		}
+		if d.Tok == token.CONST && len(d.Specs) > 0 {
+			return "const block"
+		}
+		if d.Tok == token.VAR && len(d.Specs) > 0 {
+			return "var block"
+		}
+	}
+	return "unknown"
+}
+
+func isDeclEqual(a, b ast.Decl) bool {
+	// Crude but effective for semantic diff: compare formatted strings
+	fset := token.NewFileSet()
+	var bufA, bufB bytes.Buffer
+	if err := format.Node(&bufA, fset, a); err != nil {
+		return false
+	}
+	if err := format.Node(&bufB, fset, b); err != nil {
+		return false
+	}
+	return bufA.String() == bufB.String()
 }

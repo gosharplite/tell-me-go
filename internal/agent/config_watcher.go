@@ -1,0 +1,138 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package agent
+
+import (
+	"encoding/json"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/config"
+)
+
+// ConfigWatcher monitors configuration files for changes and caches values.
+type ConfigWatcher struct {
+	mu                   sync.RWMutex
+	mainPath             string
+	sessionPath          string
+	lastMainMod          time.Time
+	lastSessionMod       time.Time
+	maxHistoryTokens     int
+	maxToolTurns         int
+	maxHistoryTurns      int
+	defaultHistoryTokens int
+	defaultToolTurns     int
+	defaultHistoryTurns  int
+}
+
+// NewConfigWatcher creates a new ConfigWatcher with default values.
+func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
+	return &ConfigWatcher{
+		maxHistoryTokens:     tokens,
+		maxToolTurns:         toolTurns,
+		maxHistoryTurns:      historyTurns,
+		defaultHistoryTokens: tokens,
+		defaultToolTurns:     toolTurns,
+		defaultHistoryTurns:  historyTurns,
+	}
+}
+
+// SetPaths sets the configuration file paths.
+func (cw *ConfigWatcher) SetPaths(main, session string) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	cw.mainPath = main
+	cw.sessionPath = session
+}
+
+// Refresh checks for file changes and updates cached values if necessary.
+func (cw *ConfigWatcher) Refresh() {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+
+	changed := false
+
+	// 1. Check main YAML
+	if cw.mainPath != "" {
+		if info, err := os.Stat(cw.mainPath); err == nil {
+			if info.ModTime().After(cw.lastMainMod) {
+				cw.lastMainMod = info.ModTime()
+				if cfg, err := config.Load(cw.mainPath); err == nil {
+					cw.maxHistoryTokens = cfg.MaxHistoryTokens
+					cw.maxToolTurns = cfg.MaxToolTurns
+					cw.maxHistoryTurns = cfg.MaxHistoryTurns
+					changed = true
+				}
+			}
+		}
+	}
+
+	// 2. Check session JSON (overrides main)
+	if cw.sessionPath != "" {
+		if info, err := os.Stat(cw.sessionPath); err == nil {
+			if info.ModTime().After(cw.lastSessionMod) || changed {
+				cw.lastSessionMod = info.ModTime()
+				cw.loadSessionConfig()
+			}
+		}
+	}
+}
+
+func (cw *ConfigWatcher) loadSessionConfig() {
+	data, err := os.ReadFile(cw.sessionPath)
+	if err != nil {
+		return
+	}
+
+	var pCfg map[string]interface{}
+	if err := json.Unmarshal(data, &pCfg); err != nil {
+		return
+	}
+
+	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
+		cw.maxHistoryTokens = toInt(val, cw.maxHistoryTokens)
+	}
+	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
+		cw.maxToolTurns = toInt(val, cw.maxToolTurns)
+	}
+	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
+		cw.maxHistoryTurns = toInt(val, cw.maxHistoryTurns)
+	}
+}
+
+func toInt(val interface{}, defaultVal int) int {
+	switch v := val.(type) {
+	case float64:
+		return int(v)
+	case string:
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			return i
+		}
+	}
+	return defaultVal
+}
+
+// SetLimits updates the cached limits manually.
+func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	if tokens > 0 {
+		cw.maxHistoryTokens = tokens
+	}
+	if toolTurns > 0 {
+		cw.maxToolTurns = toolTurns
+	}
+	if historyTurns > 0 {
+		cw.maxHistoryTurns = historyTurns
+	}
+}
+
+// GetLimits returns the current cached limits.
+func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns
+}

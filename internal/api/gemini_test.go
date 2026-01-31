@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
+	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -41,16 +42,16 @@ func TestSendChat(t *testing.T) {
 	// 2. Setup client with mock server URL and mock authenticator
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", nil, "", false)
+	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
 	// 3. Execution
-	history := []*genai.Content{
-		{Role: "user", Parts: []*genai.Part{{Text: "Hello"}}},
+	history := []*types.Content{
+		{Role: "user", Parts: []*types.Part{{Text: "Hello"}}},
 	}
-	content, _, err := client.SendChat(context.Background(), history, nil)
+	content, _, err := client.SendChat(context.Background(), history, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -73,9 +74,9 @@ func TestSendChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
 
-	_, _, err := client.SendChat(context.Background(), []*genai.Content{}, nil)
+	_, _, err := client.SendChat(context.Background(), []*types.Content{}, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for safety block, got nil")
 	}
@@ -98,9 +99,9 @@ func TestSendChat_FinishReason(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
 
-	_, _, err := client.SendChat(context.Background(), []*genai.Content{}, nil)
+	_, _, err := client.SendChat(context.Background(), []*types.Content{}, nil, nil)
 	if err == nil {
 		t.Fatalf("expected error for finish reason SAFETY, got nil")
 	}
@@ -119,9 +120,9 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "Be helpful", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "Be helpful", false)
 
-	_, _, err := client.SendChat(context.Background(), []*genai.Content{}, nil)
+	_, _, err := client.SendChat(context.Background(), []*types.Content{}, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -137,9 +138,9 @@ func TestThinkingBudget(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", nil, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false)
 
-	_, _, err := client.SendChat(context.Background(), []*genai.Content{}, nil)
+	_, _, err := client.SendChat(context.Background(), []*types.Content{}, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}

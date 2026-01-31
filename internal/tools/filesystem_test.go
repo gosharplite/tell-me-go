@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -28,7 +30,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	sm.RegisterSafePath(tmpDir)
 	sm.bypassConfirmations = true // Avoid interactive prompts
 
-	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1)}
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -87,7 +89,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := NewSecurityManager()
-	m := &fileSystemManager{sm: sm}
+	m := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -100,11 +102,81 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 		t.Fatalf("searchFiles failed: %v", err)
 	}
 
-	if !strings.Contains(result, "text.txt:1: hello world") {
-		t.Errorf("expected result to contain text file match, got %q", result)
+	if !strings.Contains(result.Text, "text.txt:1: hello world") {
+		t.Errorf("expected result to contain text file match, got %q", result.Text)
 	}
 
-	if strings.Contains(result, "binary.bin") {
+	if strings.Contains(result.Text, "binary.bin") {
 		t.Error("expected result NOT to contain binary file match")
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	os.WriteFile(filepath.Join(tempDir, "a.txt"), []byte("a"), 0644)
+	os.Mkdir(filepath.Join(tempDir, "sub"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "sub", "b.txt"), []byte("b"), 0644)
+
+	sm := NewSecurityManager()
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	t.Run("list root", func(t *testing.T) {
+		res, err := m.listFiles(ctx, map[string]interface{}{"path": tempDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Text, "[f] a.txt") || !strings.Contains(res.Text, "[d] sub") {
+			t.Errorf("unexpected output: %s", res.Text)
+		}
+	})
+
+	t.Run("non-existent path", func(t *testing.T) {
+		_, err := m.listFiles(ctx, map[string]interface{}{"path": filepath.Join(tempDir, "missing")})
+		if err == nil {
+			t.Error("expected error for missing path")
+		}
+	})
+}
+
+func TestWriteFile(t *testing.T) {
+	tempDir := t.TempDir()
+	sm := NewSecurityManager()
+	sm.bypassConfirmations = true
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	path := filepath.Join(tempDir, "new.txt")
+	content := "hello"
+	_, err := m.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  content,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := os.ReadFile(path)
+	if string(got) != content {
+		t.Errorf("got %s, want %s", got, content)
+	}
+}
+
+func TestReadFile(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	content := "some content"
+	os.WriteFile(path, []byte(content), 0644)
+
+	sm := NewSecurityManager()
+	m := &fileSystemManager{sm: sm, bm: NewBackupManager(sm, 1), fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	res, err := m.readFile(ctx, map[string]interface{}{"filepath": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, content) {
+		t.Errorf("got %s, want %s", res.Text, content)
 	}
 }

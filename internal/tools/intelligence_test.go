@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 func TestIntelligenceTools(t *testing.T) {
@@ -41,26 +43,26 @@ func Helper() int { return 42 }
 	}
 
 	t.Run("grep_definitions", func(t *testing.T) {
-		fsM := &fileSystemManager{sm: sm}
+		fsM := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 		args := map[string]interface{}{"path": tmpDir}
 		res, err := fsM.grepDefinitions(context.Background(), args)
 		if err != nil {
 			t.Fatalf("grepDefinitions failed: %v", err)
 		}
-		if !strings.Contains(res, "type MyInterface") || !strings.Contains(res, "func Helper()") {
-			t.Errorf("Unexpected output: %s", res)
+		if !strings.Contains(res.Text, "type MyInterface") || !strings.Contains(res.Text, "func Helper()") {
+			t.Errorf("Unexpected output: %s", res.Text)
 		}
 	})
 
 	t.Run("get_file_skeleton", func(t *testing.T) {
-		fsM := &fileSystemManager{sm: sm}
+		fsM := &fileSystemManager{sm: sm, fs: fsutil.DefaultFileSystem}
 		args := map[string]interface{}{"filepath": filePath}
 		res, err := fsM.getFileSkeleton(context.Background(), args)
 		if err != nil {
 			t.Fatalf("getFileSkeleton failed: %v", err)
 		}
-		if !strings.Contains(res, "func (s *MyStruct) DoSomething()") || !strings.Contains(res, "type MyInterface interface { ... }") {
-			t.Errorf("Unexpected output: %s", res)
+		if !strings.Contains(res.Text, "func (s *MyStruct) DoSomething()") || !strings.Contains(res.Text, "type MyInterface interface { ... }") {
+			t.Errorf("Unexpected output: %s", res.Text)
 		}
 	})
 
@@ -70,8 +72,8 @@ func Helper() int { return 42 }
 		if err != nil {
 			t.Fatalf("findUsages failed: %v", err)
 		}
-		if !strings.Contains(res, "test.go:") {
-			t.Errorf("Usage not found: %s", res)
+		if !strings.Contains(res.Text, "test.go:") {
+			t.Errorf("Usage not found: %s", res.Text)
 		}
 	})
 
@@ -81,8 +83,8 @@ func Helper() int { return 42 }
 		if err != nil {
 			t.Fatalf("getTypeInfo failed: %v", err)
 		}
-		if !strings.Contains(res, "Name string") || !strings.Contains(res, "DoSomething") {
-			t.Errorf("Type info incomplete: %s", res)
+		if !strings.Contains(res.Text, "Name string") || !strings.Contains(res.Text, "DoSomething") {
+			t.Errorf("Type info incomplete: %s", res.Text)
 		}
 	})
 
@@ -92,8 +94,8 @@ func Helper() int { return 42 }
 		if err != nil {
 			t.Fatalf("listImplementations failed: %v", err)
 		}
-		if !strings.Contains(res, "Interface MyInterface") || !strings.Contains(res, "MyStruct") {
-			t.Errorf("Implementations not found: %s", res)
+		if !strings.Contains(res.Text, "Interface MyInterface") || !strings.Contains(res.Text, "MyStruct") {
+			t.Errorf("Implementations not found: %s", res.Text)
 		}
 	})
 
@@ -111,7 +113,7 @@ var ref = OldFunction
 `
 		renameFile := filepath.Join(tmpDir, "rename_test.go")
 		if err := os.WriteFile(renameFile, []byte(renameCode), 0644); err != nil {
-			t.Fatal(err)
+			t.Fatal(renameFile)
 		}
 
 		args := map[string]interface{}{
@@ -146,8 +148,8 @@ var ref = OldFunction
 			t.Error("String literal was incorrectly renamed (AST check failed)")
 		}
 		// Flexible check for success message
-		if !strings.Contains(res, "OldFunction") || !strings.Contains(res, "NewFunction") || !strings.Contains(res, "Renamed") {
-			t.Errorf("Unexpected result message: %s", res)
+		if !strings.Contains(res.Text, "OldFunction") || !strings.Contains(res.Text, "NewFunction") || !strings.Contains(res.Text, "Renamed") {
+			t.Errorf("Unexpected result message: %s", res.Text)
 		}
 	})
 }

@@ -52,8 +52,8 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "Task added with ID 1") {
-			t.Errorf("Unexpected output: %s", msg)
+		if !strings.Contains(msg.Text, "Task added with ID 1") {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		// Verify file persistence
@@ -82,8 +82,8 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "1. [ ] First Task (pending)") {
-			t.Errorf("List output missing task: %s", msg)
+		if !strings.Contains(msg.Text, "1. [ ] First Task (pending)") {
+			t.Errorf("List output missing task: %s", msg.Text)
 		}
 	})
 
@@ -98,8 +98,8 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "Task 1 updated") {
-			t.Errorf("Unexpected output: %s", msg)
+		if !strings.Contains(msg.Text, "Task 1 updated") {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		s.loadTasks() // Reload from disk to verify persistence
@@ -118,8 +118,8 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if !strings.Contains(msg, "Task 1 deleted") {
-			t.Errorf("Unexpected output: %s", msg)
+		if !strings.Contains(msg.Text, "Task 1 deleted") {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		s.loadTasks()
@@ -139,8 +139,8 @@ func TestManageTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageTasks failed: %v", err)
 		}
-		if msg != "All tasks cleared." {
-			t.Errorf("Unexpected output: %s", msg)
+		if msg.Text != "All tasks cleared." {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		s.loadTasks()
@@ -167,8 +167,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "(Scratchpad is empty)" {
-			t.Errorf("Expected '(Scratchpad is empty)', got: %q", msg)
+		if msg.Text != "(Scratchpad is empty)" {
+			t.Errorf("Expected '(Scratchpad is empty)', got: %q", msg.Text)
 		}
 	})
 
@@ -182,8 +182,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "Scratchpad updated." {
-			t.Errorf("Unexpected output: %s", msg)
+		if msg.Text != "Scratchpad updated." {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		content, _ := os.ReadFile(s.scratchFile)
@@ -202,8 +202,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "# Plan\n- Step 1" {
-			t.Errorf("Content mismatch on read: %q", msg)
+		if msg.Text != "# Plan\n- Step 1" {
+			t.Errorf("Content mismatch on read: %q", msg.Text)
 		}
 	})
 
@@ -217,8 +217,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "Content appended to scratchpad." {
-			t.Errorf("Unexpected output: %s", msg)
+		if msg.Text != "Content appended to scratchpad." {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		content, _ := os.ReadFile(s.scratchFile)
@@ -235,8 +235,8 @@ func TestManageScratchpad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("manageScratchpad failed: %v", err)
 		}
-		if msg != "Scratchpad cleared." {
-			t.Errorf("Unexpected output: %s", msg)
+		if msg.Text != "Scratchpad cleared." {
+			t.Errorf("Unexpected output: %s", msg.Text)
 		}
 
 		content, _ := os.ReadFile(s.scratchFile)

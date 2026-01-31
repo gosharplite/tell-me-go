@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 // MockClient is a minimal mock for testing the agent loop
@@ -20,7 +19,7 @@ type MockClient struct {
 	ResponseText string
 }
 
-func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*genai.Tool) (*types.Content, *types.Metrics, error) {
+func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
 	// Simulate an empty response if specifically requested
 	if m.ResponseText == "EMPTY" {
 		return &types.Content{Role: "model", Parts: []*types.Part{}}, &types.Metrics{}, nil
@@ -31,7 +30,61 @@ func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, too
 	}, &types.Metrics{TotalTokens: 100}, nil
 }
 
+func (m *MockClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	if m.ResponseText == "EMPTY" {
+		return &types.Metrics{}, nil
+	}
+	callback(&types.Content{
+		Role:  "model",
+		Parts: []*types.Part{{Text: m.ResponseText}},
+	})
+	return &types.Metrics{TotalTokens: 100}, nil
+}
+
 func (m *MockClient) RefreshAuth() error { return nil }
+func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
+
+// MockLLMClient is a flexible mock for testing.
+type MockLLMClient struct {
+	SendChatFn    func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
+	StreamChatFn  func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error)
+	RefreshAuthFn func() error
+}
+
+func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+	if m.SendChatFn != nil {
+		return m.SendChatFn(ctx, history, tools, resolver)
+	}
+	return nil, nil, fmt.Errorf("SendChatFn not implemented")
+}
+
+func (m *MockLLMClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+	if m.StreamChatFn != nil {
+		return m.StreamChatFn(ctx, history, tools, resolver, callback)
+	}
+	// Fallback to SendChatFn if StreamChatFn is not provided
+	if m.SendChatFn != nil {
+		resp, metrics, err := m.SendChatFn(ctx, history, tools, resolver)
+		if err == nil {
+			callback(resp)
+		}
+		return metrics, err
+	}
+	return nil, fmt.Errorf("StreamChatFn and SendChatFn not implemented")
+}
+
+func (m *MockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
+
+func (m *MockLLMClient) RefreshAuth() error {
+	if m.RefreshAuthFn != nil {
+		return m.RefreshAuthFn()
+	}
+	return nil
+}
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
 	// This test verifies that the history manager and API client don't crash
@@ -97,5 +150,80 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	if len(h.GetContents()) > 2 {
 		t.Errorf("History not pruned correctly, got %d messages", len(h.GetContents()))
+	}
+}
+
+func TestAgent_MultiModalFlow(t *testing.T) {
+	// Setup
+	registry := tools.NewRegistry()
+	registry.Register(&types.ToolDeclaration{
+		Name: "get_image",
+	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+		return types.ToolResult{
+			Text: "Image of a cat",
+			BinaryData: []types.BinaryData{
+				{MIMEType: "image/png", Data: []byte("fake-png-data")},
+			},
+		}, nil
+	})
+
+	h := history.NewManager(t.TempDir() + "/history.json")
+	sm := tools.NewSecurityManager()
+
+	// Mock client that triggers the tool
+	mockClient := &MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+			// First call: trigger tool
+			if len(history) == 1 {
+				return &types.Content{
+					Role: "model",
+					Parts: []*types.Part{
+						{FunctionCall: &types.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+					},
+				}, &types.Metrics{}, nil
+			}
+			// Second call: return final text
+			return &types.Content{
+				Role:  "model",
+				Parts: []*types.Part{{Text: "I see the cat image."}},
+			}, &types.Metrics{}, nil
+		},
+	}
+
+	a := New(mockClient, h, registry, sm)
+	err := a.Chat(context.Background(), "Show me a cat")
+	if err != nil {
+		t.Fatalf("Chat failed: %v", err)
+	}
+
+	// Verify history
+	contents := h.GetContents()
+	// Turns:
+	// 0: User "Show me a cat"
+	// 1: Model ToolCall "get_image"
+	// 2: User ToolResponse + InlineData
+	// 3: Model "I see the cat image."
+
+	if len(contents) != 4 {
+		t.Fatalf("Expected 4 messages in history, got %d", len(contents))
+	}
+
+	toolResponseTurn := contents[2]
+	if toolResponseTurn.Role != "user" {
+		t.Errorf("Expected role 'user' for tool response, got %s", toolResponseTurn.Role)
+	}
+
+	hasInlineData := false
+	for _, p := range toolResponseTurn.Parts {
+		if p.InlineData != nil {
+			hasInlineData = true
+			if p.InlineData.MIMEType != "image/png" {
+				t.Errorf("Unexpected MIME type: %s", p.InlineData.MIMEType)
+			}
+		}
+	}
+
+	if !hasInlineData {
+		t.Error("InlineData was not injected into history")
 	}
 }

@@ -1,34 +1,37 @@
 {
-  "updated_at": "2026-01-27T10:00:00Z",
+  "updated_at": "2026-01-31T07:00:00Z",
   "models": {
     "flash": {
-      "hit": 0.025,
-      "miss": 0.025,
-      "comp": 0.30,
+      "hit": 0.015,
+      "miss": 0.15,
+      "comp": 0.60,
       "tiered_threshold": 128000,
-      "tiered_miss": 0.075,
-      "tiered_comp": 0.30
+      "tiered_miss": 0.30,
+      "tiered_comp": 1.20
     },
     "pro": {
-      "hit": 0.3125,
-      "miss": 0.3125,
-      "comp": 3.75,
+      "hit": 0.125,
+      "miss": 1.25,
+      "comp": 10.00,
       "tiered_threshold": 128000,
-      "tiered_miss": 1.25,
-      "tiered_comp": 7.50
+      "tiered_miss": 2.50,
+      "tiered_comp": 15.00
     },
     "default": {
-      "hit": 0.3125,
-      "miss": 0.3125,
-      "comp": 3.75,
+      "hit": 0.125,
+      "miss": 1.25,
+      "comp": 10.00,
       "tiered_threshold": 128000,
-      "tiered_miss": 1.25,
-      "tiered_comp": 7.50
+      "tiered_miss": 2.50,
+      "tiered_comp": 15.00
     }
   },
   "thinking_budgets": {
+    "gemini-2.0-flash": 24576,
     "gemini-2.5-flash": 24576,
-    "gemini-3-flash-preview": 32768
+    "gemini-2.5-pro": 32768,
+    "gemini-3-flash-preview": 32768,
+    "gemini-3-pro-preview": 65536
   },
-  "search_query": 0.014
+  "search_query": 0.035
 }

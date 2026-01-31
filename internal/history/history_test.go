@@ -120,15 +120,17 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 
 func TestHistoryManager_Prune(t *testing.T) {
 	t.Parallel()
-	m := NewManager("dummy.json")
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "prune.json")
+	m := NewManager(historyFile)
 
 	// Setup: 6 messages (3 turns)
-	_ = m.AddEntry(genai.RoleUser, "U1")
-	_ = m.AddEntry(genai.RoleModel, "M1")
-	_ = m.AddEntry(genai.RoleUser, "U2")
-	_ = m.AddEntry(genai.RoleModel, "M2")
-	_ = m.AddEntry(genai.RoleUser, "U3")
-	_ = m.AddEntry(genai.RoleModel, "M3")
+	_ = m.AddEntry("user", "U1")
+	_ = m.AddEntry("model", "M1")
+	_ = m.AddEntry("user", "U2")
+	_ = m.AddEntry("model", "M2")
+	_ = m.AddEntry("user", "U3")
+	_ = m.AddEntry("model", "M3")
 
 	tests := []struct {
 		name     string
@@ -144,8 +146,9 @@ func TestHistoryManager_Prune(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clone manager state for each test case
-			m2 := NewManager("dummy.json")
+			// Clone manager state for each test case using a unique file
+			caseFile := filepath.Join(tmpDir, tt.name+".json")
+			m2 := NewManager(caseFile)
 			for _, c := range m.Contents {
 				_ = m2.AddContent(&types.Content{Role: c.Role, Parts: c.Parts})
 			}
@@ -154,7 +157,7 @@ func TestHistoryManager_Prune(t *testing.T) {
 			if len(m2.GetContents()) != tt.wantLen {
 				t.Errorf("Prune(%d) got %d messages, want %d", tt.maxTurns, len(m2.GetContents()), tt.wantLen)
 			}
-			if tt.wantLen > 0 && m2.GetContents()[0].Role != genai.RoleUser {
+			if tt.wantLen > 0 && m2.GetContents()[0].Role != "user" {
 				t.Errorf("Prune(%d) first message is not 'user'", tt.maxTurns)
 			}
 		})
@@ -163,17 +166,19 @@ func TestHistoryManager_Prune(t *testing.T) {
 
 func TestHistoryManager_ReplaceRange(t *testing.T) {
 	t.Parallel()
-	m := NewManager("dummy.json")
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "replace.json")
+	m := NewManager(historyFile)
 
 	// Setup: U1, M1, U2, M2
-	_ = m.AddEntry(genai.RoleUser, "U1")
-	_ = m.AddEntry(genai.RoleModel, "M1")
-	_ = m.AddEntry(genai.RoleUser, "U2")
-	_ = m.AddEntry(genai.RoleModel, "M2")
+	_ = m.AddEntry("user", "U1")
+	_ = m.AddEntry("model", "M1")
+	_ = m.AddEntry("user", "U2")
+	_ = m.AddEntry("model", "M2")
 
 	// Scenario 1: Replace M1 with NewM1 (valid)
 	newContents := []*types.Content{
-		{Role: genai.RoleModel, Parts: []*types.Part{{Text: "NewM1"}}},
+		{Role: "model", Parts: []*types.Part{{Text: "NewM1"}}},
 	}
 	if err := m.ReplaceRange(1, 2, newContents); err != nil {
 		t.Errorf("ReplaceRange valid failed: %v", err)
@@ -188,11 +193,8 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	}
 
 	// Scenario 3: Role Violation (Replace M1 with U_New)
-	// Current state: U1, NewM1, U2, M2
-	// Try replace NewM1 (idx 1) with U_New
-	// Result would be: U1, U_New, U2, M2 -> Violation at idx 1 (U1, U_New)
 	badContents := []*types.Content{
-		{Role: genai.RoleUser, Parts: []*types.Part{{Text: "U_New"}}},
+		{Role: "user", Parts: []*types.Part{{Text: "U_New"}}},
 	}
 	if err := m.ReplaceRange(1, 2, badContents); err == nil {
 		t.Error("ReplaceRange expected error for role violation")

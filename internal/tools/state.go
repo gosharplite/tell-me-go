@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"google.golang.org/genai"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type stateManager struct {
@@ -63,24 +63,24 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 	m.loadTasks()
 	m.initSessionInfo(configDir)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, m.getSessionInfo)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The operation to perform: 'read', 'write' (overwrite), 'append', or 'clear'.",
 					Enum:        []string{"read", "write", "append", "clear"},
 				},
 				"content": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The text content to write or append. Required for 'write' and 'append' actions.",
 				},
 			},
@@ -88,23 +88,23 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.manageScratchpad)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The operation to perform: 'set', 'get', 'list', 'delete'.",
 					Enum:        []string{"set", "get", "list", "delete"},
 				},
 				"key": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The configuration key (e.g., 'teams_webhook_url').",
 				},
 				"value": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The value to store (required for 'set').",
 				},
 			},
@@ -112,19 +112,19 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.manageConfig)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "configure_ux_preferences",
 		Description: "Updates the persistent configuration for 'smart_suggestions'. Set to 'on' to enable context-aware follow-up command suggestions at the end of responses, or 'off' to disable them.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"feature": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The UX feature to configure.",
 					Enum:        []string{"smart_suggestions"},
 				},
 				"status": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "Whether the feature is 'on' or 'off'.",
 					Enum:        []string{"on", "off"},
 				},
@@ -133,27 +133,27 @@ func RegisterStateTools(r *Registry, sm *SecurityManager, configDir string) {
 		},
 	}, m.configureUXPreferences)
 
-	r.Register(&genai.FunctionDeclaration{
+	r.Register(&types.ToolDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"action": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The action to perform: 'add', 'update', 'list', 'delete', 'clear'.",
 					Enum:        []string{"add", "update", "list", "delete", "clear"},
 				},
 				"task_id": {
-					Type:        genai.TypeNumber,
+					Type:        "NUMBER",
 					Description: "The ID of the task to update or delete.",
 				},
 				"content": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The task description (required for 'add').",
 				},
 				"status": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The new status (e.g., 'completed', 'pending') for 'update' or filter for 'list'.",
 				},
 			},
@@ -238,7 +238,7 @@ func (m *stateManager) saveTasks() error {
 	return fsutil.AtomicWrite(m.tasksFile, data, 0644)
 }
 
-func (m *stateManager) getSessionInfo(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *stateManager) getSessionInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -247,12 +247,12 @@ func (m *stateManager) getSessionInfo(ctx context.Context, args map[string]inter
 
 	data, err := json.MarshalIndent(m.sessionInfo, "", "  ")
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
-	return string(data), nil
+	return types.ToolResult{Text: string(data)}, nil
 }
 
-func (m *stateManager) manageScratchpad(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *stateManager) manageScratchpad(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -262,36 +262,36 @@ func (m *stateManager) manageScratchpad(ctx context.Context, args map[string]int
 	switch action {
 	case "read":
 		if m.scratchpad == "" {
-			return "(Scratchpad is empty)", nil
+			return types.ToolResult{Text: "(Scratchpad is empty)"}, nil
 		}
-		return m.scratchpad, nil
+		return types.ToolResult{Text: m.scratchpad}, nil
 	case "write":
 		m.scratchpad = content
 		if err := m.saveScratchpad(); err != nil {
-			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 		}
-		return "Scratchpad updated.", nil
+		return types.ToolResult{Text: "Scratchpad updated."}, nil
 	case "append":
 		if m.scratchpad != "" {
 			m.scratchpad += "\n"
 		}
 		m.scratchpad += content
 		if err := m.saveScratchpad(); err != nil {
-			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 		}
-		return "Content appended to scratchpad.", nil
+		return types.ToolResult{Text: "Content appended to scratchpad."}, nil
 	case "clear":
 		m.scratchpad = ""
 		if err := m.saveScratchpad(); err != nil {
-			return "", fmt.Errorf("failed to save scratchpad: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 		}
-		return "Scratchpad cleared.", nil
+		return types.ToolResult{Text: "Scratchpad cleared."}, nil
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return types.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
-func (m *stateManager) manageConfig(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *stateManager) manageConfig(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -302,50 +302,50 @@ func (m *stateManager) manageConfig(ctx context.Context, args map[string]interfa
 	switch action {
 	case "set":
 		if key == "" {
-			return "", fmt.Errorf("key is required for set")
+			return types.ToolResult{}, fmt.Errorf("key is required for set")
 		}
 		m.config[key] = val
 		if err := m.saveConfig(); err != nil {
-			return "", fmt.Errorf("failed to save config: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save config: %w", err)
 		}
-		return fmt.Sprintf("Config set: %s = %s", key, val), nil
+		return types.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, val)}, nil
 	case "get":
 		if key == "" {
-			return "", fmt.Errorf("key is required for get")
+			return types.ToolResult{}, fmt.Errorf("key is required for get")
 		}
 		if v, ok := m.config[key]; ok {
-			return v, nil
+			return types.ToolResult{Text: v}, nil
 		}
-		return "", fmt.Errorf("key not found: %s", key)
+		return types.ToolResult{}, fmt.Errorf("key not found: %s", key)
 	case "delete":
 		if key == "" {
-			return "", fmt.Errorf("key is required for delete")
+			return types.ToolResult{}, fmt.Errorf("key is required for delete")
 		}
 		delete(m.config, key)
 		if err := m.saveConfig(); err != nil {
-			return "", fmt.Errorf("failed to save config: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save config: %w", err)
 		}
-		return fmt.Sprintf("Config deleted: %s", key), nil
+		return types.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil
 	case "list":
 		var sb strings.Builder
 		for k, v := range m.config {
 			sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
 		}
 		if sb.Len() == 0 {
-			return "Configuration is empty.", nil
+			return types.ToolResult{Text: "Configuration is empty."}, nil
 		}
-		return sb.String(), nil
+		return types.ToolResult{Text: sb.String()}, nil
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return types.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }
 
-func (m *stateManager) configureUXPreferences(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *stateManager) configureUXPreferences(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	feature, _ := args["feature"].(string)
 	status, _ := args["status"].(string)
 
 	if feature != "smart_suggestions" {
-		return "", fmt.Errorf("unsupported feature: %s", feature)
+		return types.ToolResult{}, fmt.Errorf("unsupported feature: %s", feature)
 	}
 
 	m.mu.Lock()
@@ -353,13 +353,13 @@ func (m *stateManager) configureUXPreferences(ctx context.Context, args map[stri
 
 	m.config[feature] = status
 	if err := m.saveConfig(); err != nil {
-		return "", fmt.Errorf("failed to save preference: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to save preference: %w", err)
 	}
 
-	return fmt.Sprintf("UX Preference updated: %s = %s", feature, status), nil
+	return types.ToolResult{Text: fmt.Sprintf("UX Preference updated: %s = %s", feature, status)}, nil
 }
 
-func (m *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (string, error) {
+func (m *stateManager) manageTasks(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -375,7 +375,7 @@ func (m *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 	switch action {
 	case "add":
 		if content == "" {
-			return "", fmt.Errorf("content is required for add")
+			return types.ToolResult{}, fmt.Errorf("content is required for add")
 		}
 		t := Task{
 			ID:        m.taskNextID,
@@ -386,17 +386,17 @@ func (m *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 		m.tasks[m.taskNextID] = t
 		m.taskNextID++
 		if err := m.saveTasks(); err != nil {
-			return "", fmt.Errorf("failed to save tasks: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 		}
-		return fmt.Sprintf("Task added with ID %.0f", t.ID), nil
+		return types.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", t.ID)}, nil
 
 	case "update":
 		if taskID == -1 {
-			return "", fmt.Errorf("task_id is required for update")
+			return types.ToolResult{}, fmt.Errorf("task_id is required for update")
 		}
 		t, ok := m.tasks[taskID]
 		if !ok {
-			return "", fmt.Errorf("task not found: %.0f", taskID)
+			return types.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 		}
 		if content != "" {
 			t.Content = content
@@ -406,22 +406,22 @@ func (m *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 		}
 		m.tasks[taskID] = t
 		if err := m.saveTasks(); err != nil {
-			return "", fmt.Errorf("failed to save tasks: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 		}
-		return fmt.Sprintf("Task %.0f updated", taskID), nil
+		return types.ToolResult{Text: fmt.Sprintf("Task %.0f updated", taskID)}, nil
 
 	case "delete":
 		if taskID == -1 {
-			return "", fmt.Errorf("task_id is required for delete")
+			return types.ToolResult{}, fmt.Errorf("task_id is required for delete")
 		}
 		if _, ok := m.tasks[taskID]; !ok {
-			return "", fmt.Errorf("task not found: %.0f", taskID)
+			return types.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 		}
 		delete(m.tasks, taskID)
 		if err := m.saveTasks(); err != nil {
-			return "", fmt.Errorf("failed to save tasks: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 		}
-		return fmt.Sprintf("Task %.0f deleted", taskID), nil
+		return types.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", taskID)}, nil
 
 	case "list":
 		var list []Task
@@ -436,7 +436,7 @@ func (m *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 		})
 
 		if len(list) == 0 {
-			return "No tasks found.", nil
+			return types.ToolResult{Text: "No tasks found."}, nil
 		}
 
 		var sb strings.Builder
@@ -448,16 +448,16 @@ func (m *stateManager) manageTasks(ctx context.Context, args map[string]interfac
 			}
 			sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", t.ID, icon, t.Content, t.Status))
 		}
-		return sb.String(), nil
+		return types.ToolResult{Text: sb.String()}, nil
 
 	case "clear":
 		m.tasks = make(map[float64]Task)
 		if err := m.saveTasks(); err != nil {
-			return "", fmt.Errorf("failed to save tasks: %w", err)
+			return types.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 		}
-		return "All tasks cleared.", nil
+		return types.ToolResult{Text: "All tasks cleared."}, nil
 
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return types.ToolResult{}, fmt.Errorf("unknown action: %s", action)
 	}
 }

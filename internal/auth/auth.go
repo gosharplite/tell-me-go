@@ -27,7 +27,15 @@ type Request struct {
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
 type VertexAuth struct {
-	Token string
+	Token        string
+	tokenCmdFunc func() ([]byte, error)
+}
+
+func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
+	if a.tokenCmdFunc != nil {
+		return a.tokenCmdFunc()
+	}
+	return exec.Command("gcloud", "auth", "print-access-token").Output()
 }
 
 func (a *VertexAuth) getCachePath() string {
@@ -64,7 +72,7 @@ func (a *VertexAuth) GetToken() (string, error) {
 	}
 
 	// 2. Fallback to gcloud
-	out, err := exec.Command("gcloud", "auth", "print-access-token").Output()
+	out, err := a.getTokenFromGcloud()
 	if err != nil {
 		return "", fmt.Errorf("failed to get gcloud token: %w", err)
 	}

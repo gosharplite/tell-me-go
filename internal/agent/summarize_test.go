@@ -41,7 +41,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", nil, "", false)
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	args := map[string]interface{}{
 		"turns": float64(3),
 	}
-	resp, err := a.summarizeHistory(context.Background(), args)
+	resp, err := a.contextManager.SummarizeHistoryTool(context.Background(), args)
 	if err != nil {
 		t.Fatalf("summarizeHistory failed: %v", err)
 	}

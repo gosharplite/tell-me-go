@@ -8,16 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
-	"google.golang.org/genai"
 )
 
 var (
@@ -39,64 +35,89 @@ type Chatter interface {
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
 	SetMainConfigPath(path string)
+	SetRenderer(renderer UIRenderer)
+}
+
+// UIRenderer defines the interface for UI feedback.
+type UIRenderer interface {
+	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
+	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
+	LogTurnStatus(status TurnStatus)
+	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+	LogToolResult(name string, result types.ToolResult, showTools bool)
+}
+
+// TurnStatus contains the data needed for rendering turn status.
+type TurnStatus struct {
+	Timestamp        time.Time
+	CurrentTurns     int
+	MaxHistoryTurns  int
+	Tokens           int
+	MaxHistoryTokens int
+	Metrics          *types.Metrics
+	IsPostCall       bool
+	StartTime        time.Time
 }
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client               *api.Client
+	client               types.LLMClient
 	history              *history.Manager
 	registry             *tools.Registry
 	sm                   *tools.SecurityManager
+	renderer             UIRenderer
+	configWatcher        *ConfigWatcher
+	contextManager       *ContextManager
 	logFile              string
-	maxToolTurns         int
-	maxHistoryTokens     int
-	maxHistoryTurns      int
-	prunedTurns          int
 	maxConcurrentTools   int
 	toolTimeout          time.Duration
 	showThoughts         bool
 	showTools            bool
 	rawOutput            bool
+	smartSuggestions     bool
 	persistentConfigPath string
 	mainConfigPath       string
 	startTime            time.Time
 }
 
 // New creates a new Agent.
-func New(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
+func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
 	a := &Agent{
 		client:             client,
 		history:            hManager,
 		registry:           registry,
 		sm:                 sm,
-		maxToolTurns:       10,
-		maxHistoryTokens:   120000,
+		renderer:           NewStdUIRenderer(sm),
+		configWatcher:      NewConfigWatcher(120000, 10, 20),
+		contextManager:     NewContextManager(client, hManager, registry, sm),
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		showThoughts:       true,
 		showTools:          true,
 		rawOutput:          false,
+		smartSuggestions:   false,
 		startTime:          time.Now(),
 	}
 	a.registerInternalTools()
+	a.refreshLimits() // Initial load
 	return a
 }
 
 func (a *Agent) registerInternalTools() {
-	a.registry.Register(&genai.FunctionDeclaration{
+	a.registry.Register(&types.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"turns": {
-					Type:        genai.TypeNumber,
+					Type:        "NUMBER",
 					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
 				},
 			},
 			Required: []string{"turns"},
 		},
-	}, a.summarizeHistory)
+	}, a.contextManager.SummarizeHistoryTool)
 }
 
 // SetUIOptions sets the UI visibility options.
@@ -112,15 +133,8 @@ func (a *Agent) SetRawOutput(raw bool) {
 
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
-	if toolTurns > 0 {
-		a.maxToolTurns = toolTurns
-	}
-	if historyTokens > 0 {
-		a.maxHistoryTokens = historyTokens
-	}
-	if historyTurns > 0 {
-		a.maxHistoryTurns = historyTurns
-	}
+	a.contextManager.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 }
 
 // SetConcurrency sets the parallel execution limits for the agent.
@@ -140,85 +154,39 @@ func (a *Agent) SetLogFile(path string) {
 
 // SetPrunedTurns informs the agent how many turns were removed during startup.
 func (a *Agent) SetPrunedTurns(n int) {
-	a.prunedTurns = n
+	a.contextManager.SetPrunedTurns(n)
 }
 
 // SetPersistentConfigPath sets the path to the persistent session configuration.
 func (a *Agent) SetPersistentConfigPath(path string) {
 	a.persistentConfigPath = path
+	a.configWatcher.SetPaths(a.mainConfigPath, path)
 }
 
 // SetMainConfigPath sets the path to the main YAML configuration file.
 func (a *Agent) SetMainConfigPath(path string) {
 	a.mainConfigPath = path
+	a.configWatcher.SetPaths(path, a.persistentConfigPath)
+}
+
+// SetRenderer sets a custom UI renderer.
+func (a *Agent) SetRenderer(renderer UIRenderer) {
+	if renderer != nil {
+		a.renderer = renderer
+	}
 }
 
 func (a *Agent) refreshLimits() {
-	// 1. Reload from main YAML config if available
-	if a.mainConfigPath != "" {
-		if cfg, err := config.Load(a.mainConfigPath); err == nil {
-			if cfg.MaxHistoryTokens > 0 {
-				a.maxHistoryTokens = cfg.MaxHistoryTokens
-			}
-			if cfg.MaxToolTurns > 0 {
-				a.maxToolTurns = cfg.MaxToolTurns
-			}
-			if cfg.MaxHistoryTurns > 0 {
-				a.maxHistoryTurns = cfg.MaxHistoryTurns
-			}
-		}
-	}
+	a.configWatcher.Refresh()
+	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
+	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
 
-	// 2. Override with persistent session config if available
-	if a.persistentConfigPath == "" {
-		return
-	}
-	data, err := os.ReadFile(a.persistentConfigPath)
-	if err != nil {
-		return
-	}
-
-	// Use map parsing directly for flexibility (handles string/int types)
-	// and to catch JSON errors that might otherwise be silent.
-	var pCfg map[string]interface{}
-	if err := json.Unmarshal(data, &pCfg); err != nil {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [Warning] Failed to parse session config: %v\033[0m\n",
-				time.Now().Format("15:04:05"), err)
-		}()
-		return
-	}
-
-	// Allow overriding core limits dynamically from map (handles both string and int if present)
-	if val, ok := pCfg["MAX_HISTORY_TOKENS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxHistoryTokens = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxHistoryTokens = limit
-			}
-		}
-	}
-	if val, ok := pCfg["MAX_TOOL_TURNS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxToolTurns = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxToolTurns = limit
-			}
-		}
-	}
-	if val, ok := pCfg["MAX_HISTORY_TURNS"]; ok {
-		switch v := val.(type) {
-		case float64:
-			a.maxHistoryTurns = int(v)
-		case string:
-			if limit, err := strconv.Atoi(v); err == nil && limit > 0 {
-				a.maxHistoryTurns = limit
+	// Refresh smart suggestions preference
+	if a.persistentConfigPath != "" {
+		if data, err := os.ReadFile(a.persistentConfigPath); err == nil {
+			var config map[string]string
+			if err := json.Unmarshal(data, &config); err == nil {
+				a.smartSuggestions = (config["smart_suggestions"] == "on")
 			}
 		}
 	}
@@ -226,62 +194,86 @@ func (a *Agent) refreshLimits() {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
-	a.history.AddContent(&types.Content{
+	if err := a.history.AddContent(&types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
-	})
-	a.saveHistory() // Persist initial user prompt immediately
+	}); err != nil {
+		return fmt.Errorf("failed to initialize session history: %w", err)
+	}
 
-	for turn := 0; turn <= a.maxToolTurns; turn++ {
+	_, maxTurns, _ := a.contextManager.GetLimits()
+
+	for turn := 0; turn <= maxTurns; turn++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		a.refreshLimits()
-		contents := a.history.GetContents()
 
-		// 0. Enforce history turn limit
-		if a.maxHistoryTurns > 0 && len(contents) > a.maxHistoryTurns*2 {
-			pruned := a.history.Prune(a.maxHistoryTurns)
-			if pruned > 0 {
-				a.prunedTurns += pruned
-				contents = a.history.GetContents()
-			}
-		}
-
-		tokens := a.estimatePayloadTokens(contents)
-
-		// 1. Safety Check: MAX_HISTORY_TOKENS
-		// Trigger auto-summarization at 90% of the limit to provide a safety buffer.
-		if tokens > int(float64(a.maxHistoryTokens)*0.9) {
-			// Try auto-summarization before giving up
-			if err := a.autoSummarize(ctx); err == nil {
-				contents = a.history.GetContents()
-				tokens = a.estimatePayloadTokens(contents)
-			}
-
-			// After summarization, if we are still over the hard limit, abort.
-			if tokens > a.maxHistoryTokens {
-				a.handleLimitExceeded(tokens)
-				return ErrContextLimitExceeded
-			}
-		}
-
-		// Calculate current turns
-		currentTurns := len(contents) / 2
-
-		// 2. Prepare API Contents with warnings
-		apiContents := a.prepareAPIContents(contents, turn, tokens, currentTurns)
-		a.logTurnStatus(currentTurns, tokens, nil, false)
-
-		// 3. Send Chat Request
-		respContent, metrics, err := a.sendChat(ctx, apiContents)
+		// 1. Prepare API Contents (includes pruning, summarization, and safety warnings)
+		apiContents, tokens, currentTurns, err := a.contextManager.PrepareContents(ctx, turn)
 		if err != nil {
 			return err
 		}
 
-		// 4. Render Output
-		a.renderResponse(respContent)
-		a.history.AddContent(respContent)
-		a.saveHistory() // SAVE 1: Capture model's response/tool calls
+		maxTokens, _, maxHistTurns := a.contextManager.GetLimits()
 
-		// 5. Handle Tool Execution
+		a.renderer.LogTurnStatus(TurnStatus{
+			Timestamp:        time.Now(),
+			CurrentTurns:     currentTurns,
+			MaxHistoryTurns:  maxHistTurns,
+			Tokens:           tokens,
+			MaxHistoryTokens: maxTokens,
+			IsPostCall:       false,
+		})
+
+		// 2. Send Chat Request (Streaming or Non-streaming)
+		var metrics *types.Metrics
+		var respContent *types.Content
+
+		if os.Getenv("TELL_ME_NO_STREAM") == "true" {
+			respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver())
+			if err == nil {
+				a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
+			}
+		} else {
+			streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+			metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+				streamCh <- c
+			})
+			respContent = finalize()
+
+			// Handle 401 Unauthorized for streaming
+			if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
+				}()
+				if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
+					// Finalize the failed stream before retrying to prevent goroutine leak
+					_ = finalize()
+					// Retry streaming
+					streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+					metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
+						streamCh <- c
+					})
+					respContent = finalize()
+				}
+			}
+		}
+
+		if err != nil {
+			return err
+		}
+
+		// 3. Persist Response
+		if err := a.history.AddContent(respContent); err != nil {
+			a.reportHistoryError(err)
+		}
+
+		// 4. Handle Tool Execution
 		toolStart := time.Now()
 		err = a.handleToolExecution(ctx, respContent, turn)
 		if metrics != nil {
@@ -290,97 +282,73 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		if err != nil {
 			return err
 		}
-		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
 		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
 		a.refreshLimits()
+		maxTokens, _, maxHistTurns = a.contextManager.GetLimits()
 
-		a.logTurnStatus(currentTurns, tokens, metrics, true)
+		a.renderer.LogTurnStatus(TurnStatus{
+			Timestamp:        time.Now(),
+			CurrentTurns:     currentTurns,
+			MaxHistoryTurns:  maxHistTurns,
+			Tokens:           tokens,
+			MaxHistoryTokens: maxTokens,
+			Metrics:          metrics,
+			IsPostCall:       true,
+			StartTime:        a.startTime,
+		})
 		if metrics != nil {
-			a.logUsage(metrics)
+			a.renderer.LogUsage(metrics, a.logFile, a.startTime)
 		}
 
 		if !a.hasToolCalls(respContent) {
+			a.showSmartSuggestions(ctx)
 			break
 		}
 	}
-
 	return nil
 }
 
-func (a *Agent) saveHistory() {
-	if err := a.history.Save(); err != nil {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
-				time.Now().Format("15:04:05"), err)
-		}()
+func (a *Agent) showSmartSuggestions(ctx context.Context) {
+	// 1. Check if enabled in config (cached)
+	if !a.smartSuggestions {
+		return
 	}
+
+	// 2. Generate suggestions
+	suggestionPrompt := &types.Content{
+		Role:  "user",
+		Parts: []*types.Part{{Text: "Based on our conversation, suggest 2-3 short, actionable follow-up commands I might want to run next (e.g., 'run tests', 'list files', 'check git status'). Respond ONLY with a bulleted list of commands."}},
+	}
+
+	history := a.history.GetContents()
+	// Use only last few turns for suggestions to save tokens and time
+	if len(history) > 6 {
+		history = history[len(history)-6:]
+	}
+	input := append(history, suggestionPrompt)
+
+	// Use SendChat (non-streaming) for suggestions
+	resp, _, err := a.client.SendChat(ctx, input, nil, nil)
+	if err != nil || len(resp.Parts) == 0 {
+		return
+	}
+
+	suggestions := resp.Parts[0].Text
+	if suggestions == "" {
+		return
+	}
+
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
+	fmt.Fprintf(os.Stderr, "\n\033[0;90mSuggested follow-ups:\n%s\033[0m\n", strings.TrimSpace(suggestions))
 }
 
-func (a *Agent) prepareAPIContents(contents []*types.Content, turn, tokens, currentTurns int) []*types.Content {
-	apiContents := make([]*types.Content, len(contents))
-	copy(apiContents, contents)
-
-	warning := a.getTurnWarning(turn)
-	if tokenWarning := a.getTokenWarning(tokens); tokenWarning != "" {
-		if warning != "" {
-			warning += "\n" + tokenWarning
-		} else {
-			warning = tokenWarning
-		}
-	}
-	if turnWarning := a.getHistoryTurnWarning(currentTurns); turnWarning != "" {
-		if warning != "" {
-			warning += "\n" + turnWarning
-		} else {
-			warning = turnWarning
-		}
-	}
-
-	if warning != "" && len(apiContents) > 0 {
-		lastIdx := len(apiContents) - 1
-		orig := apiContents[lastIdx]
-		// Clone only the content that receives the warning
-		cloned := &types.Content{
-			Role:  orig.Role,
-			Parts: make([]*types.Part, len(orig.Parts)),
-		}
-		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &types.Part{
-			Text: "\n\n" + warning,
-		})
-		apiContents[lastIdx] = cloned
-
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;33m[%s] [System] Safety warning injected into volatile model context.\033[0m\n",
-				time.Now().Format("15:04:05"))
-		}()
-	}
-	return apiContents
-}
-
-func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
-	toolsSDK := a.registry.ToToolSDK()
-	respContent, metrics, err := a.client.SendChat(ctx, apiContents, toolsSDK)
-
-	// Handle 401 Unauthorized
-	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[System] Token expired. Refreshing auth and retrying...\033[0m\n")
-		}()
-		if refreshErr := a.client.RefreshAuth(); refreshErr != nil {
-			return nil, nil, fmt.Errorf("failed to refresh auth: %w (original error: %v)", refreshErr, err)
-		}
-		// Retry
-		respContent, metrics, err = a.client.SendChat(ctx, apiContents, a.registry.ToToolSDK())
-	}
-	return respContent, metrics, err
+func (a *Agent) reportHistoryError(err error) {
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
+	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history entry: %v\033[0m\n",
+		time.Now().Format("15:04:05"), err)
 }
 
 func (a *Agent) hasToolCalls(content *types.Content) bool {

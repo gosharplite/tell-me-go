@@ -13,7 +13,7 @@ To define strict safety protocols when the agent is tasked with modifying its ow
 
 ### Prerequisites
 - Go toolchain 1.24+.
-- `SOP/standards/git_workflow.md` (for verification chain).
+- [Git Workflow](../standards/git_workflow.md) (for verification chain).
 
 ---
 

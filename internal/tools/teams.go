@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"google.golang.org/genai"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type teamsManager struct {
@@ -21,18 +21,18 @@ type teamsManager struct {
 // RegisterTeamsTools adds Teams-related tools to the registry.
 func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
 	m := &teamsManager{sm: sm}
-	r.RegisterWithOptions(&genai.FunctionDeclaration{
+	r.RegisterWithOptions(&types.ToolDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
-		Parameters: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
+		Parameters: &types.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*types.Schema{
 				"webhook_url": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The Power Automate workflow URL (must start with https://).",
 				},
 				"message": {
-					Type:        genai.TypeString,
+					Type:        "STRING",
 					Description: "The message to send to the channel.",
 				},
 			},
@@ -41,21 +41,29 @@ func RegisterTeamsTools(r *Registry, sm *SecurityManager) {
 	}, m.sendTeamsMessage, ToolOptions{Serial: true})
 }
 
-func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (string, error) {
-	webhookURL, _ := args["webhook_url"].(string)
-	message, _ := args["message"].(string)
+func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var params struct {
+		WebhookURL string `json:"webhook_url"`
+		Message    string `json:"message"`
+	}
+	if err := UnmarshalArgs(args, &params); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	webhookURL := params.WebhookURL
+	message := params.Message
 
 	if webhookURL == "" || message == "" {
-		return "", fmt.Errorf("webhook_url and message are required")
+		return types.ToolResult{}, fmt.Errorf("webhook_url and message are required")
 	}
 
 	// Safety confirmation (unless bypassed)
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, message)
 	if err != nil {
-		return "", err
+		return types.ToolResult{}, err
 	}
 	if !approved {
-		return "Action cancelled by user.", nil
+		return types.ToolResult{Text: "Action cancelled by user."}, nil
 	}
 
 	payload := map[string]interface{}{
@@ -72,7 +80,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -80,13 +88,13 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send message: %w", err)
+		return types.ToolResult{}, fmt.Errorf("failed to send message: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return fmt.Sprintf("Successfully sent message to Teams. Status: %s", resp.Status), nil
+		return types.ToolResult{Text: fmt.Sprintf("Successfully sent message to Teams. Status: %s", resp.Status)}, nil
 	}
 
-	return fmt.Sprintf("Failed to send message to Teams. Status: %s", resp.Status), nil
+	return types.ToolResult{Text: fmt.Sprintf("Failed to send message to Teams. Status: %s", resp.Status)}, nil
 }

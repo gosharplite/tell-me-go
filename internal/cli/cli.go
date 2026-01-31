@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -20,6 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // App represents the tell-me-go application.
@@ -29,7 +31,7 @@ type App struct {
 	Stdout        io.Writer
 	Stderr        io.Writer
 	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error)
+	ClientFactory func(cfg *config.Config, pricing types.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
 	sm      *tools.SecurityManager
@@ -57,9 +59,10 @@ func New(version string) *App {
 		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
 			return agent.New(client, hManager, registry, sm)
 		},
-		ClientFactory: func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
-			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, pricing.ThinkingBudgets, cfg.Person, cfg.UseSearch)
+			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
+			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
 		},
 	}
 }
@@ -139,11 +142,19 @@ func (a *App) Run(args []string) error {
 	a.sm.RegisterSafePath(filepath.Join(homeDir, "output"))
 	a.sm.RegisterReadOnlyPath(opts.configPath)
 
+	// Prepare pricing overrides
+	pricingOverrides := make(map[string]types.ModelPricing)
+	for k, v := range cfg.Models {
+		if v.Pricing.Comp > 0 {
+			pricingOverrides[k] = v.Pricing
+		}
+	}
+
 	if opts.newSession {
 		timestamp := time.Now().Format("20060102_150405")
 		// Record cost with a unique ID including the timestamp before archiving
 		uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(logPath))
-		_ = tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, uniqueID)
+		_ = tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
 		a.archiveSessionFilesWithTimestamp(homeDir, timestamp, historyPath, logPath, commandsLogPath)
 		a.cleanupOldBackups(homeDir, cfg.Mode)
 	}
@@ -196,7 +207,7 @@ func (a *App) Run(args []string) error {
 	tools.RegisterDevTools(registry, a.sm)
 	tools.RegisterTeamsTools(registry, a.sm)
 	tools.RegisterStateTools(registry, a.sm, modeDir)
-	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode)
+	tools.RegisterMetricsTools(registry, a.sm, logPath, cfg.Model, cfg.Mode, pricingOverrides)
 	tools.RegisterMediaTools(registry, a.sm, client)
 
 	// 6. Execute Agent
@@ -206,7 +217,25 @@ func (a *App) Run(args []string) error {
 	chatAgent.SetLogFile(logPath)
 	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
 	chatAgent.SetRawOutput(opts.rawOutput)
-	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.MaxHistoryTokens, cfg.MaxHistoryTurns)
+
+	// Resolve model-specific limits
+	maxTokens := cfg.MaxHistoryTokens
+	if mCfg, ok := cfg.Models[cfg.Model]; ok && mCfg.ContextWindow > 0 {
+		if maxTokens > mCfg.ContextWindow {
+			maxTokens = mCfg.ContextWindow
+		}
+	} else {
+		for k, v := range cfg.Models {
+			if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
+				if maxTokens > v.ContextWindow {
+					maxTokens = v.ContextWindow
+				}
+				break
+			}
+		}
+	}
+
+	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 
@@ -220,7 +249,7 @@ func (a *App) Run(args []string) error {
 	}
 
 	// 8. Record session cost
-	if err := tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, ""); err != nil {
+	if err := tools.RecordSessionCost(a.sm, logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

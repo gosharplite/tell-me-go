@@ -20,7 +20,7 @@ This SOP defines the standard structure and process for documenting procedures w
 
 #### File Criticality Levels
 To ensure stability, files are categorized by risk:
-- **Core Entry Points** (`cmd/**/*.go`): **HIGH RISK**. These are the orchestrators and CLI entry points. Modifications require full build verification and syntax validation as per `SOP/lifecycle/self_update_safety.md`.
+- **Core Entry Points** (`cmd/**/*.go`): **HIGH RISK**. These are the orchestrators and CLI entry points. Modifications require full build verification and syntax validation as per [Self-Update Safety](./self_update_safety.md).
 - **Internal/Package Logic** (`internal/**/*.go`, `pkg/**/*.go`): **MEDIUM RISK**. These contain the bulk of the system logic (API handling, history management, metrics). Unit tests must pass before any changes are committed.
 - **Configurations/Assets** (`yaml/*.yaml`, `lib/tools.json`): **LOW RISK**. Ensure valid JSON/YAML syntax.
 
@@ -51,10 +51,10 @@ Every SOP should follow a consistent Markdown structure:
 #### Step 4: Verification
 - Follow your own draft as if you were a new user.
 - Fix any ambiguities or missing steps discovered during the walkthrough.
-- **CI/Hook Integration**: Ensure the new SOP's verification steps are aligned with the pre-commit requirements defined in `SOP/standards/git_workflow.md`.
+- **CI/Hook Integration**: Ensure the new SOP's verification steps are aligned with the pre-commit requirements defined in [Git Workflow](../standards/git_workflow.md).
 
 ### 3. Maintenance & Revision
-- **Mandatory State Management**: For any SOP involving 3+ steps or destructive actions, the instructions **MUST** include a "Task Initialization" step as per `SOP/standards/cli_standards.md`:
+- **Mandatory State Management**: For any SOP involving 3+ steps or destructive actions, the instructions **MUST** include a "Task Initialization" step as per [CLI Standards](../standards/cli_standards.md):
     - **Anchor Tasking**: The first task MUST be named "SOP Compliance: [filename.md]".
     - **Atomic Turns**: Technical milestones and state updates (Tasks/Scratchpad) must occur in separate turns.
     - **Verification**: The agent must read back the state after updates.
@@ -66,7 +66,7 @@ Every SOP should follow a consistent Markdown structure:
 
 ### 4. Implementation Checklist
 - [ ] Is the title clear?
-- [ ] Does this impact **Core Entry Points**? (If yes, follow `SOP/lifecycle/self_update_safety.md`)
+- [ ] Does this impact **Core Entry Points**? (If yes, follow [Self-Update Safety](./self_update_safety.md))
 - [ ] Are all Go-specific dependencies listed?
 - [ ] Is the logic broken down into digestible numbered steps?
 - [ ] Are there Go code examples or command templates?
@@ -74,6 +74,6 @@ Every SOP should follow a consistent Markdown structure:
 - [ ] Has the quality been verified? (Run `go test ./...` and `go mod tidy` before committing)
 - [ ] Are there logic gaps? If no unit test exists for a new package, add it to the technical debt list in the scratchpad.
 - [ ] Does this impact **Testing Standards**?
-- [ ] Is the commit message structured according to `SOP/standards/git_workflow.md`?
+- [ ] Is the commit message structured according to [Git Workflow](../standards/git_workflow.md)?
 - [ ] Has the file been committed and pushed to the repository?
 

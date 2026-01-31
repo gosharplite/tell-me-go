@@ -22,14 +22,14 @@ func TestIsSafeCommand(t *testing.T) {
 		{"cat \"/etc/passwd\"", false},
 		{"grep pattern file.txt", true},
 		{"grep pattern /etc/passwd", false},
-		{"go test ./...", true},
-		{"go build .", true},
-		{"go mod tidy", true},
-		{"go run main.go", true},
-		{"go get github.com/foo/bar", true},
-		{"go install github.com/foo/bar", true},
+		{"go test ./...", false},
+		{"go build .", false},
+		{"go mod tidy", false},
+		{"go run main.go", false},
+		{"go get github.com/foo/bar", false},
+		{"go install github.com/foo/bar", false},
 		{"go vet ./...", true},
-		{"go fmt ./...", true},
+		{"go fmt ./...", false},
 		{"go clean", false}, // Not in whitelist
 	}
 
