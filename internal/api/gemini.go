@@ -164,13 +164,6 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 }
 
 func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
-	// Defensive check: Ensure all content objects have at least one part.
-	for _, h := range history {
-		if len(h.Parts) == 0 {
-			h.Parts = []*types.Part{{Text: "[empty]"}}
-		}
-	}
-
 	// Add Search tool
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
@@ -210,6 +203,10 @@ func (c *Client) prepareRequest(history []*types.Content, tools []*types.ToolDec
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
 		sdkHistory[i] = h.ToSDK(resolver)
+		// Defensive check: Ensure all content objects have at least one part for the SDK.
+		if len(sdkHistory[i].Parts) == 0 {
+			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
+		}
 	}
 
 	return config, sdkHistory

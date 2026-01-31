@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 )
 
 // Authenticator defines the interface for injecting credentials into API requests.
@@ -49,7 +51,9 @@ func (a *VertexAuth) getCachePath() string {
 			uidStr = user
 		}
 	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("tell_me_go_token_vertex_%s.txt", uidStr))
+	// Use a user-private subdirectory to prevent predictable filename attacks in /tmp
+	dir := filepath.Join(os.TempDir(), "tell-me-go-auth-"+uidStr)
+	return filepath.Join(dir, "token.txt")
 }
 
 // GetToken retrieves the OAuth2 access token with local caching.
@@ -80,7 +84,10 @@ func (a *VertexAuth) GetToken() (string, error) {
 	token := strings.TrimSpace(string(out))
 
 	// 3. Save to cache
-	_ = os.WriteFile(cacheFile, []byte(token), 0600)
+	cacheDir := filepath.Dir(cacheFile)
+	if err := os.MkdirAll(cacheDir, 0700); err == nil {
+		_ = fsutil.AtomicWrite(cacheFile, []byte(token), 0600)
+	}
 
 	a.Token = token
 	return a.Token, nil
