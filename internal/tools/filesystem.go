@@ -260,7 +260,7 @@ func (m *fileSystemManager) listFiles(ctx context.Context, args map[string]inter
 		return types.ToolResult{}, err
 	}
 
-	entries, err := m.fs.ReadDir(resolvedPath)
+	entries, err := m.fs.ReadDir(ctx, resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to list directory: %w", err)
 	}
@@ -303,18 +303,18 @@ func (m *fileSystemManager) getTree(ctx context.Context, args map[string]interfa
 	}
 
 	var sb strings.Builder
-	err = buildTree(m.fs, resolvedPath, "", 0, maxDepth, &sb)
+	err = buildTree(ctx, m.fs, resolvedPath, "", 0, maxDepth, &sb)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 	return types.ToolResult{Text: sb.String()}, nil
 }
 
-func buildTree(fs fsutil.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
+func buildTree(ctx context.Context, fs fsutil.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
 	if depth > maxDepth {
 		return nil
 	}
-	entries, err := fs.ReadDir(path)
+	entries, err := fs.ReadDir(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -336,7 +336,7 @@ func buildTree(fs fsutil.FileSystem, path, indent string, depth, maxDepth int, s
 			if entry.Name() == ".git" {
 				continue
 			}
-			buildTree(fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb)
+			buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb)
 		}
 	}
 	return nil
@@ -360,7 +360,7 @@ func (m *fileSystemManager) readFile(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, err
 	}
 
-	content, err := m.fs.ReadFile(resolvedPath)
+	content, err := m.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -402,7 +402,7 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 	}
 
 	var results []string
-	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -420,7 +420,7 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 			return nil
 		}
 
-		file, err := m.fs.Open(filePath)
+		file, err := m.fs.Open(ctx, filePath)
 		if err != nil {
 			return nil
 		}
@@ -541,11 +541,11 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(resolvedPath)
-	if err := m.fs.MkdirAll(dir, 0755); err != nil {
+	if err := m.fs.MkdirAll(ctx, dir, 0755); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	err = m.fs.WriteFile(resolvedPath, []byte(content), 0644)
+	err = m.fs.WriteFile(ctx, resolvedPath, []byte(content), 0644)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to write file: %w", err)
 	}
@@ -584,7 +584,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 
 	m.bm.Snapshot(resolvedPath, "REPLACE")
 
-	contentBytes, err := m.fs.ReadFile(resolvedPath)
+	contentBytes, err := m.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
@@ -599,7 +599,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	}
 
 	newContent := strings.Replace(content, oldText, newText, 1)
-	err = m.fs.WriteFile(resolvedPath, []byte(newContent), 0644)
+	err = m.fs.WriteFile(ctx, resolvedPath, []byte(newContent), 0644)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -632,7 +632,7 @@ func (m *fileSystemManager) findFile(ctx context.Context, args map[string]interf
 	}
 
 	var results []string
-	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -720,7 +720,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	var results []string
 	results = append(results, astResults...)
 
-	err = m.fs.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
+	err = m.fs.Walk(ctx, resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -744,7 +744,7 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 			return nil
 		}
 
-		file, err := m.fs.Open(filePath)
+		file, err := m.fs.Open(ctx, filePath)
 		if err != nil {
 			return nil
 		}
@@ -813,7 +813,7 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 		// Fallback to heuristic if AST fails
 	}
 
-	file, err := m.fs.Open(resolvedPath)
+	file, err := m.fs.Open(ctx, resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -886,7 +886,7 @@ func (m *fileSystemManager) undoFileChange(ctx context.Context, args map[string]
 	if n <= 0 {
 		n = 1
 	}
-	res, err := m.bm.Undo(n)
+	res, err := m.bm.Undo(ctx, n)
 	return types.ToolResult{Text: res}, err
 }
 
@@ -919,7 +919,7 @@ func (m *fileSystemManager) appendText(ctx context.Context, args map[string]inte
 	m.bm.Snapshot(resolvedPath, "APPEND")
 
 	// Use OpenFile with O_APPEND
-	f, err := m.fs.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := m.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to open file: %w", err)
 	}

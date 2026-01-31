@@ -584,7 +584,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 	if err := format.Node(&srcBuf, fset, srcFile); err != nil {
 		return types.ToolResult{}, fmt.Errorf("failed to format source file: %w", err)
 	}
-	if err := fsutil.AtomicWrite(resolvedSrc, srcBuf.Bytes(), 0644); err != nil {
+	if err := fsutil.AtomicWrite(ctx, resolvedSrc, srcBuf.Bytes(), 0644); err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -600,7 +600,7 @@ func (m *intelligenceManager) moveDefinition(ctx context.Context, args map[strin
 		formatted = opt
 	}
 
-	if err := fsutil.AtomicWrite(resolvedDst, formatted, 0644); err != nil {
+	if err := fsutil.AtomicWrite(ctx, resolvedDst, formatted, 0644); err != nil {
 		return types.ToolResult{}, err
 	}
 
@@ -683,7 +683,7 @@ func (m *intelligenceManager) renameSymbol(ctx context.Context, args map[string]
 			if err := format.Node(&buf, fset, f); err != nil {
 				return fmt.Errorf("failed to format %s: %w", filePath, err)
 			}
-			if err := fsutil.AtomicWrite(filePath, buf.Bytes(), 0644); err != nil {
+			if err := fsutil.AtomicWrite(ctx, filePath, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 		}

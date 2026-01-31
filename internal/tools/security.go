@@ -66,7 +66,7 @@ func (sm *SecurityManager) IsBypassActive() bool {
 }
 
 // SaveBypassState writes the persistent bypass state to disk.
-func (sm *SecurityManager) SaveBypassState() {
+func (sm *SecurityManager) SaveBypassState(ctx context.Context) {
 	sm.bypassMu.RLock()
 	file := sm.bypassFile
 	active := sm.bypassConfirmations
@@ -79,7 +79,7 @@ func (sm *SecurityManager) SaveBypassState() {
 	if active {
 		val = "true"
 	}
-	_ = fsutil.AtomicWrite(file, []byte(val), 0644)
+	_ = fsutil.AtomicWrite(ctx, file, []byte(val), 0644)
 }
 
 // SetCommandsLogFile sets the path for logging executed commands.
@@ -280,7 +280,7 @@ func (sm *SecurityManager) LoadReadOnlyPaths() error {
 }
 
 // SaveSafePaths writes persistent safe paths to disk.
-func (sm *SecurityManager) SaveSafePaths() error {
+func (sm *SecurityManager) SaveSafePaths(ctx context.Context) error {
 	sm.safePathsMu.RLock()
 	file := sm.safePathsFile
 	paths := make([]string, len(sm.safePaths))
@@ -296,11 +296,11 @@ func (sm *SecurityManager) SaveSafePaths() error {
 		return fmt.Errorf("failed to marshal safe paths: %w", err)
 	}
 
-	return fsutil.AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(ctx, file, data, 0644)
 }
 
 // SaveReadOnlyPaths writes persistent read-only paths to disk.
-func (sm *SecurityManager) SaveReadOnlyPaths() error {
+func (sm *SecurityManager) SaveReadOnlyPaths(ctx context.Context) error {
 	sm.readOnlyPathsMu.RLock()
 	file := sm.readOnlyPathsFile
 	paths := make([]string, len(sm.readOnlyPaths))
@@ -316,7 +316,7 @@ func (sm *SecurityManager) SaveReadOnlyPaths() error {
 		return fmt.Errorf("failed to marshal read-only paths: %w", err)
 	}
 
-	return fsutil.AtomicWrite(file, data, 0644)
+	return fsutil.AtomicWrite(ctx, file, data, 0644)
 }
 
 // RegisterSafePath adds a directory or file to the list of allowed boundaries for tool access.

@@ -4,6 +4,7 @@
 package fsutil
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 func TestAtomicWrite(t *testing.T) {
 	tmpDir := t.TempDir()
+	ctx := context.Background()
 
 	tests := []struct {
 		name    string
@@ -65,7 +67,7 @@ func TestAtomicWrite(t *testing.T) {
 				}
 			}
 
-			err := AtomicWrite(tt.path, tt.data, tt.perm)
+			err := AtomicWrite(ctx, tt.path, tt.data, tt.perm)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("AtomicWrite() error = %v, wantErr %v", err, tt.wantErr)
 				return

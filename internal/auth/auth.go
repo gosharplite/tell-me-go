@@ -5,6 +5,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -86,7 +87,7 @@ func (a *VertexAuth) GetToken() (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = fsutil.AtomicWrite(cacheFile, []byte(token), 0600)
+		_ = fsutil.AtomicWrite(context.Background(), cacheFile, []byte(token), 0600)
 	}
 
 	a.Token = token

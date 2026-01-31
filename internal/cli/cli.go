@@ -165,7 +165,7 @@ func (a *App) Run(args []string) error {
 		return fmt.Errorf("error saving history: %v", err)
 	}
 
-	if err := tools.RecordSessionCost(a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := tools.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

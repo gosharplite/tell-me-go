@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +15,7 @@ func TestBackupManager(t *testing.T) {
 	bm := NewBackupManager(sm, 5)
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.txt")
+	ctx := context.Background()
 
 	// 1. Snapshot non-existent file (creation)
 	bm.Snapshot(filePath, "WRITE")
@@ -28,7 +30,7 @@ func TestBackupManager(t *testing.T) {
 	}
 
 	// 3. Undo modification
-	if _, err := bm.Undo(1); err != nil {
+	if _, err := bm.Undo(ctx, 1); err != nil {
 		t.Fatalf("Undo failed: %v", err)
 	}
 	content, _ := os.ReadFile(filePath)
@@ -37,7 +39,7 @@ func TestBackupManager(t *testing.T) {
 	}
 
 	// 4. Undo creation
-	if _, err := bm.Undo(1); err != nil {
+	if _, err := bm.Undo(ctx, 1); err != nil {
 		t.Fatalf("Undo failed: %v", err)
 	}
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {

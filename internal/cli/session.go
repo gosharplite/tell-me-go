@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -85,7 +86,7 @@ func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingO
 	timestamp := time.Now().Format("20060102_150405")
 	// Record cost with a unique ID including the timestamp before archiving
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.logPath))
-	_ = tools.RecordSessionCost(a.sm, paths.logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
+	_ = tools.RecordSessionCost(context.Background(), a.sm, paths.logPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
 	a.archiveSessionFilesWithTimestamp(a.homeDir, timestamp, paths.historyPath, paths.logPath, paths.commandsLogPath)
 	a.cleanupOldBackups(a.homeDir, cfg.Mode)
 }

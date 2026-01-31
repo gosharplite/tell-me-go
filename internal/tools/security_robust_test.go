@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 func TestSecurityManagerRobust(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSecurityManager()
+	ctx := context.Background()
 
 	bypassFile := filepath.Join(tmpDir, "bypass.json")
 	safePathsFile := filepath.Join(tmpDir, "safepaths.json")
@@ -28,7 +30,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 		// Toggle bypass (assuming we can toggle it, usually via tools,
 		// but let's check if there's a direct way or if we just test Load/Save)
 		// For now, testing Load/Save logic
-		sm.SaveBypassState()
+		sm.SaveBypassState(ctx)
 		if _, err := os.Stat(bypassFile); err != nil {
 			t.Errorf("Bypass file not created: %v", err)
 		}
@@ -37,7 +39,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 
 	t.Run("Persistence_Paths", func(t *testing.T) {
 		sm.RegisterSafePath(tmpDir)
-		if err := sm.SaveSafePaths(); err != nil {
+		if err := sm.SaveSafePaths(ctx); err != nil {
 			t.Fatalf("SaveSafePaths failed: %v", err)
 		}
 
@@ -59,7 +61,7 @@ func TestSecurityManagerRobust(t *testing.T) {
 		}
 
 		sm.RegisterReadOnlyPath("/etc")
-		sm.SaveReadOnlyPaths()
+		sm.SaveReadOnlyPaths(ctx)
 		newSm.SetReadOnlyPathsFile(readOnlyPathsFile)
 		newSm.LoadReadOnlyPaths()
 

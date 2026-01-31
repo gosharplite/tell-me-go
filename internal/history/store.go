@@ -4,6 +4,7 @@
 package history
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -78,7 +79,7 @@ func (s *JSONLStore) Save(contents []*types.Content) error {
 		data = append(data, '\n')
 	}
 
-	return fsutil.AtomicWrite(s.filePath, data, 0644)
+	return fsutil.AtomicWrite(context.Background(), s.filePath, data, 0644)
 }
 
 // Append appends a single content entry to the history file.
