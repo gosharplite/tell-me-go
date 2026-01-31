@@ -30,11 +30,16 @@ type TurnState struct {
 	CurrentTurns int
 }
 
+// IToolExecutor defines the interface for tool execution.
+type IToolExecutor interface {
+	Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) (*types.Content, error)
+}
+
 // TurnEngine manages the "Think -> Act -> Observe" cycle.
 type TurnEngine struct {
 	ctxManager *ContextManager
 	gateway    gateway.LLMGateway
-	executor   *ToolExecutor
+	executor   IToolExecutor
 	registry   ToolRegistry
 	Hooks      TurnHooks
 }
@@ -50,7 +55,7 @@ func WithHooks(hooks TurnHooks) TurnEngineOption {
 }
 
 // NewTurnEngine creates a new TurnEngine with optional configuration.
-func NewTurnEngine(gw gateway.LLMGateway, ex *ToolExecutor, cm *ContextManager, reg ToolRegistry, opts ...TurnEngineOption) *TurnEngine {
+func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, opts ...TurnEngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:    gw,
 		executor:   ex,
