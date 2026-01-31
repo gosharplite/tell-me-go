@@ -19,7 +19,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Interactive Safety**: 
         *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
         *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
-    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
+    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
     *   **Intelligence (AST-Powered)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
@@ -29,7 +29,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **External Integration**:
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
     *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `read_external_docs`, `http_request`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.
-    *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`.
+    *   **Dev Tools**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`, `verify_release_readiness`.
     *   **Financial Metrics (Dynamic Pricing)**: 
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
         *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/global_costs.json`).
