@@ -25,20 +25,27 @@ func FuzzIsSafeCommand(f *testing.F) {
 	f.Add("ls $(whoami)")
 	f.Add("")
 	f.Add("   ")
+	f.Add("rm -rf /")
+	f.Add("go run main.go")
+	f.Add("sed -i 's/a/b/g' file.txt")
+	f.Add("awk '{print $1}' /etc/shadow")
 
 	f.Fuzz(func(t *testing.T, cmd string) {
 		isSafe := m.isSafeCommand(cmd)
 		
-		if isSafe {
-			// 1. Must not contain blacklisted shell metacharacters
-			unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
-			for _, char := range unsafeChars {
-				if strings.Contains(cmd, char) {
+		// 0. Negative assertions: Known unsafe patterns must be rejected
+		unsafeChars := []string{"|", "&", ";", ">", "<", "$", "`", "\n", "\r"}
+		for _, char := range unsafeChars {
+			if strings.Contains(cmd, char) {
+				if isSafe {
 					t.Errorf("Command %q marked safe but contains unsafe char %q", cmd, char)
 				}
+				return // Already checked one unsafe condition
 			}
-			
-			// 2. Must be splitable by shlex
+		}
+
+		if isSafe {
+			// 1. Must be splitable by shlex
 			parts, err := splitCommand(cmd)
 			if err != nil {
 				t.Errorf("Command %q marked safe but failed to split: %v", cmd, err)
@@ -50,22 +57,30 @@ func FuzzIsSafeCommand(f *testing.F) {
 				return
 			}
 
-			// 3. Must start with whitelisted command
+			// 2. Must start with whitelisted command
 			base := parts[0]
 			safeCommands := map[string]bool{
 				"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 				"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-				"whoami": true, "diff": true, "awk": true, "sed": true, "git": true,
-				"go": true,
+				"whoami": true, "diff": true, "git": true, "go": true,
 			}
 			if !safeCommands[base] {
 				t.Errorf("Command %q marked safe but base %q not in whitelist", cmd, base)
 			}
 			
-			// 4. Git and Go specific sub-checks
-			if base == "git" {
-				// Verify it's a read-only subcommand
-				// (Logic in isSafeCommand handles this, we're just verifying consistency)
+			// 3. Go specific sub-checks: run/build/install/mod must be rejected
+			if base == "go" {
+				sub := ""
+				for i := 1; i < len(parts); i++ {
+					if !strings.HasPrefix(parts[i], "-") {
+						sub = parts[i]
+						break
+					}
+				}
+				unsafeGo := map[string]bool{"run": true, "build": true, "install": true, "get": true, "mod": true}
+				if unsafeGo[sub] {
+					t.Errorf("Command %q marked safe but uses unsafe 'go %s' subcommand", cmd, sub)
+				}
 			}
 		}
 	})
