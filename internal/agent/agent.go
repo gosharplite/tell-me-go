@@ -63,6 +63,7 @@ type TurnStatus struct {
 type Agent struct {
 	gateway              *gateway.ResilientClient
 	engine               *TurnEngine
+	ctxManager           *ContextManager
 	history              *history.Manager
 	registry             *tools.Registry
 	sm                   *tools.SecurityManager
@@ -85,11 +86,13 @@ func New(client types.LLMClient, hManager *history.Manager, registry *tools.Regi
 	gw := gateway.NewResilientClient(client, renderer)
 	strategy := NewContextStrategy(registry)
 	executor := NewToolExecutor(registry, sm, renderer)
-	engine := NewTurnEngine(gw, executor, hManager, strategy, renderer, registry)
+	ctxManager := NewContextManager(strategy, hManager, gw, renderer)
+	engine := NewTurnEngine(gw, executor, ctxManager, renderer, registry)
 
 	a := &Agent{
 		gateway:       gw,
 		engine:        engine,
+		ctxManager:    ctxManager,
 		history:       hManager,
 		registry:      registry,
 		sm:            sm,
@@ -122,8 +125,9 @@ func (a *Agent) registerInternalTools() {
 			},
 			Required: []string{"turns"},
 		},
-	}, a.engine.SummarizeHistoryTool)
+	}, a.ctxManager.SummarizeHistoryTool)
 }
+
 
 // SetUIOptions sets the UI visibility options.
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {

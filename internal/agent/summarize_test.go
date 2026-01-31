@@ -55,7 +55,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	args := map[string]interface{}{
 		"turns": float64(3),
 	}
-	resp, err := a.engine.SummarizeHistoryTool(ctx, args)
+	resp, err := a.ctxManager.SummarizeHistoryTool(ctx, args)
 	if err != nil {
 		t.Fatalf("summarizeHistory failed: %v", err)
 	}
