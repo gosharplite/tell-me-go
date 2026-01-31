@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -65,7 +66,7 @@ type Agent struct {
 	engine               *TurnEngine
 	ctxManager           *ContextManager
 	history              *history.Manager
-	registry             *tools.Registry
+	registry             *registry.Registry
 	sm                   *tools.SecurityManager
 	renderer             UIRenderer
 	configWatcher        *ConfigWatcher
@@ -81,20 +82,20 @@ type Agent struct {
 }
 
 // New creates a new Agent.
-func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
+func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager) *Agent {
 	renderer := NewStdUIRenderer(sm)
 	gw := gateway.NewResilientClient(client, renderer)
-	strategy := NewContextStrategy(registry)
-	executor := NewToolExecutor(registry, sm, renderer)
+	strategy := NewContextStrategy(reg)
+	executor := NewToolExecutor(reg, sm, renderer)
 	ctxManager := NewContextManager(strategy, hManager, gw, renderer)
-	engine := NewTurnEngine(gw, executor, ctxManager, renderer, registry)
+	engine := NewTurnEngine(gw, executor, ctxManager, renderer, reg)
 
 	a := &Agent{
 		gateway:       gw,
 		engine:        engine,
 		ctxManager:    ctxManager,
 		history:       hManager,
-		registry:      registry,
+		registry:      reg,
 		sm:            sm,
 		renderer:      renderer,
 		configWatcher: NewConfigWatcher(120000, 10, 20),
@@ -127,7 +128,6 @@ func (a *Agent) registerInternalTools() {
 		},
 	}, a.ctxManager.SummarizeHistoryTool)
 }
-
 
 // SetUIOptions sets the UI visibility options.
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {

@@ -5,8 +5,10 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
@@ -76,4 +78,81 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 		}
 	}
 	return respContent, metrics, err
+}
+
+// GenerateImage implements types.AgentGateway.
+func (r *ResilientClient) GenerateImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var a struct {
+		Prompt      string `json:"prompt"`
+		AspectRatio string `json:"aspect_ratio"`
+		Model       string `json:"model"`
+	}
+	if err := types.UnmarshalArgs(args, &a); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	if a.Model == "" {
+		a.Model = "imagen-3.0-generate-001"
+	}
+
+	// Aspect ratio is handled by the prompt or specific API parameters in the future.
+	// For now we just pass it to the prompt if not empty.
+	prompt := a.Prompt
+	if a.AspectRatio != "" {
+		prompt = fmt.Sprintf("%s (aspect ratio %s)", prompt, a.AspectRatio)
+	}
+
+	images, err := r.client.GenerateImages(ctx, a.Model, prompt, "image/png")
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
+	result := types.ToolResult{
+		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), a.Prompt),
+	}
+	for i, data := range images {
+		result.BinaryData = append(result.BinaryData, types.BinaryData{
+			MIMEType: "image/png",
+			Data:     data,
+		})
+		// Auto-save to assets/generated
+		filename := fmt.Sprintf("assets/generated/image_%d_%d.png", time.Now().Unix(), i)
+		_ = os.MkdirAll("assets/generated", 0755)
+		_ = os.WriteFile(filename, data, 0644)
+		result.Text += fmt.Sprintf("\nSaved to %s", filename)
+	}
+
+	return result, nil
+}
+
+// ReadImage implements types.AgentGateway (though it could be handled locally).
+func (r *ResilientClient) ReadImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	var a struct {
+		Filepath string `json:"filepath"`
+	}
+	if err := types.UnmarshalArgs(args, &a); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	data, err := os.ReadFile(a.Filepath)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
+	mimeType := "image/png"
+	if strings.HasSuffix(strings.ToLower(a.Filepath), ".jpg") || strings.HasSuffix(strings.ToLower(a.Filepath), ".jpeg") {
+		mimeType = "image/jpeg"
+	} else if strings.HasSuffix(strings.ToLower(a.Filepath), ".webp") {
+		mimeType = "image/webp"
+	}
+
+	return types.ToolResult{
+		Text: fmt.Sprintf("Successfully read image from %s", a.Filepath),
+		BinaryData: []types.BinaryData{
+			{
+				MIMEType: mimeType,
+				Data:     data,
+			},
+		},
+	}, nil
 }

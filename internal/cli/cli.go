@@ -19,6 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -28,7 +30,7 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *tools.SecurityManager) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing types.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
@@ -66,8 +68,8 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
-			return agent.New(client, hManager, registry, sm)
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager) agent.Chatter {
+			return agent.New(client, hManager, reg, sm)
 		},
 		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -158,7 +160,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	}
 
 	// 6. Setup Agent & Client
-	pricing := tools.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
+	pricing := framework.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
 
 	hManager.Snapshot()
 
@@ -181,7 +183,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error saving history: %w", err)
 	}
 
-	if err := tools.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := framework.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

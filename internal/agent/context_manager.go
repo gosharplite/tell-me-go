@@ -191,7 +191,6 @@ func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[str
 	return types.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", targetTurns)}, nil
 }
 
-
 // SummarizationPrompt is the system instruction for history compression.
 const SummarizationPrompt = `You are a conversation compressor. Summarize the provided history into a concise but comprehensive state summary.
 Preserve:

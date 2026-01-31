@@ -6,6 +6,7 @@ package types
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"google.golang.org/genai"
 )
@@ -227,3 +228,11 @@ func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
 	}
 	return json.Unmarshal(b, target)
 }
+
+// AgentGateway defines the interface for high-level agent services available to tools.
+type AgentGateway interface {
+	GenerateImage(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+	ReadImage(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+}
+
+var ErrNotImplemented = fmt.Errorf("not implemented")

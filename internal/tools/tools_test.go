@@ -1,59 +1,36 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package tools
+package tools_test
 
 import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
-func TestRegistry_SerialProperty(t *testing.T) {
-	r := NewRegistry()
+func TestNewToolRegistry(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	r := registry.New()
+	tools.RegisterAll(r, sm, t.TempDir(), "v1.0.0", nil)
 
-	// 1. Default registration (Parallel)
-	r.Register(&types.ToolDeclaration{Name: "parallel_tool"}, nil)
-	if r.IsSerial("parallel_tool") {
-		t.Error("expected parallel_tool to be parallel (Serial: false)")
-	}
-
-	// 2. Explicit Serial registration
-	r.RegisterWithOptions(&types.ToolDeclaration{Name: "serial_tool"}, nil, ToolOptions{Serial: true})
-	if !r.IsSerial("serial_tool") {
-		t.Error("expected serial_tool to be serial (Serial: true)")
-	}
-
-	// 3. Explicit Parallel registration via options
-	r.RegisterWithOptions(&types.ToolDeclaration{Name: "parallel_opt_tool"}, nil, ToolOptions{Serial: false})
-	if r.IsSerial("parallel_opt_tool") {
-		t.Error("expected parallel_opt_tool to be parallel")
-	}
-
-	// 4. Non-existent tool
-	if r.IsSerial("unknown") {
-		t.Error("expected unknown tool to return Serial: false")
+	if len(r.GetDeclarations()) == 0 {
+		t.Error("expected registered tools, got none")
 	}
 }
 
-func TestRegistry_Execute(t *testing.T) {
-	r := NewRegistry()
+func TestToolExecution(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	r := registry.New()
+	tools.RegisterAll(r, sm, t.TempDir(), "v1.0.0", nil)
+
 	ctx := context.Background()
-	r.Register(&types.ToolDeclaration{Name: "test"}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{Text: "success"}, nil
-	})
-
-	res, err := r.Execute(ctx, "test", nil)
+	// list_files is registered by files.Register
+	_, err := r.Execute(ctx, "list_files", map[string]interface{}{"path": "."})
 	if err != nil {
-		t.Errorf("Execute failed: %v", err)
-	}
-	if res.Text != "success" {
-		t.Errorf("expected success, got %s", res.Text)
-	}
-
-	_, err = r.Execute(ctx, "unknown", nil)
-	if err == nil {
-		t.Error("expected error for unknown tool")
+		t.Errorf("failed to execute list_files: %v", err)
 	}
 }

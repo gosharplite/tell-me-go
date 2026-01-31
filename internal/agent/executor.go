@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -21,7 +22,7 @@ type toolExecResult struct {
 
 // ToolExecutor handles the execution of tools, including concurrency and serial locking.
 type ToolExecutor struct {
-	registry           *tools.Registry
+	registry           *registry.Registry
 	sm                 *tools.SecurityManager
 	renderer           UIRenderer
 	maxConcurrentTools int
@@ -30,7 +31,7 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *tools.Registry, sm *tools.SecurityManager, renderer UIRenderer) *ToolExecutor {
+func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, renderer UIRenderer) *ToolExecutor {
 	return &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
