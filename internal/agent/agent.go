@@ -6,10 +6,9 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -62,13 +61,14 @@ type TurnStatus struct {
 
 // Agent represents the chat orchestration logic.
 type Agent struct {
-	client               types.LLMClient
+	gateway              *gateway.ResilientClient
+	engine               *TurnEngine
 	history              *history.Manager
 	registry             *tools.Registry
 	sm                   *tools.SecurityManager
 	renderer             UIRenderer
 	configWatcher        *ConfigWatcher
-	contextManager       *ContextManager
+	strategy             *ContextStrategy
 	executor             *ToolExecutor
 	logFile              string
 	showThoughts         bool
@@ -82,20 +82,27 @@ type Agent struct {
 // New creates a new Agent.
 func New(client types.LLMClient, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) *Agent {
 	renderer := NewStdUIRenderer(sm)
+	gw := gateway.NewResilientClient(client, renderer)
+	strategy := NewContextStrategy(registry)
+	executor := NewToolExecutor(registry, sm, renderer)
+	engine := NewTurnEngine(gw, executor, hManager, strategy, renderer, registry)
+
 	a := &Agent{
-		client:         client,
-		history:        hManager,
-		registry:       registry,
-		sm:             sm,
-		renderer:       renderer,
-		configWatcher:  NewConfigWatcher(120000, 10, 20),
-		contextManager: NewContextManager(client, hManager, registry, sm),
-		executor:       NewToolExecutor(registry, sm, hManager, renderer),
-		showThoughts:   true,
-		showTools:      true,
-		rawOutput:      false,
-		startTime:      time.Now(),
+		gateway:       gw,
+		engine:        engine,
+		history:       hManager,
+		registry:      registry,
+		sm:            sm,
+		renderer:      renderer,
+		configWatcher: NewConfigWatcher(120000, 10, 20),
+		strategy:      strategy,
+		executor:      executor,
+		showThoughts:  true,
+		showTools:     true,
+		rawOutput:     false,
+		startTime:     time.Now(),
 	}
+	a.engine.OnTurnStart = a.refreshLimits
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
 	return a
@@ -115,7 +122,7 @@ func (a *Agent) registerInternalTools() {
 			},
 			Required: []string{"turns"},
 		},
-	}, a.contextManager.SummarizeHistoryTool)
+	}, a.engine.SummarizeHistoryTool)
 }
 
 // SetUIOptions sets the UI visibility options.
@@ -123,16 +130,18 @@ func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
 	a.showThoughts = showThoughts
 	a.showTools = showTools
 	a.executor.SetShowTools(showTools)
+	a.gateway.SetOptions(showThoughts, a.rawOutput)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
 func (a *Agent) SetRawOutput(raw bool) {
 	a.rawOutput = raw
+	a.gateway.SetOptions(a.showThoughts, raw)
 }
 
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
-	a.contextManager.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 }
 
@@ -144,11 +153,12 @@ func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
 // SetLogFile sets the path for usage logging.
 func (a *Agent) SetLogFile(path string) {
 	a.logFile = path
+	a.engine.SetLogFile(path)
 }
 
 // SetPrunedTurns informs the agent how many turns were removed during startup.
 func (a *Agent) SetPrunedTurns(n int) {
-	a.contextManager.SetPrunedTurns(n)
+	a.strategy.SetPrunedTurns(n)
 }
 
 // SetPersistentConfigPath sets the path to the persistent session configuration.
@@ -168,17 +178,18 @@ func (a *Agent) SetRenderer(renderer UIRenderer) {
 	if renderer != nil {
 		a.renderer = renderer
 		a.executor.renderer = renderer
+		a.engine.renderer = renderer
+		a.gateway.SetRenderer(renderer)
 	}
 }
 
 func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
-	a.contextManager.SetLimits(maxTokens, maxTurns, maxHistTurns)
+	a.strategy.SetLimits(maxTokens, maxTurns, maxHistTurns)
 }
 
 // Chat runs the multi-turn orchestration loop.
-// Refactored to coordinate high-level phases: Prepare -> Generate -> Persist -> Execute -> Log.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	if err := a.history.AddContent(ctx, &types.Content{
 		Role:  "user",
@@ -187,124 +198,6 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}
 
-	_, maxTurns, _ := a.contextManager.GetLimits()
-
-	for turn := 0; turn <= maxTurns; turn++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		a.refreshLimits()
-
-		// 1. Prepare API Contents (includes pruning, summarization, and safety warnings)
-		apiContents, tokens, currentTurns, err := a.contextManager.PrepareContents(ctx, turn)
-		if err != nil {
-			return err
-		}
-
-		a.logTurnStatus(currentTurns, tokens, nil, false)
-
-		// 2. Generate Response (Stream/Non-stream + Auth Retry)
-		respContent, metrics, err := a.generateResponse(ctx, apiContents)
-		if err != nil {
-			return err
-		}
-
-		// 3. Persist Response
-		if err := a.history.AddContent(ctx, respContent); err != nil {
-			a.reportHistoryError(err)
-		}
-
-		// 4. Handle Tool Execution
-		if err := a.handleToolExecution(ctx, respContent, turn, metrics); err != nil {
-			return err
-		}
-
-		// Refresh limits to ensure tool updates (e.g., manage_config) are reflected immediately
-		a.refreshLimits()
-		a.logTurnStatus(currentTurns, tokens, metrics, true)
-
-		if metrics != nil {
-			a.renderer.LogUsage(metrics, a.logFile, a.startTime)
-		}
-
-		if !a.hasToolCalls(respContent) {
-			break
-		}
-	}
-	return nil
-}
-
-// generateResponse handles the LLM interaction logic, including streaming and auth retries.
-func (a *Agent) generateResponse(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
-	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
-		respContent, metrics, err := a.client.SendChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver())
-		if err == nil {
-			a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
-		}
-		return respContent, metrics, err
-	}
-
-	streamCh, finalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-	metrics, err := a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-		streamCh <- c
-	})
-	respContent := finalize()
-
-	// Handle 401 Unauthorized for streaming
-	if err != nil && (strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "UNAUTHENTICATED")) {
-		a.renderer.LogSystemMessage("Token expired. Refreshing auth and retrying...", "info")
-		if refreshErr := a.client.RefreshAuth(); refreshErr == nil {
-			// Finalize the failed stream before retrying to prevent goroutine leak
-			_ = finalize()
-			// Retry streaming
-			streamCh, finalize = a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-			metrics, err = a.client.StreamChat(ctx, apiContents, a.registry.GetDeclarations(), a.history.GetResolver(), func(c *types.Content) {
-				streamCh <- c
-			})
-			respContent = finalize()
-		}
-	}
-	return respContent, metrics, err
-}
-
-// handleToolExecution delegates execution to the ToolExecutor and tracks timing.
-func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int, metrics *types.Metrics) error {
-	toolStart := time.Now()
-	_, maxToolTurns, _ := a.contextManager.GetLimits()
-
-	err := a.executor.Execute(ctx, respContent, turn, maxToolTurns)
-
-	if metrics != nil {
-		metrics.ToolDuration = time.Since(toolStart).Seconds()
-	}
-	return err
-}
-
-// logTurnStatus constructs the status object and logs it to the renderer.
-func (a *Agent) logTurnStatus(currentTurns, tokens int, metrics *types.Metrics, isPost bool) {
-	maxTokens, _, maxHistTurns := a.contextManager.GetLimits()
-	a.renderer.LogTurnStatus(TurnStatus{
-		Timestamp:        time.Now(),
-		CurrentTurns:     currentTurns,
-		MaxHistoryTurns:  maxHistTurns,
-		Tokens:           tokens,
-		MaxHistoryTokens: maxTokens,
-		Metrics:          metrics,
-		IsPostCall:       isPost,
-		StartTime:        a.startTime,
-	})
-}
-
-
-func (a *Agent) reportHistoryError(err error) {
-	a.renderer.LogSystemMessage(fmt.Sprintf("Failed to persist history entry: %v", err), "warn")
-}
-
-func (a *Agent) hasToolCalls(content *types.Content) bool {
-	for _, part := range content.Parts {
-		if part.FunctionCall != nil {
-			return true
-		}
-	}
-	return false
+	a.refreshLimits()
+	return a.engine.Run(ctx, a.startTime)
 }

@@ -50,10 +50,12 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 	sm := tools.NewSecurityManager()
 	a := New(client, hManager, registry, sm)
 
+	t.Setenv("TELL_ME_NO_STREAM", "true")
+
 	args := map[string]interface{}{
 		"turns": float64(3),
 	}
-	resp, err := a.contextManager.SummarizeHistoryTool(ctx, args)
+	resp, err := a.engine.SummarizeHistoryTool(ctx, args)
 	if err != nil {
 		t.Fatalf("summarizeHistory failed: %v", err)
 	}

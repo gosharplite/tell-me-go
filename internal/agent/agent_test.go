@@ -29,7 +29,7 @@ func TestAgent_Setters(t *testing.T) {
 	}
 
 	a.SetLimits(5, 1000, 20)
-	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
 		t.Error("SetLimits failed")
 	}
@@ -69,7 +69,7 @@ func TestAgent_EstimateTokens(t *testing.T) {
 		},
 	}
 
-	tokens := a.contextManager.EstimateTokens(contents)
+	tokens := a.strategy.EstimateTokens(contents)
 	if tokens <= 0 {
 		t.Errorf("expected positive token estimate, got %d", tokens)
 	}
@@ -377,7 +377,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 
 	a.refreshLimits()
 
-	maxTokens, maxTurns, _ := a.contextManager.GetLimits()
+	maxTokens, maxTurns, _ := a.strategy.GetLimits()
 	if maxTokens != 5000 {
 		t.Errorf("expected maxHistoryTokens 5000, got %d", maxTokens)
 	}
@@ -406,7 +406,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 
 	a.refreshLimits()
 
-	maxTokens, maxTurns, maxHistTurns := a.contextManager.GetLimits()
+	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTokens != 200000 {
 		t.Errorf("expected maxHistoryTokens 200000, got %d", maxTokens)
 	}
