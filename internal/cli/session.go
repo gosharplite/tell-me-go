@@ -150,7 +150,11 @@ func (a *App) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesT
 					}()
 					return
 				}
-				fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
+				func() {
+					a.sm.TerminalLock()
+					defer a.sm.TerminalUnlock()
+					fmt.Fprintf(a.Stdout, "Archiving existing session files to %s\n", backupDir)
+				}()
 				backupCreated = true
 			}
 			dest := filepath.Join(backupDir, filepath.Base(f))

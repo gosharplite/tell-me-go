@@ -145,7 +145,7 @@ func readSingleKey(ctx context.Context) (string, error) {
 			return "", res.err
 		}
 		if res.b == 3 { // Ctrl+C (ETX)
-			return "", fmt.Errorf("interrupted")
+			return "", context.Canceled
 		}
 		return strings.ToLower(string(res.b)), nil
 	}

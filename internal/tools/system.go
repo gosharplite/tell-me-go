@@ -569,9 +569,13 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 	resChan := make(chan result, 1)
 
 	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		response, err := reader.ReadString('\n')
-		resChan <- result{response, err}
+		// Use a simple scanner to avoid buffering issues with bufio.Reader if called multiple times
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			resChan <- result{scanner.Text(), nil}
+		} else {
+			resChan <- result{"", scanner.Err()}
+		}
 	}()
 
 	select {

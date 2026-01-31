@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -13,31 +14,61 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"golang.org/x/term"
 )
 
-func (a *App) capturePrompt(fs *flag.FlagSet, lastN int) (string, error) {
+func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
-	var isTerminal bool
-	if f, ok := a.Stdin.(*os.File); ok {
-		stat, _ := f.Stat()
-		isTerminal = (stat.Mode() & os.ModeCharDevice) != 0
-	} else {
-		isTerminal = false // Assume non-terminal for non-file readers (like buffers in tests)
+
+	// Support for E2E mocking of user input
+	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
+		return val, nil
 	}
 
+	var fd int = -1
+	if f, ok := a.Stdin.(*os.File); ok {
+		fd = int(f.Fd())
+	}
+	isTerminal := fd != -1 && term.IsTerminal(fd)
+
 	if !isTerminal {
-		b, err := io.ReadAll(a.Stdin)
-		if err == nil && len(b) > 0 {
-			if prompt != "" {
-				prompt = prompt + "\n" + string(b)
-			} else {
-				prompt = string(b)
+		// Non-terminal: Read all available input (e.g., piped content)
+		readChan := make(chan []byte, 1)
+		go func() {
+			b, _ := io.ReadAll(a.Stdin)
+			readChan <- b
+		}()
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case b := <-readChan:
+			if len(b) > 0 {
+				if prompt != "" {
+					prompt = prompt + "\n" + string(b)
+				} else {
+					prompt = string(b)
+				}
 			}
 		}
 	} else if prompt == "" && lastN == 0 {
-		fmt.Fprintln(a.Stdout, "\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
-		b, err := io.ReadAll(a.Stdin)
-		if err == nil {
+		func() {
+			a.sm.TerminalLock()
+			defer a.sm.TerminalUnlock()
+			fmt.Fprintln(a.Stdout, "\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
+		}()
+
+		// Terminal: Read multi-line input until EOF (Ctrl+D)
+		readChan := make(chan []byte, 1)
+		go func() {
+			b, _ := io.ReadAll(a.Stdin)
+			readChan <- b
+		}()
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case b := <-readChan:
 			prompt = string(b)
 		}
 	}
