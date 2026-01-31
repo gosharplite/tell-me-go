@@ -23,23 +23,6 @@ import (
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
 
-type ModelPricing struct {
-	Hit             float64 `json:"hit"`
-	Miss            float64 `json:"miss"`
-	Comp            float64 `json:"comp"`
-	TieredThreshold int64   `json:"tiered_threshold"`
-	TieredMiss      float64 `json:"tiered_miss"`
-	TieredComp      float64 `json:"tiered_comp"`
-	ThinkingBudget  int     `json:"thinking_budget,omitempty"`
-}
-
-type PricingData struct {
-	UpdatedAt       string                  `json:"updated_at"`
-	Models          map[string]ModelPricing `json:"models"`
-	ThinkingBudgets map[string]int          `json:"thinking_budgets,omitempty"`
-	SearchQuery     float64                 `json:"search_query"`
-}
-
 // SessionCostRecord represents a single session's financial footprint.
 type SessionCostRecord struct {
 	Date      string  `json:"date"`
@@ -49,20 +32,22 @@ type SessionCostRecord struct {
 }
 
 type metricsManager struct {
-	sm        *SecurityManager
-	metricsMu sync.Mutex
-	logFile   string
-	model     string
-	mode      string
+	sm               *SecurityManager
+	metricsMu        sync.Mutex
+	logFile          string
+	model            string
+	mode             string
+	pricingOverrides map[string]types.ModelPricing
 }
 
 // RegisterMetricsTools adds tools for usage and cost analysis.
-func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, model string, mode string) {
+func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]types.ModelPricing) {
 	m := &metricsManager{
-		sm:      sm,
-		logFile: logFile,
-		model:   model,
-		mode:    mode,
+		sm:               sm,
+		logFile:          logFile,
+		model:            model,
+		mode:             mode,
+		pricingOverrides: pricingOverrides,
 	}
 
 	r.Register(&types.ToolDeclaration{
@@ -91,12 +76,13 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger.
-func RecordSessionCost(sm *SecurityManager, logFile, model, mode, sessionID string) error {
+func RecordSessionCost(sm *SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]types.ModelPricing) error {
 	m := &metricsManager{
-		sm:      sm,
-		logFile: logFile,
-		model:   model,
-		mode:    mode,
+		sm:               sm,
+		logFile:          logPath,
+		model:            model,
+		mode:             mode,
+		pricingOverrides: pricingOverrides,
 	}
 	_, err := m.EstimateCost(context.Background(), true, sessionID)
 	return err
@@ -222,7 +208,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 }
 
 // GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) PricingData {
+func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) types.PricingData {
 	sm.pricingMu.Lock()
 	defer sm.pricingMu.Unlock()
 
@@ -236,7 +222,7 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) Pric
 	}
 
 	cachePath := filepath.Join(globalDir, "global_prices.json")
-	var data PricingData
+	var data types.PricingData
 	useCache := false
 
 	// 1. Try Local Cache
@@ -270,9 +256,9 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) Pric
 
 	// 3. Hardcoded Fallback (Updated for Gemini 3 Preview)
 	if !useCache {
-		data = PricingData{
+		data = types.PricingData{
 			UpdatedAt: "Hardcoded Fallback",
-			Models: map[string]ModelPricing{
+			Models: map[string]types.ModelPricing{
 				"flash": {
 					Hit:             0.025,
 					Miss:            0.025,
@@ -309,6 +295,21 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) Pric
 	return data
 }
 
+func (m *metricsManager) getModelPricing(modelName string, pricing types.PricingData) types.ModelPricing {
+	// 1. Exact match
+	if p, ok := pricing.Models[modelName]; ok {
+		return p
+	}
+	// 2. Substring match (e.g., "flash", "pro")
+	for k, v := range pricing.Models {
+		if k != "default" && strings.Contains(modelName, k) {
+			return v
+		}
+	}
+	// 3. Fallback to default
+	return pricing.Models["default"]
+}
+
 func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, sessionID string) (string, error) {
 	if err := m.sm.IsPathSafe(m.logFile); err != nil {
 		return "", err
@@ -316,6 +317,11 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 
 	outputDir := filepath.Dir(m.logFile)
 	pricing := GetPricing(ctx, m.sm, outputDir)
+
+	// Apply overrides from config
+	for k, v := range m.pricingOverrides {
+		pricing.Models[k] = v
+	}
 
 	f, err := os.Open(m.logFile)
 	if err != nil {
@@ -347,14 +353,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		totalTh += th
 
 		// Pricing Selection
-		var p ModelPricing
-		if strings.Contains(m.model, "flash") {
-			p = pricing.Models["flash"]
-		} else if strings.Contains(m.model, "pro") {
-			p = pricing.Models["pro"]
-		} else {
-			p = pricing.Models["default"]
-		}
+		p := m.getModelPricing(m.model, pricing)
 
 		rh, rm, rc := p.Hit, p.Miss, p.Comp
 		if p.TieredThreshold > 0 && (h+mMiss) > p.TieredThreshold {
@@ -402,14 +401,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 
 	// Helper to determine display rate (shows tiered if applicable)
 	getRateStr := func(item string) string {
-		var p ModelPricing
-		if strings.Contains(m.model, "flash") {
-			p = pricing.Models["flash"]
-		} else if strings.Contains(m.model, "pro") {
-			p = pricing.Models["pro"]
-		} else {
-			p = pricing.Models["default"]
-		}
+		p := m.getModelPricing(m.model, pricing)
 
 		switch item {
 		case "hit":

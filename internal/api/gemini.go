@@ -163,18 +163,28 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 
 		actualBudget := c.thinkingBudget
 		if actualBudget > 0 {
-			if maxBudget, ok := c.thinkingBudgets[c.model]; ok {
-				if actualBudget > maxBudget {
-					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
-					actualBudget = maxBudget
+			maxBudget := 0
+			// 1. Check for exact model match
+			if val, ok := c.thinkingBudgets[c.model]; ok {
+				maxBudget = val
+			}
+			// 2. Check for substring matches (e.g., "flash", "pro") if no exact match
+			if maxBudget == 0 {
+				for k, v := range c.thinkingBudgets {
+					if k != "default" && strings.Contains(c.model, k) {
+						maxBudget = v
+						break
+					}
 				}
-			} else if strings.Contains(c.model, "flash") && actualBudget > 32768 {
-				// Generic cap for flash models if not explicitly in map
-				maxFlashBudget := 32768 // Based on gemini-3-flash-preview limit
-				if actualBudget > maxFlashBudget {
-					fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for flash model '%s' exceeds common max (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxFlashBudget, maxFlashBudget)
-					actualBudget = maxFlashBudget
-				}
+			}
+			// 3. Fallback to "default"
+			if maxBudget == 0 {
+				maxBudget = c.thinkingBudgets["default"]
+			}
+
+			if maxBudget > 0 && actualBudget > maxBudget {
+				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
+				actualBudget = maxBudget
 			}
 		}
 

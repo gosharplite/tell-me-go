@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -115,7 +116,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager) agent.Chatter {
 		return mock
 	}
-	app.ClientFactory = func(cfg *config.Config, pricing tools.PricingData) (*api.Client, error) {
+	app.ClientFactory = func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 		return nil, nil // Return nil client for testing
 	}
 
