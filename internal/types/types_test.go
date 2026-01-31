@@ -5,7 +5,9 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"google.golang.org/genai"
@@ -103,5 +105,24 @@ func TestContent_ToSDK(t *testing.T) {
 	}
 	if !reflect.DeepEqual(sdkContent.Parts[0].ThoughtSignature, content.Parts[0].ThoughtSignature) {
 		t.Errorf("expected signature %v, got %v", content.Parts[0].ThoughtSignature, sdkContent.Parts[0].ThoughtSignature)
+	}
+}
+
+func TestContent_JSONSerialization(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  Content
+		contains string
+	}{
+		{"explicit role", Content{Role: "user", Parts: []*Part{{Text: "hi"}}}, `"role":"user"`},
+		{"empty role", Content{Role: "", Parts: []*Part{{Text: "hi"}}}, `"role":""`}, // Must not be omitted
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := json.Marshal(tt.content)
+			if !strings.Contains(string(b), tt.contains) {
+				t.Errorf("expected JSON to contain %q, got %q", tt.contains, string(b))
+			}
+		})
 	}
 }
