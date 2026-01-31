@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"gopkg.in/yaml.v3"
@@ -61,4 +62,29 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// ResolveThinkingBudget returns the best matching thinking budget for the model.
+func (c *Config) ResolveThinkingBudget(model string, pricing types.PricingData) int {
+	// 1. Check for exact model match in config
+	if mCfg, ok := c.Models[model]; ok && mCfg.MaxThinkingBudget > 0 {
+		return mCfg.MaxThinkingBudget
+	}
+	// 2. Check for substring matches in config
+	for k, v := range c.Models {
+		if k != "default" && strings.Contains(model, k) && v.MaxThinkingBudget > 0 {
+			return v.MaxThinkingBudget
+		}
+	}
+	// 3. Fallback to Pricing data
+	if val, ok := pricing.ThinkingBudgets[model]; ok {
+		return val
+	}
+	for k, v := range pricing.ThinkingBudgets {
+		if k != "default" && strings.Contains(model, k) {
+			return v
+		}
+	}
+	// 4. Ultimate fallback
+	return pricing.ThinkingBudgets["default"]
 }

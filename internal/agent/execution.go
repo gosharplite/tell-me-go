@@ -14,6 +14,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
+type toolExecResult struct {
+	index int
+	name  string
+	tr    types.ToolResult
+}
+
 func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Content, turn int) error {
 	var functionCalls []*types.FunctionCall
 	for _, part := range respContent.Parts {
@@ -39,11 +45,34 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 	}
 
 	a.logToolCalls(functionCalls, turn)
-	trs := a.executeToolsConcurrentResults(ctx, functionCalls)
+
+	resChan := make(chan toolExecResult, len(functionCalls))
+	var wg sync.WaitGroup
+
+	// Run execution in background
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.executeToolsConcurrentStream(ctx, functionCalls, resChan)
+	}()
+
+	// Collect results as they arrive
+	trs := make([]types.ToolResult, len(functionCalls))
+	completedCount := 0
+	for completedCount < len(functionCalls) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case res := <-resChan:
+			trs[res.index] = res.tr
+			a.renderer.LogToolResult(res.name, res.tr, a.showTools)
+			completedCount++
+		}
+	}
+	wg.Wait()
 
 	var responseParts []*types.Part
 	for i, tr := range trs {
-		a.renderer.LogToolResult(functionCalls[i].Name, tr, a.showTools)
 		responseParts = append(responseParts, a.processToolResult(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &types.Part{
@@ -106,21 +135,22 @@ func (a *Agent) processToolResult(name string, result types.ToolResult) *types.P
 	}
 }
 
-func (a *Agent) executeToolsConcurrentResults(ctx context.Context, calls []*types.FunctionCall) []types.ToolResult {
-	trs := make([]types.ToolResult, len(calls))
+func (a *Agent) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, a.maxConcurrentTools)
 
 	for i, fc := range calls {
 		if a.isSerialTool(fc.Name) {
+			// Wait for all previous tools to finish before starting serial tool
 			wg.Wait()
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						trs[i] = types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}
+						resChan <- toolExecResult{index: i, name: fc.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
-				trs[i] = a.executeTool(ctx, fc)
+				tr := a.executeTool(ctx, fc)
+				resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 			}()
 		} else {
 			wg.Add(1)
@@ -130,15 +160,15 @@ func (a *Agent) executeToolsConcurrentResults(ctx context.Context, calls []*type
 				defer func() { <-sem }()
 				defer func() {
 					if r := recover(); r != nil {
-						trs[idx] = types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}
+						resChan <- toolExecResult{index: idx, name: call.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
-				trs[idx] = a.executeTool(ctx, call)
+				tr := a.executeTool(ctx, call)
+				resChan <- toolExecResult{index: idx, name: call.Name, tr: tr}
 			}(i, fc)
 		}
 	}
 	wg.Wait()
-	return trs
 }
 
 func (a *Agent) isSerialTool(name string) bool {

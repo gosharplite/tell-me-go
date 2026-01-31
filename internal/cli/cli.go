@@ -61,17 +61,8 @@ func New(version string) *App {
 		},
 		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
-			// Merge cfg.Models thinking budgets into pricing.ThinkingBudgets
-			allBudgets := make(map[string]int)
-			for k, v := range pricing.ThinkingBudgets {
-				allBudgets[k] = v
-			}
-			for k, v := range cfg.Models {
-				if v.MaxThinkingBudget > 0 {
-					allBudgets[k] = v.MaxThinkingBudget
-				}
-			}
-			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, allBudgets, cfg.Person, cfg.UseSearch)
+			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
+			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
 		},
 	}
 }

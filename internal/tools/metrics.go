@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -254,42 +255,9 @@ func GetPricing(ctx context.Context, sm *SecurityManager, outputDir string) type
 		}
 	}
 
-	// 3. Hardcoded Fallback (Updated for Gemini 3 Preview)
+	// 3. Hardcoded Fallback
 	if !useCache {
-		data = types.PricingData{
-			UpdatedAt: "Hardcoded Fallback",
-			Models: map[string]types.ModelPricing{
-				"flash": {
-					Hit:             0.025,
-					Miss:            0.025,
-					Comp:            0.30,
-					TieredThreshold: 128000,
-					TieredMiss:      0.075,
-					TieredComp:      0.30,
-				},
-				"pro": {
-					Hit:             0.3125,
-					Miss:            0.3125,
-					Comp:            3.75,
-					TieredThreshold: 128000,
-					TieredMiss:      1.25,
-					TieredComp:      7.50,
-				},
-				"default": {
-					Hit:             0.3125,
-					Miss:            0.3125,
-					Comp:            3.75,
-					TieredThreshold: 128000,
-					TieredMiss:      1.25,
-					TieredComp:      7.50,
-				},
-			},
-			ThinkingBudgets: map[string]int{
-				"gemini-2.5-flash":       24576,
-				"gemini-3-flash-preview": 32768,
-			},
-			SearchQuery: 0.014,
-		}
+		data = config.DefaultPricing()
 	}
 
 	return data

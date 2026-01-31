@@ -25,22 +25,22 @@ type Client struct {
 	model             string
 	thinkingBudget    int
 	thinkingLevel     string
-	thinkingBudgets   map[string]int
+	maxThinkingBudget int
 	useSearch         bool
 	systemInstruction *types.Content
 	backend           genai.Backend
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, thinkingBudgets map[string]int, systemInstruction string, useSearch bool) (*Client, error) {
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool) (*Client, error) {
 	c := &Client{
-		authenticator:   authenticator,
-		apiURL:          apiURL,
-		model:           model,
-		thinkingBudget:  thinkingBudget,
-		thinkingLevel:   thinkingLevel,
-		thinkingBudgets: thinkingBudgets,
-		useSearch:       useSearch,
+		authenticator:     authenticator,
+		apiURL:            apiURL,
+		model:             model,
+		thinkingBudget:    thinkingBudget,
+		thinkingLevel:     thinkingLevel,
+		maxThinkingBudget: maxThinkingBudget,
+		useSearch:         useSearch,
 	}
 
 	if systemInstruction != "" {
@@ -163,25 +163,7 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 
 		actualBudget := c.thinkingBudget
 		if actualBudget > 0 {
-			maxBudget := 0
-			// 1. Check for exact model match
-			if val, ok := c.thinkingBudgets[c.model]; ok {
-				maxBudget = val
-			}
-			// 2. Check for substring matches (e.g., "flash", "pro") if no exact match
-			if maxBudget == 0 {
-				for k, v := range c.thinkingBudgets {
-					if k != "default" && strings.Contains(c.model, k) {
-						maxBudget = v
-						break
-					}
-				}
-			}
-			// 3. Fallback to "default"
-			if maxBudget == 0 {
-				maxBudget = c.thinkingBudgets["default"]
-			}
-
+			maxBudget := c.maxThinkingBudget
 			if maxBudget > 0 && actualBudget > maxBudget {
 				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
 				actualBudget = maxBudget
@@ -274,22 +256,7 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 
 		actualBudget := c.thinkingBudget
 		if actualBudget > 0 {
-			maxBudget := 0
-			if val, ok := c.thinkingBudgets[c.model]; ok {
-				maxBudget = val
-			}
-			if maxBudget == 0 {
-				for k, v := range c.thinkingBudgets {
-					if k != "default" && strings.Contains(c.model, k) {
-						maxBudget = v
-						break
-					}
-				}
-			}
-			if maxBudget == 0 {
-				maxBudget = c.thinkingBudgets["default"]
-			}
-
+			maxBudget := c.maxThinkingBudget
 			if maxBudget > 0 && actualBudget > maxBudget {
 				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
 				actualBudget = maxBudget

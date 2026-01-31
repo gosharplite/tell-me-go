@@ -34,15 +34,12 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "panic_tool"},
 		}
 
-		results := a.executeToolsConcurrentResults(context.Background(), calls)
+		resChan := make(chan toolExecResult, len(calls))
+		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
-		if len(results) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(results))
-		}
-
-		res := results[0].Text
-		if !strings.Contains(res, "Panic detected: intentional parallel panic") {
-			t.Errorf("expected panic error message, got: %s", res)
+		res := <-resChan
+		if !strings.Contains(res.tr.Text, "Panic detected: intentional parallel panic") {
+			t.Errorf("expected panic error message, got: %s", res.tr.Text)
 		}
 	})
 
@@ -51,15 +48,12 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 			{Name: "serial_panic_tool"},
 		}
 
-		results := a.executeToolsConcurrentResults(context.Background(), calls)
+		resChan := make(chan toolExecResult, len(calls))
+		a.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
-		if len(results) != 1 {
-			t.Fatalf("expected 1 result, got %d", len(results))
-		}
-
-		res := results[0].Text
-		if !strings.Contains(res, "Panic detected: intentional serial panic") {
-			t.Errorf("expected panic error message, got: %s", res)
+		res := <-resChan
+		if !strings.Contains(res.tr.Text, "Panic detected: intentional serial panic") {
+			t.Errorf("expected panic error message, got: %s", res.tr.Text)
 		}
 	})
 }
