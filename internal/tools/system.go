@@ -261,7 +261,7 @@ func (m *systemManager) bypassConfirmationTool(ctx context.Context, args map[str
 	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
 	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
 
-	char, err := readSingleKey(ctx)
+	char, err := m.sm.readSingleKey(ctx)
 	fmt.Fprintf(os.Stderr, "\n")
 	if err != nil {
 		return types.ToolResult{}, err
@@ -337,7 +337,7 @@ func (m *systemManager) removeSafePathTool(ctx context.Context, args map[string]
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -388,7 +388,7 @@ func (m *systemManager) removeReadOnlyPathTool(ctx context.Context, args map[str
 		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -445,7 +445,7 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -456,7 +456,7 @@ func (m *systemManager) registerSafePathTool(ctx context.Context, args map[strin
 
 		// 2. Double Confirmation
 		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
-		char, err = readSingleKey(ctx)
+		char, err = m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -511,7 +511,7 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -522,7 +522,7 @@ func (m *systemManager) registerReadOnlyPathTool(ctx context.Context, args map[s
 
 		// 2. Double Confirmation
 		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.\033[0m (y/N) ")
-		char, err = readSingleKey(ctx)
+		char, err = m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err
@@ -562,31 +562,15 @@ func (m *systemManager) askUser(ctx context.Context, args map[string]interface{}
 	fmt.Fprintf(os.Stderr, "\033[1;35m[AI Question] %s\033[0m\n", question)
 	fmt.Fprintf(os.Stderr, "Answer > ")
 
-	type result struct {
-		s   string
-		err error
-	}
-	resChan := make(chan result, 1)
-
-	go func() {
-		// Use a simple scanner to avoid buffering issues with bufio.Reader if called multiple times
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			resChan <- result{scanner.Text(), nil}
-		} else {
-			resChan <- result{"", scanner.Err()}
+	s, err := m.sm.readLine(ctx)
+	if err != nil {
+		if err == io.EOF {
+			return types.ToolResult{Text: "User closed input (EOF)."}, nil
 		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return types.ToolResult{}, ctx.Err()
-	case res := <-resChan:
-		if res.err != nil {
-			return types.ToolResult{}, fmt.Errorf("failed to read user response: %w", res.err)
-		}
-		return types.ToolResult{Text: strings.TrimSpace(res.s)}, nil
+		return types.ToolResult{}, fmt.Errorf("failed to read user response: %w", err)
 	}
+
+	return types.ToolResult{Text: strings.TrimSpace(s)}, nil
 }
 
 func (m *systemManager) readExternalDocs(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -772,7 +756,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this command? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n") // New line after key hit
 
 		if err != nil {
@@ -933,7 +917,7 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		}
 		fmt.Fprintf(os.Stderr, "⚠️  Execute this pipeline? (y/N) ")
 
-		char, err := readSingleKey(ctx)
+		char, err := m.sm.readSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
 			return types.ToolResult{}, err

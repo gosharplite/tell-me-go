@@ -4,9 +4,11 @@
 package tools
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,11 +33,22 @@ type SecurityManager struct {
 	bypassMu            sync.RWMutex
 	terminalMu          sync.Mutex
 	pricingMu           sync.Mutex
+	inputReader         *bufio.Reader
+	inputReaderMu       sync.Mutex
 }
 
 // NewSecurityManager initializes a new SecurityManager.
 func NewSecurityManager() *SecurityManager {
-	return &SecurityManager{}
+	return &SecurityManager{
+		inputReader: bufio.NewReader(os.Stdin),
+	}
+}
+
+// SetInputReader sets the input reader for the SecurityManager.
+func (sm *SecurityManager) SetInputReader(r io.Reader) {
+	sm.inputReaderMu.Lock()
+	defer sm.inputReaderMu.Unlock()
+	sm.inputReader = bufio.NewReader(r)
 }
 
 // SetBypassFile sets the file where persistent bypass state is stored.
@@ -98,7 +111,9 @@ func (sm *SecurityManager) TerminalUnlock() {
 }
 
 // readSingleKey waits for a single key press from the user and returns it in lowercase.
-func readSingleKey(ctx context.Context) (string, error) {
+// Note: This call blocks on reading from input. While wrapping it in a goroutine
+// allows context cancellation, the underlying read remains active until input is received.
+func (sm *SecurityManager) readSingleKey(ctx context.Context) (string, error) {
 	// Check context before terminal check
 	select {
 	case <-ctx.Done():
@@ -128,12 +143,13 @@ func readSingleKey(ctx context.Context) (string, error) {
 	}
 	resChan := make(chan result, 1)
 	go func() {
-		b := make([]byte, 1)
-		_, err := os.Stdin.Read(b)
+		sm.inputReaderMu.Lock()
+		defer sm.inputReaderMu.Unlock()
+		b, err := sm.inputReader.ReadByte()
 		if err != nil {
 			resChan <- result{0, err}
 		} else {
-			resChan <- result{b[0], nil}
+			resChan <- result{b, nil}
 		}
 	}()
 
@@ -148,6 +164,39 @@ func readSingleKey(ctx context.Context) (string, error) {
 			return "", context.Canceled
 		}
 		return strings.ToLower(string(res.b)), nil
+	}
+}
+
+// readLine reads a single line of input from the user.
+// Note: Similar to readSingleKey, this call blocks on the underlying read.
+func (sm *SecurityManager) readLine(ctx context.Context) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	default:
+	}
+
+	type result struct {
+		s   string
+		err error
+	}
+	resChan := make(chan result, 1)
+	go func() {
+		sm.inputReaderMu.Lock()
+		defer sm.inputReaderMu.Unlock()
+		s, err := sm.inputReader.ReadString('\n')
+		if err != nil && (err != io.EOF || s == "") {
+			resChan <- result{"", err}
+		} else {
+			resChan <- result{s, nil}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case res := <-resChan:
+		return res.s, res.err
 	}
 }
 
@@ -193,7 +242,7 @@ func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action,
 	}
 	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
 
-	char, err := readSingleKey(ctx)
+	char, err := sm.readSingleKey(ctx)
 	fmt.Fprintf(os.Stderr, "\n")
 	if err != nil {
 		return false, err

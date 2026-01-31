@@ -9,6 +9,7 @@ import (
 )
 
 func TestReadSingleKey_NoTerminal(t *testing.T) {
+	sm := NewSecurityManager()
 	// Ensure TELL_ME_MOCK_ANSWER is not set
 	oldMock := os.Getenv("TELL_ME_MOCK_ANSWER")
 	os.Setenv("TELL_ME_MOCK_ANSWER", "")
@@ -16,7 +17,7 @@ func TestReadSingleKey_NoTerminal(t *testing.T) {
 
 	// Since we are running in a test, Stdin is likely not a terminal
 	ctx := context.Background()
-	_, err := readSingleKey(ctx)
+	_, err := sm.readSingleKey(ctx)
 
 	if err == nil {
 		t.Fatal("expected error when reading single key without terminal, but got nil")

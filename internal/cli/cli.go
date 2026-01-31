@@ -57,6 +57,7 @@ func New(version string) *App {
 	}
 
 	sm := tools.NewSecurityManager()
+	sm.SetInputReader(os.Stdin)
 
 	return &App{
 		Version: version,
@@ -92,6 +93,9 @@ func (a *App) Run(args []string) error {
 }
 
 func (a *App) run(ctx context.Context, args []string) error {
+	// Sync security manager with current app stdin
+	a.sm.SetInputReader(a.Stdin)
+
 	// 1. Parse Flags & Load Config
 	args = a.sanitizeArgs(args)
 	opts, fs, err := a.parseFlags(args[1:])

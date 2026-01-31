@@ -35,6 +35,8 @@ func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (s
 		// Non-terminal: Read all available input (e.g., piped content)
 		readChan := make(chan []byte, 1)
 		go func() {
+			// Note: This blocks on the underlying read. While the context allows
+			// the main loop to continue, this goroutine remains until EOF.
 			b, _ := io.ReadAll(a.Stdin)
 			readChan <- b
 		}()
@@ -61,6 +63,8 @@ func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (s
 		// Terminal: Read multi-line input until EOF (Ctrl+D)
 		readChan := make(chan []byte, 1)
 		go func() {
+			// Note: This blocks on the underlying read. While the context allows
+			// the main loop to continue, this goroutine remains until EOF.
 			b, _ := io.ReadAll(a.Stdin)
 			readChan <- b
 		}()
