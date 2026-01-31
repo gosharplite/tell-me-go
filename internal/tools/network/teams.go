@@ -37,8 +37,12 @@ func RegisterTeams(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The message to send to the channel.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for sending this message.",
+				},
 			},
-			Required: []string{"webhook_url", "message"},
+			Required: []string{"webhook_url", "message", "reason"},
 		},
 	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
 }
@@ -47,6 +51,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	var params struct {
 		WebhookURL string `json:"webhook_url"`
 		Message    string `json:"message"`
+		Reason     string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -60,7 +65,8 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	}
 
 	// Safety confirmation (unless bypassed)
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, message)
+	detail := fmt.Sprintf("Reason: %s\n\nMessage:\n%s", params.Reason, message)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

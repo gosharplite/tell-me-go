@@ -37,7 +37,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Description: "Optional: If output_file is set, append to it instead of overwriting.",
 				},
 			},
-			Required: []string{"command"},
+			Required: []string{"command", "reason"},
 		},
 	}, shell.ExecuteCommand, registry.ToolOptions{Serial: true, LongRunning: true})
 
@@ -67,7 +67,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Description: "Optional: If output_file is set, append to it instead of overwriting.",
 				},
 			},
-			Required: []string{"commands"},
+			Required: []string{"commands", "reason"},
 		},
 	}, shell.PipeCommands, registry.ToolOptions{Serial: true, LongRunning: true})
 

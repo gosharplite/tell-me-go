@@ -115,8 +115,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The new text to insert.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for this replacement.",
+				},
 			},
-			Required: []string{"filepath", "old_text", "new_text"},
+			Required: []string{"filepath", "old_text", "new_text", "reason"},
 		},
 	}, m.replaceText, registry.ToolOptions{Serial: true, LongRunning: true})
 
@@ -186,8 +190,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The full content to write to the file.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for writing this file.",
+				},
 			},
-			Required: []string{"filepath", "content"},
+			Required: []string{"filepath", "content", "reason"},
 		},
 	}, m.writeFile, registry.ToolOptions{Serial: true, LongRunning: true})
 
@@ -205,8 +213,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The text to append. Ensure you include a leading newline (\\n) if starting a new line.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for appending this text.",
+				},
 			},
-			Required: []string{"filepath", "content"},
+			Required: []string{"filepath", "content", "reason"},
 		},
 	}, m.appendText, registry.ToolOptions{Serial: true})
 
@@ -378,6 +390,7 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
+		Reason   string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -392,7 +405,8 @@ func (m *fileSystemManager) writeFile(ctx context.Context, args map[string]inter
 	}
 
 	// Confirmation Gate
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", resolvedPath, content)
+	detail := fmt.Sprintf("Reason: %s\n\nContent (full):\n%s", params.Reason, content)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", resolvedPath, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -661,6 +675,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 		FilePath string `json:"filepath"`
 		OldText  string `json:"old_text"`
 		NewText  string `json:"new_text"`
+		Reason   string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -676,7 +691,7 @@ func (m *fileSystemManager) replaceText(ctx context.Context, args map[string]int
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Replace (first occurrence):\n%s\nWith:\n%s", oldText, newText)
+	detail := fmt.Sprintf("Reason: %s\n\nReplace (first occurrence):\n%s\nWith:\n%s", params.Reason, oldText, newText)
 	approved, err := m.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", resolvedPath, detail)
 	if err != nil {
 		return types.ToolResult{}, err
@@ -761,6 +776,7 @@ func (m *fileSystemManager) appendText(ctx context.Context, args map[string]inte
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
+		Reason   string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -775,7 +791,8 @@ func (m *fileSystemManager) appendText(ctx context.Context, args map[string]inte
 	}
 
 	// Confirmation Gate
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "APPEND TEXT", resolvedPath, content)
+	detail := fmt.Sprintf("Reason: %s\n\nContent:\n%s", params.Reason, content)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "APPEND TEXT", resolvedPath, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

@@ -30,6 +30,7 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		Symbol  string `json:"symbol"`
 		SrcFile string `json:"src_file"`
 		DstFile string `json:"dst_file"`
+		Reason  string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -48,7 +49,8 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return types.ToolResult{}, err
 	}
 
-	approved, err := m.SP.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", resolvedSrc, fmt.Sprintf("%s -> %s", symbol, resolvedDst))
+	detail := fmt.Sprintf("Reason: %s\n\nMoving: %s\nFrom: %s\nTo: %s", params.Reason, symbol, resolvedSrc, resolvedDst)
+	approved, err := m.SP.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", resolvedSrc, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
@@ -230,6 +232,7 @@ func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		OldName string `json:"old_name"`
 		NewName string `json:"new_name"`
 		Path    string `json:"path"`
+		Reason  string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -247,7 +250,8 @@ func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		return types.ToolResult{}, err
 	}
 
-	approved, err := m.SP.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", resolvedPath, fmt.Sprintf("%s -> %s", oldName, newName))
+	detail := fmt.Sprintf("Reason: %s\n\nRename: %s -> %s", params.Reason, oldName, newName)
+	approved, err := m.SP.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", resolvedPath, detail)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

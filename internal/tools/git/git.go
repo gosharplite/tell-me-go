@@ -110,8 +110,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The name of the new branch.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for creating this branch.",
+				},
 			},
-			Required: []string{"name"},
+			Required: []string{"name", "reason"},
 		},
 	}, m.gitCreateBranch, registry.ToolOptions{Serial: true})
 }
@@ -228,7 +232,8 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 
 func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 	var params struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Reason string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
@@ -239,7 +244,7 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, fmt.Errorf("branch name is required")
 	}
 
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT CREATE BRANCH", name, "")
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT CREATE BRANCH", name, params.Reason)
 	if err != nil {
 		return types.ToolResult{}, err
 	}

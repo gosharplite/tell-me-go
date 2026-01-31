@@ -159,8 +159,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The directory to search (defaults to '.')",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for this refactoring.",
+				},
 			},
-			Required: []string{"old_name", "new_name"},
+			Required: []string{"old_name", "new_name", "reason"},
 		},
 	}, ref.RenameSymbol, registry.ToolOptions{Serial: true, LongRunning: true})
 
@@ -231,8 +235,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The destination file path.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for this move.",
+				},
 			},
-			Required: []string{"symbol", "src_file", "dst_file"},
+			Required: []string{"symbol", "src_file", "dst_file", "reason"},
 		},
 	}, ref.MoveDefinition, registry.ToolOptions{Serial: true})
 }
