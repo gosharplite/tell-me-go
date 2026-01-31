@@ -55,10 +55,12 @@ func (a *Agent) handleToolExecution(ctx context.Context, respContent *types.Cont
 		}
 	}
 
-	a.history.AddContent(&types.Content{
+	if err := a.history.AddContent(&types.Content{
 		Role:  "user",
 		Parts: responseParts,
-	})
+	}); err != nil {
+		a.reportHistoryError(err)
+	}
 	return nil
 }
 

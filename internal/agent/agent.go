@@ -179,10 +179,12 @@ func (a *Agent) refreshLimits() {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
-	a.history.AddContent(&types.Content{
+	if err := a.history.AddContent(&types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to initialize session history: %w", err)
+	}
 
 	_, maxTurns, _ := a.contextManager.GetLimits()
 
@@ -214,8 +216,9 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 
 		// 3. Render Output
 		a.renderer.RenderResponse(respContent, a.showThoughts, a.rawOutput)
-		a.history.AddContent(respContent)
-		a.saveHistory() // SAVE 1: Capture model's response/tool calls
+		if err := a.history.AddContent(respContent); err != nil {
+			a.reportHistoryError(err)
+		}
 
 		// 4. Handle Tool Execution
 		toolStart := time.Now()
@@ -226,7 +229,6 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 		if err != nil {
 			return err
 		}
-		a.saveHistory() // SAVE 2: Capture results of the tool calls
 
 		// Refresh limits to ensure tool updates (e.g. manage_config) are reflected in logs immediately
 		a.refreshLimits()
@@ -254,15 +256,11 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	return nil
 }
 
-func (a *Agent) saveHistory() {
-	if err := a.history.Save(); err != nil {
-		func() {
-			a.sm.TerminalLock()
-			defer a.sm.TerminalUnlock()
-			fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history: %v\033[0m\n",
-				time.Now().Format("15:04:05"), err)
-		}()
-	}
+func (a *Agent) reportHistoryError(err error) {
+	a.sm.TerminalLock()
+	defer a.sm.TerminalUnlock()
+	fmt.Fprintf(os.Stderr, "\033[0;90m[%s] [Warning] Failed to persist history entry: %v\033[0m\n",
+		time.Now().Format("15:04:05"), err)
 }
 
 func (a *Agent) sendChat(ctx context.Context, apiContents []*types.Content) (*types.Content, *types.Metrics, error) {
