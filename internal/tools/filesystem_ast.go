@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -15,47 +16,69 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
+var (
+	skeletonPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`^func\s+`),
+		regexp.MustCompile(`^type\s+`),
+		regexp.MustCompile(`^def\s+`),
+		regexp.MustCompile(`^class\s+`),
+		regexp.MustCompile(`^function\s+`),
+		regexp.MustCompile(`^\w+\(\)\s*\{`),
+	}
+)
+
 func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	// 1. Parse Arguments
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
 	if err := UnmarshalArgs(args, &params); err != nil {
 		return types.ToolResult{}, err
 	}
-
-	path := params.FilePath
-	if path == "" {
+	if params.FilePath == "" {
 		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
-	resolvedPath, err := m.sm.IsPathSafe(path)
+	// 2. Security Check
+	resolvedPath, err := m.sm.IsPathSafe(params.FilePath)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 
+	// 3. Primary Strategy: Go AST
 	if filepath.Ext(resolvedPath) == ".go" {
-		skeleton, err := astutil.GetFileSkeletonGo(resolvedPath)
-		if err == nil {
+		if skeleton, err := astutil.GetFileSkeletonGo(resolvedPath); err == nil {
 			return types.ToolResult{Text: skeleton}, nil
 		}
-		// Fallback to heuristic if AST fails
 	}
 
-	file, err := m.fs.Open(ctx, resolvedPath)
+	// 4. Fallback Strategy: Generic Heuristic
+	return m.extractGenericSkeleton(ctx, resolvedPath)
+}
+
+func (m *fileSystemManager) extractGenericSkeleton(ctx context.Context, path string) (types.ToolResult, error) {
+	file, err := m.fs.Open(ctx, path)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 	defer file.Close()
 
 	ext := filepath.Ext(path)
-	scanner := bufio.NewScanner(file)
+	skeleton, err := scanForDefinitions(file, ext)
+	if err != nil {
+		return types.ToolResult{}, err
+	}
+
+	if skeleton == "" {
+		return types.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
+	}
+	return types.ToolResult{Text: skeleton}, nil
+}
+
+func scanForDefinitions(r io.Reader, ext string) (string, error) {
+	scanner := bufio.NewScanner(r)
 	var sb strings.Builder
 	var lastComments []string
-
-	// Simple heuristic: extract lines that look like definitions and their preceding comments
-	defPatterns := []string{
-		`^func\s+`, `^type\s+`, `^def\s+`, `^class\s+`, `^function\s+`, `^\w+\(\)\s*\{`,
-	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -72,8 +95,8 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 		}
 
 		isDef := false
-		for _, p := range defPatterns {
-			if matched, _ := regexp.MatchString(p, line); matched {
+		for _, p := range skeletonPatterns {
+			if p.MatchString(line) {
 				isDef = true
 				break
 			}
@@ -84,20 +107,9 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 				sb.WriteString(c + "\n")
 			}
 			sb.WriteString(line + "\n")
-			if ext == ".py" && strings.HasSuffix(trimmed, ":") {
-				// Keep going for Python
-			} else if !strings.HasSuffix(trimmed, "{") && ext != ".py" {
-				// Might be a multi-line signature or type, but we keep it simple
-			}
 			sb.WriteString("\n")
 		}
 		lastComments = nil
 	}
-
-	out := sb.String()
-	if out == "" {
-		return types.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
-	}
-
-	return types.ToolResult{Text: out}, nil
+	return sb.String(), scanner.Err()
 }
