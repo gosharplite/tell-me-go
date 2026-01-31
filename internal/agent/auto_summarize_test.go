@@ -24,6 +24,10 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	registry := tools.NewRegistry()
+	registry.Register(&types.ToolDeclaration{
+		Name:        "dummy_tool",
+		Description: "A dummy tool for token estimation stability",
+	}, nil)
 	ctx := context.Background()
 
 	// Mock server for summarization
@@ -48,12 +52,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	a := New(client, hManager, registry, sm, true)
 
 	// Set a token limit to trigger auto-summarization.
-	// 90% is 1800.
+	// With a 2000 token limit, the 90% threshold is 1800.
 	a.SetLimits(10, 2000, 20)
 
 	// Fill history with enough content to exceed 1800 tokens.
-	// Estimation: tokens = (charCount / 3.2)
-	// We need ~5800 chars.
+	// Estimation: tokens = (charCount / 3.2) to be conservative.
+	// 6000 chars / 3.2 ≈ 1875 tokens, safely triggering the logic.
 	longText := strings.Repeat("A", 1000)
 	for i := 0; i < 6; i++ { // 12 messages
 		hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: longText}}})
