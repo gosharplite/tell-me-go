@@ -39,14 +39,28 @@ type TurnEngine struct {
 	Hooks      TurnHooks
 }
 
-// NewTurnEngine creates a new TurnEngine.
-func NewTurnEngine(gw gateway.LLMGateway, ex *ToolExecutor, cm *ContextManager, reg ToolRegistry) *TurnEngine {
-	return &TurnEngine{
+// TurnEngineOption defines a functional option for TurnEngine.
+type TurnEngineOption func(*TurnEngine)
+
+// WithHooks sets the TurnHooks for the engine.
+func WithHooks(hooks TurnHooks) TurnEngineOption {
+	return func(e *TurnEngine) {
+		e.Hooks = hooks
+	}
+}
+
+// NewTurnEngine creates a new TurnEngine with optional configuration.
+func NewTurnEngine(gw gateway.LLMGateway, ex *ToolExecutor, cm *ContextManager, reg ToolRegistry, opts ...TurnEngineOption) *TurnEngine {
+	e := &TurnEngine{
 		gateway:    gw,
 		executor:   ex,
 		ctxManager: cm,
 		registry:   reg,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // Run executes the multi-turn orchestration loop.
@@ -82,8 +96,7 @@ func (e *TurnEngine) validateTurn(ctx context.Context, turn int) error {
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
 	if turn > maxTurns {
-		// Enforced by executor's ErrMaxTurnsReached if turn-based limit is hit during tools.
-		// We could also return an error here if we want to be strict.
+		return fmt.Errorf("%w: turn %d exceeds limit %d", ErrMaxTurnsReached, turn, maxTurns)
 	}
 	return nil
 }

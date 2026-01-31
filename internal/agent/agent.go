@@ -88,11 +88,9 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 	strategy := NewContextStrategy(reg)
 	executor := NewToolExecutor(reg, sm, renderer)
 	ctxManager := NewContextManager(strategy, hManager, gw, renderer)
-	engine := NewTurnEngine(gw, executor, ctxManager, reg)
 
 	a := &Agent{
 		gateway:       gw,
-		engine:        engine,
 		ctxManager:    ctxManager,
 		history:       hManager,
 		registry:      reg,
@@ -106,25 +104,29 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 		rawOutput:     false,
 		startTime:     time.Now(),
 	}
-	a.engine.Hooks.OnTurnStart = func(turn int) {
-		a.refreshLimits()
-	}
-	a.engine.Hooks.OnPrepare = func(tokens, currentTurns int) {
-		a.logTurnStatus(currentTurns, tokens, nil, false)
-	}
-	a.engine.Hooks.OnStream = func(ctx context.Context, respCh <-chan *types.Content) {
-		uiCh, uiFinalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
-		for c := range respCh {
-			uiCh <- c
-		}
-		_ = uiFinalize()
-	}
-	a.engine.Hooks.OnComplete = func(state *TurnState) {
-		a.logTurnStatus(state.CurrentTurns, state.Tokens, state.Metrics, true)
-		if state.Metrics != nil {
-			a.renderer.LogUsage(state.Metrics, a.logFile, a.startTime)
-		}
-	}
+
+	// Initialize engine with hooks using Functional Options
+	a.engine = NewTurnEngine(gw, executor, ctxManager, reg, WithHooks(TurnHooks{
+		OnTurnStart: func(turn int) {
+			a.refreshLimits()
+		},
+		OnPrepare: func(tokens, currentTurns int) {
+			a.logTurnStatus(currentTurns, tokens, nil, false)
+		},
+		OnStream: func(ctx context.Context, respCh <-chan *types.Content) {
+			uiCh, uiFinalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
+			for c := range respCh {
+				uiCh <- c
+			}
+			_ = uiFinalize()
+		},
+		OnComplete: func(state *TurnState) {
+			a.logTurnStatus(state.CurrentTurns, state.Tokens, state.Metrics, true)
+			if state.Metrics != nil {
+				a.renderer.LogUsage(state.Metrics, a.logFile, a.startTime)
+			}
+		},
+	}))
 
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
