@@ -805,6 +805,7 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 
 	// Stream output to stderr and capture it
 	var sb strings.Builder
+	const maxCapture = 1024 * 1024 // 1MB Memory Cap
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	multi := io.MultiReader(stdout, stderr)
@@ -833,7 +834,9 @@ func (m *systemManager) executeCommand(ctx context.Context, args map[string]inte
 	for scanner.Scan() {
 		line := scanner.Text()
 		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
-		sb.WriteString(line + "\n")
+		if sb.Len() < maxCapture {
+			sb.WriteString(line + "\n")
+		}
 		if file != nil {
 			file.WriteString(line + "\n")
 		}
@@ -1004,6 +1007,7 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 	// Read all stderr pipes in parallel
 	var wg sync.WaitGroup
 	var stderrMu sync.Mutex
+	const maxCapturePerPipe = (1024 * 1024) / 4 // 256KB per pipe to stay under ~1MB total
 	for i, se := range stderrPipes {
 		wg.Add(1)
 		go func(idx int, r io.Reader) {
@@ -1013,7 +1017,9 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 				line := scanner.Text()
 				stderrMu.Lock()
 				fmt.Fprintf(os.Stderr, "  \033[31m[%d] %s\033[0m\n", idx, line)
-				combinedStderr.WriteString(line + "\n")
+				if combinedStderr.Len() < 1024*1024 { // Cap total stderr at 1MB
+					combinedStderr.WriteString(line + "\n")
+				}
 				stderrMu.Unlock()
 			}
 		}(i, se)
@@ -1021,10 +1027,13 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 
 	// Stream stdout of the last command
 	stdoutScanner := bufio.NewScanner(stdout)
+	const maxStdoutCapture = 1024 * 1024 // 1MB Cap
 	for stdoutScanner.Scan() {
 		line := stdoutScanner.Text()
 		fmt.Fprintf(os.Stderr, "  \033[90m%s\033[0m\n", line)
-		sb.WriteString(line + "\n")
+		if sb.Len() < maxStdoutCapture {
+			sb.WriteString(line + "\n")
+		}
 		if file != nil {
 			file.WriteString(line + "\n")
 		}
