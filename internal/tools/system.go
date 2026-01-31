@@ -132,6 +132,9 @@ func RegisterSystemTools(r *Registry, sm *SecurityManager) {
 				"headers": {
 					Type:        "OBJECT",
 					Description: "HTTP headers as a map of strings.",
+					Properties: map[string]*types.Schema{
+						"Content-Type": {Type: "STRING"},
+					},
 				},
 				"body": {
 					Type:        "STRING",

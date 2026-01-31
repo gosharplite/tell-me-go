@@ -23,9 +23,6 @@ func RegisterGitTools(r *Registry, sm *SecurityManager) {
 	r.Register(&types.ToolDeclaration{
 		Name:        "get_git_status",
 		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
-		Parameters: &types.Schema{
-			Type: "OBJECT",
-		},
 	}, m.getGitStatus)
 
 	r.Register(&types.ToolDeclaration{

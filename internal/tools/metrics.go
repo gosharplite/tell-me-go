@@ -54,9 +54,6 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 	r.Register(&types.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
-		Parameters: &types.Schema{
-			Type: "OBJECT",
-		},
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return types.ToolResult{Text: res}, err
@@ -65,9 +62,6 @@ func RegisterMetricsTools(r *Registry, sm *SecurityManager, logFile string, mode
 	r.Register(&types.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
-		Parameters: &types.Schema{
-			Type: "OBJECT",
-		},
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
