@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -73,12 +72,6 @@ func TestAgent_EstimateTokens(t *testing.T) {
 	if tokens <= 0 {
 		t.Errorf("expected positive token estimate, got %d", tokens)
 	}
-}
-
-type mockAuth struct {
-	authCalls   int
-	refreshFunc func() error
-	applyFunc   func(req *auth.Request)
 }
 
 func TestAgent_Chat_AuthRefresh(t *testing.T) {
@@ -340,22 +333,27 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 
 	a := New(mockClient, hManager, registry, sm)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel the context after the tool starts running
-	go func() {
-		select {
-		case <-running:
-			cancel()
-		case <-time.After(500 * time.Millisecond):
-			// Fallback to prevent hang if tool never starts
-			cancel()
-		}
-	}()
+	t.Run("CancelDuringToolExecution", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		// Cancel the context after the tool starts running
+		go func() {
+			select {
+			case <-running:
+				cancel()
+			case <-time.After(500 * time.Millisecond):
+				// Fallback to prevent hang if tool never starts
+				cancel()
+			}
+		}()
 
-	err := a.Chat(ctx, "Run long tool")
-	if err == nil {
-		t.Error("Expected error due to context cancellation, got nil")
-	}
+		err := a.Chat(ctx, "Run long tool")
+		if err == nil {
+			t.Error("Expected error due to context cancellation, got nil")
+		}
+		if err != context.Canceled {
+			t.Errorf("Expected context.Canceled, got: %v", err)
+		}
+	})
 }
 
 func TestAgent_RefreshLimits(t *testing.T) {
