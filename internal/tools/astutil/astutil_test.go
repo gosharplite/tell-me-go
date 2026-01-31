@@ -1,7 +1,9 @@
-package tools
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package astutil
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,16 +26,16 @@ func Hello() {
 	}
 
 	// Initialize cache
-	cache := newASTCache()
+	cache := NewASTCache()
 
 	// First fetch
-	f1, _, err := cache.get(filePath)
+	f1, _, err := cache.Get(filePath)
 	if err != nil {
 		t.Fatalf("First get failed: %v", err)
 	}
 
 	// Second fetch - should be same object
-	f2, _, err := cache.get(filePath)
+	f2, _, err := cache.Get(filePath)
 	if err != nil {
 		t.Fatalf("Second get failed: %v", err)
 	}
@@ -55,7 +57,7 @@ func Hello() {
 	}
 
 	// Third fetch - should be new object
-	f3, _, err := cache.get(filePath)
+	f3, _, err := cache.Get(filePath)
 	if err != nil {
 		t.Fatalf("Third get failed: %v", err)
 	}
@@ -65,31 +67,8 @@ func Hello() {
 	}
 }
 
-func TestGrepDefinitionsGo_WithCache(t *testing.T) {
-	// Setup
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "main.go")
-	content := `package main
-
-func Foo() {}
-type Bar struct{}
-`
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	results, err := grepDefinitionsGo(context.Background(), tmpDir, "Foo")
-	if err != nil {
-		t.Fatalf("grepDefinitionsGo failed: %v", err)
-	}
-
-	if len(results) != 1 {
-		t.Errorf("Expected 1 result, got %d", len(results))
-	}
-}
-
 func TestASTCacheEviction(t *testing.T) {
-	cache := newASTCache()
+	cache := NewASTCache()
 	cache.maxSize = 2 // Small limit
 
 	tmpDir := t.TempDir()
@@ -102,7 +81,7 @@ func TestASTCacheEviction(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, _, err := cache.get(path)
+		_, _, err := cache.Get(path)
 		if err != nil {
 			t.Fatalf("Failed to get %s: %v", name, err)
 		}

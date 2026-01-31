@@ -1,4 +1,7 @@
-package tools
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package refactor_test
 
 import (
 	"context"
@@ -6,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/refactor"
 )
 
 func TestMoveDefinition(t *testing.T) {
@@ -43,37 +49,13 @@ func OtherFunc() {
 	}
 
 	dstFile := filepath.Join(dstDir, "dst.go")
-	// No longer writing dstContent to test auto-creation
-	// dstContent := `package pkg2
-	// `
-	// if err := os.WriteFile(dstFile, []byte(dstContent), 0644); err != nil {
-	// 	t.Fatal(err)
-	// }
-
-	mainFile := filepath.Join(tmpDir, "main.go")
-	mainContent := `package main
-
-import (
-	"test-move-def/pkg1"
-)
-
-func main() {
-	s := &pkg1.MyStruct{ID: 1}
-	s.Hello()
-}
-`
-	// Note: the module path "test-move-def" is just for this test context.
-	// In reality we'd need a go.mod but for AST manipulation we might get away with it if we are just doing string/ident replacements.
-	if err := os.WriteFile(mainFile, []byte(mainContent), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
 	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 
-	sm := NewSecurityManager()
+	sm := tools.NewSecurityManager()
 	sm.RegisterSafePath(tmpDir)
-	m := &intelligenceManager{sm: sm}
+	m := &refactor.Manager{SP: sm}
 
 	args := map[string]interface{}{
 		"symbol":   "MyStruct",
@@ -82,9 +64,9 @@ func main() {
 	}
 
 	ctx := context.Background()
-	resp, err := m.moveDefinition(ctx, args)
+	resp, err := m.MoveDefinition(ctx, args)
 	if err != nil {
-		t.Fatalf("moveDefinition failed: %v", err)
+		t.Fatalf("MoveDefinition failed: %v", err)
 	}
 
 	t.Logf("Response: %s", resp)
@@ -112,13 +94,37 @@ func main() {
 	if !strings.Contains(string(dstRes), "import \"fmt\"") {
 		t.Errorf("dstFile missing fmt import")
 	}
+}
 
-	// Verify mainFile references are updated (this is the hard part)
-	// mainRes, _ := os.ReadFile(mainFile)
-	// if strings.Contains(string(mainRes), "pkg1.MyStruct") {
-	// 	t.Errorf("mainFile still references pkg1.MyStruct")
-	// }
-	// if !strings.Contains(string(mainRes), "pkg2.MyStruct") {
-	// 	t.Errorf("mainFile does not reference pkg2.MyStruct")
-	// }
+func TestRenameSymbol(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.go")
+	content := `package main
+func OldName() {}
+func main() { OldName() }
+`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
+	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
+
+	sm := tools.NewSecurityManager()
+	sm.RegisterSafePath(tmpDir)
+	m := &refactor.Manager{SP: sm}
+
+	args := map[string]interface{}{
+		"old_name": "OldName",
+		"new_name": "NewName",
+		"path":     tmpDir,
+	}
+
+	_, err := m.RenameSymbol(context.Background(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := os.ReadFile(filePath)
+	if !strings.Contains(string(got), "func NewName()") {
+		t.Error("Rename failed")
+	}
 }

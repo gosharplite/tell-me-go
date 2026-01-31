@@ -61,10 +61,10 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 }
 
 func TestIsBinary(t *testing.T) {
-	if !isBinary([]byte{0}) {
+	if !fsutil.IsBinary([]byte{0}) {
 		t.Error("expected isBinary to return true for data with null byte")
 	}
-	if isBinary([]byte("text")) {
+	if fsutil.IsBinary([]byte("text")) {
 		t.Error("expected isBinary to return false for plain text")
 	}
 }

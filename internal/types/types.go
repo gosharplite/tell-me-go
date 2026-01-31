@@ -5,6 +5,7 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 
 	"google.golang.org/genai"
 )
@@ -207,4 +208,22 @@ type ToolResult struct {
 type BinaryData struct {
 	MIMEType string
 	Data     []byte
+}
+
+// SecurityProvider defines the interface for path validation and destructive action confirmation.
+type SecurityProvider interface {
+	IsPathSafe(path string) (string, error)
+	IsPathWritable(path string) (string, error)
+	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
+	TerminalLock()
+	TerminalUnlock()
+}
+
+// UnmarshalArgs helper converts map[string]interface{} to a target struct.
+func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
+	b, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, target)
 }

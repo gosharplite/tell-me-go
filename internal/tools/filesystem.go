@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/astutil"
+	"github.com/gosharplite/tell-me-go/internal/tools/navigation"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -432,7 +434,7 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		if err != nil && err != io.EOF {
 			return nil // Skip file on error
 		}
-		if isBinary(buf[:n]) {
+		if fsutil.IsBinary(buf[:n]) {
 			return nil
 		}
 		file.Seek(0, 0)
@@ -469,15 +471,6 @@ func (m *fileSystemManager) searchFiles(ctx context.Context, args map[string]int
 		out += "\n... (truncated)"
 	}
 	return types.ToolResult{Text: out}, nil
-}
-
-func isBinary(data []byte) bool {
-	for _, b := range data {
-		if b == 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *fileSystemManager) getFileDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -694,7 +687,8 @@ func (m *fileSystemManager) grepDefinitions(ctx context.Context, args map[string
 	query := params.Query
 
 	// Attempt AST-based search for Go files first
-	astResults, err := grepDefinitionsGo(ctx, resolvedPath, query)
+	nav := &navigation.Manager{SP: m.sm}
+	astResults, err := nav.GrepDefinitionsGo(ctx, resolvedPath, query)
 	if err != nil {
 		// Fallback to regex if AST fails for some reason
 	}
@@ -806,7 +800,7 @@ func (m *fileSystemManager) getFileSkeleton(ctx context.Context, args map[string
 	}
 
 	if filepath.Ext(resolvedPath) == ".go" {
-		skeleton, err := getFileSkeletonGo(resolvedPath)
+		skeleton, err := astutil.GetFileSkeletonGo(resolvedPath)
 		if err == nil {
 			return types.ToolResult{Text: skeleton}, nil
 		}

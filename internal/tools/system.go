@@ -913,4 +913,3 @@ func (m *systemManager) pipeCommands(ctx context.Context, args map[string]interf
 		Text: fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, finalRes),
 	}, nil
 }
-

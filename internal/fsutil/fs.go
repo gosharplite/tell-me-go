@@ -110,3 +110,13 @@ func (f *OSFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error
 
 // DefaultFileSystem is the global OS-based filesystem implementation.
 var DefaultFileSystem FileSystem = &OSFileSystem{}
+
+// IsBinary detects if a byte slice contains binary data (NUL bytes).
+func IsBinary(data []byte) bool {
+	for _, b := range data {
+		if b == 0 {
+			return true
+		}
+	}
+	return false
+}

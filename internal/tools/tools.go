@@ -7,7 +7,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -90,9 +89,5 @@ func (r *Registry) IsLongRunning(name string) bool {
 
 // UnmarshalArgs helper converts map[string]interface{} to a target struct.
 func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
-	b, err := json.Marshal(args)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, target)
+	return types.UnmarshalArgs(args, target)
 }
