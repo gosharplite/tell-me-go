@@ -265,7 +265,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 			strategy := NewContextStrategy(reg)
 			hManager := history.NewManager("dummy")
 			tt.setup(mockGw, hManager)
-			
+
 			// Initial user content to satisfy alternation
 			_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
@@ -308,7 +308,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 				}
 				// Second turn: return final response
 				return &types.Content{
-					Role: "model",
+					Role:  "model",
 					Parts: []*types.Part{{Text: "final response"}},
 				}, &types.Metrics{}, nil
 			}
@@ -414,7 +414,7 @@ func BenchmarkTurnEngineInitialization(b *testing.B) {
 	strategy := NewContextStrategy(reg)
 	hManager := history.NewManager("dummy")
 	cm := &ContextManager{Strategy: strategy, History: hManager}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = NewTurnEngine(gw, ex, cm, reg, WithHooks(TurnHooks{
