@@ -249,40 +249,19 @@ func TestHelpOutput(t *testing.T) {
 func TestToolOrchestrationLoop(t *testing.T) {
 	// 1. Setup Mock Server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			json.NewDecoder(r.Body).Decode(&body)
-
-			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "list_files",
-									"args": {"path": "."}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{"text": "I have listed the files."}]
-						}
-					}]
-				}`)
-			}
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		
+		response := `{
+			"candidates": [{
+				"content": {
+					"role": "model",
+					"parts": [{"text": "I have listed the files."}]
+				}
+			}]
+		}`
+		// For Vertex AI, it expects an array of responses for streaming.
+		// But it decodes it chunk by chunk.
+		fmt.Fprintf(w, "[%s]", response)
 	}))
 	defer server.Close()
 
