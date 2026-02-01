@@ -93,3 +93,10 @@ type TokenLimitReachedEvent struct {
 	Tokens   int
 	MaxLimit int
 }
+
+// SummarizationRequired signals that the history is becoming too large and should be summarized.
+type SummarizationRequired struct {
+	Tokens   int
+	MaxLimit int
+	Reason   string
+}

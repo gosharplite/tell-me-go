@@ -123,7 +123,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 				},
 				CtxManager: &ContextManager{
 					History:  history.NewManager(""),
-					Strategy: NewContextStrategy(&MockRegistry{}, nil),
+					Strategy: NewContextStrategy(NewHeuristicTokenCounter(&MockRegistry{}), nil),
 				},
 				Gateway:  mockGw,
 				Executor: &MockExecutor{
@@ -149,7 +149,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	reg := &MockRegistry{}
 	bus := &events.SimpleEventBus{}
-	strategy := NewContextStrategy(reg, bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	cm := newTestContextManager(strategy, hManager, &MockGateway{}, bus)
 	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus)
@@ -204,7 +204,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	}
 
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
@@ -279,7 +279,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 				},
 			}
 			reg := &MockRegistry{}
-			strategy := NewContextStrategy(reg, nil)
+			strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 			hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 			tt.setup(mockGw, hManager)
 
@@ -335,7 +335,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	}
 
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
@@ -358,7 +358,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 func TestTurnEngine_RecoveryLogic(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -423,7 +423,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithMiddleware(m1, m2))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
 	turn := &Turn{
@@ -473,7 +473,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, bus), reg, bus, WithClock(mockClock))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, bus), reg, bus, WithClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
 	if err != nil {
@@ -542,7 +542,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -587,7 +587,7 @@ func newTestContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLM
 func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -643,7 +643,7 @@ func TestTurnEngine_WithProcessor(t *testing.T) {
 		return ProcessResult{NextPhase: PhaseInference}
 	})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -681,7 +681,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &mockHook{}
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithHook(hook))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {

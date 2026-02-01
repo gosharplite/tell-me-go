@@ -194,7 +194,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 
 func TestWarningInjector_Transform(t *testing.T) {
 	ctx := context.Background()
-	strategy := NewContextStrategy(&mockToolRegistry{}, nil)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 	strategy.SetLimits(1000, 10, 20)
 
 	injector := &WarningInjector{Strategy: strategy}

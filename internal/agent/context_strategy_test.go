@@ -23,8 +23,8 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return m.declarations
 }
 
-func TestContextStrategy_EstimateValueSize(t *testing.T) {
-	cs := &ContextStrategy{}
+func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
+	htc := &HeuristicTokenCounter{}
 	tests := []struct {
 		name  string
 		input interface{}
@@ -51,8 +51,8 @@ func TestContextStrategy_EstimateValueSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := cs.estimateValueSize(tt.input); got != tt.want {
-				t.Errorf("estimateValueSize() = %v, want %v", got, tt.want)
+			if got := htc.EstimateValueSize(tt.input); got != tt.want {
+				t.Errorf("EstimateValueSize() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -60,7 +60,7 @@ func TestContextStrategy_EstimateValueSize(t *testing.T) {
 
 func TestContextStrategy_EstimateTokens(t *testing.T) {
 	registry := &mockToolRegistry{}
-	cs := NewContextStrategy(registry, nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(registry), nil)
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.declarations = nil
@@ -136,7 +136,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 }
 
 func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
-	cs := NewContextStrategy(&mockToolRegistry{}, nil)
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 	cs.SetLimits(1000, 10, 100)
 
 	t.Run("Exact Boundaries - 90%", func(t *testing.T) {

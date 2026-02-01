@@ -11,7 +11,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
@@ -90,38 +89,25 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	return req.Result, &req.Metadata, nil
 }
 
-// SummarizeHistoryTool implements the summarize_history tool.
-func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Turns float64 `json:"turns"`
-		Focus string  `json:"focus"`
-	}
-	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	targetTurns := int(params.Turns)
-	if targetTurns <= 0 {
-		return tools.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
-	}
-
+// SummarizeRange compresses a range of history turns into a single summary block.
+func (cm *ContextManager) SummarizeRange(ctx context.Context, turns int, focus string) (string, error) {
 	contents := cm.History.GetContents()
 	// We must leave at least the last turn (2 messages) and the current prompt
 	// to maintain context continuity.
 	maxSummarizable := (len(contents) - 2) / 2
-	if targetTurns > maxSummarizable {
-		targetTurns = maxSummarizable
+	if turns > maxSummarizable {
+		turns = maxSummarizable
 	}
 
-	if targetTurns <= 0 {
-		return tools.ToolResult{Text: "History is too short to summarize yet."}, nil
+	if turns <= 0 {
+		return "History is too short to summarize yet.", nil
 	}
 
-	msgsToSummarize := targetTurns * 2
+	msgsToSummarize := turns * 2
 
-	summary, err := cm.Summarizer.Summarize(ctx, contents[:msgsToSummarize], params.Focus)
+	summary, err := cm.Summarizer.Summarize(ctx, contents[:msgsToSummarize], focus)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return "", err
 	}
 
 	newMsgs := []*llm.Content{
@@ -136,8 +122,8 @@ func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[str
 	}
 
 	if err := cm.History.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
+		return "", fmt.Errorf("failed to update history with summary: %w", err)
 	}
 
-	return tools.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", targetTurns)}, nil
+	return fmt.Sprintf("Summarized the first %d turns of history.", turns), nil
 }

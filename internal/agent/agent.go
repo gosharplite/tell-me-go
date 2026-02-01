@@ -106,7 +106,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 
-	strategy := NewContextStrategy(reg, bus)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
 	factory := &PipelineFactory{
@@ -183,6 +183,7 @@ func (a *Agent) emit(e events.Event) {
 }
 
 func (a *Agent) registerInternalTools() {
+	it := NewInternalTools(a.ctxManager)
 	a.registry.Register(&tools.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
@@ -200,7 +201,7 @@ func (a *Agent) registerInternalTools() {
 			},
 			Required: []string{"turns"},
 		},
-	}, a.ctxManager.SummarizeHistoryTool)
+	}, it.SummarizeHistory)
 }
 
 // SetLimits sets the operational limits for the agent.

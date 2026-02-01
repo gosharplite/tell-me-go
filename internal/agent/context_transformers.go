@@ -98,6 +98,14 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	tokens := req.Metadata.OriginalTokenCount
 
 	if tokens > int(float64(t.MaxTokens)*0.9) {
+		if t.Events != nil {
+			t.Events.Publish(events.SummarizationRequired{
+				Tokens:   tokens,
+				MaxLimit: t.MaxTokens,
+				Reason:   "Pressure high ( > 90%)",
+			})
+		}
+
 		if err := t.autoSummarize(ctx, req); err == nil {
 			tokens = t.Estimator.EstimateTokens(req.History)
 			req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn

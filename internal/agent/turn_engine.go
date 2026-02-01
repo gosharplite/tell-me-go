@@ -445,6 +445,11 @@ func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	}
 
 	turn.State.RetryCount++
+
+	if err := ctx.Err(); err != nil {
+		return ProcessResult{Error: err}
+	}
+
 	select {
 	case <-ctx.Done():
 		return ProcessResult{Error: ctx.Err()}

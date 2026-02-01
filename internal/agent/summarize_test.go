@@ -106,7 +106,8 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 			if tt.name == "with focus" {
 				args["focus"] = "refactoring"
 			}
-			resp, err := a.ctxManager.SummarizeHistoryTool(ctx, args)
+			it := NewInternalTools(a.ctxManager)
+			resp, err := it.SummarizeHistory(ctx, args)
 
 			if (err != nil) != tt.expectedErr {
 				t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)

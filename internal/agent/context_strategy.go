@@ -20,7 +20,7 @@ type Warning struct {
 // ContextStrategy handles token estimation and warning generation.
 type ContextStrategy struct {
 	mu               sync.RWMutex
-	registry         ToolRegistry
+	counter          llm.TokenCounter
 	maxHistoryTokens int
 	maxToolTurns     int
 	maxHistoryTurns  int
@@ -33,9 +33,9 @@ type ToolRegistry interface {
 }
 
 // NewContextStrategy creates a new context strategy.
-func NewContextStrategy(registry ToolRegistry, bus events.EventBus) *ContextStrategy {
+func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
 	cs := &ContextStrategy{
-		registry:         registry,
+		counter:          counter,
 		maxHistoryTokens: 120000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
@@ -83,55 +83,7 @@ func (cs *ContextStrategy) GetLimits() (int, int, int) {
 
 // EstimateTokens provides a heuristic-based token count with incremental caching.
 func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
-	totalTokens := 0
-
-	// Overhead for tools
-	for _, decl := range cs.registry.GetDeclarations() {
-		totalTokens += (len(decl.Name) + len(decl.Description)) / 4
-		if decl.Parameters != nil {
-			totalTokens += 50 // Heuristic for parameter definitions
-		}
-	}
-
-	for _, c := range contents {
-		if c.TokenCount > 0 {
-			totalTokens += c.TokenCount
-			continue
-		}
-
-		// Calculate delta for this content
-		charCount := 0
-		for _, p := range c.Parts {
-			if p.Text != "" {
-				charCount += len(p.Text)
-			}
-			if p.FunctionCall != nil {
-				charCount += len(p.FunctionCall.Name)
-				charCount += cs.estimateMapSize(p.FunctionCall.Args)
-			}
-			if p.FunctionResponse != nil {
-				charCount += len(p.FunctionResponse.Name)
-				charCount += cs.estimateMapSize(p.FunctionResponse.Response)
-			}
-			if p.InlineData != nil {
-				charCount += 160 // Heuristic for blob (roughly 50 tokens)
-			}
-		}
-
-		c.TokenCount = int(float64(charCount) / 3.2)
-		totalTokens += c.TokenCount
-	}
-
-	totalTokens += 300 // Base overhead
-	return totalTokens
-}
-
-func (cs *ContextStrategy) estimateMapSize(m map[string]interface{}) int {
-	return estimateMapSizeInternal(m)
-}
-
-func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
-	return estimateValueSizeInternal(v)
+	return cs.counter.Count(contents)
 }
 
 func (cs *ContextStrategy) getTurnWarning(turn int) string {
@@ -150,42 +102,6 @@ func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	return cs.getHistoryTurnWarningLocked(currentTurns)
-}
-
-func estimateMapSizeInternal(m map[string]interface{}) int {
-	if m == nil {
-		return 0
-	}
-	size := 0
-	for k, v := range m {
-		size += len(k)
-		size += estimateValueSizeInternal(v)
-	}
-	return size
-}
-
-func estimateValueSizeInternal(v interface{}) int {
-	if v == nil {
-		return 4
-	}
-	switch val := v.(type) {
-	case string:
-		return len(val)
-	case float64, int, int64:
-		return 10
-	case bool:
-		return 5
-	case map[string]interface{}:
-		return estimateMapSizeInternal(val)
-	case []interface{}:
-		size := 0
-		for _, item := range val {
-			size += estimateValueSizeInternal(item)
-		}
-		return size
-	default:
-		return 20
-	}
 }
 
 // GetWarnings generates safety warnings based on current state.
