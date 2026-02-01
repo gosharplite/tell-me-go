@@ -32,11 +32,11 @@ func TestSlidingWindowPolicy_Prune(t *testing.T) {
 	}{
 		{"No pruning needed", 10, 4, 0, 4},
 		{"Exact limit", 5, 10, 0, 10},
-		{"Pruning exceeding", 2, 10, 4, 2},  // maxTurns 2 (4 msgs). targetMessages (2/2)*2 = 2 msgs. Pruned (10-2)/2 = 4 turns.
-		{"Odd history length", 5, 11, 4, 3}, // 11 > 10. target (5/2)*2 = 4. remove = 11-4 = 7. remove+1 = 8. remain = 3. pruned = 4.
+		{"Pruning exceeding", 2, 10, 3, 4}, // maxTurns 2 (4 msgs). remove 10-4=6. pruned 3.
+		{"Odd history length", 5, 11, 1, 9}, // 11 > 10. target 10. remove 11-10=1. remove+1=2. remain 9. pruned 1.
 		{"Zero turns", 0, 10, 0, 10},
 		{"Negative turns", -1, 10, 0, 10},
-		{"Large history small limit", 1, 20, 9, 2}, // targetMessages (1/2)*2 = 0, clamped to 2. Pruned (20-2)/2 = 9 turns.
+		{"Large history small limit", 1, 20, 9, 2}, // target 2. remove 20-2=18. pruned 9.
 	}
 
 	for _, tt := range tests {

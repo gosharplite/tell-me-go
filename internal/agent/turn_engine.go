@@ -17,7 +17,6 @@ import (
 type TurnPhase string
 
 const (
-	PhasePending    TurnPhase = "Pending"
 	PhaseRefining   TurnPhase = "Refining"
 	PhaseInference  TurnPhase = "Inference"
 	PhaseExecuting  TurnPhase = "Executing"
@@ -185,7 +184,7 @@ type ContextRefiner struct{}
 func (p *ContextRefiner) Process(ctx context.Context, turn *Turn) (TurnPhase, error) {
 	apiContents, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
-		return PhasePending, err
+		return PhaseComplete, err
 	}
 	turn.State.Metadata = metadata
 	turn.State.Tokens = metadata.FinalTokenCount
@@ -225,7 +224,7 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) (TurnPhase, err
 
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return PhasePending, err
+		return PhaseComplete, err
 	}
 	turn.State.Response = respContent
 	turn.State.Metrics = metrics
@@ -258,7 +257,7 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) (TurnPhase, err
 
 	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
-		return PhasePending, err
+		return PhaseComplete, err
 	}
 
 	if toolResponse != nil {
@@ -276,12 +275,12 @@ type PersistenceStep struct{}
 
 func (p *PersistenceStep) Process(ctx context.Context, turn *Turn) (TurnPhase, error) {
 	if err := turn.CtxManager.History.AddContent(ctx, turn.State.Response); err != nil {
-		return PhasePending, fmt.Errorf("history error: %w", err)
+		return PhaseComplete, fmt.Errorf("history error: %w", err)
 	}
 
 	if turn.State.ToolResponse != nil {
 		if err := turn.CtxManager.History.AddContent(ctx, turn.State.ToolResponse); err != nil {
-			return PhasePending, fmt.Errorf("failed to persist tool results: %w", err)
+			return PhaseComplete, fmt.Errorf("failed to persist tool results: %w", err)
 		}
 	}
 

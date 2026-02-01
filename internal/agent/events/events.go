@@ -5,6 +5,7 @@ package events
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -21,16 +22,24 @@ type EventBus interface {
 
 // SimpleEventBus is a basic implementation of EventBus.
 type SimpleEventBus struct {
+	mu          sync.RWMutex
 	subscribers []func(Event)
 }
 
 func (b *SimpleEventBus) Publish(e Event) {
-	for _, sub := range b.subscribers {
+	b.mu.RLock()
+	subs := make([]func(Event), len(b.subscribers))
+	copy(subs, b.subscribers)
+	b.mu.RUnlock()
+
+	for _, sub := range subs {
 		sub(e)
 	}
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.subscribers = append(b.subscribers, sub)
 }
 

@@ -224,7 +224,8 @@ type WorkerPool struct {
 	maxWorkers int
 	tasks      chan func(ctx context.Context)
 	wg         sync.WaitGroup
-	quit       chan struct{}
+	ctx        context.Context
+	cancel     context.CancelFunc
 	once       sync.Once
 }
 
@@ -233,10 +234,12 @@ func NewWorkerPool(maxWorkers int) *WorkerPool {
 	if maxWorkers <= 0 {
 		maxWorkers = 1
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	p := &WorkerPool{
 		maxWorkers: maxWorkers,
 		tasks:      make(chan func(ctx context.Context), maxWorkers*2),
-		quit:       make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 	p.start()
 	return p
@@ -253,8 +256,10 @@ func (p *WorkerPool) start() {
 					if !ok {
 						return
 					}
-					task(context.Background())
-				case <-p.quit:
+					task(p.ctx)
+				case <-p.ctx.Done():
+					// Drain tasks if possible or just exit?
+					// Usually we want to exit immediately if context is cancelled.
 					return
 				}
 			}
@@ -266,15 +271,15 @@ func (p *WorkerPool) start() {
 func (p *WorkerPool) Submit(task func(ctx context.Context)) {
 	select {
 	case p.tasks <- task:
-	case <-p.quit:
+	case <-p.ctx.Done():
 	}
 }
 
 // Shutdown stops all workers and waits for them to finish.
 func (p *WorkerPool) Shutdown() {
 	p.once.Do(func() {
-		close(p.quit)
-		close(p.tasks)
+		close(p.tasks) // No more tasks can be submitted
 		p.wg.Wait()
+		p.cancel()
 	})
 }

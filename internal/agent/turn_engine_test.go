@@ -278,3 +278,39 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 		t.Errorf("expected 2 turns, got %d", turnCount)
 	}
 }
+
+func TestTurnEngine_Run_ErrorMasking(t *testing.T) {
+	mockGw := &MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+			ch := make(chan *types.Content)
+			close(ch)
+			return ch, func() (*types.Content, *types.Metrics, error) {
+				return nil, nil, errors.New("ROOT CAUSE ERROR")
+			}
+		},
+	}
+
+	reg := &MockRegistry{}
+	strategy := NewContextStrategy(reg)
+	hManager := history.NewManager("dummy")
+	hManager.SetStore(&MockStore{
+		AppendFunc: func(ctx context.Context, content *types.Content) error { return nil },
+	})
+	_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
+
+	e := NewTurnEngine(mockGw, nil, NewContextManager(strategy, hManager, mockGw, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	
+	if !strings.Contains(err.Error(), "ROOT CAUSE ERROR") {
+		t.Errorf("error should contain ROOT CAUSE ERROR, but got: %v", err)
+	}
+	
+	if strings.Contains(err.Error(), "no processor for phase") {
+		t.Errorf("error should NOT contain 'no processor for phase', but got: %v", err)
+	}
+}

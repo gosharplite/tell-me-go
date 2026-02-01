@@ -48,13 +48,16 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*types.Conten
 	}
 	maxMessages := p.MaxTurns * 2
 	if len(history) > maxMessages {
-		targetMessages := (p.MaxTurns / 2) * 2
+		targetMessages := p.MaxTurns * 2
 		if targetMessages < 2 {
 			targetMessages = 2
 		}
 
 		removeCount := len(history) - targetMessages
-		removeCount += (removeCount % 2)
+		// Ensure we remove an even number of messages to keep turns intact
+		if removeCount % 2 != 0 {
+			removeCount++
+		}
 
 		if removeCount > 0 && removeCount < len(history) {
 			return history[removeCount:], removeCount / 2
