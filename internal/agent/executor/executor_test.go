@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -100,4 +101,73 @@ func TestResultCollector(t *testing.T) {
 			t.Errorf("Expected context.Canceled, got %v", err)
 		}
 	})
+}
+
+type MockStrategy struct{}
+
+func (s *MockStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+	return &llm.Part{
+		FunctionResponse: &llm.FunctionResponse{
+			Name:     name,
+			Response: map[string]interface{}{"result": result.Text},
+		},
+	}
+}
+
+func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
+	t.Parallel()
+	e := &ToolExecutor{strategy: &MockStrategy{}}
+
+	largeBlob := make([]byte, 5*1024*1024) // 5MB
+	for i := range largeBlob {
+		largeBlob[i] = byte(i % 256)
+	}
+
+	tests := []struct {
+		name      string
+		calls     []*llm.FunctionCall
+		results   []tools.ToolResult
+		wantParts int
+	}{
+		{
+			name:  "Single Tool with Binary",
+			calls: []*llm.FunctionCall{{Name: "get_image"}},
+			results: []tools.ToolResult{{
+				Text: "Here is your image",
+				BinaryData: []tools.BinaryData{
+					{MIMEType: "image/png", Data: largeBlob},
+				},
+			}},
+			wantParts: 2, // 1 Text + 1 Binary
+		},
+		{
+			name:  "Multiple Binary Parts",
+			calls: []*llm.FunctionCall{{Name: "get_files"}},
+			results: []tools.ToolResult{{
+				BinaryData: []tools.BinaryData{
+					{MIMEType: "application/pdf", Data: []byte{1, 2, 3}},
+					{MIMEType: "text/plain", Data: []byte{4, 5, 6}},
+				},
+			}},
+			wantParts: 3, // 1 Text (from Strategy.Format) + 2 Binary
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := e.assembleResponse(tt.calls, tt.results)
+
+			if len(content.Parts) != tt.wantParts {
+				t.Errorf("Got %d parts, want %d", len(content.Parts), tt.wantParts)
+			}
+
+			// Verify the last part of the first result is our large blob
+			lastPart := content.Parts[len(content.Parts)-1]
+			if lastPart.InlineData != nil {
+				if tt.name == "Single Tool with Binary" && !bytes.Equal(lastPart.InlineData.Data, largeBlob) {
+					t.Error("Binary data corruption detected")
+				}
+			}
+		})
+	}
 }
