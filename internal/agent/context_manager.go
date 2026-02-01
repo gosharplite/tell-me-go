@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
@@ -16,6 +17,7 @@ import (
 
 // ContextManager encapsulates context preparation, policy enforcement, and summarization.
 type ContextManager struct {
+	mu         sync.RWMutex
 	Strategy   *ContextStrategy
 	History    *history.Manager
 	Summarizer HistorySummarizer
@@ -46,6 +48,8 @@ func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGate
 }
 
 func (cm *ContextManager) onConfigUpdated(e events.ConfigUpdated) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
 	if cm.factory != nil {
 		cm.Pipeline = cm.factory.BuildStandardPipeline(e.Limits)
 	}
@@ -60,11 +64,15 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		History: cm.History.GetContents(),
 	}
 
-	if cm.Pipeline == nil {
+	cm.mu.RLock()
+	pipeline := cm.Pipeline
+	cm.mu.RUnlock()
+
+	if pipeline == nil {
 		return nil, nil, fmt.Errorf("context pipeline not configured")
 	}
 
-	if err := cm.Pipeline.Execute(ctx, req); err != nil {
+	if err := pipeline.Execute(ctx, req); err != nil {
 		return nil, nil, err
 	}
 

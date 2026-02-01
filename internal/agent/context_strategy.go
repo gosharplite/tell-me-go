@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -18,6 +19,7 @@ type Warning struct {
 
 // ContextStrategy handles token estimation and warning generation.
 type ContextStrategy struct {
+	mu               sync.RWMutex
 	registry         ToolRegistry
 	maxHistoryTokens int
 	maxToolTurns     int
@@ -52,6 +54,8 @@ func NewContextStrategy(registry ToolRegistry, bus events.EventBus) *ContextStra
 
 // SetLimits updates the operational limits.
 func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	if historyTokens > 0 {
 		cs.maxHistoryTokens = historyTokens
 	}
@@ -65,11 +69,15 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 
 // SetPrunedTurns sets the initial pruned turns count.
 func (cs *ContextStrategy) SetPrunedTurns(n int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	cs.prunedTurns = n
 }
 
 // GetLimits returns the current limits.
 func (cs *ContextStrategy) GetLimits() (int, int, int) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
 }
 
@@ -119,18 +127,44 @@ func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
 }
 
 func (cs *ContextStrategy) estimateMapSize(m map[string]interface{}) int {
+	return estimateMapSizeInternal(m)
+}
+
+func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
+	return estimateValueSizeInternal(v)
+}
+
+func (cs *ContextStrategy) getTurnWarning(turn int) string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.getTurnWarningLocked(turn)
+}
+
+func (cs *ContextStrategy) getTokenWarning(tokens int) string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.getTokenWarningLocked(tokens)
+}
+
+func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.getHistoryTurnWarningLocked(currentTurns)
+}
+
+func estimateMapSizeInternal(m map[string]interface{}) int {
 	if m == nil {
 		return 0
 	}
 	size := 0
 	for k, v := range m {
 		size += len(k)
-		size += cs.estimateValueSize(v)
+		size += estimateValueSizeInternal(v)
 	}
 	return size
 }
 
-func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
+func estimateValueSizeInternal(v interface{}) int {
 	if v == nil {
 		return 4
 	}
@@ -142,11 +176,11 @@ func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
 	case bool:
 		return 5
 	case map[string]interface{}:
-		return cs.estimateMapSize(val)
+		return estimateMapSizeInternal(val)
 	case []interface{}:
 		size := 0
 		for _, item := range val {
-			size += cs.estimateValueSize(item)
+			size += estimateValueSizeInternal(item)
 		}
 		return size
 	default:
@@ -156,23 +190,26 @@ func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
 
 // GetWarnings generates safety warnings based on current state.
 func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	var warnings []Warning
 
-	if w := cs.getTurnWarning(turn); w != "" {
+	if w := cs.getTurnWarningLocked(turn); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
-	if w := cs.getTokenWarning(tokens); w != "" {
+	if w := cs.getTokenWarningLocked(tokens); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
-	if w := cs.getHistoryTurnWarning(currentTurns); w != "" {
+	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
 
 	return warnings
 }
 
-func (cs *ContextStrategy) getTurnWarning(turn int) string {
+func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 	remaining := cs.maxToolTurns - turn
+	// ... (implementation remains same but uses field)
 	switch remaining {
 	case 3:
 		return "[SYSTEM NOTICE: You are approaching the operational turn limit. You have 3 turns remaining. Please begin finalizing your current task, update the scratchpad and task list with your status, and avoid starting any new multi-step operations.]"
@@ -185,7 +222,7 @@ func (cs *ContextStrategy) getTurnWarning(turn int) string {
 	}
 }
 
-func (cs *ContextStrategy) getTokenWarning(tokens int) string {
+func (cs *ContextStrategy) getTokenWarningLocked(tokens int) string {
 	ratio := float64(tokens) / float64(cs.maxHistoryTokens)
 	if ratio > 0.95 {
 		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_scratchpad' and 'manage_tasks' to save a summary of your work and plans NOW. Keep your response extremely brief.]"
@@ -195,7 +232,7 @@ func (cs *ContextStrategy) getTokenWarning(tokens int) string {
 	return ""
 }
 
-func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
+func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string {
 	if cs.maxHistoryTurns <= 0 {
 		return ""
 	}

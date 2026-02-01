@@ -24,6 +24,7 @@ type toolExecResult struct {
 
 // ToolExecutor handles the execution of tools, using a WorkerPool for concurrency.
 type ToolExecutor struct {
+	mu                 sync.RWMutex
 	registry           *registry.Registry
 	sm                 *internaltools.SecurityManager
 	events             events.EventBus
@@ -58,14 +59,20 @@ func NewToolExecutor(registry *registry.Registry, sm *internaltools.SecurityMana
 
 // SetStrategy sets the result formatting strategy.
 func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.strategy = s
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
 		e.maxConcurrentTools = maxConcurrent
 		if e.pool != nil {
-			e.pool.Shutdown()
+			// Shutdown old pool in background to avoid blocking config update
+			go e.pool.Shutdown()
 		}
 		e.pool = NewWorkerPool(maxConcurrent)
 	}
@@ -76,6 +83,11 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 
 // Execute handles the execution of function calls from the model response.
 func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+	e.mu.RLock()
+	strategy := e.strategy
+	eventsBus := e.events
+	e.mu.RUnlock()
+
 	var functionCalls []*llm.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
@@ -88,8 +100,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	}
 
 	if turn >= maxToolTurns {
-		if e.events != nil {
-			e.events.Publish(events.SystemMessageEvent{
+		if eventsBus != nil {
+			eventsBus.Publish(events.SystemMessageEvent{
 				Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 				Level:   "error",
 			})
@@ -97,8 +109,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 		return nil, llm.ErrMaxTurnsReached
 	}
 
-	if e.events != nil {
-		e.events.Publish(events.ToolCallEvent{
+	if eventsBus != nil {
+		eventsBus.Publish(events.ToolCallEvent{
 			Calls:    functionCalls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
@@ -124,8 +136,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 			return nil, ctx.Err()
 		case res := <-resChan:
 			trs[res.index] = res.tr
-			if e.events != nil {
-				e.events.Publish(events.ToolResultEvent{
+			if eventsBus != nil {
+				eventsBus.Publish(events.ToolResultEvent{
 					Name:   res.name,
 					Result: res.tr,
 				})
@@ -137,7 +149,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	var responseParts []*llm.Part
 	for i, tr := range trs {
-		responseParts = append(responseParts, e.strategy.Format(functionCalls[i].Name, tr))
+		responseParts = append(responseParts, strategy.Format(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{
@@ -173,7 +185,10 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 		} else {
 			wg.Add(1)
 			idx, call := i, fc // captured for closure
-			e.pool.Submit(func(_ context.Context) {
+			e.mu.RLock()
+			pool := e.pool
+			e.mu.RUnlock()
+			pool.Submit(func(_ context.Context) {
 				defer wg.Done()
 				defer func() {
 					if r := recover(); r != nil {
@@ -189,6 +204,10 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	e.mu.RLock()
+	toolTimeout := e.toolTimeout
+	e.mu.RUnlock()
+
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -196,7 +215,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	if e.registry.IsLongRunning(call.Name) {
 		ctx, cancel = context.WithCancel(parentCtx)
 	} else {
-		ctx, cancel = context.WithTimeout(parentCtx, e.toolTimeout)
+		ctx, cancel = context.WithTimeout(parentCtx, toolTimeout)
 	}
 	defer cancel()
 

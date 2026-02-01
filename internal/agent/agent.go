@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
@@ -41,6 +42,7 @@ type RuntimeConfig struct {
 
 // Agent represents the chat orchestration logic (Stateless Service).
 type Agent struct {
+	mu            sync.RWMutex
 	gateway       *gateway.ResilientClient
 	engine        *TurnEngine
 	ctxManager    *ContextManager
@@ -153,6 +155,9 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 }
 
 func (a *Agent) applyConfig() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
 	a.configWatcher.Refresh()
 
@@ -206,14 +211,18 @@ func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 
 // SetConcurrency sets the parallel execution limits for the agent.
 func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
+	a.mu.Lock()
 	a.config.Execution.MaxConcurrent = maxConcurrent
 	a.config.Execution.Timeout = time.Duration(timeoutSeconds) * time.Second
+	a.mu.Unlock()
 	a.applyConfig()
 }
 
 // SetLogFile sets the path for usage logging.
 func (a *Agent) SetLogFile(path string) {
+	a.mu.Lock()
 	a.config.LogFile = path
+	a.mu.Unlock()
 	a.applyConfig()
 }
 
@@ -224,13 +233,17 @@ func (a *Agent) SetPrunedTurns(n int) {
 
 // SetPersistentConfigPath sets the path to the persistent session configuration.
 func (a *Agent) SetPersistentConfigPath(path string) {
+	a.mu.Lock()
 	a.config.PersistentConfigPath = path
+	a.mu.Unlock()
 	a.applyConfig()
 }
 
 // SetMainConfigPath sets the path to the main YAML configuration file.
 func (a *Agent) SetMainConfigPath(path string) {
+	a.mu.Lock()
 	a.config.MainConfigPath = path
+	a.mu.Unlock()
 	a.applyConfig()
 }
 
