@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"golang.org/x/tools/go/packages"
@@ -27,6 +28,7 @@ type SymbolLocation struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"` // "func", "type", "var", "const"
 	Signature string `json:"signature,omitempty"`
+	Receiver  string `json:"receiver,omitempty"` // For methods
 }
 
 // TypeName represents a fully qualified type name.
@@ -58,7 +60,11 @@ type Indexer struct {
 
 	symbolsByPath map[string][]SymbolLocation
 	usagesByName  map[string][]Location
+	lastRefresh   time.Time
+	refreshMu     sync.Mutex // For serializing Refresh calls
 }
+
+const refreshTTL = 5 * time.Second
 
 func NewIndexer(dir string) (*Indexer, error) {
 	return &Indexer{
@@ -70,12 +76,26 @@ func NewIndexer(dir string) (*Indexer, error) {
 }
 
 func (idx *Indexer) Refresh(ctx context.Context) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
+	idx.mu.RLock()
+	needsRefresh := time.Since(idx.lastRefresh) > refreshTTL
+	idx.mu.RUnlock()
 
-	// Clear existing index
-	idx.symbolsByPath = make(map[string][]SymbolLocation)
-	idx.usagesByName = make(map[string][]Location)
+	if !needsRefresh {
+		return nil
+	}
+
+	// Serialize concurrent refresh attempts
+	idx.refreshMu.Lock()
+	defer idx.refreshMu.Unlock()
+
+	// Double check after acquiring lock
+	if time.Since(idx.lastRefresh) <= refreshTTL {
+		return nil
+	}
+
+	// Build new index in local variables to avoid mid-scan empty results
+	newSymbolsByPath := make(map[string][]SymbolLocation)
+	newUsagesByName := make(map[string][]Location)
 
 	cfg := &packages.Config{
 		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
@@ -90,30 +110,16 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 	}
 
 	for _, pkg := range pkgs {
-		if len(pkg.Errors) > 0 {
-			// Log error but continue with other packages
-			continue
-		}
-
 		for _, file := range pkg.Syntax {
 			filename := idx.fset.File(file.Pos()).Name()
 			absPath, _ := filepath.Abs(filename)
-			
+
 			ast.Inspect(file, func(n ast.Node) bool {
 				if n == nil {
 					return true
 				}
 
 				switch d := n.(type) {
-				case *ast.FuncDecl:
-					kind := "func"
-					sig := astutil.GetFuncSignature(d)
-					idx.addSymbol(absPath, SymbolLocation{
-						Location:  idx.toLocation(d.Name.Pos()),
-						Name:      d.Name.Name,
-						Kind:      kind,
-						Signature: sig,
-					})
 				case *ast.GenDecl:
 					for _, spec := range d.Specs {
 						switch s := spec.(type) {
@@ -123,34 +129,55 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 								kind = "const"
 							}
 							for _, name := range s.Names {
-								idx.addSymbol(absPath, SymbolLocation{
-									Location: idx.toLocation(name.Pos()),
+								loc := idx.toLocation(name.Pos())
+								newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
+									Location: loc,
 									Name:     name.Name,
 									Kind:     kind,
 								})
 							}
 						case *ast.TypeSpec:
-							idx.addSymbol(absPath, SymbolLocation{
-								Location: idx.toLocation(s.Name.Pos()),
+							loc := idx.toLocation(s.Name.Pos())
+							newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
+								Location: loc,
 								Name:     s.Name.Name,
 								Kind:     "type",
 							})
 						}
 					}
+				case *ast.FuncDecl:
+					kind := "func"
+					sig := astutil.GetFuncSignature(d)
+					recv := ""
+					if d.Recv != nil && len(d.Recv.List) > 0 {
+						recv = astutil.ExprToString(d.Recv.List[0].Type)
+					}
+					loc := idx.toLocation(d.Name.Pos())
+					newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
+						Location:  loc,
+						Name:      d.Name.Name,
+						Kind:      kind,
+						Signature: sig,
+						Receiver:  recv,
+					})
 				case *ast.Ident:
-					idx.usagesByName[d.Name] = append(idx.usagesByName[d.Name], idx.toLocation(d.Pos()))
+					loc := idx.toLocation(d.Pos())
+					newUsagesByName[d.Name] = append(newUsagesByName[d.Name], loc)
 				}
 				return true
 			})
 		}
 	}
 
+	// Atomic swap
+	idx.mu.Lock()
 	idx.pkgs = pkgs
-	return nil
-}
+	idx.symbolsByPath = newSymbolsByPath
+	idx.usagesByName = newUsagesByName
+	idx.lastRefresh = time.Now()
+	idx.mu.Unlock()
 
-func (idx *Indexer) addSymbol(path string, sym SymbolLocation) {
-	idx.symbolsByPath[path] = append(idx.symbolsByPath[path], sym)
+	return nil
 }
 
 func (idx *Indexer) toLocation(pos token.Pos) Location {
