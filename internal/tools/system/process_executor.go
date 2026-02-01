@@ -128,6 +128,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 
 	if err := p.start(); err != nil {
+		p.wait() // Ensure started processes are cleaned up
 		return ExecutionResult{ExitCode: 1, Error: err.Error()}, nil
 	}
 
@@ -139,6 +140,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		output = fmt.Sprintf("Output:\n%s\nErrors:\n%s", stdoutStr, stderrStr)
 	}
 
+	// Ensure exit code is non-zero if waitErr occurred
 	if waitErr != nil && exitCode == 0 {
 		exitCode = 1
 	}
@@ -202,10 +204,26 @@ func (p *pipeline) start() error {
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
 	var wg sync.WaitGroup
 	var stdoutStr, stderrStr strings.Builder
-	var stderrMu sync.Mutex
+	var mu sync.Mutex // Protects builders, feedback, and file
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024
+	}
+
+	appendErr := func(sb *strings.Builder, err error) {
+		if err == nil {
+			return
+		}
+		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+		if err == bufio.ErrTooLong {
+			msg = "\n[Warning] Output line too long for scanner; truncated."
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if config.Feedback != nil {
+			fmt.Fprintln(config.Feedback, msg)
+		}
+		sb.WriteString(msg + "\n")
 	}
 
 	// Capture Stderr in parallel
@@ -216,15 +234,20 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 			scanner := bufio.NewScanner(src)
 			for scanner.Scan() {
 				line := scanner.Text()
-				stderrMu.Lock()
+				mu.Lock()
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, line)
 				}
 				if stderrStr.Len() < maxCapture {
-					stderrStr.WriteString(line + "\n")
+					toWrite := line + "\n"
+					if stderrStr.Len()+len(toWrite) > maxCapture {
+						toWrite = toWrite[:maxCapture-stderrStr.Len()]
+					}
+					stderrStr.WriteString(toWrite)
 				}
-				stderrMu.Unlock()
+				mu.Unlock()
 			}
+			appendErr(&stderrStr, scanner.Err())
 		}(i, r)
 	}
 
@@ -232,16 +255,23 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	scanner := bufio.NewScanner(p.stdoutPipe)
 	for scanner.Scan() {
 		line := scanner.Text()
+		mu.Lock()
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", line)
 		}
 		if stdoutStr.Len() < maxCapture {
-			stdoutStr.WriteString(line + "\n")
+			toWrite := line + "\n"
+			if stdoutStr.Len()+len(toWrite) > maxCapture {
+				toWrite = toWrite[:maxCapture-stdoutStr.Len()]
+			}
+			stdoutStr.WriteString(toWrite)
 		}
 		if file != nil {
 			file.WriteString(line + "\n")
 		}
+		mu.Unlock()
 	}
+	appendErr(&stdoutStr, scanner.Err())
 
 	wg.Wait()
 	return stdoutStr.String(), stderrStr.String()
@@ -251,11 +281,17 @@ func (p *pipeline) wait() (int, error) {
 	var lastErr error
 	exitCode := 0
 	for i := len(p.cmds) - 1; i >= 0; i-- {
+		if p.cmds[i].Process == nil {
+			continue
+		}
 		err := p.cmds[i].Wait()
 		if i == len(p.cmds)-1 {
 			lastErr = err
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
+			if lastErr != nil {
+				exitCode = 1
+				if exitErr, ok := lastErr.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+				}
 			}
 		}
 	}
