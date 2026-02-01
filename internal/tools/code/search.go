@@ -6,14 +6,13 @@ package code
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/files"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -34,56 +33,24 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	resolvedPath, err := m.SP.IsPathSafe(path)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
-	var results []string
+	results, err := files.ConcurrentSearch(ctx, m.SP, fsutil.DefaultFileSystem, path, func(_, line string) bool {
+		return re.MatchString(line)
+	}, 500)
 
-	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			return nil
-		}
-
-		lines := strings.Split(string(content), "\n")
-		for i, line := range lines {
-			if re.MatchString(line) {
-				match := re.FindString(line)
-				trimmed := strings.TrimSpace(match)
-				if len(trimmed) > 500 {
-					trimmed = trimmed[:500] + " (truncated)"
-				}
-				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, i+1, trimmed))
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
+	if err != nil && err.Error() != "too many results" {
 		return tools.ToolResult{}, err
 	}
+
 	if len(results) == 0 {
 		return tools.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
 	}
-	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
+
+	out := strings.Join(results, "\n")
+	if err != nil && err.Error() == "too many results" {
+		out += "\n... (truncated)"
+	}
+	return tools.ToolResult{Text: out}, nil
 }
 
 func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -94,70 +61,14 @@ func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		return tools.ToolResult{}, err
 	}
 
-	query := params.Query
-	re, err := regexp.Compile(query)
+	re, err := regexp.Compile(params.Query)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
-	var results []string
-	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" || info.Name() == "output" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip binary files heuristic
-		if info.Size() > 1024*1024 { // Skip files > 1MB
-			return nil
-		}
-
-		f, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer f.Close()
-
-		// Read first 512 bytes for binary check
-		head := make([]byte, 512)
-		n, _ := f.Read(head)
-		if fsutil.IsBinary(head[:n]) {
-			return nil
-		}
-
-		// Read full content
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-
-		lines := strings.Split(string(content), "\n")
-		for i, line := range lines {
-			if re.MatchString(line) {
-				trimmed := strings.TrimSpace(line)
-				if len(trimmed) > 500 {
-					trimmed = trimmed[:500] + " (truncated)"
-				}
-				results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, trimmed))
-				if len(results) > 100 {
-					return fmt.Errorf("too many results")
-				}
-			}
-		}
-		return nil
-	})
+	results, err := files.ConcurrentSearch(ctx, m.SP, fsutil.DefaultFileSystem, ".", func(_, line string) bool {
+		return re.MatchString(line)
+	}, 100)
 
 	if err != nil && err.Error() != "too many results" {
 		return tools.ToolResult{}, err

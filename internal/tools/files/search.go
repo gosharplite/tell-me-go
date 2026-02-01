@@ -48,14 +48,10 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
-	var results []string
-	processor := func(filePath string) error {
-		return scanFile(ctx, s.fs, filePath, func(line string) bool {
-			return re.MatchString(line)
-		}, &results)
-	}
+	results, err := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) bool {
+		return re.MatchString(line)
+	}, 100)
 
-	err = walkAndProcess(ctx, s.sm, s.fs, params.Path, processor)
 	return s.formatSearchResults(results, err)
 }
 
@@ -72,12 +68,6 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	if path == "" {
 		path = "."
 	}
-	resolvedPath, err := s.sm.IsPathSafe(path)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	var results []string
 
 	// Prepare Regex for Fallback
 	var reQuery *regexp.Regexp
@@ -85,37 +75,42 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 		reQuery, _ = regexp.Compile("(?i)" + params.Query)
 	}
 
-	// Fallback Walk (Non-Go files)
-	processor := func(filePath string) error {
-		ext := filepath.Ext(filePath)
-		if !isSupportedDefExt(ext) {
-			return nil
-		}
-
-		return scanFile(ctx, s.fs, filePath, func(line string) bool {
-			isDef := false
-			for _, p := range defPatterns {
-				if matched, _ := regexp.MatchString(p, line); matched {
-					isDef = true
-					break
-				}
-			}
-			if !isDef {
-				return false
-			}
-			return reQuery == nil || reQuery.MatchString(line)
-		}, &results)
+	// Prepare Compiled Def Patterns for performance
+	compiledDefs := make([]*regexp.Regexp, len(defPatterns))
+	for i, p := range defPatterns {
+		compiledDefs[i] = regexp.MustCompile(p)
 	}
 
-	// We use resolvedPath here since we already checked safety
-	if err := walkAndProcess(ctx, s.sm, s.fs, resolvedPath, processor); err != nil {
+	results, err := ConcurrentSearch(ctx, s.sm, s.fs, path, func(path, line string) bool {
+		if !isSupportedDefExt(filepath.Ext(path)) {
+			return false
+		}
+		isDef := false
+		for _, re := range compiledDefs {
+			if re.MatchString(line) {
+				isDef = true
+				break
+			}
+		}
+		if !isDef {
+			return false
+		}
+		return reQuery == nil || reQuery.MatchString(line)
+	}, 100)
+
+	if err != nil && err.Error() != "too many results" {
 		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
 		return tools.ToolResult{Text: "No definitions found."}, nil
 	}
-	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
+
+	out := strings.Join(results, "\n")
+	if err != nil && err.Error() == "too many results" {
+		out += "\n... (truncated)"
+	}
+	return tools.ToolResult{Text: out}, nil
 }
 
 func (s *fileSearcher) formatSearchResults(results []string, err error) (tools.ToolResult, error) {
