@@ -238,7 +238,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	select {
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
-			return domaintools.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", e.toolTimeout)}
+			return domaintools.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)}
 		}
 		return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
 	case r := <-resChan:
