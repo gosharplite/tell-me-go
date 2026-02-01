@@ -46,6 +46,30 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	cm := NewContextManager(strategy, hManager, &mockGateway{}, &events.SimpleEventBus{})
 
+	// Manually set up pipeline for the test as we are bypassing Agent.New()
+	cm.Pipeline = NewContextPipeline(
+		&HistoryPruner{
+			Policy:  &SlidingWindowPolicy{MaxTurns: 20},
+			Manager: cm.History,
+		},
+		&SystemInstructionInjector{
+			Instructions: "System Instructions",
+		},
+		&TokenGatekeeper{
+			MaxTokens:  1000,
+			Estimator:  strategy,
+			Summarizer: cm.Summarizer,
+			Manager:    cm.History,
+			Events:     cm.Events,
+		},
+		&ToolDeclarationGenerator{
+			Registry: reg,
+		},
+		&WarningInjector{
+			Strategy: strategy,
+		},
+	)
+
 	// Prepare at turn 2 (approaching limit)
 	apiContents, _, err := cm.Prepare(ctx, 2)
 	if err != nil {

@@ -60,6 +60,9 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 	return func(a *Agent) {
 		a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
 		a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+		if a.ctxManager != nil {
+			a.ctxManager.Pipeline = a.buildDefaultPipeline()
+		}
 	}
 }
 
@@ -118,12 +121,41 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		opt(a)
 	}
 
+	// Initialize pipeline
+	a.ctxManager.Pipeline = a.buildDefaultPipeline()
+
 	// Initialize engine
 	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus)
 
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
 	return a
+}
+
+func (a *Agent) buildDefaultPipeline() *ContextPipeline {
+	maxTokens, _, maxTurns := a.strategy.GetLimits()
+	return NewContextPipeline(
+		&HistoryPruner{
+			Policy:  &SlidingWindowPolicy{MaxTurns: maxTurns},
+			Manager: a.ctxManager.History,
+		},
+		&SystemInstructionInjector{
+			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review.",
+		},
+		&TokenGatekeeper{
+			MaxTokens:  maxTokens,
+			Estimator:  a.strategy,
+			Summarizer: a.ctxManager.Summarizer,
+			Manager:    a.ctxManager.History,
+			Events:     a.events,
+		},
+		&ToolDeclarationGenerator{
+			Registry: a.registry,
+		},
+		&WarningInjector{
+			Strategy: a.strategy,
+		},
+	)
 }
 
 func (a *Agent) Subscribe(sub func(events.Event)) {
@@ -159,6 +191,7 @@ func (a *Agent) registerInternalTools() {
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.ctxManager.Pipeline = a.buildDefaultPipeline()
 }
 
 // SetConcurrency sets the parallel execution limits for the agent.
@@ -192,6 +225,7 @@ func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
 	a.strategy.SetLimits(maxTokens, maxTurns, maxHistTurns)
+	a.ctxManager.Pipeline = a.buildDefaultPipeline()
 }
 
 // Chat runs the multi-turn orchestration loop.

@@ -6,7 +6,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
@@ -20,6 +19,7 @@ type ContextManager struct {
 	Strategy   *ContextStrategy
 	History    *history.Manager
 	Summarizer HistorySummarizer
+	Pipeline   *ContextPipeline
 	Events     events.EventBus
 }
 
@@ -35,44 +35,19 @@ func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGate
 
 // Prepare calculates the current context, enforces limits, and handles auto-summarization using a pipeline.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
-	maxTokens, _, maxTurns := cm.Strategy.GetLimits()
+	maxTokens, _, _ := cm.Strategy.GetLimits()
 
 	req := &ContextRequest{
 		Turn:    turn,
 		History: cm.History.GetContents(),
 	}
 
-	transformers := []ContextTransformer{
-		&HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: maxTurns},
-			Manager: cm.History,
-		},
-		&SystemInstructionInjector{
-			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review.",
-		},
-		&TokenGatekeeper{
-			MaxTokens:  maxTokens,
-			Estimator:  cm.Strategy,
-			Summarizer: cm.Summarizer,
-			Manager:    cm.History,
-			Events:     cm.Events,
-		},
-		&ToolDeclarationGenerator{
-			Registry: cm.Strategy.registry,
-		},
-		&WarningInjector{
-			Strategy: cm.Strategy,
-		},
+	if cm.Pipeline == nil {
+		return nil, nil, fmt.Errorf("context pipeline not configured")
 	}
 
-	sort.Slice(transformers, func(i, j int) bool {
-		return transformers[i].Priority() < transformers[j].Priority()
-	})
-
-	for _, t := range transformers {
-		if err := t.Transform(ctx, req); err != nil {
-			return nil, nil, err
-		}
+	if err := cm.Pipeline.Execute(ctx, req); err != nil {
+		return nil, nil, err
 	}
 
 	req.Result = req.History

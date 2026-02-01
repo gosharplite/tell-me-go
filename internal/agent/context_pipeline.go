@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"sort"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
@@ -47,4 +48,41 @@ type PruningPolicy interface {
 // HistorySummarizer defines the interface for the summarization service.
 type HistorySummarizer interface {
 	Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error)
+}
+
+// ContextPipeline orchestrates a sequence of context transformations.
+type ContextPipeline struct {
+	transformers []ContextTransformer
+}
+
+// NewContextPipeline creates a new pipeline with the given transformers, sorted by priority.
+func NewContextPipeline(transformers ...ContextTransformer) *ContextPipeline {
+	p := &ContextPipeline{
+		transformers: transformers,
+	}
+	p.Sort()
+	return p
+}
+
+// Sort sorts the transformers by priority.
+func (p *ContextPipeline) Sort() {
+	sort.Slice(p.transformers, func(i, j int) bool {
+		return p.transformers[i].Priority() < p.transformers[j].Priority()
+	})
+}
+
+// Execute runs the pipeline on a context request.
+func (p *ContextPipeline) Execute(ctx context.Context, req *ContextRequest) error {
+	for _, t := range p.transformers {
+		if err := t.Transform(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AddTransformer adds a transformer to the pipeline and maintains sort order.
+func (p *ContextPipeline) AddTransformer(t ContextTransformer) {
+	p.transformers = append(p.transformers, t)
+	p.Sort()
 }
