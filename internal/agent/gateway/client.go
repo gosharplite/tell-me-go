@@ -34,50 +34,75 @@ type httpStatusErr interface {
 	StatusCode() int
 }
 
+// errorClassifier defines a function that attempts to classify an error into domain types.
+type errorClassifier func(error) (error, bool)
+
+var defaultClassifiers = []errorClassifier{
+	classifyDomain,
+	classifyGRPC,
+	classifyHTTP,
+	classifyString,
+}
+
 // WrapError converts raw client errors into domain-specific Gateway errors.
+// It uses a Chain of Responsibility pattern for extensibility and low complexity.
 func (r *ResilientClient) WrapError(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// 1. Prioritize Domain Errors already classified
-	if errors.Is(err, ErrAuth) || errors.Is(err, ErrTransient) || errors.Is(err, ErrTerminal) {
-		return err
-	}
-
-	// 2. Check gRPC Status Codes
-	if s, ok := status.FromError(err); ok {
-		switch s.Code() {
-		case codes.Unauthenticated:
-			return fmt.Errorf("%w: %v", ErrAuth, err)
-		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
-			return fmt.Errorf("%w: %v", ErrTransient, err)
-		case codes.PermissionDenied, codes.InvalidArgument:
-			return fmt.Errorf("%w: %v", ErrTerminal, err)
+	for _, classify := range defaultClassifiers {
+		if wrapped, ok := classify(err); ok {
+			return wrapped
 		}
 	}
 
-	// 3. Check for HTTP Status via Type Assertion (covers SDK REST fallbacks)
+	return fmt.Errorf("%w: %v", ErrTerminal, err)
+}
+
+func classifyDomain(err error) (error, bool) {
+	if errors.Is(err, ErrAuth) || errors.Is(err, ErrTransient) || errors.Is(err, ErrTerminal) {
+		return err, true
+	}
+	return nil, false
+}
+
+func classifyGRPC(err error) (error, bool) {
+	if s, ok := status.FromError(err); ok {
+		switch s.Code() {
+		case codes.Unauthenticated:
+			return fmt.Errorf("%w: %v", ErrAuth, err), true
+		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+			return fmt.Errorf("%w: %v", ErrTransient, err), true
+		case codes.PermissionDenied, codes.InvalidArgument:
+			return fmt.Errorf("%w: %v", ErrTerminal, err), true
+		}
+	}
+	return nil, false
+}
+
+func classifyHTTP(err error) (error, bool) {
 	var httpErr httpStatusErr
 	if errors.As(err, &httpErr) {
 		code := httpErr.StatusCode()
 		switch {
 		case code == 401:
-			return fmt.Errorf("%w: %v", ErrAuth, err)
+			return fmt.Errorf("%w: %v", ErrAuth, err), true
 		case code == 429 || code >= 500:
-			return fmt.Errorf("%w: %v", ErrTransient, err)
+			return fmt.Errorf("%w: %v", ErrTransient, err), true
 		case code >= 400 && code < 500:
-			return fmt.Errorf("%w: %v", ErrTerminal, err)
+			return fmt.Errorf("%w: %v", ErrTerminal, err), true
 		}
 	}
+	return nil, false
+}
 
-	// 4. Fallback: Only use string matching as a last resort for unknown wrappers
+func classifyString(err error) (error, bool) {
 	msg := strings.ToUpper(err.Error())
 	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
-		return fmt.Errorf("%w: %v", ErrAuth, err)
+		return fmt.Errorf("%w: %v", ErrAuth, err), true
 	}
-
-	return fmt.Errorf("%w: %v", ErrTerminal, err)
+	return nil, false
 }
 
 type result struct {
