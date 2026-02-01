@@ -66,149 +66,178 @@ func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs fsut
 		return nil, err
 	}
 
-	paths := make(chan string, 100)
-	resultsChan := make(chan string, 100)
-	errChan := make(chan error, 1)
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// 1. Walking Goroutine
+	p := &searchPipeline{
+		fs:          fs,
+		matcher:     matcher,
+		limit:       limit,
+		pathsChan:   make(chan string, 100),
+		resultsChan: make(chan string, 100),
+		errChan:     make(chan error, 1),
+		root:        resolvedRoot,
+		ctx:         ctx,
+		cancel:      cancel,
+	}
+
+	return p.Execute()
+}
+
+type searchPipeline struct {
+	fs          fsutil.FileSystem
+	matcher     func(path, line string) bool
+	limit       int
+	pathsChan   chan string
+	resultsChan chan string
+	errChan     chan error
+	root        string
+	ctx         context.Context
+	cancel      context.CancelFunc
+}
+
+func (p *searchPipeline) Execute() ([]string, error) {
+	p.startWalker()
+
+	var wg sync.WaitGroup
+	p.startWorkers(&wg)
+
 	go func() {
-		defer close(paths)
-		err := fs.Walk(ctx, resolvedRoot, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil // Skip
-			}
-			if info.IsDir() {
-				if isIgnoredDir(info.Name()) {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			// Skip files > 1MB
-			if info.Size() > 1024*1024 {
-				return nil
-			}
-			select {
-			case paths <- path:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			return nil
-		})
+		wg.Wait()
+		close(p.resultsChan)
+	}()
+
+	return p.collectResults()
+}
+
+func (p *searchPipeline) startWalker() {
+	go func() {
+		defer close(p.pathsChan)
+		err := p.fs.Walk(p.ctx, p.root, p.walkFunc)
 		if err != nil && err != context.Canceled {
 			select {
-			case errChan <- err:
+			case p.errChan <- err:
 			default:
 			}
 		}
 	}()
+}
 
-	// 2. Workers
+func (p *searchPipeline) walkFunc(path string, info os.FileInfo, err error) error {
+	if err != nil {
+		return nil // Skip
+	}
+	if p.ctx.Err() != nil {
+		return p.ctx.Err()
+	}
+
+	if info.IsDir() {
+		if isIgnoredDir(info.Name()) {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+
+	// Skip files > 1MB
+	if info.Size() > 1024*1024 {
+		return nil
+	}
+
+	select {
+	case p.pathsChan <- path:
+	case <-p.ctx.Done():
+		return p.ctx.Err()
+	}
+	return nil
+}
+
+func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {
 	numWorkers := runtime.NumCPU()
 	if numWorkers > 8 {
 		numWorkers = 8
 	}
-	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for path := range paths {
-				file, err := fs.Open(ctx, path)
-				if err != nil {
-					continue
-				}
-
-				if isBin, err := checkBinary(file); err == nil && !isBin {
-					scanner := bufio.NewScanner(file)
-					lineNum := 0
-					for scanner.Scan() {
-						lineNum++
-						line := scanner.Text()
-						if matcher(path, line) {
-							select {
-							case resultsChan <- formatMatch(path, lineNum, line):
-							case <-ctx.Done():
-								file.Close()
-								return
-							}
-						}
+			for path := range p.pathsChan {
+				if err := p.scanFile(path); err != nil {
+					if err == context.Canceled || err == context.DeadlineExceeded {
+						return
 					}
 				}
-				file.Close()
 			}
 		}()
 	}
-
-	// 3. Collector
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
-
-	var results []string
-	var finalErr error
-	for {
-		select {
-		case res, ok := <-resultsChan:
-			if !ok {
-				return results, finalErr
-			}
-			if len(results) < limit {
-				results = append(results, res)
-			}
-			if len(results) >= limit && finalErr == nil {
-				cancel()
-				finalErr = fmt.Errorf("too many results")
-			}
-		case err := <-errChan:
-			finalErr = err
-			cancel()
-		case <-ctx.Done():
-			if finalErr == nil {
-				finalErr = ctx.Err()
-			}
-			// Drain remaining results if any
-			for res := range resultsChan {
-				if len(results) < limit {
-					results = append(results, res)
-				}
-			}
-			return results, finalErr
-		}
-	}
 }
 
-// scanFile opens a file, checks for binary content, and scans lines with a matcher function.
-func scanFile(ctx context.Context, fs fsutil.FileSystem, filePath string, matcher func(string) bool, results *[]string) error {
-	file, err := fs.Open(ctx, filePath)
+func (p *searchPipeline) scanFile(path string) error {
+	file, err := p.fs.Open(p.ctx, path)
 	if err != nil {
 		return nil
 	}
 	defer file.Close()
 
-	if isBin, err := checkBinary(file); err != nil || isBin {
-		return nil
-	}
-
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		if matcher(line) {
-			*results = append(*results, formatMatch(filePath, lineNum, line))
-			if len(*results) > 100 {
-				return fmt.Errorf("too many results")
+	if isBin, err := checkBinary(file); err == nil && !isBin {
+		scanner := bufio.NewScanner(file)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Text()
+			if p.matcher(path, line) {
+				select {
+				case p.resultsChan <- formatMatch(path, lineNum, line):
+				case <-p.ctx.Done():
+					return p.ctx.Err()
+				}
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error scanning file %s: %w", filePath, err)
+		return scanner.Err()
 	}
 	return nil
+}
+
+func (p *searchPipeline) collectResults() ([]string, error) {
+	var results []string
+	var finalErr error
+	for {
+		select {
+		case res, ok := <-p.resultsChan:
+			if !ok {
+				return results, finalErr
+			}
+			results, finalErr = p.handleResult(res, results, finalErr)
+		case err := <-p.errChan:
+			finalErr = err
+			p.cancel()
+		case <-p.ctx.Done():
+			return p.handleDone(results, finalErr)
+		}
+	}
+}
+
+func (p *searchPipeline) handleResult(res string, results []string, finalErr error) ([]string, error) {
+	if len(results) < p.limit {
+		results = append(results, res)
+	}
+	if len(results) >= p.limit && finalErr == nil {
+		p.cancel()
+		finalErr = fmt.Errorf("too many results")
+	}
+	return results, finalErr
+}
+
+func (p *searchPipeline) handleDone(results []string, finalErr error) ([]string, error) {
+	if finalErr == nil {
+		finalErr = p.ctx.Err()
+	}
+	// Drain remaining results if any
+	for res := range p.resultsChan {
+		if len(results) < p.limit {
+			results = append(results, res)
+		}
+	}
+	return results, finalErr
 }
 
 // checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.
