@@ -323,3 +323,17 @@ func IsDeclEqual(a, b ast.Decl) bool {
 	}
 	return bufA.String() == bufB.String()
 }
+
+// FindTypeSpec searches for a type specification by name in an AST file.
+func FindTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
+	for _, decl := range f.Decls {
+		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
+			for _, spec := range gd.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == name {
+					return ts, gd
+				}
+			}
+		}
+	}
+	return nil, nil
+}

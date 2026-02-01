@@ -21,6 +21,21 @@ type TypeManager struct {
 	SP      types.SecurityProvider
 }
 
+type TypeDefinition struct {
+	Name     string
+	Doc      string
+	Kind     string // "struct", "interface", "alias"
+	Fields   []FieldInfo
+	Methods  []string // Used for interface methods and receiver methods
+	Location string
+}
+
+type FieldInfo struct {
+	Names string
+	Type  string
+	Tag   string
+}
+
 func NewTypeManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp types.SecurityProvider) *TypeManager {
 	return &TypeManager{
 		Indexer: idx,
@@ -54,84 +69,23 @@ func (m *TypeManager) GetTypeInfo(ctx context.Context, args map[string]interface
 
 	// For now, take the first definition
 	loc := locs[0]
-	
 	f, _, err := m.Cache.Get(loc.Path)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s:%d\n", typename, loc.Path, loc.Line))
-
-	found := false
-	for _, decl := range f.Decls {
-		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
-			for _, spec := range gd.Specs {
-				ts := spec.(*ast.TypeSpec)
-				if ts.Name.Name == typename {
-					found = true
-					if gd.Doc != nil {
-						sb.WriteString("Doc: " + gd.Doc.Text())
-					}
-					switch t := ts.Type.(type) {
-					case *ast.StructType:
-						sb.WriteString("Fields:\n")
-						for _, field := range t.Fields.List {
-							names := []string{}
-							for _, n := range field.Names {
-								names = append(names, n.Name)
-							}
-							tag := ""
-							if field.Tag != nil {
-								tag = " " + field.Tag.Value
-							}
-							sb.WriteString(fmt.Sprintf("  - %s %s%s\n", strings.Join(names, ", "), astutil.ExprToString(field.Type), tag))
-						}
-					case *ast.InterfaceType:
-						sb.WriteString("Methods:\n")
-						for _, m := range t.Methods.List {
-							if len(m.Names) > 0 {
-								sb.WriteString(fmt.Sprintf("  - %s\n", m.Names[0].Name))
-							}
-						}
-					}
-					break
-				}
-			}
-		}
-		if found {
-			break
-		}
+	ts, gd := astutil.FindTypeSpec(f, typename)
+	if ts == nil {
+		return types.ToolResult{Text: "Type not found."}, nil
 	}
 
-	// Find methods (receivers) in the same package
-	// Optimized: instead of walking the whole project, we only walk the directory of the found type
-	// (Go requires methods to be in the same package, and usually same directory)
-	dir := filepath.Dir(loc.Path)
-	sb.WriteString("Methods (Receivers):\n")
-	err = filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
-		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
-			return nil
-		}
-		ff, _, err := m.Cache.Get(p)
-		if err != nil {
-			return nil
-		}
-		for _, d := range ff.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				recvType := astutil.ExprToString(fd.Recv.List[0].Type)
-				if strings.TrimPrefix(recvType, "*") == typename {
-					sb.WriteString(fmt.Sprintf("  - %s\n", astutil.GetFuncSignature(fd)))
-				}
-			}
-		}
-		return nil
-	})
+	def := m.extractDefinition(ts, gd, loc)
+	receivers, err := m.findMethodsInPackage(filepath.Dir(loc.Path), typename)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return types.ToolResult{Text: m.renderTypeInfo(def, receivers)}, nil
 }
 
 func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -386,4 +340,118 @@ func (m *TypeManager) GrepDefinitionsGo(ctx context.Context, path, query string)
 	}
 
 	return results, err
+}
+
+func (m *TypeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc index.Location) TypeDefinition {
+	def := TypeDefinition{
+		Name:     ts.Name.Name,
+		Location: fmt.Sprintf("%s:%d", loc.Path, loc.Line),
+	}
+	if gd.Doc != nil {
+		def.Doc = gd.Doc.Text()
+	}
+
+	switch t := ts.Type.(type) {
+	case *ast.StructType:
+		def.Kind = "struct"
+		def.Fields = m.parseFields(t.Fields)
+	case *ast.InterfaceType:
+		def.Kind = "interface"
+		def.Methods = m.parseInterfaceMethods(t.Methods)
+	default:
+		def.Kind = "alias"
+	}
+	return def
+}
+
+func (m *TypeManager) parseFields(list *ast.FieldList) []FieldInfo {
+	if list == nil {
+		return nil
+	}
+	var fields []FieldInfo
+	for _, field := range list.List {
+		names := []string{}
+		for _, n := range field.Names {
+			names = append(names, n.Name)
+		}
+		tag := ""
+		if field.Tag != nil {
+			tag = field.Tag.Value
+		}
+		fields = append(fields, FieldInfo{
+			Names: strings.Join(names, ", "),
+			Type:  astutil.ExprToString(field.Type),
+			Tag:   tag,
+		})
+	}
+	return fields
+}
+
+func (m *TypeManager) parseInterfaceMethods(list *ast.FieldList) []string {
+	if list == nil {
+		return nil
+	}
+	var methods []string
+	for _, m := range list.List {
+		if len(m.Names) > 0 {
+			methods = append(methods, m.Names[0].Name)
+		}
+	}
+	return methods
+}
+
+func (m *TypeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
+	var methods []string
+	err := filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
+		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
+			return nil
+		}
+		ff, _, err := m.Cache.Get(p)
+		if err != nil {
+			return nil
+		}
+		for _, d := range ff.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+				recvType := astutil.ExprToString(fd.Recv.List[0].Type)
+				if strings.TrimPrefix(recvType, "*") == typeName {
+					methods = append(methods, astutil.GetFuncSignature(fd))
+				}
+			}
+		}
+		return nil
+	})
+	return methods, err
+}
+
+func (m *TypeManager) renderTypeInfo(def TypeDefinition, receivers []string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.Location))
+	if def.Doc != "" {
+		sb.WriteString("Doc: " + def.Doc)
+	}
+
+	if len(def.Fields) > 0 {
+		sb.WriteString("Fields:\n")
+		for _, f := range def.Fields {
+			tag := ""
+			if f.Tag != "" {
+				tag = " " + f.Tag
+			}
+			sb.WriteString(fmt.Sprintf("  - %s %s%s\n", f.Names, f.Type, tag))
+		}
+	}
+
+	if def.Kind == "interface" && len(def.Methods) > 0 {
+		sb.WriteString("Methods:\n")
+		for _, meth := range def.Methods {
+			sb.WriteString(fmt.Sprintf("  - %s\n", meth))
+		}
+	}
+
+	sb.WriteString("Methods (Receivers):\n")
+	for _, meth := range receivers {
+		sb.WriteString(fmt.Sprintf("  - %s\n", meth))
+	}
+
+	return sb.String()
 }
