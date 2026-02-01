@@ -81,75 +81,112 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 	}
 }
 
+type resultCollector struct {
+	calls []*llm.FunctionCall
+	bus   events.EventBus
+	trs   []domaintools.ToolResult
+	ch    chan toolExecResult
+}
+
+func newResultCollector(calls []*llm.FunctionCall, bus events.EventBus) *resultCollector {
+	return &resultCollector{
+		calls: calls,
+		bus:   bus,
+		trs:   make([]domaintools.ToolResult, len(calls)),
+		ch:    make(chan toolExecResult, len(calls)),
+	}
+}
+
+func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, error) {
+	completed := 0
+	for completed < len(c.calls) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case res := <-c.ch:
+			c.trs[res.index] = res.tr
+			if c.bus != nil {
+				c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+			}
+			completed++
+		}
+	}
+	return c.trs, nil
+}
+
 // Execute handles the execution of function calls from the model response.
 func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+	calls := e.extractFunctionCalls(respContent)
+	if len(calls) == 0 {
+		return nil, nil
+	}
+
+	if turn >= maxToolTurns {
+		e.publishLimitError(maxToolTurns)
+		return nil, llm.ErrMaxTurnsReached
+	}
+
+	e.publishCallEvent(calls, turn, maxToolTurns)
+
 	e.mu.RLock()
-	strategy := e.strategy
-	eventsBus := e.events
+	bus := e.events
 	e.mu.RUnlock()
 
+	// Orchestrate Execution
+	collector := newResultCollector(calls, bus)
+	go e.runExecutionPlan(ctx, calls, collector.ch)
+
+	results, err := collector.Wait(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.assembleResponse(calls, results), nil
+}
+
+func (e *ToolExecutor) extractFunctionCalls(respContent *llm.Content) []*llm.FunctionCall {
 	var functionCalls []*llm.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
 			functionCalls = append(functionCalls, part.FunctionCall)
 		}
 	}
+	return functionCalls
+}
 
-	if len(functionCalls) == 0 {
-		return nil, nil
+func (e *ToolExecutor) publishLimitError(maxToolTurns int) {
+	e.mu.RLock()
+	bus := e.events
+	e.mu.RUnlock()
+	if bus != nil {
+		bus.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
+			Level:   "error",
+		})
 	}
+}
 
-	if turn >= maxToolTurns {
-		if eventsBus != nil {
-			eventsBus.Publish(events.SystemMessageEvent{
-				Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
-				Level:   "error",
-			})
-		}
-		return nil, llm.ErrMaxTurnsReached
-	}
-
-	if eventsBus != nil {
-		eventsBus.Publish(events.ToolCallEvent{
-			Calls:    functionCalls,
+func (e *ToolExecutor) publishCallEvent(calls []*llm.FunctionCall, turn int, maxToolTurns int) {
+	e.mu.RLock()
+	bus := e.events
+	e.mu.RUnlock()
+	if bus != nil {
+		bus.Publish(events.ToolCallEvent{
+			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
 		})
 	}
+}
 
-	resChan := make(chan toolExecResult, len(functionCalls))
-	var wg sync.WaitGroup
-
-	// Run execution orchestration in background
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		e.executeToolsConcurrentStream(ctx, functionCalls, resChan)
-	}()
-
-	// Collect results as they arrive
-	trs := make([]domaintools.ToolResult, len(functionCalls))
-	completedCount := 0
-	for completedCount < len(functionCalls) {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case res := <-resChan:
-			trs[res.index] = res.tr
-			if eventsBus != nil {
-				eventsBus.Publish(events.ToolResultEvent{
-					Name:   res.name,
-					Result: res.tr,
-				})
-			}
-			completedCount++
-		}
-	}
-	wg.Wait()
+func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []domaintools.ToolResult) *llm.Content {
+	e.mu.RLock()
+	strategy := e.strategy
+	e.mu.RUnlock()
 
 	var responseParts []*llm.Part
-	for i, tr := range trs {
-		responseParts = append(responseParts, strategy.Format(functionCalls[i].Name, tr))
+	for i, tr := range results {
+		responseParts = append(responseParts, strategy.Format(calls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{
@@ -163,10 +200,10 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	return &llm.Content{
 		Role:  "user",
 		Parts: responseParts,
-	}, nil
+	}
 }
 
-func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
+func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
 	var wg sync.WaitGroup
 
 	for i, fc := range calls {

@@ -39,7 +39,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		exec.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		exec.runExecutionPlan(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional parallel panic") {
@@ -53,7 +53,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		exec.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		exec.runExecutionPlan(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional serial panic") {
