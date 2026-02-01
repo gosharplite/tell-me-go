@@ -70,7 +70,7 @@ func (m *MockClock) Now() time.Time { return m.CurrentTime }
 func TestTurnEngine_StateTransitions(t *testing.T) {
 	tests := []struct {
 		name     string
-		current  TurnPhase
+		phase    TurnPhase
 		hasTools bool
 		expected TurnPhase
 	}{
@@ -80,16 +80,67 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 		{"Executing to Persisting", PhaseExecuting, true, PhasePersisting},
 		{"Persisting to Complete", PhasePersisting, false, PhaseComplete},
 		{"Recovery to Inference", PhaseRecovering, false, PhaseInference},
-		{"Complete to Complete", PhaseComplete, false, PhaseComplete},
 	}
 
-	e := &TurnEngine{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state := &TurnState{HasToolCalls: tt.hasTools}
-			got := e.getNextPhase(tt.current, state)
-			if got != tt.expected {
-				t.Errorf("from %s (tools:%v) expected %s, got %s", tt.current, tt.hasTools, tt.expected, got)
+			var p TurnProcessor
+			switch tt.phase {
+			case PhaseRefining:
+				p = &ContextRefiner{}
+			case PhaseInference:
+				p = &InferenceStep{}
+			case PhaseExecuting:
+				p = &ExecutionStep{}
+			case PhasePersisting:
+				p = &PersistenceStep{}
+			case PhaseRecovering:
+				p = &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
+			}
+
+			// Mock Turn
+			mockGw := &MockGateway{
+				GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+					ch := make(chan *llm.Content)
+					close(ch)
+					return ch, func() (*llm.Content, *llm.Metrics, error) {
+						content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
+						if tt.hasTools && tt.phase == PhaseInference {
+							content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
+						}
+						return content, &llm.Metrics{}, nil
+					}
+				},
+			}
+			turn := &Turn{
+				State: &TurnState{
+					HasToolCalls: tt.hasTools,
+					RetryCount:   0,
+					LastError:    &AgentError{Category: ErrTransient, Message: "transient error"}, // only for recovery
+					Metadata: &ContextMetadata{
+						APIContents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
+					},
+				},
+				CtxManager: &ContextManager{
+					History:  history.NewManager(""),
+					Strategy: NewContextStrategy(&MockRegistry{}, nil),
+				},
+				Gateway:  mockGw,
+				Executor: &MockExecutor{
+					ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+						return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
+					},
+				},
+				Registry: &MockRegistry{},
+				Clock:    &realClock{},
+			}
+			if tt.phase == PhaseRefining {
+				turn.CtxManager.Pipeline = NewContextPipeline()
+			}
+
+			res := p.Process(context.Background(), turn)
+			if res.NextPhase != tt.expected {
+				t.Errorf("phase %s (tools:%v) expected next %s, got %s", tt.phase, tt.hasTools, tt.expected, res.NextPhase)
 			}
 		})
 	}
@@ -475,7 +526,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 				},
 			}
 
-			p := &RecoveryStep{}
+			p := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
 			res := p.Process(ctx, turn)
 
 			if res.Error == nil {
@@ -565,5 +616,86 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 
 	if attempts != 4 { // 1st attempt + 3 retries
 		t.Errorf("expected 4 attempts total across all turns, got %d", attempts)
+	}
+}
+
+func TestTurnEngine_WithProcessor(t *testing.T) {
+	mockGw := &MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "custom"}}}, &llm.Metrics{}, nil
+			}
+		},
+	}
+	reg := &MockRegistry{}
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
+
+	customRefinerCalled := false
+	customRefiner := TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+		customRefinerCalled = true
+		turn.State.Metadata = &ContextMetadata{
+			APIContents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
+		}
+		return ProcessResult{NextPhase: PhaseInference}
+	})
+
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !customRefinerCalled {
+		t.Error("custom refiner was not called")
+	}
+}
+
+type mockHook struct {
+	beforeCalled int
+	afterCalled  int
+	transCalled  int
+}
+
+func (h *mockHook) BeforeTurn(turn *Turn)                             { h.beforeCalled++ }
+func (h *mockHook) AfterTurn(turn *Turn, err error)                 { h.afterCalled++ }
+func (h *mockHook) OnPhaseTransition(from, to TurnPhase, s *TurnState) { h.transCalled++ }
+
+func TestTurnEngine_Hooks(t *testing.T) {
+	mockGw := &MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
+			}
+		},
+	}
+	reg := &MockRegistry{}
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
+
+	hook := &mockHook{}
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithHook(hook))
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if hook.beforeCalled != 1 {
+		t.Errorf("expected 1 BeforeTurn call, got %d", hook.beforeCalled)
+	}
+	if hook.afterCalled != 1 {
+		t.Errorf("expected 1 AfterTurn call, got %d", hook.afterCalled)
+	}
+	// Refining -> Inference -> Persisting -> Complete
+	if hook.transCalled != 3 {
+		t.Errorf("expected 3 transition calls, got %d", hook.transCalled)
 	}
 }

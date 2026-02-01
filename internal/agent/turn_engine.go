@@ -38,6 +38,38 @@ const (
 type ProcessResult struct {
 	NextPhase TurnPhase
 	Error     error
+	Stop      bool // Explicit signal to halt the turn
+}
+
+// RetryPolicy defines how the engine should handle errors and retries.
+type RetryPolicy interface {
+	ShouldRetry(err error, attempt int) (time.Duration, bool)
+}
+
+// DefaultRetryPolicy provides a standard retry implementation with linear backoff.
+type DefaultRetryPolicy struct {
+	MaxRetries int
+	Backoff    time.Duration
+}
+
+func (p *DefaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+	if attempt >= p.MaxRetries {
+		return 0, false
+	}
+	if IsFatal(err) {
+		return 0, false
+	}
+	if IsTransient(err) {
+		return time.Duration(attempt+1) * p.Backoff, true
+	}
+	return 0, false
+}
+
+// TurnHook allows intercepting lifecycle events of a turn.
+type TurnHook interface {
+	BeforeTurn(turn *Turn)
+	AfterTurn(turn *Turn, err error)
+	OnPhaseTransition(from, to TurnPhase, state *TurnState)
 }
 
 // TurnState carries data between the phases of a turn and tracks the current phase.
@@ -97,14 +129,16 @@ type Turn struct {
 
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
-	ctxManager *ContextManager
-	gateway    gateway.LLMGateway
-	executor   IToolExecutor
-	registry   ToolRegistry
-	events     events.EventBus
-	processors map[TurnPhase]TurnProcessor
-	middleware []TurnMiddleware
-	clock      Clock
+	ctxManager  *ContextManager
+	gateway     gateway.LLMGateway
+	executor    IToolExecutor
+	registry    ToolRegistry
+	events      events.EventBus
+	processors  map[TurnPhase]TurnProcessor
+	middleware  []TurnMiddleware
+	hooks       []TurnHook
+	retryPolicy RetryPolicy
+	clock       Clock
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -114,6 +148,27 @@ type EngineOption func(*TurnEngine)
 func WithMiddleware(m ...TurnMiddleware) EngineOption {
 	return func(e *TurnEngine) {
 		e.middleware = append(e.middleware, m...)
+	}
+}
+
+// WithProcessor registers or overrides a processor for a specific phase.
+func WithProcessor(phase TurnPhase, p TurnProcessor) EngineOption {
+	return func(e *TurnEngine) {
+		e.processors[phase] = p
+	}
+}
+
+// WithHook adds a lifecycle hook to the TurnEngine.
+func WithHook(h TurnHook) EngineOption {
+	return func(e *TurnEngine) {
+		e.hooks = append(e.hooks, h)
+	}
+}
+
+// WithRetryPolicy sets the retry policy for the TurnEngine.
+func WithRetryPolicy(p RetryPolicy) EngineOption {
+	return func(e *TurnEngine) {
+		e.retryPolicy = p
 	}
 }
 
@@ -127,23 +182,30 @@ func WithClock(c Clock) EngineOption {
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
 func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
-		gateway:    gw,
-		executor:   ex,
-		ctxManager: cm,
-		registry:   reg,
-		events:     bus,
-		processors: make(map[TurnPhase]TurnProcessor),
-		clock:      realClock{},
+		gateway:     gw,
+		executor:    ex,
+		ctxManager:  cm,
+		registry:    reg,
+		events:      bus,
+		processors:  make(map[TurnPhase]TurnProcessor),
+		retryPolicy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 100 * time.Millisecond},
+		clock:       realClock{},
 	}
 
+	// Register default processors
 	e.processors[PhaseRefining] = &ContextRefiner{}
 	e.processors[PhaseInference] = &InferenceStep{}
 	e.processors[PhaseExecuting] = &ExecutionStep{}
 	e.processors[PhasePersisting] = &PersistenceStep{}
-	e.processors[PhaseRecovering] = &RecoveryStep{}
+	e.processors[PhaseRecovering] = &RecoveryStep{Policy: e.retryPolicy}
 
 	for _, opt := range opts {
 		opt(e)
+	}
+
+	// Ensure RecoveryStep uses the (potentially overridden) policy
+	if rs, ok := e.processors[PhaseRecovering].(*RecoveryStep); ok {
+		rs.Policy = e.retryPolicy
 	}
 
 	// Default middleware for eventing if bus is provided
@@ -192,7 +254,17 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		}
 		_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 
-		if err := e.executeTurn(ctx, turn); err != nil {
+		for _, h := range e.hooks {
+			h.BeforeTurn(turn)
+		}
+
+		err := e.executeTurn(ctx, turn)
+
+		for _, h := range e.hooks {
+			h.AfterTurn(turn, err)
+		}
+
+		if err != nil {
 			return err
 		}
 
@@ -217,16 +289,28 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 			turn.State.LastError = res.Error
 			// If we hit an error and are not already recovering, try to recover.
 			if turn.State.Phase != PhaseRecovering {
+				for _, h := range e.hooks {
+					h.OnPhaseTransition(turn.State.Phase, PhaseRecovering, turn.State)
+				}
 				turn.State.Phase = PhaseRecovering
 				continue
 			}
 			return res.Error
 		}
 
-		if res.NextPhase != "" {
-			turn.State.Phase = res.NextPhase
-		} else {
-			turn.State.Phase = e.getNextPhase(turn.State.Phase, turn.State)
+		next := res.NextPhase
+		if next == "" {
+			// This should ideally not happen in the new design, but we default to Complete for safety
+			next = PhaseComplete
+		}
+
+		for _, h := range e.hooks {
+			h.OnPhaseTransition(turn.State.Phase, next, turn.State)
+		}
+
+		turn.State.Phase = next
+		if res.Stop {
+			turn.Stop = true
 		}
 
 		if turn.Stop && turn.State.Phase != PhaseComplete {
@@ -234,26 +318,6 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 		}
 	}
 	return nil
-}
-
-func (e *TurnEngine) getNextPhase(current TurnPhase, state *TurnState) TurnPhase {
-	switch current {
-	case PhaseRefining:
-		return PhaseInference
-	case PhaseInference:
-		if state.HasToolCalls {
-			return PhaseExecuting
-		}
-		return PhasePersisting
-	case PhaseExecuting:
-		return PhasePersisting
-	case PhasePersisting:
-		return PhaseComplete
-	case PhaseRecovering:
-		return PhaseInference
-	default:
-		return PhaseComplete
-	}
 }
 
 // ContextRefiner prepares the context for the LLM call.
@@ -268,7 +332,7 @@ func (p *ContextRefiner) Process(ctx context.Context, turn *Turn) ProcessResult 
 	turn.State.Tokens = metadata.FinalTokenCount
 	turn.State.Metadata.APIContents = apiContents // Stash for InferenceStep
 
-	return ProcessResult{}
+	return ProcessResult{NextPhase: PhaseInference}
 }
 
 // InferenceStep calls the LLM.
@@ -299,7 +363,10 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(respContent)
 
-	return ProcessResult{}
+	if turn.State.HasToolCalls {
+		return ProcessResult{NextPhase: PhaseExecuting}
+	}
+	return ProcessResult{NextPhase: PhasePersisting}
 }
 
 func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
@@ -319,7 +386,7 @@ type ExecutionStep struct{}
 
 func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	if !turn.State.HasToolCalls {
-		return ProcessResult{}
+		return ProcessResult{NextPhase: PhasePersisting}
 	}
 
 	toolStart := turn.Clock.Now()
@@ -336,7 +403,7 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	if turn.State.Metrics != nil {
 		turn.State.Metrics.ToolDuration = turn.Clock.Now().Sub(toolStart).Seconds()
 	}
-	return ProcessResult{}
+	return ProcessResult{NextPhase: PhasePersisting}
 }
 
 // PersistenceStep saves the response and tool results to history.
@@ -355,11 +422,13 @@ func (p *PersistenceStep) Process(ctx context.Context, turn *Turn) ProcessResult
 		}
 	}
 
-	return ProcessResult{}
+	return ProcessResult{NextPhase: PhaseComplete}
 }
 
 // RecoveryStep handles errors by deciding whether to retry or fail.
-type RecoveryStep struct{}
+type RecoveryStep struct {
+	Policy RetryPolicy
+}
 
 func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	err := turn.State.LastError
@@ -367,28 +436,22 @@ func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 		return ProcessResult{NextPhase: PhaseComplete}
 	}
 
-	// Max retries
-	if turn.State.RetryCount >= 3 {
-		return ProcessResult{NextPhase: PhaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
-	}
-
-	if IsFatal(err) {
+	delay, retry := p.Policy.ShouldRetry(err, turn.State.RetryCount)
+	if !retry {
+		if IsTransient(err) {
+			return ProcessResult{NextPhase: PhaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
+		}
 		return ProcessResult{NextPhase: PhaseComplete, Error: err}
 	}
 
-	if IsTransient(err) {
-		turn.State.RetryCount++
-		// Wait a bit before retrying
-		select {
-		case <-ctx.Done():
-			return ProcessResult{Error: ctx.Err()}
-		case <-time.After(time.Duration(turn.State.RetryCount) * 100 * time.Millisecond):
-		}
-		return ProcessResult{NextPhase: PhaseInference}
+	turn.State.RetryCount++
+	select {
+	case <-ctx.Done():
+		return ProcessResult{Error: ctx.Err()}
+	case <-time.After(delay):
 	}
 
-	// Default to terminal for unknown errors to be safe
-	return ProcessResult{NextPhase: PhaseComplete, Error: err}
+	return ProcessResult{NextPhase: PhaseInference}
 }
 
 // WithEvents returns a middleware that publishes events for various phases.
