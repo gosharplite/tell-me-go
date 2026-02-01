@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestJSONLStore_LargeLine(t *testing.T) {
@@ -23,9 +23,9 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
 	largeText := strings.Repeat("A", 200*1024)
-	largeContent := &types.Content{
+	largeContent := &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: largeText}},
+		Parts: []*llm.Part{{Text: largeText}},
 	}
 
 	// Test Append
@@ -56,15 +56,15 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	ctx := context.Background()
 
 	data := []byte("fake-image-data")
-	content := &types.Content{
+	content := &llm.Content{
 		Role: "user",
-		Parts: []*types.Part{
-			{InlineData: &types.Blob{MIMEType: "image/png", Data: data}},
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: data}},
 		},
 	}
 
 	// 1. Save
-	if err := store.Save(ctx, []*types.Content{content}); err != nil {
+	if err := store.Save(ctx, []*llm.Content{content}); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
@@ -152,7 +152,7 @@ func TestJSONLStore_Append_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := store.Append(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Hi"}}})
+	err := store.Append(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}})
 	if err == nil {
 		t.Error("expected error for cancelled context")
 	}
@@ -163,7 +163,7 @@ func TestJSONLStore_Load_Cancel(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "cancel_load.jsonl")
 	store := NewJSONLStore(filePath)
 	ctx := context.Background()
-	_ = store.Save(ctx, []*types.Content{{Role: "user", Parts: []*types.Part{{Text: "Hi"}}}})
+	_ = store.Save(ctx, []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}})
 
 	ctx2, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -181,14 +181,14 @@ func TestJSONLStore_Save_Cancel(t *testing.T) {
 	cancel()
 
 	data := []byte("image")
-	content := &types.Content{
+	content := &llm.Content{
 		Role: "user",
-		Parts: []*types.Part{
-			{InlineData: &types.Blob{MIMEType: "image/png", Data: data}},
+		Parts: []*llm.Part{
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: data}},
 		},
 	}
 
-	err := store.Save(ctx, []*types.Content{content})
+	err := store.Save(ctx, []*llm.Content{content})
 	if err == nil {
 		t.Error("expected error for cancelled context")
 	}

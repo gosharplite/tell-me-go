@@ -4,16 +4,13 @@
 package api
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"google.golang.org/genai"
 )
 
-// Metrics alias for backward compatibility during migration
-type Metrics = types.Metrics
-
 // GetMetrics extracts metrics from a GenAI response.
-func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *types.Metrics {
-	m := &types.Metrics{
+func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {
+	m := &llm.Metrics{
 		Duration: duration,
 	}
 

@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/types"
 	"google.golang.org/genai"
 )
 
@@ -159,7 +159,7 @@ func TestHistoryManager_Prune(t *testing.T) {
 			caseFile := filepath.Join(tmpDir, tt.name+".json")
 			m2 := NewManager(caseFile)
 			for _, c := range m.Contents {
-				_ = m2.AddContent(ctx, &types.Content{Role: c.Role, Parts: c.Parts})
+				_ = m2.AddContent(ctx, &llm.Content{Role: c.Role, Parts: c.Parts})
 			}
 
 			_, contents := m2.Prune(ctx, tt.maxTurns)
@@ -187,8 +187,8 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	_ = m.AddEntry(ctx, "model", "M2")
 
 	// Scenario 1: Replace M1 with NewM1 (valid)
-	newContents := []*types.Content{
-		{Role: "model", Parts: []*types.Part{{Text: "NewM1"}}},
+	newContents := []*llm.Content{
+		{Role: "model", Parts: []*llm.Part{{Text: "NewM1"}}},
 	}
 	if err := m.ReplaceRange(ctx, 1, 2, newContents); err != nil {
 		t.Errorf("ReplaceRange valid failed: %v", err)
@@ -203,8 +203,8 @@ func TestHistoryManager_ReplaceRange(t *testing.T) {
 	}
 
 	// Scenario 3: Role Violation (Replace M1 with U_New)
-	badContents := []*types.Content{
-		{Role: "user", Parts: []*types.Part{{Text: "U_New"}}},
+	badContents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "U_New"}}},
 	}
 	if err := m.ReplaceRange(ctx, 1, 2, badContents); err == nil {
 		t.Error("ReplaceRange expected error for role violation")
@@ -218,14 +218,14 @@ func TestHistoryManager_RepairInterruptedTool(t *testing.T) {
 
 	// Create a history that ends with a model call that has a function call
 	m := NewManager(historyFile)
-	m.Contents = append(m.Contents, &types.Content{
+	m.Contents = append(m.Contents, &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: "call tool"}},
+		Parts: []*llm.Part{{Text: "call tool"}},
 	})
-	m.Contents = append(m.Contents, &types.Content{
+	m.Contents = append(m.Contents, &llm.Content{
 		Role: "model",
-		Parts: []*types.Part{{
-			FunctionCall: &types.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"q": "123"}},
+		Parts: []*llm.Part{{
+			FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"q": "123"}},
 		}},
 	})
 	_ = m.Save(ctx)
@@ -280,15 +280,15 @@ func TestHistoryManager_CleanContent(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		content  *types.Content
+		content  *llm.Content
 		wantText string
 		wantLen  int
 	}{
 		{
 			name: "remove empty parts",
-			content: &types.Content{
+			content: &llm.Content{
 				Role: "user",
-				Parts: []*types.Part{
+				Parts: []*llm.Part{
 					{Text: "hello"},
 					{Text: ""},
 					{Text: "world"},
@@ -298,9 +298,9 @@ func TestHistoryManager_CleanContent(t *testing.T) {
 		},
 		{
 			name: "handle empty message",
-			content: &types.Content{
+			content: &llm.Content{
 				Role: "model",
-				Parts: []*types.Part{
+				Parts: []*llm.Part{
 					{Text: ""},
 				},
 			},
@@ -309,9 +309,9 @@ func TestHistoryManager_CleanContent(t *testing.T) {
 		},
 		{
 			name: "preserve thoughts",
-			content: &types.Content{
+			content: &llm.Content{
 				Role: "model",
-				Parts: []*types.Part{
+				Parts: []*llm.Part{
 					{Thought: true},
 					{ThoughtSignature: []byte("sig")},
 				},
@@ -367,8 +367,8 @@ func TestHistoryManager_Repair_NoTool(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "repair_no_tool.json")
 	m := NewManager(historyFile)
-	m.Contents = append(m.Contents, &types.Content{Role: "user", Parts: []*types.Part{{Text: "Hi"}}})
-	m.Contents = append(m.Contents, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Hello"}}})
+	m.Contents = append(m.Contents, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}})
+	m.Contents = append(m.Contents, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hello"}}})
 	m.repairLocked()
 	if len(m.Contents) != 2 {
 		t.Errorf("expected 2 messages, got %d", len(m.Contents))
@@ -377,9 +377,9 @@ func TestHistoryManager_Repair_NoTool(t *testing.T) {
 
 type mockStore struct{}
 
-func (s *mockStore) Load(ctx context.Context) ([]*types.Content, error)        { return nil, nil }
-func (s *mockStore) Save(ctx context.Context, contents []*types.Content) error { return nil }
-func (s *mockStore) Append(ctx context.Context, content *types.Content) error  { return nil }
+func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)        { return nil, nil }
+func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error { return nil }
+func (s *mockStore) Append(ctx context.Context, content *llm.Content) error  { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
 	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
@@ -402,15 +402,34 @@ func TestHistoryManager_AddContent_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. First message not user
-	err := m.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Hi"}}})
+	err := m.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}})
 	if err == nil {
 		t.Error("expected error for first message not being user")
 	}
 
 	// 2. Role alternation violation
-	_ = m.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "U1"}}})
-	err = m.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "U2"}}})
+	_ = m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U1"}}})
+	err = m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
 	if err == nil {
 		t.Error("expected error for consecutive user roles")
+	}
+}
+
+func TestHistoryManager_FileCreation(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "new_subdir", "history.jsonL")
+
+	h := NewManager(historyFile)
+	ctx := context.Background()
+
+	// Add an entry to trigger a save
+	err := h.AddEntry(ctx, "user", "test message")
+	if err != nil {
+		t.Fatalf("AddEntry failed: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
+		t.Errorf("expected history file to be created at %s", historyFile)
 	}
 }

@@ -13,11 +13,13 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -85,19 +87,17 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(ctx context.Context, prompt string) error {
+func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string) error {
 	m.capturedPrompt = prompt
 	return nil
 }
 func (m *mockChatter) SetLogFile(path string)                               {}
-func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)            {}
-func (m *mockChatter) SetRawOutput(raw bool)                                {}
 func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
-func (m *mockChatter) SetRenderer(renderer agent.UIRenderer)                {}
+func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output
@@ -114,10 +114,10 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, registry *tools.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter {
 		return mock
 	}
-	app.ClientFactory = func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
+	app.ClientFactory = func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error) {
 		return nil, nil // Return nil client for testing
 	}
 

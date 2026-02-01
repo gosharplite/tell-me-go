@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"google.golang.org/genai"
 )
 
@@ -27,7 +28,7 @@ type Client struct {
 	thinkingLevel     string
 	maxThinkingBudget int
 	useSearch         bool
-	systemInstruction *types.Content
+	systemInstruction *llm.Content
 	backend           genai.Backend
 }
 
@@ -44,9 +45,9 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 	}
 
 	if systemInstruction != "" {
-		c.systemInstruction = &types.Content{
+		c.systemInstruction = &llm.Content{
 			Role:  "system",
-			Parts: []*types.Part{{Text: systemInstruction}},
+			Parts: []*llm.Part{{Text: systemInstruction}},
 		}
 	}
 
@@ -126,7 +127,7 @@ func (c *Client) RefreshAuth() error {
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.
-func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
 	startTime := time.Now()
@@ -160,10 +161,10 @@ func (c *Client) SendChat(ctx context.Context, history []*types.Content, tools [
 		return nil, metrics, fmt.Errorf("empty response from api")
 	}
 
-	return types.FromSDKContent(candidate.Content), metrics, nil
+	return FromSDKContent(candidate.Content), metrics, nil
 }
 
-func (c *Client) prepareRequest(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
 	// Add Search tool
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
@@ -175,7 +176,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*types.Content, t
 
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
-		SystemInstruction: c.systemInstruction.ToSDK(ctx, resolver),
+		SystemInstruction: ToSDKContent(ctx, c.systemInstruction, resolver),
 	}
 
 	// Apply Thinking Config
@@ -202,7 +203,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*types.Content, t
 
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
-		sdkHistory[i] = h.ToSDK(ctx, resolver)
+		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
 		// Defensive check: Ensure all content objects have at least one part for the SDK.
 		if len(sdkHistory[i].Parts) == 0 {
 			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
@@ -213,13 +214,13 @@ func (c *Client) prepareRequest(ctx context.Context, history []*types.Content, t
 }
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
-func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
 	startTime := time.Now()
 	iter := c.sdkClient.Models.GenerateContentStream(ctx, c.model, sdkHistory, config)
 
-	var lastMetrics *types.Metrics
+	var lastMetrics *llm.Metrics
 
 	for resp, err := range iter {
 		if err != nil {
@@ -232,7 +233,7 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 		if len(resp.Candidates) > 0 {
 			candidate := resp.Candidates[0]
 			if candidate.Content != nil {
-				callback(types.FromSDKContent(candidate.Content))
+				callback(FromSDKContent(candidate.Content))
 			}
 
 			if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
@@ -250,7 +251,7 @@ func (c *Client) StreamChat(ctx context.Context, history []*types.Content, tools
 	return lastMetrics, nil
 }
 
-func toSDKTool(declarations []*types.ToolDeclaration) []*genai.Tool {
+func toSDKTool(declarations []*tools.ToolDeclaration) []*genai.Tool {
 	if len(declarations) == 0 {
 		return nil
 	}
@@ -269,7 +270,7 @@ func toSDKTool(declarations []*types.ToolDeclaration) []*genai.Tool {
 	}
 }
 
-func toSDKSchema(s *types.Schema) *genai.Schema {
+func toSDKSchema(s *tools.Schema) *genai.Schema {
 	if s == nil {
 		return nil
 	}

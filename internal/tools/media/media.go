@@ -6,26 +6,26 @@ package media
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type mediaManager struct {
 	sm           *security.SecurityManager
-	agentGateway types.AgentGateway
+	agentGateway tools.AgentGateway
 }
 
 // Register adds media generation tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager, gateway types.AgentGateway) {
+func Register(r *registry.Registry, sm *security.SecurityManager, gateway tools.AgentGateway) {
 	m := &mediaManager{sm: sm, agentGateway: gateway}
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"prompt": {
 					Type:        "STRING",
 					Description: "Detailed description of the image to generate.",
@@ -43,12 +43,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager, gateway types.
 		},
 	}, m.createImage)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "read_image",
 		Description: "Reads a local image file for vision analysis.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"filepath": {
 					Type:        "STRING",
 					Description: "The path to the image file (e.g., './assets/screenshot.png').",
@@ -59,16 +59,16 @@ func Register(r *registry.Registry, sm *security.SecurityManager, gateway types.
 	}, m.readImage)
 }
 
-func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.agentGateway == nil {
-		return types.ToolResult{}, types.ErrNotImplemented
+		return tools.ToolResult{}, tools.ErrNotImplemented
 	}
 	return m.agentGateway.GenerateImage(ctx, args)
 }
 
-func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *mediaManager) readImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.agentGateway == nil {
-		return types.ToolResult{}, types.ErrNotImplemented
+		return tools.ToolResult{}, tools.ErrNotImplemented
 	}
 	return m.agentGateway.ReadImage(ctx, args)
 }

@@ -6,271 +6,124 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // ContextManager encapsulates context preparation, policy enforcement, and summarization.
 type ContextManager struct {
-	Strategy *ContextStrategy
-	History  *history.Manager
-	Gateway  gateway.LLMGateway
-	Renderer UIRenderer
+	mu         sync.RWMutex
+	Strategy   *ContextStrategy
+	History    *history.Manager
+	Summarizer HistorySummarizer
+	Pipeline   *ContextPipeline
+	Events     events.EventBus
+	factory    *PipelineFactory
 }
 
 // NewContextManager creates a new ContextManager.
-func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, r UIRenderer) *ContextManager {
-	return &ContextManager{Strategy: s, History: h, Gateway: g, Renderer: r}
+func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+	cm := &ContextManager{
+		Strategy:   s,
+		History:    h,
+		Summarizer: NewSummarizer(g, bus),
+		Events:     bus,
+		factory:    factory,
+	}
+
+	if bus != nil {
+		bus.Subscribe(func(e events.Event) {
+			if cfg, ok := e.(events.ConfigUpdated); ok {
+				cm.onConfigUpdated(cfg)
+			}
+		})
+	}
+
+	return cm
 }
 
-// Prepare calculates the current context, enforces limits, and handles auto-summarization.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Content, int, int, error) {
-	maxTokens, _, maxTurns := cm.Strategy.GetLimits()
-
-	// 1. Enforce history turn limit
-	if maxTurns > 0 {
-		pruned := cm.History.EnforcePolicy(ctx, history.Policy{MaxTurns: maxTurns})
-		if pruned > 0 {
-			cm.Strategy.SetPrunedTurns(pruned)
-		}
+func (cm *ContextManager) onConfigUpdated(e events.ConfigUpdated) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.factory != nil {
+		cm.Pipeline = cm.factory.BuildStandardPipeline(e.Limits)
 	}
-
-	contents := cm.History.GetContents()
-	tokens := cm.Strategy.EstimateTokens(contents)
-
-	// 2. Auto-Summarization
-	if tokens > int(float64(maxTokens)*0.9) {
-		if err := cm.AutoSummarize(ctx); err == nil {
-			contents = cm.History.GetContents()
-			tokens = cm.Strategy.EstimateTokens(contents)
-		}
-
-		if tokens > maxTokens {
-			cm.Renderer.LogSystemMessage(fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, maxTokens), "error")
-			cm.Renderer.LogSystemMessage("Rolling back history. Please reduce context or start a new session.", "info")
-			cm.History.Rollback(ctx)
-			return nil, 0, 0, ErrContextLimitExceeded
-		}
-	}
-
-	currentTurns := len(contents) / 2
-	warnings := cm.Strategy.GetWarnings(turn, tokens, currentTurns)
-
-	apiContents := make([]*types.Content, len(contents))
-	copy(apiContents, contents)
-
-	if len(warnings) > 0 && len(apiContents) > 0 {
-		var combined string
-		for _, w := range warnings {
-			if combined != "" {
-				combined += "\n"
-			}
-			combined += w.Message
-		}
-
-		lastIdx := len(apiContents) - 1
-		orig := apiContents[lastIdx]
-
-		// Check if the last message contains function responses.
-		// Strict APIs (like Vertex AI) often reject mixing Text and FunctionResponse in the same Content.
-		hasFunctionResponse := false
-		for _, p := range orig.Parts {
-			if p.FunctionResponse != nil {
-				hasFunctionResponse = true
-				break
-			}
-		}
-
-		if hasFunctionResponse && len(apiContents) > 1 {
-			// Inject a volatile system turn BEFORE the last message (tool results) to maintain role alternation
-			// while keeping the warning separate from the structured tool output.
-			warningMsgs := []*types.Content{
-				{
-					Role:  "user",
-					Parts: []*types.Part{{Text: "System Notice:\n\n" + combined}},
-				},
-				{
-					Role:  "model",
-					Parts: []*types.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
-				},
-			}
-			newContents := make([]*types.Content, 0, len(apiContents)+2)
-			newContents = append(newContents, apiContents[:lastIdx]...)
-			newContents = append(newContents, warningMsgs...)
-			newContents = append(newContents, apiContents[lastIdx])
-			apiContents = newContents
-		} else {
-			// Safe to append to the last message (usually the user's primary prompt).
-			cloned := &types.Content{
-				Role:  orig.Role,
-				Parts: make([]*types.Part, len(orig.Parts)),
-			}
-			copy(cloned.Parts, orig.Parts)
-			cloned.Parts = append(cloned.Parts, &types.Part{
-				Text: "\n\n" + combined,
-			})
-			apiContents[lastIdx] = cloned
-		}
-
-		cm.Renderer.LogSystemMessage("Safety warning injected into volatile model context.", "info")
-	}
-
-	return apiContents, tokens, currentTurns, nil
 }
 
-// AutoSummarize triggers background compression of older history.
-func (cm *ContextManager) AutoSummarize(ctx context.Context) error {
-	contents := cm.History.GetContents()
-	if len(contents) < 10 {
-		return fmt.Errorf("not enough history to auto-summarize")
+// Prepare calculates the current context, enforces limits, and handles auto-summarization using a pipeline.
+func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
+	maxTokens, _, _ := cm.Strategy.GetLimits()
+
+	req := &ContextRequest{
+		Turn:    turn,
+		History: cm.History.GetContents(),
 	}
 
-	msgsToSummarize := (len(contents) / 4) * 2
-	if msgsToSummarize < 2 {
-		msgsToSummarize = 2
+	cm.mu.RLock()
+	pipeline := cm.Pipeline
+	cm.mu.RUnlock()
+
+	if pipeline == nil {
+		return nil, nil, fmt.Errorf("context pipeline not configured")
 	}
 
-	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize], "")
-	if err != nil {
-		return err
+	if err := pipeline.Execute(ctx, req); err != nil {
+		return nil, nil, err
 	}
 
-	newMsgs := []*types.Content{
-		{
-			Role:  "user",
-			Parts: []*types.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
-		},
-		{
-			Role:  "model",
-			Parts: []*types.Part{{Text: "Understood. Context compressed."}},
-		},
+	req.Result = req.History
+
+	// Final token estimation check
+	finalTokens := cm.Strategy.EstimateTokens(req.Result)
+	req.Metadata.FinalTokenCount = finalTokens
+
+	if finalTokens > maxTokens {
+		return nil, nil, fmt.Errorf("%w: %d > %d", llm.ErrContextLimitExceeded, finalTokens, maxTokens)
 	}
 
-	return cm.History.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs)
+	req.Metadata.FinalTurnCount = len(req.Result) / 2
+	return req.Result, &req.Metadata, nil
 }
 
-// PerformSummarization calls the LLM to compress a subset of history.
-func (cm *ContextManager) PerformSummarization(ctx context.Context, subset []*types.Content, focus string) (string, error) {
-	cm.Renderer.LogSystemMessage(fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)), "info")
-
-	// Transform history to text-only to avoid INVALID_ARGUMENT (missing tool declarations)
-	// and to strip large binary payloads that aren't useful for textual summarization.
-	summarizerInput := make([]*types.Content, len(subset))
-	for i, c := range subset {
-		summarizerInput[i] = &types.Content{Role: c.Role}
-		for _, p := range c.Parts {
-			if p.Text != "" {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{Text: p.Text})
-			}
-			if p.FunctionCall != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
-					Text: fmt.Sprintf("[Model called tool: %s with args: %v]", p.FunctionCall.Name, p.FunctionCall.Args),
-				})
-			}
-			if p.FunctionResponse != nil {
-				res := p.FunctionResponse.Response["result"]
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
-					Text: fmt.Sprintf("[Tool %s returned: %v]", p.FunctionResponse.Name, res),
-				})
-			}
-			if p.InlineData != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
-					Text: fmt.Sprintf("[Binary Data: %s]", p.InlineData.MIMEType),
-				})
-			}
-		}
-	}
-
-	prompt := SummarizationPrompt
-	if focus != "" {
-		prompt += fmt.Sprintf("\nFocus: %s", focus)
-	}
-	summarizerInput = append(summarizerInput, &types.Content{
-		Role:  "user",
-		Parts: []*types.Part{{Text: prompt}},
-	})
-
-	respCh, finalize := cm.Gateway.Generate(ctx, summarizerInput, nil, cm.History.GetResolver())
-	// Drain the channel; we don't stream summarization to the UI.
-	for range respCh {
-	}
-	respContent, _, err := finalize()
-	if err != nil {
-		return "", fmt.Errorf("summarization request failed: %w", err)
-	}
-
-	if len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {
-		return "", fmt.Errorf("summarization returned empty content")
-	}
-
-	return respContent.Parts[0].Text, nil
-}
-
-// SummarizeHistoryTool implements the summarize_history tool.
-func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-	var params struct {
-		Turns float64 `json:"turns"`
-		Focus string  `json:"focus"`
-	}
-	if err := types.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
-	}
-
-	targetTurns := int(params.Turns)
-	if targetTurns <= 0 {
-		return types.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
-	}
-
+// SummarizeRange compresses a range of history turns into a single summary block.
+func (cm *ContextManager) SummarizeRange(ctx context.Context, turns int, focus string) (string, error) {
 	contents := cm.History.GetContents()
 	// We must leave at least the last turn (2 messages) and the current prompt
 	// to maintain context continuity.
 	maxSummarizable := (len(contents) - 2) / 2
-	if targetTurns > maxSummarizable {
-		targetTurns = maxSummarizable
+	if turns > maxSummarizable {
+		turns = maxSummarizable
 	}
 
-	if targetTurns <= 0 {
-		return types.ToolResult{Text: "History is too short to summarize yet."}, nil
+	if turns <= 0 {
+		return "History is too short to summarize yet.", nil
 	}
 
-	msgsToSummarize := targetTurns * 2
+	msgsToSummarize := turns * 2
 
-	summary, err := cm.PerformSummarization(ctx, contents[:msgsToSummarize], params.Focus)
+	summary, err := cm.Summarizer.Summarize(ctx, contents[:msgsToSummarize], focus)
 	if err != nil {
-		return types.ToolResult{}, err
+		return "", err
 	}
 
-	newMsgs := []*types.Content{
+	newMsgs := []*llm.Content{
 		{
 			Role:  "user",
-			Parts: []*types.Part{{Text: "System Summary of previous context:\n\n" + summary}},
+			Parts: []*llm.Part{{Text: "System Summary of previous context:\n\n" + summary}},
 		},
 		{
 			Role:  "model",
-			Parts: []*types.Part{{Text: "Understood. I have integrated the summarized context."}},
+			Parts: []*llm.Part{{Text: "Understood. I have integrated the summarized context."}},
 		},
 	}
 
 	if err := cm.History.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
+		return "", fmt.Errorf("failed to update history with summary: %w", err)
 	}
 
-	return types.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", targetTurns)}, nil
+	return fmt.Sprintf("Summarized the first %d turns of history.", turns), nil
 }
-
-// SummarizationPrompt is the system instruction for history compression.
-const SummarizationPrompt = `You are a conversation compressor. Summarize the provided history into a concise but comprehensive state summary.
-Preserve:
-1. Current architecture decisions and project structure.
-2. Modified files and their high-level changes.
-3. Successfully executed commands and their critical results.
-4. Unresolved issues or pending tasks from the scratchpad/task list.
-Discard:
-1. Large file contents or boilerplate code output.
-2. Redundant tool call logs.
-3. "Trial and error" failures that don't affect the final state.
-
-The output must be a single summary that will replace these turns in the history.
-`

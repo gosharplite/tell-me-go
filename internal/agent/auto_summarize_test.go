@@ -14,17 +14,19 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"google.golang.org/genai"
 )
 
 func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	registry.Register(&types.ToolDeclaration{
+	reg := registry.New()
+	reg.Register(&tools.ToolDeclaration{
 		Name:        "dummy_tool",
 		Description: "A dummy tool for token estimation stability",
 	}, nil)
@@ -47,9 +49,9 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	// Disable streaming for testing convenience with httptest
-	a := New(client, hManager, registry, sm, true)
+	a := New(client, hManager, reg, sm, true)
 
 	// Set a token limit to trigger auto-summarization.
 	// With a 2000 token limit, the 90% threshold is 1800.
@@ -60,8 +62,8 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	// 6000 chars / 3.2 ≈ 1875 tokens, safely triggering the logic.
 	longText := strings.Repeat("A", 1000)
 	for i := 0; i < 6; i++ { // 12 messages
-		hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: longText}}})
-		hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{Text: "Response"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
 	}
 
 	// Verify initial count
@@ -71,12 +73,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	// Call Prepare, which should trigger AutoSummarize
-	_, tokens, _, err := a.ctxManager.Prepare(ctx, 1)
+	_, metadata, err := a.ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	t.Logf("Tokens after Prepare: %d", tokens)
+	t.Logf("Tokens after Prepare: %d", metadata.FinalTokenCount)
 
 	// Check if history was replaced
 	newContents := hManager.GetContents()

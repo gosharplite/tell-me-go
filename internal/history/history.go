@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Manager handles loading, saving, and manipulating conversation history.
@@ -18,8 +18,8 @@ type Manager struct {
 	mu       sync.RWMutex
 	store    Store
 	FilePath string
-	Contents []*types.Content
-	backup   []*types.Content // Keep a copy of the state before the current user prompt
+	Contents []*llm.Content
+	backup   []*llm.Content // Keep a copy of the state before the current user prompt
 }
 
 // NewManager creates a new history manager for the given file path.
@@ -27,7 +27,7 @@ func NewManager(filePath string) *Manager {
 	return &Manager{
 		store:    NewJSONLStore(filePath),
 		FilePath: filePath,
-		Contents: []*types.Content{},
+		Contents: []*llm.Content{},
 	}
 }
 
@@ -76,11 +76,11 @@ func (m *Manager) repairLocked() {
 		return
 	}
 
-	var responses []*types.Part
+	var responses []*llm.Part
 	for _, p := range last.Parts {
 		if p.FunctionCall != nil {
-			responses = append(responses, &types.Part{
-				FunctionResponse: &types.FunctionResponse{
+			responses = append(responses, &llm.Part{
+				FunctionResponse: &llm.FunctionResponse{
 					Name:     p.FunctionCall.Name,
 					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
 				},
@@ -89,7 +89,7 @@ func (m *Manager) repairLocked() {
 	}
 
 	if len(responses) > 0 {
-		m.Contents = append(m.Contents, &types.Content{
+		m.Contents = append(m.Contents, &llm.Content{
 			Role:  "user",
 			Parts: responses,
 		})
@@ -116,8 +116,8 @@ func (m *Manager) cleanLocked() {
 	}
 }
 
-func (m *Manager) cleanContentLocked(content *types.Content) {
-	var cleanParts []*types.Part
+func (m *Manager) cleanContentLocked(content *llm.Content) {
+	var cleanParts []*llm.Part
 	for _, p := range content.Parts {
 		if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought && len(p.ThoughtSignature) == 0 {
 			continue
@@ -125,7 +125,7 @@ func (m *Manager) cleanContentLocked(content *types.Content) {
 		cleanParts = append(cleanParts, p)
 	}
 	if len(cleanParts) == 0 {
-		cleanParts = append(cleanParts, &types.Part{Text: "[empty response]"})
+		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
 	}
 	content.Parts = cleanParts
 }
@@ -134,9 +134,9 @@ func (m *Manager) cleanContentLocked(content *types.Content) {
 func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	content := &types.Content{
+	content := &llm.Content{
 		Role:  role,
-		Parts: []*types.Part{{Text: text}},
+		Parts: []*llm.Part{{Text: text}},
 	}
 	if err := m.addContentLocked(content); err != nil {
 		return err
@@ -146,7 +146,7 @@ func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
 }
 
 // AddContent appends a full api.Content object to the history after validating role alternation.
-func (m *Manager) AddContent(ctx context.Context, content *types.Content) error {
+func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.addContentLocked(content); err != nil {
@@ -156,7 +156,7 @@ func (m *Manager) AddContent(ctx context.Context, content *types.Content) error 
 	return m.store.Append(ctx, content)
 }
 
-func (m *Manager) addContentLocked(content *types.Content) error {
+func (m *Manager) addContentLocked(content *llm.Content) error {
 	// 1. Validate role alternation
 	if len(m.Contents) > 0 {
 		lastRole := m.Contents[len(m.Contents)-1].Role
@@ -178,7 +178,7 @@ func (m *Manager) addContentLocked(content *types.Content) error {
 func (m *Manager) Snapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.backup = make([]*types.Content, len(m.Contents))
+	m.backup = make([]*llm.Content, len(m.Contents))
 	copy(m.backup, m.Contents)
 }
 
@@ -205,7 +205,7 @@ func (m *Manager) EnforcePolicy(ctx context.Context, p Policy) int {
 
 // Prune reduces the history when it exceeds maxTurns.
 // Returns the number of turns removed and the new contents.
-func (m *Manager) Prune(ctx context.Context, maxTurns int) (int, []*types.Content) {
+func (m *Manager) Prune(ctx context.Context, maxTurns int) (int, []*llm.Content) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if maxTurns <= 0 {
@@ -231,25 +231,25 @@ func (m *Manager) Prune(ctx context.Context, maxTurns int) (int, []*types.Conten
 	return 0, m.contentsLocked()
 }
 
-func (m *Manager) contentsLocked() []*types.Content {
-	contents := make([]*types.Content, len(m.Contents))
+func (m *Manager) contentsLocked() []*llm.Content {
+	contents := make([]*llm.Content, len(m.Contents))
 	copy(contents, m.Contents)
 	return contents
 }
 
 // GetContents returns the current history contents.
-func (m *Manager) GetContents() []*types.Content {
+func (m *Manager) GetContents() []*llm.Content {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	// Return a copy to be safe?
-	contents := make([]*types.Content, len(m.Contents))
+	contents := make([]*llm.Content, len(m.Contents))
 	copy(contents, m.Contents)
 	return contents
 }
 
 // ReplaceRange replaces a range of history entries with new content.
 // It ensures that role alternation is preserved if the caller provides alternating content.
-func (m *Manager) ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error {
+func (m *Manager) ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -261,7 +261,7 @@ func (m *Manager) ReplaceRange(ctx context.Context, start, end int, newContents 
 	head := m.Contents[:start]
 	tail := m.Contents[end:]
 
-	candidate := make([]*types.Content, 0, len(head)+len(newContents)+len(tail))
+	candidate := make([]*llm.Content, 0, len(head)+len(newContents)+len(tail))
 	candidate = append(candidate, head...)
 	candidate = append(candidate, newContents...)
 	candidate = append(candidate, tail...)
@@ -284,10 +284,10 @@ func (m *Manager) GetPath() string {
 }
 
 // GetResolver returns an AssetResolver from the underlying store.
-func (m *Manager) GetResolver() types.AssetResolver {
+func (m *Manager) GetResolver() llm.AssetResolver {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if r, ok := m.store.(types.AssetResolver); ok {
+	if r, ok := m.store.(llm.AssetResolver); ok {
 		return r
 	}
 	return nil

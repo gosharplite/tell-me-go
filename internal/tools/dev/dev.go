@@ -10,9 +10,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type devManager struct {
@@ -23,12 +23,12 @@ type devManager struct {
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	m := &devManager{sm: sm}
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",
 		Description: "Executes project tests using authorized tools (go, pytest, npm, cargo, make). Returns 'PASS' or truncated failure logs. Shell metacharacters are forbidden for security.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"command": {
 					Type:        "STRING",
 					Description: "The test command to execute (e.g., 'go test ./...', 'npm test').",
@@ -38,17 +38,17 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, m.runTests, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
 	}, m.goTidy, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_coverage",
 		Description: "Runs Go tests with coverage and returns the summary.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The package path to test (default './...')",
@@ -57,17 +57,17 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, m.getCoverage, registry.ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_linter",
 		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
 	}, m.runLinter, registry.ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_benchmark",
 		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The package path to benchmark (default './...')",
@@ -80,34 +80,34 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, m.runBenchmark, registry.ToolOptions{LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
 	}, m.checkVulnerabilities, registry.ToolOptions{LongRunning: true})
 }
 
-func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Command string `json:"command"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	command := params.Command
 	if command == "" {
-		return types.ToolResult{}, fmt.Errorf("command argument is required")
+		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
 	// Safety check: block shell metacharacters to prevent command chaining
 	if strings.ContainsAny(command, ";|&><`$") {
-		return types.ToolResult{}, fmt.Errorf("security violation: command contains forbidden shell characters")
+		return tools.ToolResult{}, fmt.Errorf("security violation: command contains forbidden shell characters")
 	}
 
 	// Split command into parts to avoid shell interpretation
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
-		return types.ToolResult{}, fmt.Errorf("invalid command")
+		return tools.ToolResult{}, fmt.Errorf("invalid command")
 	}
 
 	baseCmd := parts[0]
@@ -121,7 +121,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 	}
 
 	if !allowedTools[baseCmd] && !strings.HasSuffix(baseCmd, "run_tests.sh") {
-		return types.ToolResult{}, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
+		return tools.ToolResult{}, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
 	}
 
 	func() {
@@ -136,7 +136,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 
 	outStr := string(output)
 	if err == nil {
-		return types.ToolResult{Text: "PASS"}, nil
+		return tools.ToolResult{Text: "PASS"}, nil
 	}
 
 	// If failed, return truncated output to help diagnose
@@ -145,10 +145,10 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		outStr = strings.Join(lines[:100], "\n") + "\n... (Output truncated) ..."
 	}
 
-	return types.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, nil
 }
 
-func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -157,23 +157,23 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 
 	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	if out, err := tidyCmd.CombinedOutput(); err != nil {
-		return types.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", string(out))
 	}
 
 	fmtCmd := exec.CommandContext(ctx, "go", "fmt", "./...")
 	if out, err := fmtCmd.CombinedOutput(); err != nil {
-		return types.ToolResult{}, fmt.Errorf("go fmt failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", string(out))
 	}
 
-	return types.ToolResult{Text: "Success: Project tidied and formatted."}, nil
+	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil
 }
 
-func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -191,14 +191,14 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	out, err := cmd.CombinedOutput()
 
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Tests failed or coverage error:\n%s", string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Tests failed or coverage error:\n%s", string(out))}, nil
 	}
 
 	// Get summary
 	summaryCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func=coverage.out")
 	summaryOut, err := summaryCmd.CombinedOutput()
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Failed to generate coverage summary: %v", err)}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Failed to generate coverage summary: %v", err)}, nil
 	}
 
 	// Clean up
@@ -206,13 +206,13 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	lines := strings.Split(string(summaryOut), "\n")
 	if len(lines) > 50 {
-		return types.ToolResult{Text: strings.Join(lines[:50], "\n") + "\n... (truncated)"}, nil
+		return tools.ToolResult{Text: strings.Join(lines[:50], "\n") + "\n... (truncated)"}, nil
 	}
 
-	return types.ToolResult{Text: string(summaryOut)}, nil
+	return tools.ToolResult{Text: string(summaryOut)}, nil
 }
 
-func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -226,29 +226,29 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 	} else if _, err := exec.LookPath("staticcheck"); err == nil {
 		cmd = exec.CommandContext(ctx, "staticcheck", "./...")
 	} else {
-		return types.ToolResult{Text: "Error: No supported linter found (golangci-lint or staticcheck)."}, nil
+		return tools.ToolResult{Text: "Error: No supported linter found (golangci-lint or staticcheck)."}, nil
 	}
 
 	out, _ := cmd.CombinedOutput()
 	if len(out) == 0 {
-		return types.ToolResult{Text: "Linter passed successfully."}, nil
+		return tools.ToolResult{Text: "Linter passed successfully."}, nil
 	}
 
 	lines := strings.Split(string(out), "\n")
 	if len(lines) > 100 {
-		return types.ToolResult{Text: strings.Join(lines[:100], "\n") + "\n... (truncated)"}, nil
+		return tools.ToolResult{Text: strings.Join(lines[:100], "\n") + "\n... (truncated)"}, nil
 	}
 
-	return types.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}, nil
 }
 
-func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
 		Bench string `json:"bench"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -269,13 +269,13 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Benchmark failed:\n%s", string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Benchmark failed:\n%s", string(out))}, nil
 	}
 
-	return types.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}, nil
 }
 
-func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -283,15 +283,15 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	}()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {
-		return types.ToolResult{Text: "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"}, nil
+		return tools.ToolResult{Text: "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"}, nil
 	}
 
 	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
 	out, _ := cmd.CombinedOutput()
 
 	if len(out) == 0 {
-		return types.ToolResult{Text: "No vulnerabilities found."}, nil
+		return tools.ToolResult{Text: "No vulnerabilities found."}, nil
 	}
 
-	return types.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}, nil
 }

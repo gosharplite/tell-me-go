@@ -14,57 +14,52 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func TestAgent_Setters(t *testing.T) {
-	sm := tools.NewSecurityManager()
-	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm, false)
-	a.SetUIOptions(false, false)
-	if a.showThoughts || a.showTools {
-		t.Error("SetUIOptions failed")
-	}
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+	a := New(nil, nil, reg, sm, false)
 
 	a.SetLimits(5, 1000, 20)
 	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
-		t.Error("SetLimits failed")
+		t.Errorf("SetLimits failed: tokens=%d, toolTurns=%d, histTurns=%d", maxTokens, maxTurns, maxHistTurns)
 	}
 
 	a.SetConcurrency(10, 60)
-	if a.executor.maxConcurrentTools != 10 || a.executor.toolTimeout != 60*time.Second {
-		t.Error("SetConcurrency failed")
-	}
 
 	a.SetLogFile("test.log")
-	if a.logFile != "test.log" {
+	if a.config.LogFile != "test.log" {
 		t.Error("SetLogFile failed")
 	}
 }
 
 func TestAgent_EstimateTokens(t *testing.T) {
-	registry := tools.NewRegistry()
-	registry.Register(&types.ToolDeclaration{
+	reg := registry.New()
+	reg.Register(&tools.ToolDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
-		Parameters:  &types.Schema{Type: "OBJECT"},
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{Text: "ok"}, nil
+		Parameters:  &tools.Schema{Type: "OBJECT"},
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	sm := tools.NewSecurityManager()
-	a := New(nil, nil, registry, sm, false)
+	sm := security.NewSecurityManager(nil)
+	a := New(nil, nil, reg, sm, false)
 
-	contents := []*types.Content{
+	contents := []*llm.Content{
 		{
 			Role: "user",
-			Parts: []*types.Part{
+			Parts: []*llm.Part{
 				{Text: "Hello world"},
-				{FunctionCall: &types.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
-				{FunctionResponse: &types.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"a": 1}}},
+				{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"res": "ok"}}},
 			},
 		},
 	}
@@ -78,8 +73,8 @@ func TestAgent_EstimateTokens(t *testing.T) {
 func TestAgent_Chat_AuthRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
 	authCalls := 0
 	mockClient := &MockLLMClient{
@@ -87,17 +82,18 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 			authCalls++
 			return nil
 		},
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			if authCalls == 0 {
-				return nil, fmt.Errorf("401 Unauthorized")
+				return nil, fmt.Errorf("UNAUTHENTICATED")
 			}
-			callback(&types.Content{Role: "model", Parts: []*types.Part{{Text: "Success"}}})
-			return &types.Metrics{}, nil
+			callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Success"}}})
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
-	err := a.Chat(context.Background(), "Hello")
+	a := New(mockClient, hManager, reg, sm, false)
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -110,36 +106,37 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
 	// Tool that hangs
-	registry.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		time.Sleep(200 * time.Millisecond)
-		return types.ToolResult{Text: "Too late"}, nil
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		time.Sleep(2 * time.Second)
+		return tools.ToolResult{Text: "Too late"}, nil
 	})
 
 	callCount := 0
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				callback(&types.Content{Role: "model", Parts: []*types.Part{
-					{FunctionCall: &types.FunctionCall{Name: "slow_tool"}},
+				callback(&llm.Content{Role: "model", Parts: []*llm.Part{
+					{FunctionCall: &llm.FunctionCall{Name: "slow_tool"}},
 				}})
 			} else {
-				callback(&types.Content{Role: "model", Parts: []*types.Part{{Text: "Done"}}})
+				callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Done"}}})
 			}
-			return &types.Metrics{}, nil
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
-	a.executor.toolTimeout = 50 * time.Millisecond // Short timeout
+	a := New(mockClient, hManager, reg, sm, false)
+	a.SetConcurrency(5, 1) // 1 second timeout
 
-	_ = a.Chat(context.Background(), "Run slow tool")
+	sess := NewSession(hManager)
+	_ = a.Chat(context.Background(), sess, "Run slow tool")
 
 	contents := hManager.GetContents()
 	if len(contents) >= 3 {
@@ -155,16 +152,16 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 func TestAgent_Chat_ImageInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
-	registry.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name: "gen_image",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==")
-		return types.ToolResult{
+		return tools.ToolResult{
 			Text: "Image generated",
-			BinaryData: []types.BinaryData{
+			BinaryData: []tools.BinaryData{
 				{MIMEType: "image/png", Data: data},
 			},
 		}, nil
@@ -172,21 +169,22 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 
 	callCount := 0
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				callback(&types.Content{Role: "model", Parts: []*types.Part{
-					{FunctionCall: &types.FunctionCall{Name: "gen_image"}},
+				callback(&llm.Content{Role: "model", Parts: []*llm.Part{
+					{FunctionCall: &llm.FunctionCall{Name: "gen_image"}},
 				}})
 			} else {
-				callback(&types.Content{Role: "model", Parts: []*types.Part{{Text: "Look at this"}}})
+				callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Look at this"}}})
 			}
-			return &types.Metrics{}, nil
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
-	_ = a.Chat(context.Background(), "Generate an image")
+	a := New(mockClient, hManager, reg, sm, false)
+	sess := NewSession(hManager)
+	_ = a.Chat(context.Background(), sess, "Generate an image")
 
 	contents := hManager.GetContents()
 	foundImage := false
@@ -206,43 +204,44 @@ func TestAgentToolLoop(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
 	hManager := history.NewManager(historyFile)
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
 	// Register a dummy tool
-	registry.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name:       "get_weather",
-		Parameters: &types.Schema{Type: "OBJECT"},
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{Text: "Sunny"}, nil
+		Parameters: &tools.Schema{Type: "OBJECT"},
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "Sunny"}, nil
 	})
 
 	callCount := 0
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				callback(&types.Content{
+				callback(&llm.Content{
 					Role: "model",
-					Parts: []*types.Part{
+					Parts: []*llm.Part{
 						{Text: "I should check the weather.", Thought: true},
-						{FunctionCall: &types.FunctionCall{Name: "get_weather", Args: map[string]interface{}{}}},
+						{FunctionCall: &llm.FunctionCall{Name: "get_weather", Args: map[string]interface{}{}}},
 					},
 				})
 			} else {
-				callback(&types.Content{
+				callback(&llm.Content{
 					Role:  "model",
-					Parts: []*types.Part{{Text: "It is sunny."}},
+					Parts: []*llm.Part{{Text: "It is sunny."}},
 				})
 			}
-			return &types.Metrics{}, nil
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
+	a := New(mockClient, hManager, reg, sm, false)
 
 	// Execute Chat
-	err := a.Chat(context.Background(), "What's the weather?")
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "What's the weather?")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -257,29 +256,30 @@ func TestAgentToolLoop(t *testing.T) {
 func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
-	registry.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name: "infinite_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{Text: "Keep going"}, nil
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "Keep going"}, nil
 	})
 
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-			callback(&types.Content{Role: "model", Parts: []*types.Part{
-				{FunctionCall: &types.FunctionCall{Name: "infinite_tool"}},
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+			callback(&llm.Content{Role: "model", Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "infinite_tool"}},
 			}})
-			return &types.Metrics{}, nil
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
+	a := New(mockClient, hManager, reg, sm, false)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
-	err := a.Chat(context.Background(), "Run tool")
-	if !errors.Is(err, ErrMaxTurnsReached) {
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Run tool")
+	if !errors.Is(err, llm.ErrMaxTurnsReached) {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
 }
@@ -287,17 +287,18 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 func TestAgent_Chat_APIError(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			return nil, fmt.Errorf("API Failure")
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
-	err := a.Chat(context.Background(), "Hello")
+	a := New(mockClient, hManager, reg, sm, false)
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")
 	}
@@ -306,33 +307,33 @@ func TestAgent_Chat_APIError(t *testing.T) {
 func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	registry := tools.NewRegistry()
-	sm := tools.NewSecurityManager()
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
 
 	// Tool that takes some time
 	running := make(chan struct{})
-	registry.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name: "long_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		close(running)
 		select {
 		case <-time.After(1 * time.Second):
-			return types.ToolResult{Text: "Success"}, nil
+			return tools.ToolResult{Text: "Success"}, nil
 		case <-ctx.Done():
-			return types.ToolResult{}, ctx.Err()
+			return tools.ToolResult{}, ctx.Err()
 		}
 	})
 
 	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-			callback(&types.Content{Role: "model", Parts: []*types.Part{
-				{FunctionCall: &types.FunctionCall{Name: "long_tool"}},
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+			callback(&llm.Content{Role: "model", Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
 			}})
-			return &types.Metrics{}, nil
+			return &llm.Metrics{}, nil
 		},
 	}
 
-	a := New(mockClient, hManager, registry, sm, false)
+	a := New(mockClient, hManager, reg, sm, false)
 
 	t.Run("CancelDuringToolExecution", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -347,7 +348,8 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 			}
 		}()
 
-		err := a.Chat(ctx, "Run long tool")
+		sess := NewSession(hManager)
+		err := a.Chat(ctx, sess, "Run long tool")
 		if err == nil {
 			t.Error("Expected error due to context cancellation, got nil")
 		}
@@ -361,9 +363,9 @@ func TestAgent_RefreshLimits(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
 
-	sm := tools.NewSecurityManager()
-	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm, false)
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+	a := New(nil, nil, reg, sm, false)
 	a.SetLimits(10, 1000, 20)
 
 	// Set the config path
@@ -375,7 +377,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	a.refreshLimits()
+	a.applyConfig()
 
 	maxTokens, maxTurns, _ := a.strategy.GetLimits()
 	if maxTokens != 5000 {
@@ -390,9 +392,9 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	yamlPath := filepath.Join(tmpDir, "config.yaml")
 
-	sm := tools.NewSecurityManager()
-	registry := tools.NewRegistry()
-	a := New(nil, nil, registry, sm, false)
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+	a := New(nil, nil, reg, sm, false)
 	a.SetLimits(10, 1000, 20)
 
 	// Set the main config path
@@ -404,7 +406,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 		t.Fatalf("failed to write yaml config file: %v", err)
 	}
 
-	a.refreshLimits()
+	a.applyConfig()
 
 	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTokens != 200000 {
@@ -415,5 +417,34 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 	}
 	if maxHistTurns != 30 {
 		t.Errorf("expected maxHistoryTurns 30, got %d", maxHistTurns)
+	}
+}
+
+func TestAgent_FunctionalOptions(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+
+	a := New(nil, nil, reg, sm, false,
+		WithLimits(5, 1000, 15),
+		WithConcurrency(10, 60),
+		WithLogFile("agent.log"),
+		WithPersistentConfigPath("session.json"),
+		WithMainConfigPath("config.yaml"),
+	)
+
+	if a.config.Limits.MaxToolTurns != 5 || a.config.Limits.MaxHistoryTokens != 1000 || a.config.Limits.MaxHistoryTurns != 15 {
+		t.Errorf("WithLimits failed: %+v", a.config.Limits)
+	}
+	if a.config.Execution.MaxConcurrent != 10 || a.config.Execution.Timeout != 60*time.Second {
+		t.Errorf("WithConcurrency failed: %+v", a.config.Execution)
+	}
+	if a.config.LogFile != "agent.log" {
+		t.Errorf("WithLogFile failed: %s", a.config.LogFile)
+	}
+	if a.config.PersistentConfigPath != "session.json" {
+		t.Errorf("WithPersistentConfigPath failed: %s", a.config.PersistentConfigPath)
+	}
+	if a.config.MainConfigPath != "config.yaml" {
+		t.Errorf("WithMainConfigPath failed: %s", a.config.MainConfigPath)
 	}
 }

@@ -7,18 +7,18 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestRegistrySmoke(t *testing.T) {
 	r := registry.New()
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "test_tool",
 		Description: "A test tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{Text: "OK"}, nil
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "OK"}, nil
 	})
 
 	res, err := r.Execute(context.Background(), "test_tool", nil)

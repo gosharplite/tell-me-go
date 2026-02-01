@@ -113,43 +113,11 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		return ExecutionResult{}, fmt.Errorf("at least two commands are required for piping")
 	}
 
-	cmds := make([]*exec.Cmd, len(pipedParts))
-	var combinedStderr strings.Builder
-	var stderrPipes []io.Reader
-
-	for i, parts := range pipedParts {
-		if len(parts) == 0 {
-			return ExecutionResult{}, fmt.Errorf("empty command at index %d", i)
-		}
-		cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
-		se, _ := cmds[i].StderrPipe()
-		stderrPipes = append(stderrPipes, se)
+	p, err := e.newPipeline(ctx, pipedParts)
+	if err != nil {
+		return ExecutionResult{}, err
 	}
-
-	// Track pipes for cleanup
-	var pipes []io.Closer
-	for _, se := range stderrPipes {
-		pipes = append(pipes, se.(io.Closer))
-	}
-	defer func() {
-		for _, p := range pipes {
-			_ = p.Close()
-		}
-	}()
-
-	// Setup stdout/stdin pipes
-	for i := 0; i < len(cmds)-1; i++ {
-		pipe, err := cmds[i].StdoutPipe()
-		if err != nil {
-			return ExecutionResult{}, fmt.Errorf("failed to create pipe for command %d: %w", i, err)
-		}
-		pipes = append(pipes, pipe)
-		cmds[i+1].Stdin = pipe
-	}
-
-	lastCmd := cmds[len(cmds)-1]
-	stdout, _ := lastCmd.StdoutPipe()
-	pipes = append(pipes, stdout)
+	defer p.closePipes()
 
 	file, err := e.openOutputFile(config)
 	if err != nil {
@@ -159,91 +127,181 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		defer file.Close()
 	}
 
-	// Start all commands
-	for i := 0; i < len(cmds); i++ {
-		if err := cmds[i].Start(); err != nil {
-			return ExecutionResult{
-				ExitCode: 1,
-				Error:    fmt.Sprintf("Command %d failed to start: %v", i, err),
-			}, nil
+	if err := p.start(); err != nil {
+		p.wait() // Ensure started processes are cleaned up
+		return ExecutionResult{ExitCode: 1, Error: err.Error()}, nil
+	}
+
+	stdoutStr, stderrStr := p.capture(config, file)
+	exitCode, waitErr := p.wait()
+
+	output := stdoutStr
+	if stderrStr != "" {
+		output = fmt.Sprintf("Output:\n%s\nErrors:\n%s", stdoutStr, stderrStr)
+	}
+
+	// Ensure exit code is non-zero if waitErr occurred
+	if waitErr != nil && exitCode == 0 {
+		exitCode = 1
+	}
+
+	return ExecutionResult{Output: output, ExitCode: exitCode}, nil
+}
+
+// Internal pipeline state manager
+type pipeline struct {
+	cmds        []*exec.Cmd
+	stderrPipes []io.Reader
+	stdoutPipe  io.ReadCloser
+	pipes       []io.Closer
+}
+
+func (e *ProcessExecutor) newPipeline(ctx context.Context, pipedParts [][]string) (*pipeline, error) {
+	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
+
+	for i, parts := range pipedParts {
+		if len(parts) == 0 {
+			return nil, fmt.Errorf("empty command at index %d", i)
+		}
+		p.cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+		stderr, _ := p.cmds[i].StderrPipe()
+		p.stderrPipes = append(p.stderrPipes, stderr)
+		p.pipes = append(p.pipes, stderr.(io.Closer))
+
+		if i > 0 {
+			p.cmds[i].Stdin = p.pipes[len(p.pipes)-2].(io.Reader)
+		}
+
+		if i < len(pipedParts)-1 {
+			stdout, err := p.cmds[i].StdoutPipe()
+			if err != nil {
+				return nil, err
+			}
+			p.pipes = append(p.pipes, stdout)
 		}
 	}
 
+	var err error
+	p.stdoutPipe, err = p.cmds[len(p.cmds)-1].StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	p.pipes = append(p.pipes, p.stdoutPipe)
+
+	return p, nil
+}
+
+func (p *pipeline) start() error {
+	for i, cmd := range p.cmds {
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("command %d failed to start: %v", i, err)
+		}
+	}
+	return nil
+}
+
+func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
+	var wg sync.WaitGroup
+	var stdoutStr, stderrStr strings.Builder
+	var mu sync.Mutex // Protects builders, feedback, and file
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
-		maxCapture = 1024 * 1024 // Default 1MB
+		maxCapture = 1024 * 1024
 	}
 
-	// Read all stderr pipes in parallel
-	var wg sync.WaitGroup
-	var stderrMu sync.Mutex
-	for i, se := range stderrPipes {
+	appendErr := func(sb *strings.Builder, err error) {
+		if err == nil {
+			return
+		}
+		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+		if err == bufio.ErrTooLong {
+			msg = "\n[Warning] Output line too long for scanner; truncated."
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if config.Feedback != nil {
+			fmt.Fprintln(config.Feedback, msg)
+		}
+		sb.WriteString(msg + "\n")
+	}
+
+	// Capture Stderr in parallel
+	for i, r := range p.stderrPipes {
 		wg.Add(1)
-		go func(idx int, r io.Reader) {
+		go func(idx int, src io.Reader) {
 			defer wg.Done()
-			scanner := bufio.NewScanner(r)
+			scanner := bufio.NewScanner(src)
 			for scanner.Scan() {
 				line := scanner.Text()
-				stderrMu.Lock()
+				mu.Lock()
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, line)
 				}
-				if combinedStderr.Len() < maxCapture {
-					combinedStderr.WriteString(line + "\n")
+				if stderrStr.Len() < maxCapture {
+					toWrite := line + "\n"
+					if stderrStr.Len()+len(toWrite) > maxCapture {
+						toWrite = toWrite[:maxCapture-stderrStr.Len()]
+					}
+					stderrStr.WriteString(toWrite)
 				}
-				stderrMu.Unlock()
+				mu.Unlock()
 			}
-		}(i, se)
+			appendErr(&stderrStr, scanner.Err())
+		}(i, r)
 	}
 
-	var sb strings.Builder
-	stdoutScanner := bufio.NewScanner(stdout)
-	for stdoutScanner.Scan() {
-		line := stdoutScanner.Text()
+	// Capture Stdout sequentially (main thread)
+	scanner := bufio.NewScanner(p.stdoutPipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		mu.Lock()
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", line)
 		}
-		if sb.Len() < maxCapture {
-			sb.WriteString(line + "\n")
+		if stdoutStr.Len() < maxCapture {
+			toWrite := line + "\n"
+			if stdoutStr.Len()+len(toWrite) > maxCapture {
+				toWrite = toWrite[:maxCapture-stdoutStr.Len()]
+			}
+			stdoutStr.WriteString(toWrite)
 		}
 		if file != nil {
 			file.WriteString(line + "\n")
 		}
+		mu.Unlock()
 	}
+	appendErr(&stdoutStr, scanner.Err())
 
 	wg.Wait()
-	pipes = nil // Clear so deferred Close() don't interfere with Wait()
+	return stdoutStr.String(), stderrStr.String()
+}
 
+func (p *pipeline) wait() (int, error) {
 	var lastErr error
 	exitCode := 0
-	for i := len(cmds) - 1; i >= 0; i-- {
-		err := cmds[i].Wait()
-		if err != nil && i == len(cmds)-1 {
+	for i := len(p.cmds) - 1; i >= 0; i-- {
+		if p.cmds[i].Process == nil {
+			continue
+		}
+		err := p.cmds[i].Wait()
+		if i == len(p.cmds)-1 {
 			lastErr = err
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
+			if lastErr != nil {
 				exitCode = 1
+				if exitErr, ok := lastErr.(*exec.ExitError); ok {
+					exitCode = exitErr.ExitCode()
+				}
 			}
 		}
 	}
+	return exitCode, lastErr
+}
 
-	output := sb.String()
-	errStr := combinedStderr.String()
-
-	result := output
-	if errStr != "" {
-		result = fmt.Sprintf("Output:\n%s\nErrors:\n%s", output, errStr)
+func (p *pipeline) closePipes() {
+	for _, c := range p.pipes {
+		_ = c.Close()
 	}
-
-	if lastErr != nil && exitCode == 0 {
-		exitCode = 1
-	}
-
-	return ExecutionResult{
-		Output:   result,
-		ExitCode: exitCode,
-	}, nil
 }
 
 func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, error) {

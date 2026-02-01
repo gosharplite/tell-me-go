@@ -11,13 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/agent/ui"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 func TestUIRendererGolden(t *testing.T) {
-	sm := tools.NewSecurityManager()
-	renderer := NewStdUIRenderer(sm)
+	sm := security.NewSecurityManager(nil)
+	renderer := ui.NewStdUIRenderer(sm)
 
 	var stdout, stderr bytes.Buffer
 	renderer.SetWriters(&stdout, &stderr)
@@ -26,7 +29,7 @@ func TestUIRendererGolden(t *testing.T) {
 
 	t.Run("LogTurnStatus_PreCall", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(TurnStatus{
+		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,
@@ -39,7 +42,7 @@ func TestUIRendererGolden(t *testing.T) {
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(TurnStatus{
+		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,
@@ -47,7 +50,7 @@ func TestUIRendererGolden(t *testing.T) {
 			MaxHistoryTokens: 120000,
 			IsPostCall:       true,
 			StartTime:        fixedTime.Add(-5 * time.Second),
-			Metrics: &types.Metrics{
+			Metrics: &llm.Metrics{
 				PromptTokens:   1500,
 				CachedTokens:   1000,
 				ResponseTokens: 200,
@@ -62,7 +65,7 @@ func TestUIRendererGolden(t *testing.T) {
 	t.Run("LogToolResult", func(t *testing.T) {
 		stderr.Reset()
 		// Mock the time in the function by using a regex replacement in verifyGolden
-		renderer.LogToolResult("list_files", types.ToolResult{Text: "file1.go\nfile2.go"}, true)
+		renderer.LogToolResult("list_files", tools.ToolResult{Text: "file1.go\nfile2.go"}, true)
 		verifyGolden(t, "tool_result.golden", stderr.String())
 	})
 }

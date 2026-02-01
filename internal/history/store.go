@@ -10,15 +10,15 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Store defines the interface for history persistence.
 type Store interface {
-	Load(ctx context.Context) ([]*types.Content, error)
-	Save(ctx context.Context, contents []*types.Content) error
-	Append(ctx context.Context, content *types.Content) error
+	Load(ctx context.Context) ([]*llm.Content, error)
+	Save(ctx context.Context, contents []*llm.Content) error
+	Append(ctx context.Context, content *llm.Content) error
 }
 
 // JSONLStore implements Store using a JSON Lines file.
@@ -46,9 +46,9 @@ func (s *JSONLStore) WithFileSystem(fs fsutil.FileSystem) *JSONLStore {
 }
 
 // Load reads the history from the JSONL file.
-func (s *JSONLStore) Load(ctx context.Context) ([]*types.Content, error) {
+func (s *JSONLStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
-		return []*types.Content{}, nil
+		return []*llm.Content{}, nil
 	}
 
 	f, err := s.fs.Open(ctx, s.filePath)
@@ -57,7 +57,7 @@ func (s *JSONLStore) Load(ctx context.Context) ([]*types.Content, error) {
 	}
 	defer f.Close()
 
-	var contents []*types.Content
+	var contents []*llm.Content
 	decoder := json.NewDecoder(f)
 	for decoder.More() {
 		select {
@@ -66,7 +66,7 @@ func (s *JSONLStore) Load(ctx context.Context) ([]*types.Content, error) {
 		default:
 		}
 
-		var content types.Content
+		var content llm.Content
 		if err := decoder.Decode(&content); err != nil {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
@@ -77,13 +77,20 @@ func (s *JSONLStore) Load(ctx context.Context) ([]*types.Content, error) {
 	return contents, nil
 }
 
-// Resolve implements types.AssetResolver.
+// Resolve implements llm.AssetResolver.
 func (s *JSONLStore) Resolve(ctx context.Context, assetID string) ([]byte, error) {
 	return s.assetStore.Get(ctx, assetID)
 }
 
 // Save overwrites the entire history file (compaction/snapshot).
-func (s *JSONLStore) Save(ctx context.Context, contents []*types.Content) error {
+func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
+		}
+	}
+
 	var data []byte
 	for _, c := range contents {
 		prepared, err := s.prepareForStorage(ctx, c)
@@ -102,7 +109,14 @@ func (s *JSONLStore) Save(ctx context.Context, contents []*types.Content) error 
 }
 
 // Append appends a single content entry to the history file.
-func (s *JSONLStore) Append(ctx context.Context, content *types.Content) error {
+func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
+		}
+	}
+
 	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -130,14 +144,14 @@ func (s *JSONLStore) Append(ctx context.Context, content *types.Content) error {
 }
 
 // prepareForStorage offloads binary data to AssetStore and returns a shallow clone for JSON marshaling.
-func (s *JSONLStore) prepareForStorage(ctx context.Context, c *types.Content) (*types.Content, error) {
+func (s *JSONLStore) prepareForStorage(ctx context.Context, c *llm.Content) (*llm.Content, error) {
 	if c == nil {
 		return nil, nil
 	}
 
-	clone := &types.Content{
+	clone := &llm.Content{
 		Role:  c.Role,
-		Parts: make([]*types.Part, len(c.Parts)),
+		Parts: make([]*llm.Part, len(c.Parts)),
 	}
 
 	for i, p := range c.Parts {

@@ -6,85 +6,16 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	internaltools "github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
-
-// MockClient is a minimal mock for testing the agent loop
-type MockClient struct {
-	ResponseText string
-}
-
-func (m *MockClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	// Simulate an empty response if specifically requested
-	if m.ResponseText == "EMPTY" {
-		return &types.Content{Role: "model", Parts: []*types.Part{}}, &types.Metrics{}, nil
-	}
-	return &types.Content{
-		Role:  "model",
-		Parts: []*types.Part{{Text: m.ResponseText}},
-	}, &types.Metrics{TotalTokens: 100}, nil
-}
-
-func (m *MockClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-	if m.ResponseText == "EMPTY" {
-		return &types.Metrics{}, nil
-	}
-	callback(&types.Content{
-		Role:  "model",
-		Parts: []*types.Part{{Text: m.ResponseText}},
-	})
-	return &types.Metrics{TotalTokens: 100}, nil
-}
-
-func (m *MockClient) RefreshAuth() error { return nil }
-func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, nil
-}
-
-// MockLLMClient is a flexible mock for testing.
-type MockLLMClient struct {
-	SendChatFn    func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
-	StreamChatFn  func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error)
-	RefreshAuthFn func() error
-}
-
-func (m *MockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-	if m.SendChatFn != nil {
-		return m.SendChatFn(ctx, history, tools, resolver)
-	}
-	return nil, nil, fmt.Errorf("SendChatFn not implemented")
-}
-
-func (m *MockLLMClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
-	if m.StreamChatFn != nil {
-		return m.StreamChatFn(ctx, history, tools, resolver, callback)
-	}
-	// Fallback to SendChatFn if StreamChatFn is not provided
-	if m.SendChatFn != nil {
-		resp, metrics, err := m.SendChatFn(ctx, history, tools, resolver)
-		if err == nil {
-			callback(resp)
-		}
-		return metrics, err
-	}
-	return nil, fmt.Errorf("StreamChatFn and SendChatFn not implemented")
-}
-
-func (m *MockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, nil
-}
-
-func (m *MockLLMClient) RefreshAuth() error {
-	if m.RefreshAuthFn != nil {
-		return m.RefreshAuthFn()
-	}
-	return nil
-}
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
 	// This test verifies that the history manager and API client don't crash
@@ -95,9 +26,9 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	ctx := context.Background()
 
 	// Manually add a content with no parts (which previously caused 400 error)
-	_ = h.AddContent(ctx, &types.Content{
+	_ = h.AddContent(ctx, &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{},
+		Parts: []*llm.Part{},
 	})
 
 	if err := h.Save(ctx); err != nil {
@@ -119,7 +50,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// during a chat session.
 
 	h := history.NewManager(t.TempDir() + "/history.json")
-	registry := tools.NewRegistry()
+	registry := internaltools.New()
 	ctx := context.Background()
 
 	// Setup: Max 2 turns (4 messages)
@@ -131,10 +62,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	// Client returns a simple response
 	client := &api.Client{} // Using real client type but we won't call real API
-	// Note: We can't easily mock the client here without an interface in agent.go
-	// But we can check if the Agent struct handles the limit.
 
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	a := New(client, h, registry, sm, false)
 	a.SetLimits(10, 120000, 2) // Limit history to 2 turns
 
@@ -157,43 +86,61 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 func TestAgent_MultiModalFlow(t *testing.T) {
 	// Setup
-	registry := tools.NewRegistry()
-	registry.Register(&types.ToolDeclaration{
+	registry := internaltools.New()
+	registry.Register(&tools.ToolDeclaration{
 		Name: "get_image",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		return types.ToolResult{
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{
 			Text: "Image of a cat",
-			BinaryData: []types.BinaryData{
+			BinaryData: []tools.BinaryData{
 				{MIMEType: "image/png", Data: []byte("fake-png-data")},
 			},
 		}, nil
 	})
 
 	h := history.NewManager(t.TempDir() + "/history.json")
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 
 	// Mock client that triggers the tool
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-			// First call: trigger tool
-			if len(history) == 1 {
-				return &types.Content{
-					Role: "model",
-					Parts: []*types.Part{
-						{FunctionCall: &types.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
-					},
-				}, &types.Metrics{}, nil
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			// Find the user prompt to decide what to do
+			lastUserPrompt := ""
+			for i := len(history) - 1; i >= 0; i-- {
+				if history[i].Role == "user" && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
+					lastUserPrompt = history[i].Parts[0].Text
+					break
+				}
 			}
-			// Second call: return final text
-			return &types.Content{
+
+			// If last user message is the tool response, return final text
+			if len(history) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
+				return &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{Text: "I see the cat image."}},
+				}, &llm.Metrics{}, nil
+			}
+
+			// Otherwise, if it's the start, trigger the tool
+			if lastUserPrompt == "Show me a cat" {
+				return &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+					},
+				}, &llm.Metrics{}, nil
+			}
+
+			return &llm.Content{
 				Role:  "model",
-				Parts: []*types.Part{{Text: "I see the cat image."}},
-			}, &types.Metrics{}, nil
+				Parts: []*llm.Part{{Text: "Default response"}},
+			}, &llm.Metrics{}, nil
 		},
 	}
 
 	a := New(mockClient, h, registry, sm, false)
-	err := a.Chat(context.Background(), "Show me a cat")
+	sess := NewSession(h)
+	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}

@@ -8,20 +8,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type mockGateway struct {
-	generateFn func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error))
+	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
 }
 
-func (m *mockGateway) Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 	return m.generateFn(ctx, input, tools, resolver)
 }
 
 type mockRenderer struct {
-	UIRenderer
 	systemMessages []string
 }
 
@@ -35,41 +36,68 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
-	_ = hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "call tool"}}})
-	_ = hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{FunctionCall: &types.FunctionCall{Name: "test_tool"}}}})
-	_ = hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{FunctionResponse: &types.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockRegistry{}
-	strategy := NewContextStrategy(reg)
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	strategy.SetLimits(1000, 5, 20) // Turn 2/5 (remaining 3) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, &mockRenderer{})
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+
+	// Manually set up pipeline for the test as we are bypassing Agent.New()
+	cm.Pipeline = NewContextPipeline(
+		&HistoryPruner{
+			Policy:  &SlidingWindowPolicy{MaxTurns: 20},
+			Manager: cm.History,
+		},
+		&SystemInstructionInjector{
+			Instructions: "System Instructions",
+		},
+		&TokenGatekeeper{
+			MaxTokens:  1000,
+			Estimator:  strategy,
+			Summarizer: cm.Summarizer,
+			Manager:    cm.History,
+			Events:     cm.Events,
+		},
+		&ToolDeclarationGenerator{
+			Registry: reg,
+		},
+		&WarningInjector{
+			Strategy: strategy,
+		},
+	)
 
 	// Prepare at turn 2 (approaching limit)
-	apiContents, _, _, err := cm.Prepare(ctx, 2)
+	apiContents, _, err := cm.Prepare(ctx, 2)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
 	// Verify the injected sequence:
-	// 0: User "call tool"
-	// 1: Model Call
-	// 2: User Notice (Injected)
-	// 3: Model Ack (Injected)
-	// 4: User Response (Original index 2)
+	// 0: User Instructions (Injected by SystemInstructionInjector)
+	// 1: User "call tool"
+	// 2: Model Call
+	// 3: User Notice (Injected)
+	// 4: Model Ack (Injected)
+	// 5: User Response (Original index 2)
 
-	if len(apiContents) != 5 {
-		t.Fatalf("Expected 5 contents after injection, got %d", len(apiContents))
+	// Note: SystemInstructionInjector adds one turn at the beginning by default in my implementation.
+	if len(apiContents) != 6 {
+		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[2].Role != "user" || !strings.Contains(apiContents[2].Parts[0].Text, "System Notice") {
-		t.Errorf("Expected User Notice turn at index 2, got %v", apiContents[2])
+	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "System Notice") {
+		t.Errorf("Expected User Notice turn at index 3, got %v", apiContents[3])
 	}
-	if apiContents[3].Role != "model" || !strings.Contains(apiContents[3].Parts[0].Text, "Understood") {
-		t.Errorf("Expected Model Ack turn at index 3, got %v", apiContents[3])
+	if apiContents[4].Role != "model" || !strings.Contains(apiContents[4].Parts[0].Text, "Understood") {
+		t.Errorf("Expected Model Ack turn at index 4, got %v", apiContents[4])
 	}
-	if apiContents[4].Role != "user" || apiContents[4].Parts[0].FunctionResponse == nil {
-		t.Errorf("Expected User Response at index 4, got %v", apiContents[4])
+	if apiContents[5].Role != "user" || apiContents[5].Parts[0].FunctionResponse == nil {
+		t.Errorf("Expected User Response at index 5, got %v", apiContents[5])
 	}
 }
 
@@ -77,37 +105,38 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
 
-	subset := []*types.Content{
+	subset := []*llm.Content{
 		{
 			Role: "model",
-			Parts: []*types.Part{
-				{FunctionCall: &types.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
-				{InlineData: &types.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
 			},
 		},
 		{
 			Role: "user",
-			Parts: []*types.Part{
-				{FunctionResponse: &types.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
 			},
 		},
 	}
 
-	var capturedInput []*types.Content
-	gateway := &mockGateway{
-		generateFn: func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+	var capturedInput []*llm.Content
+	g := &mockGateway{
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			capturedInput = input
-			ch := make(chan *types.Content, 1)
-			ch <- &types.Content{Parts: []*types.Part{{Text: "Summary"}}}
+			ch := make(chan *llm.Content, 1)
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}
 			close(ch)
-			return ch, func() (*types.Content, *types.Metrics, error) {
-				return &types.Content{Parts: []*types.Part{{Text: "Summary"}}}, &types.Metrics{}, nil
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
 			}
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &mockRenderer{})
-	_, _ = cm.PerformSummarization(context.Background(), subset, "test focus")
+	bus := &events.SimpleEventBus{}
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockRegistry{}), bus), hManager, g, bus, nil)
+	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
 		t.Fatal("Generate was not called")
@@ -149,9 +178,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 }
 
 type mockRegistry struct {
-	ToolRegistry
 }
 
-func (m *mockRegistry) GetDeclarations() []*types.ToolDeclaration {
+func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
 }

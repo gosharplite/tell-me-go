@@ -10,9 +10,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type InteractionTool struct {
@@ -23,7 +23,7 @@ func NewInteractionTool(sm *security.SecurityManager) *InteractionTool {
 	return &InteractionTool{sm: sm}
 }
 
-func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -31,12 +31,12 @@ func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface
 		Question string `json:"question"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	question := params.Question
 	if question == "" {
-		return types.ToolResult{}, fmt.Errorf("question argument is required")
+		return tools.ToolResult{}, fmt.Errorf("question argument is required")
 	}
 
 	// Tell-me style: Question in magenta, followed by "Answer > " prompt
@@ -46,10 +46,10 @@ func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface
 	s, err := t.sm.ReadLine(ctx)
 	if err != nil {
 		if err == io.EOF {
-			return types.ToolResult{Text: "User closed input (EOF)."}, nil
+			return tools.ToolResult{Text: "User closed input (EOF)."}, nil
 		}
-		return types.ToolResult{}, fmt.Errorf("failed to read user response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to read user response: %w", err)
 	}
 
-	return types.ToolResult{Text: strings.TrimSpace(s)}, nil
+	return tools.ToolResult{Text: strings.TrimSpace(s)}, nil
 }

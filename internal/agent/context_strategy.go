@@ -5,8 +5,11 @@ package agent
 
 import (
 	"fmt"
+	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Warning represents a safety or limit message for the model.
@@ -16,7 +19,8 @@ type Warning struct {
 
 // ContextStrategy handles token estimation and warning generation.
 type ContextStrategy struct {
-	registry         ToolRegistry
+	mu               sync.RWMutex
+	counter          llm.TokenCounter
 	maxHistoryTokens int
 	maxToolTurns     int
 	maxHistoryTurns  int
@@ -25,21 +29,33 @@ type ContextStrategy struct {
 
 // ToolRegistry defines the interface for accessing tool declarations.
 type ToolRegistry interface {
-	GetDeclarations() []*types.ToolDeclaration
+	GetDeclarations() []*tools.ToolDeclaration
 }
 
 // NewContextStrategy creates a new context strategy.
-func NewContextStrategy(registry ToolRegistry) *ContextStrategy {
-	return &ContextStrategy{
-		registry:         registry,
+func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
+	cs := &ContextStrategy{
+		counter:          counter,
 		maxHistoryTokens: 120000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
 	}
+
+	if bus != nil {
+		bus.Subscribe(func(e events.Event) {
+			if cfg, ok := e.(events.ConfigUpdated); ok {
+				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
+			}
+		})
+	}
+
+	return cs
 }
 
 // SetLimits updates the operational limits.
 func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	if historyTokens > 0 {
 		cs.maxHistoryTokens = historyTokens
 	}
@@ -53,100 +69,63 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 
 // SetPrunedTurns sets the initial pruned turns count.
 func (cs *ContextStrategy) SetPrunedTurns(n int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	cs.prunedTurns = n
 }
 
 // GetLimits returns the current limits.
 func (cs *ContextStrategy) GetLimits() (int, int, int) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
 }
 
-// EstimateTokens provides a heuristic-based token count.
-func (cs *ContextStrategy) EstimateTokens(contents []*types.Content) int {
-	charCount := 0
-	for _, decl := range cs.registry.GetDeclarations() {
-		charCount += len(decl.Name) + len(decl.Description)
-		if decl.Parameters != nil {
-			charCount += 200 // Heuristic for parameter definitions
-		}
-	}
-	for _, c := range contents {
-		for _, p := range c.Parts {
-			if p.Text != "" {
-				charCount += len(p.Text)
-			}
-			if p.FunctionCall != nil {
-				charCount += len(p.FunctionCall.Name)
-				charCount += cs.estimateMapSize(p.FunctionCall.Args)
-			}
-			if p.FunctionResponse != nil {
-				charCount += len(p.FunctionResponse.Name)
-				charCount += cs.estimateMapSize(p.FunctionResponse.Response)
-			}
-			if p.InlineData != nil {
-				charCount += 160 // Heuristic for blob (roughly 50 tokens)
-			}
-		}
-	}
-	charCount += 1000 // Base overhead
-	return int(float64(charCount) / 3.2)
+// EstimateTokens provides a heuristic-based token count with incremental caching.
+func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
+	return cs.counter.Count(contents)
 }
 
-func (cs *ContextStrategy) estimateMapSize(m map[string]interface{}) int {
-	if m == nil {
-		return 0
-	}
-	size := 0
-	for k, v := range m {
-		size += len(k)
-		size += cs.estimateValueSize(v)
-	}
-	return size
+func (cs *ContextStrategy) getTurnWarning(turn int) string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.getTurnWarningLocked(turn)
 }
 
-func (cs *ContextStrategy) estimateValueSize(v interface{}) int {
-	if v == nil {
-		return 4
-	}
-	switch val := v.(type) {
-	case string:
-		return len(val)
-	case float64, int, int64:
-		return 10
-	case bool:
-		return 5
-	case map[string]interface{}:
-		return cs.estimateMapSize(val)
-	case []interface{}:
-		size := 0
-		for _, item := range val {
-			size += cs.estimateValueSize(item)
-		}
-		return size
-	default:
-		return 20
-	}
+func (cs *ContextStrategy) getTokenWarning(tokens int) string {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.getTokenWarningLocked(tokens)
+}
+
+func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.getHistoryTurnWarningLocked(currentTurns)
 }
 
 // GetWarnings generates safety warnings based on current state.
 func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 	var warnings []Warning
 
-	if w := cs.getTurnWarning(turn); w != "" {
+	if w := cs.getTurnWarningLocked(turn); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
-	if w := cs.getTokenWarning(tokens); w != "" {
+	if w := cs.getTokenWarningLocked(tokens); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
-	if w := cs.getHistoryTurnWarning(currentTurns); w != "" {
+	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
 
 	return warnings
 }
 
-func (cs *ContextStrategy) getTurnWarning(turn int) string {
+func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 	remaining := cs.maxToolTurns - turn
+	// ... (implementation remains same but uses field)
 	switch remaining {
 	case 3:
 		return "[SYSTEM NOTICE: You are approaching the operational turn limit. You have 3 turns remaining. Please begin finalizing your current task, update the scratchpad and task list with your status, and avoid starting any new multi-step operations.]"
@@ -159,7 +138,7 @@ func (cs *ContextStrategy) getTurnWarning(turn int) string {
 	}
 }
 
-func (cs *ContextStrategy) getTokenWarning(tokens int) string {
+func (cs *ContextStrategy) getTokenWarningLocked(tokens int) string {
 	ratio := float64(tokens) / float64(cs.maxHistoryTokens)
 	if ratio > 0.95 {
 		return "[CRITICAL SYSTEM NOTICE: Conversation history is at 95% capacity. Immediate risk of session rollback. You must use 'manage_scratchpad' and 'manage_tasks' to save a summary of your work and plans NOW. Keep your response extremely brief.]"
@@ -169,7 +148,7 @@ func (cs *ContextStrategy) getTokenWarning(tokens int) string {
 	return ""
 }
 
-func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
+func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string {
 	if cs.maxHistoryTurns <= 0 {
 		return ""
 	}

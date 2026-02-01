@@ -11,30 +11,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Service handles image generation and storage.
 type Service struct {
-	client types.LLMClient
+	client llm.LLMClient
 }
 
 // NewService creates a new media service.
-func NewService(client types.LLMClient) *Service {
+func NewService(client llm.LLMClient) *Service {
 	return &Service{
 		client: client,
 	}
 }
 
 // GenerateImage handles image generation requests and saves them to disk.
-func (s *Service) GenerateImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (s *Service) GenerateImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var a struct {
 		Prompt      string `json:"prompt"`
 		AspectRatio string `json:"aspect_ratio"`
 		Model       string `json:"model"`
 	}
-	if err := types.UnmarshalArgs(args, &a); err != nil {
-		return types.ToolResult{}, err
+	if err := tools.UnmarshalArgs(args, &a); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	if a.Model == "" {
@@ -48,14 +49,14 @@ func (s *Service) GenerateImage(ctx context.Context, args map[string]interface{}
 
 	images, err := s.client.GenerateImages(ctx, a.Model, prompt, "image/png")
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
-	result := types.ToolResult{
+	result := tools.ToolResult{
 		Text: fmt.Sprintf("Generated %d images for prompt: %s", len(images), a.Prompt),
 	}
 	for i, data := range images {
-		result.BinaryData = append(result.BinaryData, types.BinaryData{
+		result.BinaryData = append(result.BinaryData, tools.BinaryData{
 			MIMEType: "image/png",
 			Data:     data,
 		})
@@ -70,17 +71,17 @@ func (s *Service) GenerateImage(ctx context.Context, args map[string]interface{}
 }
 
 // ReadImage reads an image from the filesystem.
-func (s *Service) ReadImage(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (s *Service) ReadImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var a struct {
 		Filepath string `json:"filepath"`
 	}
-	if err := types.UnmarshalArgs(args, &a); err != nil {
-		return types.ToolResult{}, err
+	if err := tools.UnmarshalArgs(args, &a); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	data, err := os.ReadFile(a.Filepath)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	mimeType := "image/png"
@@ -92,9 +93,9 @@ func (s *Service) ReadImage(ctx context.Context, args map[string]interface{}) (t
 		mimeType = "image/webp"
 	}
 
-	return types.ToolResult{
+	return tools.ToolResult{
 		Text: fmt.Sprintf("Successfully read image from %s", a.Filepath),
-		BinaryData: []types.BinaryData{
+		BinaryData: []tools.BinaryData{
 			{
 				MIMEType: mimeType,
 				Data:     data,

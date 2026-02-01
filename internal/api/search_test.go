@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 type toolCapturer struct {
@@ -92,7 +92,7 @@ func TestSearchToolSelection(t *testing.T) {
 			capturer.Set(nil)
 
 			// Test StreamChat
-			_, err = client.StreamChat(context.Background(), nil, nil, nil, func(c *types.Content) {})
+			_, err = client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 			if err != nil {
 				t.Fatalf("StreamChat failed: %v", err)
 			}

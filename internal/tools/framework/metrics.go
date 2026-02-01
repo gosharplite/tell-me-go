@@ -18,11 +18,56 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
+
+// UsageStats holds aggregated token counts for a session.
+type UsageStats struct {
+	Hits           int64
+	Misses         int64
+	Comp           int64
+	Thinking       int64
+	TieredMisses   int64
+	TieredComp     int64
+	TieredThinking int64
+	SearchQueries  int64
+}
+
+// CostBreakdown represents the final financial calculation results.
+type CostBreakdown struct {
+	Stats        UsageStats
+	CostHits     float64
+	CostMisses   float64
+	CostComp     float64
+	CostThinking float64
+	CostSearch   float64
+	TotalCost    float64
+}
+
+// CostCalculator handles the financial logic decoupled from IO.
+type CostCalculator struct {
+	Pricing llm.PricingData
+	Model   llm.ModelPricing
+}
+
+// Calculate performs tiered pricing arithmetic.
+func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
+	cb := CostBreakdown{Stats: stats}
+	p := c.Model
+
+	cb.CostHits = float64(stats.Hits) * p.Hit / 1e6
+	cb.CostMisses = (float64(stats.Misses)*p.Miss + float64(stats.TieredMisses)*p.TieredMiss) / 1e6
+	cb.CostComp = (float64(stats.Comp)*p.Comp + float64(stats.TieredComp)*p.TieredComp) / 1e6
+	cb.CostThinking = (float64(stats.Thinking)*p.Comp + float64(stats.TieredThinking)*p.TieredComp) / 1e6
+	cb.CostSearch = float64(stats.SearchQueries) * c.Pricing.SearchQuery
+
+	cb.TotalCost = cb.CostHits + cb.CostMisses + cb.CostComp + cb.CostThinking + cb.CostSearch
+	return cb
+}
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
 
@@ -40,11 +85,11 @@ type metricsManager struct {
 	logFile          string
 	model            string
 	mode             string
-	pricingOverrides map[string]types.ModelPricing
+	pricingOverrides map[string]llm.ModelPricing
 }
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]types.ModelPricing) {
+func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]llm.ModelPricing) {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -53,27 +98,27 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 		pricingOverrides: pricingOverrides,
 	}
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
-		return types.ToolResult{Text: res}, err
+		return tools.ToolResult{Text: res}, err
 	})
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
 		res, err := m.getCostSummary(ctx)
-		return types.ToolResult{Text: res}, err
+		return tools.ToolResult{Text: res}, err
 	})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]types.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]llm.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -101,7 +146,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 	var totalCached, totalPrompt, totalResponse int32
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var mt types.Metrics
+		var mt llm.Metrics
 		if err := json.Unmarshal([]byte(scanner.Text()), &mt); err == nil {
 			totalCached += mt.CachedTokens
 			totalPrompt += mt.PromptTokens
@@ -126,7 +171,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 		(float64(totalPrompt) * p.Miss / 1e6) +
 		(float64(totalResponse) * p.Comp / 1e6)
 
-	summary := types.Metrics{
+	summary := llm.Metrics{
 		Timestamp:      time.Now().Format(time.RFC3339),
 		CachedTokens:   totalCached,
 		PromptTokens:   totalPrompt,
@@ -214,7 +259,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	}
 
 	// 5. Write back atomically
-	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
+	if bytes, err := json.Marshal(history); err == nil {
 		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 	}
 }
@@ -266,7 +311,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 }
 
 // GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) types.PricingData {
+func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) llm.PricingData {
 	sm.PricingMu().Lock()
 	defer sm.PricingMu().Unlock()
 
@@ -280,7 +325,7 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	}
 
 	cachePath := filepath.Join(globalDir, "global_prices.json")
-	var data types.PricingData
+	var data llm.PricingData
 	useCache := false
 
 	// 1. Try Local Cache
@@ -320,7 +365,7 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	return data
 }
 
-func (m *metricsManager) getModelPricing(modelName string, pricing types.PricingData) types.ModelPricing {
+func (m *metricsManager) getModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
 	// 1. Exact match
 	if p, ok := pricing.Models[modelName]; ok {
 		return p
@@ -349,18 +394,58 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	f, err := os.Open(resolvedLog)
+	p := m.getModelPricing(m.model, pricing)
+
+	// 1. Parse usage from log
+	usage, err := m.parseUsage(resolvedLog, p)
 	if err != nil {
-		return "Error: Log file not found. Ensure you have made at least one request.", nil
+		if os.IsNotExist(err) {
+			return "Error: Log file not found. Ensure you have made at least one request.", nil
+		}
+		return "", fmt.Errorf("failed to parse usage log: %w", err)
+	}
+
+	// 2. Delegate financial math to Calculator
+	calc := &CostCalculator{Pricing: pricing, Model: p}
+	breakdown := calc.Calculate(usage)
+
+	// 3. Persistence: Record to local ledger
+	if shouldRecord {
+		if sessionID == "" {
+			sessionID = filepath.Base(m.logFile)
+		}
+		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
+			Date:      time.Now().Format("2006-01-02"),
+			Session:   sessionID,
+			Model:     m.model,
+			TotalCost: breakdown.TotalCost,
+		})
+	}
+
+	// 4. Render report
+	return m.renderReport(pricing, breakdown), nil
+}
+
+func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return UsageStats{}, err
 	}
 	defer f.Close()
 
-	var totalH, totalM, totalC, totalS, totalTh int64
-	var costH, costM, costC, costTh, costS float64
-
+	var stats UsageStats
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+		var mt llm.Metrics
+
+		// Try JSON first (SOP: Structured over Procedural)
+		if err := json.Unmarshal([]byte(line), &mt); err == nil {
+			m.accumulate(&stats, mt, p)
+			continue
+		}
+
+		// Fallback to legacy text format parsing
 		parts := strings.Fields(line)
 		if len(parts) < 15 {
 			continue
@@ -372,47 +457,48 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		s, _ := strconv.ParseInt(parts[12], 10, 64)
 		th, _ := strconv.ParseInt(parts[14], 10, 64)
 
-		totalH += h
-		totalM += mMiss
-		totalC += c
-		totalS += s
-		totalTh += th
-
-		// Pricing Selection
-		p := m.getModelPricing(m.model, pricing)
-
-		rh, rm, rc := p.Hit, p.Miss, p.Comp
-		if p.TieredThreshold > 0 && (h+mMiss) > p.TieredThreshold {
-			rm, rc = p.TieredMiss, p.TieredComp
+		mtLegacy := llm.Metrics{
+			CachedTokens:   int32(h),
+			PromptTokens:   int32(h + mMiss),
+			ResponseTokens: int32(c),
+			SearchQueries:  int(s),
+			ThinkingTokens: int32(th),
 		}
+		m.accumulate(&stats, mtLegacy, p)
+	}
+	return stats, scanner.Err()
+}
 
-		costH += (float64(h) * rh / 1e6)
-		costM += (float64(mMiss) * rm / 1e6)
-		costC += (float64(c) * rc / 1e6)
-		costTh += (float64(th) * rc / 1e6)
-		costS += float64(s) * pricing.SearchQuery
+func (m *metricsManager) accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
+	h := int64(mt.CachedTokens)
+	mMiss := int64(mt.PromptTokens) - h
+	if mMiss < 0 {
+		mMiss = 0
 	}
 
-	totalCost := costH + costM + costC + costTh + costS
+	stats.Hits += h
+	stats.SearchQueries += int64(mt.SearchQueries)
 
-	// Persistence: Record to local ledger
-	if shouldRecord {
-		if sessionID == "" {
-			sessionID = filepath.Base(m.logFile)
-		}
-		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
-			Date:      time.Now().Format("2006-01-02"),
-			Session:   sessionID,
-			Model:     m.model,
-			TotalCost: totalCost,
-		})
+	if p.TieredThreshold > 0 && int64(mt.PromptTokens) > p.TieredThreshold {
+		stats.TieredMisses += mMiss
+		stats.TieredComp += int64(mt.ResponseTokens)
+		stats.TieredThinking += int64(mt.ThinkingTokens)
+	} else {
+		stats.Misses += mMiss
+		stats.Comp += int64(mt.ResponseTokens)
+		stats.Thinking += int64(mt.ThinkingTokens)
 	}
+}
+
+func (m *metricsManager) renderReport(pricing llm.PricingData, breakdown CostBreakdown) string {
+	p := m.getModelPricing(m.model, pricing)
+	stats := breakdown.Stats
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Estimated Cost for Session (Model: %s):\n", m.model))
 	sb.WriteString(fmt.Sprintf("Pricing Data As Of: %s\n", pricing.UpdatedAt))
 
-	// Check for stale data (older than 30 days)
+	// Check for stale data
 	if t, err := time.Parse(time.RFC3339, pricing.UpdatedAt); err == nil {
 		if time.Since(t) > 30*24*time.Hour {
 			sb.WriteString("⚠️ WARNING: Pricing data is over 30 days old. Accuracy not guaranteed.\n")
@@ -425,10 +511,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	sb.WriteString("| Item | Count | Rate (USD/1M) | Cost (USD) |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- |\n")
 
-	// Helper to determine display rate (shows tiered if applicable)
 	getRateStr := func(item string) string {
-		p := m.getModelPricing(m.model, pricing)
-
 		switch item {
 		case "hit":
 			return fmt.Sprintf("$%.2f", p.Hit)
@@ -448,12 +531,12 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		return "-"
 	}
 
-	sb.WriteString(fmt.Sprintf("| Cache Hits | %d | %s | $%.6f |\n", totalH, getRateStr("hit"), costH))
-	sb.WriteString(fmt.Sprintf("| Cache Misses | %d | %s | $%.6f |\n", totalM, getRateStr("miss"), costM))
-	sb.WriteString(fmt.Sprintf("| Completion | %d | %s | $%.6f |\n", totalC, getRateStr("comp"), costC))
-	sb.WriteString(fmt.Sprintf("| Thinking | %d | %s | $%.6f |\n", totalTh, getRateStr("comp"), costTh))
-	sb.WriteString(fmt.Sprintf("| Search Queries | %d | %s | $%.6f |\n", totalS, getRateStr("search"), costS))
-	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", totalCost) + "** |\n")
+	sb.WriteString(fmt.Sprintf("| Cache Hits | %d | %s | $%.6f |\n", stats.Hits, getRateStr("hit"), breakdown.CostHits))
+	sb.WriteString(fmt.Sprintf("| Cache Misses | %d | %s | $%.6f |\n", stats.Misses+stats.TieredMisses, getRateStr("miss"), breakdown.CostMisses))
+	sb.WriteString(fmt.Sprintf("| Completion | %d | %s | $%.6f |\n", stats.Comp+stats.TieredComp, getRateStr("comp"), breakdown.CostComp))
+	sb.WriteString(fmt.Sprintf("| Thinking | %d | %s | $%.6f |\n", stats.Thinking+stats.TieredThinking, getRateStr("comp"), breakdown.CostThinking))
+	sb.WriteString(fmt.Sprintf("| Search Queries | %d | %s | $%.6f |\n", stats.SearchQueries, getRateStr("search"), breakdown.CostSearch))
+	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
-	return sb.String(), nil
+	return sb.String()
 }

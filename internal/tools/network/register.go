@@ -4,9 +4,9 @@
 package network
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Register adds network-related tools to the registry.
@@ -14,12 +14,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	net := NewNetworkTool(sm)
 	RegisterTeams(r, sm)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"url": {
 					Type:        "STRING",
 					Description: "The documentation URL to fetch.",
@@ -29,12 +29,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, net.ReadExternalDocs)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "http_request",
 		Description: "Executes a custom HTTP request.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"method": {
 					Type:        "STRING",
 					Description: "HTTP method (GET, POST, PUT, DELETE, etc.).",
@@ -46,7 +46,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 				"headers": {
 					Type:        "OBJECT",
 					Description: "HTTP headers as a map of strings.",
-					Properties: map[string]*types.Schema{
+					Properties: map[string]*tools.Schema{
 						"Content-Type": {Type: "STRING"},
 					},
 				},

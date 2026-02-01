@@ -6,6 +6,7 @@
 package tools
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
@@ -16,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/network"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/system"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Registry is a type alias for backward compatibility during refactoring.
@@ -44,7 +44,7 @@ func NewRegistry() *registry.Registry {
 }
 
 // RegisterAll registers all available tools into the registry.
-func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir string, version string, gateway types.AgentGateway) {
+func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir string, version string, gateway tools.AgentGateway) {
 	files.Register(r, sm)
 	framework.RegisterState(r, sm, configDir)
 	framework.RegisterPolicy(r, sm)
