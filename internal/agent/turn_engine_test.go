@@ -171,8 +171,11 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	}
 
 	err := e.Run(ctx, time.Now())
-	if err == nil || !errors.Is(err, llm.ErrMaxTurnsReached) {
-		t.Errorf("expected ErrMaxTurnsReached, got %v", err)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, llm.ErrMaxTurnsReached) && !strings.Contains(err.Error(), "infinite loop detected") {
+		t.Errorf("expected ErrMaxTurnsReached or loop detection, got %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -85,6 +86,8 @@ type TurnState struct {
 	ToolResponse *llm.Content     `json:"tool_response,omitempty"`
 	LastError    error            `json:"-"`
 	RetryCount   int              `json:"retry_count"`
+	ToolCallCount map[string]int  `json:"-"`
+	LastResponse  string          `json:"-"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -215,6 +218,7 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 			WithStreaming(e.events),
 			WithStatusReporter(e.events),
 			WithMetrics(e.events),
+			WithLoopDetector(),
 		)
 	}
 
@@ -232,12 +236,21 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	totalRetries := 0
+	var lastState *TurnState
 	for i := 0; ; i++ {
 		if err := e.checkLimits(ctx, i); err != nil {
 			return err
 		}
 
 		turn := e.createTurn(i, startTime, totalRetries)
+		if lastState != nil {
+			turn.State.ToolCallCount = lastState.ToolCallCount
+			turn.State.LastResponse = lastState.LastResponse
+		}
+		if turn.State.ToolCallCount == nil {
+			turn.State.ToolCallCount = make(map[string]int)
+		}
+
 		e.notifyBeforeTurn(turn)
 
 		err := e.executeTurn(ctx, turn)
@@ -248,6 +261,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		}
 
 		totalRetries = turn.State.RetryCount
+		lastState = turn.State
 		if e.shouldStopRunning(turn) {
 			break
 		}
@@ -310,6 +324,9 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 			return err
 		}
 		if e.shouldBreak(turn, res) {
+			if res.Error != nil {
+				return res.Error
+			}
 			break
 		}
 	}
@@ -578,6 +595,47 @@ func WithMetrics(bus events.EventBus) TurnMiddleware {
 					StartTime: turn.StartTime,
 				})
 			}
+			return res
+		})
+	}
+}
+
+// WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
+func WithLoopDetector() TurnMiddleware {
+	return func(next TurnProcessor) TurnProcessor {
+		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+			res := next.Process(ctx, turn)
+
+			if turn.State.Phase == PhaseInference && res.Error == nil && turn.State.Response != nil {
+				// 1. Text loop detection
+				currentText := ""
+				for _, p := range turn.State.Response.Parts {
+					currentText += p.Text
+				}
+				if currentText != "" && currentText == turn.State.LastResponse {
+					return ProcessResult{
+						Stop:  true,
+						Error: fmt.Errorf("infinite loop detected: model is repeating the exact same text response"),
+					}
+				}
+				turn.State.LastResponse = currentText
+
+				// 2. Tool call loop detection
+				for _, p := range turn.State.Response.Parts {
+					if p.FunctionCall != nil {
+						args, _ := json.Marshal(p.FunctionCall.Args)
+						key := p.FunctionCall.Name + ":" + string(args)
+						turn.State.ToolCallCount[key]++
+						if turn.State.ToolCallCount[key] > 5 {
+							return ProcessResult{
+								Stop:  true,
+								Error: fmt.Errorf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]),
+							}
+						}
+					}
+				}
+			}
+
 			return res
 		})
 	}
