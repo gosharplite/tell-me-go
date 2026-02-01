@@ -61,3 +61,43 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		}
 	})
 }
+
+func TestResultCollector(t *testing.T) {
+	t.Parallel()
+	calls := []*llm.FunctionCall{
+		{Name: "tool0"},
+		{Name: "tool1"},
+		{Name: "tool2"},
+	}
+
+	t.Run("Ordering", func(t *testing.T) {
+		collector := newResultCollector(calls, nil)
+		// Simulate tools finishing out of order
+		collector.ch <- toolExecResult{index: 2, name: "tool2", tr: tools.ToolResult{Text: "res2"}}
+		collector.ch <- toolExecResult{index: 0, name: "tool0", tr: tools.ToolResult{Text: "res0"}}
+		collector.ch <- toolExecResult{index: 1, name: "tool1", tr: tools.ToolResult{Text: "res1"}}
+
+		results, err := collector.Wait(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(results) != 3 {
+			t.Fatalf("Expected 3 results, got %d", len(results))
+		}
+		if results[0].Text != "res0" || results[1].Text != "res1" || results[2].Text != "res2" {
+			t.Errorf("Results out of order: %v", results)
+		}
+	})
+
+	t.Run("Context Cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		collector := newResultCollector(calls, nil)
+		cancel()
+
+		_, err := collector.Wait(ctx)
+		if err != context.Canceled {
+			t.Errorf("Expected context.Canceled, got %v", err)
+		}
+	})
+}

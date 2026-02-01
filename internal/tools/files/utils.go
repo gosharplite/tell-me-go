@@ -156,8 +156,10 @@ func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs fsut
 			if !ok {
 				return results, finalErr
 			}
-			results = append(results, res)
-			if len(results) >= limit {
+			if len(results) < limit {
+				results = append(results, res)
+			}
+			if len(results) >= limit && finalErr == nil {
 				cancel()
 				finalErr = fmt.Errorf("too many results")
 			}
