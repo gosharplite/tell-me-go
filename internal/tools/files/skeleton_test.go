@@ -15,35 +15,71 @@ import (
 )
 
 func TestGetFileSkeleton(t *testing.T) {
-	tempDir := t.TempDir()
-	path := filepath.Join(tempDir, "test.py")
-	content := `
-# This is a comment
-def my_func():
-    pass
-
-class MyClass:
-    def method(self):
-        pass
-`
-	os.WriteFile(path, []byte(content), 0644)
-
 	sm := security.NewSecurityManager(nil)
 	s := &fileSkeleton{sm: sm, fs: fsutil.DefaultFileSystem}
 	ctx := context.Background()
 
-	res, err := s.getFileSkeleton(ctx, map[string]interface{}{"filepath": path})
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+		mustHave []string
+	}{
+		{
+			name:     "Python",
+			filename: "test.py",
+			content:  "# comment\ndef func():\n    pass\n\nclass MyClass:\n    pass",
+			mustHave: []string{"# comment", "def func():", "class MyClass:"},
+		},
+		{
+			name:     "Go",
+			filename: "test.go",
+			content:  "// Go comment\nfunc Main() {}\ntype MyStruct struct{}",
+			mustHave: []string{"// Go comment", "func Main()", "type MyStruct"},
+		},
+		{
+			name:     "JavaScript",
+			filename: "test.js",
+			content:  "// JS comment\nfunction test() {}\nclass Boat {}",
+			mustHave: []string{"// JS comment", "function test()", "class Boat"},
+		},
+		{
+			name:     "Bash",
+			filename: "test.sh",
+			content:  "# Bash comment\nmy_func() {\n  echo hi\n}",
+			mustHave: []string{"# Bash comment", "my_func() {"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			path := filepath.Join(tempDir, tt.filename)
+			if err := os.WriteFile(path, []byte(tt.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			res, err := s.getFileSkeleton(ctx, map[string]interface{}{"filepath": path})
+			if err != nil {
+				t.Fatalf("getFileSkeleton failed: %v", err)
+			}
+
+			for _, want := range tt.mustHave {
+				if !strings.Contains(res.Text, want) {
+					t.Errorf("expected skeleton to contain %q, but it didn't. Got:\n%s", want, res.Text)
+				}
+			}
+		})
+	}
+}
+
+func TestScanForDefinitions_Empty(t *testing.T) {
+	r := strings.NewReader("just plain text\nwithout definitions")
+	got, err := scanForDefinitions(r, ".txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if !strings.Contains(res.Text, "# This is a comment") {
-		t.Error("expected comment to be preserved")
-	}
-	if !strings.Contains(res.Text, "def my_func():") {
-		t.Error("expected function definition")
-	}
-	if !strings.Contains(res.Text, "class MyClass:") {
-		t.Error("expected class definition")
+	if got != "" {
+		t.Errorf("expected empty string for file with no definitions, got %q", got)
 	}
 }

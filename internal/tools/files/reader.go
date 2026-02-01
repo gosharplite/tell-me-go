@@ -209,11 +209,22 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		return types.ToolResult{}, err
 	}
 
-	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
-	out, _ := cmd.CombinedOutput()
+	if _, err := exec.LookPath("diff"); err != nil {
+		return types.ToolResult{}, fmt.Errorf("'diff' command not found: %w", err)
+	}
 
-	if len(out) == 0 {
+	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
+	out, err := cmd.CombinedOutput()
+
+	if len(out) == 0 && err == nil {
 		return types.ToolResult{Text: "Files are identical."}, nil
+	}
+
+	// diff returns exit code 1 if files differ, which is an error for Command.CombinedOutput
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			return types.ToolResult{}, fmt.Errorf("diff failed: %w", err)
+		}
 	}
 
 	return types.ToolResult{Text: string(out)}, nil

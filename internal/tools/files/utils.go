@@ -76,6 +76,9 @@ func scanFile(ctx context.Context, fs fsutil.FileSystem, filePath string, matche
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error scanning file %s: %w", filePath, err)
+	}
 	return nil
 }
 

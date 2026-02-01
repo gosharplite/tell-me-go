@@ -5,6 +5,7 @@ package files
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,4 +128,58 @@ func TestAppendText(t *testing.T) {
 	if string(got) != expected {
 		t.Errorf("got %q, want %q", string(got), expected)
 	}
+}
+
+
+type mockFS struct {
+	fsutil.FileSystem
+	mkdirErr error
+	writeErr error
+}
+
+func (m *mockFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	if m.mkdirErr != nil {
+		return m.mkdirErr
+	}
+	return os.MkdirAll(path, perm)
+}
+
+func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, perm os.FileMode) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	return os.WriteFile(filename, data, perm)
+}
+
+func TestWriteFile_Failures(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	
+	t.Run("mkdir failure", func(t *testing.T) {
+		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
+		w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: mfs}
+		_, err := w.writeFile(context.Background(), map[string]interface{}{
+			"filepath": "/tmp/any/file.txt",
+			"content": "test",
+			"reason": "testing",
+		})
+		if err == nil || !strings.Contains(err.Error(), "disk full") {
+			t.Errorf("expected disk full error, got %v", err)
+		}
+	})
+
+	t.Run("write failure", func(t *testing.T) {
+		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
+		w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: mfs}
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, "file.txt")
+		_, err := w.writeFile(context.Background(), map[string]interface{}{
+			"filepath": path,
+			"content": "test",
+			"reason": "testing",
+		})
+		if err == nil || !strings.Contains(err.Error(), "write error") {
+			t.Errorf("expected write error, got %v", err)
+		}
+	})
 }
