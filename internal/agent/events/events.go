@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package events
 
 import (
 	"context"
@@ -44,11 +44,6 @@ type StatusUpdate struct {
 type TurnStarted struct {
 	Turn     int
 	MaxTurns int
-}
-
-// TurnStatusEvent carries payload and token metrics for UI display.
-type TurnStatusEvent struct {
-	Status TurnStatus
 }
 
 // ResponseStreamEvent carries a channel for streaming LLM output.

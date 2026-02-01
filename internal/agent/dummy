@@ -1,0 +1,5 @@
+{"role":"user","parts":[{"function_response":{"name":"t"}}]}
+{"role":"model","parts":[{"function_call":{"name":"t"}}]}
+{"role":"user","parts":[{"function_response":{"name":"t"}}]}
+{"role":"model","parts":[{"function_call":{"name":"t"}}]}
+{"role":"user","parts":[{"function_response":{"name":"t"}}]}

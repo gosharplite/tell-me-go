@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
@@ -14,18 +15,18 @@ import (
 // Summarizer implements the HistorySummarizer interface using an LLM gateway.
 type Summarizer struct {
 	gateway gateway.LLMGateway
-	events  EventBus
+	events  events.EventBus
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g gateway.LLMGateway, events EventBus) *Summarizer {
-	return &Summarizer{gateway: g, events: events}
+func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
+	return &Summarizer{gateway: g, events: bus}
 }
 
 // Summarize uses the LLM to compress a subset of history.
 func (s *Summarizer) Summarize(ctx context.Context, subset []*types.Content, focus string) (string, error) {
 	if s.events != nil {
-		s.events.Publish(SystemMessageEvent{
+		s.events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)),
 			Level:   "info",
 		})

@@ -11,13 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestUIRendererGolden(t *testing.T) {
 	sm := tools.NewSecurityManager()
-	renderer := NewStdUIRenderer(sm)
+	renderer := ui.NewStdUIRenderer(sm)
 
 	var stdout, stderr bytes.Buffer
 	renderer.SetWriters(&stdout, &stderr)
@@ -26,7 +28,7 @@ func TestUIRendererGolden(t *testing.T) {
 
 	t.Run("LogTurnStatus_PreCall", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(TurnStatus{
+		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,
@@ -39,7 +41,7 @@ func TestUIRendererGolden(t *testing.T) {
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
-		renderer.LogTurnStatus(TurnStatus{
+		renderer.LogTurnStatus(events.TurnStatus{
 			Timestamp:        fixedTime,
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
@@ -23,15 +24,15 @@ func (m *mockHistoryManager) ReplaceRange(ctx context.Context, start, end int, n
 
 func TestSlidingWindowPolicy_Prune(t *testing.T) {
 	tests := []struct {
-		name          string
-		maxTurns      int
-		historyLen    int // Number of messages
-		expectPruned  int // Number of turns (2 msgs per turn)
-		expectRemain  int // Number of messages remaining
+		name         string
+		maxTurns     int
+		historyLen   int // Number of messages
+		expectPruned int // Number of turns (2 msgs per turn)
+		expectRemain int // Number of messages remaining
 	}{
 		{"No pruning needed", 10, 4, 0, 4},
 		{"Exact limit", 5, 10, 0, 10},
-		{"Pruning exceeding", 2, 10, 4, 2}, // maxTurns 2 (4 msgs). targetMessages (2/2)*2 = 2 msgs. Pruned (10-2)/2 = 4 turns.
+		{"Pruning exceeding", 2, 10, 4, 2},  // maxTurns 2 (4 msgs). targetMessages (2/2)*2 = 2 msgs. Pruned (10-2)/2 = 4 turns.
 		{"Odd history length", 5, 11, 4, 3}, // 11 > 10. target (5/2)*2 = 4. remove = 11-4 = 7. remove+1 = 8. remain = 3. pruned = 4.
 		{"Zero turns", 0, 10, 0, 10},
 		{"Negative turns", -1, 10, 0, 10},
@@ -59,7 +60,7 @@ func TestSlidingWindowPolicy_Prune(t *testing.T) {
 
 func TestHistoryPruner_Transform(t *testing.T) {
 	ctx := context.Background()
-	
+
 	t.Run("Pruning occurred", func(t *testing.T) {
 		managerCalled := false
 		m := &mockHistoryManager{
@@ -173,7 +174,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		history := make([]*types.Content, 10)
 		req := &ContextRequest{History: history}
 		err := tg.Transform(ctx, req)
-		if !errors.Is(err, ErrContextLimitExceeded) {
+		if !errors.Is(err, types.ErrContextLimitExceeded) {
 			t.Errorf("expected ErrContextLimitExceeded, got %v", err)
 		}
 	})
@@ -211,7 +212,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 	t.Run("Inject turn warning", func(t *testing.T) {
 		req := &ContextRequest{
 			Turn: 7, // 3 remaining
-			Result: []*types.Content{
+			History: []*types.Content{
 				{Role: "user", Parts: []*types.Part{{Text: "prompt"}}},
 			},
 		}
@@ -225,7 +226,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 		if len(req.Metadata.Warnings) == 0 {
 			t.Error("expected warnings in metadata")
 		}
-		lastContent := req.Result[len(req.Result)-1]
+		lastContent := req.History[len(req.History)-1]
 		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "3 turns remaining") {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
@@ -240,7 +241,7 @@ func TestContextManager_Prepare_PipelineIntegration(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
-	
+
 	// Add 12 messages (6 turns) to trigger pruning
 	for i := 0; i < 6; i++ {
 		_ = hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "u"}}})
@@ -255,7 +256,7 @@ func TestContextManager_Prepare_PipelineIntegration(t *testing.T) {
 				return &types.Content{Parts: []*types.Part{{Text: "summary"}}}, &types.Metrics{}, nil
 			}
 		},
-	}, &SimpleEventBus{})
+	}, &events.SimpleEventBus{})
 
 	apiContents, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {
@@ -282,7 +283,7 @@ func TestContextManager_Prepare_PipelineIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
-	
+
 	foundWarning := false
 	for _, w := range metadata.Warnings {
 		if strings.Contains(w, "final turn") {

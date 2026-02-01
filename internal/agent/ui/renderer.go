@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package ui
 
 import (
 	"context"
@@ -13,10 +13,22 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
 	"golang.org/x/term"
 )
+
+// UIRenderer defines the interface for UI feedback.
+type UIRenderer interface {
+	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
+	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
+	LogTurnStatus(status events.TurnStatus)
+	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
+	LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool)
+	LogToolResult(name string, result types.ToolResult, showTools bool)
+	LogSystemMessage(msg string, level string)
+}
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
 type StdUIRenderer struct {
@@ -75,11 +87,9 @@ func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime tim
 		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 	}
 
-	// [Time] H: 0 M: 45201 C: 217 T: 46102 N: 45418(98%) S: 1 Th: 1540 [13.5s / 15.2s]
 	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%s / %.2fs]\n",
 		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, r.now().Sub(startTime).Seconds())
 
-	// Append to log file
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -88,7 +98,7 @@ func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime tim
 	_, _ = f.WriteString(logLine)
 }
 
-func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
+func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
 	timestamp := status.Timestamp.Format("15:04:05")
@@ -99,7 +109,7 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := reset
 		if float64(tks) > float64(status.MaxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m" // Red if > 90%
+			tokenColor = "\033[0;31m"
 		}
 
 		if isActual {
@@ -112,16 +122,13 @@ func (r *StdUIRenderer) LogTurnStatus(status TurnStatus) {
 	}
 
 	if !status.IsPostCall {
-		// 1. Print Payload Status (Pre-call estimate)
 		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
 		fmt.Fprintf(r.stderr, "%s╭─⠿ %sTurn %d/%d%s\n", gray, reset, status.CurrentTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
 	} else if status.Metrics != nil {
 		m := status.Metrics
-		// 2. Re-print Payload Status (Post-call actual)
 		printSystemLine(int(m.PromptTokens), true)
 
-		// 3. Print Usage Metrics (Post-call)
 		miss := m.PromptTokens - m.CachedTokens
 		newTokens := miss + m.ResponseTokens + m.ThinkingTokens
 		percent := 0
@@ -175,7 +182,6 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 	}
 }
 
-// StreamResponse provides a channel to stream content parts and a finalizer to get the aggregated content.
 func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content) {
 	ch := make(chan *types.Content, 100)
 	state := &streamState{
@@ -247,7 +253,6 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *types.Part) 
 
 func (r *StdUIRenderer) handleTextPart(state *streamState, part *types.Part) {
 	r.closeThinking(state)
-	// For text, we stream it raw to terminal
 	fmt.Fprint(r.stdout, part.Text)
 	state.totalText.WriteString(part.Text)
 }
@@ -299,7 +304,7 @@ func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
 
 func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
 	if width <= 0 {
-		width = 80 // Fallback
+		width = 80
 	}
 	lines := 0
 	currentLineLen := 0
@@ -369,7 +374,6 @@ func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, show
 		if len(snippet) > 200 {
 			snippet = snippet[:197] + "..."
 		}
-		// Clean up newlines for a compact log
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
 		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: %s%s\n", cyan, timestamp, name, snippet, reset)
 	}
@@ -384,18 +388,18 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
-	color := "\033[0;90m" // Gray
+	color := "\033[0;90m"
 	prefix := "System"
 
 	switch level {
 	case "error":
-		color = "\033[0;31m" // Red
+		color = "\033[0;31m"
 		prefix = "Error"
 	case "warn":
-		color = "\033[0;90m" // Gray for consistency with previous reportHistoryError
+		color = "\033[0;90m"
 		prefix = "Warning"
 	case "info":
-		color = "\033[0;36m" // Cyan
+		color = "\033[0;36m"
 		prefix = "Info"
 	}
 

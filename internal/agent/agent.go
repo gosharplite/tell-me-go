@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/tools"
@@ -15,57 +17,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-var (
-	// ErrContextLimitExceeded is returned when the payload exceeds the safety threshold.
-	ErrContextLimitExceeded = fmt.Errorf("payload estimate exceeds safety limit")
-
-	// ErrMaxTurnsReached is returned when the model reaches the turn limit.
-	ErrMaxTurnsReached = fmt.Errorf("maximum tool execution turns reached")
-)
-
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
 	SetLogFile(path string)
-	SetUIOptions(showThoughts, showTools bool)
-	SetRawOutput(raw bool)
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
 	SetMainConfigPath(path string)
-	SetRenderer(renderer UIRenderer)
-}
-
-// UIRenderer defines the interface for UI feedback.
-type UIRenderer interface {
-	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
-	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
-	LogTurnStatus(status TurnStatus)
-	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
-	LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool)
-	LogToolResult(name string, result types.ToolResult, showTools bool)
-	LogSystemMessage(msg string, level string)
-}
-
-// TurnStatus contains the data needed for rendering turn status.
-type TurnStatus struct {
-	Timestamp        time.Time
-	CurrentTurns     int
-	MaxHistoryTurns  int
-	Tokens           int
-	MaxHistoryTokens int
-	Metrics          *types.Metrics
-	IsPostCall       bool
-	StartTime        time.Time
+	Subscribe(sub func(events.Event))
 }
 
 // AgentConfig holds the configuration for the Agent.
 type AgentConfig struct {
 	LogFile              string
-	ShowThoughts         bool
-	ShowTools            bool
-	RawOutput            bool
 	PersistentConfigPath string
 	MainConfigPath       string
 }
@@ -77,32 +43,16 @@ type Agent struct {
 	ctxManager    *ContextManager
 	registry      *registry.Registry
 	sm            *tools.SecurityManager
-	renderer      UIRenderer
 	configWatcher *ConfigWatcher
 	strategy      *ContextStrategy
-	executor      *ToolExecutor
-	events        EventBus
+	executor      *executor.ToolExecutor
+	events        events.EventBus
 
 	config AgentConfig
 }
 
 // AgentOption defines a functional option for configuring an Agent.
 type AgentOption func(*Agent)
-
-// WithUIOptions sets the initial UI visibility options.
-func WithUIOptions(showThoughts, showTools bool) AgentOption {
-	return func(a *Agent) {
-		a.config.ShowThoughts = showThoughts
-		a.config.ShowTools = showTools
-	}
-}
-
-// WithRawOutput sets whether to output raw text or rendered markdown.
-func WithRawOutput(raw bool) AgentOption {
-	return func(a *Agent) {
-		a.config.RawOutput = raw
-	}
-}
 
 // WithLimits sets the initial operational limits.
 func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
@@ -126,13 +76,6 @@ func WithLogFile(path string) AgentOption {
 	}
 }
 
-// WithPrunedTurns (Legacy/Removed - state should be in Session)
-func WithPrunedTurns(n int) AgentOption {
-	return func(a *Agent) {
-		// No-op or handle appropriately if still needed for init
-	}
-}
-
 // WithPersistentConfigPath sets the path to the persistent session configuration.
 func WithPersistentConfigPath(path string) AgentOption {
 	return func(a *Agent) {
@@ -149,39 +92,24 @@ func WithMainConfigPath(path string) AgentOption {
 	}
 }
 
-// WithRenderer sets a custom UI renderer and automatically subscribes it to events.
-func WithRenderer(renderer UIRenderer) AgentOption {
-	return func(a *Agent) {
-		if renderer != nil {
-			a.renderer = renderer
-		}
-	}
-}
-
 // New creates a new Agent using functional options.
 func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
-	events := &SimpleEventBus{}
-	renderer := NewStdUIRenderer(sm)
+	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 	strategy := NewContextStrategy(reg)
-	executor := NewToolExecutor(reg, sm, events)
-	ctxManager := NewContextManager(strategy, hManager, gw, events)
+	exec := executor.NewToolExecutor(reg, sm, bus)
+	ctxManager := NewContextManager(strategy, hManager, gw, bus)
 
 	a := &Agent{
 		gateway:       gw,
 		ctxManager:    ctxManager,
 		registry:      reg,
 		sm:            sm,
-		renderer:      renderer,
 		configWatcher: NewConfigWatcher(120000, 10, 20),
 		strategy:      strategy,
-		executor:      executor,
-		events:        events,
-		config: AgentConfig{
-			ShowThoughts: true,
-			ShowTools:    true,
-			RawOutput:    false,
-		},
+		executor:      exec,
+		events:        bus,
+		config:        AgentConfig{},
 	}
 
 	// Apply options
@@ -190,50 +118,20 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 	}
 
 	// Initialize engine
-	a.engine = NewTurnEngine(gw, executor, ctxManager, reg, events)
-
-	// Subscribe renderer to events
-	a.events.Subscribe(a.handleEvent)
+	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus)
 
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
 	return a
 }
 
-func (a *Agent) handleEvent(e Event) {
-	switch ev := e.(type) {
-	case TurnStatusEvent:
-		a.renderer.LogTurnStatus(ev.Status)
-	case ResponseStreamEvent:
-		uiCh, uiFinalize := a.renderer.StreamResponse(ev.Context, a.config.ShowThoughts, a.config.RawOutput)
-		for c := range ev.Stream {
-			uiCh <- c
-		}
-		_ = uiFinalize()
-	case UsageMetricsEvent:
-		a.renderer.LogUsage(ev.Metrics, a.config.LogFile, ev.StartTime)
-	case ToolCallEvent:
-		a.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, a.config.ShowTools)
-	case ToolResultEvent:
-		a.renderer.LogToolResult(ev.Name, ev.Result, a.config.ShowTools)
-	case SystemMessageEvent:
-		a.renderer.LogSystemMessage(ev.Message, ev.Level)
-	case TokenLimitReachedEvent:
-		// Already handled by SystemMessageEvent in TokenGatekeeper for now,
-		// but could be used for specific UI triggers.
-	case StatusUpdate:
-		a.renderer.LogSystemMessage(ev.Message, ev.Level)
-	}
-}
-
-func (a *Agent) Subscribe(sub func(Event)) {
+func (a *Agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *Agent) emit(e Event) {
+func (a *Agent) emit(e events.Event) {
 	a.events.Publish(e)
 }
-
 
 func (a *Agent) registerInternalTools() {
 	a.registry.Register(&types.ToolDeclaration{
@@ -254,18 +152,6 @@ func (a *Agent) registerInternalTools() {
 			Required: []string{"turns"},
 		},
 	}, a.ctxManager.SummarizeHistoryTool)
-}
-
-// SetUIOptions sets the UI visibility options.
-func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
-	a.config.ShowThoughts = showThoughts
-	a.config.ShowTools = showTools
-	a.executor.SetShowTools(showTools)
-}
-
-// SetRawOutput sets whether to output raw text or rendered markdown.
-func (a *Agent) SetRawOutput(raw bool) {
-	a.config.RawOutput = raw
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -301,11 +187,6 @@ func (a *Agent) SetMainConfigPath(path string) {
 	a.configWatcher.SetPaths(path, a.config.PersistentConfigPath)
 }
 
-// SetRenderer sets a custom UI renderer.
-func (a *Agent) SetRenderer(renderer UIRenderer) {
-	a.renderer = renderer
-}
-
 func (a *Agent) refreshLimits() {
 	a.configWatcher.Refresh()
 	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
@@ -322,6 +203,6 @@ func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 	}
 
 	a.refreshLimits()
-	a.emit(StatusUpdate{Message: "Starting chat...", Level: "info"})
+	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
 }

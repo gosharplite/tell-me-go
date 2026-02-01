@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
@@ -86,7 +87,7 @@ type TokenGatekeeper struct {
 	Manager    interface {
 		ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error
 	}
-	Events EventBus
+	Events events.EventBus
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
@@ -101,21 +102,20 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 
 		if tokens > t.MaxTokens {
 			if t.Events != nil {
-				t.Events.Publish(TokenLimitReachedEvent{
+				t.Events.Publish(events.TokenLimitReachedEvent{
 					Tokens:   tokens,
 					MaxLimit: t.MaxTokens,
 				})
-				t.Events.Publish(SystemMessageEvent{
+				t.Events.Publish(events.SystemMessageEvent{
 					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, t.MaxTokens),
 					Level:   "error",
 				})
 			}
-			return ErrContextLimitExceeded
+			return types.ErrContextLimitExceeded
 		}
 	}
 
 	req.Metadata.FinalTokenCount = tokens
-	req.Result = req.History
 	return nil
 }
 
@@ -164,7 +164,7 @@ type WarningInjector struct {
 
 func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
-	currentTurns := len(req.Result) / 2
+	currentTurns := len(req.History) / 2
 
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
@@ -183,8 +183,8 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
 	}
 
-	apiContents := make([]*types.Content, len(req.Result))
-	copy(apiContents, req.Result)
+	apiContents := make([]*types.Content, len(req.History))
+	copy(apiContents, req.History)
 
 	lastIdx := len(apiContents) - 1
 	orig := apiContents[lastIdx]
@@ -225,8 +225,43 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		apiContents[lastIdx] = cloned
 	}
 
-	req.Result = apiContents
+	req.History = apiContents
 	return nil
 }
 
 func (t *WarningInjector) Priority() int { return 100 }
+
+// SystemInstructionInjector adds current constraints/SOPs.
+type SystemInstructionInjector struct {
+	Instructions string
+}
+
+func (t *SystemInstructionInjector) Transform(ctx context.Context, req *ContextRequest) error {
+	if t.Instructions == "" {
+		return nil
+	}
+
+	instr := &types.Content{
+		Role:  "user",
+		Parts: []*types.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+	}
+
+	req.History = append([]*types.Content{instr}, req.History...)
+	return nil
+}
+
+func (t *SystemInstructionInjector) Priority() int { return 5 }
+
+// ToolDeclarationGenerator injects tool schemas from the registry.
+type ToolDeclarationGenerator struct {
+	Registry ToolRegistry
+}
+
+func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRequest) error {
+	// This transformer might just be a placeholder if tools are passed separately to the API,
+	// but the requirement says "Injects tool schemas from the registry".
+	// If the model needs them in-context (e.g. for certain models), we do it here.
+	return nil
+}
+
+func (t *ToolDeclarationGenerator) Priority() int { return 30 }

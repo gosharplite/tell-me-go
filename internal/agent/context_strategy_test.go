@@ -63,10 +63,10 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.declarations = nil
-		// charCount = 1000. 1000 / 3.2 = 312
+		// base = 300
 		got := cs.EstimateTokens(nil)
-		if got != 312 {
-			t.Errorf("expected 312 tokens, got %d", got)
+		if got != 300 {
+			t.Errorf("expected 300 tokens, got %d", got)
 		}
 	})
 
@@ -78,12 +78,11 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 				Parameters:  &types.Schema{Type: "object"},
 			},
 		}
-		// charCount = 1000 (base) + len("my_tool") (7) + len("does something") (14) + 200 (params)
-		// total = 1000 + 7 + 14 + 200 = 1221
-		// 1221 / 3.2 = 381.5625 -> 381
+		// charCount = base(300) + (len("my_tool") (7) + len("does something") (14)) / 4 + 50 (params)
+		// total = 300 + 5 + 50 = 355
 		got := cs.EstimateTokens(nil)
-		if got != 381 {
-			t.Errorf("expected 381 tokens, got %d", got)
+		if got != 355 {
+			t.Errorf("expected 355 tokens, got %d", got)
 		}
 		registry.declarations = nil // reset
 	})
@@ -104,6 +103,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 		base := cs.EstimateTokens(nil)
 		withBlob := cs.EstimateTokens(contents)
 		diff := withBlob - base
+		// 160 chars / 3.2 = 50 tokens
 		if diff != 50 {
 			t.Errorf("expected blob to add 50 tokens, added %d", diff)
 		}
@@ -124,11 +124,12 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 				},
 			},
 		}
-		// charCount: 1000 (base) + 4 (name "test") + 6 (key "nested") + 20 (slice [1,2] -> 10+10)
-		// total = 1030. 1030 / 3.2 = 321.875 -> 321
+		// charCount: (base 300) + (name "test"(4) + key "nested"(6) + slice [1,2] -> 10+10)/3.2
+		// 30 / 3.2 = 9.375 -> 9
+		// total = 300 + 9 = 309
 		got := cs.EstimateTokens(contents)
-		if got != 321 {
-			t.Errorf("expected 321 tokens, got %d", got)
+		if got != 309 {
+			t.Errorf("expected 309 tokens, got %d", got)
 		}
 	})
 }

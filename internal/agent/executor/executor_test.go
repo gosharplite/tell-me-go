@@ -1,33 +1,36 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package executor
 
 import (
 	"context"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
-	registry := tools.NewRegistry()
-	registry.Register(&types.ToolDeclaration{
+func TestToolExecutor_PanicRecovery(t *testing.T) {
+	reg := registry.New()
+	reg.Register(&types.ToolDeclaration{
 		Name: "panic_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional parallel panic")
 	})
-	registry.RegisterWithOptions(&types.ToolDeclaration{
+	reg.RegisterWithOptions(&types.ToolDeclaration{
 		Name: "serial_panic_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
 		panic("intentional serial panic")
 	}, tools.ToolOptions{Serial: true})
 
 	sm := tools.NewSecurityManager()
-	a := New(nil, nil, registry, sm, false)
-	a.executor.maxConcurrentTools = 2
+	bus := &events.SimpleEventBus{}
+	exec := NewToolExecutor(reg, sm, bus)
+	exec.SetConcurrency(2, 0)
 
 	t.Run("Parallel Panic", func(t *testing.T) {
 		calls := []*types.FunctionCall{
@@ -35,7 +38,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		a.executor.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		exec.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional parallel panic") {
@@ -49,7 +52,7 @@ func TestAgent_ExecuteToolsConcurrently_PanicRecovery(t *testing.T) {
 		}
 
 		resChan := make(chan toolExecResult, len(calls))
-		a.executor.executeToolsConcurrentStream(context.Background(), calls, resChan)
+		exec.executeToolsConcurrentStream(context.Background(), calls, resChan)
 
 		res := <-resChan
 		if !strings.Contains(res.tr.Text, "Panic detected: intentional serial panic") {

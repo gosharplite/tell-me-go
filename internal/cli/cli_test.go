@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -90,14 +91,12 @@ func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string)
 	return nil
 }
 func (m *mockChatter) SetLogFile(path string)                               {}
-func (m *mockChatter) SetUIOptions(showThoughts, showTools bool)            {}
-func (m *mockChatter) SetRawOutput(raw bool)                                {}
 func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
-func (m *mockChatter) SetRenderer(renderer agent.UIRenderer)                {}
+func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output

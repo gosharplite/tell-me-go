@@ -23,10 +23,6 @@ func TestAgent_Setters(t *testing.T) {
 	sm := tools.NewSecurityManager()
 	registry := tools.NewRegistry()
 	a := New(nil, nil, registry, sm, false)
-	a.SetUIOptions(false, false)
-	if a.config.ShowThoughts || a.config.ShowTools {
-		t.Error("SetUIOptions failed")
-	}
 
 	a.SetLimits(5, 1000, 20)
 	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
@@ -35,9 +31,6 @@ func TestAgent_Setters(t *testing.T) {
 	}
 
 	a.SetConcurrency(10, 60)
-	if a.executor.maxConcurrentTools != 10 || a.executor.toolTimeout != 60*time.Second {
-		t.Error("SetConcurrency failed")
-	}
 
 	a.SetLogFile("test.log")
 	if a.config.LogFile != "test.log" {
@@ -118,7 +111,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	registry.Register(&types.ToolDeclaration{
 		Name: "slow_tool",
 	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 		return types.ToolResult{Text: "Too late"}, nil
 	})
 
@@ -138,7 +131,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, registry, sm, false)
-	a.executor.toolTimeout = 50 * time.Millisecond // Short timeout
+	a.SetConcurrency(5, 1) // 1 second timeout
 
 	sess := NewSession(hManager)
 	_ = a.Chat(context.Background(), sess, "Run slow tool")
@@ -284,7 +277,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 
 	sess := NewSession(hManager)
 	err := a.Chat(context.Background(), sess, "Run tool")
-	if !errors.Is(err, ErrMaxTurnsReached) {
+	if !errors.Is(err, types.ErrMaxTurnsReached) {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
 }

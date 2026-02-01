@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
@@ -21,7 +22,6 @@ func (m *mockGateway) Generate(ctx context.Context, input []*types.Content, tool
 }
 
 type mockRenderer struct {
-	UIRenderer
 	systemMessages []string
 }
 
@@ -43,7 +43,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	strategy := NewContextStrategy(reg)
 	strategy.SetLimits(1000, 5, 20) // Turn 2/5 (remaining 3) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, &SimpleEventBus{})
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, &events.SimpleEventBus{})
 
 	// Prepare at turn 2 (approaching limit)
 	apiContents, _, err := cm.Prepare(ctx, 2)
@@ -52,24 +52,26 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	}
 
 	// Verify the injected sequence:
-	// 0: User "call tool"
-	// 1: Model Call
-	// 2: User Notice (Injected)
-	// 3: Model Ack (Injected)
-	// 4: User Response (Original index 2)
+	// 0: User Instructions (Injected by SystemInstructionInjector)
+	// 1: User "call tool"
+	// 2: Model Call
+	// 3: User Notice (Injected)
+	// 4: Model Ack (Injected)
+	// 5: User Response (Original index 2)
 
-	if len(apiContents) != 5 {
-		t.Fatalf("Expected 5 contents after injection, got %d", len(apiContents))
+	// Note: SystemInstructionInjector adds one turn at the beginning by default in my implementation.
+	if len(apiContents) != 6 {
+		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[2].Role != "user" || !strings.Contains(apiContents[2].Parts[0].Text, "System Notice") {
-		t.Errorf("Expected User Notice turn at index 2, got %v", apiContents[2])
+	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "System Notice") {
+		t.Errorf("Expected User Notice turn at index 3, got %v", apiContents[3])
 	}
-	if apiContents[3].Role != "model" || !strings.Contains(apiContents[3].Parts[0].Text, "Understood") {
-		t.Errorf("Expected Model Ack turn at index 3, got %v", apiContents[3])
+	if apiContents[4].Role != "model" || !strings.Contains(apiContents[4].Parts[0].Text, "Understood") {
+		t.Errorf("Expected Model Ack turn at index 4, got %v", apiContents[4])
 	}
-	if apiContents[4].Role != "user" || apiContents[4].Parts[0].FunctionResponse == nil {
-		t.Errorf("Expected User Response at index 4, got %v", apiContents[4])
+	if apiContents[5].Role != "user" || apiContents[5].Parts[0].FunctionResponse == nil {
+		t.Errorf("Expected User Response at index 5, got %v", apiContents[5])
 	}
 }
 
@@ -106,7 +108,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &SimpleEventBus{})
+	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &events.SimpleEventBus{})
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package executor
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -24,24 +25,29 @@ type toolExecResult struct {
 type ToolExecutor struct {
 	registry           *registry.Registry
 	sm                 *tools.SecurityManager
-	events             EventBus
+	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
-	showTools          bool
 	pool               *WorkerPool
+	strategy           ResultStrategy
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, events EventBus) *ToolExecutor {
+func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, bus events.EventBus) *ToolExecutor {
 	return &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
-		events:             events,
+		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
-		showTools:          true,
 		pool:               NewWorkerPool(5),
+		strategy:           &MarkdownStrategy{},
 	}
+}
+
+// SetStrategy sets the result formatting strategy.
+func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
+	e.strategy = s
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
@@ -55,10 +61,6 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 	if timeout > 0 {
 		e.toolTimeout = timeout
 	}
-}
-
-func (e *ToolExecutor) SetShowTools(show bool) {
-	e.showTools = show
 }
 
 // Execute handles the execution of function calls from the model response.
@@ -76,16 +78,16 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 
 	if turn >= maxToolTurns {
 		if e.events != nil {
-			e.events.Publish(SystemMessageEvent{
+			e.events.Publish(events.SystemMessageEvent{
 				Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 				Level:   "error",
 			})
 		}
-		return nil, ErrMaxTurnsReached
+		return nil, types.ErrMaxTurnsReached
 	}
 
 	if e.events != nil {
-		e.events.Publish(ToolCallEvent{
+		e.events.Publish(events.ToolCallEvent{
 			Calls:    functionCalls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
@@ -112,7 +114,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 		case res := <-resChan:
 			trs[res.index] = res.tr
 			if e.events != nil {
-				e.events.Publish(ToolResultEvent{
+				e.events.Publish(events.ToolResultEvent{
 					Name:   res.name,
 					Result: res.tr,
 				})
@@ -124,7 +126,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 
 	var responseParts []*types.Part
 	for i, tr := range trs {
-		responseParts = append(responseParts, e.processToolResult(functionCalls[i].Name, tr))
+		responseParts = append(responseParts, e.strategy.Format(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &types.Part{
 				InlineData: &types.Blob{
@@ -139,15 +141,6 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 		Role:  "user",
 		Parts: responseParts,
 	}, nil
-}
-
-func (e *ToolExecutor) processToolResult(name string, result types.ToolResult) *types.Part {
-	return &types.Part{
-		FunctionResponse: &types.FunctionResponse{
-			Name:     name,
-			Response: map[string]interface{}{"result": result.Text},
-		},
-	}
 }
 
 func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
@@ -224,4 +217,64 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *types.Functi
 		}
 		return r.tr
 	}
+}
+
+// WorkerPool manages a fixed number of workers to execute tasks concurrently.
+type WorkerPool struct {
+	maxWorkers int
+	tasks      chan func(ctx context.Context)
+	wg         sync.WaitGroup
+	quit       chan struct{}
+	once       sync.Once
+}
+
+// NewWorkerPool creates and starts a new worker pool.
+func NewWorkerPool(maxWorkers int) *WorkerPool {
+	if maxWorkers <= 0 {
+		maxWorkers = 1
+	}
+	p := &WorkerPool{
+		maxWorkers: maxWorkers,
+		tasks:      make(chan func(ctx context.Context), maxWorkers*2),
+		quit:       make(chan struct{}),
+	}
+	p.start()
+	return p
+}
+
+func (p *WorkerPool) start() {
+	for i := 0; i < p.maxWorkers; i++ {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			for {
+				select {
+				case task, ok := <-p.tasks:
+					if !ok {
+						return
+					}
+					task(context.Background())
+				case <-p.quit:
+					return
+				}
+			}
+		}()
+	}
+}
+
+// Submit adds a task to the pool.
+func (p *WorkerPool) Submit(task func(ctx context.Context)) {
+	select {
+	case p.tasks <- task:
+	case <-p.quit:
+	}
+}
+
+// Shutdown stops all workers and waits for them to finish.
+func (p *WorkerPool) Shutdown() {
+	p.once.Do(func() {
+		close(p.quit)
+		close(p.tasks)
+		p.wg.Wait()
+	})
 }

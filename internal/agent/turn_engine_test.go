@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
@@ -60,8 +61,8 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	reg := &MockRegistry{}
 	strategy := NewContextStrategy(reg)
 	hManager := history.NewManager("dummy")
-	cm := NewContextManager(strategy, hManager, &MockGateway{}, &SimpleEventBus{})
-	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, &SimpleEventBus{})
+	cm := NewContextManager(strategy, hManager, &MockGateway{}, &events.SimpleEventBus{})
+	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, &events.SimpleEventBus{})
 	e.ctxManager.Strategy.SetLimits(1000, 5, 2) // Max 2 turns (0, 1, 2)
 
 	ctx := context.Background()
@@ -75,11 +76,11 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 		}
 	}
 
-	// We need 3 calls to Run to exceed turn 2. 
+	// We need 3 calls to Run to exceed turn 2.
 	// Actually TurnEngine.Run loop starts from i=0.
 	// If maxTurns=2, then i=0, i=1, i=2 are allowed. i=3 will fail.
 	// But it only increments 'i' if there are tool calls.
-	
+
 	// Force tool calls to keep the loop going
 	e.gateway.(*MockGateway).GenerateFunc = func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
 		ch := make(chan *types.Content)
@@ -93,24 +94,24 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	}
 
 	err := e.Run(ctx, time.Now())
-	if err == nil || !errors.Is(err, ErrMaxTurnsReached) {
+	if err == nil || !errors.Is(err, types.ErrMaxTurnsReached) {
 		t.Errorf("expected ErrMaxTurnsReached, got %v", err)
 	}
 }
 
 func TestTurnEngine_Run_EventSequence(t *testing.T) {
-	var events []string
-	bus := &SimpleEventBus{}
-	bus.Subscribe(func(e Event) {
+	var capturedEvents []string
+	bus := &events.SimpleEventBus{}
+	bus.Subscribe(func(e events.Event) {
 		switch e.(type) {
-		case TurnStarted:
-			events = append(events, "TurnStarted")
-		case TurnStatusEvent:
-			events = append(events, "TurnStatusEvent")
-		case ResponseStreamEvent:
-			events = append(events, "ResponseStreamEvent")
-		case UsageMetricsEvent:
-			events = append(events, "UsageMetricsEvent")
+		case events.TurnStarted:
+			capturedEvents = append(capturedEvents, "TurnStarted")
+		case events.TurnStatusEvent:
+			capturedEvents = append(capturedEvents, "TurnStatusEvent")
+		case events.ResponseStreamEvent:
+			capturedEvents = append(capturedEvents, "ResponseStreamEvent")
+		case events.UsageMetricsEvent:
+			capturedEvents = append(capturedEvents, "UsageMetricsEvent")
 		}
 	})
 
@@ -145,8 +146,8 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 
 	// TurnStatusEvent is published twice: once in ContextRefiner and once at the end of Run.
 	expected := []string{"TurnStarted", "TurnStatusEvent", "ResponseStreamEvent", "TurnStatusEvent", "UsageMetricsEvent"}
-	if len(events) != len(expected) {
-		t.Errorf("expected events %v, got %v", expected, events)
+	if len(capturedEvents) != len(expected) {
+		t.Errorf("expected events %v, got %v", expected, capturedEvents)
 	}
 }
 
@@ -208,7 +209,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 			_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-			e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, &SimpleEventBus{}), reg, &SimpleEventBus{})
+			e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
 			strategy.SetLimits(1000, 5, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -265,7 +266,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	})
 	_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, &SimpleEventBus{}), reg, &SimpleEventBus{})
+	e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())

@@ -61,16 +61,26 @@ func (cs *ContextStrategy) GetLimits() (int, int, int) {
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
 }
 
-// EstimateTokens provides a heuristic-based token count.
+// EstimateTokens provides a heuristic-based token count with incremental caching.
 func (cs *ContextStrategy) EstimateTokens(contents []*types.Content) int {
-	charCount := 0
+	totalTokens := 0
+
+	// Overhead for tools
 	for _, decl := range cs.registry.GetDeclarations() {
-		charCount += len(decl.Name) + len(decl.Description)
+		totalTokens += (len(decl.Name) + len(decl.Description)) / 4
 		if decl.Parameters != nil {
-			charCount += 200 // Heuristic for parameter definitions
+			totalTokens += 50 // Heuristic for parameter definitions
 		}
 	}
+
 	for _, c := range contents {
+		if c.TokenCount > 0 {
+			totalTokens += c.TokenCount
+			continue
+		}
+
+		// Calculate delta for this content
+		charCount := 0
 		for _, p := range c.Parts {
 			if p.Text != "" {
 				charCount += len(p.Text)
@@ -87,9 +97,13 @@ func (cs *ContextStrategy) EstimateTokens(contents []*types.Content) int {
 				charCount += 160 // Heuristic for blob (roughly 50 tokens)
 			}
 		}
+
+		c.TokenCount = int(float64(charCount) / 3.2)
+		totalTokens += c.TokenCount
 	}
-	charCount += 1000 // Base overhead
-	return int(float64(charCount) / 3.2)
+
+	totalTokens += 300 // Base overhead
+	return totalTokens
 }
 
 func (cs *ContextStrategy) estimateMapSize(m map[string]interface{}) int {

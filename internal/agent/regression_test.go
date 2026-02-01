@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -175,8 +176,25 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	// Mock client that triggers the tool
 	mockClient := &MockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
-			// First call: trigger tool
-			if len(history) == 1 {
+			// Find the user prompt to decide what to do
+			lastUserPrompt := ""
+			for i := len(history) - 1; i >= 0; i-- {
+				if history[i].Role == "user" && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
+					lastUserPrompt = history[i].Parts[0].Text
+					break
+				}
+			}
+
+			// If last user message is the tool response, return final text
+			if len(history) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
+				return &types.Content{
+					Role:  "model",
+					Parts: []*types.Part{{Text: "I see the cat image."}},
+				}, &types.Metrics{}, nil
+			}
+
+			// Otherwise, if it's the start, trigger the tool
+			if lastUserPrompt == "Show me a cat" {
 				return &types.Content{
 					Role: "model",
 					Parts: []*types.Part{
@@ -184,10 +202,10 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 					},
 				}, &types.Metrics{}, nil
 			}
-			// Second call: return final text
+
 			return &types.Content{
 				Role:  "model",
-				Parts: []*types.Part{{Text: "I see the cat image."}},
+				Parts: []*types.Part{{Text: "Default response"}},
 			}, &types.Metrics{}, nil
 		},
 	}

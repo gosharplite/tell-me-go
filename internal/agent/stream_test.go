@@ -8,13 +8,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestStreamResponse(t *testing.T) {
 	sm := tools.NewSecurityManager()
-	renderer := NewStdUIRenderer(sm)
+	renderer := ui.NewStdUIRenderer(sm)
 
 	var stdout, stderr bytes.Buffer
 	renderer.SetWriters(&stdout, &stderr)

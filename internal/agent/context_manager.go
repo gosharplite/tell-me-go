@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/types"
@@ -18,16 +19,16 @@ type ContextManager struct {
 	Strategy   *ContextStrategy
 	History    *history.Manager
 	Summarizer HistorySummarizer
-	Events     EventBus
+	Events     events.EventBus
 }
 
 // NewContextManager creates a new ContextManager.
-func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, events EventBus) *ContextManager {
+func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus) *ContextManager {
 	return &ContextManager{
 		Strategy:   s,
 		History:    h,
-		Summarizer: NewSummarizer(g, events),
-		Events:     events,
+		Summarizer: NewSummarizer(g, bus),
+		Events:     bus,
 	}
 }
 
@@ -45,12 +46,18 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 			Policy:  &SlidingWindowPolicy{MaxTurns: maxTurns},
 			Manager: cm.History,
 		},
+		&SystemInstructionInjector{
+			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review.",
+		},
 		&TokenGatekeeper{
 			MaxTokens:  maxTokens,
 			Estimator:  cm.Strategy,
 			Summarizer: cm.Summarizer,
 			Manager:    cm.History,
 			Events:     cm.Events,
+		},
+		&ToolDeclarationGenerator{
+			Registry: cm.Strategy.registry,
 		},
 		&WarningInjector{
 			Strategy: cm.Strategy,
@@ -65,6 +72,16 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 		if err := t.Transform(ctx, req); err != nil {
 			return nil, nil, err
 		}
+	}
+
+	req.Result = req.History
+
+	// Final token estimation check
+	finalTokens := cm.Strategy.EstimateTokens(req.Result)
+	req.Metadata.FinalTokenCount = finalTokens
+
+	if finalTokens > maxTokens {
+		return nil, nil, fmt.Errorf("%w: %d > %d", types.ErrContextLimitExceeded, finalTokens, maxTokens)
 	}
 
 	req.Metadata.FinalTurnCount = len(req.Result) / 2

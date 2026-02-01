@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
@@ -122,8 +123,11 @@ func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, op
 	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
 	chatAgent.SetMainConfigPath(opts.configPath)
 	chatAgent.SetLogFile(paths.logPath)
-	chatAgent.SetUIOptions(cfg.ShowThoughts, cfg.ShowTools)
-	chatAgent.SetRawOutput(opts.rawOutput)
+
+	// Create and subscribe UI sidecar
+	renderer := ui.NewStdUIRenderer(a.sm)
+	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, paths.logPath)
+	chatAgent.Subscribe(subscriber.HandleEvent)
 
 	// Resolve model-specific limits
 	maxTokens := cfg.MaxHistoryTokens
