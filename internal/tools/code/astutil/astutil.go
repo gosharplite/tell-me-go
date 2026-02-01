@@ -4,11 +4,14 @@
 package astutil
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -218,4 +221,105 @@ func (c *ASTCache) GetFileSkeletonGo(filePath string) (string, error) {
 	}
 
 	return sb.String(), nil
+}
+
+func CalculateComplexity(fd *ast.FuncDecl) int {
+	complexity := 1
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch t := n.(type) {
+		case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.CaseClause, *ast.CommClause:
+			complexity++
+		case *ast.BinaryExpr:
+			if t.Op == token.LAND || t.Op == token.LOR {
+				complexity++
+			}
+		}
+		return true
+	})
+	return complexity
+}
+
+func CompareASTs(base, curr *ast.File) []string {
+	var changes []string
+
+	baseDecls := map[string]ast.Decl{}
+	for _, d := range base.Decls {
+		baseDecls[GetDeclKey(d)] = d
+	}
+
+	currDecls := map[string]ast.Decl{}
+	for _, d := range curr.Decls {
+		currDecls[GetDeclKey(d)] = d
+	}
+
+	// Find Added and Modified
+	var keys []string
+	for k := range currDecls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		currDecl := currDecls[k]
+		if baseDecl, ok := baseDecls[k]; !ok {
+			changes = append(changes, "Added: "+k)
+		} else {
+			if !IsDeclEqual(baseDecl, currDecl) {
+				changes = append(changes, "Modified: "+k)
+			}
+		}
+	}
+
+	// Find Deleted
+	var baseKeys []string
+	for k := range baseDecls {
+		baseKeys = append(baseKeys, k)
+	}
+	sort.Strings(baseKeys)
+
+	for _, k := range baseKeys {
+		if _, ok := currDecls[k]; !ok {
+			changes = append(changes, "Deleted: "+k)
+		}
+	}
+
+	return changes
+}
+
+func GetDeclKey(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		name := d.Name.Name
+		if d.Recv != nil && len(d.Recv.List) > 0 {
+			recv := ExprToString(d.Recv.List[0].Type)
+			return fmt.Sprintf("func (%s) %s", recv, name)
+		}
+		return "func " + name
+	case *ast.GenDecl:
+		if d.Tok == token.TYPE && len(d.Specs) > 0 {
+			if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
+				return "type " + ts.Name.Name
+			}
+		}
+		if d.Tok == token.CONST && len(d.Specs) > 0 {
+			return "const block"
+		}
+		if d.Tok == token.VAR && len(d.Specs) > 0 {
+			return "var block"
+		}
+	}
+	return "unknown"
+}
+
+func IsDeclEqual(a, b ast.Decl) bool {
+	// Crude but effective for semantic diff: compare formatted strings
+	fset := token.NewFileSet()
+	var bufA, bufB bytes.Buffer
+	if err := format.Node(&bufA, fset, a); err != nil {
+		return false
+	}
+	if err := format.Node(&bufB, fset, b); err != nil {
+		return false
+	}
+	return bufA.String() == bufB.String()
 }
