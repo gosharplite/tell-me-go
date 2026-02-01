@@ -531,3 +531,38 @@ func newTestContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLM
 	cm.Pipeline = minimalPipeline()
 	return cm
 }
+
+func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	strategy := NewContextStrategy(reg)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	attempts := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content)
+		close(ch)
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			attempts++
+			// Always return transient error
+			return nil, nil, gateway.ErrTransient
+		}
+	}
+
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "max retries reached") {
+		t.Errorf("expected max retries error, got %v", err)
+	}
+
+	if attempts != 4 { // 1st attempt + 3 retries
+		t.Errorf("expected 4 attempts total across all turns, got %d", attempts)
+	}
+}

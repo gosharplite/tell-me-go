@@ -112,7 +112,10 @@ func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content,
 	if r.disableStreaming {
 		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
 		if err == nil {
-			outCh <- content
+			select {
+			case outCh <- content:
+			case <-ctx.Done():
+			}
 		}
 		return content, metrics, err
 	}
@@ -125,7 +128,10 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 		for _, p := range c.Parts {
 			finalContent.AddPart(p)
 		}
-		outCh <- c
+		select {
+		case outCh <- c:
+		case <-ctx.Done():
+		}
 	}
 	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
 	return finalContent, metrics, err

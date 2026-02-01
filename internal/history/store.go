@@ -84,6 +84,13 @@ func (s *JSONLStore) Resolve(ctx context.Context, assetID string) ([]byte, error
 
 // Save overwrites the entire history file (compaction/snapshot).
 func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
+		}
+	}
+
 	var data []byte
 	for _, c := range contents {
 		prepared, err := s.prepareForStorage(ctx, c)
@@ -103,6 +110,13 @@ func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
 
 // Append appends a single content entry to the history file.
 func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
+		}
+	}
+
 	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err

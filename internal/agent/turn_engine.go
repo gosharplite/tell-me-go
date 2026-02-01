@@ -164,6 +164,7 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
+	totalRetries := 0
 	for i := 0; ; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -181,7 +182,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		turn := &Turn{
 			Index:      i,
 			StartTime:  startTime,
-			State:      &TurnState{CurrentTurns: i, Phase: PhaseRefining},
+			State:      &TurnState{CurrentTurns: i, Phase: PhaseRefining, RetryCount: totalRetries},
 			CtxManager: e.ctxManager,
 			Gateway:    e.gateway,
 			Executor:   e.executor,
@@ -194,6 +195,8 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		if err := e.executeTurn(ctx, turn); err != nil {
 			return err
 		}
+
+		totalRetries = turn.State.RetryCount
 
 		if !turn.State.HasToolCalls || turn.Stop {
 			break

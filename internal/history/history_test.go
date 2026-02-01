@@ -414,3 +414,22 @@ func TestHistoryManager_AddContent_Errors(t *testing.T) {
 		t.Error("expected error for consecutive user roles")
 	}
 }
+
+func TestHistoryManager_FileCreation(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "new_subdir", "history.jsonL")
+
+	h := NewManager(historyFile)
+	ctx := context.Background()
+
+	// Add an entry to trigger a save
+	err := h.AddEntry(ctx, "user", "test message")
+	if err != nil {
+		t.Fatalf("AddEntry failed: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(historyFile); os.IsNotExist(err) {
+		t.Errorf("expected history file to be created at %s", historyFile)
+	}
+}
