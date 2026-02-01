@@ -67,6 +67,9 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 			MaxToolTurns:     toolTurns,
 			MaxHistoryTurns:  historyTurns,
 		}
+		if a.configWatcher != nil {
+			a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+		}
 	}
 }
 

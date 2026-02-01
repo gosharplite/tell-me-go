@@ -699,3 +699,81 @@ func TestTurnEngine_Hooks(t *testing.T) {
 		t.Errorf("expected 3 transition calls, got %d", hook.transCalled)
 	}
 }
+
+type mockRetryPolicy struct {
+	shouldRetryCalled bool
+	delay             time.Duration
+	retry             bool
+}
+
+func (m *mockRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+	m.shouldRetryCalled = true
+	return m.delay, m.retry
+}
+
+func TestTurnEngine_WithRetryPolicy(t *testing.T) {
+	mockGw := &MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, errors.New("transient")
+			}
+		},
+	}
+	reg := &MockRegistry{}
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
+
+	policy := &mockRetryPolicy{retry: false} // Don't actually retry to keep test fast
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithRetryPolicy(policy))
+
+	_ = e.Run(context.Background(), time.Now())
+
+	if !policy.shouldRetryCalled {
+		t.Error("custom retry policy was not called")
+	}
+}
+
+func TestTurnEngine_StopSignal(t *testing.T) {
+	mockGw := &MockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
+			}
+		},
+	}
+	reg := &MockRegistry{}
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
+
+	stopProcessor := TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+		return ProcessResult{Stop: true, NextPhase: PhaseComplete}
+	})
+
+	// Override Inference with a processor that returns Stop: true
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseInference, stopProcessor))
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// If it reached complete through Stop: true, turn.Stop should be true
+	// However, Run loop checks turn.Stop. Let's use a hook to verify we didn't go further than Inference.
+	hook := &mockHook{}
+	e = NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil,
+		WithProcessor(PhaseInference, stopProcessor),
+		WithHook(hook),
+	)
+
+	_ = e.Run(context.Background(), time.Now())
+
+	// Phases: Refining -> Inference (Stop) -> Complete
+	// Transitions: Refining to Inference, Inference to Complete
+	if hook.transCalled != 2 {
+		t.Errorf("expected 2 transitions with stop signal, got %d", hook.transCalled)
+	}
+}

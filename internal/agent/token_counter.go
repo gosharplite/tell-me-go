@@ -98,7 +98,7 @@ func estimateValueSizeInternal(v interface{}) int {
 	case map[string]interface{}:
 		return estimateMapSizeInternal(val)
 	case []interface{}:
-		size := 0
+		size := 1
 		for _, item := range val {
 			size += estimateValueSizeInternal(item)
 		}

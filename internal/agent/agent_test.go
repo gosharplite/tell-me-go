@@ -419,3 +419,32 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 		t.Errorf("expected maxHistoryTurns 30, got %d", maxHistTurns)
 	}
 }
+
+func TestAgent_FunctionalOptions(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+
+	a := New(nil, nil, reg, sm, false,
+		WithLimits(5, 1000, 15),
+		WithConcurrency(10, 60),
+		WithLogFile("agent.log"),
+		WithPersistentConfigPath("session.json"),
+		WithMainConfigPath("config.yaml"),
+	)
+
+	if a.config.Limits.MaxToolTurns != 5 || a.config.Limits.MaxHistoryTokens != 1000 || a.config.Limits.MaxHistoryTurns != 15 {
+		t.Errorf("WithLimits failed: %+v", a.config.Limits)
+	}
+	if a.config.Execution.MaxConcurrent != 10 || a.config.Execution.Timeout != 60*time.Second {
+		t.Errorf("WithConcurrency failed: %+v", a.config.Execution)
+	}
+	if a.config.LogFile != "agent.log" {
+		t.Errorf("WithLogFile failed: %s", a.config.LogFile)
+	}
+	if a.config.PersistentConfigPath != "session.json" {
+		t.Errorf("WithPersistentConfigPath failed: %s", a.config.PersistentConfigPath)
+	}
+	if a.config.MainConfigPath != "config.yaml" {
+		t.Errorf("WithMainConfigPath failed: %s", a.config.MainConfigPath)
+	}
+}
