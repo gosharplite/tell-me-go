@@ -9,35 +9,36 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type ComplexityAnalyzer struct {
 	Cache *astutil.ASTCache
-	SP    types.SecurityProvider
+	SP    security.SecurityProvider
 }
 
-func NewComplexityAnalyzer(cache *astutil.ASTCache, sp types.SecurityProvider) *ComplexityAnalyzer {
+func NewComplexityAnalyzer(cache *astutil.ASTCache, sp security.SecurityProvider) *ComplexityAnalyzer {
 	return &ComplexityAnalyzer{
 		Cache: cache,
 		SP:    sp,
 	}
 }
 
-func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
 	resolvedPath, err := a.SP.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	type funcComplexity struct {
@@ -83,10 +84,10 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	})
 
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if len(complexities) == 0 {
-		return types.ToolResult{Text: "No Go functions found to analyze."}, nil
+		return tools.ToolResult{Text: "No Go functions found to analyze."}, nil
 	}
 
 	// Sort by complexity descending
@@ -109,5 +110,5 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 		results = append(results, "... (truncated)")
 	}
 
-	return types.ToolResult{Text: "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n")}, nil
 }

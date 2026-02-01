@@ -4,13 +4,13 @@
 package code
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/index"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/refactor"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Register adds AST-based tools to the registry.
@@ -22,12 +22,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"query": {
 					Type:        "STRING",
 					Description: "The symbol name to find.",
@@ -41,12 +41,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.FindUsages)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "find_definitions",
 		Description: "Finds the exact declaration(s) of a symbol using AST.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"query": {
 					Type:        "STRING",
 					Description: "The symbol name to find.",
@@ -60,12 +60,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.FindDefinitions)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "list_symbols",
 		Description: "Lists all top-level symbols (functions, types, constants, variables) in a package or directory.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The directory to scan (defaults to '.')",
@@ -78,12 +78,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.ListSymbols)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "list_implementations",
 		Description: "Map the relationship between interfaces and structs in the codebase.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"interface_name": {
 					Type:        "STRING",
 					Description: "The name of the interface to find implementors for.",
@@ -93,12 +93,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.ListImplementations)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "get_type_info",
 		Description: "Provides a detailed structural breakdown of a Go type, including fields, and all associated methods. Use this to understand internal state and behavior.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"typename": {
 					Type:        "STRING",
 					Description: "The name of the type to inspect.",
@@ -112,17 +112,17 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.GetTypeInfo)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
 	}, inf.GetProjectSummary)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "search_usages_globally",
 		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"query": {
 					Type:        "STRING",
 					Description: "The string or regex to search for.",
@@ -132,12 +132,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, sea.SearchUsagesGlobally)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "semantic_diff",
 		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"target": {
 					Type:        "STRING",
 					Description: "The git target (commit hash, branch name, or 'HEAD~1') to compare against.",
@@ -147,12 +147,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.SemanticDiff)
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "rename_symbol",
 		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"old_name": {
 					Type:        "STRING",
 					Description: "The current name of the symbol.",
@@ -174,12 +174,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ref.RenameSymbol, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "list_todos",
 		Description: "Scans the project for TODO, FIXME, or BUG comments.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The directory to scan (defaults to '.')",
@@ -188,12 +188,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, sea.ListTodos)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "go_doc",
 		Description: "Retrieves the official Go documentation and comments for a symbol or package. Best for understanding the intended usage of a library.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"symbol": {
 					Type:        "STRING",
 					Description: "The package or symbol to get documentation for (e.g., 'fmt.Println', './internal/tools').",
@@ -203,12 +203,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, inf.GoDoc)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "analyze_complexity",
 		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The file or directory to analyze.",
@@ -218,17 +218,17 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.AnalyzeComplexity)
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
 	}, ana.GetPackageGraph)
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "move_definition",
 		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"symbol": {
 					Type:        "STRING",
 					Description: "The name of the symbol to move.",

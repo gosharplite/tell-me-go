@@ -17,11 +17,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // App represents the tell-me-go application.
@@ -30,11 +30,11 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing types.PricingData) (*api.Client, error)
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
-	sm      *tools.SecurityManager
+	sm      *security.SecurityManager
 }
 
 type sessionPaths struct {
@@ -58,8 +58,7 @@ func New(version string) *App {
 		homeDir = "."
 	}
 
-	sm := tools.NewSecurityManager()
-	sm.SetInputReader(os.Stdin)
+	sm := security.NewSecurityManager(os.Stdin)
 
 	return &App{
 		Version: version,
@@ -68,10 +67,10 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) agent.Chatter {
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter {
 			return agent.New(client, hManager, reg, sm, disableStreaming)
 		},
-		ClientFactory: func(cfg *config.Config, pricing types.PricingData) (*api.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
 			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
@@ -128,7 +127,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	// 3. Initialize Security & Session
 	a.setupSecurity(paths, opts, cfg)
 
-	pricingOverrides := make(map[string]types.ModelPricing)
+	pricingOverrides := make(map[string]llm.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
 			pricingOverrides[k] = v.Pricing

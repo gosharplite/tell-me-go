@@ -8,16 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/index"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type TypeManager struct {
 	Indexer index.SymbolIndex
 	Cache   *astutil.ASTCache
-	SP      types.SecurityProvider
+	SP      security.SecurityProvider
 }
 
 type TypeDefinition struct {
@@ -35,7 +36,7 @@ type FieldInfo struct {
 	Tag   string
 }
 
-func NewTypeManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp types.SecurityProvider) *TypeManager {
+func NewTypeManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp security.SecurityProvider) *TypeManager {
 	return &TypeManager{
 		Indexer: idx,
 		Cache:   cache,
@@ -43,57 +44,57 @@ func NewTypeManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp types.Sec
 	}
 }
 
-func (m *TypeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *TypeManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Typename string `json:"typename"`
 		Path     string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	typename := params.Typename
 	if typename == "" {
-		return types.ToolResult{Text: "Please provide a typename."}, nil
+		return tools.ToolResult{Text: "Please provide a typename."}, nil
 	}
 
 	if err := m.Indexer.Refresh(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	locs, err := m.Indexer.Lookup(ctx, typename)
 	if err != nil || len(locs) == 0 {
-		return types.ToolResult{Text: "Type not found."}, nil
+		return tools.ToolResult{Text: "Type not found."}, nil
 	}
 
 	// For now, take the first definition
 	loc := locs[0]
 	f, _, err := m.Cache.Get(loc.Path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	ts, gd := astutil.FindTypeSpec(f, typename)
 	if ts == nil {
-		return types.ToolResult{Text: "Type not found."}, nil
+		return tools.ToolResult{Text: "Type not found."}, nil
 	}
 
 	def := m.extractDefinition(ts, gd, loc)
 	receivers, err := m.findMethodsInPackage(filepath.Dir(loc.Path), typename)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
-	return types.ToolResult{Text: m.renderTypeInfo(def, receivers)}, nil
+	return tools.ToolResult{Text: m.renderTypeInfo(def, receivers)}, nil
 }
 
-func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path         string `json:"path"`
 		ExportedOnly bool   `json:"exported_only"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -102,16 +103,16 @@ func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface
 	}
 	resolvedPath, err := m.SP.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if err := m.Indexer.Refresh(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, "", params.ExportedOnly)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	var results []string
@@ -133,34 +134,34 @@ func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No symbols found."}, nil
+		return tools.ToolResult{Text: "No symbols found."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *TypeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *TypeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		InterfaceName string `json:"interface_name"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if params.InterfaceName == "" {
-		return types.ToolResult{Text: "Please provide an interface_name."}, nil
+		return tools.ToolResult{Text: "Please provide an interface_name."}, nil
 	}
 
 	if err := m.Indexer.Refresh(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	implementors, err := m.Indexer.FindImplementors(ctx, params.InterfaceName)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if len(implementors) == 0 {
-		return types.ToolResult{Text: fmt.Sprintf("No implementors found for %s", params.InterfaceName)}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("No implementors found for %s", params.InterfaceName)}, nil
 	}
 
 	var sb strings.Builder
@@ -169,16 +170,16 @@ func (m *TypeManager) ListImplementations(ctx context.Context, args map[string]i
 		sb.WriteString(fmt.Sprintf("- %s.%s\n", imp.PkgPath, imp.Name))
 	}
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *TypeManager) FindUsages(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *TypeManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	query := params.Query
@@ -189,16 +190,16 @@ func (m *TypeManager) FindUsages(ctx context.Context, args map[string]interface{
 
 	resolvedPath, err := m.SP.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if err := m.Indexer.Refresh(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	locs, err := m.Indexer.GetUsages(ctx, query, resolvedPath)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	var results []string
@@ -209,18 +210,18 @@ func (m *TypeManager) FindUsages(ctx context.Context, args map[string]interface{
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No usages found."}, nil
+		return tools.ToolResult{Text: "No usages found."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -229,16 +230,16 @@ func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]inter
 	}
 	resolvedPath, err := m.SP.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if err := m.Indexer.Refresh(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, params.Query, false)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	var results []string
@@ -260,9 +261,9 @@ func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]inter
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No definitions found."}, nil
+		return tools.ToolResult{Text: "No definitions found."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
 func (m *TypeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc index.Location) TypeDefinition {
@@ -324,7 +325,7 @@ func (m *TypeManager) parseInterfaceMethods(list *ast.FieldList) []string {
 }
 
 func (m *TypeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
-	// Still using findMethodsInPackage with Walk/Cache because Indexer currently doesn't 
+	// Still using findMethodsInPackage with Walk/Cache because Indexer currently doesn't
 	// associate methods with types in a way that's easy to retrieve here.
 	// Future optimization: Indexer should store receiver types for functions.
 	var methods []string

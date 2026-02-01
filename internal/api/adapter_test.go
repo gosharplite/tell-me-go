@@ -1,15 +1,14 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package types
+package api
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"google.golang.org/genai"
 )
 
@@ -41,7 +40,7 @@ func TestPart_Conversion(t *testing.T) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
 	}
 
-	backToSDK := internalPart.ToSDK(context.Background(), nil)
+	backToSDK := ToSDKPart(context.Background(), internalPart, nil)
 	if !reflect.DeepEqual(backToSDK, sdkPart) {
 		t.Errorf("roundtrip failed: expected %+v, got %+v", sdkPart, backToSDK)
 	}
@@ -50,9 +49,9 @@ func TestPart_Conversion(t *testing.T) {
 func TestPart_ToSDK_LazyHydration(t *testing.T) {
 	assetID := "test-asset"
 	assetData := []byte("image-data")
-	p := &Part{
+	p := &llm.Part{
 		AssetID: assetID,
-		InlineData: &Blob{
+		InlineData: &llm.Blob{
 			MIMEType: "image/png",
 		},
 	}
@@ -66,7 +65,7 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 		},
 	}
 
-	sdkPart := p.ToSDK(context.Background(), resolver)
+	sdkPart := ToSDKPart(context.Background(), p, resolver)
 
 	if sdkPart.InlineData == nil {
 		t.Fatal("expected InlineData to be populated")
@@ -85,9 +84,9 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 }
 
 func TestContent_ToSDK(t *testing.T) {
-	content := &Content{
+	content := &llm.Content{
 		Role: "model",
-		Parts: []*Part{
+		Parts: []*llm.Part{
 			{
 				Text:             "thinking",
 				Thought:          true,
@@ -96,7 +95,7 @@ func TestContent_ToSDK(t *testing.T) {
 		},
 	}
 
-	sdkContent := content.ToSDK(context.Background(), nil)
+	sdkContent := ToSDKContent(context.Background(), content, nil)
 	if sdkContent.Role != content.Role {
 		t.Errorf("expected role %s, got %s", content.Role, sdkContent.Role)
 	}
@@ -105,24 +104,5 @@ func TestContent_ToSDK(t *testing.T) {
 	}
 	if !reflect.DeepEqual(sdkContent.Parts[0].ThoughtSignature, content.Parts[0].ThoughtSignature) {
 		t.Errorf("expected signature %v, got %v", content.Parts[0].ThoughtSignature, sdkContent.Parts[0].ThoughtSignature)
-	}
-}
-
-func TestContent_JSONSerialization(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  Content
-		contains string
-	}{
-		{"explicit role", Content{Role: "user", Parts: []*Part{{Text: "hi"}}}, `"role":"user"`},
-		{"empty role", Content{Role: "", Parts: []*Part{{Text: "hi"}}}, `"role":""`}, // Must not be omitted
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			b, _ := json.Marshal(tt.content)
-			if !strings.Contains(string(b), tt.contains) {
-				t.Errorf("expected JSON to contain %q, got %q", tt.contains, string(b))
-			}
-		})
 	}
 }

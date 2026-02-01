@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 func TestStreamResponse(t *testing.T) {
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	renderer := ui.NewStdUIRenderer(sm)
 
 	var stdout, stderr bytes.Buffer
@@ -26,13 +26,13 @@ func TestStreamResponse(t *testing.T) {
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, false)
 
-		ch <- &types.Content{
-			Parts: []*types.Part{
+		ch <- &llm.Content{
+			Parts: []*llm.Part{
 				{Thought: true, Text: "Thinking..."},
 			},
 		}
-		ch <- &types.Content{
-			Parts: []*types.Part{
+		ch <- &llm.Content{
+			Parts: []*llm.Part{
 				{Text: "Hello, world!"},
 			},
 		}
@@ -50,8 +50,8 @@ func TestStreamResponse(t *testing.T) {
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, true)
 
-		ch <- &types.Content{
-			Parts: []*types.Part{
+		ch <- &llm.Content{
+			Parts: []*llm.Part{
 				{Text: "Raw text"},
 			},
 		}
@@ -69,10 +69,10 @@ func TestStreamResponse(t *testing.T) {
 		ctx := context.Background()
 		ch, finalize := renderer.StreamResponse(ctx, true, false)
 
-		ch <- &types.Content{
-			Parts: []*types.Part{
+		ch <- &llm.Content{
+			Parts: []*llm.Part{
 				{
-					InlineData: &types.Blob{
+					InlineData: &llm.Blob{
 						MIMEType: "image/png",
 						Data:     []byte("fake data"),
 					},

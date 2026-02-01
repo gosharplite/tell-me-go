@@ -9,26 +9,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type mockLLMClient struct {
-	sendChatFunc      func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error)
-	streamChatFunc    func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error)
+	sendChatFunc      func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	streamChatFunc    func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
 	refreshAuthFunc   func() error
 	refreshAuthCalled int
 }
 
-func (m *mockLLMClient) SendChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	if m.sendChatFunc != nil {
 		return m.sendChatFunc(ctx, history, tools, resolver)
 	}
 	return nil, nil, nil
 }
 
-func (m *mockLLMClient) StreamChat(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+func (m *mockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	if m.streamChatFunc != nil {
 		return m.streamChatFunc(ctx, history, tools, resolver, callback)
 	}
@@ -50,7 +51,7 @@ func (m *mockLLMClient) RefreshAuth() error {
 func TestGenerate_FinalizeContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &mockLLMClient{
-		streamChatFunc: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		streamChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			select {} // Hang indefinitely
 		},
 	}
@@ -77,12 +78,12 @@ func TestGenerate_FinalizeContextCancellation(t *testing.T) {
 func TestGenerate_SendChat_AuthRetry(t *testing.T) {
 	callCount := 0
 	client := &mockLLMClient{
-		sendChatFunc: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
 				return nil, nil, errors.New("401 Unauthorized")
 			}
-			return &types.Content{Parts: []*types.Part{{Text: "success"}}}, &types.Metrics{}, nil
+			return &llm.Content{Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -109,12 +110,12 @@ func TestGenerate_SendChat_AuthRetry(t *testing.T) {
 func TestGenerate_RetryableError(t *testing.T) {
 	callCount := 0
 	client := &mockLLMClient{
-		sendChatFunc: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
 				return nil, nil, errors.New("429 Too Many Requests")
 			}
-			return &types.Content{Parts: []*types.Part{{Text: "success"}}}, &types.Metrics{}, nil
+			return &llm.Content{Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 		},
 	}
 
@@ -182,15 +183,15 @@ func TestWrapError(t *testing.T) {
 func TestGenerate_StreamChat_AuthRetry(t *testing.T) {
 	callCount := 0
 	client := &mockLLMClient{
-		streamChatFunc: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver, callback func(*types.Content)) (*types.Metrics, error) {
+		streamChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
 				// Fail on the first call (before any content is sent)
 				return nil, status.Error(codes.Unauthenticated, "expired token")
 			}
 			// Succeed on the second call
-			callback(&types.Content{Parts: []*types.Part{{Text: "success"}}})
-			return &types.Metrics{}, nil
+			callback(&llm.Content{Parts: []*llm.Part{{Text: "success"}}})
+			return &llm.Metrics{}, nil
 		},
 	}
 
@@ -232,7 +233,7 @@ func TestGenerate_StreamChat_AuthRetry(t *testing.T) {
 func TestGenerate_TerminalError(t *testing.T) {
 	callCount := 0
 	client := &mockLLMClient{
-		sendChatFunc: func(ctx context.Context, history []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (*types.Content, *types.Metrics, error) {
+		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			return nil, nil, errors.New("400 Bad Request")
 		},

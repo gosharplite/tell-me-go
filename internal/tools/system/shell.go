@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type ShellTool struct {
@@ -29,7 +29,7 @@ func NewShellTool(sm *security.SecurityManager) *ShellTool {
 	}
 }
 
-func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -40,19 +40,19 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		Append     bool   `json:"append"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	command := params.Command
 	if command == "" {
-		return types.ToolResult{}, fmt.Errorf("command argument is required")
+		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
 	outputFile := params.OutputFile
 	if outputFile != "" {
 		resolvedFile, err := t.sm.IsPathWritable(outputFile)
 		if err != nil {
-			return types.ToolResult{}, err
+			return tools.ToolResult{}, err
 		}
 		outputFile = resolvedFile
 	}
@@ -85,7 +85,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		char, err := t.sm.ReadSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
-			return types.ToolResult{}, err
+			return tools.ToolResult{}, err
 		}
 		if char == "y" {
 			approved = true
@@ -93,7 +93,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	}
 
 	if !approved {
-		return types.ToolResult{Text: fmt.Sprintf("User denied execution of command: %s", command)}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("User denied execution of command: %s", command)}, nil
 	}
 
 	t.sm.LogAudit("REASON", params.Reason, "COMMAND", command)
@@ -101,7 +101,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	// 3. Execute
 	parts, err := t.validator.Split(command)
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
 	}
 
 	fmt.Fprintf(os.Stderr, "\033[90mExecuting... (Output shown below)\033[0m\n")
@@ -115,7 +115,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	output := res.Output
@@ -123,12 +123,12 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		output = output[:50000] + "\n... (truncated)"
 	}
 
-	return types.ToolResult{
+	return tools.ToolResult{
 		Text: fmt.Sprintf("Exit Code: %d\nOutput:\n%s", res.ExitCode, output),
 	}, nil
 }
 
-func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -139,19 +139,19 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		Append     bool     `json:"append"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	commands := params.Commands
 	if len(commands) < 2 {
-		return types.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
+		return tools.ToolResult{}, fmt.Errorf("at least two commands are required for piping")
 	}
 
 	outputFile := params.OutputFile
 	if outputFile != "" {
 		resolvedFile, err := t.sm.IsPathWritable(outputFile)
 		if err != nil {
-			return types.ToolResult{}, err
+			return tools.ToolResult{}, err
 		}
 		outputFile = resolvedFile
 	}
@@ -190,7 +190,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		char, err := t.sm.ReadSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
-			return types.ToolResult{}, err
+			return tools.ToolResult{}, err
 		}
 		if char == "y" {
 			approved = true
@@ -198,7 +198,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	}
 
 	if !approved {
-		return types.ToolResult{Text: "User denied execution of pipeline."}, nil
+		return tools.ToolResult{Text: "User denied execution of pipeline."}, nil
 	}
 
 	t.sm.LogAudit("PIPELINE", strings.Join(commands, " | "), "REASON", params.Reason)
@@ -208,7 +208,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	for i, cmdStr := range commands {
 		parts, err := t.validator.Split(cmdStr)
 		if err != nil {
-			return types.ToolResult{Text: fmt.Sprintf("Error parsing command at index %d: %v", i, err)}, nil
+			return tools.ToolResult{Text: fmt.Sprintf("Error parsing command at index %d: %v", i, err)}, nil
 		}
 		pipedParts[i] = parts
 	}
@@ -224,7 +224,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
 
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	finalRes := res.Output
@@ -232,7 +232,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		finalRes = finalRes[:50000] + "\n... (truncated)"
 	}
 
-	return types.ToolResult{
+	return tools.ToolResult{
 		Text: fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, finalRes),
 	}, nil
 }

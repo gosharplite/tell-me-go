@@ -6,7 +6,7 @@ package events
 import (
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // TurnStatus contains the data needed for rendering turn status.
@@ -16,7 +16,7 @@ type TurnStatus struct {
 	MaxHistoryTurns  int
 	Tokens           int
 	MaxHistoryTokens int
-	Metrics          *types.Metrics
+	Metrics          *llm.Metrics
 	IsPostCall       bool
 	StartTime        time.Time
 }

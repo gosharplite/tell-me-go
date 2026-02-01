@@ -18,10 +18,11 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
@@ -40,11 +41,11 @@ type metricsManager struct {
 	logFile          string
 	model            string
 	mode             string
-	pricingOverrides map[string]types.ModelPricing
+	pricingOverrides map[string]llm.ModelPricing
 }
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]types.ModelPricing) {
+func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]llm.ModelPricing) {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -53,27 +54,27 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 		pricingOverrides: pricingOverrides,
 	}
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
-		return types.ToolResult{Text: res}, err
+		return tools.ToolResult{Text: res}, err
 	})
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
 		res, err := m.getCostSummary(ctx)
-		return types.ToolResult{Text: res}, err
+		return tools.ToolResult{Text: res}, err
 	})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]types.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]llm.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -101,7 +102,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 	var totalCached, totalPrompt, totalResponse int32
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		var mt types.Metrics
+		var mt llm.Metrics
 		if err := json.Unmarshal([]byte(scanner.Text()), &mt); err == nil {
 			totalCached += mt.CachedTokens
 			totalPrompt += mt.PromptTokens
@@ -126,7 +127,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 		(float64(totalPrompt) * p.Miss / 1e6) +
 		(float64(totalResponse) * p.Comp / 1e6)
 
-	summary := types.Metrics{
+	summary := llm.Metrics{
 		Timestamp:      time.Now().Format(time.RFC3339),
 		CachedTokens:   totalCached,
 		PromptTokens:   totalPrompt,
@@ -214,7 +215,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	}
 
 	// 5. Write back atomically
-	if bytes, err := json.MarshalIndent(history, "", "  "); err == nil {
+	if bytes, err := json.Marshal(history); err == nil {
 		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 	}
 }
@@ -266,7 +267,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 }
 
 // GetPricing handles the tiered fetching of pricing data: Local Cache -> Remote -> Hardcoded Fallback.
-func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) types.PricingData {
+func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) llm.PricingData {
 	sm.PricingMu().Lock()
 	defer sm.PricingMu().Unlock()
 
@@ -280,7 +281,7 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	}
 
 	cachePath := filepath.Join(globalDir, "global_prices.json")
-	var data types.PricingData
+	var data llm.PricingData
 	useCache := false
 
 	// 1. Try Local Cache
@@ -320,7 +321,7 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	return data
 }
 
-func (m *metricsManager) getModelPricing(modelName string, pricing types.PricingData) types.ModelPricing {
+func (m *metricsManager) getModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
 	// 1. Exact match
 	if p, ok := pricing.Models[modelName]; ok {
 		return p

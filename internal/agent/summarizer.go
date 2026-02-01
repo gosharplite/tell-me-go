@@ -9,7 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // Summarizer implements the HistorySummarizer interface using an LLM gateway.
@@ -24,7 +24,7 @@ func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
 }
 
 // Summarize uses the LLM to compress a subset of history.
-func (s *Summarizer) Summarize(ctx context.Context, subset []*types.Content, focus string) (string, error) {
+func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 	if s.events != nil {
 		s.events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)),
@@ -33,26 +33,26 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*types.Content, foc
 	}
 
 	// Transform history to text-only to avoid INVALID_ARGUMENT
-	summarizerInput := make([]*types.Content, len(subset))
+	summarizerInput := make([]*llm.Content, len(subset))
 	for i, c := range subset {
-		summarizerInput[i] = &types.Content{Role: c.Role}
+		summarizerInput[i] = &llm.Content{Role: c.Role}
 		for _, p := range c.Parts {
 			if p.Text != "" {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{Text: p.Text})
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{Text: p.Text})
 			}
 			if p.FunctionCall != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
 					Text: fmt.Sprintf("[Model called tool: %s with args: %v]", p.FunctionCall.Name, p.FunctionCall.Args),
 				})
 			}
 			if p.FunctionResponse != nil {
 				res := p.FunctionResponse.Response["result"]
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
 					Text: fmt.Sprintf("[Tool %s returned: %v]", p.FunctionResponse.Name, res),
 				})
 			}
 			if p.InlineData != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &types.Part{
+				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
 					Text: fmt.Sprintf("[Binary Data: %s]", p.InlineData.MIMEType),
 				})
 			}
@@ -63,9 +63,9 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*types.Content, foc
 	if focus != "" {
 		prompt += fmt.Sprintf("\nFocus: %s", focus)
 	}
-	summarizerInput = append(summarizerInput, &types.Content{
+	summarizerInput = append(summarizerInput, &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: prompt}},
+		Parts: []*llm.Part{{Text: prompt}},
 	})
 
 	// We need a resolver for the gateway call, but since we've stripped binary data, it's mostly for satisfying the interface.

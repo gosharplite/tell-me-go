@@ -11,13 +11,13 @@ import (
 
 func TestIndexer_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create a dummy project
 	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	code := `package test
 func F1() {}
 func F2() {}
@@ -33,7 +33,7 @@ func F2() {}
 	}
 
 	ctx := context.Background()
-	
+
 	// Pre-warm the index
 	if err := idx.Refresh(ctx); err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func F2() {}
 		}()
 	}
 
-	// 2 goroutines doing Refresh frequently (forcing TTL bypass if we could, 
+	// 2 goroutines doing Refresh frequently (forcing TTL bypass if we could,
 	// but here we just test that they don't crash or return empty results)
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
@@ -68,7 +68,7 @@ func F2() {}
 			defer wg.Done()
 			<-start
 			for j := 0; j < 10; j++ {
-				// We don't wait for TTL here to test concurrency safety, 
+				// We don't wait for TTL here to test concurrency safety,
 				// though Refresh will actually skip if TTL not met.
 				// To force a refresh, we'd need to manipulate lastRefresh or wait.
 				// For race testing, even the skipping path is valuable.

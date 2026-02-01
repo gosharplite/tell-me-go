@@ -10,21 +10,22 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	internaltools "github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type toolExecResult struct {
 	index int
 	name  string
-	tr    types.ToolResult
+	tr    domaintools.ToolResult
 }
 
 // ToolExecutor handles the execution of tools, using a WorkerPool for concurrency.
 type ToolExecutor struct {
 	registry           *registry.Registry
-	sm                 *tools.SecurityManager
+	sm                 *internaltools.SecurityManager
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -33,7 +34,7 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry *registry.Registry, sm *internaltools.SecurityManager, bus events.EventBus) *ToolExecutor {
 	return &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
@@ -64,8 +65,8 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 }
 
 // Execute handles the execution of function calls from the model response.
-func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) (*types.Content, error) {
-	var functionCalls []*types.FunctionCall
+func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+	var functionCalls []*llm.FunctionCall
 	for _, part := range respContent.Parts {
 		if part.FunctionCall != nil {
 			functionCalls = append(functionCalls, part.FunctionCall)
@@ -83,7 +84,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 				Level:   "error",
 			})
 		}
-		return nil, types.ErrMaxTurnsReached
+		return nil, llm.ErrMaxTurnsReached
 	}
 
 	if e.events != nil {
@@ -105,7 +106,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	}()
 
 	// Collect results as they arrive
-	trs := make([]types.ToolResult, len(functionCalls))
+	trs := make([]domaintools.ToolResult, len(functionCalls))
 	completedCount := 0
 	for completedCount < len(functionCalls) {
 		select {
@@ -124,12 +125,12 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	}
 	wg.Wait()
 
-	var responseParts []*types.Part
+	var responseParts []*llm.Part
 	for i, tr := range trs {
 		responseParts = append(responseParts, e.strategy.Format(functionCalls[i].Name, tr))
 		for _, b := range tr.BinaryData {
-			responseParts = append(responseParts, &types.Part{
-				InlineData: &types.Blob{
+			responseParts = append(responseParts, &llm.Part{
+				InlineData: &llm.Blob{
 					MIMEType: b.MIMEType,
 					Data:     b.Data,
 				},
@@ -137,13 +138,13 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 		}
 	}
 
-	return &types.Content{
+	return &llm.Content{
 		Role:  "user",
 		Parts: responseParts,
 	}, nil
 }
 
-func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
+func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
 	var wg sync.WaitGroup
 
 	for i, fc := range calls {
@@ -153,7 +154,7 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: i, name: fc.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						resChan <- toolExecResult{index: i, name: fc.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
 				tr := e.executeTool(ctx, fc)
@@ -166,7 +167,7 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 				defer wg.Done()
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: idx, name: call.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						resChan <- toolExecResult{index: idx, name: call.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 					}
 				}()
 				tr := e.executeTool(ctx, call)
@@ -177,7 +178,7 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 	wg.Wait()
 }
 
-func (e *ToolExecutor) executeTool(parentCtx context.Context, call *types.FunctionCall) types.ToolResult {
+func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -190,14 +191,14 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *types.Functi
 	defer cancel()
 
 	type res struct {
-		tr  types.ToolResult
+		tr  domaintools.ToolResult
 		err error
 	}
 	resChan := make(chan res, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- res{tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+				resChan <- res{tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
@@ -208,12 +209,12 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *types.Functi
 	select {
 	case <-ctx.Done():
 		if ctx.Err() == context.DeadlineExceeded {
-			return types.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", e.toolTimeout)}
+			return domaintools.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", e.toolTimeout)}
 		}
-		return types.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
+		return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
 	case r := <-resChan:
 		if r.err != nil {
-			return types.ToolResult{Text: fmt.Sprintf("Error: %v", r.err)}
+			return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", r.err)}
 		}
 		return r.tr
 	}

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type ChangeAnalyzer struct {
@@ -26,12 +26,12 @@ func NewChangeAnalyzer(cache *astutil.ASTCache, exec CommandExecutor) *ChangeAna
 	}
 }
 
-func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Target string `json:"target"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	target := params.Target
@@ -53,7 +53,7 @@ func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]inter
 	// Get list of changed .go files
 	filesOut, err := a.Exec.CombinedOutput(ctx, "git", "diff", "--name-only", target)
 	if err != nil {
-		return types.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
+		return tools.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
 	}
 
 	changedFiles := strings.Split(strings.TrimSpace(string(filesOut)), "\n")
@@ -97,5 +97,5 @@ func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]inter
 		}
 	}
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }

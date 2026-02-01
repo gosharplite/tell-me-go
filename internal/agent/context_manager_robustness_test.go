@@ -9,15 +9,16 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type mockGateway struct {
-	generateFn func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error))
+	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
 }
 
-func (m *mockGateway) Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 	return m.generateFn(ctx, input, tools, resolver)
 }
 
@@ -35,9 +36,9 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
-	_ = hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{Text: "call tool"}}})
-	_ = hManager.AddContent(ctx, &types.Content{Role: "model", Parts: []*types.Part{{FunctionCall: &types.FunctionCall{Name: "test_tool"}}}})
-	_ = hManager.AddContent(ctx, &types.Content{Role: "user", Parts: []*types.Part{{FunctionResponse: &types.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockRegistry{}
 	strategy := NewContextStrategy(reg)
@@ -79,36 +80,36 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
 
-	subset := []*types.Content{
+	subset := []*llm.Content{
 		{
 			Role: "model",
-			Parts: []*types.Part{
-				{FunctionCall: &types.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
-				{InlineData: &types.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
 			},
 		},
 		{
 			Role: "user",
-			Parts: []*types.Part{
-				{FunctionResponse: &types.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
 			},
 		},
 	}
 
-	var capturedInput []*types.Content
-	gateway := &mockGateway{
-		generateFn: func(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
+	var capturedInput []*llm.Content
+	g := &mockGateway{
+		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			capturedInput = input
-			ch := make(chan *types.Content, 1)
-			ch <- &types.Content{Parts: []*types.Part{{Text: "Summary"}}}
+			ch := make(chan *llm.Content, 1)
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}
 			close(ch)
-			return ch, func() (*types.Content, *types.Metrics, error) {
-				return &types.Content{Parts: []*types.Part{{Text: "Summary"}}}, &types.Metrics{}, nil
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
 			}
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &events.SimpleEventBus{})
+	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, g, &events.SimpleEventBus{})
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
@@ -151,9 +152,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 }
 
 type mockRegistry struct {
-	ToolRegistry
 }
 
-func (m *mockRegistry) GetDeclarations() []*types.ToolDeclaration {
+func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
 }

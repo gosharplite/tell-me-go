@@ -12,10 +12,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type fileSkeleton struct {
@@ -32,42 +32,42 @@ var skeletonPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^\w+\(\)\s*\{`),
 }
 
-func (s *fileSkeleton) getFileSkeleton(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (s *fileSkeleton) getFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if params.FilePath == "" {
-		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
+		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
 	resolvedPath, err := s.sm.IsPathSafe(params.FilePath)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	return s.extractGenericSkeleton(ctx, resolvedPath)
 }
 
-func (s *fileSkeleton) extractGenericSkeleton(ctx context.Context, path string) (types.ToolResult, error) {
+func (s *fileSkeleton) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {
 	file, err := s.fs.Open(ctx, path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	defer file.Close()
 
 	ext := filepath.Ext(path)
 	skeleton, err := scanForDefinitions(file, ext)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if skeleton == "" {
-		return types.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
+		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
 	}
-	return types.ToolResult{Text: skeleton}, nil
+	return tools.ToolResult{Text: skeleton}, nil
 }
 
 func scanForDefinitions(r io.Reader, ext string) (string, error) {

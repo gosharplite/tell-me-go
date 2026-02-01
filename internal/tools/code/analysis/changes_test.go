@@ -12,7 +12,7 @@ import (
 
 func TestChangeAnalyzer_SemanticDiff(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create a dummy file in the temp dir to represent the "current" state
 	currCode := `package p
 func NewFunc() {}

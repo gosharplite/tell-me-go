@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type NetworkTool struct {
@@ -26,7 +26,7 @@ func NewNetworkTool(sm *security.SecurityManager) *NetworkTool {
 	return &NetworkTool{sm: sm}
 }
 
-func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Method  string            `json:"method"`
 		URL     string            `json:"url"`
@@ -34,7 +34,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 		Body    string            `json:"body"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	method := params.Method
@@ -54,7 +54,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	for k, v := range params.Headers {
@@ -64,7 +64,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -72,7 +72,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
 	respBody, err := io.ReadAll(limitReader)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to read response: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var sb strings.Builder
@@ -89,20 +89,20 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	}
 	sb.WriteString(respBodyStr)
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		URL string `json:"url"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	url := params.URL
 	if url == "" {
-		return types.ToolResult{}, fmt.Errorf("url argument is required")
+		return tools.ToolResult{}, fmt.Errorf("url argument is required")
 	}
 
 	client := &http.Client{
@@ -112,19 +112,19 @@ func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := client.Do(req)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return types.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return tools.ToolResult{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Limit reader to prevent DoS
 	limitReader := io.LimitReader(resp.Body, 50001)
 	body, err := io.ReadAll(limitReader)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	content := string(body)
@@ -150,5 +150,5 @@ func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		content = content[:10000] + "\n... (truncated)"
 	}
 
-	return types.ToolResult{Text: content}, nil
+	return tools.ToolResult{Text: content}, nil
 }

@@ -6,7 +6,8 @@ package agent
 import (
 	"fmt"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Warning represents a safety or limit message for the model.
@@ -25,7 +26,7 @@ type ContextStrategy struct {
 
 // ToolRegistry defines the interface for accessing tool declarations.
 type ToolRegistry interface {
-	GetDeclarations() []*types.ToolDeclaration
+	GetDeclarations() []*tools.ToolDeclaration
 }
 
 // NewContextStrategy creates a new context strategy.
@@ -62,7 +63,7 @@ func (cs *ContextStrategy) GetLimits() (int, int, int) {
 }
 
 // EstimateTokens provides a heuristic-based token count with incremental caching.
-func (cs *ContextStrategy) EstimateTokens(contents []*types.Content) int {
+func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
 	totalTokens := 0
 
 	// Overhead for tools

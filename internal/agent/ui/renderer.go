@@ -14,25 +14,26 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"golang.org/x/term"
 )
 
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
-	RenderResponse(respContent *types.Content, showThoughts, rawOutput bool)
-	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content)
+	RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool)
+	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
 	LogTurnStatus(status events.TurnStatus)
-	LogUsage(m *types.Metrics, logFile string, startTime time.Time)
-	LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool)
-	LogToolResult(name string, result types.ToolResult, showTools bool)
+	LogUsage(m *llm.Metrics, logFile string, startTime time.Time)
+	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
+	LogToolResult(name string, result tools.ToolResult, showTools bool)
 	LogSystemMessage(msg string, level string)
 }
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
 type StdUIRenderer struct {
-	sm       *tools.SecurityManager
+	sm       *security.SecurityManager
 	stdout   io.Writer
 	stderr   io.Writer
 	now      func() time.Time
@@ -41,7 +42,7 @@ type StdUIRenderer struct {
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
-	aggregated    *types.Content
+	aggregated    *llm.Content
 	totalText     strings.Builder
 	thoughtActive bool
 	showThoughts  bool
@@ -49,7 +50,7 @@ type streamState struct {
 }
 
 // NewStdUIRenderer creates a new StdUIRenderer.
-func NewStdUIRenderer(sm *tools.SecurityManager) *StdUIRenderer {
+func NewStdUIRenderer(sm *security.SecurityManager) *StdUIRenderer {
 	tr, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
@@ -69,7 +70,7 @@ func (r *StdUIRenderer) SetWriters(stdout, stderr io.Writer) {
 	r.stderr = stderr
 }
 
-func (r *StdUIRenderer) LogUsage(m *types.Metrics, logFile string, startTime time.Time) {
+func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.Time) {
 	if logFile == "" || m == nil {
 		return
 	}
@@ -153,7 +154,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	}
 }
 
-func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts, rawOutput bool) {
+func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			r.sm.TerminalLock()
@@ -182,10 +183,10 @@ func (r *StdUIRenderer) RenderResponse(respContent *types.Content, showThoughts,
 	}
 }
 
-func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *types.Content, func() *types.Content) {
-	ch := make(chan *types.Content, 100)
+func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
+	ch := make(chan *llm.Content, 100)
 	state := &streamState{
-		aggregated:   &types.Content{Role: "model"},
+		aggregated:   &llm.Content{Role: "model"},
 		showThoughts: showThoughts,
 		rawOutput:    rawOutput,
 	}
@@ -199,7 +200,7 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	}()
 
 	var once sync.Once
-	finalize := func() *types.Content {
+	finalize := func() *llm.Content {
 		once.Do(func() {
 			close(ch)
 			wg.Wait()
@@ -211,7 +212,7 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	return ch, finalize
 }
 
-func (r *StdUIRenderer) processStream(ctx context.Context, ch <-chan *types.Content, state *streamState) {
+func (r *StdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Content, state *streamState) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -229,7 +230,7 @@ func (r *StdUIRenderer) processStream(ctx context.Context, ch <-chan *types.Cont
 	}
 }
 
-func (r *StdUIRenderer) renderStreamPart(state *streamState, part *types.Part) {
+func (r *StdUIRenderer) renderStreamPart(state *streamState, part *llm.Part) {
 	if part.Thought {
 		r.handleThoughtPart(state, part)
 	} else if part.Text != "" {
@@ -241,7 +242,7 @@ func (r *StdUIRenderer) renderStreamPart(state *streamState, part *types.Part) {
 	}
 }
 
-func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *types.Part) {
+func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 	if !state.thoughtActive && state.showThoughts {
 		r.safePrintStderr(fmt.Sprintf("\033[0;90m[%s] [Thinking]\n", r.now().Format("15:04:05")))
 		state.thoughtActive = true
@@ -251,13 +252,13 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *types.Part) 
 	}
 }
 
-func (r *StdUIRenderer) handleTextPart(state *streamState, part *types.Part) {
+func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
 	fmt.Fprint(r.stdout, part.Text)
 	state.totalText.WriteString(part.Text)
 }
 
-func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *types.Part) {
+func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
 	r.safePrintStderr(fmt.Sprintf("\n\033[0;90m[%s] [Media] %s (%d bytes)\033[0m\n",
 		r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data)))
@@ -326,7 +327,7 @@ func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
 	return lines
 }
 
-func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns int, showTools bool) {
+func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
@@ -357,7 +358,7 @@ func (r *StdUIRenderer) LogToolCall(calls []*types.FunctionCall, turn, maxTurns 
 	}
 }
 
-func (r *StdUIRenderer) LogToolResult(name string, result types.ToolResult, showTools bool) {
+func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
 	if !showTools {
 		return
 	}

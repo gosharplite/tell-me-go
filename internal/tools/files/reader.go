@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type fileReader struct {
@@ -21,12 +21,12 @@ type fileReader struct {
 	fs fsutil.FileSystem
 }
 
-func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -36,12 +36,12 @@ func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{})
 
 	resolvedPath, err := r.sm.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	entries, err := r.fs.ReadDir(ctx, resolvedPath)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to list directory: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to list directory: %w", err)
 	}
 
 	var sb strings.Builder
@@ -54,16 +54,16 @@ func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{})
 		sb.WriteString(fmt.Sprintf("[%s] %s\n", typeStr, entry.Name()))
 	}
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path     string `json:"path"`
 		MaxDepth int    `json:"max_depth"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -73,7 +73,7 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 
 	resolvedPath, err := r.sm.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	maxDepth := params.MaxDepth
@@ -84,9 +84,9 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 	var sb strings.Builder
 	err = buildTree(ctx, r.fs, resolvedPath, "", 0, maxDepth, &sb)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
 func buildTree(ctx context.Context, fs fsutil.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
@@ -121,47 +121,47 @@ func buildTree(ctx context.Context, fs fsutil.FileSystem, path, indent string, d
 	return nil
 }
 
-func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.FilePath
 	if path == "" {
-		return types.ToolResult{}, fmt.Errorf("filepath argument is required")
+		return tools.ToolResult{}, fmt.Errorf("filepath argument is required")
 	}
 
 	resolvedPath, err := r.sm.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	content, err := r.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
 	if len(content) > 100000 {
-		return types.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
+		return tools.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
 	}
 
-	return types.ToolResult{Text: string(content)}, nil
+	return tools.ToolResult{Text: string(content)}, nil
 }
 
-func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path    string `json:"path"`
 		Pattern string `json:"pattern"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if params.Pattern == "" {
-		return types.ToolResult{}, fmt.Errorf("pattern argument is required")
+		return tools.ToolResult{}, fmt.Errorf("pattern argument is required")
 	}
 
 	var results []string
@@ -179,22 +179,22 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 	// fileReader doesn't have walkAndProcess, I should probably move it to a shared place or redefine it.
 	// Actually, search_files uses walkAndProcess. I'll move walkAndProcess to a internal helper in this package.
 	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, processor); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No files found matching pattern."}, nil
+		return tools.ToolResult{Text: "No files found matching pattern."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		File1 string `json:"file1"`
 		File2 string `json:"file2"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	file1 := params.File1
@@ -202,30 +202,30 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 
 	resolved1, err := r.sm.IsPathSafe(file1)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	resolved2, err := r.sm.IsPathSafe(file2)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if _, err := exec.LookPath("diff"); err != nil {
-		return types.ToolResult{}, fmt.Errorf("'diff' command not found: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("'diff' command not found: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
 	out, err := cmd.CombinedOutput()
 
 	if len(out) == 0 && err == nil {
-		return types.ToolResult{Text: "Files are identical."}, nil
+		return tools.ToolResult{Text: "Files are identical."}, nil
 	}
 
 	// diff returns exit code 1 if files differ, which is an error for Command.CombinedOutput
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
-			return types.ToolResult{}, fmt.Errorf("diff failed: %w", err)
+			return tools.ToolResult{}, fmt.Errorf("diff failed: %w", err)
 		}
 	}
 
-	return types.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}, nil
 }

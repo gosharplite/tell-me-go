@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package types
+package pricing
 
 // ModelPricing represents the cost structure for a specific model tier.
 type ModelPricing struct {

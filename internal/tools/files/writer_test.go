@@ -40,7 +40,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 		"filepath": filePath,
 		"old_text": "target",
 		"new_text": "replaced",
-		"reason": "testing",
+		"reason":   "testing",
 	}
 	_, err = w.replaceText(ctx, args)
 	if err == nil {
@@ -130,7 +130,6 @@ func TestAppendText(t *testing.T) {
 	}
 }
 
-
 type mockFS struct {
 	fsutil.FileSystem
 	mkdirErr error
@@ -154,14 +153,14 @@ func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, pe
 func TestWriteFile_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	
+
 	t.Run("mkdir failure", func(t *testing.T) {
 		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
 		w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: mfs}
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": "/tmp/any/file.txt",
-			"content": "test",
-			"reason": "testing",
+			"content":  "test",
+			"reason":   "testing",
 		})
 		if err == nil || !strings.Contains(err.Error(), "disk full") {
 			t.Errorf("expected disk full error, got %v", err)
@@ -175,8 +174,8 @@ func TestWriteFile_Failures(t *testing.T) {
 		path := filepath.Join(tempDir, "file.txt")
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": path,
-			"content": "test",
-			"reason": "testing",
+			"content":  "test",
+			"reason":   "testing",
 		})
 		if err == nil || !strings.Contains(err.Error(), "write error") {
 			t.Errorf("expected write error, got %v", err)

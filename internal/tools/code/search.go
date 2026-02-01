@@ -11,21 +11,22 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type SearchManager struct {
-	SP types.SecurityProvider
+	SP security.SecurityProvider
 }
 
-func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -35,7 +36,7 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 
 	resolvedPath, err := m.SP.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -77,26 +78,26 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 	})
 
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
+		return tools.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	query := params.Query
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
@@ -159,16 +160,16 @@ func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 	})
 
 	if err != nil && err.Error() != "too many results" {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No matches found."}, nil
+		return tools.ToolResult{Text: "No matches found."}, nil
 	}
 
 	out := strings.Join(results, "\n")
 	if err != nil && err.Error() == "too many results" {
 		out += "\n... (truncated)"
 	}
-	return types.ToolResult{Text: out}, nil
+	return tools.ToolResult{Text: out}, nil
 }

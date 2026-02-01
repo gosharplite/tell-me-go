@@ -10,7 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // Clock provides a way to get the current time, facilitating deterministic testing.
@@ -44,19 +44,19 @@ type ProcessResult struct {
 type TurnState struct {
 	Phase        TurnPhase        `json:"phase"`
 	HasToolCalls bool             `json:"has_tool_calls"`
-	Metrics      *types.Metrics   `json:"metrics,omitempty"`
+	Metrics      *llm.Metrics     `json:"metrics,omitempty"`
 	Tokens       int              `json:"tokens"`
 	CurrentTurns int              `json:"current_turns"`
 	Metadata     *ContextMetadata `json:"metadata,omitempty"`
-	Response     *types.Content   `json:"response,omitempty"`
-	ToolResponse *types.Content   `json:"tool_response,omitempty"`
+	Response     *llm.Content     `json:"response,omitempty"`
+	ToolResponse *llm.Content     `json:"tool_response,omitempty"`
 	LastError    error            `json:"-"`
 	RetryCount   int              `json:"retry_count"`
 }
 
 // IToolExecutor defines the interface for tool execution.
 type IToolExecutor interface {
-	Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) (*types.Content, error)
+	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
 // TurnProcessor defines a single stage in the TurnEngine pipeline.
@@ -89,7 +89,7 @@ type Turn struct {
 	Clock        Clock
 
 	// StreamHandler allows external handling of LLM response streams.
-	StreamHandler func(context.Context, <-chan *types.Content)
+	StreamHandler func(context.Context, <-chan *llm.Content)
 
 	// Results/Outputs
 	Stop bool
@@ -171,7 +171,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 
 		_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
 		if i > maxTurns {
-			return fmt.Errorf("%w: turn %d exceeds limit %d", types.ErrMaxTurnsReached, i, maxTurns)
+			return fmt.Errorf("%w: turn %d exceeds limit %d", llm.ErrMaxTurnsReached, i, maxTurns)
 		}
 
 		if e.events != nil {
@@ -299,7 +299,7 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	return ProcessResult{}
 }
 
-func (p *InferenceStep) hasToolCalls(content *types.Content) bool {
+func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
 	if content == nil {
 		return false
 	}
@@ -394,7 +394,7 @@ func WithEvents(bus events.EventBus) TurnMiddleware {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			// Setup for specific phases
 			if turn.State.Phase == PhaseInference && bus != nil {
-				turn.StreamHandler = func(ctx context.Context, stream <-chan *types.Content) {
+				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
 					bus.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}

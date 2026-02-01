@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 func contains(s, substr string) bool {
@@ -15,10 +16,10 @@ func contains(s, substr string) bool {
 }
 
 type mockToolRegistry struct {
-	declarations []*types.ToolDeclaration
+	declarations []*tools.ToolDeclaration
 }
 
-func (m *mockToolRegistry) GetDeclarations() []*types.ToolDeclaration {
+func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return m.declarations
 }
 
@@ -71,11 +72,11 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 
 	t.Run("Tool Declarations", func(t *testing.T) {
-		registry.declarations = []*types.ToolDeclaration{
+		registry.declarations = []*tools.ToolDeclaration{
 			{
 				Name:        "my_tool",
 				Description: "does something",
-				Parameters:  &types.Schema{Type: "object"},
+				Parameters:  &tools.Schema{Type: "object"},
 			},
 		}
 		// charCount = base(300) + (len("my_tool") (7) + len("does something") (14)) / 4 + 50 (params)
@@ -88,11 +89,11 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 
 	t.Run("Blob Handling", func(t *testing.T) {
-		contents := []*types.Content{
+		contents := []*llm.Content{
 			{
-				Parts: []*types.Part{
+				Parts: []*llm.Part{
 					{
-						InlineData: &types.Blob{
+						InlineData: &llm.Blob{
 							MIMEType: "image/png",
 							Data:     make([]byte, 10000), // Large blob
 						},
@@ -110,11 +111,11 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 
 	t.Run("Recursive Map/Slice", func(t *testing.T) {
-		contents := []*types.Content{
+		contents := []*llm.Content{
 			{
-				Parts: []*types.Part{
+				Parts: []*llm.Part{
 					{
-						FunctionCall: &types.FunctionCall{
+						FunctionCall: &llm.FunctionCall{
 							Name: "test",
 							Args: map[string]interface{}{
 								"nested": []interface{}{1, 2},

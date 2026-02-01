@@ -11,10 +11,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -42,7 +43,7 @@ type Agent struct {
 	engine        *TurnEngine
 	ctxManager    *ContextManager
 	registry      *registry.Registry
-	sm            *tools.SecurityManager
+	sm            *security.SecurityManager
 	configWatcher *ConfigWatcher
 	strategy      *ContextStrategy
 	executor      *executor.ToolExecutor
@@ -93,7 +94,7 @@ func WithMainConfigPath(path string) AgentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
+func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 	strategy := NewContextStrategy(reg)
@@ -134,12 +135,12 @@ func (a *Agent) emit(e events.Event) {
 }
 
 func (a *Agent) registerInternalTools() {
-	a.registry.Register(&types.ToolDeclaration{
+	a.registry.Register(&tools.ToolDeclaration{
 		Name:        "summarize_history",
 		Description: "Summarizes a specified number of older conversation turns to free up context space.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"turns": {
 					Type:        "NUMBER",
 					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
@@ -195,9 +196,9 @@ func (a *Agent) refreshLimits() {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
-	if err := s.History.AddContent(ctx, &types.Content{
+	if err := s.History.AddContent(ctx, &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: prompt}},
+		Parts: []*llm.Part{{Text: prompt}},
 	}); err != nil {
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}

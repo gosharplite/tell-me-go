@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/config"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
@@ -22,7 +22,7 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 		modeDir: tmpDir,
 		logPath: filepath.Join(tmpDir, "tokens.log"),
 	}
-	pricingOverrides := make(map[string]types.ModelPricing)
+	pricingOverrides := make(map[string]llm.ModelPricing)
 
 	reg := app.setupRegistry(nil, cfg, paths, pricingOverrides)
 

@@ -10,8 +10,9 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // ContextManager encapsulates context preparation, policy enforcement, and summarization.
@@ -33,7 +34,7 @@ func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGate
 }
 
 // Prepare calculates the current context, enforces limits, and handles auto-summarization using a pipeline.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Content, *ContextMetadata, error) {
+func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
 	maxTokens, _, maxTurns := cm.Strategy.GetLimits()
 
 	req := &ContextRequest{
@@ -81,7 +82,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 	req.Metadata.FinalTokenCount = finalTokens
 
 	if finalTokens > maxTokens {
-		return nil, nil, fmt.Errorf("%w: %d > %d", types.ErrContextLimitExceeded, finalTokens, maxTokens)
+		return nil, nil, fmt.Errorf("%w: %d > %d", llm.ErrContextLimitExceeded, finalTokens, maxTokens)
 	}
 
 	req.Metadata.FinalTurnCount = len(req.Result) / 2
@@ -89,18 +90,18 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 }
 
 // SummarizeHistoryTool implements the summarize_history tool.
-func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
 		Focus string  `json:"focus"`
 	}
-	if err := types.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	targetTurns := int(params.Turns)
 	if targetTurns <= 0 {
-		return types.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
+		return tools.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
 	}
 
 	contents := cm.History.GetContents()
@@ -112,30 +113,30 @@ func (cm *ContextManager) SummarizeHistoryTool(ctx context.Context, args map[str
 	}
 
 	if targetTurns <= 0 {
-		return types.ToolResult{Text: "History is too short to summarize yet."}, nil
+		return tools.ToolResult{Text: "History is too short to summarize yet."}, nil
 	}
 
 	msgsToSummarize := targetTurns * 2
 
 	summary, err := cm.Summarizer.Summarize(ctx, contents[:msgsToSummarize], params.Focus)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
-	newMsgs := []*types.Content{
+	newMsgs := []*llm.Content{
 		{
 			Role:  "user",
-			Parts: []*types.Part{{Text: "System Summary of previous context:\n\n" + summary}},
+			Parts: []*llm.Part{{Text: "System Summary of previous context:\n\n" + summary}},
 		},
 		{
 			Role:  "model",
-			Parts: []*types.Part{{Text: "Understood. I have integrated the summarized context."}},
+			Parts: []*llm.Part{{Text: "Understood. I have integrated the summarized context."}},
 		},
 	}
 
 	if err := cm.History.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
-		return types.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("failed to update history with summary: %w", err)
 	}
 
-	return types.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", targetTurns)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Summarized the first %d turns of history.", targetTurns)}, nil
 }

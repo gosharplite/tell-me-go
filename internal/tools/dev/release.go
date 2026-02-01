@@ -12,16 +12,16 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // RegisterRelease adds release management tools to the registry.
 func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 	m := &releaseManager{sm: sm}
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
 	}, m.verifyReleaseReadiness)
@@ -31,7 +31,7 @@ type releaseManager struct {
 	sm *security.SecurityManager
 }
 
-func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}) (types.ToolResult, error) {
+func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}) (tools.ToolResult, error) {
 	var report strings.Builder
 	report.WriteString("### Release Readiness Report\n\n")
 
@@ -118,7 +118,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 		report.WriteString("- [OK] All tests passed (including race detector).\n")
 	}
 
-	return types.ToolResult{Text: report.String()}, nil
+	return tools.ToolResult{Text: report.String()}, nil
 }
 
 func isBinaryFile(path string) bool {

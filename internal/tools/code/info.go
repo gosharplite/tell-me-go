@@ -11,15 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type InfoManager struct {
-	SP types.SecurityProvider
+	SP security.SecurityProvider
 }
 
-func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 
@@ -71,7 +72,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	})
 
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	sb.WriteString("\nFile Counts:\n")
@@ -85,15 +86,15 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	}
 	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol string `json:"symbol"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	symbol := params.Symbol
@@ -106,8 +107,8 @@ func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
 	}
 
-	return types.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: string(out)}, nil
 }

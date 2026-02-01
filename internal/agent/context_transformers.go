@@ -8,14 +8,14 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // HistoryPruner enforces history turn limits using a policy.
 type HistoryPruner struct {
 	Policy  PruningPolicy
 	Manager interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error
+		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
 	} // Decouple from history.Manager
 }
 
@@ -42,7 +42,7 @@ type SlidingWindowPolicy struct {
 	MaxTurns int
 }
 
-func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*types.Content) ([]*types.Content, int) {
+func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
 	if p.MaxTurns <= 0 {
 		return history, 0
 	}
@@ -55,7 +55,7 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*types.Conten
 
 		removeCount := len(history) - targetMessages
 		// Ensure we remove an even number of messages to keep turns intact
-		if removeCount % 2 != 0 {
+		if removeCount%2 != 0 {
 			removeCount++
 		}
 
@@ -69,7 +69,7 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*types.Conten
 // ImportanceRankPolicy (placeholder for future implementation)
 type ImportanceRankPolicy struct{}
 
-func (p *ImportanceRankPolicy) Prune(ctx context.Context, history []*types.Content) ([]*types.Content, int) {
+func (p *ImportanceRankPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
 	// TODO: Implement importance-based pruning
 	return history, 0
 }
@@ -77,7 +77,7 @@ func (p *ImportanceRankPolicy) Prune(ctx context.Context, history []*types.Conte
 // PinningPolicy (placeholder for future implementation)
 type PinningPolicy struct{}
 
-func (p *PinningPolicy) Prune(ctx context.Context, history []*types.Content) ([]*types.Content, int) {
+func (p *PinningPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
 	// TODO: Implement pinning-based pruning
 	return history, 0
 }
@@ -88,7 +88,7 @@ type TokenGatekeeper struct {
 	Estimator  TokenEstimator
 	Summarizer HistorySummarizer
 	Manager    interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error
+		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
 	}
 	Events events.EventBus
 }
@@ -114,7 +114,7 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 					Level:   "error",
 				})
 			}
-			return types.ErrContextLimitExceeded
+			return llm.ErrContextLimitExceeded
 		}
 	}
 
@@ -140,14 +140,14 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		return err
 	}
 
-	newMsgs := []*types.Content{
+	newMsgs := []*llm.Content{
 		{
 			Role:  "user",
-			Parts: []*types.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
+			Parts: []*llm.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
 		},
 		{
 			Role:  "model",
-			Parts: []*types.Part{{Text: "Understood. Context compressed."}},
+			Parts: []*llm.Part{{Text: "Understood. Context compressed."}},
 		},
 	}
 
@@ -186,7 +186,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
 	}
 
-	apiContents := make([]*types.Content, len(req.History))
+	apiContents := make([]*llm.Content, len(req.History))
 	copy(apiContents, req.History)
 
 	lastIdx := len(apiContents) - 1
@@ -201,28 +201,28 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	}
 
 	if hasFunctionResponse && len(apiContents) > 1 {
-		warningMsgs := []*types.Content{
+		warningMsgs := []*llm.Content{
 			{
 				Role:  "user",
-				Parts: []*types.Part{{Text: "System Notice:\n\n" + combined}},
+				Parts: []*llm.Part{{Text: "System Notice:\n\n" + combined}},
 			},
 			{
 				Role:  "model",
-				Parts: []*types.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
+				Parts: []*llm.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
 			},
 		}
-		newContents := make([]*types.Content, 0, len(apiContents)+2)
+		newContents := make([]*llm.Content, 0, len(apiContents)+2)
 		newContents = append(newContents, apiContents[:lastIdx]...)
 		newContents = append(newContents, warningMsgs...)
 		newContents = append(newContents, apiContents[lastIdx])
 		apiContents = newContents
 	} else {
-		cloned := &types.Content{
+		cloned := &llm.Content{
 			Role:  orig.Role,
-			Parts: make([]*types.Part, len(orig.Parts)),
+			Parts: make([]*llm.Part, len(orig.Parts)),
 		}
 		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &types.Part{
+		cloned.Parts = append(cloned.Parts, &llm.Part{
 			Text: "\n\n" + combined,
 		})
 		apiContents[lastIdx] = cloned
@@ -244,12 +244,12 @@ func (t *SystemInstructionInjector) Transform(ctx context.Context, req *ContextR
 		return nil
 	}
 
-	instr := &types.Content{
+	instr := &llm.Content{
 		Role:  "user",
-		Parts: []*types.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+		Parts: []*llm.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
 	}
 
-	req.History = append([]*types.Content{instr}, req.History...)
+	req.History = append([]*llm.Content{instr}, req.History...)
 	return nil
 }
 

@@ -19,7 +19,7 @@ func TestAnalysisManager_Delegation(t *testing.T) {
 	idx, _ := index.NewIndexer(tmpDir)
 	cache := astutil.NewASTCache()
 	sp := &mockSecurityProvider{}
-	
+
 	// Real constructor
 	m := NewAnalysisManager(idx, cache, sp)
 
@@ -51,7 +51,7 @@ func TestAnalysisManager_Delegation(t *testing.T) {
 		t.Errorf("FindDefinitions delegation failed: %v, %v", err, res.Text)
 	}
 
-	// SemanticDiff and ListImplementations might require more setup or mocks if we were testing their logic here, 
+	// SemanticDiff and ListImplementations might require more setup or mocks if we were testing their logic here,
 	// but we just test delegation.
 	_, _ = m.SemanticDiff(ctx, map[string]interface{}{"target": "HEAD"})
 	_, _ = m.ListImplementations(ctx, map[string]interface{}{"interface_name": "I"})

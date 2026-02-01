@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 func TestCalculateVisualLines(t *testing.T) {
@@ -51,7 +52,7 @@ func FuzzCalculateVisualLines(f *testing.F) {
 
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
 	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
@@ -68,10 +69,10 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	t.Run("LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
-			Timestamp: r.now(),
-			CurrentTurns: 0,
-			MaxHistoryTurns: 10,
-			Tokens: 100,
+			Timestamp:        r.now(),
+			CurrentTurns:     0,
+			MaxHistoryTurns:  10,
+			Tokens:           100,
 			MaxHistoryTokens: 1000,
 		})
 		if !strings.Contains(stderr.String(), "Turn 1/10") {
@@ -82,13 +83,13 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	t.Run("LogUsage", func(t *testing.T) {
 		// LogUsage writes to a file
 		tmpFile := t.TempDir() + "/usage.log"
-		metrics := &types.Metrics{
-			PromptTokens: 10,
+		metrics := &llm.Metrics{
+			PromptTokens:   10,
 			ResponseTokens: 5,
-			TotalTokens: 15,
+			TotalTokens:    15,
 		}
 		r.LogUsage(metrics, tmpFile, r.now())
-		
+
 		data, err := os.ReadFile(tmpFile)
 		if err != nil {
 			t.Fatalf("failed to read usage log: %v", err)
@@ -101,7 +102,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 
 func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
 	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
@@ -109,16 +110,16 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
-			Timestamp: r.now(),
-			CurrentTurns: 1,
+			Timestamp:       r.now(),
+			CurrentTurns:    1,
 			MaxHistoryTurns: 10,
-			IsPostCall: true,
-			Metrics: &types.Metrics{
-				PromptTokens: 500,
-				CachedTokens: 200,
+			IsPostCall:      true,
+			Metrics: &llm.Metrics{
+				PromptTokens:   500,
+				CachedTokens:   200,
 				ResponseTokens: 100,
-				TotalTokens: 600,
-				Duration: 2.0,
+				TotalTokens:    600,
+				Duration:       2.0,
 			},
 			StartTime: r.now().Add(-5 * time.Second),
 		})
@@ -129,7 +130,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolCall([]*types.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val"}}}, 0, 5, true)
+		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val"}}}, 0, 5, true)
 		if !strings.Contains(stderr.String(), "Tool Action") || !strings.Contains(stderr.String(), "my_tool") {
 			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", stderr.String())
 		}
@@ -137,7 +138,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("LogToolResult_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolResult("my_tool", types.ToolResult{Text: "output", BinaryData: []types.BinaryData{{MIMEType: "image/png", Data: []byte("xyz")}}}, true)
+		r.LogToolResult("my_tool", tools.ToolResult{Text: "output", BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("xyz")}}}, true)
 		if !strings.Contains(stderr.String(), "Tool Result") || !strings.Contains(stderr.String(), "image/png") {
 			t.Errorf("expected stderr to contain 'Tool Result' and 'image/png', got %q", stderr.String())
 		}
@@ -145,7 +146,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("RenderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()
-		content := &types.Content{Parts: []*types.Part{{Text: "# Title\nbody"}}}
+		content := &llm.Content{Parts: []*llm.Part{{Text: "# Title\nbody"}}}
 		r.RenderResponse(content, false, false)
 		if !strings.Contains(stdout.String(), "Title") {
 			t.Errorf("expected stdout to contain 'Title', got %q", stdout.String())
@@ -154,7 +155,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("RenderResponse_Thoughts", func(t *testing.T) {
 		stderr.Reset()
-		content := &types.Content{Parts: []*types.Part{{Text: "I am thinking", Thought: true}}}
+		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", Thought: true}}}
 		r.RenderResponse(content, true, false)
 		if !strings.Contains(stderr.String(), "Thinking") || !strings.Contains(stderr.String(), "I am thinking") {
 			t.Errorf("expected stderr to contain 'Thinking', got %q", stderr.String())
@@ -164,7 +165,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 func TestStdUIRenderer_Streaming(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
 	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
@@ -175,9 +176,9 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 		defer cancel()
 
 		ch, finalize := r.StreamResponse(ctx, false, true) // rawOutput=true for simplicity
-		ch <- &types.Content{Parts: []*types.Part{{Text: "Hello"}}}
-		ch <- &types.Content{Parts: []*types.Part{{Text: " World"}}}
-		
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Hello"}}}
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: " World"}}}
+
 		agg := finalize()
 		var aggText string
 		for _, p := range agg.Parts {
@@ -197,9 +198,9 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 		defer cancel()
 
 		ch, finalize := r.StreamResponse(ctx, true, true)
-		ch <- &types.Content{Parts: []*types.Part{{Text: "Thinking...", Thought: true}}}
-		ch <- &types.Content{Parts: []*types.Part{{Text: "Result"}}}
-		
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Thinking...", Thought: true}}}
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Result"}}}
+
 		_ = finalize()
 		if !strings.Contains(stderr.String(), "Thinking...") {
 			t.Errorf("expected stderr to contain 'Thinking...', got %q", stderr.String())

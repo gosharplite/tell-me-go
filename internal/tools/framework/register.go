@@ -4,9 +4,10 @@
 package framework
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Config holds the configuration for framework tools.
@@ -15,7 +16,7 @@ type Config struct {
 	Model            string
 	Mode             string
 	OutputDir        string
-	PricingOverrides map[string]types.ModelPricing
+	PricingOverrides map[string]llm.ModelPricing
 }
 
 // Register adds framework-related tools (policy, metrics, state) to the registry.
@@ -32,12 +33,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager, cfg Config) {
 }
 
 func registerPolicyTools(r *registry.Registry, policy *PolicyTool) {
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",
 		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The absolute or relative path to authorize.",
@@ -51,17 +52,17 @@ func registerPolicyTools(r *registry.Registry, policy *PolicyTool) {
 		},
 	}, policy.RegisterSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
 	}, policy.ListSafePaths)
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_safepath",
 		Description: "Removes a directory or file from the authorized boundaries.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The path to remove from authorized boundaries.",
@@ -71,12 +72,12 @@ func registerPolicyTools(r *registry.Registry, policy *PolicyTool) {
 		},
 	}, policy.RemoveSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_readpath",
 		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The absolute or relative path to authorize for reading.",
@@ -90,17 +91,17 @@ func registerPolicyTools(r *registry.Registry, policy *PolicyTool) {
 		},
 	}, policy.RegisterReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&types.ToolDeclaration{
+	r.Register(&tools.ToolDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
 	}, policy.ListReadPaths)
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_readpath",
 		Description: "Removes a directory or file from the read-only authorized boundaries.",
-		Parameters: &types.Schema{
+		Parameters: &tools.Schema{
 			Type: "OBJECT",
-			Properties: map[string]*types.Schema{
+			Properties: map[string]*tools.Schema{
 				"path": {
 					Type:        "STRING",
 					Description: "The path to remove from read-only authorized boundaries.",
@@ -110,12 +111,12 @@ func registerPolicyTools(r *registry.Registry, policy *PolicyTool) {
 		},
 	}, policy.RemoveReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
 	}, policy.BypassConfirmation, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.RegisterWithOptions(&types.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
 	}, policy.RevokeBypass, registry.ToolOptions{Serial: true, LongRunning: true})

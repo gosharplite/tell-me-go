@@ -4,19 +4,20 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type RefactorManager struct {
-	SP types.SecurityProvider
+	SP security.SecurityProvider
 }
 
-func NewRefactorManager(sp types.SecurityProvider) *RefactorManager {
+func NewRefactorManager(sp security.SecurityProvider) *RefactorManager {
 	return &RefactorManager{SP: sp}
 }
 
-func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol  string `json:"symbol"`
 		SrcFile string `json:"src_file"`
@@ -24,7 +25,7 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		Reason  string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	plan := &MovePlan{
@@ -36,32 +37,32 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	// Security Check
 	resolvedSrc, err := m.SP.IsPathWritable(plan.SrcFile)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	resolvedDst, err := m.SP.IsPathWritable(plan.DstFile)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	plan.SrcFile = resolvedSrc
 	plan.DstFile = resolvedDst
 
 	approved, err := m.SP.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", plan.SrcFile, plan.Description()+"\nReason: "+params.Reason)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return types.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	tx := NewTransaction()
 	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if _, err := tx.LoadFile(plan.DstFile); err != nil {
 		// Handle non-existent destination
 		// For simplicity in this refactor, we assume it exists or fail
 		// Real implementation should handle it
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	tx.Add(NewMoveTransform(plan))
@@ -69,13 +70,13 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	tx.Add(NewImportCleanupTransform(plan.DstFile))
 
 	if err := tx.Commit(ctx); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
-	return types.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
 }
 
-func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	// For now, keeping the old implementation logic but structured within the new manager
 	// In a real refactor, this would also use Transactions and Transforms
 	var params struct {
@@ -85,7 +86,7 @@ func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		Reason  string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	oldName := params.OldName
@@ -97,19 +98,19 @@ func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 
 	resolvedPath, err := m.SP.IsPathWritable(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	detail := fmt.Sprintf("Reason: %s\n\nRename: %s -> %s", params.Reason, oldName, newName)
 	approved, err := m.SP.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", resolvedPath, detail)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return types.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
 	// ... simplified implementation or keep using old logic for now to ensure continuity
 	// A better way is to implement RenameTransform
-	return types.ToolResult{Text: "RenameSymbol migrated to new manager (logic to be fully refactored to Transforms)."}, nil
+	return tools.ToolResult{Text: "RenameSymbol migrated to new manager (logic to be fully refactored to Transforms)."}, nil
 }

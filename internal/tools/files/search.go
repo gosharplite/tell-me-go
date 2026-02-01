@@ -10,10 +10,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 type fileSearcher struct {
@@ -30,22 +30,22 @@ var defPatterns = []string{
 	`^\w+\(\)\s*\{`,         // Bash function
 }
 
-func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
 		Query string `json:"query"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if params.Query == "" {
-		return types.ToolResult{}, fmt.Errorf("query argument is required")
+		return tools.ToolResult{}, fmt.Errorf("query argument is required")
 	}
 
 	re, err := regexp.Compile(params.Query)
 	if err != nil {
-		return types.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
+		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
 	var results []string
@@ -59,13 +59,13 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	return s.formatSearchResults(results, err)
 }
 
-func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path  string `json:"path"`
 		Query string `json:"query"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	path := params.Path
@@ -74,7 +74,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	}
 	resolvedPath, err := s.sm.IsPathSafe(path)
 	if err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	var results []string
@@ -109,29 +109,29 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 
 	// We use resolvedPath here since we already checked safety
 	if err := walkAndProcess(ctx, s.sm, s.fs, resolvedPath, processor); err != nil {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No definitions found."}, nil
+		return tools.ToolResult{Text: "No definitions found."}, nil
 	}
-	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
-func (s *fileSearcher) formatSearchResults(results []string, err error) (types.ToolResult, error) {
+func (s *fileSearcher) formatSearchResults(results []string, err error) (tools.ToolResult, error) {
 	if err != nil && err.Error() != "too many results" {
-		return types.ToolResult{}, err
+		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return types.ToolResult{Text: "No matches found."}, nil
+		return tools.ToolResult{Text: "No matches found."}, nil
 	}
 
 	out := strings.Join(results, "\n")
 	if err != nil && err.Error() == "too many results" {
 		out += "\n... (truncated)"
 	}
-	return types.ToolResult{Text: out}, nil
+	return tools.ToolResult{Text: out}, nil
 }
 
 func isSupportedDefExt(ext string) bool {

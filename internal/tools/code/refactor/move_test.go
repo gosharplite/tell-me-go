@@ -35,8 +35,8 @@ type Config struct {
 			wantErr: false,
 		},
 		{
-			name:    "symbol not found",
-			symbol:  "Missing",
+			name:   "symbol not found",
+			symbol: "Missing",
 			srcCode: `package a
 func Hello() {}`,
 			dstCode: `package b`,

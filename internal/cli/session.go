@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
@@ -28,7 +29,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/network"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/system"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func (a *App) initPaths(cfg *config.Config) (*sessionPaths, error) {
@@ -92,7 +92,7 @@ func (a *App) setupSecurity(paths *sessionPaths, opts *cliOptions, cfg *config.C
 	a.sm.RegisterReadOnlyPath(opts.configPath)
 }
 
-func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingOverrides map[string]types.ModelPricing) {
+func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingOverrides map[string]llm.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	// Record cost with a unique ID including the timestamp before archiving
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.logPath))
@@ -101,7 +101,7 @@ func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingO
 	a.cleanupOldBackups(a.homeDir, cfg.Mode)
 }
 
-func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]types.ModelPricing) *registry.Registry {
+func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]llm.ModelPricing) *registry.Registry {
 	reg := registry.New()
 
 	files.Register(reg, a.sm)

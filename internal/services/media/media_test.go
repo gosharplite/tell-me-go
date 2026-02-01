@@ -8,12 +8,21 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 type mockLLMClient struct {
-	types.LLMClient
+	llm.LLMClient
 	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+}
+
+func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return nil, nil, nil
+}
+
+func (m *mockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	return nil, nil
 }
 
 func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
@@ -21,6 +30,10 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 		return m.generateImagesFn(ctx, model, prompt, mimeType)
 	}
 	return nil, nil
+}
+
+func (m *mockLLMClient) RefreshAuth() error {
+	return nil
 }
 
 func TestMediaService_GenerateImage(t *testing.T) {

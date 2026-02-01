@@ -3,13 +3,13 @@
 
 package config
 
-import "github.com/gosharplite/tell-me-go/internal/types"
+import "github.com/gosharplite/tell-me-go/internal/domain/llm"
 
 // DefaultPricing returns the hardcoded fallback pricing data.
-func DefaultPricing() types.PricingData {
-	return types.PricingData{
+func DefaultPricing() llm.PricingData {
+	return llm.PricingData{
 		UpdatedAt: "Hardcoded Fallback",
-		Models: map[string]types.ModelPricing{
+		Models: map[string]llm.ModelPricing{
 			"flash": {
 				Hit:             0.015,
 				Miss:            0.15,

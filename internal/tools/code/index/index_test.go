@@ -145,14 +145,14 @@ type T struct{}
 func TestIndexer_ErrorPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
-	
+
 	// Valid file
 	os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}"), 0644)
-	
+
 	idx, _ := NewIndexer(tmpDir)
 	ctx := context.Background()
 	idx.Refresh(ctx)
-	
+
 	syms, _ := idx.SearchSymbols(ctx, tmpDir, "F", false)
 	if len(syms) != 1 {
 		t.Fatal("Expected to find F")
@@ -160,14 +160,14 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 
 	// Create a file with syntax error
 	os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte("package test\nfunc G() {"), 0644)
-	
+
 	// Force refresh by resetting lastRefresh
 	idx.mu.Lock()
 	idx.lastRefresh = time.Time{}
 	idx.mu.Unlock()
-	
+
 	_ = idx.Refresh(ctx)
-	
+
 	syms, _ = idx.SearchSymbols(ctx, tmpDir, "F", false)
 	if len(syms) == 0 {
 		t.Error("Expected to still have F in index despite other file errors")

@@ -10,20 +10,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // ResilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
 type ResilientClient struct {
-	client           types.LLMClient
+	client           llm.LLMClient
 	disableStreaming bool
 	sleep            func(context.Context, time.Duration) error
 }
 
 // NewResilientClient creates a new ResilientClient.
-func NewResilientClient(client types.LLMClient, disableStreaming bool) *ResilientClient {
+func NewResilientClient(client llm.LLMClient, disableStreaming bool) *ResilientClient {
 	return &ResilientClient{
 		client:           client,
 		disableStreaming: disableStreaming,
@@ -68,19 +69,19 @@ func (r *ResilientClient) WrapError(err error) error {
 }
 
 // Generate handles the LLM interaction logic, returning a stream and a finalizer.
-func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, tools []*types.ToolDeclaration, resolver types.AssetResolver) (<-chan *types.Content, func() (*types.Content, *types.Metrics, error)) {
-	outCh := make(chan *types.Content, 100)
+func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	outCh := make(chan *llm.Content, 100)
 
 	type result struct {
-		content *types.Content
-		metrics *types.Metrics
+		content *llm.Content
+		metrics *llm.Metrics
 		err     error
 	}
 	resCh := make(chan result, 1)
 
 	go func() {
-		var finalContent *types.Content
-		var finalMetrics *types.Metrics
+		var finalContent *llm.Content
+		var finalMetrics *llm.Metrics
 		var finalErr error
 
 		for attempt := 0; attempt < 3; attempt++ {
@@ -91,8 +92,8 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 					break
 				}
 			} else {
-				finalContent = &types.Content{Role: "model"}
-				callback := func(c *types.Content) {
+				finalContent = &llm.Content{Role: "model"}
+				callback := func(c *llm.Content) {
 					for _, p := range c.Parts {
 						finalContent.AddPart(p)
 					}
@@ -129,7 +130,7 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 		resCh <- result{finalContent, finalMetrics, finalErr}
 	}()
 
-	finalize := func() (*types.Content, *types.Metrics, error) {
+	finalize := func() (*llm.Content, *llm.Metrics, error) {
 		select {
 		case res := <-resCh:
 			return res.content, res.metrics, res.err

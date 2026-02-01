@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Event represents a generic signal from the Orchestrator.
@@ -58,12 +59,12 @@ type TurnStarted struct {
 // ResponseStreamEvent carries a channel for streaming LLM output.
 type ResponseStreamEvent struct {
 	Context context.Context
-	Stream  <-chan *types.Content
+	Stream  <-chan *llm.Content
 }
 
 // ToolCallEvent signals that one or more tools are being invoked.
 type ToolCallEvent struct {
-	Calls    []*types.FunctionCall
+	Calls    []*llm.FunctionCall
 	Turn     int
 	MaxTurns int
 }
@@ -71,12 +72,12 @@ type ToolCallEvent struct {
 // ToolResultEvent signals that a tool has finished execution.
 type ToolResultEvent struct {
 	Name   string
-	Result types.ToolResult
+	Result tools.ToolResult
 }
 
 // UsageMetricsEvent signals that a turn is complete and usage should be recorded.
 type UsageMetricsEvent struct {
-	Metrics   *types.Metrics
+	Metrics   *llm.Metrics
 	LogFile   string
 	StartTime time.Time
 }

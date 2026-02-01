@@ -34,7 +34,7 @@ func TestFormatMatch(t *testing.T) {
 	path := "test.txt"
 	lineNum := 10
 	text := "  some text  "
-	
+
 	got := formatMatch(path, lineNum, text)
 	expected := "test.txt:10: some text"
 	if got != expected {

@@ -6,22 +6,23 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 type DependencyAnalyzer struct {
 	Exec CommandExecutor
-	SP   types.SecurityProvider
+	SP   security.SecurityProvider
 }
 
-func NewDependencyAnalyzer(exec CommandExecutor, sp types.SecurityProvider) *DependencyAnalyzer {
+func NewDependencyAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *DependencyAnalyzer {
 	return &DependencyAnalyzer{
 		Exec: exec,
 		SP:   sp,
 	}
 }
 
-func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		a.SP.TerminalLock()
 		defer a.SP.TerminalUnlock()
@@ -30,7 +31,7 @@ func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 
 	out, err := a.Exec.CombinedOutput(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	if err != nil {
-		return types.ToolResult{Text: fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out))}, nil
+		return tools.ToolResult{Text: fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out))}, nil
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -67,5 +68,5 @@ func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 		}
 	}
 
-	return types.ToolResult{Text: sb.String()}, nil
+	return tools.ToolResult{Text: sb.String()}, nil
 }

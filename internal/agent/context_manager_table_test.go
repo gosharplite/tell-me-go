@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/types"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 func TestSlidingWindowPolicy_Extended(t *testing.T) {
@@ -17,26 +17,16 @@ func TestSlidingWindowPolicy_Extended(t *testing.T) {
 	}{
 		{"Limit 1, History 1 (Odd)", 1, 1, 0, 1},
 		{"Limit 1, History 2 (Even)", 1, 2, 0, 2},
-		{"Limit 1, History 3 (Odd, Overflow)", 1, 3, 1, 1}, // target (1/2)*2=0 -> 2. remove 3-2=1. remove+1=2. remain 1.
-		{"Limit 2, History 5 (Odd, Overflow)", 2, 5, 1, 3}, // target (2/2)*2=2. remove 5-2=3. remove+1=4. remain 1?
-        // Wait, SlidingWindowPolicy.Prune logic:
-        /*
-        targetMessages := (p.MaxTurns / 2) * 2
-        if targetMessages < 2 { targetMessages = 2 }
-        remove := len(history) - targetMessages
-        if remove % 2 != 0 { remove++ }
-        prunedTurns = remove / 2
-        return history[remove:], prunedTurns
-        */
-        // If historyLen=5, target=2. remove=5-2=3. remove=4. return history[4:], pruned=2. remain=1.
+		{"Limit 1, History 3 (Odd, Overflow)", 1, 3, 1, 1},
+		{"Limit 2, History 5 (Odd, Overflow)", 2, 5, 1, 3},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &SlidingWindowPolicy{MaxTurns: tt.maxTurns}
-			history := make([]*types.Content, tt.historyLen)
+			history := make([]*llm.Content, tt.historyLen)
 			for i := range history {
-				history[i] = &types.Content{Role: "user"}
+				history[i] = &llm.Content{Role: "user"}
 			}
 
 			gotHistory, _ := p.Prune(context.Background(), history)
@@ -67,7 +57,7 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
 			req := &ContextRequest{
-				History: []*types.Content{{Role: "user"}},
+				History: []*llm.Content{{Role: "user"}},
 			}
 			err := tg.Transform(context.Background(), req)
 			if tt.shouldError && err == nil {
@@ -78,4 +68,12 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockEstimator struct {
+	tokens int
+}
+
+func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
+	return m.tokens
 }

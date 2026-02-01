@@ -9,31 +9,32 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/tools"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 func TestToolExecutor_PanicRecovery(t *testing.T) {
 	reg := registry.New()
-	reg.Register(&types.ToolDeclaration{
+	reg.Register(&tools.ToolDeclaration{
 		Name: "panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		panic("intentional parallel panic")
 	})
-	reg.RegisterWithOptions(&types.ToolDeclaration{
+	reg.RegisterWithOptions(&tools.ToolDeclaration{
 		Name: "serial_panic_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		panic("intentional serial panic")
-	}, tools.ToolOptions{Serial: true})
+	}, registry.ToolOptions{Serial: true})
 
-	sm := tools.NewSecurityManager()
+	sm := security.NewSecurityManager(nil)
 	bus := &events.SimpleEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 	exec.SetConcurrency(2, 0)
 
 	t.Run("Parallel Panic", func(t *testing.T) {
-		calls := []*types.FunctionCall{
+		calls := []*llm.FunctionCall{
 			{Name: "panic_tool"},
 		}
 
@@ -47,7 +48,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 	})
 
 	t.Run("Serial Panic", func(t *testing.T) {
-		calls := []*types.FunctionCall{
+		calls := []*llm.FunctionCall{
 			{Name: "serial_panic_tool"},
 		}
 

@@ -241,7 +241,7 @@ type T1 struct { A int }
 	curr, _ := parser.ParseFile(fset, "curr.go", currCode, parser.ParseComments)
 
 	changes := CompareASTs(base, curr)
-	
+
 	expected := []string{"Modified: func F1", "Added: func F3", "Modified: type T1", "Deleted: func F2"}
 	for _, exp := range expected {
 		found := false
@@ -285,12 +285,12 @@ var V = 2
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	k1 := GetDeclKey(f.Decls[0])
 	if k1 != "const block" {
 		t.Errorf("expected const block, got %s", k1)
 	}
-	
+
 	k2 := GetDeclKey(f.Decls[1])
 	if k2 != "var block" {
 		t.Errorf("expected var block, got %s", k2)
