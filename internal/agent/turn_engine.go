@@ -210,7 +210,11 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
-		e.middleware = append(e.middleware, WithEvents(e.events))
+		e.middleware = append(e.middleware,
+			WithStreaming(e.events),
+			WithStatusReporter(e.events),
+			WithMetrics(e.events),
+		)
 	}
 
 	// Apply middleware in reverse order so the first one added is the outermost
@@ -459,45 +463,30 @@ func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	return ProcessResult{NextPhase: PhaseInference}
 }
 
-// WithEvents returns a middleware that publishes events for various phases.
-func WithEvents(bus events.EventBus) TurnMiddleware {
+// WithStreaming returns a middleware that injects a stream handler into the turn.
+func WithStreaming(bus events.EventBus) TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
-			// Setup for specific phases
 			if turn.State.Phase == PhaseInference && bus != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
 					bus.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
+			return next.Process(ctx, turn)
+		})
+	}
+}
 
+// WithStatusReporter returns a middleware that publishes turn status events.
+func WithStatusReporter(bus events.EventBus) TurnMiddleware {
+	return func(next TurnProcessor) TurnProcessor {
+		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			res := next.Process(ctx, turn)
-
 			if bus == nil || res.Error != nil {
 				return res
 			}
 
-			// Post-processing events
-			switch turn.State.Phase {
-			case PhaseRefining:
-				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
-				bus.Publish(events.TurnStatusEvent{
-					Status: events.TurnStatus{
-						Timestamp:        turn.Clock.Now(),
-						CurrentTurns:     turn.Index,
-						MaxHistoryTurns:  maxHistTurns,
-						Tokens:           turn.State.Tokens,
-						MaxHistoryTokens: maxTokens,
-						IsPostCall:       false,
-						StartTime:        turn.StartTime,
-					},
-				})
-			case PhasePersisting:
-				if turn.State.Metrics != nil {
-					bus.Publish(events.UsageMetricsEvent{
-						Metrics:   turn.State.Metrics,
-						StartTime: turn.StartTime,
-					})
-				}
+			if turn.State.Phase == PhaseRefining || turn.State.Phase == PhasePersisting {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
@@ -507,12 +496,27 @@ func WithEvents(bus events.EventBus) TurnMiddleware {
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,
 						Metrics:          turn.State.Metrics,
-						IsPostCall:       true,
+						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
 					},
 				})
 			}
+			return res
+		})
+	}
+}
 
+// WithMetrics returns a middleware that publishes usage metrics.
+func WithMetrics(bus events.EventBus) TurnMiddleware {
+	return func(next TurnProcessor) TurnProcessor {
+		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+			res := next.Process(ctx, turn)
+			if bus != nil && turn.State.Phase == PhasePersisting && turn.State.Metrics != nil {
+				bus.Publish(events.UsageMetricsEvent{
+					Metrics:   turn.State.Metrics,
+					StartTime: turn.StartTime,
+				})
+			}
 			return res
 		})
 	}
