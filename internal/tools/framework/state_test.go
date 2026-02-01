@@ -18,20 +18,17 @@ func TestStateManager(t *testing.T) {
 	sm.SetBypassActive(true)
 
 	m := &stateManager{
-		sm:          sm,
-		tasks:       make(map[float64]Task),
-		taskNextID:  1,
-		config:      make(map[string]string),
-		configFile:  filepath.Join(tempDir, "config.json"),
-		scratchFile: filepath.Join(tempDir, "scratchpad.md"),
-		tasksFile:   filepath.Join(tempDir, "tasks.json"),
+		sm:         sm,
+		tasks:      NewTaskStore(filepath.Join(tempDir, "tasks.json")),
+		config:     NewConfigStore(filepath.Join(tempDir, "config.json")),
+		scratchpad: NewScratchpadStore(filepath.Join(tempDir, "scratchpad.md")),
 	}
 
 	ctx := context.Background()
 
 	t.Run("Write and Read Scratchpad", func(t *testing.T) {
 		content := "Initial thoughts."
-		_, err := m.manageScratchpad(ctx, map[string]interface{}{
+		_, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "write",
 			"content": content,
 		})
@@ -39,7 +36,7 @@ func TestStateManager(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, err := m.manageScratchpad(ctx, map[string]interface{}{
+		res, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
 			"action": "read",
 		})
 		if err != nil {
@@ -52,7 +49,7 @@ func TestStateManager(t *testing.T) {
 
 	t.Run("Append Scratchpad", func(t *testing.T) {
 		addition := "\nMore thoughts."
-		_, err := m.manageScratchpad(ctx, map[string]interface{}{
+		_, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "append",
 			"content": addition,
 		})
@@ -60,7 +57,7 @@ func TestStateManager(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, err := m.manageScratchpad(ctx, map[string]interface{}{
+		res, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
 			"action": "read",
 		})
 		if err != nil {
@@ -73,7 +70,7 @@ func TestStateManager(t *testing.T) {
 
 	t.Run("Manage Tasks", func(t *testing.T) {
 		// Add task
-		_, err := m.manageTasks(ctx, map[string]interface{}{
+		_, err := m.tasks.ManageTasks(ctx, map[string]interface{}{
 			"action":  "add",
 			"content": "Implement feature X",
 		})
@@ -82,7 +79,7 @@ func TestStateManager(t *testing.T) {
 		}
 
 		// List tasks
-		res, err := m.manageTasks(ctx, map[string]interface{}{
+		res, err := m.tasks.ManageTasks(ctx, map[string]interface{}{
 			"action": "list",
 		})
 		if err != nil {
@@ -93,7 +90,7 @@ func TestStateManager(t *testing.T) {
 		}
 
 		// Update task
-		_, err = m.manageTasks(ctx, map[string]interface{}{
+		_, err = m.tasks.ManageTasks(ctx, map[string]interface{}{
 			"action":  "update",
 			"task_id": 1.0,
 			"status":  "completed",
@@ -103,14 +100,14 @@ func TestStateManager(t *testing.T) {
 		}
 
 		// Verify update
-		res, _ = m.manageTasks(ctx, map[string]interface{}{"action": "list"})
+		res, _ = m.tasks.ManageTasks(ctx, map[string]interface{}{"action": "list"})
 		if !strings.Contains(res.Text, "[x]") {
 			t.Errorf("task status not updated: %s", res.Text)
 		}
 	})
 
 	t.Run("Manage Config", func(t *testing.T) {
-		_, err := m.manageConfig(ctx, map[string]interface{}{
+		_, err := m.config.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
 			"key":    "theme",
 			"value":  "dark",
@@ -119,7 +116,7 @@ func TestStateManager(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, err := m.manageConfig(ctx, map[string]interface{}{
+		res, err := m.config.ManageConfig(ctx, map[string]interface{}{
 			"action": "get",
 			"key":    "theme",
 		})
@@ -133,17 +130,13 @@ func TestStateManager(t *testing.T) {
 
 	t.Run("Persistence", func(t *testing.T) {
 		// Create a new manager pointing to the same directory
-		m2 := &stateManager{
-			sm:          sm,
-			tasks:       make(map[float64]Task),
-			config:      make(map[string]string),
-			configFile:  filepath.Join(tempDir, "config.json"),
-			scratchFile: filepath.Join(tempDir, "scratchpad.md"),
-			tasksFile:   filepath.Join(tempDir, "tasks.json"),
+		configStore2 := NewConfigStore(filepath.Join(tempDir, "config.json"))
+		err := configStore2.Load()
+		if err != nil {
+			t.Fatal(err)
 		}
-		m2.loadConfig()
 
-		res, err := m2.manageConfig(ctx, map[string]interface{}{
+		res, err := configStore2.ManageConfig(ctx, map[string]interface{}{
 			"action": "get",
 			"key":    "theme",
 		})
