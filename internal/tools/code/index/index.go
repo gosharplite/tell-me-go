@@ -76,11 +76,7 @@ func NewIndexer(dir string) (*Indexer, error) {
 }
 
 func (idx *Indexer) Refresh(ctx context.Context) error {
-	idx.mu.RLock()
-	needsRefresh := time.Since(idx.lastRefresh) > refreshTTL
-	idx.mu.RUnlock()
-
-	if !needsRefresh {
+	if !idx.needsRefresh() {
 		return nil
 	}
 
@@ -89,94 +85,25 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 	defer idx.refreshMu.Unlock()
 
 	// Double check after acquiring lock
-	if time.Since(idx.lastRefresh) <= refreshTTL {
+	if !idx.needsRefresh() {
 		return nil
 	}
 
-	// Build new index in local variables to avoid mid-scan empty results
-	newSymbolsByPath := make(map[string][]SymbolLocation)
-	newUsagesByName := make(map[string][]Location)
-
-	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
-		Dir:     idx.dir,
-		Fset:    idx.fset,
-		Context: ctx,
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
+	pkgs, err := idx.loadPackages(ctx)
 	if err != nil {
 		return err
 	}
 
+	h := newHarvester(idx.fset)
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
 			filename := idx.fset.File(file.Pos()).Name()
-			absPath, _ := filepath.Abs(filename)
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				if n == nil {
-					return true
-				}
-
-				switch d := n.(type) {
-				case *ast.GenDecl:
-					for _, spec := range d.Specs {
-						switch s := spec.(type) {
-						case *ast.ValueSpec:
-							kind := "var"
-							if d.Tok == token.CONST {
-								kind = "const"
-							}
-							for _, name := range s.Names {
-								loc := idx.toLocation(name.Pos())
-								newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
-									Location: loc,
-									Name:     name.Name,
-									Kind:     kind,
-								})
-							}
-						case *ast.TypeSpec:
-							loc := idx.toLocation(s.Name.Pos())
-							newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
-								Location: loc,
-								Name:     s.Name.Name,
-								Kind:     "type",
-							})
-						}
-					}
-				case *ast.FuncDecl:
-					kind := "func"
-					sig := astutil.GetFuncSignature(d)
-					recv := ""
-					if d.Recv != nil && len(d.Recv.List) > 0 {
-						recv = astutil.ExprToString(d.Recv.List[0].Type)
-					}
-					loc := idx.toLocation(d.Name.Pos())
-					newSymbolsByPath[absPath] = append(newSymbolsByPath[absPath], SymbolLocation{
-						Location:  loc,
-						Name:      d.Name.Name,
-						Kind:      kind,
-						Signature: sig,
-						Receiver:  recv,
-					})
-				case *ast.Ident:
-					loc := idx.toLocation(d.Pos())
-					newUsagesByName[d.Name] = append(newUsagesByName[d.Name], loc)
-				}
-				return true
-			})
+			h.currentPath, _ = filepath.Abs(filename)
+			ast.Inspect(file, h.visit)
 		}
 	}
 
-	// Atomic swap
-	idx.mu.Lock()
-	idx.pkgs = pkgs
-	idx.symbolsByPath = newSymbolsByPath
-	idx.usagesByName = newUsagesByName
-	idx.lastRefresh = time.Now()
-	idx.mu.Unlock()
-
+	idx.updateState(pkgs, h)
 	return nil
 }
 
@@ -301,4 +228,127 @@ func (idx *Indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	}
 
 	return results, nil
+}
+
+type harvester struct {
+	fset          *token.FileSet
+	symbolsByPath map[string][]SymbolLocation
+	usagesByName  map[string][]Location
+	currentPath   string
+}
+
+func newHarvester(fset *token.FileSet) *harvester {
+	return &harvester{
+		fset:          fset,
+		symbolsByPath: make(map[string][]SymbolLocation),
+		usagesByName:  make(map[string][]Location),
+	}
+}
+
+func (h *harvester) visit(n ast.Node) bool {
+	if n == nil {
+		return true
+	}
+
+	switch d := n.(type) {
+	case *ast.GenDecl:
+		h.handleGenDecl(d)
+	case *ast.FuncDecl:
+		h.handleFuncDecl(d)
+	case *ast.Ident:
+		h.handleIdent(d)
+	}
+	return true
+}
+
+func (h *harvester) handleGenDecl(d *ast.GenDecl) {
+	for _, spec := range d.Specs {
+		switch s := spec.(type) {
+		case *ast.ValueSpec:
+			h.handleValueSpec(d, s)
+		case *ast.TypeSpec:
+			h.handleTypeSpec(s)
+		}
+	}
+}
+
+func (h *harvester) handleValueSpec(d *ast.GenDecl, s *ast.ValueSpec) {
+	kind := "var"
+	if d.Tok == token.CONST {
+		kind = "const"
+	}
+	for _, name := range s.Names {
+		loc := h.toLocation(name.Pos())
+		h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
+			Location: loc,
+			Name:     name.Name,
+			Kind:     kind,
+		})
+	}
+}
+
+func (h *harvester) handleTypeSpec(s *ast.TypeSpec) {
+	loc := h.toLocation(s.Name.Pos())
+	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
+		Location: loc,
+		Name:     s.Name.Name,
+		Kind:     "type",
+	})
+}
+
+func (h *harvester) handleFuncDecl(d *ast.FuncDecl) {
+	kind := "func"
+	sig := astutil.GetFuncSignature(d)
+	recv := ""
+	if d.Recv != nil && len(d.Recv.List) > 0 {
+		recv = astutil.ExprToString(d.Recv.List[0].Type)
+	}
+	loc := h.toLocation(d.Name.Pos())
+	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
+		Location:  loc,
+		Name:      d.Name.Name,
+		Kind:      kind,
+		Signature: sig,
+		Receiver:  recv,
+	})
+}
+
+func (h *harvester) handleIdent(d *ast.Ident) {
+	loc := h.toLocation(d.Pos())
+	h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
+}
+
+func (h *harvester) toLocation(pos token.Pos) Location {
+	p := h.fset.Position(pos)
+	abs, _ := filepath.Abs(p.Filename)
+	return Location{
+		Path:   abs,
+		Line:   p.Line,
+		Column: p.Column,
+	}
+}
+
+func (idx *Indexer) needsRefresh() bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return time.Since(idx.lastRefresh) > refreshTTL
+}
+
+func (idx *Indexer) loadPackages(ctx context.Context) ([]*packages.Package, error) {
+	cfg := &packages.Config{
+		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
+		Dir:     idx.dir,
+		Fset:    idx.fset,
+		Context: ctx,
+	}
+	return packages.Load(cfg, "./...")
+}
+
+func (idx *Indexer) updateState(pkgs []*packages.Package, h *harvester) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.pkgs = pkgs
+	idx.symbolsByPath = h.symbolsByPath
+	idx.usagesByName = h.usagesByName
+	idx.lastRefresh = time.Now()
 }
