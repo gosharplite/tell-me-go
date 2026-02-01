@@ -226,6 +226,9 @@ type WorkerPool struct {
 	wg         sync.WaitGroup
 	ctx        context.Context
 	cancel     context.CancelFunc
+	closing    chan struct{}
+	mu         sync.RWMutex
+	closed     bool
 	once       sync.Once
 }
 
@@ -240,6 +243,7 @@ func NewWorkerPool(maxWorkers int) *WorkerPool {
 		tasks:      make(chan func(ctx context.Context), maxWorkers*2),
 		ctx:        ctx,
 		cancel:     cancel,
+		closing:    make(chan struct{}),
 	}
 	p.start()
 	return p
@@ -258,8 +262,6 @@ func (p *WorkerPool) start() {
 					}
 					task(p.ctx)
 				case <-p.ctx.Done():
-					// Drain tasks if possible or just exit?
-					// Usually we want to exit immediately if context is cancelled.
 					return
 				}
 			}
@@ -269,8 +271,16 @@ func (p *WorkerPool) start() {
 
 // Submit adds a task to the pool.
 func (p *WorkerPool) Submit(task func(ctx context.Context)) {
+	p.mu.RLock()
+	if p.closed {
+		p.mu.RUnlock()
+		return
+	}
+	p.mu.RUnlock()
+
 	select {
 	case p.tasks <- task:
+	case <-p.closing:
 	case <-p.ctx.Done():
 	}
 }
@@ -278,7 +288,12 @@ func (p *WorkerPool) Submit(task func(ctx context.Context)) {
 // Shutdown stops all workers and waits for them to finish.
 func (p *WorkerPool) Shutdown() {
 	p.once.Do(func() {
-		close(p.tasks) // No more tasks can be submitted
+		p.mu.Lock()
+		p.closed = true
+		p.mu.Unlock()
+
+		close(p.closing)
+		close(p.tasks)
 		p.wg.Wait()
 		p.cancel()
 	})

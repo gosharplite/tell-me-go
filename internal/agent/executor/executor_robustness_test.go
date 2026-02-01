@@ -183,3 +183,31 @@ func TestWorkerPool_Shutdown(t *testing.T) {
 		t.Errorf("Expected at least 2 tasks to complete before/during shutdown, got %d", completed)
 	}
 }
+
+func TestWorkerPool_SubmitRace(t *testing.T) {
+	p := NewWorkerPool(1)
+	
+	// Start a worker that blocks
+	p.Submit(func(ctx context.Context) {
+		time.Sleep(50 * time.Millisecond)
+	})
+	
+	// Start many submitters
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("Recovered from panic in Submit: %v", r)
+				}
+			}()
+			p.Submit(func(ctx context.Context) {})
+		}()
+	}
+	
+	time.Sleep(10 * time.Millisecond)
+	p.Shutdown()
+	wg.Wait()
+}
