@@ -40,7 +40,13 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 		return types.ToolResult{}, err
 	}
 
-	var results []string
+	type funcComplexity struct {
+		line       int
+		name       string
+		complexity int
+		filePath   string
+	}
+	var complexities []funcComplexity
 
 	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
 		select {
@@ -65,7 +71,12 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 					recvType := astutil.ExprToString(fd.Recv.List[0].Type)
 					funcName = fmt.Sprintf("(%s).%s", recvType, funcName)
 				}
-				results = append(results, fmt.Sprintf("%s:%d: %s - Complexity: %d", filePath, fset.Position(fd.Pos()).Line, funcName, complexity))
+				complexities = append(complexities, funcComplexity{
+					line:       fset.Position(fd.Pos()).Line,
+					name:       funcName,
+					complexity: complexity,
+					filePath:   filePath,
+				})
 			}
 		}
 		return nil
@@ -74,20 +85,28 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	if err != nil {
 		return types.ToolResult{}, err
 	}
-	if len(results) == 0 {
+	if len(complexities) == 0 {
 		return types.ToolResult{Text: "No Go functions found to analyze."}, nil
 	}
 
 	// Sort by complexity descending
-	sort.Slice(results, func(i, j int) bool {
-		var ci, cj int
-		fmt.Sscanf(results[i], "%*[^:]: %*d: %*s - Complexity: %d", &ci)
-		fmt.Sscanf(results[j], "%*[^:]: %*d: %*s - Complexity: %d", &cj)
-		return ci > cj
+	sort.Slice(complexities, func(i, j int) bool {
+		if complexities[i].complexity != complexities[j].complexity {
+			return complexities[i].complexity > complexities[j].complexity
+		}
+		return complexities[i].name < complexities[j].name
 	})
 
-	if len(results) > 100 {
-		results = append(results[:100], "... (truncated)")
+	if len(complexities) > 100 {
+		complexities = complexities[:100]
+	}
+
+	var results []string
+	for _, c := range complexities {
+		results = append(results, fmt.Sprintf("%s:%d: %s - Complexity: %d", c.filePath, c.line, c.name, c.complexity))
+	}
+	if len(complexities) == 100 {
+		results = append(results, "... (truncated)")
 	}
 
 	return types.ToolResult{Text: "Cyclomatic Complexity Analysis (Top 100):\n" + strings.Join(results, "\n")}, nil
