@@ -6,6 +6,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestGenerate_SendChat_AuthRetry(t *testing.T) {
 		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
-				return nil, nil, errors.New("401 Unauthorized")
+				return nil, nil, status.Error(codes.Unauthenticated, "expired token")
 			}
 			return &llm.Content{Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 		},
@@ -112,7 +113,7 @@ func TestGenerate_NoTransientRetry(t *testing.T) {
 	client := &mockLLMClient{
 		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			return nil, nil, errors.New("429 Too Many Requests")
+			return nil, nil, status.Error(codes.ResourceExhausted, "quota exceeded")
 		},
 	}
 
@@ -137,6 +138,19 @@ func TestGenerate_NoTransientRetry(t *testing.T) {
 	}
 }
 
+type httpStatusErrImpl struct {
+	code int
+	msg  string
+}
+
+func (e *httpStatusErrImpl) Error() string {
+	return e.msg
+}
+
+func (e *httpStatusErrImpl) StatusCode() int {
+	return e.code
+}
+
 func TestWrapError(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -148,16 +162,20 @@ func TestWrapError(t *testing.T) {
 		{"gRPC ResourceExhausted", status.Error(codes.ResourceExhausted, "quota exceeded"), ErrTransient},
 		{"gRPC Unavailable", status.Error(codes.Unavailable, "server down"), ErrTransient},
 		{"gRPC DeadlineExceeded", status.Error(codes.DeadlineExceeded, "too slow"), ErrTransient},
+		{"gRPC Aborted", status.Error(codes.Aborted, "aborted"), ErrTransient},
+		{"gRPC PermissionDenied", status.Error(codes.PermissionDenied, "denied"), ErrTerminal},
+		{"gRPC InvalidArgument", status.Error(codes.InvalidArgument, "bad arg"), ErrTerminal},
 		{"gRPC Internal (non-retryable)", status.Error(codes.Internal, "boom"), ErrTerminal},
-		{"HTTP 401 string", errors.New("error: 401 Unauthorized"), ErrAuth},
-		{"HTTP UNAUTHENTICATED string", errors.New("UNAUTHENTICATED access"), ErrAuth},
-		{"HTTP 429 string", errors.New("error: 429 Too Many Requests"), ErrTransient},
-		{"HTTP RESOURCE_EXHAUSTED string", errors.New("RESOURCE_EXHAUSTED"), ErrTransient},
-		{"HTTP 503 string", errors.New("error: 503 Service Unavailable"), ErrTransient},
-		{"HTTP UNAVAILABLE string", errors.New("UNAVAILABLE"), ErrTransient},
-		{"HTTP 504 string", errors.New("error: 504 Gateway Timeout"), ErrTransient},
-		{"HTTP GATEWAY_TIMEOUT string", errors.New("GATEWAY_TIMEOUT"), ErrTransient},
+		{"HTTP 401 via StatusCode", &httpStatusErrImpl{401, "unauthorized"}, ErrAuth},
+		{"HTTP 429 via StatusCode", &httpStatusErrImpl{429, "too many requests"}, ErrTransient},
+		{"HTTP 500 via StatusCode", &httpStatusErrImpl{500, "internal error"}, ErrTransient},
+		{"HTTP 503 via StatusCode", &httpStatusErrImpl{503, "unavailable"}, ErrTransient},
+		{"HTTP 400 via StatusCode", &httpStatusErrImpl{400, "bad request"}, ErrTerminal},
+		{"HTTP 404 via StatusCode", &httpStatusErrImpl{404, "not found"}, ErrTerminal},
+		{"HTTP 401 string fallback", errors.New("error: UNAUTHENTICATED"), ErrAuth},
+		{"HTTP UNAUTENTICATED string fallback", errors.New("API_KEY_INVALID"), ErrAuth},
 		{"Generic error", errors.New("some random error"), ErrTerminal},
+		{"Already wrapped ErrAuth", fmt.Errorf("%w: nested", ErrAuth), ErrAuth},
 	}
 
 	r := &ResilientClient{}

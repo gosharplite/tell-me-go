@@ -84,7 +84,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 		},
 		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 			if authCalls == 0 {
-				return nil, fmt.Errorf("401 Unauthorized")
+				return nil, fmt.Errorf("UNAUTHENTICATED")
 			}
 			callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Success"}}})
 			return &llm.Metrics{}, nil

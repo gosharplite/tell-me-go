@@ -29,30 +29,52 @@ func NewResilientClient(client llm.LLMClient, disableStreaming bool) *ResilientC
 	}
 }
 
+// httpStatusErr captures various HTTP error implementations in SDKs.
+type httpStatusErr interface {
+	StatusCode() int
+}
+
 // WrapError converts raw client errors into domain-specific Gateway errors.
 func (r *ResilientClient) WrapError(err error) error {
 	if err == nil {
 		return nil
 	}
 
+	// 1. Prioritize Domain Errors already classified
+	if errors.Is(err, ErrAuth) || errors.Is(err, ErrTransient) || errors.Is(err, ErrTerminal) {
+		return err
+	}
+
+	// 2. Check gRPC Status Codes
 	if s, ok := status.FromError(err); ok {
 		switch s.Code() {
 		case codes.Unauthenticated:
 			return fmt.Errorf("%w: %v", ErrAuth, err)
-		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded:
+		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
 			return fmt.Errorf("%w: %v", ErrTransient, err)
+		case codes.PermissionDenied, codes.InvalidArgument:
+			return fmt.Errorf("%w: %v", ErrTerminal, err)
 		}
 	}
 
-	// Fallback to string matching for non-GRPC errors (e.g. from SDK's HTTP layer)
-	msg := strings.ToUpper(err.Error())
-	if strings.Contains(msg, "401") || strings.Contains(msg, "UNAUTHENTICATED") {
-		return fmt.Errorf("%w: %v", ErrAuth, err)
+	// 3. Check for HTTP Status via Type Assertion (covers SDK REST fallbacks)
+	var httpErr httpStatusErr
+	if errors.As(err, &httpErr) {
+		code := httpErr.StatusCode()
+		switch {
+		case code == 401:
+			return fmt.Errorf("%w: %v", ErrAuth, err)
+		case code == 429 || code >= 500:
+			return fmt.Errorf("%w: %v", ErrTransient, err)
+		case code >= 400 && code < 500:
+			return fmt.Errorf("%w: %v", ErrTerminal, err)
+		}
 	}
-	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
-		strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") ||
-		strings.Contains(msg, "504") || strings.Contains(msg, "GATEWAY_TIMEOUT") {
-		return fmt.Errorf("%w: %v", ErrTransient, err)
+
+	// 4. Fallback: Only use string matching as a last resort for unknown wrappers
+	msg := strings.ToUpper(err.Error())
+	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
+		return fmt.Errorf("%w: %v", ErrAuth, err)
 	}
 
 	return fmt.Errorf("%w: %v", ErrTerminal, err)
