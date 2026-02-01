@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"sync"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -36,6 +37,7 @@ type SymbolIndex interface {
 type Indexer struct {
 	dir  string
 	fset *token.FileSet
+	mu   sync.RWMutex
 	pkgs []*packages.Package
 }
 
@@ -47,6 +49,9 @@ func NewIndexer(dir string) (*Indexer, error) {
 }
 
 func (idx *Indexer) Refresh(ctx context.Context) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
 	if idx.pkgs != nil {
 		// For now, simple "once per session" caching
 		// In a long-running service, we'd check file mod times
@@ -75,6 +80,9 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 }
 
 func (idx *Indexer) Lookup(ctx context.Context, symbol string) ([]Location, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
 	var locations []Location
 	for _, pkg := range idx.pkgs {
 		obj := pkg.Types.Scope().Lookup(symbol)
@@ -91,6 +99,9 @@ func (idx *Indexer) Lookup(ctx context.Context, symbol string) ([]Location, erro
 }
 
 func (idx *Indexer) FindImplementors(ctx context.Context, interfaceName string) ([]TypeName, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
 	var iface *types.Interface
 
 	// Find the interface type

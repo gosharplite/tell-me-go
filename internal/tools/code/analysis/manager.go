@@ -20,13 +20,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
-type AnalysisManager struct {
-	Indexer index.SymbolIndex
-	SP      types.SecurityProvider
+type CommandExecutor interface {
+	Output(ctx context.Context, name string, args ...string) ([]byte, error)
+	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-func NewAnalysisManager(idx index.SymbolIndex, sp types.SecurityProvider) *AnalysisManager {
-	return &AnalysisManager{Indexer: idx, SP: sp}
+type RealExecutor struct{}
+
+func (e *RealExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+func (e *RealExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+type AnalysisManager struct {
+	Indexer index.SymbolIndex
+	Cache   *astutil.ASTCache
+	SP      types.SecurityProvider
+	Exec    CommandExecutor
+}
+
+func NewAnalysisManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp types.SecurityProvider) *AnalysisManager {
+	return &AnalysisManager{
+		Indexer: idx,
+		Cache:   cache,
+		SP:      sp,
+		Exec:    &RealExecutor{},
+	}
 }
 
 func (m *AnalysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}) (types.ToolResult, error) {
@@ -55,7 +77,7 @@ func (m *AnalysisManager) AnalyzeComplexity(ctx context.Context, args map[string
 			return nil
 		}
 
-		f, fset, err := astutil.GlobalCache.Get(filePath)
+		f, fset, err := m.Cache.Get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -114,8 +136,7 @@ func (m *AnalysisManager) GetPackageGraph(ctx context.Context, args map[string]i
 		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Analyzing package dependencies\033[0m\n")
 	}()
 
-	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
-	out, err := cmd.CombinedOutput()
+	out, err := m.Exec.CombinedOutput(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	if err != nil {
 		return types.ToolResult{Text: fmt.Sprintf("Error listing packages: %v\nOutput: %s", err, string(out))}, nil
 	}
@@ -125,8 +146,7 @@ func (m *AnalysisManager) GetPackageGraph(ctx context.Context, args map[string]i
 	sb.WriteString("Internal Package Dependency Graph:\n")
 
 	// Get module name to filter for internal imports
-	modCmd := exec.CommandContext(ctx, "go", "list", "-m")
-	modOut, _ := modCmd.Output()
+	modOut, _ := m.Exec.Output(ctx, "go", "list", "-m")
 	modName := strings.TrimSpace(string(modOut))
 
 	for _, line := range lines {
@@ -169,8 +189,8 @@ func (m *AnalysisManager) SemanticDiff(ctx context.Context, args map[string]inte
 	target := params.Target
 
 	// 1. Get stats and summary as before
-	statOut, _ := exec.CommandContext(ctx, "git", "diff", "--stat", target).CombinedOutput()
-	summaryOut, _ := exec.CommandContext(ctx, "git", "diff", "--summary", target).CombinedOutput()
+	statOut, _ := m.Exec.CombinedOutput(ctx, "git", "diff", "--stat", target)
+	summaryOut, _ := m.Exec.CombinedOutput(ctx, "git", "diff", "--summary", target)
 
 	var sb strings.Builder
 	sb.WriteString("Semantic Diff Summary:\n\n")
@@ -183,7 +203,7 @@ func (m *AnalysisManager) SemanticDiff(ctx context.Context, args map[string]inte
 	sb.WriteString("\nLogical Code Changes:\n")
 
 	// Get list of changed .go files
-	filesOut, err := exec.CommandContext(ctx, "git", "diff", "--name-only", target).CombinedOutput()
+	filesOut, err := m.Exec.CombinedOutput(ctx, "git", "diff", "--name-only", target)
 	if err != nil {
 		return types.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
 	}
@@ -197,14 +217,14 @@ func (m *AnalysisManager) SemanticDiff(ctx context.Context, args map[string]inte
 		}
 
 		// Get current AST
-		currAST, _, err := astutil.GlobalCache.Get(relPath)
+		currAST, _, err := m.Cache.Get(relPath)
 		if err != nil {
 			continue // Skip unparsable current files
 		}
 
 		// Get target AST (base)
 		var baseAST *ast.File
-		baseContent, err := exec.CommandContext(ctx, "git", "show", target+":"+relPath).Output()
+		baseContent, err := m.Exec.Output(ctx, "git", "show", target+":"+relPath)
 		if err == nil {
 			baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
 		}
@@ -384,7 +404,7 @@ func (m *AnalysisManager) FindUsages(ctx context.Context, args map[string]interf
 		default:
 		}
 
-		f, fset, err := astutil.GlobalCache.Get(filePath)
+		f, fset, err := m.Cache.Get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -448,7 +468,7 @@ func (m *AnalysisManager) ListSymbols(ctx context.Context, args map[string]inter
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, fset, err := astutil.GlobalCache.Get(filePath)
+		f, fset, err := m.Cache.Get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -522,7 +542,7 @@ func (m *AnalysisManager) GetTypeInfo(ctx context.Context, args map[string]inter
 		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
 			return nil
 		}
-		f, _, err := astutil.GlobalCache.Get(filePath)
+		f, _, err := m.Cache.Get(filePath)
 		if err != nil {
 			return nil
 		}
@@ -570,7 +590,7 @@ func (m *AnalysisManager) GetTypeInfo(ctx context.Context, args map[string]inter
 							if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
 								return nil
 							}
-							ff, _, _ := astutil.GlobalCache.Get(p)
+							ff, _, _ := m.Cache.Get(p)
 							if ff == nil {
 								return nil
 							}
@@ -643,7 +663,7 @@ func (m *AnalysisManager) GrepDefinitionsGo(ctx context.Context, path, query str
 			return nil
 		}
 
-		f, fset, err := astutil.GlobalCache.Get(filePath)
+		f, fset, err := m.Cache.Get(filePath)
 		if err != nil {
 			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
 			return nil // Skip files with syntax errors but track them

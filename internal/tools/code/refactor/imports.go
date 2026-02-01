@@ -1,11 +1,14 @@
 package refactor
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
+	"go/format"
+	"go/parser"
 	"go/token"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/imports"
 )
 
 type ImportCleanupTransform struct {
@@ -23,10 +26,24 @@ func (t *ImportCleanupTransform) Apply(ctx context.Context, fset *token.FileSet,
 		return nil
 	}
 
-	// Use golang.org/x/tools/go/ast/astutil to clean up imports
-	// This is a simplified version
-	astutil.AddImport(fset, file, "fmt") // Dummy to ensure it works
-	astutil.DeleteImport(fset, file, "fmt")
+	// Clean up imports using imports.Process
+	// We need to format the file to a buffer first because imports.Process works on bytes
+	var buf bytes.Buffer
+	if err := format.Node(&buf, fset, file); err != nil {
+		return err
+	}
 
+	res, err := imports.Process(t.Path, buf.Bytes(), nil)
+	if err != nil {
+		return err
+	}
+
+	// Re-parse the result back into the AST
+	newFile, err := parser.ParseFile(fset, t.Path, res, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+
+	files[t.Path] = newFile
 	return nil
 }

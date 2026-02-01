@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -68,4 +69,48 @@ func (c Circle) Area() float64 {
 	if !found {
 		t.Errorf("expected to find Circle as implementor of Shape")
 	}
+}
+
+
+func TestIndexer_Concurrency(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "indexer_concurrency_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	err = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code := "package test\ntype X interface { Foo() }\ntype Y struct{}\nfunc (y Y) Foo() {}"
+	err = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := NewIndexer(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			idx.Refresh(ctx)
+		}()
+		go func() {
+			defer wg.Done()
+			idx.Lookup(ctx, "X")
+		}()
+		go func() {
+			defer wg.Done()
+			idx.FindImplementors(ctx, "X")
+		}()
+	}
+	wg.Wait()
 }

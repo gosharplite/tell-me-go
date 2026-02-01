@@ -77,8 +77,6 @@ func (c *ASTCache) Get(path string) (*ast.File, *token.FileSet, error) {
 	return f, c.fset, nil
 }
 
-var GlobalCache = NewASTCache()
-
 func ExprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
@@ -182,8 +180,8 @@ func GetFuncTypeSig(f *ast.FuncType) string {
 	return sb.String()
 }
 
-func GetFileSkeletonGo(filePath string) (string, error) {
-	f, _, err := GlobalCache.Get(filePath)
+func (c *ASTCache) GetFileSkeletonGo(filePath string) (string, error) {
+	f, _, err := c.Get(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse Go file: %w", err)
 	}

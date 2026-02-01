@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -39,19 +40,38 @@ func (tx *Transaction) Commit(ctx context.Context) error {
 		}
 	}
 
+	var writtenFiles []string
 	for path, file := range tx.files {
-		f, err := os.Create(path)
+		tmpPath := path + ".tmp"
+		f, err := os.Create(tmpPath)
 		if err != nil {
+			tx.rollback(writtenFiles)
 			return err
 		}
 		if err := format.Node(f, tx.fset, file); err != nil {
 			f.Close()
+			os.Remove(tmpPath)
+			tx.rollback(writtenFiles)
 			return err
 		}
 		f.Close()
+		writtenFiles = append(writtenFiles, path)
+	}
+
+	for _, path := range writtenFiles {
+		if err := os.Rename(path+".tmp", path); err != nil {
+			// This is tricky if it fails mid-way, but Renaming is usually atomic on the same FS
+			return fmt.Errorf("failed to finalize %s: %w", path, err)
+		}
 	}
 
 	return nil
+}
+
+func (tx *Transaction) rollback(writtenFiles []string) {
+	for _, path := range writtenFiles {
+		os.Remove(path + ".tmp")
+	}
 }
 
 func (tx *Transaction) LoadFile(path string) (*ast.File, error) {

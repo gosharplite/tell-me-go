@@ -6,6 +6,7 @@ package code
 import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/index"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/refactor"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -15,8 +16,9 @@ import (
 // Register adds AST-based tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	idx, _ := index.NewIndexer(".")
+	cache := astutil.NewASTCache()
 	ref := refactor.NewRefactorManager(sm)
-	ana := analysis.NewAnalysisManager(idx, sm)
+	ana := analysis.NewAnalysisManager(idx, cache, sm)
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
 
