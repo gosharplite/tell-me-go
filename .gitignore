@@ -33,3 +33,8 @@ api_key.txt
 .DS_Store
 Thumbs.db
 
+
+# Test and Coverage
+*.out
+*.test
+*.prof
