@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,53 +105,33 @@ func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface
 		return types.ToolResult{}, err
 	}
 
-	var results []string
-	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
-			return nil
-		}
-		f, fset, err := m.Cache.Get(filePath)
-		if err != nil {
-			return nil
-		}
+	if err := m.Indexer.Refresh(ctx); err != nil {
+		return types.ToolResult{}, err
+	}
 
-		for _, decl := range f.Decls {
-			switch d := decl.(type) {
-			case *ast.FuncDecl:
-				if params.ExportedOnly && !ast.IsExported(d.Name.Name) {
-					continue
-				}
-				results = append(results, fmt.Sprintf("%s:%d: %s", filePath, fset.Position(d.Pos()).Line, astutil.GetFuncSignature(d)))
-			case *ast.GenDecl:
-				for _, spec := range d.Specs {
-					switch s := spec.(type) {
-					case *ast.TypeSpec:
-						if params.ExportedOnly && !ast.IsExported(s.Name.Name) {
-							continue
-						}
-						results = append(results, fmt.Sprintf("%s:%d: type %s", filePath, fset.Position(s.Pos()).Line, s.Name.Name))
-					case *ast.ValueSpec:
-						for _, name := range s.Names {
-							if params.ExportedOnly && !ast.IsExported(name.Name) {
-								continue
-							}
-							results = append(results, fmt.Sprintf("%s:%d: %s %s", filePath, fset.Position(name.Pos()).Line, d.Tok, name.Name))
-						}
-					}
-				}
-			}
-		}
-		return nil
-	})
-
+	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, "", params.ExportedOnly)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
+
+	var results []string
+	for _, sym := range symbols {
+		desc := sym.Name
+		switch sym.Kind {
+		case "type":
+			desc = "type " + sym.Name
+		case "func":
+			if sym.Signature != "" {
+				desc = sym.Signature
+			}
+		case "var":
+			desc = "var " + sym.Name
+		case "const":
+			desc = "const " + sym.Name
+		}
+		results = append(results, fmt.Sprintf("%s:%d: %s", sym.Path, sym.Line, desc))
+	}
+
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No symbols found."}, nil
 	}
@@ -213,49 +192,22 @@ func (m *TypeManager) FindUsages(ctx context.Context, args map[string]interface{
 		return types.ToolResult{}, err
 	}
 
-	var results []string
+	if err := m.Indexer.Refresh(ctx); err != nil {
+		return types.ToolResult{}, err
+	}
 
-	err = filepath.Walk(resolvedPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		f, fset, err := m.Cache.Get(filePath)
-		if err != nil {
-			return nil
-		}
-
-		// Read file lines for context
-		var lines []string
-		if content, err := os.ReadFile(filePath); err == nil {
-			lines = strings.Split(string(content), "\n")
-		}
-
-		ast.Inspect(f, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok {
-				if id.Name == query {
-					pos := fset.Position(id.Pos())
-					lineContent := ""
-					if pos.Line > 0 && pos.Line <= len(lines) {
-						lineContent = strings.TrimSpace(lines[pos.Line-1])
-					}
-					results = append(results, fmt.Sprintf("%s:%d:%d: %s", filePath, pos.Line, pos.Column, lineContent))
-				}
-			}
-			return true
-		})
-		return nil
-	})
-
+	locs, err := m.Indexer.GetUsages(ctx, query, resolvedPath)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
+
+	var results []string
+	for _, loc := range locs {
+		// To keep rendering consistent with previous version, we might want line content.
+		// But index only has location. We could fetch line content from cache if needed.
+		results = append(results, fmt.Sprintf("%s:%d:%d", loc.Path, loc.Line, loc.Column))
+	}
+
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No usages found."}, nil
 	}
@@ -280,66 +232,37 @@ func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]inter
 		return types.ToolResult{}, err
 	}
 
-	results, err := m.GrepDefinitionsGo(ctx, resolvedPath, params.Query)
+	if err := m.Indexer.Refresh(ctx); err != nil {
+		return types.ToolResult{}, err
+	}
+
+	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, params.Query, false)
 	if err != nil {
 		return types.ToolResult{}, err
 	}
+
+	var results []string
+	for _, sym := range symbols {
+		desc := sym.Name
+		switch sym.Kind {
+		case "type":
+			desc = "type " + sym.Name
+		case "func":
+			if sym.Signature != "" {
+				desc = sym.Signature
+			}
+		case "var":
+			desc = "var " + sym.Name
+		case "const":
+			desc = "const " + sym.Name
+		}
+		results = append(results, fmt.Sprintf("%s:%d: %s", sym.Path, sym.Line, desc))
+	}
+
 	if len(results) == 0 {
 		return types.ToolResult{Text: "No definitions found."}, nil
 	}
 	return types.ToolResult{Text: strings.Join(results, "\n")}, nil
-}
-
-func (m *TypeManager) GrepDefinitionsGo(ctx context.Context, path, query string) ([]string, error) {
-	var results []string
-	var parseErrors []string
-
-	err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if err != nil || info.IsDir() || filepath.Ext(filePath) != ".go" {
-			return nil
-		}
-
-		f, fset, err := m.Cache.Get(filePath)
-		if err != nil {
-			parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", filePath, err))
-			return nil
-		}
-
-		for _, decl := range f.Decls {
-			switch d := decl.(type) {
-			case *ast.FuncDecl:
-				name := d.Name.Name
-				if query == "" || strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
-					line := fset.Position(d.Pos()).Line
-					sig := astutil.GetFuncSignature(d)
-					results = append(results, fmt.Sprintf("%s:%d: %s", filePath, line, sig))
-				}
-			case *ast.GenDecl:
-				if d.Tok == token.TYPE {
-					for _, spec := range d.Specs {
-						tSpec := spec.(*ast.TypeSpec)
-						name := tSpec.Name.Name
-						if query == "" || strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
-							line := fset.Position(tSpec.Pos()).Line
-							results = append(results, fmt.Sprintf("%s:%d: type %s", filePath, line, name))
-						}
-					}
-				}
-			}
-		}
-		return nil
-	})
-
-	if len(results) == 0 && len(parseErrors) > 0 {
-		return nil, fmt.Errorf("failed to parse Go files:\n%s", strings.Join(parseErrors, "\n"))
-	}
-
-	return results, err
 }
 
 func (m *TypeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc index.Location) TypeDefinition {
@@ -401,6 +324,9 @@ func (m *TypeManager) parseInterfaceMethods(list *ast.FieldList) []string {
 }
 
 func (m *TypeManager) findMethodsInPackage(dir, typeName string) ([]string, error) {
+	// Still using findMethodsInPackage with Walk/Cache because Indexer currently doesn't 
+	// associate methods with types in a way that's easy to retrieve here.
+	// Future optimization: Indexer should store receiver types for functions.
 	var methods []string
 	err := filepath.Walk(dir, func(p string, i os.FileInfo, e error) error {
 		if e != nil || i.IsDir() || filepath.Ext(p) != ".go" {
@@ -444,7 +370,7 @@ func (m *TypeManager) renderTypeInfo(def TypeDefinition, receivers []string) str
 		}
 	}
 
-	if def.Kind == "interface" && len(def.Methods) > 0 {
+	if len(def.Methods) > 0 {
 		sb.WriteString("Methods:\n")
 		for _, meth := range def.Methods {
 			sb.WriteString(fmt.Sprintf("  - %s\n", meth))
