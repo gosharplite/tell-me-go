@@ -13,19 +13,22 @@ import (
 
 // Summarizer implements the HistorySummarizer interface using an LLM gateway.
 type Summarizer struct {
-	gateway  gateway.LLMGateway
-	renderer UIRenderer
+	gateway gateway.LLMGateway
+	events  EventBus
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g gateway.LLMGateway, r UIRenderer) *Summarizer {
-	return &Summarizer{gateway: g, renderer: r}
+func NewSummarizer(g gateway.LLMGateway, events EventBus) *Summarizer {
+	return &Summarizer{gateway: g, events: events}
 }
 
 // Summarize uses the LLM to compress a subset of history.
 func (s *Summarizer) Summarize(ctx context.Context, subset []*types.Content, focus string) (string, error) {
-	if s.renderer != nil {
-		s.renderer.LogSystemMessage(fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)), "info")
+	if s.events != nil {
+		s.events.Publish(SystemMessageEvent{
+			Message: fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)),
+			Level:   "info",
+		})
 	}
 
 	// Transform history to text-only to avoid INVALID_ARGUMENT

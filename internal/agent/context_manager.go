@@ -18,16 +18,16 @@ type ContextManager struct {
 	Strategy   *ContextStrategy
 	History    *history.Manager
 	Summarizer HistorySummarizer
-	Renderer   UIRenderer
+	Events     EventBus
 }
 
 // NewContextManager creates a new ContextManager.
-func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, r UIRenderer) *ContextManager {
+func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, events EventBus) *ContextManager {
 	return &ContextManager{
 		Strategy:   s,
 		History:    h,
-		Summarizer: NewSummarizer(g, r),
-		Renderer:   r,
+		Summarizer: NewSummarizer(g, events),
+		Events:     events,
 	}
 }
 
@@ -50,7 +50,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 			Estimator:  cm.Strategy,
 			Summarizer: cm.Summarizer,
 			Manager:    cm.History,
-			Renderer:   cm.Renderer,
+			Events:     cm.Events,
 		},
 		&WarningInjector{
 			Strategy: cm.Strategy,

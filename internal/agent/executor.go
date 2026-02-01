@@ -24,7 +24,7 @@ type toolExecResult struct {
 type ToolExecutor struct {
 	registry           *registry.Registry
 	sm                 *tools.SecurityManager
-	renderer           UIRenderer
+	events             EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	showTools          bool
@@ -32,11 +32,11 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, renderer UIRenderer) *ToolExecutor {
+func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, events EventBus) *ToolExecutor {
 	return &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
-		renderer:           renderer,
+		events:             events,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		showTools:          true,
@@ -75,11 +75,22 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	}
 
 	if turn >= maxToolTurns {
-		e.renderer.LogSystemMessage(fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns), "error")
+		if e.events != nil {
+			e.events.Publish(SystemMessageEvent{
+				Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
+				Level:   "error",
+			})
+		}
 		return nil, ErrMaxTurnsReached
 	}
 
-	e.renderer.LogToolCall(functionCalls, turn, maxToolTurns, e.showTools)
+	if e.events != nil {
+		e.events.Publish(ToolCallEvent{
+			Calls:    functionCalls,
+			Turn:     turn,
+			MaxTurns: maxToolTurns,
+		})
+	}
 
 	resChan := make(chan toolExecResult, len(functionCalls))
 	var wg sync.WaitGroup
@@ -100,7 +111,12 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 			return nil, ctx.Err()
 		case res := <-resChan:
 			trs[res.index] = res.tr
-			e.renderer.LogToolResult(res.name, res.tr, e.showTools)
+			if e.events != nil {
+				e.events.Publish(ToolResultEvent{
+					Name:   res.name,
+					Result: res.tr,
+				})
+			}
 			completedCount++
 		}
 	}

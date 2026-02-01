@@ -193,7 +193,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	}
 
 	a := New(mockClient, h, registry, sm, false)
-	err := a.Chat(context.Background(), "Show me a cat")
+	sess := NewSession(h)
+	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}

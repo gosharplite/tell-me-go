@@ -17,6 +17,7 @@ type ContextMetadata struct {
 	PrunedTurns        int
 	SummarizedTurns    int
 	Warnings           []string
+	APIContents        []*types.Content
 }
 
 // ContextRequest carries state through the context transformation pipeline.

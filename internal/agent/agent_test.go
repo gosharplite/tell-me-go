@@ -24,7 +24,7 @@ func TestAgent_Setters(t *testing.T) {
 	registry := tools.NewRegistry()
 	a := New(nil, nil, registry, sm, false)
 	a.SetUIOptions(false, false)
-	if a.showThoughts || a.showTools {
+	if a.config.ShowThoughts || a.config.ShowTools {
 		t.Error("SetUIOptions failed")
 	}
 
@@ -40,7 +40,7 @@ func TestAgent_Setters(t *testing.T) {
 	}
 
 	a.SetLogFile("test.log")
-	if a.logFile != "test.log" {
+	if a.config.LogFile != "test.log" {
 		t.Error("SetLogFile failed")
 	}
 }
@@ -97,7 +97,8 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, registry, sm, false)
-	err := a.Chat(context.Background(), "Hello")
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -139,7 +140,8 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	a := New(mockClient, hManager, registry, sm, false)
 	a.executor.toolTimeout = 50 * time.Millisecond // Short timeout
 
-	_ = a.Chat(context.Background(), "Run slow tool")
+	sess := NewSession(hManager)
+	_ = a.Chat(context.Background(), sess, "Run slow tool")
 
 	contents := hManager.GetContents()
 	if len(contents) >= 3 {
@@ -186,7 +188,8 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, registry, sm, false)
-	_ = a.Chat(context.Background(), "Generate an image")
+	sess := NewSession(hManager)
+	_ = a.Chat(context.Background(), sess, "Generate an image")
 
 	contents := hManager.GetContents()
 	foundImage := false
@@ -242,7 +245,8 @@ func TestAgentToolLoop(t *testing.T) {
 	a := New(mockClient, hManager, registry, sm, false)
 
 	// Execute Chat
-	err := a.Chat(context.Background(), "What's the weather?")
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "What's the weather?")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
@@ -278,7 +282,8 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	a := New(mockClient, hManager, registry, sm, false)
 	a.SetLimits(2, 1000, 20) // Max 2 turns
 
-	err := a.Chat(context.Background(), "Run tool")
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Run tool")
 	if !errors.Is(err, ErrMaxTurnsReached) {
 		t.Fatalf("Expected ErrMaxTurnsReached, got: %v", err)
 	}
@@ -297,7 +302,8 @@ func TestAgent_Chat_APIError(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, registry, sm, false)
-	err := a.Chat(context.Background(), "Hello")
+	sess := NewSession(hManager)
+	err := a.Chat(context.Background(), sess, "Hello")
 	if err == nil {
 		t.Error("Expected error on API failure, got nil")
 	}
@@ -347,7 +353,8 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 			}
 		}()
 
-		err := a.Chat(ctx, "Run long tool")
+		sess := NewSession(hManager)
+		err := a.Chat(ctx, sess, "Run long tool")
 		if err == nil {
 			t.Error("Expected error due to context cancellation, got nil")
 		}

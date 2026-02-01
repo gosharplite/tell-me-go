@@ -13,6 +13,27 @@ import (
 // Event represents a generic signal from the Orchestrator.
 type Event interface{}
 
+// EventBus defines the interface for publishing and subscribing to events.
+type EventBus interface {
+	Publish(e Event)
+	Subscribe(sub func(Event))
+}
+
+// SimpleEventBus is a basic implementation of EventBus.
+type SimpleEventBus struct {
+	subscribers []func(Event)
+}
+
+func (b *SimpleEventBus) Publish(e Event) {
+	for _, sub := range b.subscribers {
+		sub(e)
+	}
+}
+
+func (b *SimpleEventBus) Subscribe(sub func(Event)) {
+	b.subscribers = append(b.subscribers, sub)
+}
+
 // StatusUpdate signals a change in the agent's internal state or progress.
 type StatusUpdate struct {
 	Message string
@@ -54,4 +75,16 @@ type UsageMetricsEvent struct {
 	Metrics   *types.Metrics
 	LogFile   string
 	StartTime time.Time
+}
+
+// SystemMessageEvent signals a system-level message (error, warning, info).
+type SystemMessageEvent struct {
+	Message string
+	Level   string
+}
+
+// TokenLimitReachedEvent signals that the conversation has reached its token limit.
+type TokenLimitReachedEvent struct {
+	Tokens   int
+	MaxLimit int
 }

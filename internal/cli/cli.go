@@ -175,7 +175,10 @@ func (a *App) run(ctx context.Context, args []string) error {
 	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned)
 
 	// 7. Execute & Finalize
-	if err := chatAgent.Chat(ctx, prompt); err != nil {
+	sess := agent.NewSession(hManager)
+	sess.PrunedTurns = pruned
+
+	if err := chatAgent.Chat(ctx, sess, prompt); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
 

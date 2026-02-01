@@ -85,7 +85,7 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(ctx context.Context, prompt string) error {
+func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string) error {
 	m.capturedPrompt = prompt
 	return nil
 }

@@ -86,7 +86,7 @@ type TokenGatekeeper struct {
 	Manager    interface {
 		ReplaceRange(ctx context.Context, start, end int, newContents []*types.Content) error
 	}
-	Renderer UIRenderer
+	Events EventBus
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
@@ -100,8 +100,15 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 		}
 
 		if tokens > t.MaxTokens {
-			if t.Renderer != nil {
-				t.Renderer.LogSystemMessage(fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, t.MaxTokens), "error")
+			if t.Events != nil {
+				t.Events.Publish(TokenLimitReachedEvent{
+					Tokens:   tokens,
+					MaxLimit: t.MaxTokens,
+				})
+				t.Events.Publish(SystemMessageEvent{
+					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, t.MaxTokens),
+					Level:   "error",
+				})
 			}
 			return ErrContextLimitExceeded
 		}

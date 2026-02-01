@@ -255,7 +255,7 @@ func TestContextManager_Prepare_PipelineIntegration(t *testing.T) {
 				return &types.Content{Parts: []*types.Part{{Text: "summary"}}}, &types.Metrics{}, nil
 			}
 		},
-	}, &mockRenderer{})
+	}, &SimpleEventBus{})
 
 	apiContents, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {

@@ -43,7 +43,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	strategy := NewContextStrategy(reg)
 	strategy.SetLimits(1000, 5, 20) // Turn 2/5 (remaining 3) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, &mockRenderer{})
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, &SimpleEventBus{})
 
 	// Prepare at turn 2 (approaching limit)
 	apiContents, _, err := cm.Prepare(ctx, 2)
@@ -106,7 +106,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &mockRenderer{})
+	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &SimpleEventBus{})
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
