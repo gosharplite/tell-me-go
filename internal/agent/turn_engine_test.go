@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -482,5 +483,40 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 				t.Errorf("expected error containing %q, got %v", tt.wantErr, res.Error)
 			}
 		})
+	}
+}
+
+func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	strategy := NewContextStrategy(reg)
+	hManager := history.NewManager("dummy")
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	attempts := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content)
+		close(ch)
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			attempts++
+			if attempts < 2 {
+				// Return gateway transient error
+				return nil, nil, gateway.ErrTransient
+			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+		}
+	}
+
+	e := NewTurnEngine(mockGw, nil, NewContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
 }

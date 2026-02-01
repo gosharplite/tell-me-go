@@ -107,38 +107,33 @@ func TestGenerate_SendChat_AuthRetry(t *testing.T) {
 	}
 }
 
-func TestGenerate_RetryableError(t *testing.T) {
+func TestGenerate_NoTransientRetry(t *testing.T) {
 	callCount := 0
 	client := &mockLLMClient{
 		sendChatFunc: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
-			if callCount == 1 {
-				return nil, nil, errors.New("429 Too Many Requests")
-			}
-			return &llm.Content{Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+			return nil, nil, errors.New("429 Too Many Requests")
 		},
 	}
 
-	// We use a small timeout to not wait too long in tests.
 	r := NewResilientClient(client, true)
-	r.sleep = func(ctx context.Context, d time.Duration) error { return nil }
 
 	outCh, finalize := r.Generate(context.Background(), nil, nil, nil)
 
 	for range outCh {
 	}
 
-	content, _, err := finalize()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, _, err := finalize()
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 
-	if callCount != 2 {
-		t.Errorf("expected 2 calls, got %d", callCount)
+	if !errors.Is(err, ErrTransient) {
+		t.Errorf("expected ErrTransient, got %v", err)
 	}
 
-	if content.Parts[0].Text != "success" {
-		t.Errorf("expected 'success', got %v", content.Parts[0].Text)
+	if callCount != 1 {
+		t.Errorf("expected exactly 1 call, got %d (ResilientClient should no longer retry transient errors)", callCount)
 	}
 }
 
@@ -196,7 +191,6 @@ func TestGenerate_StreamChat_AuthRetry(t *testing.T) {
 	}
 
 	r := NewResilientClient(client, false)
-	r.sleep = func(ctx context.Context, d time.Duration) error { return nil }
 
 	outCh, finalize := r.Generate(context.Background(), nil, nil, nil)
 
@@ -240,7 +234,6 @@ func TestGenerate_TerminalError(t *testing.T) {
 	}
 
 	r := NewResilientClient(client, true)
-	r.sleep = func(ctx context.Context, d time.Duration) error { return nil }
 
 	outCh, finalize := r.Generate(context.Background(), nil, nil, nil)
 	for range outCh {

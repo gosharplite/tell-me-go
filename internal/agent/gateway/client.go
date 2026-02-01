@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -20,7 +19,6 @@ import (
 type ResilientClient struct {
 	client           llm.LLMClient
 	disableStreaming bool
-	sleep            func(context.Context, time.Duration) error
 }
 
 // NewResilientClient creates a new ResilientClient.
@@ -28,14 +26,6 @@ func NewResilientClient(client llm.LLMClient, disableStreaming bool) *ResilientC
 	return &ResilientClient{
 		client:           client,
 		disableStreaming: disableStreaming,
-		sleep: func(ctx context.Context, d time.Duration) error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(d):
-				return nil
-			}
-		},
 	}
 }
 
@@ -68,66 +58,21 @@ func (r *ResilientClient) WrapError(err error) error {
 	return fmt.Errorf("%w: %v", ErrTerminal, err)
 }
 
+type result struct {
+	content *llm.Content
+	metrics *llm.Metrics
+	err     error
+}
+
 // Generate handles the LLM interaction logic, returning a stream and a finalizer.
 func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 	outCh := make(chan *llm.Content, 100)
-
-	type result struct {
-		content *llm.Content
-		metrics *llm.Metrics
-		err     error
-	}
 	resCh := make(chan result, 1)
 
 	go func() {
-		var finalContent *llm.Content
-		var finalMetrics *llm.Metrics
-		var finalErr error
-
-		for attempt := 0; attempt < 3; attempt++ {
-			if r.disableStreaming {
-				finalContent, finalMetrics, finalErr = r.client.SendChat(ctx, input, tools, resolver)
-				if finalErr == nil {
-					outCh <- finalContent
-					break
-				}
-			} else {
-				finalContent = &llm.Content{Role: "model"}
-				callback := func(c *llm.Content) {
-					for _, p := range c.Parts {
-						finalContent.AddPart(p)
-					}
-					outCh <- c
-				}
-				finalMetrics, finalErr = r.client.StreamChat(ctx, input, tools, resolver, callback)
-				if finalErr == nil {
-					break
-				}
-			}
-
-			wrappedErr := r.WrapError(finalErr)
-			if errors.Is(wrappedErr, ErrAuth) {
-				if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
-					continue // Immediate retry after auth refresh
-				}
-			}
-
-			if errors.Is(wrappedErr, ErrTransient) && attempt < 2 {
-				wait := time.Duration(1<<attempt) * time.Second
-				if err := r.sleep(ctx, wait); err != nil {
-					finalErr = err
-					attempt = 3 // break
-				} else {
-					continue
-				}
-			} else {
-				finalErr = wrappedErr
-				break
-			}
-		}
-
+		content, metrics, err := r.executeWithTransparentRetry(ctx, input, tools, resolver, outCh)
 		close(outCh)
-		resCh <- result{finalContent, finalMetrics, finalErr}
+		resCh <- result{content, metrics, err}
 	}()
 
 	finalize := func() (*llm.Content, *llm.Metrics, error) {
@@ -140,4 +85,48 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, to
 	}
 
 	return outCh, finalize
+}
+
+// executeWithTransparentRetry only retries for things the client can fix (like Auth)
+func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		content, metrics, err := r.attemptCall(ctx, input, tools, resolver, outCh)
+		if err == nil {
+			return content, metrics, nil
+		}
+
+		wrapped := r.WrapError(err)
+		if errors.Is(wrapped, ErrAuth) {
+			if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
+				continue // Fixed! Retry once.
+			}
+		}
+		lastErr = wrapped
+		break // Let the TurnEngine handle transient/terminal retries
+	}
+	return nil, nil, lastErr
+}
+
+func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+	if r.disableStreaming {
+		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
+		if err == nil {
+			outCh <- content
+		}
+		return content, metrics, err
+	}
+	return r.performStreamingCall(ctx, input, tools, resolver, outCh)
+}
+
+func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+	finalContent := &llm.Content{Role: "model"}
+	callback := func(c *llm.Content) {
+		for _, p := range c.Parts {
+			finalContent.AddPart(p)
+		}
+		outCh <- c
+	}
+	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
+	return finalContent, metrics, err
 }

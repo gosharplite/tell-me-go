@@ -3,7 +3,11 @@
 
 package agent
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+)
 
 // Error categories
 var (
@@ -30,6 +34,9 @@ func (e *AgentError) Unwrap() error {
 }
 
 func IsTransient(err error) bool {
+	if errors.Is(err, gateway.ErrTransient) {
+		return true
+	}
 	var ae *AgentError
 	if errors.As(err, &ae) {
 		return errors.Is(ae.Category, ErrTransient)
@@ -38,6 +45,9 @@ func IsTransient(err error) bool {
 }
 
 func IsFatal(err error) bool {
+	if errors.Is(err, gateway.ErrTerminal) || errors.Is(err, gateway.ErrAuth) {
+		return true
+	}
 	var ae *AgentError
 	if errors.As(err, &ae) {
 		return errors.Is(ae.Category, ErrFatal)
