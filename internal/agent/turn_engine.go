@@ -39,6 +39,7 @@ type ProcessResult struct {
 	NextPhase TurnPhase
 	Error     error
 	Stop      bool // Explicit signal to halt the turn
+	Recovery  bool // Explicit signal that we should enter recovery
 }
 
 // RetryPolicy defines how the engine should handle errors and retries.
@@ -232,96 +233,131 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	totalRetries := 0
 	for i := 0; ; i++ {
-		if err := ctx.Err(); err != nil {
+		if err := e.checkLimits(ctx, i); err != nil {
 			return err
 		}
 
-		_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
-		if i > maxTurns {
-			return fmt.Errorf("%w: turn %d exceeds limit %d", llm.ErrMaxTurnsReached, i, maxTurns)
-		}
-
-		if e.events != nil {
-			e.events.Publish(events.TurnStarted{Turn: i, MaxTurns: maxTurns})
-		}
-
-		turn := &Turn{
-			Index:      i,
-			StartTime:  startTime,
-			State:      &TurnState{CurrentTurns: i, Phase: PhaseRefining, RetryCount: totalRetries},
-			CtxManager: e.ctxManager,
-			Gateway:    e.gateway,
-			Executor:   e.executor,
-			Registry:   e.registry,
-			Events:     e.events,
-			Clock:      e.clock,
-		}
-		_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
-
-		for _, h := range e.hooks {
-			h.BeforeTurn(turn)
-		}
+		turn := e.createTurn(i, startTime, totalRetries)
+		e.notifyBeforeTurn(turn)
 
 		err := e.executeTurn(ctx, turn)
-
-		for _, h := range e.hooks {
-			h.AfterTurn(turn, err)
-		}
+		e.notifyAfterTurn(turn, err)
 
 		if err != nil {
 			return err
 		}
 
 		totalRetries = turn.State.RetryCount
-
-		if !turn.State.HasToolCalls || turn.Stop {
+		if e.shouldStopRunning(turn) {
 			break
 		}
 	}
 	return nil
 }
 
+func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
+	if turnIndex > maxTurns {
+		return fmt.Errorf("%w: turn %d exceeds limit %d", llm.ErrMaxTurnsReached, turnIndex, maxTurns)
+	}
+
+	if e.events != nil {
+		e.events.Publish(events.TurnStarted{Turn: turnIndex, MaxTurns: maxTurns})
+	}
+	return nil
+}
+
+func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
+	turn := &Turn{
+		Index:      index,
+		StartTime:  startTime,
+		State:      &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
+		CtxManager: e.ctxManager,
+		Gateway:    e.gateway,
+		Executor:   e.executor,
+		Registry:   e.registry,
+		Events:     e.events,
+		Clock:      e.clock,
+	}
+	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
+	return turn
+}
+
+func (e *TurnEngine) notifyBeforeTurn(turn *Turn) {
+	for _, h := range e.hooks {
+		h.BeforeTurn(turn)
+	}
+}
+
+func (e *TurnEngine) notifyAfterTurn(turn *Turn, err error) {
+	for _, h := range e.hooks {
+		h.AfterTurn(turn, err)
+	}
+}
+
+func (e *TurnEngine) shouldStopRunning(turn *Turn) bool {
+	return !turn.State.HasToolCalls || turn.Stop
+}
+
 func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 	for turn.State.Phase != PhaseComplete {
-		processor, ok := e.processors[turn.State.Phase]
-		if !ok {
-			return fmt.Errorf("no processor for phase: %s", turn.State.Phase)
+		res, err := e.executePhase(ctx, turn)
+		if err != nil {
+			return err
 		}
-
-		res := processor.Process(ctx, turn)
-		if res.Error != nil {
-			turn.State.LastError = res.Error
-			// If we hit an error and are not already recovering, try to recover.
-			if turn.State.Phase != PhaseRecovering {
-				for _, h := range e.hooks {
-					h.OnPhaseTransition(turn.State.Phase, PhaseRecovering, turn.State)
-				}
-				turn.State.Phase = PhaseRecovering
-				continue
-			}
-			return res.Error
-		}
-
-		next := res.NextPhase
-		if next == "" {
-			// This should ideally not happen in the new design, but we default to Complete for safety
-			next = PhaseComplete
-		}
-
-		for _, h := range e.hooks {
-			h.OnPhaseTransition(turn.State.Phase, next, turn.State)
-		}
-
-		turn.State.Phase = next
-		if res.Stop {
-			turn.Stop = true
-		}
-
-		if turn.Stop && turn.State.Phase != PhaseComplete {
+		if e.shouldBreak(turn, res) {
 			break
 		}
 	}
 	return nil
+}
+
+func (e *TurnEngine) executePhase(ctx context.Context, turn *Turn) (ProcessResult, error) {
+	processor, ok := e.processors[turn.State.Phase]
+	if !ok {
+		return ProcessResult{}, fmt.Errorf("no processor for phase: %s", turn.State.Phase)
+	}
+
+	res := processor.Process(ctx, turn)
+	if res.Error != nil {
+		turn.State.LastError = res.Error
+	}
+
+	next := e.determineNextPhase(turn.State.Phase, res)
+	e.notifyTransition(turn.State.Phase, next, turn.State)
+	turn.State.Phase = next
+
+	if res.Error != nil && next == PhaseComplete {
+		return res, res.Error
+	}
+	return res, nil
+}
+
+func (e *TurnEngine) shouldBreak(turn *Turn, res ProcessResult) bool {
+	if res.Stop {
+		turn.Stop = true
+	}
+	return turn.Stop && turn.State.Phase != PhaseComplete
+}
+
+func (e *TurnEngine) determineNextPhase(current TurnPhase, res ProcessResult) TurnPhase {
+	if (res.Error != nil || res.Recovery) && current != PhaseRecovering {
+		return PhaseRecovering
+	}
+	if res.NextPhase != "" {
+		return res.NextPhase
+	}
+	return PhaseComplete
+}
+
+func (e *TurnEngine) notifyTransition(from, to TurnPhase, state *TurnState) {
+	for _, h := range e.hooks {
+		h.OnPhaseTransition(from, to, state)
+	}
 }
 
 // ContextRefiner prepares the context for the LLM call.
@@ -343,6 +379,17 @@ func (p *ContextRefiner) Process(ctx context.Context, turn *Turn) ProcessResult 
 type InferenceStep struct{}
 
 func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
+	respContent, metrics, err := p.invokeModel(ctx, turn)
+	if err != nil {
+		return ProcessResult{Error: err}
+	}
+
+	p.updateState(turn, respContent, metrics)
+
+	return p.routeBasedOnContent(respContent)
+}
+
+func (p *InferenceStep) invokeModel(ctx context.Context, turn *Turn) (*llm.Content, *llm.Metrics, error) {
 	apiContents := turn.State.Metadata.APIContents
 	respCh, finalize := turn.Gateway.Generate(ctx, apiContents, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
@@ -355,19 +402,25 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return ProcessResult{Error: err}
+		return nil, nil, err
 	}
 	if respContent == nil {
-		return ProcessResult{Error: fmt.Errorf("api returned nil content")}
+		return nil, nil, fmt.Errorf("api returned nil content")
 	}
-	turn.State.Response = respContent
+	return respContent, metrics, nil
+}
+
+func (p *InferenceStep) updateState(turn *Turn, content *llm.Content, metrics *llm.Metrics) {
+	turn.State.Response = content
 	turn.State.Metrics = metrics
 	if metrics != nil {
 		turn.State.Tokens = int(metrics.PromptTokens)
 	}
-	turn.State.HasToolCalls = p.hasToolCalls(respContent)
+	turn.State.HasToolCalls = p.hasToolCalls(content)
+}
 
-	if turn.State.HasToolCalls {
+func (p *InferenceStep) routeBasedOnContent(content *llm.Content) ProcessResult {
+	if p.hasToolCalls(content) {
 		return ProcessResult{NextPhase: PhaseExecuting}
 	}
 	return ProcessResult{NextPhase: PhasePersisting}
@@ -442,12 +495,20 @@ func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 
 	delay, retry := p.Policy.ShouldRetry(err, turn.State.RetryCount)
 	if !retry {
-		if IsTransient(err) {
-			return ProcessResult{NextPhase: PhaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
-		}
-		return ProcessResult{NextPhase: PhaseComplete, Error: err}
+		return p.handleFailure(err)
 	}
 
+	return p.attemptRetry(ctx, turn, delay)
+}
+
+func (p *RecoveryStep) handleFailure(err error) ProcessResult {
+	if IsTransient(err) {
+		return ProcessResult{NextPhase: PhaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
+	}
+	return ProcessResult{NextPhase: PhaseComplete, Error: err}
+}
+
+func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *Turn, delay time.Duration) ProcessResult {
 	turn.State.RetryCount++
 
 	if err := ctx.Err(); err != nil {
