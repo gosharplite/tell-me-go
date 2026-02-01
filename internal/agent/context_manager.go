@@ -21,15 +21,33 @@ type ContextManager struct {
 	Summarizer HistorySummarizer
 	Pipeline   *ContextPipeline
 	Events     events.EventBus
+	factory    *PipelineFactory
 }
 
 // NewContextManager creates a new ContextManager.
-func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus) *ContextManager {
-	return &ContextManager{
+func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+	cm := &ContextManager{
 		Strategy:   s,
 		History:    h,
 		Summarizer: NewSummarizer(g, bus),
 		Events:     bus,
+		factory:    factory,
+	}
+
+	if bus != nil {
+		bus.Subscribe(func(e events.Event) {
+			if cfg, ok := e.(events.ConfigUpdated); ok {
+				cm.onConfigUpdated(cfg)
+			}
+		})
+	}
+
+	return cm
+}
+
+func (cm *ContextManager) onConfigUpdated(e events.ConfigUpdated) {
+	if cm.factory != nil {
+		cm.Pipeline = cm.factory.BuildStandardPipeline(e.Limits)
 	}
 }
 

@@ -60,7 +60,7 @@ func TestContextStrategy_EstimateValueSize(t *testing.T) {
 
 func TestContextStrategy_EstimateTokens(t *testing.T) {
 	registry := &mockToolRegistry{}
-	cs := NewContextStrategy(registry)
+	cs := NewContextStrategy(registry, nil)
 
 	t.Run("Base overhead", func(t *testing.T) {
 		registry.declarations = nil
@@ -136,7 +136,7 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 }
 
 func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
-	cs := NewContextStrategy(&mockToolRegistry{})
+	cs := NewContextStrategy(&mockToolRegistry{}, nil)
 	cs.SetLimits(1000, 10, 100)
 
 	t.Run("Exact Boundaries - 90%", func(t *testing.T) {

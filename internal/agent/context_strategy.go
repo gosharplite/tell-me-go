@@ -6,6 +6,7 @@ package agent
 import (
 	"fmt"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -30,13 +31,23 @@ type ToolRegistry interface {
 }
 
 // NewContextStrategy creates a new context strategy.
-func NewContextStrategy(registry ToolRegistry) *ContextStrategy {
-	return &ContextStrategy{
+func NewContextStrategy(registry ToolRegistry, bus events.EventBus) *ContextStrategy {
+	cs := &ContextStrategy{
 		registry:         registry,
 		maxHistoryTokens: 120000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
 	}
+
+	if bus != nil {
+		bus.Subscribe(func(e events.Event) {
+			if cfg, ok := e.(events.ConfigUpdated); ok {
+				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
+			}
+		})
+	}
+
+	return cs
 }
 
 // SetLimits updates the operational limits.

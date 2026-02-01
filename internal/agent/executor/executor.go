@@ -35,7 +35,7 @@ type ToolExecutor struct {
 
 // NewToolExecutor creates a new ToolExecutor.
 func NewToolExecutor(registry *registry.Registry, sm *internaltools.SecurityManager, bus events.EventBus) *ToolExecutor {
-	return &ToolExecutor{
+	e := &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
 		events:             bus,
@@ -44,6 +44,16 @@ func NewToolExecutor(registry *registry.Registry, sm *internaltools.SecurityMana
 		pool:               NewWorkerPool(5),
 		strategy:           &MarkdownStrategy{},
 	}
+
+	if bus != nil {
+		bus.Subscribe(func(event events.Event) {
+			if cfg, ok := event.(events.ConfigUpdated); ok {
+				e.SetConcurrency(cfg.Execution.MaxConcurrent, cfg.Execution.Timeout)
+			}
+		})
+	}
+
+	return e
 }
 
 // SetStrategy sets the result formatting strategy.

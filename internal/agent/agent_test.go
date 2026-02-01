@@ -29,7 +29,7 @@ func TestAgent_Setters(t *testing.T) {
 	a.SetLimits(5, 1000, 20)
 	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
-		t.Error("SetLimits failed")
+		t.Errorf("SetLimits failed: tokens=%d, toolTurns=%d, histTurns=%d", maxTokens, maxTurns, maxHistTurns)
 	}
 
 	a.SetConcurrency(10, 60)
@@ -377,7 +377,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	a.refreshLimits()
+	a.applyConfig()
 
 	maxTokens, maxTurns, _ := a.strategy.GetLimits()
 	if maxTokens != 5000 {
@@ -406,7 +406,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 		t.Fatalf("failed to write yaml config file: %v", err)
 	}
 
-	a.refreshLimits()
+	a.applyConfig()
 
 	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
 	if maxTokens != 200000 {

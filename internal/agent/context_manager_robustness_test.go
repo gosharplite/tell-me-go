@@ -41,10 +41,11 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockRegistry{}
-	strategy := NewContextStrategy(reg)
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(reg, bus)
 	strategy.SetLimits(1000, 5, 20) // Turn 2/5 (remaining 3) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, &events.SimpleEventBus{})
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
 
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
@@ -133,7 +134,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 		},
 	}
 
-	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, g, &events.SimpleEventBus{})
+	bus := &events.SimpleEventBus{}
+	cm := NewContextManager(NewContextStrategy(&mockRegistry{}, bus), hManager, g, bus, nil)
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {

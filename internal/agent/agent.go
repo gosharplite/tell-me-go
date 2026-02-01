@@ -30,8 +30,10 @@ type Chatter interface {
 	Subscribe(sub func(events.Event))
 }
 
-// AgentConfig holds the configuration for the Agent.
-type AgentConfig struct {
+// RuntimeConfig consolidates all agent configuration parameters.
+type RuntimeConfig struct {
+	Limits               events.Limits
+	Execution            events.ExecutionConfig
 	LogFile              string
 	PersistentConfigPath string
 	MainConfigPath       string
@@ -49,7 +51,7 @@ type Agent struct {
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 
-	config AgentConfig
+	config RuntimeConfig
 }
 
 // AgentOption defines a functional option for configuring an Agent.
@@ -58,10 +60,10 @@ type AgentOption func(*Agent)
 // WithLimits sets the initial operational limits.
 func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 	return func(a *Agent) {
-		a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
-		a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-		if a.ctxManager != nil {
-			a.ctxManager.Pipeline = a.buildDefaultPipeline()
+		a.config.Limits = events.Limits{
+			MaxHistoryTokens: historyTokens,
+			MaxToolTurns:     toolTurns,
+			MaxHistoryTurns:  historyTurns,
 		}
 	}
 }
@@ -69,7 +71,10 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 // WithConcurrency sets the parallel execution limits for the agent.
 func WithConcurrency(maxConcurrent int, timeoutSeconds int) AgentOption {
 	return func(a *Agent) {
-		a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
+		a.config.Execution = events.ExecutionConfig{
+			MaxConcurrent: maxConcurrent,
+			Timeout:       time.Duration(timeoutSeconds) * time.Second,
+		}
 	}
 }
 
@@ -84,7 +89,6 @@ func WithLogFile(path string) AgentOption {
 func WithPersistentConfigPath(path string) AgentOption {
 	return func(a *Agent) {
 		a.config.PersistentConfigPath = path
-		a.configWatcher.SetPaths(a.config.MainConfigPath, path)
 	}
 }
 
@@ -92,7 +96,6 @@ func WithPersistentConfigPath(path string) AgentOption {
 func WithMainConfigPath(path string) AgentOption {
 	return func(a *Agent) {
 		a.config.MainConfigPath = path
-		a.configWatcher.SetPaths(path, a.config.PersistentConfigPath)
 	}
 }
 
@@ -100,9 +103,19 @@ func WithMainConfigPath(path string) AgentOption {
 func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
-	strategy := NewContextStrategy(reg)
+
+	strategy := NewContextStrategy(reg, bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
-	ctxManager := NewContextManager(strategy, hManager, gw, bus)
+
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+
+	ctxManager := NewContextManager(strategy, hManager, gw, bus, factory)
 
 	a := &Agent{
 		gateway:       gw,
@@ -113,7 +126,17 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
-		config:        AgentConfig{},
+		config: RuntimeConfig{
+			Limits: events.Limits{
+				MaxHistoryTokens: 120000,
+				MaxToolTurns:     10,
+				MaxHistoryTurns:  20,
+			},
+			Execution: events.ExecutionConfig{
+				MaxConcurrent: 5,
+				Timeout:       30 * time.Second,
+			},
+		},
 	}
 
 	// Apply options
@@ -121,41 +144,29 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		opt(a)
 	}
 
-	// Initialize pipeline
-	a.ctxManager.Pipeline = a.buildDefaultPipeline()
-
 	// Initialize engine
 	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus)
 
 	a.registerInternalTools()
-	a.refreshLimits() // Initial load
+	a.applyConfig() // Broadcast initial config
 	return a
 }
 
-func (a *Agent) buildDefaultPipeline() *ContextPipeline {
-	maxTokens, _, maxTurns := a.strategy.GetLimits()
-	return NewContextPipeline(
-		&HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: maxTurns},
-			Manager: a.ctxManager.History,
-		},
-		&SystemInstructionInjector{
-			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review.",
-		},
-		&TokenGatekeeper{
-			MaxTokens:  maxTokens,
-			Estimator:  a.strategy,
-			Summarizer: a.ctxManager.Summarizer,
-			Manager:    a.ctxManager.History,
-			Events:     a.events,
-		},
-		&ToolDeclarationGenerator{
-			Registry: a.registry,
-		},
-		&WarningInjector{
-			Strategy: a.strategy,
-		},
-	)
+func (a *Agent) applyConfig() {
+	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
+	a.configWatcher.Refresh()
+
+	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
+	// Update config from watcher if it changed
+	a.config.Limits.MaxHistoryTokens = tokens
+	a.config.Limits.MaxToolTurns = toolTurns
+	a.config.Limits.MaxHistoryTurns = histTurns
+
+	a.events.Publish(events.ConfigUpdated{
+		Limits:    a.config.Limits,
+		LogFile:   a.config.LogFile,
+		Execution: a.config.Execution,
+	})
 }
 
 func (a *Agent) Subscribe(sub func(events.Event)) {
@@ -189,19 +200,21 @@ func (a *Agent) registerInternalTools() {
 
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
-	a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-	a.ctxManager.Pipeline = a.buildDefaultPipeline()
+	a.applyConfig()
 }
 
 // SetConcurrency sets the parallel execution limits for the agent.
 func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
-	a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
+	a.config.Execution.MaxConcurrent = maxConcurrent
+	a.config.Execution.Timeout = time.Duration(timeoutSeconds) * time.Second
+	a.applyConfig()
 }
 
 // SetLogFile sets the path for usage logging.
 func (a *Agent) SetLogFile(path string) {
 	a.config.LogFile = path
+	a.applyConfig()
 }
 
 // SetPrunedTurns (Legacy support - usually in Session)
@@ -212,20 +225,13 @@ func (a *Agent) SetPrunedTurns(n int) {
 // SetPersistentConfigPath sets the path to the persistent session configuration.
 func (a *Agent) SetPersistentConfigPath(path string) {
 	a.config.PersistentConfigPath = path
-	a.configWatcher.SetPaths(a.config.MainConfigPath, path)
+	a.applyConfig()
 }
 
 // SetMainConfigPath sets the path to the main YAML configuration file.
 func (a *Agent) SetMainConfigPath(path string) {
 	a.config.MainConfigPath = path
-	a.configWatcher.SetPaths(path, a.config.PersistentConfigPath)
-}
-
-func (a *Agent) refreshLimits() {
-	a.configWatcher.Refresh()
-	maxTokens, maxTurns, maxHistTurns := a.configWatcher.GetLimits()
-	a.strategy.SetLimits(maxTokens, maxTurns, maxHistTurns)
-	a.ctxManager.Pipeline = a.buildDefaultPipeline()
+	a.applyConfig()
 }
 
 // Chat runs the multi-turn orchestration loop.
@@ -237,7 +243,7 @@ func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}
 
-	a.refreshLimits()
+	a.applyConfig()
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
 }

@@ -97,10 +97,11 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 
 func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(reg, bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	cm := newTestContextManager(strategy, hManager, &MockGateway{}, &events.SimpleEventBus{})
-	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, &events.SimpleEventBus{})
+	cm := newTestContextManager(strategy, hManager, &MockGateway{}, bus)
+	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus)
 	e.ctxManager.Strategy.SetLimits(1000, 5, 2) // Max 2 turns (0, 1, 2)
 
 	ctx := context.Background()
@@ -152,7 +153,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	}
 
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	strategy := NewContextStrategy(reg, nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
@@ -227,7 +228,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 				},
 			}
 			reg := &MockRegistry{}
-			strategy := NewContextStrategy(reg)
+			strategy := NewContextStrategy(reg, nil)
 			hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 			tt.setup(mockGw, hManager)
 
@@ -283,7 +284,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	}
 
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	strategy := NewContextStrategy(reg, nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
@@ -306,7 +307,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 func TestTurnEngine_RecoveryLogic(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	strategy := NewContextStrategy(reg, nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -371,7 +372,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg), hManager, mockGw, nil), reg, nil, WithMiddleware(m1, m2))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, nil), reg, nil, WithMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
 	turn := &Turn{
@@ -421,7 +422,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg), hManager, mockGw, bus), reg, bus, WithClock(mockClock))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(reg, nil), hManager, mockGw, bus), reg, bus, WithClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
 	if err != nil {
@@ -490,7 +491,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	strategy := NewContextStrategy(reg, nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -527,7 +528,7 @@ func minimalPipeline() *ContextPipeline {
 }
 
 func newTestContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus) *ContextManager {
-	cm := NewContextManager(s, h, g, bus)
+	cm := NewContextManager(s, h, g, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
 }
@@ -535,7 +536,7 @@ func newTestContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLM
 func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	strategy := NewContextStrategy(reg)
+	strategy := NewContextStrategy(reg, nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
