@@ -32,6 +32,40 @@ func (s *MyStruct) Foo() {}
 			want:     []string{"Type: MyStruct", "ID int `json:\"id\"`", "func (s *MyStruct) Foo()"},
 		},
 		{
+			name: "interface type",
+			code: `package test
+// Reader is an interface
+type Reader interface {
+	Read(p []byte) (n int, err error)
+}`,
+			typename: "Reader",
+			want:     []string{"Type: Reader", "Methods:", "Read"},
+		},
+		{
+			name: "type alias",
+			code: `package test
+type MyInt int`,
+			typename: "MyInt",
+			want:     []string{"Type: MyInt", "Kind: alias"},
+		},
+		{
+			name: "interface type with embedding",
+			code: `package test
+type I1 interface { M1() }
+type I2 interface {
+	I1
+	M2()
+}`,
+			typename: "I2",
+			want:     []string{"Type: I2", "M2"},
+		},
+		{
+			name:     "empty typename",
+			code:     `package test`,
+			typename: "",
+			want:     []string{"Please provide a typename."},
+		},
+		{
 			name:     "missing type",
 			code:     `package test`,
 			typename: "Missing",

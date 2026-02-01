@@ -426,6 +426,9 @@ func (m *TypeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 func (m *TypeManager) renderTypeInfo(def TypeDefinition, receivers []string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.Location))
+	if def.Kind != "" {
+		sb.WriteString(fmt.Sprintf("Kind: %s\n", def.Kind))
+	}
 	if def.Doc != "" {
 		sb.WriteString("Doc: " + def.Doc)
 	}
