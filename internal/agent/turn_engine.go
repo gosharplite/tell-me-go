@@ -15,7 +15,7 @@ import (
 // TurnHooks allows decoupling UI and logging side effects from the engine.
 type TurnHooks struct {
 	OnTurnStart   func(turn int)
-	OnPrepare     func(tokens, currentTurns int)
+	OnPrepare     func(metadata *ContextMetadata)
 	OnStream      func(ctx context.Context, respCh <-chan *types.Content)
 	OnResponse    func(content *types.Content)
 	OnToolResults func(results *types.Content)
@@ -108,13 +108,13 @@ func (e *TurnEngine) validateTurn(ctx context.Context, turn int) error {
 
 func (e *TurnEngine) executeTurn(ctx context.Context, turn int, startTime time.Time) (*TurnState, error) {
 	// PHASE 1: THINK (Context + LLM Generation)
-	apiContents, tokens, currentTurns, err := e.ctxManager.Prepare(ctx, turn)
+	apiContents, metadata, err := e.ctxManager.Prepare(ctx, turn)
 	if err != nil {
 		return nil, err
 	}
 
 	if e.Hooks.OnPrepare != nil {
-		e.Hooks.OnPrepare(tokens, currentTurns)
+		e.Hooks.OnPrepare(metadata)
 	}
 
 	respCh, finalize := e.gateway.Generate(ctx, apiContents, e.registry.GetDeclarations(), e.ctxManager.History.GetResolver())
@@ -154,8 +154,8 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn int, startTime time.T
 	state := &TurnState{
 		HasToolCalls: toolResponse != nil,
 		Metrics:      metrics,
-		Tokens:       tokens,
-		CurrentTurns: currentTurns,
+		Tokens:       metadata.FinalTokenCount,
+		CurrentTurns: metadata.FinalTurnCount,
 	}
 
 	if e.Hooks.OnComplete != nil {

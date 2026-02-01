@@ -110,8 +110,8 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 		OnTurnStart: func(turn int) {
 			a.refreshLimits()
 		},
-		OnPrepare: func(tokens, currentTurns int) {
-			a.logTurnStatus(currentTurns, tokens, nil, false)
+		OnPrepare: func(metadata *ContextMetadata) {
+			a.logTurnStatus(metadata.FinalTurnCount, metadata.FinalTokenCount, nil, false)
 		},
 		OnStream: func(ctx context.Context, respCh <-chan *types.Content) {
 			uiCh, uiFinalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)

@@ -57,10 +57,10 @@ func (m *MockStore) Append(ctx context.Context, content *types.Content) error {
 }
 
 func TestTurnEngine_ValidateTurn(t *testing.T) {
+	strategy := &ContextStrategy{}
+	cm := NewContextManager(strategy, nil, nil, nil)
 	e := &TurnEngine{
-		ctxManager: &ContextManager{
-			Strategy: &ContextStrategy{},
-		},
+		ctxManager: cm,
 	}
 	e.ctxManager.Strategy.SetLimits(1000, 5, 10)
 
@@ -77,10 +77,10 @@ func TestTurnEngine_ValidateTurn(t *testing.T) {
 }
 
 func TestTurnEngine_ValidateTurnLimit(t *testing.T) {
+	strategy := &ContextStrategy{}
+	cm := NewContextManager(strategy, nil, nil, nil)
 	e := &TurnEngine{
-		ctxManager: &ContextManager{
-			Strategy: &ContextStrategy{},
-		},
+		ctxManager: cm,
 	}
 	e.ctxManager.Strategy.SetLimits(1000, 5, 10)
 
@@ -103,7 +103,7 @@ func TestTurnEngine_Run_HookSequence(t *testing.T) {
 	var sequence []string
 	hooks := TurnHooks{
 		OnTurnStart: func(turn int) { sequence = append(sequence, "OnTurnStart") },
-		OnPrepare:   func(tokens, currentTurns int) { sequence = append(sequence, "OnPrepare") },
+		OnPrepare:   func(metadata *ContextMetadata) { sequence = append(sequence, "OnPrepare") },
 		OnStream: func(ctx context.Context, respCh <-chan *types.Content) {
 			sequence = append(sequence, "OnStream")
 			for range respCh {
@@ -135,7 +135,7 @@ func TestTurnEngine_Run_HookSequence(t *testing.T) {
 	// History must start with user role to avoid alternation violation
 	_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, nil, &ContextManager{Strategy: strategy, History: hManager}, reg, WithHooks(hooks))
+	e := NewTurnEngine(mockGw, nil, NewContextManager(strategy, hManager, mockGw, nil), reg, WithHooks(hooks))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -178,7 +178,7 @@ func TestTurnEngine_Run_ChannelDraining(t *testing.T) {
 	})
 	_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, nil, &ContextManager{Strategy: strategy, History: hManager}, reg) // No hooks
+	e := NewTurnEngine(mockGw, nil, NewContextManager(strategy, hManager, mockGw, nil), reg) // No hooks
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -269,7 +269,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 			// Initial user content to satisfy alternation
 			_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-			e := NewTurnEngine(mockGw, mockEx, &ContextManager{Strategy: strategy, History: hManager}, reg)
+			e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, nil), reg)
 			strategy.SetLimits(1000, 5, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -339,7 +339,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 		OnToolResults: func(results *types.Content) { toolResultCalled = true },
 	}
 
-	e := NewTurnEngine(mockGw, mockEx, &ContextManager{Strategy: strategy, History: hManager}, reg, WithHooks(hooks))
+	e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, nil), reg, WithHooks(hooks))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -398,7 +398,7 @@ func TestTurnEngine_Run_ToolHistoryError(t *testing.T) {
 	})
 	_ = hManager.AddContent(context.Background(), &types.Content{Role: "user", Parts: []*types.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, mockEx, &ContextManager{Strategy: strategy, History: hManager}, reg)
+	e := NewTurnEngine(mockGw, mockEx, NewContextManager(strategy, hManager, mockGw, nil), reg)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -413,13 +413,13 @@ func BenchmarkTurnEngineInitialization(b *testing.B) {
 	reg := &MockRegistry{}
 	strategy := NewContextStrategy(reg)
 	hManager := history.NewManager("dummy")
-	cm := &ContextManager{Strategy: strategy, History: hManager}
+	cm := NewContextManager(strategy, hManager, gw, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = NewTurnEngine(gw, ex, cm, reg, WithHooks(TurnHooks{
 			OnTurnStart: func(turn int) {},
-			OnPrepare:   func(tokens, currentTurns int) {},
+			OnPrepare:   func(metadata *ContextMetadata) {},
 		}))
 	}
 }

@@ -46,7 +46,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	cm := NewContextManager(strategy, hManager, &mockGateway{}, &mockRenderer{})
 
 	// Prepare at turn 2 (approaching limit)
-	apiContents, _, _, err := cm.Prepare(ctx, 2)
+	apiContents, _, err := cm.Prepare(ctx, 2)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	}
 
 	cm := NewContextManager(NewContextStrategy(&mockRegistry{}), hManager, gateway, &mockRenderer{})
-	_, _ = cm.PerformSummarization(context.Background(), subset, "test focus")
+	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
 		t.Fatal("Generate was not called")

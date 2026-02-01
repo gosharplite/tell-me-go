@@ -71,12 +71,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	// Call Prepare, which should trigger AutoSummarize
-	_, tokens, _, err := a.ctxManager.Prepare(ctx, 1)
+	_, metadata, err := a.ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	t.Logf("Tokens after Prepare: %d", tokens)
+	t.Logf("Tokens after Prepare: %d", metadata.FinalTokenCount)
 
 	// Check if history was replaced
 	newContents := hManager.GetContents()
