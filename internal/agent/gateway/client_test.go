@@ -20,7 +20,7 @@ type mockHttpStatusErr struct {
 }
 
 func (m mockHttpStatusErr) StatusCode() int { return m.code }
-func (m mockHttpStatusErr) Error() string  { return fmt.Sprintf("HTTP %d", m.code) }
+func (m mockHttpStatusErr) Error() string   { return fmt.Sprintf("HTTP %d", m.code) }
 
 func TestResilientClient_WrapError(t *testing.T) {
 	client := &ResilientClient{}

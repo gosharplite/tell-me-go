@@ -35,10 +35,10 @@ func TestCostCalculator_Calculate(t *testing.T) {
 		{
 			name: "Standard usage",
 			stats: UsageStats{
-				Hits:   1000000, // $0.1
-				Misses: 1000000, // $1.0
-				Comp:   1000000, // $2.0
-				SearchQueries: 1, // $0.01
+				Hits:          1000000, // $0.1
+				Misses:        1000000, // $1.0
+				Comp:          1000000, // $2.0
+				SearchQueries: 1,       // $0.01
 			},
 			wantCost: 3.11,
 		},

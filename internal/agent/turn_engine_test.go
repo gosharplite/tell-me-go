@@ -125,7 +125,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 					History:  history.NewManager(""),
 					Strategy: NewContextStrategy(NewHeuristicTokenCounter(&MockRegistry{}), nil),
 				},
-				Gateway:  mockGw,
+				Gateway: mockGw,
 				Executor: &MockExecutor{
 					ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 						return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
@@ -661,8 +661,8 @@ type mockHook struct {
 	transCalled  int
 }
 
-func (h *mockHook) BeforeTurn(turn *Turn)                             { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *Turn, err error)                 { h.afterCalled++ }
+func (h *mockHook) BeforeTurn(turn *Turn)                              { h.beforeCalled++ }
+func (h *mockHook) AfterTurn(turn *Turn, err error)                    { h.afterCalled++ }
 func (h *mockHook) OnPhaseTransition(from, to TurnPhase, s *TurnState) { h.transCalled++ }
 
 func TestTurnEngine_Hooks(t *testing.T) {

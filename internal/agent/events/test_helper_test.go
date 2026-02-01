@@ -10,7 +10,7 @@ import (
 
 func TestTestEventBus(t *testing.T) {
 	bus := &TestEventBus{}
-	
+
 	type MyEvent struct{ ID int }
 	type OtherEvent struct{}
 

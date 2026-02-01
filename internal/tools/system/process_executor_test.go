@@ -72,7 +72,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				if !strings.Contains(res.Output, "too long") && !strings.Contains(res.Output, "truncated") {
 					// Skip if python3 is missing, but if it ran, it should have the warning
 					if !strings.Contains(res.Error, "not found") {
-						// This might be tricky if python3 is missing. 
+						// This might be tricky if python3 is missing.
 						// Let's assume it's there or just log it.
 						t.Logf("Output: %s", res.Output)
 					}
