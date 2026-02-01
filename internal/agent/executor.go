@@ -20,7 +20,7 @@ type toolExecResult struct {
 	tr    types.ToolResult
 }
 
-// ToolExecutor handles the execution of tools, including concurrency and serial locking.
+// ToolExecutor handles the execution of tools, using a WorkerPool for concurrency.
 type ToolExecutor struct {
 	registry           *registry.Registry
 	sm                 *tools.SecurityManager
@@ -28,6 +28,7 @@ type ToolExecutor struct {
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	showTools          bool
+	pool               *WorkerPool
 }
 
 // NewToolExecutor creates a new ToolExecutor.
@@ -39,12 +40,17 @@ func NewToolExecutor(registry *registry.Registry, sm *tools.SecurityManager, ren
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		showTools:          true,
+		pool:               NewWorkerPool(5),
 	}
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
-	if maxConcurrent > 0 {
+	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
 		e.maxConcurrentTools = maxConcurrent
+		if e.pool != nil {
+			e.pool.Shutdown()
+		}
+		e.pool = NewWorkerPool(maxConcurrent)
 	}
 	if timeout > 0 {
 		e.toolTimeout = timeout
@@ -78,7 +84,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *types.Content, 
 	resChan := make(chan toolExecResult, len(functionCalls))
 	var wg sync.WaitGroup
 
-	// Run execution in background
+	// Run execution orchestration in background
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -130,7 +136,6 @@ func (e *ToolExecutor) processToolResult(name string, result types.ToolResult) *
 
 func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls []*types.FunctionCall, resChan chan<- toolExecResult) {
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, e.maxConcurrentTools)
 
 	for i, fc := range calls {
 		if e.registry.IsSerial(fc.Name) {
@@ -147,10 +152,9 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 			}()
 		} else {
 			wg.Add(1)
-			sem <- struct{}{}
-			go func(idx int, call *types.FunctionCall) {
+			idx, call := i, fc // captured for closure
+			e.pool.Submit(func(_ context.Context) {
 				defer wg.Done()
-				defer func() { <-sem }()
 				defer func() {
 					if r := recover(); r != nil {
 						resChan <- toolExecResult{index: idx, name: call.Name, tr: types.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
@@ -158,7 +162,7 @@ func (e *ToolExecutor) executeToolsConcurrentStream(ctx context.Context, calls [
 				}()
 				tr := e.executeTool(ctx, call)
 				resChan <- toolExecResult{index: idx, name: call.Name, tr: tr}
-			}(i, fc)
+			})
 		}
 	}
 	wg.Wait()

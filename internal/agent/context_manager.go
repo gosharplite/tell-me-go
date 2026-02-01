@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -55,6 +56,10 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 			Strategy: cm.Strategy,
 		},
 	}
+
+	sort.Slice(transformers, func(i, j int) bool {
+		return transformers[i].Priority() < transformers[j].Priority()
+	})
 
 	for _, t := range transformers {
 		if err := t.Transform(ctx, req); err != nil {

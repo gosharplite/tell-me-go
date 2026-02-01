@@ -141,39 +141,39 @@ func TestGenerate_RetryableError(t *testing.T) {
 	}
 }
 
-func TestClassifyError(t *testing.T) {
+func TestWrapError(t *testing.T) {
 	tests := []struct {
-		name        string
-		err         error
-		isAuth      bool
-		isRetryable bool
+		name     string
+		err      error
+		expected error
 	}{
-		{"nil error", nil, false, false},
-		{"gRPC Unauthenticated", status.Error(codes.Unauthenticated, "auth failed"), true, false},
-		{"gRPC ResourceExhausted", status.Error(codes.ResourceExhausted, "quota exceeded"), false, true},
-		{"gRPC Unavailable", status.Error(codes.Unavailable, "server down"), false, true},
-		{"gRPC DeadlineExceeded", status.Error(codes.DeadlineExceeded, "too slow"), false, true},
-		{"gRPC Internal (non-retryable)", status.Error(codes.Internal, "boom"), false, false},
-		{"HTTP 401 string", errors.New("error: 401 Unauthorized"), true, false},
-		{"HTTP UNAUTHENTICATED string", errors.New("UNAUTHENTICATED access"), true, false},
-		{"HTTP 429 string", errors.New("error: 429 Too Many Requests"), false, true},
-		{"HTTP RESOURCE_EXHAUSTED string", errors.New("RESOURCE_EXHAUSTED"), false, true},
-		{"HTTP 503 string", errors.New("error: 503 Service Unavailable"), false, true},
-		{"HTTP UNAVAILABLE string", errors.New("UNAVAILABLE"), false, true},
-		{"HTTP 504 string", errors.New("error: 504 Gateway Timeout"), false, true},
-		{"HTTP GATEWAY_TIMEOUT string", errors.New("GATEWAY_TIMEOUT"), false, true},
-		{"Generic error", errors.New("some random error"), false, false},
+		{"nil error", nil, nil},
+		{"gRPC Unauthenticated", status.Error(codes.Unauthenticated, "auth failed"), ErrAuth},
+		{"gRPC ResourceExhausted", status.Error(codes.ResourceExhausted, "quota exceeded"), ErrTransient},
+		{"gRPC Unavailable", status.Error(codes.Unavailable, "server down"), ErrTransient},
+		{"gRPC DeadlineExceeded", status.Error(codes.DeadlineExceeded, "too slow"), ErrTransient},
+		{"gRPC Internal (non-retryable)", status.Error(codes.Internal, "boom"), ErrTerminal},
+		{"HTTP 401 string", errors.New("error: 401 Unauthorized"), ErrAuth},
+		{"HTTP UNAUTHENTICATED string", errors.New("UNAUTHENTICATED access"), ErrAuth},
+		{"HTTP 429 string", errors.New("error: 429 Too Many Requests"), ErrTransient},
+		{"HTTP RESOURCE_EXHAUSTED string", errors.New("RESOURCE_EXHAUSTED"), ErrTransient},
+		{"HTTP 503 string", errors.New("error: 503 Service Unavailable"), ErrTransient},
+		{"HTTP UNAVAILABLE string", errors.New("UNAVAILABLE"), ErrTransient},
+		{"HTTP 504 string", errors.New("error: 504 Gateway Timeout"), ErrTransient},
+		{"HTTP GATEWAY_TIMEOUT string", errors.New("GATEWAY_TIMEOUT"), ErrTransient},
+		{"Generic error", errors.New("some random error"), ErrTerminal},
 	}
 
 	r := &ResilientClient{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			isAuth, isRetryable := r.classifyError(tt.err)
-			if isAuth != tt.isAuth {
-				t.Errorf("isAuth = %v, want %v", isAuth, tt.isAuth)
-			}
-			if isRetryable != tt.isRetryable {
-				t.Errorf("isRetryable = %v, want %v", isRetryable, tt.isRetryable)
+			got := r.WrapError(tt.err)
+			if tt.expected == nil {
+				if got != nil {
+					t.Errorf("expected nil error, got %v", got)
+				}
+			} else if !errors.Is(got, tt.expected) {
+				t.Errorf("expected %v error, got %v", tt.expected, got)
 			}
 		})
 	}
@@ -248,6 +248,10 @@ func TestGenerate_TerminalError(t *testing.T) {
 	_, _, err := finalize()
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+
+	if !errors.Is(err, ErrTerminal) {
+		t.Errorf("expected ErrTerminal, got %v", err)
 	}
 
 	if callCount != 1 {

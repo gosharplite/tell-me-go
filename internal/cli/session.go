@@ -118,7 +118,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	return reg
 }
 
-func (a *App) configureAgent(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int) {
+func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int) {
 	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
 	chatAgent.SetMainConfigPath(opts.configPath)
 	chatAgent.SetLogFile(paths.logPath)

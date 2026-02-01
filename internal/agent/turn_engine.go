@@ -12,6 +12,17 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
+// TurnPhase represents the current stage of a single agent turn.
+type TurnPhase string
+
+const (
+	PhasePreparing TurnPhase = "Preparing"
+	PhaseThinking  TurnPhase = "Thinking"
+	PhaseObserving TurnPhase = "Observing"
+	PhaseExecuting TurnPhase = "Executing"
+	PhaseComplete  TurnPhase = "Complete"
+)
+
 // TurnHooks allows decoupling UI and logging side effects from the engine.
 type TurnHooks struct {
 	OnTurnStart   func(turn int)
@@ -22,12 +33,16 @@ type TurnHooks struct {
 	OnComplete    func(state *TurnState)
 }
 
-// TurnState carries data between the phases of a turn.
+// TurnState carries data between the phases of a turn and tracks the current phase.
 type TurnState struct {
+	Phase        TurnPhase
 	HasToolCalls bool
 	Metrics      *types.Metrics
 	Tokens       int
 	CurrentTurns int
+	Metadata     *ContextMetadata
+	Response     *types.Content
+	ToolResponse *types.Content
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -35,7 +50,7 @@ type IToolExecutor interface {
 	Execute(ctx context.Context, respContent *types.Content, turn int, maxToolTurns int) (*types.Content, error)
 }
 
-// TurnEngine manages the "Think -> Act -> Observe" cycle.
+// TurnEngine manages the "Think -> Act -> Observe" cycle using an explicit state machine.
 type TurnEngine struct {
 	ctxManager *ContextManager
 	gateway    gateway.LLMGateway
@@ -71,18 +86,15 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	for turn := 0; ; turn++ {
-		// 1. Validation & Guards
 		if err := e.validateTurn(ctx, turn); err != nil {
 			return err
 		}
 
-		// 2. Execute the Atomic Turn
 		state, err := e.executeTurn(ctx, turn, startTime)
 		if err != nil {
 			return err
 		}
 
-		// 3. Exit Condition
 		if !state.HasToolCalls {
 			break
 		}
@@ -107,57 +119,30 @@ func (e *TurnEngine) validateTurn(ctx context.Context, turn int) error {
 }
 
 func (e *TurnEngine) executeTurn(ctx context.Context, turn int, startTime time.Time) (*TurnState, error) {
-	// PHASE 1: THINK (Context + LLM Generation)
-	apiContents, metadata, err := e.ctxManager.Prepare(ctx, turn)
-	if err != nil {
+	state := &TurnState{
+		CurrentTurns: turn,
+		Phase:        PhasePreparing,
+	}
+
+	// 1. Preparation & Thinking
+	if err := e.transitionToThinking(ctx, state); err != nil {
 		return nil, err
 	}
 
-	if e.Hooks.OnPrepare != nil {
-		e.Hooks.OnPrepare(metadata)
-	}
-
-	respCh, finalize := e.gateway.Generate(ctx, apiContents, e.registry.GetDeclarations(), e.ctxManager.History.GetResolver())
-
-	// UI streaming is now a decoupled concern
-	if e.Hooks.OnStream != nil {
-		e.Hooks.OnStream(ctx, respCh)
-	} else {
-		// Drain channel if no hook is provided
-		for range respCh {
-		}
-	}
-
-	respContent, metrics, err := finalize()
-	if err != nil {
+	// 2. Observation (Persistence of model response)
+	if err := e.transitionToObserving(ctx, state); err != nil {
 		return nil, err
 	}
 
-	if e.Hooks.OnResponse != nil {
-		e.Hooks.OnResponse(respContent)
-	}
-
-	// PHASE 2: OBSERVE (Persistence)
-	if err := e.ctxManager.History.AddContent(ctx, respContent); err != nil {
-		return nil, fmt.Errorf("history error: %w", err)
-	}
-
-	// PHASE 3: ACT (Tool Execution)
-	var toolResponse *types.Content
-	if e.hasToolCalls(respContent) {
-		toolResponse, err = e.handleToolExecution(ctx, respContent, turn, metrics)
-		if err != nil {
+	// 3. Execution (Tool Action)
+	if state.HasToolCalls {
+		if err := e.transitionToExecuting(ctx, state); err != nil {
 			return nil, err
 		}
 	}
 
-	state := &TurnState{
-		HasToolCalls: toolResponse != nil,
-		Metrics:      metrics,
-		Tokens:       metadata.FinalTokenCount,
-		CurrentTurns: metadata.FinalTurnCount,
-	}
-
+	// 4. Finalization
+	state.Phase = PhaseComplete
 	if e.Hooks.OnComplete != nil {
 		e.Hooks.OnComplete(state)
 	}
@@ -165,28 +150,74 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn int, startTime time.T
 	return state, nil
 }
 
-func (e *TurnEngine) handleToolExecution(ctx context.Context, respContent *types.Content, turn int, metrics *types.Metrics) (*types.Content, error) {
+func (e *TurnEngine) transitionToThinking(ctx context.Context, state *TurnState) error {
+	apiContents, metadata, err := e.ctxManager.Prepare(ctx, state.CurrentTurns)
+	if err != nil {
+		return err
+	}
+	state.Metadata = metadata
+	state.Tokens = metadata.FinalTokenCount
+
+	if e.Hooks.OnPrepare != nil {
+		e.Hooks.OnPrepare(metadata)
+	}
+
+	state.Phase = PhaseThinking
+	respCh, finalize := e.gateway.Generate(ctx, apiContents, e.registry.GetDeclarations(), e.ctxManager.History.GetResolver())
+
+	if e.Hooks.OnStream != nil {
+		e.Hooks.OnStream(ctx, respCh)
+	} else {
+		for range respCh {
+		}
+	}
+
+	respContent, metrics, err := finalize()
+	if err != nil {
+		return err
+	}
+	state.Response = respContent
+	state.Metrics = metrics
+	state.HasToolCalls = e.hasToolCalls(respContent)
+
+	if e.Hooks.OnResponse != nil {
+		e.Hooks.OnResponse(respContent)
+	}
+	return nil
+}
+
+func (e *TurnEngine) transitionToObserving(ctx context.Context, state *TurnState) error {
+	state.Phase = PhaseObserving
+	if err := e.ctxManager.History.AddContent(ctx, state.Response); err != nil {
+		return fmt.Errorf("history error: %w", err)
+	}
+	return nil
+}
+
+func (e *TurnEngine) transitionToExecuting(ctx context.Context, state *TurnState) error {
+	state.Phase = PhaseExecuting
 	toolStart := time.Now()
 	_, maxToolTurns, _ := e.ctxManager.Strategy.GetLimits()
 
-	toolResponse, err := e.executor.Execute(ctx, respContent, turn, maxToolTurns)
+	toolResponse, err := e.executor.Execute(ctx, state.Response, state.CurrentTurns, maxToolTurns)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if toolResponse != nil {
+		state.ToolResponse = toolResponse
 		if e.Hooks.OnToolResults != nil {
 			e.Hooks.OnToolResults(toolResponse)
 		}
 		if err := e.ctxManager.History.AddContent(ctx, toolResponse); err != nil {
-			return nil, fmt.Errorf("failed to persist tool results: %w", err)
+			return fmt.Errorf("failed to persist tool results: %w", err)
 		}
 	}
 
-	if metrics != nil {
-		metrics.ToolDuration = time.Since(toolStart).Seconds()
+	if state.Metrics != nil {
+		state.Metrics.ToolDuration = time.Since(toolStart).Seconds()
 	}
-	return toolResponse, nil
+	return nil
 }
 
 func (e *TurnEngine) hasToolCalls(content *types.Content) bool {

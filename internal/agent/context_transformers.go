@@ -34,6 +34,8 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	return nil
 }
 
+func (t *HistoryPruner) Priority() int { return 10 }
+
 // SlidingWindowPolicy keeps the last N turns.
 type SlidingWindowPolicy struct {
 	MaxTurns int
@@ -109,6 +111,8 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	req.Result = req.History
 	return nil
 }
+
+func (t *TokenGatekeeper) Priority() int { return 20 }
 
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
 	contents := req.History
@@ -217,3 +221,5 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	req.Result = apiContents
 	return nil
 }
+
+func (t *WarningInjector) Priority() int { return 100 }

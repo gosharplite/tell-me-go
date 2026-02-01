@@ -172,7 +172,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
 	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming)
-	a.configureAgent(chatAgent, cfg, opts, paths, pruned)
+	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned)
 
 	// 7. Execute & Finalize
 	if err := chatAgent.Chat(ctx, prompt); err != nil {

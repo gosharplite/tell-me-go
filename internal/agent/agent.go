@@ -60,12 +60,12 @@ type TurnStatus struct {
 	StartTime        time.Time
 }
 
-// Agent represents the chat orchestration logic.
+// Agent represents the chat orchestration logic (Orchestrator).
 type Agent struct {
 	gateway              *gateway.ResilientClient
 	engine               *TurnEngine
 	ctxManager           *ContextManager
-	history              *history.Manager
+	session              *Session
 	registry             *registry.Registry
 	sm                   *tools.SecurityManager
 	renderer             UIRenderer
@@ -78,11 +78,86 @@ type Agent struct {
 	rawOutput            bool
 	persistentConfigPath string
 	mainConfigPath       string
-	startTime            time.Time
+
+	subscribers []func(Event)
 }
 
-// New creates a new Agent.
-func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool) *Agent {
+// AgentOption defines a functional option for configuring an Agent.
+type AgentOption func(*Agent)
+
+// WithUIOptions sets the initial UI visibility options.
+func WithUIOptions(showThoughts, showTools bool) AgentOption {
+	return func(a *Agent) {
+		a.showThoughts = showThoughts
+		a.showTools = showTools
+	}
+}
+
+// WithRawOutput sets whether to output raw text or rendered markdown.
+func WithRawOutput(raw bool) AgentOption {
+	return func(a *Agent) {
+		a.rawOutput = raw
+	}
+}
+
+// WithLimits sets the initial operational limits.
+func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
+	return func(a *Agent) {
+		a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
+		a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	}
+}
+
+// WithConcurrency sets the parallel execution limits for the agent.
+func WithConcurrency(maxConcurrent int, timeoutSeconds int) AgentOption {
+	return func(a *Agent) {
+		a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
+	}
+}
+
+// WithLogFile sets the path for usage logging.
+func WithLogFile(path string) AgentOption {
+	return func(a *Agent) {
+		a.logFile = path
+	}
+}
+
+// WithPrunedTurns informs the agent how many turns were removed during startup.
+func WithPrunedTurns(n int) AgentOption {
+	return func(a *Agent) {
+		a.session.PrunedTurns = n
+		a.strategy.SetPrunedTurns(n)
+	}
+}
+
+// WithPersistentConfigPath sets the path to the persistent session configuration.
+func WithPersistentConfigPath(path string) AgentOption {
+	return func(a *Agent) {
+		a.persistentConfigPath = path
+		a.configWatcher.SetPaths(a.mainConfigPath, path)
+	}
+}
+
+// WithMainConfigPath sets the path to the main YAML configuration file.
+func WithMainConfigPath(path string) AgentOption {
+	return func(a *Agent) {
+		a.mainConfigPath = path
+		a.configWatcher.SetPaths(path, a.persistentConfigPath)
+	}
+}
+
+// WithRenderer sets a custom UI renderer and automatically subscribes it to events.
+func WithRenderer(renderer UIRenderer) AgentOption {
+	return func(a *Agent) {
+		if renderer != nil {
+			a.renderer = renderer
+			a.executor.renderer = renderer
+		}
+	}
+}
+
+// New creates a new Agent using functional options.
+func New(client types.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *tools.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	renderer := NewStdUIRenderer(sm)
 	gw := gateway.NewResilientClient(client, disableStreaming)
 	strategy := NewContextStrategy(reg)
@@ -92,7 +167,7 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 	a := &Agent{
 		gateway:       gw,
 		ctxManager:    ctxManager,
-		history:       hManager,
+		session:       NewSession(hManager),
 		registry:      reg,
 		sm:            sm,
 		renderer:      renderer,
@@ -102,18 +177,28 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 		showThoughts:  true,
 		showTools:     true,
 		rawOutput:     false,
-		startTime:     time.Now(),
 	}
 
-	// Initialize engine with hooks using Functional Options
+	// Apply options
+	for _, opt := range options {
+		opt(a)
+	}
+
+	// Initialize engine with hooks that emit events
 	a.engine = NewTurnEngine(gw, executor, ctxManager, reg, WithHooks(TurnHooks{
 		OnTurnStart: func(turn int) {
 			a.refreshLimits()
+			a.emit(TurnStarted{Turn: turn})
 		},
 		OnPrepare: func(metadata *ContextMetadata) {
-			a.logTurnStatus(metadata.FinalTurnCount, metadata.FinalTokenCount, nil, false)
+			status := a.getTurnStatus(metadata.FinalTurnCount, metadata.FinalTokenCount, nil, false)
+			a.emit(TurnStatusEvent{Status: status})
+			// Legacy support
+			a.renderer.LogTurnStatus(status)
 		},
 		OnStream: func(ctx context.Context, respCh <-chan *types.Content) {
+			a.emit(ResponseStreamEvent{Context: ctx, Stream: respCh})
+			// Legacy support
 			uiCh, uiFinalize := a.renderer.StreamResponse(ctx, a.showThoughts, a.rawOutput)
 			for c := range respCh {
 				uiCh <- c
@@ -121,16 +206,36 @@ func New(client types.LLMClient, hManager *history.Manager, reg *registry.Regist
 			_ = uiFinalize()
 		},
 		OnComplete: func(state *TurnState) {
-			a.logTurnStatus(state.CurrentTurns, state.Tokens, state.Metrics, true)
+			status := a.getTurnStatus(state.CurrentTurns, state.Tokens, state.Metrics, true)
+			a.emit(TurnStatusEvent{Status: status})
+			// Legacy support
+			a.renderer.LogTurnStatus(status)
 			if state.Metrics != nil {
-				a.renderer.LogUsage(state.Metrics, a.logFile, a.startTime)
+				a.emit(UsageMetricsEvent{Metrics: state.Metrics, LogFile: a.logFile, StartTime: a.session.StartTime})
+				a.renderer.LogUsage(state.Metrics, a.logFile, a.session.StartTime)
 			}
+		},
+		OnResponse: func(content *types.Content) {
+			// Events could be added here for tool call detection etc if needed
+		},
+		OnToolResults: func(results *types.Content) {
+			// Events for individual tool results are currently handled by executor
 		},
 	}))
 
 	a.registerInternalTools()
 	a.refreshLimits() // Initial load
 	return a
+}
+
+func (a *Agent) Subscribe(sub func(Event)) {
+	a.subscribers = append(a.subscribers, sub)
+}
+
+func (a *Agent) emit(e Event) {
+	for _, sub := range a.subscribers {
+		sub(e)
+	}
 }
 
 func (a *Agent) registerInternalTools() {
@@ -156,55 +261,48 @@ func (a *Agent) registerInternalTools() {
 
 // SetUIOptions sets the UI visibility options.
 func (a *Agent) SetUIOptions(showThoughts, showTools bool) {
-	a.showThoughts = showThoughts
-	a.showTools = showTools
+	WithUIOptions(showThoughts, showTools)(a)
 	a.executor.SetShowTools(showTools)
 }
 
 // SetRawOutput sets whether to output raw text or rendered markdown.
 func (a *Agent) SetRawOutput(raw bool) {
-	a.rawOutput = raw
+	WithRawOutput(raw)(a)
 }
 
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
-	a.strategy.SetLimits(historyTokens, toolTurns, historyTurns)
-	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	WithLimits(toolTurns, historyTokens, historyTurns)(a)
 }
 
 // SetConcurrency sets the parallel execution limits for the agent.
 func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
-	a.executor.SetConcurrency(maxConcurrent, time.Duration(timeoutSeconds)*time.Second)
+	WithConcurrency(maxConcurrent, timeoutSeconds)(a)
 }
 
 // SetLogFile sets the path for usage logging.
 func (a *Agent) SetLogFile(path string) {
-	a.logFile = path
+	WithLogFile(path)(a)
 }
 
 // SetPrunedTurns informs the agent how many turns were removed during startup.
 func (a *Agent) SetPrunedTurns(n int) {
-	a.strategy.SetPrunedTurns(n)
+	WithPrunedTurns(n)(a)
 }
 
 // SetPersistentConfigPath sets the path to the persistent session configuration.
 func (a *Agent) SetPersistentConfigPath(path string) {
-	a.persistentConfigPath = path
-	a.configWatcher.SetPaths(a.mainConfigPath, path)
+	WithPersistentConfigPath(path)(a)
 }
 
 // SetMainConfigPath sets the path to the main YAML configuration file.
 func (a *Agent) SetMainConfigPath(path string) {
-	a.mainConfigPath = path
-	a.configWatcher.SetPaths(path, a.persistentConfigPath)
+	WithMainConfigPath(path)(a)
 }
 
 // SetRenderer sets a custom UI renderer.
 func (a *Agent) SetRenderer(renderer UIRenderer) {
-	if renderer != nil {
-		a.renderer = renderer
-		a.executor.renderer = renderer
-	}
+	WithRenderer(renderer)(a)
 }
 
 func (a *Agent) refreshLimits() {
@@ -213,9 +311,9 @@ func (a *Agent) refreshLimits() {
 	a.strategy.SetLimits(maxTokens, maxTurns, maxHistTurns)
 }
 
-func (a *Agent) logTurnStatus(currentTurns, tokens int, metrics *types.Metrics, isPost bool) {
+func (a *Agent) getTurnStatus(currentTurns, tokens int, metrics *types.Metrics, isPost bool) TurnStatus {
 	maxTokens, _, maxHistTurns := a.strategy.GetLimits()
-	a.renderer.LogTurnStatus(TurnStatus{
+	return TurnStatus{
 		Timestamp:        time.Now(),
 		CurrentTurns:     currentTurns,
 		MaxHistoryTurns:  maxHistTurns,
@@ -223,13 +321,13 @@ func (a *Agent) logTurnStatus(currentTurns, tokens int, metrics *types.Metrics, 
 		MaxHistoryTokens: maxTokens,
 		Metrics:          metrics,
 		IsPostCall:       isPost,
-		StartTime:        a.startTime,
-	})
+		StartTime:        a.session.StartTime,
+	}
 }
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, prompt string) error {
-	if err := a.history.AddContent(ctx, &types.Content{
+	if err := a.session.History.AddContent(ctx, &types.Content{
 		Role:  "user",
 		Parts: []*types.Part{{Text: prompt}},
 	}); err != nil {
@@ -237,5 +335,6 @@ func (a *Agent) Chat(ctx context.Context, prompt string) error {
 	}
 
 	a.refreshLimits()
-	return a.engine.Run(ctx, a.startTime)
+	a.emit(StatusUpdate{Message: "Starting chat...", Level: "info"})
+	return a.engine.Run(ctx, a.session.StartTime)
 }

@@ -5,6 +5,8 @@ package gateway
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ResilientClient wraps an LLMClient with retry logic.
+// ResilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
 type ResilientClient struct {
 	client           types.LLMClient
 	disableStreaming bool
@@ -36,28 +38,33 @@ func NewResilientClient(client types.LLMClient, disableStreaming bool) *Resilien
 	}
 }
 
-func (r *ResilientClient) classifyError(err error) (isAuth bool, isRetryable bool) {
+// WrapError converts raw client errors into domain-specific Gateway errors.
+func (r *ResilientClient) WrapError(err error) error {
 	if err == nil {
-		return false, false
+		return nil
 	}
 
 	if s, ok := status.FromError(err); ok {
 		switch s.Code() {
 		case codes.Unauthenticated:
-			return true, false
+			return fmt.Errorf("%w: %v", ErrAuth, err)
 		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded:
-			return false, true
+			return fmt.Errorf("%w: %v", ErrTransient, err)
 		}
 	}
 
 	// Fallback to string matching for non-GRPC errors (e.g. from SDK's HTTP layer)
 	msg := strings.ToUpper(err.Error())
-	isAuth = strings.Contains(msg, "401") || strings.Contains(msg, "UNAUTHENTICATED")
-	isRetryable = strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
+	if strings.Contains(msg, "401") || strings.Contains(msg, "UNAUTHENTICATED") {
+		return fmt.Errorf("%w: %v", ErrAuth, err)
+	}
+	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
 		strings.Contains(msg, "503") || strings.Contains(msg, "UNAVAILABLE") ||
-		strings.Contains(msg, "504") || strings.Contains(msg, "GATEWAY_TIMEOUT")
+		strings.Contains(msg, "504") || strings.Contains(msg, "GATEWAY_TIMEOUT") {
+		return fmt.Errorf("%w: %v", ErrTransient, err)
+	}
 
-	return isAuth, isRetryable
+	return fmt.Errorf("%w: %v", ErrTerminal, err)
 }
 
 // Generate handles the LLM interaction logic, returning a stream and a finalizer.
@@ -97,14 +104,14 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 				}
 			}
 
-			isAuth, isRetryable := r.classifyError(finalErr)
-			if isAuth {
+			wrappedErr := r.WrapError(finalErr)
+			if errors.Is(wrappedErr, ErrAuth) {
 				if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
 					continue // Immediate retry after auth refresh
 				}
 			}
 
-			if isRetryable && attempt < 2 {
+			if errors.Is(wrappedErr, ErrTransient) && attempt < 2 {
 				wait := time.Duration(1<<attempt) * time.Second
 				if err := r.sleep(ctx, wait); err != nil {
 					finalErr = err
@@ -113,6 +120,7 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*types.Content, 
 					continue
 				}
 			} else {
+				finalErr = wrappedErr
 				break
 			}
 		}

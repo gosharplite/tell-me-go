@@ -5,8 +5,18 @@ package gateway
 
 import (
 	"context"
+	"errors"
 
 	"github.com/gosharplite/tell-me-go/internal/types"
+)
+
+var (
+	// ErrTransient signals a retryable failure (e.g., rate limit, timeout).
+	ErrTransient = errors.New("transient error")
+	// ErrTerminal signals a non-retryable failure (e.g., invalid request).
+	ErrTerminal = errors.New("terminal error")
+	// ErrAuth signals an authentication failure.
+	ErrAuth = errors.New("authentication error")
 )
 
 // LLMGateway defines the interface for resilient AI model interactions.

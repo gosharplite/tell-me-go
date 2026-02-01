@@ -30,6 +30,7 @@ type ContextRequest struct {
 // ContextTransformer defines a stage in the context preparation pipeline.
 type ContextTransformer interface {
 	Transform(ctx context.Context, req *ContextRequest) error
+	Priority() int
 }
 
 // TokenEstimator decouples the manager from specific counting logic.
