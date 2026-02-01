@@ -6,8 +6,10 @@ package files
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -26,10 +28,15 @@ func (f *searchMockFile) Seek(offset int64, whence int) (int64, error) { return 
 
 type searchMockFS struct {
 	fsutil.FileSystem
-	files map[string][]byte
+	files    map[string][]byte
+	walkErr  error
+	openErrs map[string]error
 }
 
 func (m *searchMockFS) Open(ctx context.Context, name string) (fsutil.File, error) {
+	if err, ok := m.openErrs[name]; ok {
+		return nil, err
+	}
 	content, ok := m.files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -46,6 +53,9 @@ func (m *searchMockFS) Stat(ctx context.Context, name string) (os.FileInfo, erro
 }
 
 func (m *searchMockFS) Walk(ctx context.Context, root string, fn fsutil.WalkFunc) error {
+	if m.walkErr != nil {
+		return m.walkErr
+	}
 	for path, content := range m.files {
 		info := &searchMockFileInfo{name: path, size: int64(len(content))}
 		if err := fn(path, info, nil); err != nil {
@@ -93,36 +103,90 @@ func TestConcurrentSearch(t *testing.T) {
 			"bin.exe":   []byte{0, 1, 2, 3, 0},
 			"large.txt": make([]byte, 2*1024*1024),
 		},
+		openErrs: make(map[string]error),
 	}
 
 	ctx := context.Background()
 
-	t.Run("Basic Search", func(t *testing.T) {
-		results, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
-			return bytes.Contains([]byte(line), []byte("todo"))
-		}, 10)
-		if err != nil && err.Error() != "too many results" {
-			t.Fatal(err)
-		}
-		if len(results) != 2 {
-			t.Errorf("expected 2 results, got %d: %v", len(results), results)
-		}
-	})
+	tests := []struct {
+		name       string
+		query      string
+		limit      int
+		wantCount  int
+		wantSub    []string
+		wantErrMsg string
+		setup      func(*searchMockFS)
+	}{
+		{
+			name:      "Basic Search",
+			query:     "todo",
+			limit:     10,
+			wantCount: 2,
+			wantSub:   []string{"file1.txt:2: todo: fix this", "file3.txt:1: another todo"},
+		},
+		{
+			name:       "Limit Enforcement",
+			query:      "todo",
+			limit:      1,
+			wantCount:  1,
+			wantErrMsg: "too many results",
+		},
+		{
+			name:      "No matches",
+			query:     "nonexistent",
+			limit:     10,
+			wantCount: 0,
+		},
+		{
+			name:      "File Open Error Handling",
+			query:     "todo",
+			limit:     10,
+			wantCount: 1, // file1.txt:2 fails open, only file3.txt:1 matches
+			wantSub:   []string{"file3.txt:1: another todo"},
+			setup: func(mfs *searchMockFS) {
+				mfs.openErrs["file1.txt"] = fmt.Errorf("permission denied")
+			},
+		},
+	}
 
-	t.Run("Limit Enforcement", func(t *testing.T) {
-		results, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
-			return true // Match everything
-		}, 1)
-		if err == nil || err.Error() != "too many results" {
-			t.Errorf("expected 'too many results' error, got %v", err)
-		}
-		if len(results) != 1 {
-			t.Errorf("expected 1 result, got %d", len(results))
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset or setup FS
+			fs.openErrs = make(map[string]error)
+			if tt.setup != nil {
+				tt.setup(fs)
+			}
+
+			results, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
+				return bytes.Contains([]byte(line), []byte(tt.query))
+			}, tt.limit)
+
+			if tt.wantErrMsg != "" {
+				if err == nil || err.Error() != tt.wantErrMsg {
+					t.Errorf("expected error %q, got %v", tt.wantErrMsg, err)
+				}
+			} else if err != nil && err.Error() != "too many results" {
+				t.Fatal(err)
+			}
+
+			if len(results) != tt.wantCount {
+				t.Errorf("expected %d results, got %d: %v", tt.wantCount, len(results), results)
+			}
+
+			if len(tt.wantSub) > 0 {
+				sort.Strings(results)
+				sort.Strings(tt.wantSub)
+				for i, s := range tt.wantSub {
+					if i < len(results) && results[i] != s {
+						t.Errorf("result[%d] = %q, want %q", i, results[i], s)
+					}
+				}
+			}
+		})
+	}
 
 	t.Run("Binary and Large Files are Skipped", func(t *testing.T) {
-		// Fill large.txt with matchable content but it should be skipped due to size
+		fs.openErrs = make(map[string]error)
 		fs.files["large.txt"] = append([]byte("todo hidden in large file"), make([]byte, 2*1024*1024)...)
 
 		results, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
@@ -131,7 +195,6 @@ func TestConcurrentSearch(t *testing.T) {
 		if err != nil && err.Error() != "too many results" {
 			t.Fatal(err)
 		}
-		// Should still only have 2 matches from file1 and file3. bin.exe and large.txt should be skipped.
 		if len(results) != 2 {
 			t.Errorf("expected 2 results, got %d", len(results))
 		}
@@ -139,7 +202,7 @@ func TestConcurrentSearch(t *testing.T) {
 
 	t.Run("Context Cancellation", func(t *testing.T) {
 		cancelCtx, cancel := context.WithCancel(ctx)
-		cancel() // Cancel immediately
+		cancel()
 
 		_, err := ConcurrentSearch(cancelCtx, sp, fs, ".", func(_, line string) bool {
 			return true

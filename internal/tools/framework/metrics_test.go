@@ -69,3 +69,96 @@ func TestCostCalculator_Calculate(t *testing.T) {
 		})
 	}
 }
+
+func TestMetricsManager_Accumulate(t *testing.T) {
+	m := &metricsManager{}
+	p := llm.ModelPricing{
+		TieredThreshold: 1000,
+	}
+
+	tests := []struct {
+		name         string
+		mt           llm.Metrics
+		wantTiered   bool
+		wantMisses   int64
+		wantHits     int64
+		wantComp     int64
+		wantThinking int64
+	}{
+		{
+			name: "Below threshold",
+			mt: llm.Metrics{
+				CachedTokens:   100,
+				PromptTokens:   999,
+				ResponseTokens: 200,
+				ThinkingTokens: 50,
+			},
+			wantTiered:   false,
+			wantHits:     100,
+			wantMisses:   899,
+			wantComp:     200,
+			wantThinking: 50,
+		},
+		{
+			name: "Exactly at threshold",
+			mt: llm.Metrics{
+				CachedTokens:   100,
+				PromptTokens:   1000,
+				ResponseTokens: 200,
+				ThinkingTokens: 50,
+			},
+			wantTiered:   false,
+			wantHits:     100,
+			wantMisses:   900,
+			wantComp:     200,
+			wantThinking: 50,
+		},
+		{
+			name: "One above threshold",
+			mt: llm.Metrics{
+				CachedTokens:   100,
+				PromptTokens:   1001,
+				ResponseTokens: 200,
+				ThinkingTokens: 50,
+			},
+			wantTiered:   true,
+			wantHits:     100,
+			wantMisses:   901,
+			wantComp:     200,
+			wantThinking: 50,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stats := &UsageStats{}
+			m.accumulate(stats, tt.mt, p)
+
+			if stats.Hits != tt.wantHits {
+				t.Errorf("Hits = %v, want %v", stats.Hits, tt.wantHits)
+			}
+
+			if tt.wantTiered {
+				if stats.TieredMisses != tt.wantMisses {
+					t.Errorf("TieredMisses = %v, want %v", stats.TieredMisses, tt.wantMisses)
+				}
+				if stats.TieredComp != tt.wantComp {
+					t.Errorf("TieredComp = %v, want %v", stats.TieredComp, tt.wantComp)
+				}
+				if stats.TieredThinking != tt.wantThinking {
+					t.Errorf("TieredThinking = %v, want %v", stats.TieredThinking, tt.wantThinking)
+				}
+			} else {
+				if stats.Misses != tt.wantMisses {
+					t.Errorf("Misses = %v, want %v", stats.Misses, tt.wantMisses)
+				}
+				if stats.Comp != tt.wantComp {
+					t.Errorf("Comp = %v, want %v", stats.Comp, tt.wantComp)
+				}
+				if stats.Thinking != tt.wantThinking {
+					t.Errorf("Thinking = %v, want %v", stats.Thinking, tt.wantThinking)
+				}
+			}
+		})
+	}
+}
