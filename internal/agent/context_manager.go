@@ -46,6 +46,9 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*types.Conte
 			Policy:  &SlidingWindowPolicy{MaxTurns: maxTurns},
 			Manager: cm.History,
 		},
+		&SystemInstructionInjector{
+			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review.",
+		},
 		&TokenGatekeeper{
 			MaxTokens:  maxTokens,
 			Estimator:  cm.Strategy,

@@ -257,7 +257,7 @@ func TestToolOrchestrationLoop(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&body)
 
 		response := `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"list_files","args":{"path":"."}}}]}}]}`
-		if len(body.Contents) > 1 {
+		if len(body.Contents) > 2 {
 			response = `{"candidates":[{"content":{"role":"model","parts":[{"text":"I have listed the files."}]}}]}`
 		}
 		fmt.Fprint(w, response)
@@ -297,7 +297,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -365,7 +365,7 @@ func TestWriteFileDenial(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -434,7 +434,7 @@ func TestSecurityGate(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				// Turn 1: Return a malicious function call
 				fmt.Fprint(w, `{
 					"candidates": [{
@@ -491,7 +491,7 @@ func TestSymlinkAttack(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -548,7 +548,7 @@ func TestManageTasks(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -616,7 +616,7 @@ func TestManageScratchpad(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&body)
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 1 {
+			if len(body.Contents) <= 2 {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {

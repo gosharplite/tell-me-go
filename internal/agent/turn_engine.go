@@ -13,6 +13,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
+// Clock provides a way to get the current time, facilitating deterministic testing.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
 // TurnPhase represents the current stage of a single agent turn.
 type TurnPhase string
 
@@ -42,6 +51,7 @@ type TurnState struct {
 	Response     *types.Content   `json:"response,omitempty"`
 	ToolResponse *types.Content   `json:"tool_response,omitempty"`
 	LastError    error            `json:"-"`
+	RetryCount   int              `json:"retry_count"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -76,6 +86,7 @@ type Turn struct {
 	Registry     ToolRegistry
 	Events       events.EventBus
 	MaxToolTurns int
+	Clock        Clock
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *types.Content)
@@ -93,6 +104,7 @@ type TurnEngine struct {
 	events     events.EventBus
 	processors map[TurnPhase]TurnProcessor
 	middleware []TurnMiddleware
+	clock      Clock
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -105,6 +117,13 @@ func WithMiddleware(m ...TurnMiddleware) EngineOption {
 	}
 }
 
+// WithClock sets the clock for the TurnEngine.
+func WithClock(c Clock) EngineOption {
+	return func(e *TurnEngine) {
+		e.clock = c
+	}
+}
+
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
 func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
@@ -114,6 +133,7 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 		registry:   reg,
 		events:     bus,
 		processors: make(map[TurnPhase]TurnProcessor),
+		clock:      realClock{},
 	}
 
 	e.processors[PhaseRefining] = &ContextRefiner{}
@@ -167,6 +187,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 			Executor:   e.executor,
 			Registry:   e.registry,
 			Events:     e.events,
+			Clock:      e.clock,
 		}
 		_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 
@@ -298,7 +319,7 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 		return ProcessResult{}
 	}
 
-	toolStart := time.Now()
+	toolStart := turn.Clock.Now()
 
 	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
@@ -310,7 +331,7 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	}
 
 	if turn.State.Metrics != nil {
-		turn.State.Metrics.ToolDuration = time.Since(toolStart).Seconds()
+		turn.State.Metrics.ToolDuration = turn.Clock.Now().Sub(toolStart).Seconds()
 	}
 	return ProcessResult{}
 }
@@ -338,10 +359,33 @@ func (p *PersistenceStep) Process(ctx context.Context, turn *Turn) ProcessResult
 type RecoveryStep struct{}
 
 func (p *RecoveryStep) Process(ctx context.Context, turn *Turn) ProcessResult {
-	if turn.State.LastError != nil {
-		return ProcessResult{NextPhase: PhaseComplete, Error: turn.State.LastError}
+	err := turn.State.LastError
+	if err == nil {
+		return ProcessResult{NextPhase: PhaseComplete}
 	}
-	return ProcessResult{}
+
+	// Max retries
+	if turn.State.RetryCount >= 3 {
+		return ProcessResult{NextPhase: PhaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
+	}
+
+	if IsFatal(err) {
+		return ProcessResult{NextPhase: PhaseComplete, Error: err}
+	}
+
+	if IsTransient(err) {
+		turn.State.RetryCount++
+		// Wait a bit before retrying
+		select {
+		case <-ctx.Done():
+			return ProcessResult{Error: ctx.Err()}
+		case <-time.After(time.Duration(turn.State.RetryCount) * 100 * time.Millisecond):
+		}
+		return ProcessResult{NextPhase: PhaseInference}
+	}
+
+	// Default to terminal for unknown errors to be safe
+	return ProcessResult{NextPhase: PhaseComplete, Error: err}
 }
 
 // WithEvents returns a middleware that publishes events for various phases.
@@ -367,7 +411,7 @@ func WithEvents(bus events.EventBus) TurnMiddleware {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
-						Timestamp:        time.Now(),
+						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
@@ -386,7 +430,7 @@ func WithEvents(bus events.EventBus) TurnMiddleware {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
-						Timestamp:        time.Now(),
+						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
