@@ -272,11 +272,11 @@ func (p *WorkerPool) start() {
 // Submit adds a task to the pool.
 func (p *WorkerPool) Submit(task func(ctx context.Context)) {
 	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	if p.closed {
-		p.mu.RUnlock()
 		return
 	}
-	p.mu.RUnlock()
 
 	select {
 	case p.tasks <- task:
@@ -290,10 +290,10 @@ func (p *WorkerPool) Shutdown() {
 	p.once.Do(func() {
 		p.mu.Lock()
 		p.closed = true
-		p.mu.Unlock()
-
 		close(p.closing)
 		close(p.tasks)
+		p.mu.Unlock()
+
 		p.wg.Wait()
 		p.cancel()
 	})
