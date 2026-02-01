@@ -5,15 +5,18 @@ package code
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/index"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/refactor"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/types"
 )
 
 // Register adds AST-based tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
-	nav := &NavigationManager{SP: sm}
-	ref := &RefactorManager{SP: sm}
-	ana := &AnalysisManager{SP: sm}
+	idx, _ := index.NewIndexer(".")
+	ref := refactor.NewRefactorManager(sm)
+	ana := analysis.NewAnalysisManager(idx, sm)
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
 
@@ -34,7 +37,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, nav.FindUsages)
+	}, ana.FindUsages)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "find_definitions",
@@ -53,7 +56,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, nav.FindDefinitions)
+	}, ana.FindDefinitions)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "list_symbols",
@@ -71,7 +74,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 				},
 			},
 		},
-	}, nav.ListSymbols)
+	}, ana.ListSymbols)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "list_implementations",
@@ -79,13 +82,14 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		Parameters: &types.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*types.Schema{
-				"path": {
+				"interface_name": {
 					Type:        "STRING",
-					Description: "The directory to search (defaults to '.')",
+					Description: "The name of the interface to find implementors for.",
 				},
 			},
+			Required: []string{"interface_name"},
 		},
-	}, nav.ListImplementations)
+	}, ana.ListImplementations)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "get_type_info",
@@ -104,7 +108,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"typename"},
 		},
-	}, nav.GetTypeInfo)
+	}, ana.GetTypeInfo)
 
 	r.Register(&types.ToolDeclaration{
 		Name:        "get_project_summary",
