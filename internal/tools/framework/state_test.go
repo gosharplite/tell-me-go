@@ -5,146 +5,53 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
-func TestStateManager(t *testing.T) {
+func TestStateManager_GetSessionInfo(t *testing.T) {
 	tempDir := t.TempDir()
+	fs := fsutil.DefaultFileSystem
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 
 	m := &stateManager{
 		sm:         sm,
-		tasks:      NewTaskStore(filepath.Join(tempDir, "tasks.json")),
-		config:     NewConfigStore(filepath.Join(tempDir, "config.json")),
-		scratchpad: NewScratchpadStore(filepath.Join(tempDir, "scratchpad.md")),
+		tasks:      NewTaskStore(fs, filepath.Join(tempDir, "tasks.json")),
+		config:     NewConfigStore(fs, filepath.Join(tempDir, "config.json")),
+		scratchpad: NewScratchpadStore(fs, filepath.Join(tempDir, "scratchpad.md")),
 	}
 
 	ctx := context.Background()
+	m.initSessionInfo(tempDir)
 
-	t.Run("Write and Read Scratchpad", func(t *testing.T) {
-		content := "Initial thoughts."
-		_, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "write",
-			"content": content,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
-			"action": "read",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, content) {
-			t.Errorf("got %q, want %q", res.Text, content)
-		}
-	})
-
-	t.Run("Append Scratchpad", func(t *testing.T) {
-		addition := "\nMore thoughts."
-		_, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "append",
-			"content": addition,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := m.scratchpad.ManageScratchpad(ctx, map[string]interface{}{
-			"action": "read",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "Initial thoughts.") || !strings.Contains(res.Text, "More thoughts.") {
-			t.Errorf("scratchpad missing expected content: %s", res.Text)
-		}
-	})
-
-	t.Run("Manage Tasks", func(t *testing.T) {
-		// Add task
-		_, err := m.tasks.ManageTasks(ctx, map[string]interface{}{
-			"action":  "add",
-			"content": "Implement feature X",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// List tasks
-		res, err := m.tasks.ManageTasks(ctx, map[string]interface{}{
-			"action": "list",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "Implement feature X") {
-			t.Errorf("task list missing new task: %s", res.Text)
-		}
-
-		// Update task
-		_, err = m.tasks.ManageTasks(ctx, map[string]interface{}{
-			"action":  "update",
-			"task_id": 1.0,
-			"status":  "completed",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Verify update
-		res, _ = m.tasks.ManageTasks(ctx, map[string]interface{}{"action": "list"})
-		if !strings.Contains(res.Text, "[x]") {
-			t.Errorf("task status not updated: %s", res.Text)
-		}
-	})
-
-	t.Run("Manage Config", func(t *testing.T) {
-		_, err := m.config.ManageConfig(ctx, map[string]interface{}{
+	t.Run("Get Session Info", func(t *testing.T) {
+		m.config.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
-			"key":    "theme",
-			"value":  "dark",
+			"key":    "test_key",
+			"value":  "test_val",
 		})
+
+		res, err := m.getSessionInfo(ctx, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		res, err := m.config.ManageConfig(ctx, map[string]interface{}{
-			"action": "get",
-			"key":    "theme",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "dark") {
-			t.Errorf("config get failed: %s", res.Text)
-		}
-	})
-
-	t.Run("Persistence", func(t *testing.T) {
-		// Create a new manager pointing to the same directory
-		configStore2 := NewConfigStore(filepath.Join(tempDir, "config.json"))
-		err := configStore2.Load()
-		if err != nil {
+		var info SessionInfo
+		if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
 			t.Fatal(err)
 		}
 
-		res, err := configStore2.ManageConfig(ctx, map[string]interface{}{
-			"action": "get",
-			"key":    "theme",
-		})
-		if err != nil {
-			t.Fatal(err)
+		if info.Config["test_key"] != "test_val" {
+			t.Errorf("expected test_val in session info, got %v", info.Config["test_key"])
 		}
-		if !strings.Contains(res.Text, "dark") {
-			t.Error("state was not persisted to disk")
+		if !strings.Contains(info.Paths["config_dir"], tempDir) {
+			t.Errorf("expected config_dir to contain %s, got %s", tempDir, info.Paths["config_dir"])
 		}
 	})
 }

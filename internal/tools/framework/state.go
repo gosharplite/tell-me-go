@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
@@ -31,17 +32,19 @@ type SessionInfo struct {
 
 // RegisterState adds state management tools (scratchpad, config, tasks) to the registry.
 func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir string) {
+	fs := fsutil.DefaultFileSystem
 	m := &stateManager{
 		sm:         sm,
-		tasks:      NewTaskStore(filepath.Join(configDir, "tasks.json")),
-		config:     NewConfigStore(filepath.Join(configDir, "config.json")),
-		scratchpad: NewScratchpadStore(filepath.Join(configDir, "scratchpad.md")),
+		tasks:      NewTaskStore(fs, filepath.Join(configDir, "tasks.json")),
+		config:     NewConfigStore(fs, filepath.Join(configDir, "config.json")),
+		scratchpad: NewScratchpadStore(fs, filepath.Join(configDir, "scratchpad.md")),
 	}
 
 	// Initialize state
-	_ = m.config.Load()
-	_ = m.scratchpad.Load()
-	_ = m.tasks.Load()
+	ctx := context.Background()
+	_ = m.config.Load(ctx)
+	_ = m.scratchpad.Load(ctx)
+	_ = m.tasks.Load(ctx)
 	m.initSessionInfo(configDir)
 
 	r.Register(&tools.ToolDeclaration{

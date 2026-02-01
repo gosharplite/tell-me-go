@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
@@ -20,26 +19,28 @@ type ConfigStore struct {
 	mu       sync.RWMutex
 	config   map[string]string
 	filePath string
+	fs       fsutil.FileSystem
 }
 
 // NewConfigStore creates a new ConfigStore.
-func NewConfigStore(filePath string) *ConfigStore {
+func NewConfigStore(fs fsutil.FileSystem, filePath string) *ConfigStore {
 	return &ConfigStore{
 		config:   make(map[string]string),
 		filePath: filePath,
+		fs:       fs,
 	}
 }
 
 // Load loads configuration from disk.
-func (s *ConfigStore) Load() error {
+func (s *ConfigStore) Load(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := os.Stat(s.filePath); err != nil {
+	if _, err := s.fs.Stat(ctx, s.filePath); err != nil {
 		return nil
 	}
 
-	data, err := os.ReadFile(s.filePath)
+	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (s *ConfigStore) Save(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.AtomicWrite(ctx, s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
 // GetAll returns a copy of all configuration.

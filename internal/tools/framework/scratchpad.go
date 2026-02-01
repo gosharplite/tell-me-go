@@ -6,7 +6,6 @@ package framework
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -18,25 +17,27 @@ type ScratchpadStore struct {
 	mu         sync.RWMutex
 	scratchpad string
 	filePath   string
+	fs         fsutil.FileSystem
 }
 
 // NewScratchpadStore creates a new ScratchpadStore.
-func NewScratchpadStore(filePath string) *ScratchpadStore {
+func NewScratchpadStore(fs fsutil.FileSystem, filePath string) *ScratchpadStore {
 	return &ScratchpadStore{
 		filePath: filePath,
+		fs:       fs,
 	}
 }
 
 // Load loads the scratchpad from disk.
-func (s *ScratchpadStore) Load() error {
+func (s *ScratchpadStore) Load(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := os.Stat(s.filePath); err != nil {
+	if _, err := s.fs.Stat(ctx, s.filePath); err != nil {
 		return nil
 	}
 
-	data, err := os.ReadFile(s.filePath)
+	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func (s *ScratchpadStore) Save(ctx context.Context) error {
 	data := []byte(s.scratchpad)
 	s.mu.RUnlock()
 
-	return fsutil.AtomicWrite(ctx, s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
 // ManageScratchpad handles the manage_scratchpad tool.

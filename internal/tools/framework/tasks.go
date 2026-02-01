@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -27,31 +26,33 @@ type Task struct {
 
 // TaskStore manages a list of tasks with persistence.
 type TaskStore struct {
-	mu         sync.RWMutex
-	tasks      map[float64]Task
-	nextID     float64
-	filePath   string
+	mu       sync.RWMutex
+	tasks    map[float64]Task
+	nextID   float64
+	filePath string
+	fs       fsutil.FileSystem
 }
 
 // NewTaskStore creates a new TaskStore.
-func NewTaskStore(filePath string) *TaskStore {
+func NewTaskStore(fs fsutil.FileSystem, filePath string) *TaskStore {
 	return &TaskStore{
 		tasks:    make(map[float64]Task),
 		nextID:   1,
 		filePath: filePath,
+		fs:       fs,
 	}
 }
 
 // Load loads tasks from disk.
-func (s *TaskStore) Load() error {
+func (s *TaskStore) Load(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := os.Stat(s.filePath); err != nil {
+	if _, err := s.fs.Stat(ctx, s.filePath); err != nil {
 		return nil // File doesn't exist yet, which is fine
 	}
 
-	data, err := os.ReadFile(s.filePath)
+	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
 		return err
 	}
@@ -88,7 +89,7 @@ func (s *TaskStore) Save(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.AtomicWrite(ctx, s.filePath, data, 0644)
+	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
 // ManageTasks handles the manage_tasks tool.
