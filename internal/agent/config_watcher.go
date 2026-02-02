@@ -32,15 +32,22 @@ type ConfigWatcher struct {
 
 // NewConfigWatcher creates a new ConfigWatcher with default values.
 func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
+	defaultThreshold := 128000
+	if dp := config.DefaultPricing(); dp.Models != nil {
+		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
+			defaultThreshold = int(m.TieredThreshold)
+		}
+	}
+
 	return &ConfigWatcher{
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
-		tieredThreshold:      128000,
+		tieredThreshold:      defaultThreshold,
 		defaultHistoryTokens: tokens,
 		defaultToolTurns:     toolTurns,
 		defaultHistoryTurns:  historyTurns,
-		defaultThreshold:     128000,
+		defaultThreshold:     defaultThreshold,
 	}
 }
 

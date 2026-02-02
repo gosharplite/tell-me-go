@@ -45,3 +45,12 @@ func DefaultPricing() llm.PricingData {
 		SearchQuery: 0.035,
 	}
 }
+
+// Default limits for history and tools.
+const (
+	DefaultMaxToolTurns       = 10
+	DefaultMaxHistoryTurns    = 20
+	DefaultMaxHistoryTokens   = 100000
+	DefaultMaxConcurrentTools = 5
+	DefaultToolTimeoutSeconds = 30
+)

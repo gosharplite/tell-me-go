@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -128,19 +129,19 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		ctxManager:    ctxManager,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: NewConfigWatcher(100000, 10, 20),
+		configWatcher: NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
 		config: RuntimeConfig{
 			Limits: events.Limits{
-				MaxHistoryTokens: 100000,
-				MaxToolTurns:     10,
-				MaxHistoryTurns:  20,
+				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
+				MaxToolTurns:     config.DefaultMaxToolTurns,
+				MaxHistoryTurns:  config.DefaultMaxHistoryTurns,
 			},
 			Execution: events.ExecutionConfig{
-				MaxConcurrent: 5,
-				Timeout:       30 * time.Second,
+				MaxConcurrent: config.DefaultMaxConcurrentTools,
+				Timeout:       time.Duration(config.DefaultToolTimeoutSeconds) * time.Second,
 			},
 		},
 	}

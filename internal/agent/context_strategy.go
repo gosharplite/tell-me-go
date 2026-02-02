@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -35,12 +36,19 @@ type ToolRegistry interface {
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
+	defaultThreshold := 128000
+	if dp := config.DefaultPricing(); dp.Models != nil {
+		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
+			defaultThreshold = int(m.TieredThreshold)
+		}
+	}
+
 	cs := &ContextStrategy{
 		counter:          counter,
-		maxHistoryTokens: 100000,
-		maxToolTurns:     10,
-		maxHistoryTurns:  20,
-		tieredThreshold:  128000,
+		maxHistoryTokens: config.DefaultMaxHistoryTokens,
+		maxToolTurns:     config.DefaultMaxToolTurns,
+		maxHistoryTurns:  config.DefaultMaxHistoryTurns,
+		tieredThreshold:  defaultThreshold,
 	}
 
 	if bus != nil {

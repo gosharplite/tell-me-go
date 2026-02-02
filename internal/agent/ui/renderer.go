@@ -40,6 +40,8 @@ type StdUIRenderer struct {
 	renderer *glamour.TermRenderer
 }
 
+const warningRatio = 0.78 // ~100k for 128k cliff
+
 // streamState holds the transient state for a single response stream.
 type streamState struct {
 	aggregated    *llm.Content
@@ -147,7 +149,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		if cliff <= 0 {
 			cliff = 128000
 		}
-		warning := int(float64(cliff) * 0.78) // ~100k for 128k cliff
+		warning := int(float64(cliff) * warningRatio)
 
 		tColor := gray
 		if int(m.TotalTokens) >= cliff {
