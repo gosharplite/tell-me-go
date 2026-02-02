@@ -763,6 +763,16 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 		ledgerMu.Lock()
 		defer ledgerMu.Unlock()
 
+		lockPath := historyPath + ".lock"
+		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		if err != nil {
+			return // Another process is writing; skip this background update
+		}
+		defer func() {
+			lock.Close()
+			os.Remove(lockPath)
+		}()
+
 		// Re-read and merge in case of concurrent updates during walk
 		if content, err := os.ReadFile(historyPath); err == nil {
 			var latest []SessionCostRecord

@@ -46,7 +46,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	// Dynamic logic based on profile
 	if profile == ProfilePrecise {
 		transformers = append(transformers, &SystemInstructionInjector{
-			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review. Be precise and concise.",
+			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review. Be precise and concise. Note: Only the Coder role has WRITE access to the filesystem.",
 		})
 	} else {
 		transformers = append(transformers, &SystemInstructionInjector{
