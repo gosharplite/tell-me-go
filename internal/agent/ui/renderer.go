@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
@@ -39,8 +40,6 @@ type StdUIRenderer struct {
 	now      func() time.Time
 	renderer *glamour.TermRenderer
 }
-
-const warningRatio = 0.78 // ~100k for 128k cliff
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
@@ -111,8 +110,11 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := reset
-		if float64(tks) > float64(status.MaxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m"
+		if float64(tks) > float64(status.MaxHistoryTokens)*config.WarningRatio {
+			tokenColor = "\033[0;33m" // Yellow caution
+		}
+		if float64(tks) > float64(status.MaxHistoryTokens) {
+			tokenColor = "\033[0;31m" // Red limit
 		}
 
 		if isActual {
@@ -147,16 +149,18 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		// Cliff logic
 		cliff := status.TieredThreshold
 		if cliff <= 0 {
-			cliff = 128000
+			cliff = config.DefaultTieredThreshold
 		}
-		warning := int(float64(cliff) * warningRatio)
+		warning := int(float64(cliff) * config.WarningRatio)
 
-		tColor := gray
-		if int(m.TotalTokens) >= cliff {
-			tColor = "\033[0;31m" // Red
-		} else if int(m.TotalTokens) >= warning {
-			tColor = "\033[0;33m" // Yellow
+		statusColor := gray
+		if int(m.PromptTokens) >= cliff {
+			statusColor = "\033[0;31m" // Red
+		} else if int(m.PromptTokens) >= warning {
+			statusColor = "\033[0;33m" // Yellow
 		}
+
+		tColor := statusColor
 
 		pColor := gray
 		if percent < 20 {
@@ -167,10 +171,8 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 		// N color follows efficiency unless we hit the cliff penalty
 		nColor := pColor
-		if int(m.TotalTokens) >= cliff {
-			nColor = "\033[0;31m"
-		} else if int(m.TotalTokens) >= warning {
-			nColor = "\033[0;33m"
+		if statusColor != gray {
+			nColor = statusColor
 		}
 
 		totalDuration := r.now().Sub(status.StartTime).Seconds()

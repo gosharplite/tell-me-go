@@ -53,4 +53,6 @@ const (
 	DefaultMaxHistoryTokens   = 100000
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30
+	DefaultTieredThreshold    = 128000
+	WarningRatio              = 0.78 // ~100k for 128k cliff
 )

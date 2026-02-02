@@ -36,7 +36,7 @@ type ToolRegistry interface {
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
-	defaultThreshold := 128000
+	defaultThreshold := config.DefaultTieredThreshold
 	if dp := config.DefaultPricing(); dp.Models != nil {
 		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
 			defaultThreshold = int(m.TieredThreshold)

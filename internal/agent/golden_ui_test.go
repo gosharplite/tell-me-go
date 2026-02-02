@@ -62,6 +62,50 @@ func TestUIRendererGolden(t *testing.T) {
 		verifyGolden(t, "turn_status_post.golden", stderr.String())
 	})
 
+	t.Run("LogTurnStatus_PostCall_Cliff", func(t *testing.T) {
+		stderr.Reset()
+		renderer.LogTurnStatus(events.TurnStatus{
+			Timestamp:        fixedTime,
+			CurrentTurns:     1,
+			MaxHistoryTurns:  20,
+			Tokens:           130000,
+			MaxHistoryTokens: 100000,
+			TieredThreshold:  128000,
+			IsPostCall:       true,
+			StartTime:        fixedTime.Add(-5 * time.Second),
+			Metrics: &llm.Metrics{
+				PromptTokens:   130000,
+				CachedTokens:   120000,
+				ResponseTokens: 5000,
+				TotalTokens:    135000,
+				Duration:       1.5,
+			},
+		})
+		verifyGolden(t, "turn_status_cliff.golden", stderr.String())
+	})
+
+	t.Run("LogTurnStatus_PostCall_Warning", func(t *testing.T) {
+		stderr.Reset()
+		renderer.LogTurnStatus(events.TurnStatus{
+			Timestamp:        fixedTime,
+			CurrentTurns:     1,
+			MaxHistoryTurns:  20,
+			Tokens:           105000,
+			MaxHistoryTokens: 100000,
+			TieredThreshold:  128000,
+			IsPostCall:       true,
+			StartTime:        fixedTime.Add(-5 * time.Second),
+			Metrics: &llm.Metrics{
+				PromptTokens:   105000,
+				CachedTokens:   100000,
+				ResponseTokens: 2000,
+				TotalTokens:    107000,
+				Duration:       1.5,
+			},
+		})
+		verifyGolden(t, "turn_status_warning.golden", stderr.String())
+	})
+
 	t.Run("LogToolResult", func(t *testing.T) {
 		stderr.Reset()
 		// Mock the time in the function by using a regex replacement in verifyGolden
