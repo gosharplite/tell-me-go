@@ -24,6 +24,7 @@ type ContextStrategy struct {
 	maxHistoryTokens int
 	maxToolTurns     int
 	maxHistoryTurns  int
+	tieredThreshold  int
 	prunedTurns      int
 }
 
@@ -39,12 +40,14 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 		maxHistoryTokens: 100000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
+		tieredThreshold:  128000,
 	}
 
 	if bus != nil {
 		bus.Subscribe(func(e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
+				cs.SetTieredThreshold(cfg.Limits.TieredThreshold)
 			}
 		})
 	}
@@ -67,6 +70,14 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
+func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if threshold > 0 {
+		cs.tieredThreshold = threshold
+	}
+}
+
 // SetPrunedTurns sets the initial pruned turns count.
 func (cs *ContextStrategy) SetPrunedTurns(n int) {
 	cs.mu.Lock()
@@ -79,6 +90,12 @@ func (cs *ContextStrategy) GetLimits() (int, int, int) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
+}
+
+func (cs *ContextStrategy) GetTieredThreshold() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.tieredThreshold
 }
 
 // EstimateTokens provides a heuristic-based token count with incremental caching.

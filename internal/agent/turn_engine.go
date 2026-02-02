@@ -566,6 +566,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 
 			if turn.State.Phase == PhaseRefining || turn.State.Phase == PhasePersisting {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
+				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
@@ -573,6 +574,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,
+						TieredThreshold:  threshold,
 						Metrics:          turn.State.Metrics,
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,

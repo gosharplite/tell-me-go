@@ -171,7 +171,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
 	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming)
-	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned)
+	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pricing)
 
 	// 7. Execute & Finalize
 	sess := agent.NewSession(hManager)

@@ -24,6 +24,7 @@ type Chatter interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
 	SetLogFile(path string)
 	SetLimits(toolTurns, historyTokens, historyTurns int)
+	SetTieredThreshold(threshold int)
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
@@ -165,10 +166,13 @@ func (a *Agent) applyConfig() {
 	a.configWatcher.Refresh()
 
 	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
+	threshold := a.configWatcher.GetTieredThreshold()
+
 	// Update config from watcher if it changed
 	a.config.Limits.MaxHistoryTokens = tokens
 	a.config.Limits.MaxToolTurns = toolTurns
 	a.config.Limits.MaxHistoryTurns = histTurns
+	a.config.Limits.TieredThreshold = threshold
 
 	a.events.Publish(events.ConfigUpdated{
 		Limits:    a.config.Limits,
@@ -210,6 +214,11 @@ func (a *Agent) registerInternalTools() {
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.applyConfig()
+}
+
+func (a *Agent) SetTieredThreshold(threshold int) {
+	a.configWatcher.SetTieredThreshold(threshold)
 	a.applyConfig()
 }
 

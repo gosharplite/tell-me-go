@@ -142,9 +142,12 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			hColor = reset
 		}
 
-		// Cliff logic (Gemini 1.5 Flash)
-		cliff := 128000
-		warning := 100000
+		// Cliff logic
+		cliff := status.TieredThreshold
+		if cliff <= 0 {
+			cliff = 128000
+		}
+		warning := int(float64(cliff) * 0.78) // ~100k for 128k cliff
 
 		tColor := gray
 		if int(m.TotalTokens) >= cliff {
