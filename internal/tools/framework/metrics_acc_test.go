@@ -129,18 +129,18 @@ func TestSessionCostTracker_MixedModels(t *testing.T) {
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	})
-	
+
 	costA := (100.0*2.0 + 50.0*3.0) / 1e6
-	
+
 	// turn 2: model-b
 	tracker.Accumulate(llm.Metrics{
 		Model:          "model-b",
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	})
-	
+
 	costB := (100.0*20.0 + 50.0*30.0) / 1e6
-	
+
 	cost := tracker.GetTotalCost(context.Background())
 	want := costA + costB
 	if cost != want {
@@ -166,11 +166,11 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	// 1. JSON with Model A
 	m1 := llm.Metrics{Model: "model-a", PromptTokens: 100, ResponseTokens: 50}
 	d1, _ := json.Marshal(m1)
-	
+
 	// 2. JSON with Model B
 	m2 := llm.Metrics{Model: "model-b", PromptTokens: 100, ResponseTokens: 50}
 	d2, _ := json.Marshal(m2)
-	
+
 	// 3. JSON with explicit Cost (summary record)
 	m3 := llm.Metrics{Model: "model-a", Cost: 1.2345}
 	d3, _ := json.Marshal(m3)
@@ -190,7 +190,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	if totalCost != wantCost {
 		t.Errorf("Expected total cost %f, got %f", wantCost, totalCost)
 	}
-	
+
 	if stats.Misses != 200 {
 		t.Errorf("Expected 200 misses, got %d", stats.Misses)
 	}

@@ -333,7 +333,12 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) {
-		go m.recoverLedger(ctx, globalDir)
+		// Use a background context for recovery so it's not aborted if the request context is cancelled.
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+		go func() {
+			defer cancel()
+			m.recoverLedger(bgCtx, globalDir)
+		}()
 	}
 
 	// 3. Update or Append (identify by session ID)
@@ -393,7 +398,12 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		go m.recoverLedger(ctx, globalDir)
+		// Use a background context for recovery so it's not aborted if the request context is cancelled.
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+		go func() {
+			defer cancel()
+			m.recoverLedger(bgCtx, globalDir)
+		}()
 		return "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
 	}
 
