@@ -100,6 +100,7 @@ func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
+func (m *mockChatter) SetSystemInstructions(instr string)                   {}
 func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
 func (m *mockChatter) GetCostTracker() *framework.SessionCostTracker        { return nil }
 

@@ -148,44 +148,10 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		printSystemLine(int(m.PromptTokens), true)
 
 		miss := m.PromptTokens - m.CachedTokens
-		newTokens := miss + m.ResponseTokens + m.ThinkingTokens
-		percent := 0
-		if m.TotalTokens > 0 {
-			percent = int((int64(newTokens) * 100) / int64(m.TotalTokens))
-		}
 
 		hColor := gray
 		if miss > m.CachedTokens {
 			hColor = reset
-		}
-
-		// Cliff logic
-		cliff := status.TieredThreshold
-		if cliff <= 0 {
-			cliff = config.DefaultTieredThreshold
-		}
-		warning := int(float64(cliff) * config.WarningRatio)
-
-		statusColor := gray
-		if int(m.PromptTokens) >= cliff {
-			statusColor = "\033[0;31m" // Red
-		} else if int(m.PromptTokens) >= warning {
-			statusColor = "\033[0;33m" // Yellow
-		}
-
-		tColor := statusColor
-
-		pColor := gray
-		if percent < 20 {
-			pColor = "\033[0;32m" // Green
-		} else if percent > 70 {
-			pColor = reset // White
-		}
-
-		// N color follows efficiency unless we hit the cliff penalty
-		nColor := pColor
-		if statusColor != gray {
-			nColor = statusColor
 		}
 
 		totalDuration := r.now().Sub(status.StartTime).Seconds()
@@ -194,8 +160,8 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 		}
 
-		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d %sT: %s%d%s %sN: %s%d(%d%%)%s S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
-			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, gray, tColor, m.TotalTokens, gray, gray, nColor, newTokens, percent, gray, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+		fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+			gray, timestamp, miss, hColor, m.CachedTokens, gray, m.ResponseTokens, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
 
 		costStr := ""
 		if status.SessionCost > 0 {

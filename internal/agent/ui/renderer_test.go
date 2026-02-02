@@ -207,3 +207,46 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 		}
 	})
 }
+
+func TestLogTurnStatus_Format(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+	r.now = func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) }
+
+	r.LogTurnStatus(events.TurnStatus{
+		Timestamp:       r.now(),
+		CurrentTurns:    1,
+		MaxHistoryTurns: 10,
+		IsPostCall:      true,
+		Metrics: &llm.Metrics{
+			PromptTokens:   9185,
+			CachedTokens:   0,
+			ResponseTokens: 516,
+			ThinkingTokens: 435,
+			TotalTokens:    9185 + 516 + 435,
+			Duration:       8.12,
+		},
+		StartTime: r.now().Add(-8330 * time.Millisecond), // 8.33s total
+	})
+
+	output := stderr.String()
+	// Check for the specific format: [21:04:52] M: 9185 H: 0 C: 516 Th: 435 [8.12s / 8.33s]
+	// We'll check parts to ignore colors.
+	parts := []string{
+		"[21:04:52]",
+		"M: 9185",
+		"H: 0",
+		"C: 516",
+		"Th: 435",
+		"8.12s",
+		"/ 8.33s",
+	}
+
+	for _, p := range parts {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q, got %q", p, output)
+		}
+	}
+}
