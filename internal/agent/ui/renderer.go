@@ -142,14 +142,40 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			hColor = reset
 		}
 
+		// Cliff logic (Gemini 1.5 Flash)
+		cliff := 128000
+		warning := 100000
+
+		tColor := gray
+		if int(m.TotalTokens) >= cliff {
+			tColor = "\033[0;31m" // Red
+		} else if int(m.TotalTokens) >= warning {
+			tColor = "\033[0;33m" // Yellow
+		}
+
+		pColor := gray
+		if percent < 20 {
+			pColor = "\033[0;32m" // Green
+		} else if percent > 70 {
+			pColor = reset // White
+		}
+
+		// N color follows efficiency unless we hit the cliff penalty
+		nColor := pColor
+		if int(m.TotalTokens) >= cliff {
+			nColor = "\033[0;31m"
+		} else if int(m.TotalTokens) >= warning {
+			nColor = "\033[0;33m"
+		}
+
 		totalDuration := r.now().Sub(status.StartTime).Seconds()
 		durationStr := fmt.Sprintf("%.2fs", m.Duration)
 		if m.ToolDuration > 3.0 {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 		}
 
-		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
-			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d %sT: %s%d%s %sN: %s%d(%d%%)%s S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, gray, tColor, m.TotalTokens, gray, gray, nColor, newTokens, percent, gray, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
 		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, gray)
 	}
 }
