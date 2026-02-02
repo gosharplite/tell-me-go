@@ -100,7 +100,7 @@ You can also use the `-r` flag with a regular prompt to receive raw text without
 
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:
-`[14:19:43] [System (3/20)] Payload: ~4549/120000 tokens`
+`[14:19:43] [System (3/20)] Payload: ~4549/100000 tokens`
 *   **(3/20)**: Current turn count / Max history turns.
 *   **Tokens**: Estimated payload size / Max history tokens. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
 
@@ -150,7 +150,7 @@ TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
-MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback
+MAX_HISTORY_TOKENS: 100000 # Max payload size before safety rollback (Headroom for 128k price cliff)
 
 # --- Authentication ---
 KEY_FILE: "" # Optional: Path to Service Account JSON key.

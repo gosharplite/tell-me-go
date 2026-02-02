@@ -34,7 +34,7 @@ func TestUIRendererGolden(t *testing.T) {
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,
 			Tokens:           1234,
-			MaxHistoryTokens: 120000,
+			MaxHistoryTokens: 100000,
 			IsPostCall:       false,
 		})
 		verifyGolden(t, "turn_status_pre.golden", stderr.String())
@@ -47,7 +47,7 @@ func TestUIRendererGolden(t *testing.T) {
 			CurrentTurns:     1,
 			MaxHistoryTurns:  20,
 			Tokens:           1234,
-			MaxHistoryTokens: 120000,
+			MaxHistoryTokens: 100000,
 			IsPostCall:       true,
 			StartTime:        fixedTime.Add(-5 * time.Second),
 			Metrics: &llm.Metrics{

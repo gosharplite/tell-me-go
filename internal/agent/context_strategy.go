@@ -36,7 +36,7 @@ type ToolRegistry interface {
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
 	cs := &ContextStrategy{
 		counter:          counter,
-		maxHistoryTokens: 120000,
+		maxHistoryTokens: 100000,
 		maxToolTurns:     10,
 		maxHistoryTurns:  20,
 	}

@@ -127,13 +127,13 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		ctxManager:    ctxManager,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: NewConfigWatcher(120000, 10, 20),
+		configWatcher: NewConfigWatcher(100000, 10, 20),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
 		config: RuntimeConfig{
 			Limits: events.Limits{
-				MaxHistoryTokens: 120000,
+				MaxHistoryTokens: 100000,
 				MaxToolTurns:     10,
 				MaxHistoryTurns:  20,
 			},

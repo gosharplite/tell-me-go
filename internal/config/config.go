@@ -51,7 +51,7 @@ func Load(path string) (*Config, error) {
 	// Set defaults
 	cfg.MaxToolTurns = 10
 	cfg.MaxHistoryTurns = 20
-	cfg.MaxHistoryTokens = 120000
+	cfg.MaxHistoryTokens = 100000
 	cfg.MaxConcurrentTools = 5
 	cfg.ToolTimeoutSeconds = 30
 	cfg.ShowThoughts = true
