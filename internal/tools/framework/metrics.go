@@ -400,20 +400,28 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	cachePath := filepath.Join(globalDir, "global_prices.json")
 	var data llm.PricingData
 	useCache := false
+	isStale := false
 
 	// 1. Try Local Cache
 	if info, err := os.Stat(cachePath); err == nil {
-		if time.Since(info.ModTime()) < 24*time.Hour {
-			if content, err := os.ReadFile(cachePath); err == nil {
-				if err := json.Unmarshal(content, &data); err == nil {
-					useCache = true
+		if content, err := os.ReadFile(cachePath); err == nil {
+			if err := json.Unmarshal(content, &data); err == nil {
+				useCache = true
+				if time.Since(info.ModTime()) >= 24*time.Hour {
+					isStale = true
 				}
 			}
 		}
 	}
 
 	// 2. Try Remote if cache is missing or stale
-	if !useCache {
+	if !useCache || isStale {
+		if isStale {
+			// If we have stale data, return it immediately and fetch in background
+			go fetchAndCachePricing(context.Background(), sm, cachePath)
+			return data
+		}
+
 		// Optimization: Check for connectivity before hitting network to avoid long timeout
 		client := http.Client{Timeout: 2 * time.Second} // Shorter timeout
 		req, _ := http.NewRequestWithContext(ctx, "GET", pricingURL, nil)
@@ -627,4 +635,29 @@ func (m *metricsManager) renderReport(pricing llm.PricingData, breakdown CostBre
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
 	return sb.String()
+}
+
+func fetchAndCachePricing(ctx context.Context, sm *security.SecurityManager, cachePath string) {
+	sm.PricingMu().Lock()
+	defer sm.PricingMu().Unlock()
+
+	// Double check freshness inside lock
+	if info, err := os.Stat(cachePath); err == nil {
+		if time.Since(info.ModTime()) < 24*time.Hour {
+			return
+		}
+	}
+
+	client := http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx, "GET", pricingURL, nil)
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var data llm.PricingData
+		if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+			if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
+				_ = fsutil.AtomicWrite(ctx, cachePath, bytes, 0644)
+			}
+		}
+	}
 }

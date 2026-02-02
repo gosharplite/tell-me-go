@@ -5,13 +5,17 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
@@ -87,10 +91,10 @@ type TurnState struct {
 	Metadata      *ContextMetadata `json:"metadata,omitempty"`
 	Response      *llm.Content     `json:"response,omitempty"`
 	ToolResponse  *llm.Content     `json:"tool_response,omitempty"`
-	LastError     error            `json:"-"`
-	RetryCount    int              `json:"retry_count"`
-	ToolCallCount map[string]int   `json:"-"`
-	LastResponse  string           `json:"-"`
+	LastError            error            `json:"-"`
+	RetryCount           int              `json:"retry_count"`
+	ToolCallCount        map[string]int   `json:"-"`
+	RecentResponseHashes []string         `json:"-"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -137,6 +141,7 @@ type Turn struct {
 
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
+	mu               sync.RWMutex
 	ctxManager       *ContextManager
 	gateway          gateway.LLMGateway
 	executor         IToolExecutor
@@ -196,6 +201,8 @@ func WithClock(c Clock) EngineOption {
 // WithHardBudget sets a maximum session budget in USD.
 func WithHardBudget(limit float64) EngineOption {
 	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		e.HardBudgetLimit = limit
 	}
 }
@@ -203,6 +210,9 @@ func WithHardBudget(limit float64) EngineOption {
 // WithConfig sets the security and usage configuration for the engine.
 func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
 		e.sm = sm
 		e.logFile = logFile
 		e.model = model
@@ -263,8 +273,11 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 		// without leaking subscribers or handling unsubscription.
 		e.events.Subscribe(func(ev events.Event) {
 			if um, ok := ev.(events.UsageMetricsEvent); ok {
-				if e.costTracker != nil && um.Metrics != nil {
-					e.costTracker.Accumulate(*um.Metrics)
+				e.mu.RLock()
+				tracker := e.costTracker
+				e.mu.RUnlock()
+				if tracker != nil && um.Metrics != nil {
+					tracker.Accumulate(*um.Metrics)
 				}
 			}
 		})
@@ -300,7 +313,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		turn := e.createTurn(i, startTime, totalRetries)
 		if lastState != nil {
 			turn.State.ToolCallCount = lastState.ToolCallCount
-			turn.State.LastResponse = lastState.LastResponse
+			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
 		}
 		if turn.State.ToolCallCount == nil {
 			turn.State.ToolCallCount = make(map[string]int)
@@ -329,9 +342,14 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 		return err
 	}
 
-	if e.costTracker != nil && e.HardBudgetLimit > 0 {
-		if cost := e.costTracker.GetTotalCost(ctx); cost > e.HardBudgetLimit {
-			return fmt.Errorf("%w: current cost $%.4f exceeds budget $%.4f", llm.ErrBudgetExceeded, cost, e.HardBudgetLimit)
+	e.mu.RLock()
+	tracker := e.costTracker
+	limit := e.HardBudgetLimit
+	e.mu.RUnlock()
+
+	if tracker != nil && limit > 0 {
+		if cost := tracker.GetTotalCost(ctx); cost > limit {
+			return fmt.Errorf("%w: current cost $%.4f exceeds budget $%.4f", llm.ErrBudgetExceeded, cost, limit)
 		}
 	}
 
@@ -347,6 +365,10 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 }
 
 func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
+	e.mu.RLock()
+	tracker := e.costTracker
+	e.mu.RUnlock()
+
 	turn := &Turn{
 		Index:      index,
 		StartTime:  startTime,
@@ -357,7 +379,7 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 		Registry:   e.registry,
 		Events:     e.events,
 		Clock:      e.clock,
-		CostTracker: e.costTracker,
+		CostTracker: tracker,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 	return turn
@@ -678,18 +700,29 @@ func WithLoopDetector() TurnMiddleware {
 			res := next.Process(ctx, turn)
 
 			if turn.State.Phase == PhaseInference && res.Error == nil && turn.State.Response != nil {
-				// 1. Text loop detection
+				// 1. Multi-step text loop detection
 				currentText := ""
 				for _, p := range turn.State.Response.Parts {
 					currentText += p.Text
 				}
-				if currentText != "" && currentText == turn.State.LastResponse {
-					return ProcessResult{
-						Stop:  true,
-						Error: fmt.Errorf("infinite loop detected: model is repeating the exact same text response"),
+				if currentText != "" {
+					h := sha256.Sum256([]byte(currentText))
+					currentHash := hex.EncodeToString(h[:])
+
+					for _, prevHash := range turn.State.RecentResponseHashes {
+						if currentHash == prevHash {
+							return ProcessResult{
+								Stop:  true,
+								Error: fmt.Errorf("infinite loop detected: model is repeating a previous response"),
+							}
+						}
+					}
+					// Keep last N hashes (using the same repetition limit)
+					turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
+					if len(turn.State.RecentResponseHashes) > config.DefaultMaxLoopRepetitions {
+						turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
 					}
 				}
-				turn.State.LastResponse = currentText
 
 				// 2. Tool call loop detection
 				for _, p := range turn.State.Response.Parts {
@@ -697,7 +730,7 @@ func WithLoopDetector() TurnMiddleware {
 						args, _ := json.Marshal(p.FunctionCall.Args)
 						key := p.FunctionCall.Name + ":" + string(args)
 						turn.State.ToolCallCount[key]++
-						if turn.State.ToolCallCount[key] > 5 {
+						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
 							return ProcessResult{
 								Stop:  true,
 								Error: fmt.Errorf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]),

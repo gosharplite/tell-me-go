@@ -54,5 +54,6 @@ const (
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30
 	DefaultTieredThreshold    = 128000
+	DefaultMaxLoopRepetitions = 5
 	WarningRatio              = 0.78 // ~100k for 128k cliff
 )
