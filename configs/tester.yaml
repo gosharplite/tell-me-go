@@ -1,0 +1,12 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+MODE: "tester"
+PERSON: "You are the Tester. Your mission is to write and execute tests, ensuring 80%+ coverage and validating that the implementation meets all requirements."
+AIMODEL: "gemini-2.0-flash-001"
+USE_SEARCH: true
+SHOW_THOUGHTS: true
+SHOW_TOOLS: true
+MAX_TURNS: 10
+MAX_HISTORY_TURNS: 20
+MAX_HISTORY_TOKENS: 100000

@@ -8,9 +8,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,6 +154,12 @@ type SessionCostRecord struct {
 	TotalCost float64 `json:"total_cost"`
 }
 
+var (
+	recoveryInProgress sync.Map // historyPath -> bool
+	dateRegex          = regexp.MustCompile(`(\d{4})(\d{2})(\d{2})`)
+	ledgerMu           sync.Mutex
+)
+
 type metricsManager struct {
 	sm               *security.SecurityManager
 	metricsMu        sync.Mutex
@@ -268,6 +276,9 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+
 	// Global costs are in the parent output directory
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -292,10 +303,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) {
-		_ = m.recoverLedger(ctx, globalDir)
-		if content, err := os.ReadFile(historyPath); err == nil {
-			_ = json.Unmarshal(content, &history)
-		}
+		go m.recoverLedger(context.Background(), globalDir)
 	}
 
 	// 3. Update or Append (identify by session ID)
@@ -346,13 +354,21 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+
 	outputDir := filepath.Dir(m.logFile)
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		_ = m.recoverLedger(ctx, globalDir)
+		go m.recoverLedger(context.Background(), globalDir)
+		return "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
+	}
+
+	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
+		return "Cost history recovery is currently in progress. Please try again in a few moments.", nil
 	}
 
 	content, err := os.ReadFile(historyPath)
@@ -513,7 +529,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	// 3. Persistence: Record to local ledger
 	if shouldRecord {
 		if sessionID == "" {
-			sessionID = filepath.Base(m.logFile)
+			sessionID = filepath.ToSlash(filepath.Join(m.mode, filepath.Base(m.logFile)))
 		}
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
@@ -670,9 +686,22 @@ func fetchAndCachePricing(ctx context.Context, sm *security.SecurityManager, cac
 }
 
 // recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
-func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) error {
-	var records []SessionCostRecord
+func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+	if _, loaded := recoveryInProgress.LoadOrStore(historyPath, true); loaded {
+		return
+	}
+	defer recoveryInProgress.Delete(historyPath)
+
+	var history []SessionCostRecord
+	if content, err := os.ReadFile(historyPath); err == nil {
+		_ = json.Unmarshal(content, &history)
+	}
+
 	seen := make(map[string]bool)
+	for _, r := range history {
+		seen[r.Session] = true
+	}
 
 	// Fetch pricing once for all calculations
 	pricing := GetPricing(ctx, m.sm, globalDir)
@@ -680,54 +709,80 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) er
 		pricing.Models[k] = v
 	}
 	p := GetModelPricing(m.model, pricing)
+	calc := &CostCalculator{Pricing: pricing, Model: p}
 
 	// 1. Walk through all subdirectories
-	_ = filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), "tokens.log") {
+	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
+			return nil
+		}
+		if info.IsDir() || !strings.HasSuffix(info.Name(), "tokens.log") {
 			return nil
 		}
 
-		// Identify session uniquely using parent dir and filename
-		parent := filepath.Dir(path)
-		sessionID := filepath.Join(filepath.Base(parent), info.Name())
-		
+		rel, _ := filepath.Rel(globalDir, path)
+		rel = filepath.ToSlash(rel)
+		sessionID := rel
+		if strings.HasPrefix(rel, "backups/") {
+			sessionID = "backup/" + rel[len("backups/"):]
+		}
+
 		if seen[sessionID] {
 			return nil
 		}
 
 		usage, err := ParseUsage(path, p)
 		if err == nil {
-			calc := &CostCalculator{Pricing: pricing, Model: p}
 			breakdown := calc.Calculate(usage)
-			
-			// Extract date from folder name (YYYYMMDD) or mod time
-			datePart := filepath.Base(parent)
+
+			// Extract date from path or mod time
 			date := info.ModTime().Format("2006-01-02")
-			if len(datePart) >= 8 {
-				if t, err := time.Parse("20060102", datePart[:8]); err == nil {
-					date = t.Format("2006-01-02")
-				}
+			if matches := dateRegex.FindStringSubmatch(rel); len(matches) > 3 {
+				date = fmt.Sprintf("%s-%s-%s", matches[1], matches[2], matches[3])
 			}
 
-			records = append(records, SessionCostRecord{
+			history = append(history, SessionCostRecord{
 				Date:      date,
 				Session:   sessionID,
 				Model:     m.model,
 				TotalCost: breakdown.TotalCost,
 			})
 			seen[sessionID] = true
+		} else {
+			log.Printf("Recovery: failed to parse %s: %v\n", path, err)
 		}
 		return nil
 	})
 
-	if len(records) == 0 {
-		return nil
+	if err != nil {
+		log.Printf("Recovery: walk failed: %v\n", err)
 	}
 
-	// 2. Write back to global ledger
-	historyPath := filepath.Join(globalDir, "global_costs.json")
-	if bytes, err := json.Marshal(records); err == nil {
-		return fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	if len(history) > 0 {
+		ledgerMu.Lock()
+		defer ledgerMu.Unlock()
+
+		// Re-read and merge in case of concurrent updates during walk
+		if content, err := os.ReadFile(historyPath); err == nil {
+			var latest []SessionCostRecord
+			if err := json.Unmarshal(content, &latest); err == nil {
+				mergedMap := make(map[string]SessionCostRecord)
+				for _, r := range history {
+					mergedMap[r.Session] = r
+				}
+				for _, r := range latest {
+					mergedMap[r.Session] = r
+				}
+				history = make([]SessionCostRecord, 0, len(mergedMap))
+				for _, r := range mergedMap {
+					history = append(history, r)
+				}
+			}
+		}
+
+		if bytes, err := json.Marshal(history); err == nil {
+			_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+		}
 	}
-	return nil
 }
