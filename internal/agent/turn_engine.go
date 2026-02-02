@@ -7,11 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
 // Clock provides a way to get the current time, facilitating deterministic testing.
@@ -76,18 +79,18 @@ type TurnHook interface {
 
 // TurnState carries data between the phases of a turn and tracks the current phase.
 type TurnState struct {
-	Phase        TurnPhase        `json:"phase"`
-	HasToolCalls bool             `json:"has_tool_calls"`
-	Metrics      *llm.Metrics     `json:"metrics,omitempty"`
-	Tokens       int              `json:"tokens"`
-	CurrentTurns int              `json:"current_turns"`
-	Metadata     *ContextMetadata `json:"metadata,omitempty"`
-	Response     *llm.Content     `json:"response,omitempty"`
-	ToolResponse *llm.Content     `json:"tool_response,omitempty"`
-	LastError    error            `json:"-"`
-	RetryCount   int              `json:"retry_count"`
-	ToolCallCount map[string]int  `json:"-"`
-	LastResponse  string          `json:"-"`
+	Phase         TurnPhase        `json:"phase"`
+	HasToolCalls  bool             `json:"has_tool_calls"`
+	Metrics       *llm.Metrics     `json:"metrics,omitempty"`
+	Tokens        int              `json:"tokens"`
+	CurrentTurns  int              `json:"current_turns"`
+	Metadata      *ContextMetadata `json:"metadata,omitempty"`
+	Response      *llm.Content     `json:"response,omitempty"`
+	ToolResponse  *llm.Content     `json:"tool_response,omitempty"`
+	LastError     error            `json:"-"`
+	RetryCount    int              `json:"retry_count"`
+	ToolCallCount map[string]int   `json:"-"`
+	LastResponse  string           `json:"-"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -133,16 +136,20 @@ type Turn struct {
 
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
-	ctxManager  *ContextManager
-	gateway     gateway.LLMGateway
-	executor    IToolExecutor
-	registry    ToolRegistry
-	events      events.EventBus
-	processors  map[TurnPhase]TurnProcessor
-	middleware  []TurnMiddleware
-	hooks       []TurnHook
-	retryPolicy RetryPolicy
-	clock       Clock
+	ctxManager       *ContextManager
+	gateway          gateway.LLMGateway
+	executor         IToolExecutor
+	registry         ToolRegistry
+	events           events.EventBus
+	processors       map[TurnPhase]TurnProcessor
+	middleware       []TurnMiddleware
+	hooks            []TurnHook
+	retryPolicy      RetryPolicy
+	clock            Clock
+	sm               *security.SecurityManager
+	logFile          string
+	model            string
+	pricingOverrides map[string]llm.ModelPricing
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -183,6 +190,16 @@ func WithClock(c Clock) EngineOption {
 	}
 }
 
+// WithConfig sets the security and usage configuration for the engine.
+func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) EngineOption {
+	return func(e *TurnEngine) {
+		e.sm = sm
+		e.logFile = logFile
+		e.model = model
+		e.pricingOverrides = pricingOverrides
+	}
+}
+
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
 func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
@@ -216,7 +233,7 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 	if e.events != nil {
 		e.middleware = append(e.middleware,
 			WithStreaming(e.events),
-			WithStatusReporter(e.events),
+			WithStatusReporter(e.events, e.sm, e.logFile, e.model, e.pricingOverrides),
 			WithMetrics(e.events),
 			WithLoopDetector(),
 		)
@@ -556,7 +573,7 @@ func WithStreaming(bus events.EventBus) TurnMiddleware {
 }
 
 // WithStatusReporter returns a middleware that publishes turn status events.
-func WithStatusReporter(bus events.EventBus) TurnMiddleware {
+func WithStatusReporter(bus events.EventBus, sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			res := next.Process(ctx, turn)
@@ -567,6 +584,25 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 			if turn.State.Phase == PhaseRefining || turn.State.Phase == PhasePersisting {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
+
+				var cost float64
+				if turn.State.Phase == PhasePersisting && sm != nil && logFile != "" && model != "" {
+					// We calculate the current session cost from the log
+					// This is fast as it only reads the current session's log file
+					pricing := framework.GetPricing(ctx, sm, filepath.Dir(logFile))
+					for k, v := range pricingOverrides {
+						pricing.Models[k] = v
+					}
+
+					p := framework.GetModelPricing(model, pricing)
+					usage, err := framework.ParseUsage(logFile, p)
+					if err == nil {
+						calc := &framework.CostCalculator{Pricing: pricing, Model: p}
+						breakdown := calc.Calculate(usage)
+						cost = breakdown.TotalCost
+					}
+				}
+
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
@@ -578,6 +614,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						Metrics:          turn.State.Metrics,
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
+						SessionCost:      cost,
 					},
 				})
 			}

@@ -41,6 +41,7 @@ type TurnStatus struct {
 	Metrics          *llm.Metrics
 	IsPostCall       bool
 	StartTime        time.Time
+	SessionCost      float64
 }
 
 // TurnStatusEvent carries payload and token metrics for UI display.

@@ -58,7 +58,7 @@ func TestWithStreaming(t *testing.T) {
 
 func TestWithStatusReporter(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithStatusReporter(bus)
+	mw := WithStatusReporter(bus, nil, "", "", nil)
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	cs := NewContextStrategy(nil, nil)

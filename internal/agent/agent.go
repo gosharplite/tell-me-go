@@ -40,6 +40,9 @@ type RuntimeConfig struct {
 	LogFile              string
 	PersistentConfigPath string
 	MainConfigPath       string
+	Model                string
+	Mode                 string
+	PricingOverrides     map[string]llm.ModelPricing
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -60,6 +63,15 @@ type Agent struct {
 
 // AgentOption defines a functional option for configuring an Agent.
 type AgentOption func(*Agent)
+
+// WithPricing sets the pricing configuration for cost estimation.
+func WithPricing(model, mode string, overrides map[string]llm.ModelPricing) AgentOption {
+	return func(a *Agent) {
+		a.config.Model = model
+		a.config.Mode = mode
+		a.config.PricingOverrides = overrides
+	}
+}
 
 // WithLimits sets the initial operational limits.
 func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
@@ -152,7 +164,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 	}
 
 	// Initialize engine
-	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus)
+	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus, WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides))
 
 	a.registerInternalTools()
 	a.applyConfig() // Broadcast initial config

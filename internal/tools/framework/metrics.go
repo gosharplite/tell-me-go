@@ -366,6 +366,11 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 }
 
 func (m *metricsManager) getModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
+	return GetModelPricing(modelName, pricing)
+}
+
+// GetModelPricing finds the best pricing match for a model name.
+func GetModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
 	// 1. Exact match
 	if p, ok := pricing.Models[modelName]; ok {
 		return p
@@ -394,10 +399,10 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	p := m.getModelPricing(m.model, pricing)
+	p := GetModelPricing(m.model, pricing)
 
 	// 1. Parse usage from log
-	usage, err := m.parseUsage(resolvedLog, p)
+	usage, err := ParseUsage(resolvedLog, p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -427,6 +432,11 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 }
 
 func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
+	return ParseUsage(path, p)
+}
+
+// ParseUsage extracts usage statistics from a log file.
+func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return UsageStats{}, err
@@ -441,7 +451,7 @@ func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats
 
 		// Try JSON first (SOP: Structured over Procedural)
 		if err := json.Unmarshal([]byte(line), &mt); err == nil {
-			m.accumulate(&stats, mt, p)
+			Accumulate(&stats, mt, p)
 			continue
 		}
 
@@ -464,12 +474,17 @@ func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats
 			SearchQueries:  int(s),
 			ThinkingTokens: int32(th),
 		}
-		m.accumulate(&stats, mtLegacy, p)
+		Accumulate(&stats, mtLegacy, p)
 	}
 	return stats, scanner.Err()
 }
 
 func (m *metricsManager) accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
+	Accumulate(stats, mt, p)
+}
+
+// Accumulate adds metrics to usage statistics.
+func Accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
 	h := int64(mt.CachedTokens)
 	mMiss := int64(mt.PromptTokens) - h
 	if mMiss < 0 {

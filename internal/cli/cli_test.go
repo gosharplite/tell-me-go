@@ -93,6 +93,7 @@ func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string)
 }
 func (m *mockChatter) SetLogFile(path string)                               {}
 func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
+func (m *mockChatter) SetTieredThreshold(threshold int)                     {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
@@ -114,7 +115,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]llm.ModelPricing) agent.Chatter {
 		return mock
 	}
 	app.ClientFactory = func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error) {

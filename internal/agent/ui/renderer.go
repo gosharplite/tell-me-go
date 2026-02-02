@@ -202,7 +202,12 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d %sT: %s%d%s %sN: %s%d(%d%%)%s S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
 			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, gray, tColor, m.TotalTokens, gray, gray, nColor, newTokens, percent, gray, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
-		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, gray)
+
+		costStr := ""
+		if status.SessionCost > 0 {
+			costStr = fmt.Sprintf(" %s($%.4f)%s", "\033[0;32m", status.SessionCost, gray)
+		}
+		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s%s\n", gray, reset, costStr, gray)
 	}
 }
 
