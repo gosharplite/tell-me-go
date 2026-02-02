@@ -4,7 +4,7 @@
 # Vertex AI Configuration Template
 MODE: "vertex"
 PERSON: "A helpful AI assistant using Google Vertex AI."
-AIMODEL: "gemini-2.0-flash-001"
+AIMODEL: "gemini-3-flash-preview"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
 
 # --- Tools & Features ---
@@ -29,12 +29,6 @@ KEY_FILE: "" # Optional: Path to Service Account JSON key. If empty, uses gcloud
 
 # --- Model Specific Overrides ---
 MODELS:
-  gemini-2.0-flash:
-    MAX_THINKING_BUDGET: 24576
-    CONTEXT_WINDOW: 1048576
-  gemini-1.5-pro:
-    MAX_THINKING_BUDGET: 0
-    CONTEXT_WINDOW: 2097152
   gemini-3-flash-preview:
     MAX_THINKING_BUDGET: 32768
     CONTEXT_WINDOW: 1048576
