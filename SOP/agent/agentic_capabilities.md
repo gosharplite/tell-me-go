@@ -97,3 +97,11 @@ The agent must monitor resource limits during the orchestration loop to allow th
 - **Atomic Operations**: Tools should perform one clear action.
 - **Clear Descriptions**: The AI's ability to use a tool depends entirely on the clarity of the tool's description.
 - **No Side Effects in Tests**: Ensure tool tests use `t.TempDir()`.
+
+#### 6. Economic Awareness & Loop Protection (Safe-by-Design)
+To prevent runaway costs and infinite execution loops, the agent implements proactive monitoring at the orchestration level.
+- **Hard Budget Limit**: An internal USD threshold can be set (programmatically) for the session. The `TurnEngine` performs a pre-turn check; if the current accumulated cost exceeds the limit, execution is immediately halted with `ErrBudgetExceeded`.
+- **Loop Detection (SHA-256 Hashing)**: To detect model-level repetition cycles (identical text or repeating tool-call patterns), the agent hashes the **entire JSON model response** using SHA-256. 
+    - If the same hash is detected within a window of recent turns, the turn is stopped with an "infinite loop detected" error.
+    - **Argument-Level Detection**: Individual tool calls are also tracked by hashing `name + arguments`. If a specific tool is called with identical parameters more than `config.DefaultMaxLoopRepetitions` (e.g., 3 times) within a single session, the loop is broken.
+- **Economic Transparency**: Every turn status update includes the current session cost and provides "Price Cliff" warnings when approaching tiered thresholds.
