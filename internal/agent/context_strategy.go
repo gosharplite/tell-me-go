@@ -129,7 +129,7 @@ func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
 	return cs.getHistoryTurnWarningLocked(currentTurns)
 }
 
-// GetWarnings generates safety warnings based on current state.
+// GetWarnings generates safety and financial warnings based on current state.
 func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -144,8 +144,26 @@ func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning
 	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
+	if w := cs.getPriceWarningLocked(tokens); w != "" {
+		warnings = append(warnings, Warning{Message: w})
+	}
 
 	return warnings
+}
+
+func (cs *ContextStrategy) getPriceWarningLocked(tokens int) string {
+	cliff := cs.tieredThreshold
+	if cliff <= 0 {
+		return ""
+	}
+	warning := int(float64(cliff) * config.WarningRatio)
+
+	if tokens >= cliff {
+		return "[URGENT ECONOMIC NOTICE: The high-tier billing threshold has been reached. Current operational costs are now 2x higher. You MUST be extremely concise, minimize internal reasoning (Thinking Tokens), and combine multiple operations into single turns where possible to conserve the user's budget.]"
+	} else if tokens >= warning {
+		return "[ECONOMIC NOTICE: You are approaching the high-tier billing threshold. To protect the user's budget, please be highly selective with tool calls and avoid redundant operations. Focus on high-impact actions and be concise in your reasoning.]"
+	}
+	return ""
 }
 
 func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
