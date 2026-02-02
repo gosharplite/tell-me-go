@@ -42,7 +42,11 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Pre-Limit Warnings**: 
         *   **AI Awareness**: When `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) is nearing, the agent injects escalating **System Notices** into the AI's volatile history. 
         *   **Graceful Exit**: This instructs the model to prioritize state persistence (scratchpad/tasks) before the process terminates or rolls back.
-    *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
+    *   **Infinite Loop Protection**: 
+        *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
+        *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
+    *   **Internal Hard Budget**: Enforces a deterministic USD limit (Safe-by-Design) to halt sessions automatically if costs exceed safety thresholds.
+    *   **Recursion Limit**: Prevents excessive turns using the `MAX_TURNS` configuration.
     *   **Descriptive Error Handling**: Automatically identifies and reports specific API block reasons (e.g., `SAFETY`, `RECITATION`) instead of generic "empty response" errors.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
@@ -57,6 +61,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **The 128k Barrier**: Google bills sessions > 128k tokens at a **2x higher rate**. 
     *   **Safety Headroom**: The system is tuned with a default `MAX_HISTORY_TOKENS` of **100k**, providing a ~28k buffer for "Thinking" and response tokens.
     *   **Traffic-Light UI**: The terminal context indicator (**T**) turns **Yellow** at 100k and **Red** at 128k, signaling that the next turn will trigger the expensive tier.
+*   **Deterministic Budgeting**: An internal `HardBudgetLimit` (USD) can be set programmatically to terminate sessions immediately if they exceed a pre-defined safety threshold.
 *   **Cache Efficiency Indicators**: 
     *   **Exposure Tracking (%)**: The UI shows exactly what percentage of each turn is billed (**N**).
     *   **Green Metrics**: A **Green** percentage (<20%) indicates that Google's Context Cache is successfully serving 80%+ of your turn for free.
