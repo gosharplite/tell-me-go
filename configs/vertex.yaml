@@ -21,7 +21,8 @@ TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
-MAX_HISTORY_TOKENS: 100000 # Max payload size before safety rollback (Headroom for 128k price cliff)
+MAX_HISTORY_TOKENS: 100000 # Pre-flight limit. Prevents sending too much context.
+                           # Combined with THINKING_BUDGET, this keeps you safely below the 128k price cliff.
 
 # --- Authentication ---
 KEY_FILE: "" # Optional: Path to Service Account JSON key. If empty, uses gcloud default credentials.
