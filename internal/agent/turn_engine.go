@@ -202,6 +202,8 @@ func WithClock(c Clock) EngineOption {
 // Feature is intended for internal/API use only to maintain a clean UI.
 func WithHardBudget(limit float64) EngineOption {
 	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		e.HardBudgetLimit = limit
 	}
 }
@@ -342,10 +344,15 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	}
 
 	// Deterministic Budget Guardrail (API/Internal only)
-	if e.HardBudgetLimit > 0 && e.costTracker != nil {
-		if cost := e.costTracker.GetTotalCost(ctx); cost >= e.HardBudgetLimit {
+	e.mu.RLock()
+	limit := e.HardBudgetLimit
+	tracker := e.costTracker
+	e.mu.RUnlock()
+
+	if limit > 0 && tracker != nil {
+		if cost := tracker.GetTotalCost(ctx); cost >= limit {
 			return fmt.Errorf("%w: current session cost $%.4f exceeds internal limit $%.4f",
-				llm.ErrBudgetExceeded, cost, e.HardBudgetLimit)
+				llm.ErrBudgetExceeded, cost, limit)
 		}
 	}
 
