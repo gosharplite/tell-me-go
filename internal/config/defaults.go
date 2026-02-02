@@ -42,9 +42,6 @@ func DefaultPricing() llm.PricingData {
 			},
 		},
 		ThinkingBudgets: map[string]int{
-			"gemini-2.0-flash":       24576,
-			"gemini-2.5-flash":       24576,
-			"gemini-2.5-pro":         32768,
 			"gemini-3-flash-preview": 32768,
 			"gemini-3-pro-preview":   65536,
 		},
