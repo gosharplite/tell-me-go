@@ -113,7 +113,16 @@ func (a *App) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
-	// 2. Initialize Paths & Persistent Config
+	// 2. Handle Prompt Early
+	// We capture the prompt before creating any directories or persistent configs
+	// to ensure that if the prompt is empty (and not just showing history),
+	// we exit before making any changes to the filesystem.
+	prompt, err := a.capturePrompt(ctx, fs, opts.lastN)
+	if err != nil {
+		return err
+	}
+
+	// 3. Initialize Paths & Persistent Config
 	paths, err := a.initPaths(cfg)
 	if err != nil {
 		return err
@@ -124,7 +133,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 		log.Printf("Warning: Failed to load/update persistent config: %v", err)
 	}
 
-	// 3. Initialize Security & Session
+	// 4. Initialize Security & Session
 	a.setupSecurity(paths, opts, cfg)
 
 	pricingOverrides := make(map[string]llm.ModelPricing)
@@ -138,7 +147,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 		a.handleNewSession(paths, cfg, pricingOverrides)
 	}
 
-	// 4. Initialize History
+	// 5. Initialize History
 	hManager := history.NewManager(paths.historyPath)
 	if err := hManager.Load(ctx); err != nil {
 		return fmt.Errorf("error loading history: %w", err)
@@ -149,11 +158,6 @@ func (a *App) run(ctx context.Context, args []string) error {
 		a.showHistory(hManager, opts.lastN, opts.rawOutput)
 	}
 
-	// 5. Handle Prompt
-	prompt, err := a.capturePrompt(ctx, fs, opts.lastN)
-	if err != nil {
-		return err
-	}
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}

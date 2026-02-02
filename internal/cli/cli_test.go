@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
@@ -163,5 +164,35 @@ func TestRunEmptyPromptError(t *testing.T) {
 	err := app.Run([]string{"bin", "-c", configPath})
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
+	}
+}
+
+func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	// We don't set TELL_ME_HOME, so it might use "." but we want to be sure it doesn't create "output"
+	// in the current working directory.
+	// To avoid polluting the project root during tests, we can change the working directory.
+	
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	oldHome := os.Getenv("TELL_ME_HOME")
+	os.Unsetenv("TELL_ME_HOME")
+	defer os.Setenv("TELL_ME_HOME", oldHome)
+
+	app := New("test")
+	app.Stdin = strings.NewReader("\n") // Empty prompt
+	
+	// Create a dummy config in tmpDir
+	configPath := filepath.Join(tmpDir, "vertex.yaml")
+	os.WriteFile(configPath, []byte("mode: test-mode\n"), 0644)
+
+	// Run with empty prompt
+	_ = app.Run([]string{"bin", "-c", configPath})
+
+	// Check if output directory was created
+	if _, err := os.Stat("output"); !os.IsNotExist(err) {
+		t.Errorf("output directory should not have been created on empty prompt")
 	}
 }

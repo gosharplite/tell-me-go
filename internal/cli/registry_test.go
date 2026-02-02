@@ -13,11 +13,12 @@ import (
 
 func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	app := New("test")
+	tmpDir := t.TempDir()
+	app.homeDir = tmpDir
 	cfg := &config.Config{
 		Model: "test-model",
 		Mode:  "test-mode",
 	}
-	tmpDir := t.TempDir()
 	paths := &sessionPaths{
 		modeDir: tmpDir,
 		logPath: filepath.Join(tmpDir, "tokens.log"),

@@ -114,7 +114,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	framework.RegisterPolicy(reg, a.sm)
 	framework.RegisterMetrics(reg, a.sm, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
 	dev.RegisterRelease(reg, a.sm)
-	media.Register(reg, a.sm, mediasvc.NewService(client))
+	media.Register(reg, a.sm, mediasvc.NewService(client, filepath.Join(a.homeDir, "assets/generated")))
 
 	return reg
 }
