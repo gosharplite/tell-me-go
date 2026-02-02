@@ -21,6 +21,25 @@ import (
 	"golang.org/x/term"
 )
 
+// sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
+func sanitizeForTerminal(text string) string {
+	replacements := map[string]string{
+		"$\\leftrightarrow$": "↔",
+		"$\\rightarrow$":     "→",
+		"$\\leftarrow$":      "←",
+		"$\\Rightarrow$":     "⇒",
+		"$\\Leftarrow$":      "⇐",
+		"$\\dots$":           "...",
+		"$\\cdot$":           "·",
+		"$\\times$":          "×",
+		"$\\checkmark$":      "✓",
+	}
+	for old, new := range replacements {
+		text = strings.ReplaceAll(text, old, new)
+	}
+	return text
+}
+
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
 	RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool)
@@ -191,19 +210,21 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			r.sm.TerminalLock()
-			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", r.now().Format("15:04:05"), part.Text)
+			sanitized := sanitizeForTerminal(part.Text)
+			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", r.now().Format("15:04:05"), sanitized)
 			r.sm.TerminalUnlock()
 		}
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
+			sanitized := sanitizeForTerminal(part.Text)
 			if rawOutput {
-				fmt.Fprint(r.stdout, part.Text)
-				if !strings.HasSuffix(part.Text, "\n") {
+				fmt.Fprint(r.stdout, sanitized)
+				if !strings.HasSuffix(sanitized, "\n") {
 					fmt.Fprintln(r.stdout)
 				}
 			} else {
-				r.renderMarkdown(part.Text)
+				r.renderMarkdown(sanitized)
 			}
 		}
 
@@ -281,13 +302,15 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("\033[0;90m%s\033[0m", part.Text))
+		sanitized := sanitizeForTerminal(part.Text)
+		r.safePrintStderr(fmt.Sprintf("\033[0;90m%s\033[0m", sanitized))
 	}
 }
 
 func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
-	fmt.Fprint(r.stdout, part.Text)
+	sanitized := sanitizeForTerminal(part.Text)
+	fmt.Fprint(r.stdout, sanitized)
 	state.totalText.WriteString(part.Text)
 }
 
@@ -314,7 +337,8 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 	if !state.rawOutput {
 		fullText := state.totalText.String()
 		if fullText != "" {
-			r.clearAndRenderMarkdown(fullText)
+			sanitized := sanitizeForTerminal(fullText)
+			r.clearAndRenderMarkdown(sanitized)
 		}
 		fmt.Fprintln(r.stdout)
 	}
