@@ -74,7 +74,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 	}
 
 	// Verify headers
-	if !strings.Contains(summary, "| Date | M | H | O | Total Cost (USD) |") {
+	if !strings.Contains(summary, "| Date | Miss | Hit | Other | Eff % | Total Cost (USD) |") {
 		t.Errorf("summary missing expected header: %s", summary)
 	}
 
@@ -82,14 +82,16 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 	// Session 1: M=800, H=200, O=400, Cost=1.5
 	// Session 2: M=500, H=0, O=100, Cost=0.5
 	// Total: M=1300, H=200, O=500, Cost=2.0
-	expected27 := "| 2023-10-27 | 1300 | 200 | 500 | $2.0000 |"
+	// Eff: 200 / 1500 = 13.3%
+	expected27 := "| 2023-10-27 | 1300 | 200 | 500 | 13.3% | $2.0000 |"
 	if !strings.Contains(summary, expected27) {
 		t.Errorf("summary missing expected row for 2023-10-27: %s", summary)
 	}
 
 	// Verify 2023-10-26 aggregates
 	// Session 3: M=1500, H=500, O=600, Cost=2.0
-	expected26 := "| 2023-10-26 | 1500 | 500 | 600 | $2.0000 |"
+	// Eff: 500 / 2000 = 25.0%
+	expected26 := "| 2023-10-26 | 1500 | 500 | 600 | 25.0% | $2.0000 |"
 	if !strings.Contains(summary, expected26) {
 		t.Errorf("summary missing expected row for 2023-10-26: %s", summary)
 	}
@@ -99,7 +101,8 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 	// Total H: 200 + 500 = 700
 	// Total O: 500 + 600 = 1100
 	// Total Cost: 2.0 + 2.0 = 4.0
-	expectedGrand := "| **Grand Total** | **2800** | **700** | **1100** | **$4.0000** |"
+	// Total Eff: 700 / 3500 = 20.0%
+	expectedGrand := "| **Grand Total** | **2800** | **700** | **1100** | **20.0%** | **$4.0000** |"
 	if !strings.Contains(summary, expectedGrand) {
 		t.Errorf("summary missing expected grand total: %s", summary)
 	}
