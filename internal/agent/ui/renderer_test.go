@@ -94,8 +94,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read usage log: %v", err)
 		}
-		if !strings.Contains(string(data), "T: 15") {
-			t.Errorf("expected usage log to contain 'T: 15', got %q", string(data))
+		if !strings.Contains(string(data), "\"total_tokens\":15") {
+			t.Errorf("expected usage log to contain '\"total_tokens\":15', got %q", string(data))
 		}
 	})
 }

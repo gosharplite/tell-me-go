@@ -5,6 +5,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -95,28 +96,21 @@ func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.
 		return
 	}
 
-	miss := m.PromptTokens - m.CachedTokens
-	newTokens := miss + m.ResponseTokens + m.ThinkingTokens
-	percent := 0
-	if m.TotalTokens > 0 {
-		percent = int((int64(newTokens) * 100) / int64(m.TotalTokens))
-	}
+	m.Timestamp = r.now().Format(time.RFC3339)
+	m.IsSummary = false
 
-	timestamp := r.now().Format("15:04:05")
-	durationStr := fmt.Sprintf("%.2fs", m.Duration)
-	if m.ToolDuration > 3.0 {
-		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
+	data, err := json.Marshal(m)
+	if err != nil {
+		return
 	}
-
-	logLine := fmt.Sprintf("[%s] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%s / %.2fs]\n",
-		timestamp, m.CachedTokens, miss, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, durationStr, r.now().Sub(startTime).Seconds())
 
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	_, _ = f.WriteString(logLine)
+	_, _ = f.Write(data)
+	_, _ = f.WriteString("\n")
 }
 
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {

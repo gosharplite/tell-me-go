@@ -82,7 +82,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	}
-	// Note: ParseUsage expects JSON lines or legacy text. We'll use JSON.
+	// Note: ParseUsage expects JSON lines.
 	data, _ := json.Marshal(initialMetrics)
 	os.WriteFile(logFile, append(data, '\n'), 0644)
 
@@ -191,7 +191,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 		t.Errorf("Expected total cost %f, got %f", wantCost, totalCost)
 	}
 
-	if stats.Misses != 200 {
-		t.Errorf("Expected 200 misses, got %d", stats.Misses)
+	if stats.PromptTokens != 200 {
+		t.Errorf("Expected 200 prompt tokens, got %d", stats.PromptTokens)
 	}
 }
