@@ -187,6 +187,8 @@ var (
 	ledgerMu           sync.Mutex
 )
 
+const ledgerRecoveryTimeout = 10 * time.Minute
+
 // breakStaleLock removes a lock file if it's older than 5 minutes to prevent deadlocks after crashes.
 func breakStaleLock(lockPath string) {
 	if info, err := os.Stat(lockPath); err == nil {
@@ -333,12 +335,14 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) {
-		// Use a background context for recovery so it's not aborted if the request context is cancelled.
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-		go func() {
-			defer cancel()
-			m.recoverLedger(bgCtx, globalDir)
-		}()
+		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
+			// Use a background context for recovery so it's not aborted if the request context is cancelled.
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
+			go func() {
+				defer cancel()
+				m.recoverLedger(bgCtx, globalDir)
+			}()
+		}
 	}
 
 	// 3. Update or Append (identify by session ID)
@@ -398,12 +402,14 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		// Use a background context for recovery so it's not aborted if the request context is cancelled.
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
-		go func() {
-			defer cancel()
-			m.recoverLedger(bgCtx, globalDir)
-		}()
+		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
+			// Use a background context for recovery so it's not aborted if the request context is cancelled.
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
+			go func() {
+				defer cancel()
+				m.recoverLedger(bgCtx, globalDir)
+			}()
+		}
 		return "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
 	}
 
