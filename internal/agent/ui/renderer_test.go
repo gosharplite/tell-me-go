@@ -263,7 +263,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "($0.1234 M: 1000 H: 2000 O: 3000)") {
-		t.Errorf("expected output to contain aggregate metrics, got %q", output)
+	if !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
+		t.Errorf("expected output to contain aggregate metrics and hit rate, got %q", output)
 	}
 }

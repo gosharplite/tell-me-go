@@ -165,7 +165,19 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 		costStr := ""
 		if status.SessionCost > 0 {
-			costStr = fmt.Sprintf(" %s($%.4f M: %d H: %d O: %d)%s", "\033[0;32m", status.SessionCost, status.TotalM, status.TotalH, status.TotalO, gray)
+			hitRate := 0.0
+			if total := status.TotalM + status.TotalH; total > 0 {
+				hitRate = float64(status.TotalH) / float64(total) * 100
+			}
+			green := "\033[0;32m"
+			costStr = fmt.Sprintf(" %s(%s$%.4f%s M: %d H: %d %s%.1f%%%s O: %d)%s",
+				gray,
+				green, status.SessionCost, gray,
+				status.TotalM,
+				status.TotalH,
+				green, hitRate, gray,
+				status.TotalO,
+				gray)
 		}
 		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, costStr)
 	}
