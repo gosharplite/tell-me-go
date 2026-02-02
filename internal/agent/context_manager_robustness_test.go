@@ -35,7 +35,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	reg := &mockRegistry{}
 	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
-	strategy.SetLimits(1000, 5, 20) // Turn 2/5 (remaining 3) -> Triggers warning
+	strategy.SetLimits(1000, 5, 20) // Turn 3/5 (remaining 2) -> Triggers warning
 
 	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
 
@@ -63,8 +63,8 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 		},
 	)
 
-	// Prepare at turn 2 (approaching limit)
-	apiContents, _, err := cm.Prepare(ctx, 2)
+	// Prepare at turn 3 (approaching limit)
+	apiContents, _, err := cm.Prepare(ctx, 3)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "System Notice") {
+	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "URGENT SYSTEM NOTICE") {
 		t.Errorf("Expected User Notice turn at index 3, got %v", apiContents[3])
 	}
 	if apiContents[4].Role != "model" || !strings.Contains(apiContents[4].Parts[0].Text, "Understood") {

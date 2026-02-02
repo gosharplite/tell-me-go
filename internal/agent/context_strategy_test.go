@@ -192,18 +192,18 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 		// maxToolTurns = 10
 		// turn 7 -> 3 remaining
 		w3 := cs.getTurnWarning(7)
-		if !contains(w3, "3 turns remaining") {
-			t.Errorf("expected warning at 3 turns remaining, got %q", w3)
+		if w3 != "" {
+			t.Errorf("expected no warning at 3 turns remaining, got %q", w3)
 		}
 		// turn 8 -> 2 remaining
 		w2 := cs.getTurnWarning(8)
-		if !contains(w2, "URGENT") || !contains(w2, "2 turns remaining") {
-			t.Errorf("expected urgent warning at 2 turns remaining, got %q", w2)
+		if !contains(w2, "URGENT") || !contains(w2, "2 turns remaining") || !contains(w2, "manage_scratchpad") {
+			t.Errorf("expected urgent warning at 2 turns remaining with manage_scratchpad, got %q", w2)
 		}
 		// turn 9 -> 1 remaining
 		w1 := cs.getTurnWarning(9)
-		if !contains(w1, "FINAL") || !contains(w1, "final turn") {
-			t.Errorf("expected final warning at 1 turn remaining, got %q", w1)
+		if !contains(w1, "FINAL") || !contains(w1, "final turn") || !contains(w1, "forbidden") {
+			t.Errorf("expected final warning at 1 turn remaining with forbidden, got %q", w1)
 		}
 	})
 
