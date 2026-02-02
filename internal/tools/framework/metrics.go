@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -75,11 +76,27 @@ func NewSessionCostTracker(sm *security.SecurityManager, logFile string, model l
 	}
 }
 
+// Subscribe registers the tracker to listen for usage metrics events.
+func (t *SessionCostTracker) Subscribe(bus events.EventBus) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(func(e events.Event) {
+		if ev, ok := e.(events.UsageMetricsEvent); ok {
+			if ev.Metrics != nil {
+				t.Accumulate(*ev.Metrics)
+			}
+		}
+	})
+}
+
 // GetTotalCost returns the accumulated cost.
 func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// If not initiated, we do a synchronous warmup as a fallback,
+	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
 		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
 			t.stats = usage
@@ -89,6 +106,18 @@ func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 
 	calc := &CostCalculator{Pricing: t.pricing, Model: t.model}
 	return calc.Calculate(t.stats).TotalCost
+}
+
+// Warmup pre-loads the session state from the log file.
+func (t *SessionCostTracker) Warmup() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.initiated && t.logFile != "" {
+		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+			t.stats = usage
+		}
+		t.initiated = true
+	}
 }
 
 // Accumulate adds new turn metrics to the running total.

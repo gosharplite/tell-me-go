@@ -152,6 +152,7 @@ type TurnEngine struct {
 	model            string
 	pricingOverrides map[string]llm.ModelPricing
 	costTracker      *framework.SessionCostTracker
+	HardBudgetLimit  float64
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -192,6 +193,13 @@ func WithClock(c Clock) EngineOption {
 	}
 }
 
+// WithHardBudget sets a maximum session budget in USD.
+func WithHardBudget(limit float64) EngineOption {
+	return func(e *TurnEngine) {
+		e.HardBudgetLimit = limit
+	}
+}
+
 // WithConfig sets the security and usage configuration for the engine.
 func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
@@ -208,6 +216,7 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 			}
 			p := framework.GetModelPricing(model, pricing)
 			e.costTracker = framework.NewSessionCostTracker(sm, logFile, p, pricing)
+			go e.costTracker.Warmup()
 		}
 	}
 }
@@ -250,6 +259,16 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
+		// Subscribe the cost tracker to metrics events via delegation to allow reconfiguration
+		// without leaking subscribers or handling unsubscription.
+		e.events.Subscribe(func(ev events.Event) {
+			if um, ok := ev.(events.UsageMetricsEvent); ok {
+				if e.costTracker != nil && um.Metrics != nil {
+					e.costTracker.Accumulate(*um.Metrics)
+				}
+			}
+		})
+
 		e.middleware = append(e.middleware,
 			WithStreaming(e.events),
 			WithStatusReporter(e.events),
@@ -308,6 +327,12 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	if e.costTracker != nil && e.HardBudgetLimit > 0 {
+		if cost := e.costTracker.GetTotalCost(ctx); cost > e.HardBudgetLimit {
+			return fmt.Errorf("%w: current cost $%.4f exceeds budget $%.4f", llm.ErrBudgetExceeded, cost, e.HardBudgetLimit)
+		}
 	}
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
@@ -607,9 +632,6 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 
 				var cost float64
 				if turn.State.Phase == PhasePersisting && turn.CostTracker != nil {
-					if turn.State.Metrics != nil {
-						turn.CostTracker.Accumulate(*turn.State.Metrics)
-					}
 					cost = turn.CostTracker.GetTotalCost(ctx)
 				}
 
