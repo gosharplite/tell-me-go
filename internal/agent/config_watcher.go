@@ -23,20 +23,31 @@ type ConfigWatcher struct {
 	maxHistoryTokens     int
 	maxToolTurns         int
 	maxHistoryTurns      int
+	tieredThreshold      int
 	defaultHistoryTokens int
 	defaultToolTurns     int
 	defaultHistoryTurns  int
+	defaultThreshold     int
 }
 
 // NewConfigWatcher creates a new ConfigWatcher with default values.
 func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
+	defaultThreshold := config.DefaultTieredThreshold
+	if dp := config.DefaultPricing(); dp.Models != nil {
+		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
+			defaultThreshold = int(m.TieredThreshold)
+		}
+	}
+
 	return &ConfigWatcher{
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
+		tieredThreshold:      defaultThreshold,
 		defaultHistoryTokens: tokens,
 		defaultToolTurns:     toolTurns,
 		defaultHistoryTurns:  historyTurns,
+		defaultThreshold:     defaultThreshold,
 	}
 }
 
@@ -130,9 +141,23 @@ func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	}
 }
 
+func (cw *ConfigWatcher) SetTieredThreshold(threshold int) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	if threshold > 0 {
+		cw.tieredThreshold = threshold
+	}
+}
+
 // GetLimits returns the current cached limits.
 func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns
+}
+
+func (cw *ConfigWatcher) GetTieredThreshold() int {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.tieredThreshold
 }

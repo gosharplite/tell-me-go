@@ -65,7 +65,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	sm := security.NewSecurityManager(nil)
 	a := New(client, h, registry, sm, false)
-	a.SetLimits(10, 120000, 2) // Limit history to 2 turns
+	a.SetLimits(10, 100000, 2) // Limit history to 2 turns
 
 	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
 	_ = h.AddEntry(ctx, "user", "U3")

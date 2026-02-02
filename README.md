@@ -42,13 +42,33 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Pre-Limit Warnings**: 
         *   **AI Awareness**: When `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) is nearing, the agent injects escalating **System Notices** into the AI's volatile history. 
         *   **Graceful Exit**: This instructs the model to prioritize state persistence (scratchpad/tasks) before the process terminates or rolls back.
-    *   **Recursion Limit**: Prevents infinite tool-calling loops using the `MAX_TURNS` configuration.
+    *   **Infinite Loop Protection**: 
+        *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
+        *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
+    *   **Internal Hard Budget**: Enforces a deterministic USD limit (Safe-by-Design) to halt sessions automatically if costs exceed safety thresholds.
+    *   **Recursion Limit**: Prevents excessive turns using the `MAX_TURNS` configuration.
     *   **Descriptive Error Handling**: Automatically identifies and reports specific API block reasons (e.g., `SAFETY`, `RECITATION`) instead of generic "empty response" errors.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), session-specific data (history and logs) is archived to `output/backups/`, while environment state (safepaths, tasks, and scratchpads) remains persistent.
     *   **Crash Resilience**: Automatically persists history after every turn (user prompt, model response, and tool results). If a system crash occurs during execution, a built-in **Auto-Repair** mechanism fixes the history on next startup to ensure the session remains valid and resumable.
 *   **Bash Compatibility**: Uses identical file naming and structures as the original Bash project for full interoperability.
+
+## 🛡️ Wallet Protection & Billing Transparency
+`tell-me-go` is built to prevent the "hidden" cost spikes common in high-context AI development, specifically targeting **Vertex AI's tiered pricing model**.
+
+*   **Price Cliff Guardrails**: 
+    *   **The 128k Barrier**: Google bills sessions > 128k tokens at a **2x higher rate**. 
+    *   **Safety Headroom**: The system is tuned with a default `MAX_HISTORY_TOKENS` of **100k**, providing a ~28k buffer for "Thinking" and response tokens.
+    *   **Traffic-Light UI**: The terminal context indicator (**T**) turns **Yellow** at 100k and **Red** at 128k, signaling that the next turn will trigger the expensive tier.
+*   **Deterministic Budgeting**: An internal `HardBudgetLimit` (USD) can be set programmatically to terminate sessions immediately if they exceed a pre-defined safety threshold.
+*   **Cache Efficiency Indicators**: 
+    *   **Exposure Tracking (%)**: The UI shows exactly what percentage of each turn is billed (**N**).
+    *   **Green Metrics**: A **Green** percentage (<20%) indicates that Google's Context Cache is successfully serving 80%+ of your turn for free.
+*   **Comprehensive Cost Auditing**:
+    *   **Reasoning Transparency**: "Thinking" tokens are high-cost (Output rate). The system explicitly tracks and bills them in its estimates.
+    *   **Grounding Fees**: Flat-rate fees for Google Search queries ($0.035/ea) are factored into the total session cost.
+    *   **Persistent Ledger**: All session costs are recorded in a centralized `global_costs.json` file for daily expenditure tracking via `get_cost_summary`.
 
 ## 📋 Prerequisites
 *   **Go**: 1.24 or higher.
@@ -100,9 +120,26 @@ You can also use the `-r` flag with a regular prompt to receive raw text without
 
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:
-`[14:19:43] [System (3/20)] Payload: ~4549/120000 tokens`
+`[14:19:43] [System (3/20)] Payload: ~4549/100000 tokens`
 *   **(3/20)**: Current turn count / Max history turns.
 *   **Tokens**: Estimated payload size / Max history tokens. Turns **RED** if >90% of `MAX_HISTORY_TOKENS`.
+
+**Post-turn Usage Metrics:**
+After the model responds, a detailed breakdown is provided:
+`[08:21:09] H: 1204 M: 31882 C: 402 T: 33488 N: 32284(96%) S: 1 Th: 0`
+*   **H (Hits)**: Tokens served for free from Google's cache. Turns **GRAY** when active.
+*   **M (Misses)**: Paid tokens (Input minus Hits). Turns **WHITE** if misses > hits.
+*   **C (Completion)**: Response tokens generated by the model.
+*   **T (Total Context)**: The key **Price Cliff** metric.
+    *   **Logic**: This is the sum of `Input + Response`. It acts as the **Price Selector**: it determines if you are charged the **Standard** rate or the **2x Penalty** rate.
+    *   **Gray**: < 100k (Standard billing).
+    *   **Yellow**: 100k - 128k (Warning/Headroom).
+    *   **Red**: > 128k (**High-Tier Pricing triggered** for the entire turn).
+*   **N (%)**: **Billed Tokens**. The actual **Quantity** of tokens you are purchasing at the rate determined by **T**.
+    *   **Green**: < 20% (Highly efficient caching).
+    *   **Gray**: 20% - 70% (Standard).
+    *   **White**: > 70% (Cache cold/High exposure).
+*   **S/Th**: Number of Google Search queries and Thinking tokens used.
 
 **Thinking Mode (Gemini 2.0):**
 If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.
@@ -150,7 +187,7 @@ TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
-MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback
+MAX_HISTORY_TOKENS: 100000 # Max payload size before safety rollback (Headroom for 128k price cliff)
 
 # --- Authentication ---
 KEY_FILE: "" # Optional: Path to Service Account JSON key.
@@ -175,27 +212,6 @@ MODELS:
 The `MODELS` section allows you to define hard technical limits for different model generations.
 *   **`MAX_THINKING_BUDGET`**: Automatically clamps the `THINKING_BUDGET` to the model's supported maximum to prevent API errors.
 *   **`CONTEXT_WINDOW`**: Provides the baseline for the agent's payload tracking and safety rollback logic.
-
-### 🧠 Strategic Memory Management
-To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
-
-1.  **`MAX_HISTORY_TOKENS` (Default: 120,000)**:
-    *   **The Price Cliff**: Gemini 1.5/2.0 pricing tiers jump at **128k tokens**. Staying below 120k ensures you always pay the "Standard" rate ($0.15 - $1.25/1M) and avoid the "Premium" rate ($0.30 - $2.50/1M).
-    *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
-
-2.  **`MAX_HISTORY_TURNS`**:
-    *   **50% Pruning Strategy**: When this limit is hit, the agent prunes the oldest **50%** of the conversation.
-    *   **Why 50%?**: Gemini charges for the full "Cache Miss" when the prefix changes. By pruning half the history instead of just 1 turn, the agent creates a **stable cache prefix**. The next dozens of turns will be processed using high-speed, 90%-discounted cached tokens.
-    *   **AI Re-Sync**: After a major prune, the agent injects an **Urgent System Notice** into the history, instructing the model to use the **Scratchpad** to recover its situational awareness.
-
-3.  **`MAX_TURNS` (Default: 10)**:
-    *   **Execution Safety**: Limits how many consecutive tool-calls the agent can make in a single prompt. This prevents infinite loops and controls turn-by-turn costs.
-
-#### Recommended Settings:
-| Model Type | MAX_HISTORY_TOKENS | MAX_HISTORY_TURNS | MAX_TURNS |
-| :--- | :--- | :--- | :--- |
-| **Flash (Fast/Light)** | 120,000 | **40** | 50 |
-| **Pro (Deep/Complex)** | 120,000 | **20** | 50 |
 
 ## ⌨️ Shell Integration (Recommended)
 To streamline your workflow, add these aliases to your `.bashrc` or `.zshrc`. This provides a fast, one-letter command (`b`) for interacting with the assistant and simplifies session management.

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -24,6 +25,7 @@ type ContextStrategy struct {
 	maxHistoryTokens int
 	maxToolTurns     int
 	maxHistoryTurns  int
+	tieredThreshold  int
 	prunedTurns      int
 }
 
@@ -34,17 +36,26 @@ type ToolRegistry interface {
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
+	defaultThreshold := config.DefaultTieredThreshold
+	if dp := config.DefaultPricing(); dp.Models != nil {
+		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
+			defaultThreshold = int(m.TieredThreshold)
+		}
+	}
+
 	cs := &ContextStrategy{
 		counter:          counter,
-		maxHistoryTokens: 120000,
-		maxToolTurns:     10,
-		maxHistoryTurns:  20,
+		maxHistoryTokens: config.DefaultMaxHistoryTokens,
+		maxToolTurns:     config.DefaultMaxToolTurns,
+		maxHistoryTurns:  config.DefaultMaxHistoryTurns,
+		tieredThreshold:  defaultThreshold,
 	}
 
 	if bus != nil {
 		bus.Subscribe(func(e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
+				cs.SetTieredThreshold(cfg.Limits.TieredThreshold)
 			}
 		})
 	}
@@ -67,6 +78,14 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
+func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if threshold > 0 {
+		cs.tieredThreshold = threshold
+	}
+}
+
 // SetPrunedTurns sets the initial pruned turns count.
 func (cs *ContextStrategy) SetPrunedTurns(n int) {
 	cs.mu.Lock()
@@ -79,6 +98,12 @@ func (cs *ContextStrategy) GetLimits() (int, int, int) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
+}
+
+func (cs *ContextStrategy) GetTieredThreshold() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.tieredThreshold
 }
 
 // EstimateTokens provides a heuristic-based token count with incremental caching.
@@ -104,7 +129,7 @@ func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
 	return cs.getHistoryTurnWarningLocked(currentTurns)
 }
 
-// GetWarnings generates safety warnings based on current state.
+// GetWarnings generates safety and financial warnings based on current state.
 func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -119,8 +144,26 @@ func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning
 	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
 		warnings = append(warnings, Warning{Message: w})
 	}
+	if w := cs.getPriceWarningLocked(tokens); w != "" {
+		warnings = append(warnings, Warning{Message: w})
+	}
 
 	return warnings
+}
+
+func (cs *ContextStrategy) getPriceWarningLocked(tokens int) string {
+	cliff := cs.tieredThreshold
+	if cliff <= 0 {
+		return ""
+	}
+	warning := int(float64(cliff) * config.WarningRatio)
+
+	if tokens >= cliff {
+		return "[URGENT ECONOMIC NOTICE: The high-tier billing threshold has been reached. Current operational costs are now 2x higher. You MUST be extremely concise, minimize internal reasoning (Thinking Tokens), and combine multiple operations into single turns where possible to conserve the user's budget.]"
+	} else if tokens >= warning {
+		return "[ECONOMIC NOTICE: You are approaching the high-tier billing threshold. To protect the user's budget, please be highly selective with tool calls and avoid redundant operations. Focus on high-impact actions and be concise in your reasoning.]"
+	}
+	return ""
 }
 
 func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {

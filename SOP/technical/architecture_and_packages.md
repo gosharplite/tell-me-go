@@ -30,6 +30,8 @@ The project is organized into the following top-level directories:
     - `internal/api`: Communication logic using `google.golang.org/genai`.
     - `internal/history`: Session management and JSON persistence.
     - `internal/cli`: Terminal UI, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic to ensure environment isolation.
+    - `internal/security`: Centralized **Security Manager** and guardrails (e.g., path sanitization, bypass management).
+    - `internal/domain`: Core domain models and interfaces (e.g., `llm`, `tools`) used to decouple packages.
     - `internal/auth`: Token management for Vertex AI.
     - `internal/tools`: Registry and implementation of executable functions.
     - `internal/fsutil`: Filesystem utilities, including content-addressable **Asset Storage**.
@@ -61,15 +63,18 @@ tell-me-go/
 │   └── tell-me-go/
 │       └── main.go       # Orchestration and Entry Point
 ├── internal/
-│   ├── agent/            # High-level Agent Loop
-│   ├── api/              # Gemini Client Logic
+│   ├── agent/            # High-level Agent Loop (Think-Act-Observe)
+│   ├── api/              # Gemini/Vertex AI Client Logic
 │   ├── auth/             # Token Management
 │   ├── cli/              # CLI logic, Flag Parsing, and Mode Scoping
 │   ├── config/           # YAML/Env Loading
+│   ├── domain/           # Core Domain Models (LLM, Tools, Pricing)
 │   ├── fsutil/           # Asset Storage and FS Helpers
-│   ├── history/          # Conversation Storage
-│   ├── tools/            # Agent Tools
-│   └── types/            # Internal Domain Models
+│   ├── history/          # Conversation Storage and Turn Management
+│   ├── pricing/          # Model-specific pricing data
+│   ├── security/         # Security Manager and Guardrails
+│   ├── services/         # External service abstractions (Media, etc.)
+│   └── tools/            # Agent Tool Registry and Implementations
 ├── configs/
 │   └── vertex.yaml       # Vertex AI Template
 ├── tests/

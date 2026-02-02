@@ -30,7 +30,7 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]llm.ModelPricing) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
@@ -67,8 +67,8 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool) agent.Chatter {
-			return agent.New(client, hManager, reg, sm, disableStreaming)
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]llm.ModelPricing) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming, agent.WithPricing(model, mode, pricingOverrides))
 		},
 		ClientFactory: func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -170,8 +170,8 @@ func (a *App) run(ctx context.Context, args []string) error {
 
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
-	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming)
-	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned)
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides)
+	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pricing)
 
 	// 7. Execute & Finalize
 	sess := agent.NewSession(hManager)

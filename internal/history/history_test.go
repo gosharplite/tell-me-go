@@ -32,8 +32,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 		t.Errorf("failed to add user entry: %v", err)
 	}
 
-	if err := m.AddEntry(ctx, genai.RoleUser, "Hello again"); err == nil {
-		t.Error("expected error for consecutive 'user' roles")
+	if err := m.AddEntry(ctx, genai.RoleUser, "Hello again"); err != nil {
+		t.Errorf("failed to add consecutive user entry: %v", err)
 	}
 
 	if err := m.AddEntry(ctx, genai.RoleModel, "Hi there"); err != nil {
@@ -397,7 +397,7 @@ func TestHistoryManager_Repair_Empty(t *testing.T) {
 	}
 }
 
-func TestHistoryManager_AddContent_Errors(t *testing.T) {
+func TestHistoryManager_AddContent_Merging(t *testing.T) {
 	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
 	ctx := context.Background()
 
@@ -407,11 +407,19 @@ func TestHistoryManager_AddContent_Errors(t *testing.T) {
 		t.Error("expected error for first message not being user")
 	}
 
-	// 2. Role alternation violation
+	// 2. Role alternation merging
 	_ = m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U1"}}})
 	err = m.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
-	if err == nil {
-		t.Error("expected error for consecutive user roles")
+	if err != nil {
+		t.Errorf("expected merging, got error: %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 1 {
+		t.Errorf("expected 1 message after merging, got %d", len(contents))
+	}
+	if len(contents[0].Parts) != 2 {
+		t.Errorf("expected 2 parts in merged message, got %d", len(contents[0].Parts))
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -52,6 +53,78 @@ type CostBreakdown struct {
 type CostCalculator struct {
 	Pricing llm.PricingData
 	Model   llm.ModelPricing
+}
+
+// SessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
+type SessionCostTracker struct {
+	mu        sync.Mutex
+	stats     UsageStats
+	pricing   llm.PricingData
+	model     llm.ModelPricing
+	logFile   string
+	sm        *security.SecurityManager
+	initiated bool
+}
+
+// NewSessionCostTracker creates a new tracker.
+func NewSessionCostTracker(sm *security.SecurityManager, logFile string, model llm.ModelPricing, pricing llm.PricingData) *SessionCostTracker {
+	return &SessionCostTracker{
+		sm:      sm,
+		logFile: logFile,
+		model:   model,
+		pricing: pricing,
+	}
+}
+
+// Subscribe registers the tracker to listen for usage metrics events.
+func (t *SessionCostTracker) Subscribe(bus events.EventBus) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(func(e events.Event) {
+		if ev, ok := e.(events.UsageMetricsEvent); ok {
+			if ev.Metrics != nil {
+				t.Accumulate(*ev.Metrics)
+			}
+		}
+	})
+}
+
+// GetTotalCost returns the accumulated cost.
+func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// If not initiated, we do a synchronous warmup as a fallback,
+	// but normally this should be triggered by Warmup() early.
+	if !t.initiated && t.logFile != "" {
+		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+			t.stats = usage
+		}
+		t.initiated = true
+	}
+
+	calc := &CostCalculator{Pricing: t.pricing, Model: t.model}
+	return calc.Calculate(t.stats).TotalCost
+}
+
+// Warmup pre-loads the session state from the log file.
+func (t *SessionCostTracker) Warmup() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.initiated && t.logFile != "" {
+		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+			t.stats = usage
+		}
+		t.initiated = true
+	}
+}
+
+// Accumulate adds new turn metrics to the running total.
+func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	Accumulate(&t.stats, mt, t.model)
 }
 
 // Calculate performs tiered pricing arithmetic.
@@ -327,20 +400,32 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	cachePath := filepath.Join(globalDir, "global_prices.json")
 	var data llm.PricingData
 	useCache := false
+	isStale := false
 
 	// 1. Try Local Cache
 	if info, err := os.Stat(cachePath); err == nil {
-		if time.Since(info.ModTime()) < 24*time.Hour {
-			if content, err := os.ReadFile(cachePath); err == nil {
-				if err := json.Unmarshal(content, &data); err == nil {
-					useCache = true
+		if content, err := os.ReadFile(cachePath); err == nil {
+			if err := json.Unmarshal(content, &data); err == nil {
+				useCache = true
+				if time.Since(info.ModTime()) >= 24*time.Hour {
+					isStale = true
 				}
 			}
 		}
 	}
 
 	// 2. Try Remote if cache is missing or stale
-	if !useCache {
+	if !useCache || isStale {
+		if isStale {
+			// If we have stale data, return it immediately and fetch in background
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			go func() {
+				defer cancel()
+				fetchAndCachePricing(bgCtx, sm, cachePath)
+			}()
+			return data
+		}
+
 		// Optimization: Check for connectivity before hitting network to avoid long timeout
 		client := http.Client{Timeout: 2 * time.Second} // Shorter timeout
 		req, _ := http.NewRequestWithContext(ctx, "GET", pricingURL, nil)
@@ -366,6 +451,11 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 }
 
 func (m *metricsManager) getModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
+	return GetModelPricing(modelName, pricing)
+}
+
+// GetModelPricing finds the best pricing match for a model name.
+func GetModelPricing(modelName string, pricing llm.PricingData) llm.ModelPricing {
 	// 1. Exact match
 	if p, ok := pricing.Models[modelName]; ok {
 		return p
@@ -394,10 +484,10 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	p := m.getModelPricing(m.model, pricing)
+	p := GetModelPricing(m.model, pricing)
 
 	// 1. Parse usage from log
-	usage, err := m.parseUsage(resolvedLog, p)
+	usage, err := ParseUsage(resolvedLog, p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -426,7 +516,8 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	return m.renderReport(pricing, breakdown), nil
 }
 
-func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
+// ParseUsage extracts usage statistics from a log file.
+func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return UsageStats{}, err
@@ -441,7 +532,7 @@ func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats
 
 		// Try JSON first (SOP: Structured over Procedural)
 		if err := json.Unmarshal([]byte(line), &mt); err == nil {
-			m.accumulate(&stats, mt, p)
+			Accumulate(&stats, mt, p)
 			continue
 		}
 
@@ -464,12 +555,13 @@ func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats
 			SearchQueries:  int(s),
 			ThinkingTokens: int32(th),
 		}
-		m.accumulate(&stats, mtLegacy, p)
+		Accumulate(&stats, mtLegacy, p)
 	}
 	return stats, scanner.Err()
 }
 
-func (m *metricsManager) accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
+// Accumulate adds metrics to usage statistics.
+func Accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
 	h := int64(mt.CachedTokens)
 	mMiss := int64(mt.PromptTokens) - h
 	if mMiss < 0 {
@@ -539,4 +631,29 @@ func (m *metricsManager) renderReport(pricing llm.PricingData, breakdown CostBre
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
 	return sb.String()
+}
+
+func fetchAndCachePricing(ctx context.Context, sm *security.SecurityManager, cachePath string) {
+	sm.PricingMu().Lock()
+	defer sm.PricingMu().Unlock()
+
+	// Double check freshness inside lock
+	if info, err := os.Stat(cachePath); err == nil {
+		if time.Since(info.ModTime()) < 24*time.Hour {
+			return
+		}
+	}
+
+	client := http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx, "GET", pricingURL, nil)
+	resp, err := client.Do(req)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		var data llm.PricingData
+		if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+			if bytes, err := json.MarshalIndent(data, "", "  "); err == nil {
+				_ = fsutil.AtomicWrite(ctx, cachePath, bytes, 0644)
+			}
+		}
+	}
 }

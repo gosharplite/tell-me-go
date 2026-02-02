@@ -119,7 +119,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	return reg
 }
 
-func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int) {
+func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing llm.PricingData) {
 	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
 	chatAgent.SetMainConfigPath(opts.configPath)
 	chatAgent.SetLogFile(paths.logPath)
@@ -146,7 +146,22 @@ func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, op
 		}
 	}
 
+	// Resolve tiered threshold from pricing
+	threshold := 128000 // Default
+	if mPricing, ok := pricing.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
+		threshold = int(mPricing.TieredThreshold)
+	} else {
+		// Fallback to substring match
+		for k, v := range pricing.Models {
+			if k != "default" && strings.Contains(cfg.Model, k) && v.TieredThreshold > 0 {
+				threshold = int(v.TieredThreshold)
+				break
+			}
+		}
+	}
+
 	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
+	chatAgent.SetTieredThreshold(threshold)
 	chatAgent.SetPrunedTurns(pruned)
 	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 }

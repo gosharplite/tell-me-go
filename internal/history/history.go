@@ -138,8 +138,12 @@ func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
 		Role:  role,
 		Parts: []*llm.Part{{Text: text}},
 	}
-	if err := m.addContentLocked(content); err != nil {
+	merged, err := m.addContentLocked(content)
+	if err != nil {
 		return err
+	}
+	if merged {
+		return m.saveLocked(ctx)
 	}
 	m.cleanContentLocked(content)
 	return m.store.Append(ctx, content)
@@ -149,29 +153,35 @@ func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
 func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.addContentLocked(content); err != nil {
+	merged, err := m.addContentLocked(content)
+	if err != nil {
 		return err
+	}
+	if merged {
+		return m.saveLocked(ctx)
 	}
 	m.cleanContentLocked(content)
 	return m.store.Append(ctx, content)
 }
 
-func (m *Manager) addContentLocked(content *llm.Content) error {
+func (m *Manager) addContentLocked(content *llm.Content) (bool, error) {
 	// 1. Validate role alternation
 	if len(m.Contents) > 0 {
-		lastRole := m.Contents[len(m.Contents)-1].Role
-		if lastRole == content.Role {
-			return fmt.Errorf("role alternation violation: last role was %s, cannot add another %s", lastRole, content.Role)
+		last := m.Contents[len(m.Contents)-1]
+		if last.Role == content.Role {
+			// Merge parts instead of erroring to handle interrupted sessions or consecutive prompts
+			last.Parts = append(last.Parts, content.Parts...)
+			return true, nil
 		}
 	} else if content.Role != "user" {
 		// First message must be user
-		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
+		return false, fmt.Errorf("first message must be 'user', got '%s'", content.Role)
 	}
 
 	// 2. Add entry
 	m.Contents = append(m.Contents, content)
 
-	return nil
+	return false, nil
 }
 
 // Snapshot takes a backup of the current state for potential rollback.

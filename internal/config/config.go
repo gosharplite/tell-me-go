@@ -49,11 +49,11 @@ func Load(path string) (*Config, error) {
 
 	var cfg Config
 	// Set defaults
-	cfg.MaxToolTurns = 10
-	cfg.MaxHistoryTurns = 20
-	cfg.MaxHistoryTokens = 120000
-	cfg.MaxConcurrentTools = 5
-	cfg.ToolTimeoutSeconds = 30
+	cfg.MaxToolTurns = DefaultMaxToolTurns
+	cfg.MaxHistoryTurns = DefaultMaxHistoryTurns
+	cfg.MaxHistoryTokens = DefaultMaxHistoryTokens
+	cfg.MaxConcurrentTools = DefaultMaxConcurrentTools
+	cfg.ToolTimeoutSeconds = DefaultToolTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
 

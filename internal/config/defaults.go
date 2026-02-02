@@ -11,12 +11,12 @@ func DefaultPricing() llm.PricingData {
 		UpdatedAt: "Hardcoded Fallback",
 		Models: map[string]llm.ModelPricing{
 			"flash": {
-				Hit:             0.015,
-				Miss:            0.15,
-				Comp:            0.60,
+				Hit:             0.025,
+				Miss:            0.10,
+				Comp:            0.40,
 				TieredThreshold: 128000,
-				TieredMiss:      0.30,
-				TieredComp:      1.20,
+				TieredMiss:      0.20,
+				TieredComp:      0.80,
 			},
 			"pro": {
 				Hit:             0.125,
@@ -45,3 +45,15 @@ func DefaultPricing() llm.PricingData {
 		SearchQuery: 0.035,
 	}
 }
+
+// Default limits for history and tools.
+const (
+	DefaultMaxToolTurns       = 10
+	DefaultMaxHistoryTurns    = 20
+	DefaultMaxHistoryTokens   = 100000
+	DefaultMaxConcurrentTools = 5
+	DefaultToolTimeoutSeconds = 30
+	DefaultTieredThreshold    = 128000
+	DefaultMaxLoopRepetitions = 5
+	WarningRatio              = 0.78 // ~100k for 128k cliff
+)

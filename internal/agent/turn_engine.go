@@ -5,12 +5,20 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
 // Clock provides a way to get the current time, facilitating deterministic testing.
@@ -75,16 +83,18 @@ type TurnHook interface {
 
 // TurnState carries data between the phases of a turn and tracks the current phase.
 type TurnState struct {
-	Phase        TurnPhase        `json:"phase"`
-	HasToolCalls bool             `json:"has_tool_calls"`
-	Metrics      *llm.Metrics     `json:"metrics,omitempty"`
-	Tokens       int              `json:"tokens"`
-	CurrentTurns int              `json:"current_turns"`
-	Metadata     *ContextMetadata `json:"metadata,omitempty"`
-	Response     *llm.Content     `json:"response,omitempty"`
-	ToolResponse *llm.Content     `json:"tool_response,omitempty"`
-	LastError    error            `json:"-"`
-	RetryCount   int              `json:"retry_count"`
+	Phase                TurnPhase        `json:"phase"`
+	HasToolCalls         bool             `json:"has_tool_calls"`
+	Metrics              *llm.Metrics     `json:"metrics,omitempty"`
+	Tokens               int              `json:"tokens"`
+	CurrentTurns         int              `json:"current_turns"`
+	Metadata             *ContextMetadata `json:"metadata,omitempty"`
+	Response             *llm.Content     `json:"response,omitempty"`
+	ToolResponse         *llm.Content     `json:"tool_response,omitempty"`
+	LastError            error            `json:"-"`
+	RetryCount           int              `json:"retry_count"`
+	ToolCallCount        map[string]int   `json:"-"`
+	RecentResponseHashes []string         `json:"-"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -120,6 +130,7 @@ type Turn struct {
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        Clock
+	CostTracker  *framework.SessionCostTracker
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *llm.Content)
@@ -130,16 +141,23 @@ type Turn struct {
 
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
-	ctxManager  *ContextManager
-	gateway     gateway.LLMGateway
-	executor    IToolExecutor
-	registry    ToolRegistry
-	events      events.EventBus
-	processors  map[TurnPhase]TurnProcessor
-	middleware  []TurnMiddleware
-	hooks       []TurnHook
-	retryPolicy RetryPolicy
-	clock       Clock
+	mu               sync.RWMutex
+	ctxManager       *ContextManager
+	gateway          gateway.LLMGateway
+	executor         IToolExecutor
+	registry         ToolRegistry
+	events           events.EventBus
+	processors       map[TurnPhase]TurnProcessor
+	middleware       []TurnMiddleware
+	hooks            []TurnHook
+	retryPolicy      RetryPolicy
+	clock            Clock
+	sm               *security.SecurityManager
+	logFile          string
+	model            string
+	pricingOverrides map[string]llm.ModelPricing
+	costTracker      *framework.SessionCostTracker
+	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -180,6 +198,47 @@ func WithClock(c Clock) EngineOption {
 	}
 }
 
+// WithHardBudget sets a maximum session budget in USD.
+// Feature is intended for internal/API use only to maintain a clean UI.
+func WithHardBudget(limit float64) EngineOption {
+	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.HardBudgetLimit = limit
+	}
+}
+
+// WithConfig sets the security and usage configuration for the engine.
+func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) EngineOption {
+	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		e.sm = sm
+		e.logFile = logFile
+		e.model = model
+		e.pricingOverrides = pricingOverrides
+
+		// Initialize cost tracker if we have the necessary info
+		if sm != nil && logFile != "" && model != "" {
+			pricing := framework.GetPricing(context.Background(), sm, filepath.Dir(logFile))
+			for k, v := range pricingOverrides {
+				pricing.Models[k] = v
+			}
+			p := framework.GetModelPricing(model, pricing)
+			e.costTracker = framework.NewSessionCostTracker(sm, logFile, p, pricing)
+			go e.costTracker.Warmup()
+		}
+	}
+}
+
+// Reconfigure applies new options to the engine.
+func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
+	for _, opt := range opts {
+		opt(e)
+	}
+}
+
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
 func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
@@ -211,10 +270,24 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
+		// Subscribe the cost tracker to metrics events via delegation to allow reconfiguration
+		// without leaking subscribers or handling unsubscription.
+		e.events.Subscribe(func(ev events.Event) {
+			if um, ok := ev.(events.UsageMetricsEvent); ok {
+				e.mu.RLock()
+				tracker := e.costTracker
+				e.mu.RUnlock()
+				if tracker != nil && um.Metrics != nil {
+					tracker.Accumulate(*um.Metrics)
+				}
+			}
+		})
+
 		e.middleware = append(e.middleware,
 			WithStreaming(e.events),
 			WithStatusReporter(e.events),
 			WithMetrics(e.events),
+			WithLoopDetector(),
 		)
 	}
 
@@ -232,12 +305,21 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	totalRetries := 0
+	var lastState *TurnState
 	for i := 0; ; i++ {
 		if err := e.checkLimits(ctx, i); err != nil {
 			return err
 		}
 
 		turn := e.createTurn(i, startTime, totalRetries)
+		if lastState != nil {
+			turn.State.ToolCallCount = lastState.ToolCallCount
+			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
+		}
+		if turn.State.ToolCallCount == nil {
+			turn.State.ToolCallCount = make(map[string]int)
+		}
+
 		e.notifyBeforeTurn(turn)
 
 		err := e.executeTurn(ctx, turn)
@@ -248,6 +330,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		}
 
 		totalRetries = turn.State.RetryCount
+		lastState = turn.State
 		if e.shouldStopRunning(turn) {
 			break
 		}
@@ -258,6 +341,19 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	// Deterministic Budget Guardrail (API/Internal only)
+	e.mu.RLock()
+	limit := e.HardBudgetLimit
+	tracker := e.costTracker
+	e.mu.RUnlock()
+
+	if limit > 0 && tracker != nil {
+		if cost := tracker.GetTotalCost(ctx); cost >= limit {
+			return fmt.Errorf("%w: current session cost $%.4f exceeds internal limit $%.4f",
+				llm.ErrBudgetExceeded, cost, limit)
+		}
 	}
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
@@ -272,16 +368,21 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 }
 
 func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
+	e.mu.RLock()
+	tracker := e.costTracker
+	e.mu.RUnlock()
+
 	turn := &Turn{
-		Index:      index,
-		StartTime:  startTime,
-		State:      &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
-		CtxManager: e.ctxManager,
-		Gateway:    e.gateway,
-		Executor:   e.executor,
-		Registry:   e.registry,
-		Events:     e.events,
-		Clock:      e.clock,
+		Index:       index,
+		StartTime:   startTime,
+		State:       &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
+		CtxManager:  e.ctxManager,
+		Gateway:     e.gateway,
+		Executor:    e.executor,
+		Registry:    e.registry,
+		Events:      e.events,
+		Clock:       e.clock,
+		CostTracker: tracker,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 	return turn
@@ -310,6 +411,9 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 			return err
 		}
 		if e.shouldBreak(turn, res) {
+			if res.Error != nil {
+				return res.Error
+			}
 			break
 		}
 	}
@@ -549,6 +653,13 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 
 			if turn.State.Phase == PhaseRefining || turn.State.Phase == PhasePersisting {
 				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
+				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
+
+				var cost float64
+				if turn.CostTracker != nil {
+					cost = turn.CostTracker.GetTotalCost(ctx)
+				}
+
 				bus.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
@@ -556,9 +667,11 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,
+						TieredThreshold:  threshold,
 						Metrics:          turn.State.Metrics,
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
+						SessionCost:      cost,
 					},
 				})
 			}
@@ -578,6 +691,53 @@ func WithMetrics(bus events.EventBus) TurnMiddleware {
 					StartTime: turn.StartTime,
 				})
 			}
+			return res
+		})
+	}
+}
+
+// WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
+func WithLoopDetector() TurnMiddleware {
+	return func(next TurnProcessor) TurnProcessor {
+		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+			res := next.Process(ctx, turn)
+
+			if turn.State.Phase == PhaseInference && res.Error == nil && turn.State.Response != nil {
+				// 1. Multi-step loop detection (Text & Tool Calls)
+				rawJSON, _ := json.Marshal(turn.State.Response)
+				h := sha256.Sum256(rawJSON)
+				currentHash := hex.EncodeToString(h[:])
+
+				for _, prevHash := range turn.State.RecentResponseHashes {
+					if currentHash == prevHash {
+						return ProcessResult{
+							Stop:  true,
+							Error: fmt.Errorf("infinite loop detected: model is repeating a previous response (content or tool calls)"),
+						}
+					}
+				}
+				// Keep last N hashes (using the same repetition limit)
+				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
+				if len(turn.State.RecentResponseHashes) > config.DefaultMaxLoopRepetitions {
+					turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
+				}
+
+				// 2. Tool call loop detection (Immediate threshold)
+				for _, p := range turn.State.Response.Parts {
+					if p.FunctionCall != nil {
+						args, _ := json.Marshal(p.FunctionCall.Args)
+						key := p.FunctionCall.Name + ":" + string(args)
+						turn.State.ToolCallCount[key]++
+						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
+							return ProcessResult{
+								Stop:  true,
+								Error: fmt.Errorf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]),
+							}
+						}
+					}
+				}
+			}
+
 			return res
 		})
 	}

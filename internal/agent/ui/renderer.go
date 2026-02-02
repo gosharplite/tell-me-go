@@ -14,11 +14,31 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"golang.org/x/term"
 )
+
+// sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
+func sanitizeForTerminal(text string) string {
+	replacements := map[string]string{
+		"$\\leftrightarrow$": "↔",
+		"$\\rightarrow$":     "→",
+		"$\\leftarrow$":      "←",
+		"$\\Rightarrow$":     "⇒",
+		"$\\Leftarrow$":      "⇐",
+		"$\\dots$":           "...",
+		"$\\cdot$":           "·",
+		"$\\times$":          "×",
+		"$\\checkmark$":      "✓",
+	}
+	for old, new := range replacements {
+		text = strings.ReplaceAll(text, old, new)
+	}
+	return text
+}
 
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
@@ -109,8 +129,11 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := reset
-		if float64(tks) > float64(status.MaxHistoryTokens)*0.9 {
-			tokenColor = "\033[0;31m"
+		if float64(tks) > float64(status.MaxHistoryTokens)*config.WarningRatio {
+			tokenColor = "\033[0;33m" // Yellow caution
+		}
+		if float64(tks) > float64(status.MaxHistoryTokens) {
+			tokenColor = "\033[0;31m" // Red limit
 		}
 
 		if isActual {
@@ -142,15 +165,49 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			hColor = reset
 		}
 
+		// Cliff logic
+		cliff := status.TieredThreshold
+		if cliff <= 0 {
+			cliff = config.DefaultTieredThreshold
+		}
+		warning := int(float64(cliff) * config.WarningRatio)
+
+		statusColor := gray
+		if int(m.PromptTokens) >= cliff {
+			statusColor = "\033[0;31m" // Red
+		} else if int(m.PromptTokens) >= warning {
+			statusColor = "\033[0;33m" // Yellow
+		}
+
+		tColor := statusColor
+
+		pColor := gray
+		if percent < 20 {
+			pColor = "\033[0;32m" // Green
+		} else if percent > 70 {
+			pColor = reset // White
+		}
+
+		// N color follows efficiency unless we hit the cliff penalty
+		nColor := pColor
+		if statusColor != gray {
+			nColor = statusColor
+		}
+
 		totalDuration := r.now().Sub(status.StartTime).Seconds()
 		durationStr := fmt.Sprintf("%.2fs", m.Duration)
 		if m.ToolDuration > 3.0 {
 			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 		}
 
-		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d T: %d N: %d(%d%%) S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
-			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, m.TotalTokens, newTokens, percent, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
-		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, gray)
+		fmt.Fprintf(r.stderr, "%s[%s] %sH: %d M: %d%s C: %d %sT: %s%d%s %sN: %s%d(%d%%)%s S: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+			gray, timestamp, hColor, m.CachedTokens, miss, gray, m.ResponseTokens, gray, tColor, m.TotalTokens, gray, gray, nColor, newTokens, percent, gray, m.SearchQueries, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+
+		costStr := ""
+		if status.SessionCost > 0 {
+			costStr = fmt.Sprintf(" %s($%.4f)%s", "\033[0;32m", status.SessionCost, gray)
+		}
+		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s%s\n", gray, reset, costStr, gray)
 	}
 }
 
@@ -158,7 +215,8 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			r.sm.TerminalLock()
-			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", r.now().Format("15:04:05"), part.Text)
+			sanitized := sanitizeForTerminal(part.Text)
+			fmt.Fprintf(r.stderr, "\033[0;90m[%s] [Thinking]\n%s\033[0m\n", r.now().Format("15:04:05"), sanitized)
 			r.sm.TerminalUnlock()
 		}
 	}
@@ -170,7 +228,8 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 					fmt.Fprintln(r.stdout)
 				}
 			} else {
-				r.renderMarkdown(part.Text)
+				sanitized := sanitizeForTerminal(part.Text)
+				r.renderMarkdown(sanitized)
 			}
 		}
 
@@ -248,13 +307,18 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("\033[0;90m%s\033[0m", part.Text))
+		sanitized := sanitizeForTerminal(part.Text)
+		r.safePrintStderr(fmt.Sprintf("\033[0;90m%s\033[0m", sanitized))
 	}
 }
 
 func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
-	fmt.Fprint(r.stdout, part.Text)
+	output := part.Text
+	if !state.rawOutput {
+		output = sanitizeForTerminal(part.Text)
+	}
+	fmt.Fprint(r.stdout, output)
 	state.totalText.WriteString(part.Text)
 }
 
@@ -281,7 +345,8 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 	if !state.rawOutput {
 		fullText := state.totalText.String()
 		if fullText != "" {
-			r.clearAndRenderMarkdown(fullText)
+			sanitized := sanitizeForTerminal(fullText)
+			r.clearAndRenderMarkdown(sanitized)
 		}
 		fmt.Fprintln(r.stdout)
 	}

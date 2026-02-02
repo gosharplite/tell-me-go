@@ -265,10 +265,13 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 		return tools.ToolResult{Text: "Keep going"}, nil
 	})
 
+	callCount := 0
 	mockClient := &MockLLMClient{
 		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+			callCount++
+			// Provide unique arguments to avoid the loop detector
 			callback(&llm.Content{Role: "model", Parts: []*llm.Part{
-				{FunctionCall: &llm.FunctionCall{Name: "infinite_tool"}},
+				{FunctionCall: &llm.FunctionCall{Name: "infinite_tool", Args: map[string]interface{}{"n": callCount}}},
 			}})
 			return &llm.Metrics{}, nil
 		},

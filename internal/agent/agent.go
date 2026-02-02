@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -24,6 +25,8 @@ type Chatter interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
 	SetLogFile(path string)
 	SetLimits(toolTurns, historyTokens, historyTurns int)
+	SetHardBudgetLimit(limit float64)
+	SetTieredThreshold(threshold int)
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
@@ -38,6 +41,10 @@ type RuntimeConfig struct {
 	LogFile              string
 	PersistentConfigPath string
 	MainConfigPath       string
+	Model                string
+	Mode                 string
+	PricingOverrides     map[string]llm.ModelPricing
+	HardBudgetLimit      float64
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -58,6 +65,15 @@ type Agent struct {
 
 // AgentOption defines a functional option for configuring an Agent.
 type AgentOption func(*Agent)
+
+// WithPricing sets the pricing configuration for cost estimation.
+func WithPricing(model, mode string, overrides map[string]llm.ModelPricing) AgentOption {
+	return func(a *Agent) {
+		a.config.Model = model
+		a.config.Mode = mode
+		a.config.PricingOverrides = overrides
+	}
+}
 
 // WithLimits sets the initial operational limits.
 func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
@@ -127,19 +143,19 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		ctxManager:    ctxManager,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: NewConfigWatcher(120000, 10, 20),
+		configWatcher: NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
 		config: RuntimeConfig{
 			Limits: events.Limits{
-				MaxHistoryTokens: 120000,
-				MaxToolTurns:     10,
-				MaxHistoryTurns:  20,
+				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
+				MaxToolTurns:     config.DefaultMaxToolTurns,
+				MaxHistoryTurns:  config.DefaultMaxHistoryTurns,
 			},
 			Execution: events.ExecutionConfig{
-				MaxConcurrent: 5,
-				Timeout:       30 * time.Second,
+				MaxConcurrent: config.DefaultMaxConcurrentTools,
+				Timeout:       time.Duration(config.DefaultToolTimeoutSeconds) * time.Second,
 			},
 		},
 	}
@@ -150,7 +166,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 	}
 
 	// Initialize engine
-	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus)
+	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus, WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides))
 
 	a.registerInternalTools()
 	a.applyConfig() // Broadcast initial config
@@ -159,22 +175,38 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 
 func (a *Agent) applyConfig() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
 	a.configWatcher.Refresh()
 
 	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
+	threshold := a.configWatcher.GetTieredThreshold()
+
 	// Update config from watcher if it changed
 	a.config.Limits.MaxHistoryTokens = tokens
 	a.config.Limits.MaxToolTurns = toolTurns
 	a.config.Limits.MaxHistoryTurns = histTurns
+	a.config.Limits.TieredThreshold = threshold
+
+	// Capture values for engine reconfiguration outside of lock
+	logFile := a.config.LogFile
+	model := a.config.Model
+	overrides := a.config.PricingOverrides
+	budget := a.config.HardBudgetLimit
 
 	a.events.Publish(events.ConfigUpdated{
 		Limits:    a.config.Limits,
 		LogFile:   a.config.LogFile,
 		Execution: a.config.Execution,
 	})
+	a.mu.Unlock()
+
+	// Sync engine configuration
+	if a.engine != nil {
+		a.engine.Reconfigure(
+			WithConfig(a.sm, logFile, model, overrides),
+			WithHardBudget(budget),
+		)
+	}
 }
 
 func (a *Agent) Subscribe(sub func(events.Event)) {
@@ -210,6 +242,18 @@ func (a *Agent) registerInternalTools() {
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.applyConfig()
+}
+
+func (a *Agent) SetHardBudgetLimit(limit float64) {
+	a.mu.Lock()
+	a.config.HardBudgetLimit = limit
+	a.mu.Unlock()
+	a.applyConfig()
+}
+
+func (a *Agent) SetTieredThreshold(threshold int) {
+	a.configWatcher.SetTieredThreshold(threshold)
 	a.applyConfig()
 }
 

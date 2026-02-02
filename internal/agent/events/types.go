@@ -14,6 +14,7 @@ type Limits struct {
 	MaxHistoryTokens int
 	MaxToolTurns     int
 	MaxHistoryTurns  int
+	TieredThreshold  int
 }
 
 // ExecutionConfig defines the parallel execution and timeout settings.
@@ -36,9 +37,11 @@ type TurnStatus struct {
 	MaxHistoryTurns  int
 	Tokens           int
 	MaxHistoryTokens int
+	TieredThreshold  int
 	Metrics          *llm.Metrics
 	IsPostCall       bool
 	StartTime        time.Time
+	SessionCost      float64
 }
 
 // TurnStatusEvent carries payload and token metrics for UI display.
