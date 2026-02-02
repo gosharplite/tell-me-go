@@ -333,7 +333,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) {
-		go m.recoverLedger(context.Background(), globalDir)
+		go m.recoverLedger(ctx, globalDir)
 	}
 
 	// 3. Update or Append (identify by session ID)
@@ -393,7 +393,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		go m.recoverLedger(context.Background(), globalDir)
+		go m.recoverLedger(ctx, globalDir)
 		return "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
 	}
 
@@ -771,6 +771,9 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 
 	// 1. Walk through all subdirectories
 	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
 			return nil
