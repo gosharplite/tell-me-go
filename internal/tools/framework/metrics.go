@@ -100,7 +100,7 @@ func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	// If not initiated, we do a synchronous warmup as a fallback,
 	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
-		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+		if usage, _, err := ParseUsage(t.logFile, t.model); err == nil {
 			t.stats = usage
 		}
 		t.initiated = true
@@ -115,7 +115,7 @@ func (t *SessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.initiated && t.logFile != "" {
-		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+		if usage, _, err := ParseUsage(t.logFile, t.model); err == nil {
 			t.stats = usage
 		}
 		t.initiated = true
@@ -156,9 +156,18 @@ type SessionCostRecord struct {
 
 var (
 	recoveryInProgress sync.Map // historyPath -> bool
-	dateRegex          = regexp.MustCompile(`(\d{4})(\d{2})(\d{2})`)
+	dateRegex          = regexp.MustCompile(`(\d{4})[-_/]?(\d{2})[-_/]?(\d{2})`)
 	ledgerMu           sync.Mutex
 )
+
+// breakStaleLock removes a lock file if it's older than 5 minutes to prevent deadlocks after crashes.
+func breakStaleLock(lockPath string) {
+	if info, err := os.Stat(lockPath); err == nil {
+		if time.Since(info.ModTime()) > 5*time.Minute {
+			_ = os.Remove(lockPath)
+		}
+	}
+}
 
 type metricsManager struct {
 	sm               *security.SecurityManager
@@ -254,6 +263,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 
 	summary := llm.Metrics{
 		Timestamp:      time.Now().Format(time.RFC3339),
+		Model:          model,
 		CachedTokens:   totalCached,
 		PromptTokens:   totalPrompt,
 		ResponseTokens: totalResponse,
@@ -284,7 +294,8 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 	lockPath := historyPath + ".lock"
 
-	// 1. Acquire simple file-based lock
+	// 1. Acquire simple file-based lock (with stale lock protection)
+	breakStaleLock(lockPath)
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		return
@@ -514,7 +525,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	p := GetModelPricing(m.model, pricing)
 
 	// 1. Parse usage from log
-	usage, err := ParseUsage(resolvedLog, p)
+	usage, _, err := ParseUsage(resolvedLog, p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -544,14 +555,15 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 }
 
 // ParseUsage extracts usage statistics from a log file.
-func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
+func ParseUsage(path string, p llm.ModelPricing) (UsageStats, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return UsageStats{}, err
+		return UsageStats{}, "", err
 	}
 	defer f.Close()
 
 	var stats UsageStats
+	var detectedModel string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -559,6 +571,9 @@ func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 
 		// Try JSON first (SOP: Structured over Procedural)
 		if err := json.Unmarshal([]byte(line), &mt); err == nil {
+			if detectedModel == "" && mt.Model != "" {
+				detectedModel = mt.Model
+			}
 			Accumulate(&stats, mt, p)
 			continue
 		}
@@ -584,7 +599,7 @@ func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 		}
 		Accumulate(&stats, mtLegacy, p)
 	}
-	return stats, scanner.Err()
+	return stats, detectedModel, scanner.Err()
 }
 
 // Accumulate adds metrics to usage statistics.
@@ -732,9 +747,22 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 			return nil
 		}
 
-		usage, err := ParseUsage(path, p)
+		usage, detectedModel, err := ParseUsage(path, p)
 		if err == nil {
-			breakdown := calc.Calculate(usage)
+			modelToUse := detectedModel
+			if modelToUse == "" {
+				modelToUse = m.model
+			}
+
+			// Recalculate if model is different from current default
+			var finalBreakdown CostBreakdown
+			if modelToUse != m.model {
+				pHistorical := GetModelPricing(modelToUse, pricing)
+				calcHistorical := &CostCalculator{Pricing: pricing, Model: pHistorical}
+				finalBreakdown = calcHistorical.Calculate(usage)
+			} else {
+				finalBreakdown = calc.Calculate(usage)
+			}
 
 			// Extract date from path or mod time
 			date := info.ModTime().Format("2006-01-02")
@@ -745,8 +773,8 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 			history = append(history, SessionCostRecord{
 				Date:      date,
 				Session:   sessionID,
-				Model:     m.model,
-				TotalCost: breakdown.TotalCost,
+				Model:     modelToUse,
+				TotalCost: finalBreakdown.TotalCost,
 			})
 			seen[sessionID] = true
 		} else {
@@ -764,6 +792,7 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 		defer ledgerMu.Unlock()
 
 		lockPath := historyPath + ".lock"
+		breakStaleLock(lockPath)
 		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 		if err != nil {
 			return // Another process is writing; skip this background update

@@ -131,6 +131,7 @@ type Turn struct {
 	MaxToolTurns int
 	Clock        Clock
 	CostTracker  *framework.SessionCostTracker
+	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *llm.Content)
@@ -370,6 +371,7 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
 	e.mu.RLock()
 	tracker := e.costTracker
+	model := e.model
 	e.mu.RUnlock()
 
 	turn := &Turn{
@@ -383,6 +385,7 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 		Events:      e.events,
 		Clock:       e.clock,
 		CostTracker: tracker,
+		Model:       model,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 	return turn
@@ -518,6 +521,7 @@ func (p *InferenceStep) updateState(turn *Turn, content *llm.Content, metrics *l
 	turn.State.Response = content
 	turn.State.Metrics = metrics
 	if metrics != nil {
+		metrics.Model = turn.Model
 		turn.State.Tokens = int(metrics.PromptTokens)
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)
