@@ -49,14 +49,14 @@ func TestGetPricing_CacheLogic(t *testing.T) {
 		got := GetPricing(context.Background(), sm, tmpDir)
 		// Should return stale data immediately
 		assert.Equal(t, data.UpdatedAt, got.UpdatedAt)
-		
+
 		// Small delay to allow background goroutine (though it might fail network, it shouldn't block)
 		time.Sleep(10 * time.Millisecond)
 	})
 
 	t.Run("Missing Cache Returns Fallback or Remote", func(t *testing.T) {
 		_ = os.Remove(cachePath)
-		
+
 		// Use a context that will timeout quickly for the remote fetch attempt
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()

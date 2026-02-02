@@ -42,7 +42,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 	close(ch0)
-	
+
 	// Turn 1: returns "B"
 	ch1 := make(chan *llm.Content, 1)
 	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
@@ -99,7 +99,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
 	close(ch0)
-	
+
 	// Turn 1: returns Tool B
 	ch1 := make(chan *llm.Content, 1)
 	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}

@@ -27,7 +27,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 	reg := &limitMockRegistry{}
-    
+
 	factory := &PipelineFactory{
 		History:   h,
 		Events:    bus,
@@ -56,7 +56,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}
 	close(ch0)
-	
+
 	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch0, func() (*llm.Content, *llm.Metrics, error) {
 		// 1 million prompt tokens + 1 million response tokens = $2 total cost
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 1000000, ResponseTokens: 1000000}, nil

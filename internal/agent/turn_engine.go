@@ -83,14 +83,14 @@ type TurnHook interface {
 
 // TurnState carries data between the phases of a turn and tracks the current phase.
 type TurnState struct {
-	Phase         TurnPhase        `json:"phase"`
-	HasToolCalls  bool             `json:"has_tool_calls"`
-	Metrics       *llm.Metrics     `json:"metrics,omitempty"`
-	Tokens        int              `json:"tokens"`
-	CurrentTurns  int              `json:"current_turns"`
-	Metadata      *ContextMetadata `json:"metadata,omitempty"`
-	Response      *llm.Content     `json:"response,omitempty"`
-	ToolResponse  *llm.Content     `json:"tool_response,omitempty"`
+	Phase                TurnPhase        `json:"phase"`
+	HasToolCalls         bool             `json:"has_tool_calls"`
+	Metrics              *llm.Metrics     `json:"metrics,omitempty"`
+	Tokens               int              `json:"tokens"`
+	CurrentTurns         int              `json:"current_turns"`
+	Metadata             *ContextMetadata `json:"metadata,omitempty"`
+	Response             *llm.Content     `json:"response,omitempty"`
+	ToolResponse         *llm.Content     `json:"tool_response,omitempty"`
 	LastError            error            `json:"-"`
 	RetryCount           int              `json:"retry_count"`
 	ToolCallCount        map[string]int   `json:"-"`
@@ -373,15 +373,15 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 	e.mu.RUnlock()
 
 	turn := &Turn{
-		Index:      index,
-		StartTime:  startTime,
-		State:      &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
-		CtxManager: e.ctxManager,
-		Gateway:    e.gateway,
-		Executor:   e.executor,
-		Registry:   e.registry,
-		Events:     e.events,
-		Clock:      e.clock,
+		Index:       index,
+		StartTime:   startTime,
+		State:       &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
+		CtxManager:  e.ctxManager,
+		Gateway:     e.gateway,
+		Executor:    e.executor,
+		Registry:    e.registry,
+		Events:      e.events,
+		Clock:       e.clock,
 		CostTracker: tracker,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
