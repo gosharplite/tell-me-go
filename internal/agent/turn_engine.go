@@ -126,6 +126,7 @@ type Turn struct {
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        Clock
+	CostTracker  *framework.SessionCostTracker
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *llm.Content)
@@ -150,6 +151,7 @@ type TurnEngine struct {
 	logFile          string
 	model            string
 	pricingOverrides map[string]llm.ModelPricing
+	costTracker      *framework.SessionCostTracker
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -197,6 +199,16 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 		e.logFile = logFile
 		e.model = model
 		e.pricingOverrides = pricingOverrides
+
+		// Initialize cost tracker if we have the necessary info
+		if sm != nil && logFile != "" && model != "" {
+			pricing := framework.GetPricing(context.Background(), sm, filepath.Dir(logFile))
+			for k, v := range pricingOverrides {
+				pricing.Models[k] = v
+			}
+			p := framework.GetModelPricing(model, pricing)
+			e.costTracker = framework.NewSessionCostTracker(sm, logFile, p, pricing)
+		}
 	}
 }
 
@@ -233,7 +245,7 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 	if e.events != nil {
 		e.middleware = append(e.middleware,
 			WithStreaming(e.events),
-			WithStatusReporter(e.events, e.sm, e.logFile, e.model, e.pricingOverrides),
+			WithStatusReporter(e.events),
 			WithMetrics(e.events),
 			WithLoopDetector(),
 		)
@@ -313,6 +325,7 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 		Registry:   e.registry,
 		Events:     e.events,
 		Clock:      e.clock,
+		CostTracker: e.costTracker,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 	return turn
@@ -573,7 +586,7 @@ func WithStreaming(bus events.EventBus) TurnMiddleware {
 }
 
 // WithStatusReporter returns a middleware that publishes turn status events.
-func WithStatusReporter(bus events.EventBus, sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) TurnMiddleware {
+func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			res := next.Process(ctx, turn)
@@ -586,21 +599,11 @@ func WithStatusReporter(bus events.EventBus, sm *security.SecurityManager, logFi
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
-				if turn.State.Phase == PhasePersisting && sm != nil && logFile != "" && model != "" {
-					// We calculate the current session cost from the log
-					// This is fast as it only reads the current session's log file
-					pricing := framework.GetPricing(ctx, sm, filepath.Dir(logFile))
-					for k, v := range pricingOverrides {
-						pricing.Models[k] = v
+				if turn.State.Phase == PhasePersisting && turn.CostTracker != nil {
+					if turn.State.Metrics != nil {
+						turn.CostTracker.Accumulate(*turn.State.Metrics)
 					}
-
-					p := framework.GetModelPricing(model, pricing)
-					usage, err := framework.ParseUsage(logFile, p)
-					if err == nil {
-						calc := &framework.CostCalculator{Pricing: pricing, Model: p}
-						breakdown := calc.Calculate(usage)
-						cost = breakdown.TotalCost
-					}
+					cost = turn.CostTracker.GetTotalCost(ctx)
 				}
 
 				bus.Publish(events.TurnStatusEvent{

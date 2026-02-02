@@ -54,6 +54,50 @@ type CostCalculator struct {
 	Model   llm.ModelPricing
 }
 
+// SessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
+type SessionCostTracker struct {
+	mu        sync.Mutex
+	stats     UsageStats
+	pricing   llm.PricingData
+	model     llm.ModelPricing
+	logFile   string
+	sm        *security.SecurityManager
+	initiated bool
+}
+
+// NewSessionCostTracker creates a new tracker.
+func NewSessionCostTracker(sm *security.SecurityManager, logFile string, model llm.ModelPricing, pricing llm.PricingData) *SessionCostTracker {
+	return &SessionCostTracker{
+		sm:      sm,
+		logFile: logFile,
+		model:   model,
+		pricing: pricing,
+	}
+}
+
+// GetTotalCost returns the accumulated cost.
+func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if !t.initiated && t.logFile != "" {
+		if usage, err := ParseUsage(t.logFile, t.model); err == nil {
+			t.stats = usage
+		}
+		t.initiated = true
+	}
+
+	calc := &CostCalculator{Pricing: t.pricing, Model: t.model}
+	return calc.Calculate(t.stats).TotalCost
+}
+
+// Accumulate adds new turn metrics to the running total.
+func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	Accumulate(&t.stats, mt, t.model)
+}
+
 // Calculate performs tiered pricing arithmetic.
 func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 	cb := CostBreakdown{Stats: stats}
