@@ -9,8 +9,8 @@ AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_I
 
 # --- Tools & Features ---
 USE_SEARCH: true
-THINKING_BUDGET: 0 # Max for gemini-2.5-flash is 24576, for gemini-3-flash-preview it's higher (e.g. 32000+)
-THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
+THINKING_BUDGET: 0
+THINKING_LEVEL: "HIGH" # Options: LOW, MEDIUM, HIGH
 SHOW_THOUGHTS: true
 SHOW_TOOLS: true
 
