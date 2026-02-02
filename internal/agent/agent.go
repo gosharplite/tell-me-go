@@ -173,8 +173,6 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 
 func (a *Agent) applyConfig() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
 	a.configWatcher.Refresh()
 
@@ -187,11 +185,22 @@ func (a *Agent) applyConfig() {
 	a.config.Limits.MaxHistoryTurns = histTurns
 	a.config.Limits.TieredThreshold = threshold
 
+	// Capture values for engine reconfiguration outside of lock
+	logFile := a.config.LogFile
+	model := a.config.Model
+	overrides := a.config.PricingOverrides
+
 	a.events.Publish(events.ConfigUpdated{
 		Limits:    a.config.Limits,
 		LogFile:   a.config.LogFile,
 		Execution: a.config.Execution,
 	})
+	a.mu.Unlock()
+
+	// Sync engine configuration
+	if a.engine != nil {
+		a.engine.Reconfigure(WithConfig(a.sm, logFile, model, overrides))
+	}
 }
 
 func (a *Agent) Subscribe(sub func(events.Event)) {

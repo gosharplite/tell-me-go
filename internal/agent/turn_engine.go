@@ -212,6 +212,13 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 	}
 }
 
+// Reconfigure applies new options to the engine.
+func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
+	for _, opt := range opts {
+		opt(e)
+	}
+}
+
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
 func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
