@@ -196,7 +196,7 @@ The `MODELS` section allows you to define hard technical limits for different mo
 To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
 
 1.  **`MAX_HISTORY_TOKENS` (Default: 100,000)**:
-    *   **The Price Cliff**: Gemini context pricing tiers jump at **128k tokens**. Staying below 100k ensures you pay the "Standard" rate and leave headroom for responses.
+    *   **The Price Cliff**: Gemini context pricing tiers jump at **128k tokens**. Staying below 100k ensures you pay the "Standard" rate (e.g., $0.10 - $1.25/1M) and leave headroom for responses.
     *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
 
 2.  **`MAX_HISTORY_TURNS`**:

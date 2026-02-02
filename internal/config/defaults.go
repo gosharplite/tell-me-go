@@ -11,12 +11,12 @@ func DefaultPricing() llm.PricingData {
 		UpdatedAt: "Hardcoded Fallback",
 		Models: map[string]llm.ModelPricing{
 			"flash": {
-				Hit:             0.05,
-				Miss:            0.50,
-				Comp:            3.00,
+				Hit:             0.025,
+				Miss:            0.10,
+				Comp:            0.40,
 				TieredThreshold: 128000,
-				TieredMiss:      1.00,
-				TieredComp:      6.00,
+				TieredMiss:      0.20,
+				TieredComp:      0.80,
 			},
 			"pro": {
 				Hit:             0.125,
