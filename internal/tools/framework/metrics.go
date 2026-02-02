@@ -97,6 +97,12 @@ func (t *SessionCostTracker) Subscribe(bus events.EventBus) {
 
 // GetTotalCost returns the accumulated cost.
 func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
+	_, totalCost := t.GetStats(ctx)
+	return totalCost
+}
+
+// GetStats returns the accumulated usage statistics and total cost.
+func (t *SessionCostTracker) GetStats(ctx context.Context) (UsageStats, float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -110,7 +116,7 @@ func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 		t.initiated = true
 	}
 
-	return t.totalCost
+	return t.stats, t.totalCost
 }
 
 // Warmup pre-loads the session state from the log file.
@@ -229,7 +235,7 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPath, model, mode, sessionID string, pricingOverrides map[string]llm.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracker *SessionCostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]llm.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -245,17 +251,25 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 	}
 
 	// 2. Append legacy summary to the log file itself
-	pricing := GetPricing(ctx, sm, filepath.Dir(logPath))
-	for k, v := range pricingOverrides {
-		pricing.Models[k] = v
-	}
+	var usage UsageStats
+	var totalCost float64
 
-	usage, totalCost, _, err := ParseUsage(logPath, pricing, model)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	if tracker != nil {
+		usage, totalCost = tracker.GetStats(ctx)
+	} else {
+		pricing := GetPricing(ctx, sm, filepath.Dir(logPath))
+		for k, v := range pricingOverrides {
+			pricing.Models[k] = v
 		}
-		return err
+
+		var err error
+		usage, totalCost, _, err = ParseUsage(logPath, pricing, model)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
 	}
 
 	if usage.Hits == 0 && usage.Misses == 0 && usage.Comp == 0 && usage.Thinking == 0 &&
@@ -272,7 +286,8 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 		TotalTokens:    int32(usage.Hits + usage.Misses + usage.TieredMisses + usage.Comp + usage.TieredComp + usage.Thinking + usage.TieredThinking),
 		ThinkingTokens: int32(usage.Thinking + usage.TieredThinking),
 		SearchQueries:  int(usage.SearchQueries),
-		Duration:       totalCost, // Repurpose Duration for USD cost in summary
+		Cost:           totalCost,
+		IsSummary:      true,
 	}
 
 	summaryBytes, _ := json.Marshal(summary)
@@ -580,6 +595,9 @@ func ParseUsage(path string, pricing llm.PricingData, defaultModel string) (Usag
 
 		// Try JSON first (SOP: Structured over Procedural)
 		if err := json.Unmarshal([]byte(line), &mt); err == nil {
+			if mt.IsSummary {
+				continue
+			}
 			mtModel := mt.Model
 			if mtModel == "" {
 				mtModel = defaultModel
@@ -591,7 +609,11 @@ func ParseUsage(path string, pricing llm.PricingData, defaultModel string) (Usag
 			p := GetModelPricing(mtModel, pricing)
 			Accumulate(&stats, mt, p)
 			calc := &CostCalculator{Pricing: pricing, Model: p}
-			totalCost += calc.CalculateMetrics(mt).TotalCost
+			if mt.Cost > 0 {
+				totalCost += mt.Cost
+			} else {
+				totalCost += calc.CalculateMetrics(mt).TotalCost
+			}
 			continue
 		}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -100,6 +101,7 @@ func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
 func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
+func (m *mockChatter) GetCostTracker() *framework.SessionCostTracker        { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output

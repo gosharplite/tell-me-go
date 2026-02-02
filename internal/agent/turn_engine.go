@@ -746,3 +746,10 @@ func WithLoopDetector() TurnMiddleware {
 		})
 	}
 }
+
+// GetCostTracker returns the session cost tracker used by the engine.
+func (e *TurnEngine) GetCostTracker() *framework.SessionCostTracker {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.costTracker
+}

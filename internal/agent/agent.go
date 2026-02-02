@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -32,6 +33,7 @@ type Chatter interface {
 	SetPersistentConfigPath(path string)
 	SetMainConfigPath(path string)
 	Subscribe(sub func(events.Event))
+	GetCostTracker() *framework.SessionCostTracker
 }
 
 // RuntimeConfig consolidates all agent configuration parameters.
@@ -307,4 +309,9 @@ func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 	a.applyConfig()
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
+}
+
+// GetCostTracker returns the session cost tracker used by the agent's engine.
+func (a *Agent) GetCostTracker() *framework.SessionCostTracker {
+	return a.engine.GetCostTracker()
 }

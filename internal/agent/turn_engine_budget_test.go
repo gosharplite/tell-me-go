@@ -44,7 +44,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 		},
 	}
 	modelPricing := pricing.Models["test-model"]
-	tracker := framework.NewSessionCostTracker(nil, "", modelPricing, pricing)
+	tracker := framework.NewSessionCostTracker(nil, "", "test-model", modelPricing, pricing)
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001)) // Very low budget
 	engine.costTracker = tracker

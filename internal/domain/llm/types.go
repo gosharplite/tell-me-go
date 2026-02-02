@@ -55,6 +55,8 @@ type Metrics struct {
 	SearchQueries  int     `json:"search_queries,omitempty"`
 	Duration       float64 `json:"duration"`
 	ToolDuration   float64 `json:"tool_duration,omitempty"`
+	Cost           float64 `json:"cost,omitempty"` // USD cost for this turn or summary
+	IsSummary      bool    `json:"is_summary,omitempty"`
 }
 
 // ModelPricing represents the cost structure for a specific model tier.
