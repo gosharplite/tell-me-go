@@ -418,7 +418,11 @@ func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir str
 	if !useCache || isStale {
 		if isStale {
 			// If we have stale data, return it immediately and fetch in background
-			go fetchAndCachePricing(context.Background(), sm, cachePath)
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			go func() {
+				defer cancel()
+				fetchAndCachePricing(bgCtx, sm, cachePath)
+			}()
 			return data
 		}
 

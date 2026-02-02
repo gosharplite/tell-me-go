@@ -653,7 +653,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
-				if turn.State.Phase == PhasePersisting && turn.CostTracker != nil {
+				if turn.CostTracker != nil {
 					cost = turn.CostTracker.GetTotalCost(ctx)
 				}
 
@@ -700,31 +700,26 @@ func WithLoopDetector() TurnMiddleware {
 			res := next.Process(ctx, turn)
 
 			if turn.State.Phase == PhaseInference && res.Error == nil && turn.State.Response != nil {
-				// 1. Multi-step text loop detection
-				currentText := ""
-				for _, p := range turn.State.Response.Parts {
-					currentText += p.Text
-				}
-				if currentText != "" {
-					h := sha256.Sum256([]byte(currentText))
-					currentHash := hex.EncodeToString(h[:])
+				// 1. Multi-step loop detection (Text & Tool Calls)
+				rawJSON, _ := json.Marshal(turn.State.Response)
+				h := sha256.Sum256(rawJSON)
+				currentHash := hex.EncodeToString(h[:])
 
-					for _, prevHash := range turn.State.RecentResponseHashes {
-						if currentHash == prevHash {
-							return ProcessResult{
-								Stop:  true,
-								Error: fmt.Errorf("infinite loop detected: model is repeating a previous response"),
-							}
+				for _, prevHash := range turn.State.RecentResponseHashes {
+					if currentHash == prevHash {
+						return ProcessResult{
+							Stop:  true,
+							Error: fmt.Errorf("infinite loop detected: model is repeating a previous response (content or tool calls)"),
 						}
 					}
-					// Keep last N hashes (using the same repetition limit)
-					turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
-					if len(turn.State.RecentResponseHashes) > config.DefaultMaxLoopRepetitions {
-						turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
-					}
+				}
+				// Keep last N hashes (using the same repetition limit)
+				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
+				if len(turn.State.RecentResponseHashes) > config.DefaultMaxLoopRepetitions {
+					turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
 				}
 
-				// 2. Tool call loop detection
+				// 2. Tool call loop detection (Immediate threshold)
 				for _, p := range turn.State.Response.Parts {
 					if p.FunctionCall != nil {
 						args, _ := json.Marshal(p.FunctionCall.Args)
