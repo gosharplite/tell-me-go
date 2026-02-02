@@ -22,14 +22,6 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools 
 	return m.generateFn(ctx, input, tools, resolver)
 }
 
-type mockRenderer struct {
-	systemMessages []string
-}
-
-func (m *mockRenderer) LogSystemMessage(msg string, level string) {
-	m.systemMessages = append(m.systemMessages, msg)
-}
-
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")

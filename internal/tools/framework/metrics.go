@@ -516,10 +516,6 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	return m.renderReport(pricing, breakdown), nil
 }
 
-func (m *metricsManager) parseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
-	return ParseUsage(path, p)
-}
-
 // ParseUsage extracts usage statistics from a log file.
 func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 	f, err := os.Open(path)
@@ -562,10 +558,6 @@ func ParseUsage(path string, p llm.ModelPricing) (UsageStats, error) {
 		Accumulate(&stats, mtLegacy, p)
 	}
 	return stats, scanner.Err()
-}
-
-func (m *metricsManager) accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
-	Accumulate(stats, mt, p)
 }
 
 // Accumulate adds metrics to usage statistics.
