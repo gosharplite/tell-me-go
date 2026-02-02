@@ -94,8 +94,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read usage log: %v", err)
 		}
-		if !strings.Contains(string(data), "T: 15") {
-			t.Errorf("expected usage log to contain 'T: 15', got %q", string(data))
+		if !strings.Contains(string(data), "\"total_tokens\":15") {
+			t.Errorf("expected usage log to contain '\"total_tokens\":15', got %q", string(data))
 		}
 	})
 }
@@ -206,4 +206,64 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 			t.Errorf("expected stderr to contain 'Thinking...', got %q", stderr.String())
 		}
 	})
+}
+
+func TestLogTurnStatus_Format(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+	r.now = func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) }
+
+	r.LogTurnStatus(events.TurnStatus{
+		Timestamp:       r.now(),
+		CurrentTurns:    1,
+		MaxHistoryTurns: 10,
+		IsPostCall:      true,
+		Metrics: &llm.Metrics{
+			PromptTokens:   9185,
+			CachedTokens:   0,
+			ResponseTokens: 516,
+			ThinkingTokens: 435,
+			TotalTokens:    9185 + 516 + 435,
+			Duration:       8.12,
+		},
+		StartTime: r.now().Add(-8330 * time.Millisecond), // 8.33s total
+	})
+
+	output := stderr.String()
+	// Check for the specific format: [21:04:52] M: 9185 H: 0 C: 516 Th: 435 [8.12s / 8.33s]
+	// We'll check parts to ignore colors.
+	parts := []string{
+		"[21:04:52]",
+		"M: 9185",
+		"H: 0",
+		"C: 516",
+		"Th: 435",
+		"8.12s",
+		"/ 8.33s",
+	}
+
+	for _, p := range parts {
+		if !strings.Contains(output, p) {
+			t.Errorf("expected output to contain %q, got %q", p, output)
+		}
+	}
+
+	// Check Ready line with aggregates
+	r.LogTurnStatus(events.TurnStatus{
+		Timestamp:   r.now(),
+		IsPostCall:  true,
+		SessionCost: 0.1234,
+		TotalM:      1000,
+		TotalH:      2000,
+		TotalO:      3000,
+		Metrics: &llm.Metrics{
+			PromptTokens: 10, // Just to satisfy printSystemLine
+		},
+	})
+	output = stderr.String()
+	if !strings.Contains(output, "($0.1234 M: 1000 H: 2000 O: 3000)") {
+		t.Errorf("expected output to contain aggregate metrics, got %q", output)
+	}
 }

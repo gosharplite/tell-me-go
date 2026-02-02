@@ -10,6 +10,12 @@ func DefaultPricing() llm.PricingData {
 	return llm.PricingData{
 		UpdatedAt: "Hardcoded Fallback",
 		Models: map[string]llm.ModelPricing{
+			"gemini-3-flash-preview": {
+				Hit:             0.05,
+				Miss:            0.50,
+				Comp:            3.00,
+				TieredThreshold: 0,
+			},
 			"flash": {
 				Hit:             0.025,
 				Miss:            0.10,

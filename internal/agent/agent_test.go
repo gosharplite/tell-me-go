@@ -451,3 +451,142 @@ func TestAgent_FunctionalOptions(t *testing.T) {
 		t.Errorf("WithMainConfigPath failed: %s", a.config.MainConfigPath)
 	}
 }
+
+func TestAgent_SystemInstructions(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
+	a := New(nil, hManager, reg, sm, false)
+
+	customInstr := "You are a specialized Go expert."
+	a.SetSystemInstructions(customInstr)
+
+	if a.config.SystemInstructions != customInstr {
+		t.Errorf("expected config instructions %q, got %q", customInstr, a.config.SystemInstructions)
+	}
+
+	if a.ctxManager.factory.SystemInstructions != customInstr {
+		t.Errorf("expected factory instructions %q, got %q", customInstr, a.ctxManager.factory.SystemInstructions)
+	}
+
+	// Prepare history to trigger pipeline execution
+	ctx := context.Background()
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
+
+	prepared, _, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	// First message should be the system instructions
+	if len(prepared) == 0 {
+		t.Fatal("expected prepared history, got empty")
+	}
+
+	found := false
+	for _, c := range prepared {
+		if c.Role == "user" && len(c.Parts) > 0 && strings.Contains(c.Parts[0].Text, customInstr) {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("custom system instructions not found in prepared history")
+	}
+}
+
+func TestAgent_WithSystemInstructions(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+	instr := "Initial instructions"
+	a := New(nil, nil, reg, sm, false, WithSystemInstructions(instr))
+
+	if a.config.SystemInstructions != instr {
+		t.Errorf("expected config instructions %q, got %q", instr, a.config.SystemInstructions)
+	}
+
+	if a.ctxManager.factory.SystemInstructions != instr {
+		t.Errorf("expected factory instructions %q, got %q", instr, a.ctxManager.factory.SystemInstructions)
+	}
+}
+
+func TestAgent_PinningIntegration(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
+
+	// Create agent with limit of 2 turns (4 messages)
+	a := New(nil, hManager, reg, sm, false, WithLimits(10, 1000, 2))
+	ctx := context.Background()
+
+	// 1. Add 5 turns to history (10 messages)
+	for i := 1; i <= 5; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d User", i)}},
+		})
+		_ = hManager.AddContent(ctx, &llm.Content{
+			Role:  "model",
+			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d Model", i)}},
+		})
+	}
+
+	// 2. Pin Turn 1 (messages 0 and 1)
+	contents := hManager.GetContents()
+	contents[0].Pinned = true // Pinning User message of Turn 1
+	// contents[1] (Model) doesn't strictly need to be pinned as the turn-based policy handles pairs
+
+	// 3. Trigger context preparation
+	prepared, meta, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	// 4. Verify results
+	// Expected turns:
+	// Turn 1 (Pinned)
+	// Turn 4 (Window)
+	// Turn 5 (Window)
+	// System Instructions (injected by transformer)
+
+	// Turn 2 and 3 should be pruned.
+
+	// meta.PrunedTurns should be 2 (Turn 2 and Turn 3)
+	if meta.PrunedTurns != 2 {
+		t.Errorf("expected 2 pruned turns, got %d", meta.PrunedTurns)
+	}
+
+	// Check if Turn 1 is present
+	foundT1 := false
+	for _, c := range prepared {
+		if strings.Contains(c.Parts[0].Text, "Turn 1 User") {
+			foundT1 = true
+			break
+		}
+	}
+	if !foundT1 {
+		t.Error("Turn 1 (Pinned) not found in prepared history")
+	}
+
+	// Check if Turn 2 is NOT present
+	for _, c := range prepared {
+		if strings.Contains(c.Parts[0].Text, "Turn 2 User") {
+			t.Error("Turn 2 (Unpinned) found in prepared history, should have been pruned")
+		}
+	}
+
+	// Check if Turn 5 is present (Last turn)
+	foundT5 := false
+	for _, c := range prepared {
+		if strings.Contains(c.Parts[0].Text, "Turn 5 User") {
+			foundT5 = true
+			break
+		}
+	}
+	if !foundT5 {
+		t.Error("Turn 5 (Window) not found in prepared history")
+	}
+}

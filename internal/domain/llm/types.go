@@ -16,6 +16,7 @@ type Content struct {
 	Role       string  `json:"role"`
 	Parts      []*Part `json:"parts,omitempty"`
 	TokenCount int     `json:"token_count,omitempty"`
+	Pinned     bool    `json:"pinned,omitempty"`
 }
 
 type Part struct {
@@ -45,15 +46,18 @@ type FunctionResponse struct {
 
 // Metrics represents the token usage and timing for a single API turn.
 type Metrics struct {
-	Timestamp      string
-	CachedTokens   int32
-	PromptTokens   int32
-	ResponseTokens int32
-	TotalTokens    int32
-	ThinkingTokens int32
-	SearchQueries  int
-	Duration       float64
-	ToolDuration   float64
+	Timestamp      string  `json:"timestamp"`
+	Model          string  `json:"model,omitempty"`
+	CachedTokens   int32   `json:"cached_tokens"`
+	PromptTokens   int32   `json:"prompt_tokens"`
+	ResponseTokens int32   `json:"response_tokens"`
+	TotalTokens    int32   `json:"total_tokens"`
+	ThinkingTokens int32   `json:"thinking_tokens,omitempty"`
+	SearchQueries  int     `json:"search_queries,omitempty"`
+	Duration       float64 `json:"duration"`
+	ToolDuration   float64 `json:"tool_duration,omitempty"`
+	Cost           float64 `json:"cost,omitempty"` // USD cost for this turn or summary
+	IsSummary      bool    `json:"is_summary,omitempty"`
 }
 
 // ModelPricing represents the cost structure for a specific model tier.

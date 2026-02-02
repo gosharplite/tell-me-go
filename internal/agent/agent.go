@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -31,7 +32,9 @@ type Chatter interface {
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
 	SetPersistentConfigPath(path string)
 	SetMainConfigPath(path string)
+	SetSystemInstructions(instr string)
 	Subscribe(sub func(events.Event))
+	GetCostTracker() *framework.SessionCostTracker
 }
 
 // RuntimeConfig consolidates all agent configuration parameters.
@@ -45,6 +48,7 @@ type RuntimeConfig struct {
 	Mode                 string
 	PricingOverrides     map[string]llm.ModelPricing
 	HardBudgetLimit      float64
+	SystemInstructions   string
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -128,19 +132,8 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
-	factory := &PipelineFactory{
-		Registry:   reg,
-		History:    hManager,
-		Summarizer: NewSummarizer(gw, bus),
-		Estimator:  strategy,
-		Events:     bus,
-	}
-
-	ctxManager := NewContextManager(strategy, hManager, gw, bus, factory)
-
 	a := &Agent{
 		gateway:       gw,
-		ctxManager:    ctxManager,
 		registry:      reg,
 		sm:            sm,
 		configWatcher: NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
@@ -164,6 +157,18 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 	for _, opt := range options {
 		opt(a)
 	}
+
+	factory := &PipelineFactory{
+		Registry:           reg,
+		History:            hManager,
+		Summarizer:         NewSummarizer(gw, bus),
+		Estimator:          strategy,
+		Events:             bus,
+		SystemInstructions: a.config.SystemInstructions,
+	}
+
+	ctxManager := NewContextManager(strategy, hManager, gw, bus, factory)
+	a.ctxManager = ctxManager
 
 	// Initialize engine
 	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus, WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides))
@@ -307,4 +312,27 @@ func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 	a.applyConfig()
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
+}
+
+// GetCostTracker returns the session cost tracker used by the agent's engine.
+func (a *Agent) GetCostTracker() *framework.SessionCostTracker {
+	return a.engine.GetCostTracker()
+}
+
+// SetSystemInstructions updates the system instructions used by the context pipeline.
+func (a *Agent) SetSystemInstructions(instr string) {
+	a.mu.Lock()
+	a.config.SystemInstructions = instr
+	if a.ctxManager != nil && a.ctxManager.factory != nil {
+		a.ctxManager.factory.SystemInstructions = instr
+	}
+	a.mu.Unlock()
+	a.applyConfig()
+}
+
+// WithSystemInstructions sets the initial system instructions.
+func WithSystemInstructions(instr string) AgentOption {
+	return func(a *Agent) {
+		a.config.SystemInstructions = instr
+	}
 }

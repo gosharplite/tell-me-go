@@ -185,7 +185,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error saving history: %w", err)
 	}
 
-	if err := framework.RecordSessionCost(ctx, a.sm, paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := framework.RecordSessionCost(ctx, a.sm, chatAgent.GetCostTracker(), paths.logPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(a.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 

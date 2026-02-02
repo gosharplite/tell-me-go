@@ -193,3 +193,59 @@ func TestJSONLStore_Save_Cancel(t *testing.T) {
 		t.Error("expected error for cancelled context")
 	}
 }
+
+func TestJSONLStore_PinnedPersistence(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "pinned_history.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx := context.Background()
+
+	content := &llm.Content{
+		Role:   "user",
+		Parts:  []*llm.Part{{Text: "Critical decision"}},
+		Pinned: true,
+	}
+
+	// Save pinned content
+	if err := store.Save(ctx, []*llm.Content{content}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Load it back
+	loaded, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(loaded) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(loaded))
+	}
+
+	if !loaded[0].Pinned {
+		t.Error("expected Pinned to be true after loading")
+	}
+
+	// Test Append with Pinned: true
+	appendContent := &llm.Content{
+		Role:   "model",
+		Parts:  []*llm.Part{{Text: "Acknowledged"}},
+		Pinned: true,
+	}
+	if err := store.Append(ctx, appendContent); err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+
+	loaded, err = store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(loaded))
+	}
+
+	if !loaded[1].Pinned {
+		t.Error("expected second entry Pinned to be true after loading")
+	}
+}

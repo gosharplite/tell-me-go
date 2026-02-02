@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -64,8 +65,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		m := &mockHistoryManager{
 			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
 				managerCalled = true
-				if start != 0 || end != 4 || newContents != nil {
-					t.Errorf("unexpected ReplaceRange call: %d, %d, %v", start, end, newContents)
+				if start != 0 || end != 6 || len(newContents) != 2 {
+					t.Errorf("unexpected ReplaceRange call: start=%d, end=%d, len=%d", start, end, len(newContents))
 				}
 				return nil
 			},
@@ -162,6 +163,9 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		}
 		// 10 messages to allow summarization trigger (>= 10)
 		h := make([]*llm.Content, 10)
+		for i := range h {
+			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+		}
 		req := &ContextRequest{History: h}
 		err := tg.Transform(ctx, req)
 		if !errors.Is(err, llm.ErrContextLimitExceeded) {
@@ -180,6 +184,9 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 			},
 		}
 		h := make([]*llm.Content, 10)
+		for i := range h {
+			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+		}
 		req := &ContextRequest{History: h}
 		err := tg.Transform(ctx, req)
 		// Should still succeed if under limit, but metadata won't show summarization
@@ -221,4 +228,141 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
 	})
+}
+
+func TestSlidingWindowPolicy_Prune_Pinned(t *testing.T) {
+	t.Parallel()
+	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn (2 messages)
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
+	}
+
+	// Without pinning, it would keep only T3.
+	// With T1 pinned, it should keep T1 AND T3.
+	gotHistory, pruned := p.Prune(context.Background(), history)
+
+	if pruned != 1 {
+		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
+	}
+
+	if len(gotHistory) != 4 {
+		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
+	}
+
+	if gotHistory[0].Parts[0].Text != "T1 User" {
+		t.Errorf("expected T1 User as first message, got %q", gotHistory[0].Parts[0].Text)
+	}
+	if gotHistory[2].Parts[0].Text != "T3 User" {
+		t.Errorf("expected T3 User as third message, got %q", gotHistory[2].Parts[0].Text)
+	}
+}
+
+func TestSlidingWindowPolicy_Prune_Pinned_ModelPart(t *testing.T) {
+	t.Parallel()
+	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}, Pinned: true}, // Pin the model part
+		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
+	}
+
+	gotHistory, pruned := p.Prune(context.Background(), history)
+
+	if pruned != 1 {
+		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
+	}
+
+	if len(gotHistory) != 4 {
+		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
+	}
+}
+
+func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
+	ctx := context.Background()
+
+	// Mock estimator that triggers summarization
+	// We want > 900 tokens if MaxTokens is 1000
+	estimator := &mockEstimator{tokens: 950}
+
+	summarizerCalled := false
+	summarizer := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+			summarizerCalled = true
+			// Verify that none of the messages passed to summarizer are pinned
+			for _, msg := range subset {
+				if msg.Pinned {
+					t.Errorf("Pinned message passed to summarizer: %v", msg)
+				}
+			}
+			return "summary of unpinned turns", nil
+		},
+	}
+
+	managerCalled := false
+	manager := &mockHistoryManager{
+		ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
+			managerCalled = true
+			// Turn 0 and 1 are pinned (indices 0,1,2,3)
+			// So it should NOT replace them.
+			if start < 4 {
+				t.Errorf("Replacing pinned turns: start=%d", start)
+			}
+			return nil
+		},
+	}
+
+	tg := &TokenGatekeeper{
+		MaxTokens:  1000,
+		Estimator:  estimator,
+		Summarizer: summarizer,
+		Manager:    manager,
+	}
+
+	// Create 10 turns (20 messages)
+	h := make([]*llm.Content, 20)
+	for i := 0; i < 20; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "model"
+		}
+		h[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: fmt.Sprintf("Msg %d", i)}}}
+	}
+
+	// Pin Turn 0 and Turn 1
+	h[0].Pinned = true
+	h[1].Pinned = true
+	h[2].Pinned = true
+	h[3].Pinned = true
+
+	req := &ContextRequest{History: h}
+
+	err := tg.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	if !summarizerCalled {
+		t.Error("Summarizer was not called")
+	}
+	if !managerCalled {
+		t.Error("Manager.ReplaceRange was not called")
+	}
+
+	// Verify pinned turns still exist at the beginning of req.History
+	if !req.History[0].Pinned || req.History[0].Parts[0].Text != "Msg 0" {
+		t.Error("Turn 0 (pinned) was lost or corrupted")
+	}
+	if !req.History[2].Pinned || req.History[2].Parts[0].Text != "Msg 2" {
+		t.Error("Turn 1 (pinned) was lost or corrupted")
+	}
 }

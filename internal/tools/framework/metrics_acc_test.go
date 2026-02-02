@@ -28,7 +28,7 @@ func TestSessionCostTracker(t *testing.T) {
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
 
 	// 1. Initial cost should be 0
 	cost := tracker.GetTotalCost(context.Background())
@@ -82,11 +82,11 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	}
-	// Note: ParseUsage expects JSON lines or legacy text. We'll use JSON.
+	// Note: ParseUsage expects JSON lines.
 	data, _ := json.Marshal(initialMetrics)
 	os.WriteFile(logFile, append(data, '\n'), 0644)
 
-	tracker := NewSessionCostTracker(nil, logFile, model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
 
 	// Lazy init should pick up existing log
 	cost := tracker.GetTotalCost(context.Background())
@@ -103,5 +103,126 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	want = (100.0*2.0 + 100.0*3.0) / 1e6
 	if cost != want {
 		t.Errorf("Expected cumulative cost %f, got %f", want, cost)
+	}
+}
+
+func TestSessionCostTracker_MixedModels(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "metrics_mixed_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logFile := filepath.Join(tmpDir, "tokens.log")
+	pricing := llm.PricingData{
+		Models: map[string]llm.ModelPricing{
+			"model-a": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
+			"model-b": {Hit: 10.0, Miss: 20.0, Comp: 30.0},
+		},
+	}
+
+	tracker := NewSessionCostTracker(nil, logFile, "model-a", pricing.Models["model-a"], pricing)
+
+	// turn 1: model-a
+	tracker.Accumulate(llm.Metrics{
+		Model:          "model-a",
+		PromptTokens:   100,
+		ResponseTokens: 50,
+	})
+
+	costA := (100.0*2.0 + 50.0*3.0) / 1e6
+
+	// turn 2: model-b
+	tracker.Accumulate(llm.Metrics{
+		Model:          "model-b",
+		PromptTokens:   100,
+		ResponseTokens: 50,
+	})
+
+	costB := (100.0*20.0 + 50.0*30.0) / 1e6
+
+	cost := tracker.GetTotalCost(context.Background())
+	want := costA + costB
+	if cost != want {
+		t.Errorf("Expected mixed model cost %f, got %f", want, cost)
+	}
+}
+
+func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "parse_usage_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logFile := filepath.Join(tmpDir, "tokens.log")
+	pricing := llm.PricingData{
+		Models: map[string]llm.ModelPricing{
+			"model-a": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
+			"model-b": {Hit: 10.0, Miss: 20.0, Comp: 30.0},
+		},
+	}
+
+	// 1. JSON with Model A
+	m1 := llm.Metrics{Model: "model-a", PromptTokens: 100, ResponseTokens: 50}
+	d1, _ := json.Marshal(m1)
+
+	// 2. JSON with Model B
+	m2 := llm.Metrics{Model: "model-b", PromptTokens: 100, ResponseTokens: 50}
+	d2, _ := json.Marshal(m2)
+
+	// 3. JSON with explicit Cost (summary record)
+	m3 := llm.Metrics{Model: "model-a", Cost: 1.2345}
+	d3, _ := json.Marshal(m3)
+
+	content := string(d1) + "\n" + string(d2) + "\n" + string(d3) + "\n"
+	os.WriteFile(logFile, []byte(content), 0644)
+
+	stats, totalCost, _, err := ParseUsage(logFile, pricing, "model-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	costA := (100.0*2.0 + 50.0*3.0) / 1e6
+	costB := (100.0*20.0 + 50.0*30.0) / 1e6
+	wantCost := costA + costB + 1.2345
+
+	if totalCost != wantCost {
+		t.Errorf("Expected total cost %f, got %f", wantCost, totalCost)
+	}
+
+	if stats.PromptTokens != 200 {
+		t.Errorf("Expected 200 prompt tokens, got %d", stats.PromptTokens)
+	}
+}
+
+func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
+	model := llm.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
+	pricing := llm.PricingData{
+		Models: map[string]llm.ModelPricing{
+			"test-model": model,
+		},
+	}
+
+	tracker := NewSessionCostTracker(nil, "", "test-model", model, pricing)
+
+	tracker.Accumulate(llm.Metrics{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+		ThinkingTokens: 25,
+	})
+
+	stats, cost := tracker.GetStats(context.Background())
+	// Thinking tokens should be added to OutputCost calculation (Comp SKU)
+	// Input: 100 * 2 / 1e6 = 0.0002
+	// Output: (50 + 25) * 3 / 1e6 = 0.000225
+	// Total: 0.000425
+	wantCost := (100.0*2.0 + (50.0+25.0)*3.0) / 1e6
+	if cost < wantCost-1e-12 || cost > wantCost+1e-12 {
+		t.Errorf("Expected cost with thinking tokens %f, got %f", wantCost, cost)
+	}
+
+	if stats.ThinkingTokens != 25 {
+		t.Errorf("Expected 25 thinking tokens in stats, got %d", stats.ThinkingTokens)
 	}
 }

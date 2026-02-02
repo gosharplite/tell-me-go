@@ -24,8 +24,9 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	newHistory, pruned := t.Policy.Prune(ctx, req.History)
 
 	if pruned > 0 {
-		removeCount := initialLen - len(newHistory)
-		if err := t.Manager.ReplaceRange(ctx, 0, removeCount, nil); err != nil {
+		// We replace the entire history range to ensure the manager stays in sync
+		// with non-contiguous pruning (pinned turns kept in the middle/start).
+		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
 			return err
 		}
 	}
@@ -35,9 +36,9 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	return nil
 }
 
-func (t *HistoryPruner) Priority() int { return 10 }
+func (t *HistoryPruner) Priority() int { return 1 }
 
-// SlidingWindowPolicy keeps the last N turns.
+// SlidingWindowPolicy keeps the last N turns, prioritizing pinned content.
 type SlidingWindowPolicy struct {
 	MaxTurns int
 }
@@ -46,24 +47,58 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content)
 	if p.MaxTurns <= 0 {
 		return history, 0
 	}
-	maxMessages := p.MaxTurns * 2
-	if len(history) > maxMessages {
-		targetMessages := p.MaxTurns * 2
-		if targetMessages < 2 {
-			targetMessages = 2
-		}
 
-		removeCount := len(history) - targetMessages
-		// Ensure we remove an even number of messages to keep turns intact
-		if removeCount%2 != 0 {
-			removeCount++
-		}
+	if len(history) <= p.MaxTurns*2 {
+		return history, 0
+	}
 
-		if removeCount > 0 && removeCount < len(history) {
-			return history[removeCount:], removeCount / 2
+	// Group messages into turns (pairs)
+	var turns [][]*llm.Content
+	for i := 0; i < len(history); i += 2 {
+		end := i + 2
+		if end > len(history) {
+			end = len(history)
+		}
+		turns = append(turns, history[i:end])
+	}
+
+	totalTurns := len(turns)
+	keep := make([]bool, totalTurns)
+
+	// Rule 1: Keep last N turns (Sliding Window)
+	startWindow := totalTurns - p.MaxTurns
+	if startWindow < 0 {
+		startWindow = 0
+	}
+	for i := startWindow; i < totalTurns; i++ {
+		keep[i] = true
+	}
+
+	// Rule 2: Keep any turn that has a Pinned message
+	for i := 0; i < totalTurns; i++ {
+		if keep[i] {
+			continue
+		}
+		for _, msg := range turns[i] {
+			if msg.Pinned {
+				keep[i] = true
+				break
+			}
 		}
 	}
-	return history, 0
+
+	// Construct new history and count pruned turns
+	var newHistory []*llm.Content
+	prunedCount := 0
+	for i, k := range keep {
+		if k {
+			newHistory = append(newHistory, turns[i]...)
+		} else {
+			prunedCount++
+		}
+	}
+
+	return newHistory, prunedCount
 }
 
 // ImportanceRankPolicy (placeholder for future implementation)
@@ -130,7 +165,7 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	return nil
 }
 
-func (t *TokenGatekeeper) Priority() int { return 20 }
+func (t *TokenGatekeeper) Priority() int { return 80 }
 
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
 	contents := req.History
@@ -138,12 +173,65 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		return fmt.Errorf("not enough history to auto-summarize")
 	}
 
-	msgsToSummarize := (len(contents) / 4) * 2
-	if msgsToSummarize < 2 {
-		msgsToSummarize = 2
+	// Group into turns (pairs of messages)
+	var turns [][]*llm.Content
+	for i := 0; i < len(contents); i += 2 {
+		end := i + 2
+		if end > len(contents) {
+			end = len(contents)
+		}
+		turns = append(turns, contents[i:end])
 	}
 
-	summary, err := t.Summarizer.Summarize(ctx, contents[:msgsToSummarize], "")
+	// Find the first contiguous block of at least 2 turns that contains no pinned messages.
+	// We want to summarize about 50% of the history, but at least 2 turns.
+	targetTurns := len(turns) / 2
+	if targetTurns < 2 {
+		targetTurns = 2
+	}
+
+	startTurn := -1
+	numTurns := 0
+
+	for i := 0; i < len(turns); i++ {
+		isPinned := false
+		for _, msg := range turns[i] {
+			if msg.Pinned {
+				isPinned = true
+				break
+			}
+		}
+
+		if !isPinned {
+			if startTurn == -1 {
+				startTurn = i
+			}
+			numTurns++
+			if numTurns >= targetTurns {
+				break
+			}
+		} else {
+			// If we found a pinned turn and we haven't reached targetTurns, reset and look further.
+			// However, if we already have at least 2 turns, we could potentially stop here.
+			if numTurns >= 2 {
+				break
+			}
+			startTurn = -1
+			numTurns = 0
+		}
+	}
+
+	if startTurn == -1 || numTurns < 2 {
+		return fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
+	}
+
+	startIdx := startTurn * 2
+	endIdx := (startTurn + numTurns) * 2
+	if endIdx > len(contents) {
+		endIdx = len(contents)
+	}
+
+	summary, err := t.Summarizer.Summarize(ctx, contents[startIdx:endIdx], "")
 	if err != nil {
 		return err
 	}
@@ -159,12 +247,16 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	if err := t.Manager.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
+	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
 		return err
 	}
 
 	// Update the request history after replacement in the manager
-	req.History = append(newMsgs, contents[msgsToSummarize:]...)
+	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
+	updatedHistory = append(updatedHistory, contents[:startIdx]...)
+	updatedHistory = append(updatedHistory, newMsgs...)
+	updatedHistory = append(updatedHistory, contents[endIdx:]...)
+	req.History = updatedHistory
 	return nil
 }
 
@@ -261,7 +353,7 @@ func (t *SystemInstructionInjector) Transform(ctx context.Context, req *ContextR
 	return nil
 }
 
-func (t *SystemInstructionInjector) Priority() int { return 5 }
+func (t *SystemInstructionInjector) Priority() int { return 110 }
 
 // ToolDeclarationGenerator injects tool schemas from the registry.
 type ToolDeclarationGenerator struct {
@@ -275,4 +367,4 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return 30 }
+func (t *ToolDeclarationGenerator) Priority() int { return 90 }

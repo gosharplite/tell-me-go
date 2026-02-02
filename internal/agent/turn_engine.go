@@ -131,6 +131,7 @@ type Turn struct {
 	MaxToolTurns int
 	Clock        Clock
 	CostTracker  *framework.SessionCostTracker
+	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
 	StreamHandler func(context.Context, <-chan *llm.Content)
@@ -226,7 +227,7 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 				pricing.Models[k] = v
 			}
 			p := framework.GetModelPricing(model, pricing)
-			e.costTracker = framework.NewSessionCostTracker(sm, logFile, p, pricing)
+			e.costTracker = framework.NewSessionCostTracker(sm, logFile, model, p, pricing)
 			go e.costTracker.Warmup()
 		}
 	}
@@ -370,6 +371,7 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
 	e.mu.RLock()
 	tracker := e.costTracker
+	model := e.model
 	e.mu.RUnlock()
 
 	turn := &Turn{
@@ -383,6 +385,7 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 		Events:      e.events,
 		Clock:       e.clock,
 		CostTracker: tracker,
+		Model:       model,
 	}
 	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
 	return turn
@@ -518,6 +521,7 @@ func (p *InferenceStep) updateState(turn *Turn, content *llm.Content, metrics *l
 	turn.State.Response = content
 	turn.State.Metrics = metrics
 	if metrics != nil {
+		metrics.Model = turn.Model
 		turn.State.Tokens = int(metrics.PromptTokens)
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)
@@ -656,8 +660,13 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
+				var totalM, totalH, totalO int64
 				if turn.CostTracker != nil {
 					cost = turn.CostTracker.GetTotalCost(ctx)
+					stats, _ := turn.CostTracker.GetStats(ctx)
+					totalM = stats.PromptTokens - stats.CachedTokens
+					totalH = stats.CachedTokens
+					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
 				bus.Publish(events.TurnStatusEvent{
@@ -672,6 +681,9 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
+						TotalM:           totalM,
+						TotalH:           totalH,
+						TotalO:           totalO,
 					},
 				})
 			}
@@ -741,4 +753,11 @@ func WithLoopDetector() TurnMiddleware {
 			return res
 		})
 	}
+}
+
+// GetCostTracker returns the session cost tracker used by the engine.
+func (e *TurnEngine) GetCostTracker() *framework.SessionCostTracker {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.costTracker
 }

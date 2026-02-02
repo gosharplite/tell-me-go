@@ -21,13 +21,19 @@ const (
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
-	Registry   *registry.Registry
-	History    *history.Manager
-	Summarizer HistorySummarizer
-	Estimator  TokenEstimator
-	Events     events.EventBus
-	Profile    OptimizationProfile
+	Registry           *registry.Registry
+	History            *history.Manager
+	Summarizer         HistorySummarizer
+	Estimator          TokenEstimator
+	Events             events.EventBus
+	Profile            OptimizationProfile
+	SystemInstructions string
 }
+
+const (
+	DefaultSystemInstructions = "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review. Be precise and concise. Note: Only the Coder role has WRITE access to the filesystem."
+	DefaultChattyInstructions = "You are a helpful AI assistant. Be chatty and friendly."
+)
 
 // BuildStandardPipeline creates the default context transformation pipeline.
 func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPipeline {
@@ -43,16 +49,18 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		},
 	}
 
-	// Dynamic logic based on profile
-	if profile == ProfilePrecise {
-		transformers = append(transformers, &SystemInstructionInjector{
-			Instructions: "You are an autonomous Software Development Agent. Follow the SOP: 1. Analyze 2. Plan 3. TDD 4. Standards 5. Review. Be precise and concise.",
-		})
-	} else {
-		transformers = append(transformers, &SystemInstructionInjector{
-			Instructions: "You are a helpful AI assistant. Be chatty and friendly.",
-		})
+	instr := f.SystemInstructions
+	if instr == "" {
+		if profile == ProfilePrecise {
+			instr = DefaultSystemInstructions
+		} else {
+			instr = DefaultChattyInstructions
+		}
 	}
+
+	transformers = append(transformers, &SystemInstructionInjector{
+		Instructions: instr,
+	})
 
 	transformers = append(transformers,
 		&TokenGatekeeper{

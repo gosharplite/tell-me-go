@@ -14,12 +14,9 @@ func TestCostCalculator_Calculate(t *testing.T) {
 		SearchQuery: 0.01,
 	}
 	modelPricing := llm.ModelPricing{
-		Hit:             0.1,
-		Miss:            1.0,
-		Comp:            2.0,
-		TieredThreshold: 1000,
-		TieredMiss:      0.5,
-		TieredComp:      1.0,
+		Hit:  0.1,
+		Miss: 1.0,
+		Comp: 2.0,
 	}
 
 	calc := &CostCalculator{
@@ -35,28 +32,12 @@ func TestCostCalculator_Calculate(t *testing.T) {
 		{
 			name: "Standard usage",
 			stats: UsageStats{
-				Hits:          1000000, // $0.1
-				Misses:        1000000, // $1.0
-				Comp:          1000000, // $2.0
-				SearchQueries: 1,       // $0.01
+				CachedTokens:   1000000, // $0.1
+				PromptTokens:   2000000, // 1000000 miss * $1.0 = $1.0
+				ResponseTokens: 1000000, // $2.0
+				SearchQueries:  1,       // $0.01
 			},
 			wantCost: 3.11,
-		},
-		{
-			name: "Tiered usage",
-			stats: UsageStats{
-				TieredMisses: 1000000, // $0.5
-				TieredComp:   1000000, // $1.0
-			},
-			wantCost: 1.5,
-		},
-		{
-			name: "Thinking usage",
-			stats: UsageStats{
-				Thinking:       1000000, // $2.0
-				TieredThinking: 1000000, // $1.0
-			},
-			wantCost: 3.0,
 		},
 	}
 
@@ -71,59 +52,30 @@ func TestCostCalculator_Calculate(t *testing.T) {
 }
 
 func TestAccumulate(t *testing.T) {
-	p := llm.ModelPricing{
-		TieredThreshold: 1000,
-	}
+	p := llm.ModelPricing{}
 
 	tests := []struct {
 		name         string
 		mt           llm.Metrics
-		wantTiered   bool
-		wantMisses   int64
-		wantHits     int64
-		wantComp     int64
+		wantPrompt   int64
+		wantResponse int64
+		wantCached   int64
+		wantSearch   int64
 		wantThinking int64
 	}{
 		{
-			name: "Below threshold",
-			mt: llm.Metrics{
-				CachedTokens:   100,
-				PromptTokens:   999,
-				ResponseTokens: 200,
-				ThinkingTokens: 50,
-			},
-			wantTiered:   false,
-			wantHits:     100,
-			wantMisses:   899,
-			wantComp:     200,
-			wantThinking: 50,
-		},
-		{
-			name: "Exactly at threshold",
+			name: "Basic",
 			mt: llm.Metrics{
 				CachedTokens:   100,
 				PromptTokens:   1000,
 				ResponseTokens: 200,
+				SearchQueries:  1,
 				ThinkingTokens: 50,
 			},
-			wantTiered:   false,
-			wantHits:     100,
-			wantMisses:   900,
-			wantComp:     200,
-			wantThinking: 50,
-		},
-		{
-			name: "One above threshold",
-			mt: llm.Metrics{
-				CachedTokens:   100,
-				PromptTokens:   1001,
-				ResponseTokens: 200,
-				ThinkingTokens: 50,
-			},
-			wantTiered:   true,
-			wantHits:     100,
-			wantMisses:   901,
-			wantComp:     200,
+			wantPrompt:   1000,
+			wantResponse: 200,
+			wantCached:   100,
+			wantSearch:   1,
 			wantThinking: 50,
 		},
 	}
@@ -133,30 +85,20 @@ func TestAccumulate(t *testing.T) {
 			stats := &UsageStats{}
 			Accumulate(stats, tt.mt, p)
 
-			if stats.Hits != tt.wantHits {
-				t.Errorf("Hits = %v, want %v", stats.Hits, tt.wantHits)
+			if stats.PromptTokens != tt.wantPrompt {
+				t.Errorf("PromptTokens = %v, want %v", stats.PromptTokens, tt.wantPrompt)
 			}
-
-			if tt.wantTiered {
-				if stats.TieredMisses != tt.wantMisses {
-					t.Errorf("TieredMisses = %v, want %v", stats.TieredMisses, tt.wantMisses)
-				}
-				if stats.TieredComp != tt.wantComp {
-					t.Errorf("TieredComp = %v, want %v", stats.TieredComp, tt.wantComp)
-				}
-				if stats.TieredThinking != tt.wantThinking {
-					t.Errorf("TieredThinking = %v, want %v", stats.TieredThinking, tt.wantThinking)
-				}
-			} else {
-				if stats.Misses != tt.wantMisses {
-					t.Errorf("Misses = %v, want %v", stats.Misses, tt.wantMisses)
-				}
-				if stats.Comp != tt.wantComp {
-					t.Errorf("Comp = %v, want %v", stats.Comp, tt.wantComp)
-				}
-				if stats.Thinking != tt.wantThinking {
-					t.Errorf("Thinking = %v, want %v", stats.Thinking, tt.wantThinking)
-				}
+			if stats.ResponseTokens != tt.wantResponse {
+				t.Errorf("ResponseTokens = %v, want %v", stats.ResponseTokens, tt.wantResponse)
+			}
+			if stats.CachedTokens != tt.wantCached {
+				t.Errorf("CachedTokens = %v, want %v", stats.CachedTokens, tt.wantCached)
+			}
+			if stats.SearchQueries != tt.wantSearch {
+				t.Errorf("SearchQueries = %v, want %v", stats.SearchQueries, tt.wantSearch)
+			}
+			if stats.ThinkingTokens != tt.wantThinking {
+				t.Errorf("ThinkingTokens = %v, want %v", stats.ThinkingTokens, tt.wantThinking)
 			}
 		})
 	}
