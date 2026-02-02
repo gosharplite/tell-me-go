@@ -224,7 +224,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Error("expected warnings in metadata")
 		}
 		lastContent := req.History[len(req.History)-1]
-		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "2 turns remaining") {
+		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "Only 2 turns remain") {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
 	})
