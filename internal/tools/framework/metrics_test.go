@@ -70,8 +70,7 @@ func TestCostCalculator_Calculate(t *testing.T) {
 	}
 }
 
-func TestMetricsManager_Accumulate(t *testing.T) {
-	m := &metricsManager{}
+func TestAccumulate(t *testing.T) {
 	p := llm.ModelPricing{
 		TieredThreshold: 1000,
 	}
@@ -132,7 +131,7 @@ func TestMetricsManager_Accumulate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stats := &UsageStats{}
-			m.accumulate(stats, tt.mt, p)
+			Accumulate(stats, tt.mt, p)
 
 			if stats.Hits != tt.wantHits {
 				t.Errorf("Hits = %v, want %v", stats.Hits, tt.wantHits)
