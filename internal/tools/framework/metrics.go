@@ -791,6 +791,9 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 			return ctx.Err()
 		}
 		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
 			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
 			return nil
 		}
@@ -829,7 +832,7 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 				TotalCost: totalCost,
 			})
 			seen[sessionID] = true
-		} else {
+		} else if !os.IsNotExist(err) {
 			log.Printf("Recovery: failed to parse %s: %v\n", path, err)
 		}
 		return nil
