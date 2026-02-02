@@ -64,8 +64,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		m := &mockHistoryManager{
 			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
 				managerCalled = true
-				if start != 0 || end != 4 || newContents != nil {
-					t.Errorf("unexpected ReplaceRange call: %d, %d, %v", start, end, newContents)
+				if start != 0 || end != 6 || len(newContents) != 2 {
+					t.Errorf("unexpected ReplaceRange call: start=%d, end=%d, len=%d", start, end, len(newContents))
 				}
 				return nil
 			},
@@ -221,4 +221,61 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
 	})
+}
+
+func TestSlidingWindowPolicy_Prune_Pinned(t *testing.T) {
+	t.Parallel()
+	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn (2 messages)
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
+	}
+
+	// Without pinning, it would keep only T3.
+	// With T1 pinned, it should keep T1 AND T3.
+	gotHistory, pruned := p.Prune(context.Background(), history)
+
+	if pruned != 1 {
+		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
+	}
+
+	if len(gotHistory) != 4 {
+		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
+	}
+
+	if gotHistory[0].Parts[0].Text != "T1 User" {
+		t.Errorf("expected T1 User as first message, got %q", gotHistory[0].Parts[0].Text)
+	}
+	if gotHistory[2].Parts[0].Text != "T3 User" {
+		t.Errorf("expected T3 User as third message, got %q", gotHistory[2].Parts[0].Text)
+	}
+}
+
+func TestSlidingWindowPolicy_Prune_Pinned_ModelPart(t *testing.T) {
+	t.Parallel()
+	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}, Pinned: true}, // Pin the model part
+		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
+	}
+
+	gotHistory, pruned := p.Prune(context.Background(), history)
+
+	if pruned != 1 {
+		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
+	}
+
+	if len(gotHistory) != 4 {
+		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
+	}
 }

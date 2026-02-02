@@ -141,3 +141,20 @@ func TestPart_StructVerification(t *testing.T) {
 		t.Error("signature mismatch")
 	}
 }
+
+func TestContent_Pinned(t *testing.T) {
+	t.Parallel()
+	c := &Content{
+		Role:   "user",
+		Pinned: true,
+	}
+
+	if !c.Pinned {
+		t.Error("expected Pinned to be true")
+	}
+
+	c.Pinned = false
+	if c.Pinned {
+		t.Error("expected Pinned to be false")
+	}
+}

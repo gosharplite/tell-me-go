@@ -150,8 +150,9 @@ func (s *JSONLStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 	}
 
 	clone := &llm.Content{
-		Role:  c.Role,
-		Parts: make([]*llm.Part, len(c.Parts)),
+		Role:   c.Role,
+		Parts:  make([]*llm.Part, len(c.Parts)),
+		Pinned: c.Pinned,
 	}
 
 	for i, p := range c.Parts {

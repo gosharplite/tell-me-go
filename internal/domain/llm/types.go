@@ -16,6 +16,7 @@ type Content struct {
 	Role       string  `json:"role"`
 	Parts      []*Part `json:"parts,omitempty"`
 	TokenCount int     `json:"token_count,omitempty"`
+	Pinned     bool    `json:"pinned,omitempty"`
 }
 
 type Part struct {

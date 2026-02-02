@@ -24,8 +24,9 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	newHistory, pruned := t.Policy.Prune(ctx, req.History)
 
 	if pruned > 0 {
-		removeCount := initialLen - len(newHistory)
-		if err := t.Manager.ReplaceRange(ctx, 0, removeCount, nil); err != nil {
+		// We replace the entire history range to ensure the manager stays in sync
+		// with non-contiguous pruning (pinned turns kept in the middle/start).
+		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
 			return err
 		}
 	}
@@ -35,9 +36,9 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	return nil
 }
 
-func (t *HistoryPruner) Priority() int { return 10 }
+func (t *HistoryPruner) Priority() int { return 1 }
 
-// SlidingWindowPolicy keeps the last N turns.
+// SlidingWindowPolicy keeps the last N turns, prioritizing pinned content.
 type SlidingWindowPolicy struct {
 	MaxTurns int
 }
@@ -46,24 +47,58 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content)
 	if p.MaxTurns <= 0 {
 		return history, 0
 	}
-	maxMessages := p.MaxTurns * 2
-	if len(history) > maxMessages {
-		targetMessages := p.MaxTurns * 2
-		if targetMessages < 2 {
-			targetMessages = 2
-		}
 
-		removeCount := len(history) - targetMessages
-		// Ensure we remove an even number of messages to keep turns intact
-		if removeCount%2 != 0 {
-			removeCount++
-		}
+	if len(history) <= p.MaxTurns*2 {
+		return history, 0
+	}
 
-		if removeCount > 0 && removeCount < len(history) {
-			return history[removeCount:], removeCount / 2
+	// Group messages into turns (pairs)
+	var turns [][]*llm.Content
+	for i := 0; i < len(history); i += 2 {
+		end := i + 2
+		if end > len(history) {
+			end = len(history)
+		}
+		turns = append(turns, history[i:end])
+	}
+
+	totalTurns := len(turns)
+	keep := make([]bool, totalTurns)
+
+	// Rule 1: Keep last N turns (Sliding Window)
+	startWindow := totalTurns - p.MaxTurns
+	if startWindow < 0 {
+		startWindow = 0
+	}
+	for i := startWindow; i < totalTurns; i++ {
+		keep[i] = true
+	}
+
+	// Rule 2: Keep any turn that has a Pinned message
+	for i := 0; i < totalTurns; i++ {
+		if keep[i] {
+			continue
+		}
+		for _, msg := range turns[i] {
+			if msg.Pinned {
+				keep[i] = true
+				break
+			}
 		}
 	}
-	return history, 0
+
+	// Construct new history and count pruned turns
+	var newHistory []*llm.Content
+	prunedCount := 0
+	for i, k := range keep {
+		if k {
+			newHistory = append(newHistory, turns[i]...)
+		} else {
+			prunedCount++
+		}
+	}
+
+	return newHistory, prunedCount
 }
 
 // ImportanceRankPolicy (placeholder for future implementation)
