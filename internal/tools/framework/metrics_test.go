@@ -61,6 +61,7 @@ func TestAccumulate(t *testing.T) {
 		wantResponse int64
 		wantCached   int64
 		wantSearch   int64
+		wantThinking int64
 	}{
 		{
 			name: "Basic",
@@ -69,11 +70,13 @@ func TestAccumulate(t *testing.T) {
 				PromptTokens:   1000,
 				ResponseTokens: 200,
 				SearchQueries:  1,
+				ThinkingTokens: 50,
 			},
 			wantPrompt:   1000,
 			wantResponse: 200,
 			wantCached:   100,
 			wantSearch:   1,
+			wantThinking: 50,
 		},
 	}
 
@@ -93,6 +96,9 @@ func TestAccumulate(t *testing.T) {
 			}
 			if stats.SearchQueries != tt.wantSearch {
 				t.Errorf("SearchQueries = %v, want %v", stats.SearchQueries, tt.wantSearch)
+			}
+			if stats.ThinkingTokens != tt.wantThinking {
+				t.Errorf("ThinkingTokens = %v, want %v", stats.ThinkingTokens, tt.wantThinking)
 			}
 		})
 	}

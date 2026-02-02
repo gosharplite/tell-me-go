@@ -172,10 +172,11 @@ func (c *CostCalculator) CalculateMetrics(mt llm.Metrics) CostBreakdown {
 
 // SessionCostRecord represents a single session's financial footprint.
 type SessionCostRecord struct {
-	Date      string  `json:"date"`
-	Session   string  `json:"session"`
-	Model     string  `json:"model"`
-	TotalCost float64 `json:"total_cost"`
+	Date      string     `json:"date"`
+	Session   string     `json:"session"`
+	Model     string     `json:"model"`
+	TotalCost float64    `json:"total_cost"`
+	Usage     UsageStats `json:"usage,omitempty"`
 }
 
 var (
@@ -424,14 +425,21 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 
 	// Aggregate by Date
 	dailyTotals := make(map[string]float64)
+	dailyUsage := make(map[string]UsageStats) // Track usage per day
 	for _, r := range history {
 		dailyTotals[r.Date] += r.TotalCost
+		u := dailyUsage[r.Date]
+		u.PromptTokens += r.Usage.PromptTokens
+		u.ResponseTokens += r.Usage.ResponseTokens
+		u.CachedTokens += r.Usage.CachedTokens
+		u.ThinkingTokens += r.Usage.ThinkingTokens
+		dailyUsage[r.Date] = u
 	}
 
 	var sb strings.Builder
 	sb.WriteString("### AI Usage Cost Summary (by Date)\n\n")
-	sb.WriteString("| Date | Total Cost (USD) |\n")
-	sb.WriteString("| :--- | :--- |\n")
+	sb.WriteString("| Date | M | H | O | Total Cost (USD) |\n")
+	sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
 
 	// Sort dates descending
 	var dates []string
@@ -441,12 +449,22 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
 
 	var grandTotal float64
+	var totalM, totalH, totalO int64
 	for _, d := range dates {
 		cost := dailyTotals[d]
-		sb.WriteString(fmt.Sprintf("| %s | $%.4f |\n", d, cost))
+		u := dailyUsage[d]
+
+		mTokens := u.PromptTokens - u.CachedTokens
+		hTokens := u.CachedTokens
+		oTokens := u.ResponseTokens + u.ThinkingTokens
+
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | $%.4f |\n", d, mTokens, hTokens, oTokens, cost))
 		grandTotal += cost
+		totalM += mTokens
+		totalH += hTokens
+		totalO += oTokens
 	}
-	sb.WriteString(fmt.Sprintf("| **Grand Total** | **$%.4f** |\n", grandTotal))
+	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **$%.4f** |\n", totalM, totalH, totalO, grandTotal))
 
 	return sb.String(), nil
 }
@@ -519,6 +537,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 			Session:   sessionID,
 			Model:     detectedModel,
 			TotalCost: breakdown.TotalCost,
+			Usage:     usage,
 		})
 	}
 
@@ -650,7 +669,7 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 			return nil
 		}
 
-		_, totalCost, detectedModel, err := ParseUsage(path, pricing, m.model)
+		usage, totalCost, detectedModel, err := ParseUsage(path, pricing, m.model)
 		if err == nil {
 			modelToUse := detectedModel
 			if modelToUse == "" {
@@ -668,6 +687,7 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 				Session:   sessionID,
 				Model:     modelToUse,
 				TotalCost: totalCost,
+				Usage:     usage,
 			})
 			seen[sessionID] = true
 		} else if !os.IsNotExist(err) {
