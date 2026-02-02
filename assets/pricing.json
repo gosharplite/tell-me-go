@@ -1,29 +1,29 @@
 {
-  "updated_at": "2026-01-31T07:00:00Z",
+  "updated_at": "2026-02-02T13:00:00Z",
   "models": {
     "flash": {
-      "hit": 0.015,
-      "miss": 0.15,
-      "comp": 0.60,
+      "hit": 0.025,
+      "miss": 0.10,
+      "comp": 0.40,
       "tiered_threshold": 128000,
-      "tiered_miss": 0.30,
-      "tiered_comp": 1.20
+      "tiered_miss": 0.20,
+      "tiered_comp": 0.80
     },
     "pro": {
-      "hit": 0.125,
+      "hit": 0.3125,
       "miss": 1.25,
-      "comp": 10.00,
+      "comp": 5.00,
       "tiered_threshold": 128000,
       "tiered_miss": 2.50,
-      "tiered_comp": 15.00
+      "tiered_comp": 10.00
     },
     "default": {
-      "hit": 0.125,
+      "hit": 0.3125,
       "miss": 1.25,
-      "comp": 10.00,
+      "comp": 5.00,
       "tiered_threshold": 128000,
       "tiered_miss": 2.50,
-      "tiered_comp": 15.00
+      "tiered_comp": 10.00
     }
   },
   "thinking_budgets": {
