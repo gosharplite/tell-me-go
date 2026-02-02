@@ -285,11 +285,16 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 
 	var history []SessionCostRecord
 
-	// 2. Read existing history
+	// 2. Read existing history (or recover if missing)
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			_ = os.Rename(historyPath, historyPath+".bak")
 			history = []SessionCostRecord{}
+		}
+	} else if os.IsNotExist(err) {
+		_ = m.recoverLedger(ctx, globalDir)
+		if content, err := os.ReadFile(historyPath); err == nil {
+			_ = json.Unmarshal(content, &history)
 		}
 	}
 
@@ -344,6 +349,12 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	outputDir := filepath.Dir(m.logFile)
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	// SOP: Auto-recovery of missing ledger
+	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
+		_ = m.recoverLedger(ctx, globalDir)
+	}
+
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
@@ -656,4 +667,67 @@ func fetchAndCachePricing(ctx context.Context, sm *security.SecurityManager, cac
 			}
 		}
 	}
+}
+
+// recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
+func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) error {
+	var records []SessionCostRecord
+	seen := make(map[string]bool)
+
+	// Fetch pricing once for all calculations
+	pricing := GetPricing(ctx, m.sm, globalDir)
+	for k, v := range m.pricingOverrides {
+		pricing.Models[k] = v
+	}
+	p := GetModelPricing(m.model, pricing)
+
+	// 1. Walk through all subdirectories
+	_ = filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), "tokens.log") {
+			return nil
+		}
+
+		// Identify session uniquely using parent dir and filename
+		parent := filepath.Dir(path)
+		sessionID := filepath.Join(filepath.Base(parent), info.Name())
+		
+		if seen[sessionID] {
+			return nil
+		}
+
+		usage, err := ParseUsage(path, p)
+		if err == nil {
+			calc := &CostCalculator{Pricing: pricing, Model: p}
+			breakdown := calc.Calculate(usage)
+			
+			// Extract date from folder name (YYYYMMDD) or mod time
+			datePart := filepath.Base(parent)
+			date := info.ModTime().Format("2006-01-02")
+			if len(datePart) >= 8 {
+				if t, err := time.Parse("20060102", datePart[:8]); err == nil {
+					date = t.Format("2006-01-02")
+				}
+			}
+
+			records = append(records, SessionCostRecord{
+				Date:      date,
+				Session:   sessionID,
+				Model:     m.model,
+				TotalCost: breakdown.TotalCost,
+			})
+			seen[sessionID] = true
+		}
+		return nil
+	})
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	// 2. Write back to global ledger
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+	if bytes, err := json.Marshal(records); err == nil {
+		return fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	}
+	return nil
 }
