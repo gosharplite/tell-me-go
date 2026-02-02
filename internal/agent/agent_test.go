@@ -506,7 +506,7 @@ func TestAgent_WithSystemInstructions(t *testing.T) {
 	if a.config.SystemInstructions != instr {
 		t.Errorf("expected config instructions %q, got %q", instr, a.config.SystemInstructions)
 	}
-	
+
 	if a.ctxManager.factory.SystemInstructions != instr {
 		t.Errorf("expected factory instructions %q, got %q", instr, a.ctxManager.factory.SystemInstructions)
 	}
@@ -517,7 +517,7 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	
+
 	// Create agent with limit of 2 turns (4 messages)
 	a := New(nil, hManager, reg, sm, false, WithLimits(10, 1000, 2))
 	ctx := context.Background()
@@ -546,14 +546,14 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	}
 
 	// 4. Verify results
-	// Expected turns: 
+	// Expected turns:
 	// Turn 1 (Pinned)
 	// Turn 4 (Window)
 	// Turn 5 (Window)
 	// System Instructions (injected by transformer)
-	
+
 	// Turn 2 and 3 should be pruned.
-	
+
 	// meta.PrunedTurns should be 2 (Turn 2 and Turn 3)
 	if meta.PrunedTurns != 2 {
 		t.Errorf("expected 2 pruned turns, got %d", meta.PrunedTurns)
