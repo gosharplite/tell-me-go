@@ -1,0 +1,80 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package agent
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+)
+
+func TestTurnEngine_BudgetLimit(t *testing.T) {
+	bus := &events.SimpleEventBus{}
+	h := history.NewManager(t.TempDir() + "/history.jsonl")
+
+	counter := &HeuristicTokenCounter{}
+	strategy := NewContextStrategy(counter, bus)
+	strategy.SetLimits(1000, 10, 10)
+
+	gw := &mockLLMGateway{}
+	exec := &mockExecutor{}
+	reg := &limitMockRegistry{}
+    
+	factory := &PipelineFactory{
+		History:   h,
+		Events:    bus,
+		Estimator: strategy,
+	}
+
+	cm := NewContextManager(strategy, h, gw, bus, factory)
+	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
+
+	// Setup cost tracker with a high rate
+	pricing := llm.PricingData{
+		Models: map[string]llm.ModelPricing{
+			"test-model": {Miss: 1.0, Comp: 1.0}, // $1 per million tokens
+		},
+	}
+	modelPricing := pricing.Models["test-model"]
+	tracker := framework.NewSessionCostTracker(nil, "", modelPricing, pricing)
+
+	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001)) // Very low budget
+	engine.costTracker = tracker
+
+	ctx := context.Background()
+	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	// Turn 0: Model returns a response with high metrics
+	ch0 := make(chan *llm.Content, 1)
+	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}
+	close(ch0)
+	
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch0, func() (*llm.Content, *llm.Metrics, error) {
+		// 1 million prompt tokens + 1 million response tokens = $2 total cost
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}, &llm.Metrics{PromptTokens: 1000000, ResponseTokens: 1000000}, nil
+	}).Once()
+
+	// Run first turn
+	err := engine.Run(ctx, time.Now())
+	assert.NoError(t, err) // First turn check occurs BEFORE cost is accumulated from it
+
+	// Second turn should fail at checkLimits
+	ch1 := make(chan *llm.Content, 1)
+	close(ch1)
+	gw.On("Generate", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(ch1, func() (*llm.Content, *llm.Metrics, error) {
+		return nil, nil, nil
+	})
+
+	err = engine.Run(ctx, time.Now())
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, llm.ErrBudgetExceeded)
+	assert.Contains(t, err.Error(), "exceeds internal limit")
+}

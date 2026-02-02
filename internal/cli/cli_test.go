@@ -93,6 +93,7 @@ func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string)
 }
 func (m *mockChatter) SetLogFile(path string)                               {}
 func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
+func (m *mockChatter) SetHardBudgetLimit(limit float64)                     {}
 func (m *mockChatter) SetTieredThreshold(threshold int)                     {}
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}

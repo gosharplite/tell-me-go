@@ -25,6 +25,7 @@ type Chatter interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
 	SetLogFile(path string)
 	SetLimits(toolTurns, historyTokens, historyTurns int)
+	SetHardBudgetLimit(limit float64)
 	SetTieredThreshold(threshold int)
 	SetPrunedTurns(n int)
 	SetConcurrency(maxConcurrent int, timeoutSeconds int)
@@ -43,6 +44,7 @@ type RuntimeConfig struct {
 	Model                string
 	Mode                 string
 	PricingOverrides     map[string]llm.ModelPricing
+	HardBudgetLimit      float64
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -189,6 +191,7 @@ func (a *Agent) applyConfig() {
 	logFile := a.config.LogFile
 	model := a.config.Model
 	overrides := a.config.PricingOverrides
+	budget := a.config.HardBudgetLimit
 
 	a.events.Publish(events.ConfigUpdated{
 		Limits:    a.config.Limits,
@@ -199,7 +202,10 @@ func (a *Agent) applyConfig() {
 
 	// Sync engine configuration
 	if a.engine != nil {
-		a.engine.Reconfigure(WithConfig(a.sm, logFile, model, overrides))
+		a.engine.Reconfigure(
+			WithConfig(a.sm, logFile, model, overrides),
+			WithHardBudget(budget),
+		)
 	}
 }
 
@@ -236,6 +242,13 @@ func (a *Agent) registerInternalTools() {
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
+	a.applyConfig()
+}
+
+func (a *Agent) SetHardBudgetLimit(limit float64) {
+	a.mu.Lock()
+	a.config.HardBudgetLimit = limit
+	a.mu.Unlock()
 	a.applyConfig()
 }
 

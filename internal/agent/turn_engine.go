@@ -157,6 +157,7 @@ type TurnEngine struct {
 	model            string
 	pricingOverrides map[string]llm.ModelPricing
 	costTracker      *framework.SessionCostTracker
+	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -194,6 +195,14 @@ func WithRetryPolicy(p RetryPolicy) EngineOption {
 func WithClock(c Clock) EngineOption {
 	return func(e *TurnEngine) {
 		e.clock = c
+	}
+}
+
+// WithHardBudget sets a maximum session budget in USD.
+// Feature is intended for internal/API use only to maintain a clean UI.
+func WithHardBudget(limit float64) EngineOption {
+	return func(e *TurnEngine) {
+		e.HardBudgetLimit = limit
 	}
 }
 
@@ -330,6 +339,14 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	// Deterministic Budget Guardrail (API/Internal only)
+	if e.HardBudgetLimit > 0 && e.costTracker != nil {
+		if cost := e.costTracker.GetTotalCost(ctx); cost >= e.HardBudgetLimit {
+			return fmt.Errorf("%w: current session cost $%.4f exceeds internal limit $%.4f",
+				llm.ErrBudgetExceeded, cost, e.HardBudgetLimit)
+		}
 	}
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
