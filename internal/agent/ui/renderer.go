@@ -217,13 +217,13 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
-			sanitized := sanitizeForTerminal(part.Text)
 			if rawOutput {
-				fmt.Fprint(r.stdout, sanitized)
-				if !strings.HasSuffix(sanitized, "\n") {
+				fmt.Fprint(r.stdout, part.Text)
+				if !strings.HasSuffix(part.Text, "\n") {
 					fmt.Fprintln(r.stdout)
 				}
 			} else {
+				sanitized := sanitizeForTerminal(part.Text)
 				r.renderMarkdown(sanitized)
 			}
 		}
@@ -309,8 +309,11 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 
 func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
-	sanitized := sanitizeForTerminal(part.Text)
-	fmt.Fprint(r.stdout, sanitized)
+	output := part.Text
+	if !state.rawOutput {
+		output = sanitizeForTerminal(part.Text)
+	}
+	fmt.Fprint(r.stdout, output)
 	state.totalText.WriteString(part.Text)
 }
 
