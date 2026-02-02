@@ -227,7 +227,7 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 				pricing.Models[k] = v
 			}
 			p := framework.GetModelPricing(model, pricing)
-			e.costTracker = framework.NewSessionCostTracker(sm, logFile, p, pricing)
+			e.costTracker = framework.NewSessionCostTracker(sm, logFile, model, p, pricing)
 			go e.costTracker.Warmup()
 		}
 	}

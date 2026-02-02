@@ -28,7 +28,7 @@ func TestSessionCostTracker(t *testing.T) {
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
 
 	// 1. Initial cost should be 0
 	cost := tracker.GetTotalCost(context.Background())
@@ -86,7 +86,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	data, _ := json.Marshal(initialMetrics)
 	os.WriteFile(logFile, append(data, '\n'), 0644)
 
-	tracker := NewSessionCostTracker(nil, logFile, model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
 
 	// Lazy init should pick up existing log
 	cost := tracker.GetTotalCost(context.Background())

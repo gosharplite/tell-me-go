@@ -61,20 +61,23 @@ type CostCalculator struct {
 type SessionCostTracker struct {
 	mu        sync.Mutex
 	stats     UsageStats
+	totalCost float64
 	pricing   llm.PricingData
 	model     llm.ModelPricing
+	modelName string
 	logFile   string
 	sm        *security.SecurityManager
 	initiated bool
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm *security.SecurityManager, logFile string, model llm.ModelPricing, pricing llm.PricingData) *SessionCostTracker {
+func NewSessionCostTracker(sm *security.SecurityManager, logFile string, modelName string, model llm.ModelPricing, pricing llm.PricingData) *SessionCostTracker {
 	return &SessionCostTracker{
-		sm:      sm,
-		logFile: logFile,
-		model:   model,
-		pricing: pricing,
+		sm:        sm,
+		logFile:   logFile,
+		modelName: modelName,
+		model:     model,
+		pricing:   pricing,
 	}
 }
 
@@ -100,14 +103,14 @@ func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	// If not initiated, we do a synchronous warmup as a fallback,
 	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
-		if usage, _, err := ParseUsage(t.logFile, t.model); err == nil {
+		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
+			t.totalCost = totalCost
 		}
 		t.initiated = true
 	}
 
-	calc := &CostCalculator{Pricing: t.pricing, Model: t.model}
-	return calc.Calculate(t.stats).TotalCost
+	return t.totalCost
 }
 
 // Warmup pre-loads the session state from the log file.
@@ -115,8 +118,9 @@ func (t *SessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.initiated && t.logFile != "" {
-		if usage, _, err := ParseUsage(t.logFile, t.model); err == nil {
+		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
+			t.totalCost = totalCost
 		}
 		t.initiated = true
 	}
@@ -126,7 +130,17 @@ func (t *SessionCostTracker) Warmup() {
 func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	Accumulate(&t.stats, mt, t.model)
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = t.modelName
+	}
+	p := GetModelPricing(mtModel, t.pricing)
+
+	Accumulate(&t.stats, mt, p)
+
+	calc := &CostCalculator{Pricing: t.pricing, Model: p}
+	t.totalCost += calc.CalculateMetrics(mt).TotalCost
 }
 
 // Calculate performs tiered pricing arithmetic.
@@ -142,6 +156,13 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 
 	cb.TotalCost = cb.CostHits + cb.CostMisses + cb.CostComp + cb.CostThinking + cb.CostSearch
 	return cb
+}
+
+// CalculateMetrics calculates the cost for a single metrics entry.
+func (c *CostCalculator) CalculateMetrics(mt llm.Metrics) CostBreakdown {
+	var stats UsageStats
+	Accumulate(&stats, mt, c.Model)
+	return c.Calculate(stats)
 }
 
 const pricingURL = "https://raw.githubusercontent.com/gosharplite/tell-me-go/main/assets/pricing.json"
@@ -224,51 +245,34 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, logPat
 	}
 
 	// 2. Append legacy summary to the log file itself
-	f, err := os.OpenFile(logPath, os.O_RDONLY, 0644)
+	pricing := GetPricing(ctx, sm, filepath.Dir(logPath))
+	for k, v := range pricingOverrides {
+		pricing.Models[k] = v
+	}
+
+	usage, totalCost, _, err := ParseUsage(logPath, pricing, model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	defer f.Close()
 
-	var totalCached, totalPrompt, totalResponse int32
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var mt llm.Metrics
-		if err := json.Unmarshal([]byte(scanner.Text()), &mt); err == nil {
-			totalCached += mt.CachedTokens
-			totalPrompt += mt.PromptTokens
-			totalResponse += mt.ResponseTokens
-		}
-	}
-
-	if totalCached == 0 && totalPrompt == 0 && totalResponse == 0 {
+	if usage.Hits == 0 && usage.Misses == 0 && usage.Comp == 0 && usage.Thinking == 0 &&
+		usage.TieredMisses == 0 && usage.TieredComp == 0 && usage.TieredThinking == 0 {
 		return nil
 	}
-
-	// Fetch pricing for summary
-	pricing := GetPricing(ctx, sm, filepath.Dir(logPath))
-	// Apply overrides
-	for k, v := range pricingOverrides {
-		pricing.Models[k] = v
-	}
-	p := m.getModelPricing(model, pricing)
-
-	// Simple calculation for summary (doesn't account for tiered/thinking here, but it's just a legacy summary)
-	cost := (float64(totalCached) * p.Hit / 1e6) +
-		(float64(totalPrompt) * p.Miss / 1e6) +
-		(float64(totalResponse) * p.Comp / 1e6)
 
 	summary := llm.Metrics{
 		Timestamp:      time.Now().Format(time.RFC3339),
 		Model:          model,
-		CachedTokens:   totalCached,
-		PromptTokens:   totalPrompt,
-		ResponseTokens: totalResponse,
-		TotalTokens:    totalCached + totalPrompt + totalResponse,
-		Duration:       cost, // We repurpose Duration to store USD cost in summary entries
+		CachedTokens:   int32(usage.Hits),
+		PromptTokens:   int32(usage.Hits + usage.Misses + usage.TieredMisses),
+		ResponseTokens: int32(usage.Comp + usage.TieredComp),
+		TotalTokens:    int32(usage.Hits + usage.Misses + usage.TieredMisses + usage.Comp + usage.TieredComp + usage.Thinking + usage.TieredThinking),
+		ThinkingTokens: int32(usage.Thinking + usage.TieredThinking),
+		SearchQueries:  int(usage.SearchQueries),
+		Duration:       totalCost, // Repurpose Duration for USD cost in summary
 	}
 
 	summaryBytes, _ := json.Marshal(summary)
@@ -522,10 +526,8 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		pricing.Models[k] = v
 	}
 
-	p := GetModelPricing(m.model, pricing)
-
 	// 1. Parse usage from log
-	usage, _, err := ParseUsage(resolvedLog, p)
+	usage, totalCost, detectedModel, err := ParseUsage(resolvedLog, pricing, m.model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -533,9 +535,15 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		return "", fmt.Errorf("failed to parse usage log: %w", err)
 	}
 
+	if detectedModel == "" {
+		detectedModel = m.model
+	}
+
 	// 2. Delegate financial math to Calculator
+	p := GetModelPricing(detectedModel, pricing)
 	calc := &CostCalculator{Pricing: pricing, Model: p}
 	breakdown := calc.Calculate(usage)
+	breakdown.TotalCost = totalCost // Use the per-turn accurate total cost
 
 	// 3. Persistence: Record to local ledger
 	if shouldRecord {
@@ -545,7 +553,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
 			Date:      time.Now().Format("2006-01-02"),
 			Session:   sessionID,
-			Model:     m.model,
+			Model:     detectedModel,
 			TotalCost: breakdown.TotalCost,
 		})
 	}
@@ -554,15 +562,16 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	return m.renderReport(pricing, breakdown), nil
 }
 
-// ParseUsage extracts usage statistics from a log file.
-func ParseUsage(path string, p llm.ModelPricing) (UsageStats, string, error) {
+// ParseUsage extracts usage statistics and calculates total cost from a log file.
+func ParseUsage(path string, pricing llm.PricingData, defaultModel string) (UsageStats, float64, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return UsageStats{}, "", err
+		return UsageStats{}, 0, "", err
 	}
 	defer f.Close()
 
 	var stats UsageStats
+	var totalCost float64
 	var detectedModel string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -571,10 +580,18 @@ func ParseUsage(path string, p llm.ModelPricing) (UsageStats, string, error) {
 
 		// Try JSON first (SOP: Structured over Procedural)
 		if err := json.Unmarshal([]byte(line), &mt); err == nil {
-			if detectedModel == "" && mt.Model != "" {
-				detectedModel = mt.Model
+			mtModel := mt.Model
+			if mtModel == "" {
+				mtModel = defaultModel
 			}
+			if detectedModel == "" && mtModel != "" {
+				detectedModel = mtModel
+			}
+
+			p := GetModelPricing(mtModel, pricing)
 			Accumulate(&stats, mt, p)
+			calc := &CostCalculator{Pricing: pricing, Model: p}
+			totalCost += calc.CalculateMetrics(mt).TotalCost
 			continue
 		}
 
@@ -597,9 +614,15 @@ func ParseUsage(path string, p llm.ModelPricing) (UsageStats, string, error) {
 			SearchQueries:  int(s),
 			ThinkingTokens: int32(th),
 		}
+		if detectedModel == "" {
+			detectedModel = defaultModel
+		}
+		p := GetModelPricing(defaultModel, pricing)
 		Accumulate(&stats, mtLegacy, p)
+		calc := &CostCalculator{Pricing: pricing, Model: p}
+		totalCost += calc.CalculateMetrics(mtLegacy).TotalCost
 	}
-	return stats, detectedModel, scanner.Err()
+	return stats, totalCost, detectedModel, scanner.Err()
 }
 
 // Accumulate adds metrics to usage statistics.
@@ -723,8 +746,6 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 	for k, v := range m.pricingOverrides {
 		pricing.Models[k] = v
 	}
-	p := GetModelPricing(m.model, pricing)
-	calc := &CostCalculator{Pricing: pricing, Model: p}
 
 	// 1. Walk through all subdirectories
 	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
@@ -747,21 +768,11 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 			return nil
 		}
 
-		usage, detectedModel, err := ParseUsage(path, p)
+		_, totalCost, detectedModel, err := ParseUsage(path, pricing, m.model)
 		if err == nil {
 			modelToUse := detectedModel
 			if modelToUse == "" {
 				modelToUse = m.model
-			}
-
-			// Recalculate if model is different from current default
-			var finalBreakdown CostBreakdown
-			if modelToUse != m.model {
-				pHistorical := GetModelPricing(modelToUse, pricing)
-				calcHistorical := &CostCalculator{Pricing: pricing, Model: pHistorical}
-				finalBreakdown = calcHistorical.Calculate(usage)
-			} else {
-				finalBreakdown = calc.Calculate(usage)
 			}
 
 			// Extract date from path or mod time
@@ -774,7 +785,7 @@ func (m *metricsManager) recoverLedger(ctx context.Context, globalDir string) {
 				Date:      date,
 				Session:   sessionID,
 				Model:     modelToUse,
-				TotalCost: finalBreakdown.TotalCost,
+				TotalCost: totalCost,
 			})
 			seen[sessionID] = true
 		} else {
