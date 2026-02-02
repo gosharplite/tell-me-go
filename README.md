@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
 
 ## Overview
-`tell-me-go` is a high-performance, type-safe assistant designed for developers. It provides a terminal-based interface to interact with Google's Gemini models, specifically optimized for **Gemini 2.0+** reasoning and multimodal capabilities. Governed by strict Standard Operating Procedures (SOPs), it ensures a robust and predictable experience.
+`tell-me-go` is a high-performance, type-safe assistant designed for developers. It provides a terminal-based interface to interact with Google's Gemini models, specifically optimized for **Gemini 3+** reasoning and multimodal capabilities. Governed by strict Standard Operating Procedures (SOPs), it ensures a robust and predictable experience.
 
 ## 🚀 Features
 *   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
@@ -141,7 +141,7 @@ After the model responds, a detailed breakdown is provided:
     *   **White**: > 70% (Cache cold/High exposure).
 *   **S/Th**: Number of Google Search queries and Thinking tokens used.
 
-**Thinking Mode (Gemini 2.0):**
+**Thinking Mode (Gemini 3):**
 If `THINKING_BUDGET` or `THINKING_LEVEL` is set in your config, the assistant will display its reasoning process in the terminal.
 
 **New Session:**
@@ -170,12 +170,12 @@ The tool is optimized for Google Vertex AI.
 # configs/vertex.yaml
 MODE: "vertex"
 PERSON: "A helpful AI assistant using Google Vertex AI."
-AIMODEL: "gemini-2.0-flash-001"
+AIMODEL: "gemini-3-flash-preview"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
 
 # --- Tools & Features ---
 USE_SEARCH: true
-THINKING_BUDGET: 0 # Max for gemini-2.5-flash is 24576
+THINKING_BUDGET: 0 # Max for gemini-3-flash-preview is 32768
 THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
 SHOW_THOUGHTS: true
 SHOW_TOOLS: true
@@ -194,12 +194,6 @@ KEY_FILE: "" # Optional: Path to Service Account JSON key.
 
 # --- Model Specific Overrides ---
 MODELS:
-  gemini-2.0-flash:
-    MAX_THINKING_BUDGET: 24576
-    CONTEXT_WINDOW: 1048576
-  gemini-1.5-pro:
-    MAX_THINKING_BUDGET: 0
-    CONTEXT_WINDOW: 2097152
   gemini-3-flash-preview:
     MAX_THINKING_BUDGET: 32768
     CONTEXT_WINDOW: 1048576
