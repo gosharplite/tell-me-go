@@ -50,6 +50,21 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Crash Resilience**: Automatically persists history after every turn (user prompt, model response, and tool results). If a system crash occurs during execution, a built-in **Auto-Repair** mechanism fixes the history on next startup to ensure the session remains valid and resumable.
 *   **Bash Compatibility**: Uses identical file naming and structures as the original Bash project for full interoperability.
 
+## 🛡️ Wallet Protection & Billing Transparency
+`tell-me-go` is built to prevent the "hidden" cost spikes common in high-context AI development, specifically targeting **Vertex AI's tiered pricing model**.
+
+*   **Price Cliff Guardrails**: 
+    *   **The 128k Barrier**: Google bills sessions > 128k tokens at a **2x higher rate**. 
+    *   **Safety Headroom**: The system is tuned with a default `MAX_HISTORY_TOKENS` of **100k**, providing a ~28k buffer for "Thinking" and response tokens.
+    *   **Traffic-Light UI**: The terminal context indicator (**T**) turns **Yellow** at 100k and **Red** at 128k, signaling that the next turn will trigger the expensive tier.
+*   **Cache Efficiency Indicators**: 
+    *   **Exposure Tracking (%)**: The UI shows exactly what percentage of each turn is billed (**N**).
+    *   **Green Metrics**: A **Green** percentage (<20%) indicates that Google's Context Cache is successfully serving 80%+ of your turn for free.
+*   **Comprehensive Cost Auditing**:
+    *   **Reasoning Transparency**: "Thinking" tokens are high-cost (Output rate). The system explicitly tracks and bills them in its estimates.
+    *   **Grounding Fees**: Flat-rate fees for Google Search queries ($0.035/ea) are factored into the total session cost.
+    *   **Persistent Ledger**: All session costs are recorded in a centralized `global_costs.json` file for daily expenditure tracking via `get_cost_summary`.
+
 ## 📋 Prerequisites
 *   **Go**: 1.24 or higher.
 *   **Google Cloud SDK (gcloud)**: Required for Vertex AI authentication.
@@ -191,27 +206,6 @@ MODELS:
 The `MODELS` section allows you to define hard technical limits for different model generations.
 *   **`MAX_THINKING_BUDGET`**: Automatically clamps the `THINKING_BUDGET` to the model's supported maximum to prevent API errors.
 *   **`CONTEXT_WINDOW`**: Provides the baseline for the agent's payload tracking and safety rollback logic.
-
-### 🧠 Strategic Memory Management
-To optimize for **cost efficiency** and **Gemini Context Caching**, the assistant uses a tiered memory strategy based on three critical variables:
-
-1.  **`MAX_HISTORY_TOKENS` (Default: 100,000)**:
-    *   **The Price Cliff**: Gemini context pricing tiers jump at **128k tokens**. Staying below 100k ensures you pay the "Standard" rate (e.g., $0.10 - $1.25/1M) and leave headroom for responses.
-    *   **Safety Net**: If a response or tool output pushes the payload over this limit, the agent automatically **rolls back** the last turn to prevent a session crash or accidental high charges.
-
-2.  **`MAX_HISTORY_TURNS`**:
-    *   **50% Pruning Strategy**: When this limit is hit, the agent prunes the oldest **50%** of the conversation.
-    *   **Why 50%?**: Gemini charges for the full "Cache Miss" when the prefix changes. By pruning half the history instead of just 1 turn, the agent creates a **stable cache prefix**. The next dozens of turns will be processed using high-speed, 90%-discounted cached tokens.
-    *   **AI Re-Sync**: After a major prune, the agent injects an **Urgent System Notice** into the history, instructing the model to use the **Scratchpad** to recover its situational awareness.
-
-3.  **`MAX_TURNS` (Default: 10)**:
-    *   **Execution Safety**: Limits how many consecutive tool-calls the agent can make in a single prompt. This prevents infinite loops and controls turn-by-turn costs.
-
-#### Recommended Settings:
-| Model Type | MAX_HISTORY_TOKENS | MAX_HISTORY_TURNS | MAX_TURNS |
-| :--- | :--- | :--- | :--- |
-| **Flash (Fast/Light)** | 100,000 | **40** | 50 |
-| **Pro (Deep/Complex)** | 100,000 | **20** | 50 |
 
 ## ⌨️ Shell Integration (Recommended)
 To streamline your workflow, add these aliases to your `.bashrc` or `.zshrc`. This provides a fast, one-letter command (`b`) for interacting with the assistant and simplifies session management.
