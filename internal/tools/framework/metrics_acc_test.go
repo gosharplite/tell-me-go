@@ -195,3 +195,34 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 		t.Errorf("Expected 200 prompt tokens, got %d", stats.PromptTokens)
 	}
 }
+
+func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
+	model := llm.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
+	pricing := llm.PricingData{
+		Models: map[string]llm.ModelPricing{
+			"test-model": model,
+		},
+	}
+
+	tracker := NewSessionCostTracker(nil, "", "test-model", model, pricing)
+
+	tracker.Accumulate(llm.Metrics{
+		PromptTokens:   100,
+		ResponseTokens: 50,
+		ThinkingTokens: 25,
+	})
+
+	stats, cost := tracker.GetStats(context.Background())
+	// Thinking tokens should be added to OutputCost calculation (Comp SKU)
+	// Input: 100 * 2 / 1e6 = 0.0002
+	// Output: (50 + 25) * 3 / 1e6 = 0.000225
+	// Total: 0.000425
+	wantCost := (100.0*2.0 + (50.0+25.0)*3.0) / 1e6
+	if cost < wantCost-1e-12 || cost > wantCost+1e-12 {
+		t.Errorf("Expected cost with thinking tokens %f, got %f", wantCost, cost)
+	}
+
+	if stats.ThinkingTokens != 25 {
+		t.Errorf("Expected 25 thinking tokens in stats, got %d", stats.ThinkingTokens)
+	}
+}

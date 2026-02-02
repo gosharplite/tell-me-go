@@ -660,8 +660,13 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
+				var totalM, totalH, totalO int64
 				if turn.CostTracker != nil {
 					cost = turn.CostTracker.GetTotalCost(ctx)
+					stats, _ := turn.CostTracker.GetStats(ctx)
+					totalM = stats.PromptTokens - stats.CachedTokens
+					totalH = stats.CachedTokens
+					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
 				bus.Publish(events.TurnStatusEvent{
@@ -676,6 +681,9 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
+						TotalM:           totalM,
+						TotalH:           totalH,
+						TotalO:           totalO,
 					},
 				})
 			}

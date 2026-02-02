@@ -50,6 +50,10 @@ func TestUIRendererGolden(t *testing.T) {
 			MaxHistoryTokens: 100000,
 			IsPostCall:       true,
 			StartTime:        fixedTime.Add(-5 * time.Second),
+			SessionCost:      0.0123,
+			TotalM:           500,
+			TotalH:           1000,
+			TotalO:           200,
 			Metrics: &llm.Metrics{
 				PromptTokens:   1500,
 				CachedTokens:   1000,

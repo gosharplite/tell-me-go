@@ -249,4 +249,21 @@ func TestLogTurnStatus_Format(t *testing.T) {
 			t.Errorf("expected output to contain %q, got %q", p, output)
 		}
 	}
+
+	// Check Ready line with aggregates
+	r.LogTurnStatus(events.TurnStatus{
+		Timestamp:   r.now(),
+		IsPostCall:  true,
+		SessionCost: 0.1234,
+		TotalM:      1000,
+		TotalH:      2000,
+		TotalO:      3000,
+		Metrics: &llm.Metrics{
+			PromptTokens: 10, // Just to satisfy printSystemLine
+		},
+	})
+	output = stderr.String()
+	if !strings.Contains(output, "($0.1234 M: 1000 H: 2000 O: 3000)") {
+		t.Errorf("expected output to contain aggregate metrics, got %q", output)
+	}
 }

@@ -33,6 +33,7 @@ type UsageStats struct {
 	ResponseTokens int64
 	CachedTokens   int64
 	SearchQueries  int64
+	ThinkingTokens int64
 }
 
 // CostBreakdown represents the final financial calculation results.
@@ -155,7 +156,7 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 
 	cb.InputCost = float64(inputTokens) * p.Miss / 1e6
 	cb.CacheCost = float64(stats.CachedTokens) * p.Hit / 1e6
-	cb.OutputCost = float64(stats.ResponseTokens) * p.Comp / 1e6
+	cb.OutputCost = float64(stats.ResponseTokens+stats.ThinkingTokens) * p.Comp / 1e6
 	cb.SearchCost = float64(stats.SearchQueries) * c.Pricing.SearchQuery
 
 	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.OutputCost + cb.SearchCost
@@ -574,6 +575,7 @@ func Accumulate(stats *UsageStats, mt llm.Metrics, p llm.ModelPricing) {
 	stats.ResponseTokens += int64(mt.ResponseTokens)
 	stats.CachedTokens += int64(mt.CachedTokens)
 	stats.SearchQueries += int64(mt.SearchQueries)
+	stats.ThinkingTokens += int64(mt.ThinkingTokens)
 }
 
 func (m *metricsManager) renderReport(pricing llm.PricingData, breakdown CostBreakdown) string {
