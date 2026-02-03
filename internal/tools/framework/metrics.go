@@ -391,16 +391,20 @@ func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bo
 	dailyTotals := make(map[string]float64)
 	dailyUsage := make(map[string]pricing.UsageStats) // Track usage per day
 
-	offset := 0 // Default to local
-	if useGoogleBilling {
-		offset = -16 // Shift CST (UTC+8) to PST (UTC-8)
-	}
+	// Define the Google Billing timezone (typically PST/PDT)
+	// Using a fixed -8 offset is safer than a hardcoded subtraction
+	// if we can't load "America/Los_Angeles" from the system database.
+	billingZone := time.FixedZone("UTC-8", -8*3600)
 
 	for _, r := range history {
 		// Determine the effective date for this record
 		effectiveDate := r.Date // Fallback for old records
 		if !r.Timestamp.IsZero() {
-			effectiveDate = r.Timestamp.Add(time.Duration(offset) * time.Hour).Format("2006-01-02")
+			if useGoogleBilling {
+				effectiveDate = r.Timestamp.In(billingZone).Format("2006-01-02")
+			} else {
+				effectiveDate = r.Timestamp.Local().Format("2006-01-02")
+			}
 		}
 
 		dailyTotals[effectiveDate] += r.TotalCost

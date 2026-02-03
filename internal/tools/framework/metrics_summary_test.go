@@ -167,4 +167,30 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	if strings.Contains(summary, "2023-10-27") {
 		t.Errorf("Did not expect 2023-10-27 in billing summary, got:\n%s", summary)
 	}
+
+	// 3. New test case for UTC timestamp that was previously buggy
+	// Timestamp: 2023-10-27 10:00:00 UTC
+	// In UTC-8, this is 2023-10-27 02:00:00.
+	ts2 := time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC)
+	history = append(history, SessionCostRecord{
+		Date:      "2023-10-27",
+		Timestamp: ts2,
+		Session:   "session-utc",
+		Model:     "model1",
+		TotalCost: 1.0,
+		Usage: pricing.UsageStats{
+			PromptTokens: 1000,
+		},
+	})
+	data, _ = json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	summary, err = m.getCostSummary(context.Background(), true)
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+	// The new record should be 2023-10-27 in UTC-8
+	if !strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Expected 2023-10-27 in billing summary for 10:00 UTC timestamp, got:\n%s", summary)
+	}
 }
