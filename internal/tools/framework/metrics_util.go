@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -41,6 +42,11 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			continue
+		}
+
 		var mt llm.Metrics
 
 		// Try JSON first (SOP: Structured over Procedural)
