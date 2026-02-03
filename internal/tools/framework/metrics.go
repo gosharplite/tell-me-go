@@ -420,7 +420,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bo
 			if useGoogleBilling {
 				effectiveDate = r.Timestamp.In(billingZone).Format("2006-01-02")
 			} else {
-				effectiveDate = r.Timestamp.Local().Format("2006-01-02")
+				effectiveDate = r.Timestamp.UTC().Format("2006-01-02")
 			}
 		}
 
