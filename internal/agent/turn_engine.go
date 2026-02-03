@@ -711,7 +711,12 @@ func (e *TurnEngine) WithMetrics() TurnMiddleware {
 			if e.events != nil && turn.State.Phase == PhasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
 					e.mu.Lock()
-					e.taskCost += turn.CostTracker.CalculateCost(*turn.State.Metrics)
+					// Calculate the cost for this specific turn
+					turnCost := turn.CostTracker.CalculateCost(*turn.State.Metrics)
+					// Populate the field so the UI can display it
+					turn.State.Metrics.Cost = turnCost
+					// Accumulate into the task total
+					e.taskCost += turnCost
 					e.mu.Unlock()
 				}
 

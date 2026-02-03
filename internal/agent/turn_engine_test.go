@@ -805,6 +805,15 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
 	e.costTracker = tracker
 
+	var turnCosts []float64
+	bus.Subscribe(func(ev events.Event) {
+		if um, ok := ev.(events.UsageMetricsEvent); ok {
+			if um.Metrics != nil {
+				turnCosts = append(turnCosts, um.Metrics.Cost)
+			}
+		}
+	})
+
 	// First turn: 1000 prompt tokens, 500 response tokens
 	// Second turn: 1000 prompt tokens, 500 response tokens
 	turnCount := 0
@@ -842,10 +851,24 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		t.Errorf("expected task cost %f, got %f", expectedTaskCost, e.taskCost)
 	}
 
+	if len(turnCosts) != 2 {
+		t.Errorf("expected 2 usage metrics events, got %d", len(turnCosts))
+	}
+	for i, c := range turnCosts {
+		if fmt.Sprintf("%.6f", c) != "0.000300" {
+			t.Errorf("turn %d: expected turn cost 0.000300, got %f", i, c)
+		}
+	}
+
 	// Run again, taskCost should reset
 	turnCount = 0
+	turnCosts = nil
 	_ = e.Run(context.Background(), time.Now())
 	if fmt.Sprintf("%.6f", e.taskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
 		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, e.taskCost)
+	}
+
+	if len(turnCosts) != 2 {
+		t.Errorf("expected 2 usage metrics events on second run, got %d", len(turnCosts))
 	}
 }
