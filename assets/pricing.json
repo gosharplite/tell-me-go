@@ -5,7 +5,7 @@
       "hit": 0.025,
       "miss": 0.10,
       "comp": 0.40,
-      "tiered_threshold": 128000,
+      "tiered_threshold": 0,
       "tiered_miss": 0.20,
       "tiered_comp": 0.80
     },
@@ -13,7 +13,7 @@
       "hit": 0.3125,
       "miss": 1.25,
       "comp": 5.00,
-      "tiered_threshold": 128000,
+      "tiered_threshold": 0,
       "tiered_miss": 2.50,
       "tiered_comp": 10.00
     },
@@ -21,7 +21,7 @@
       "hit": 0.3125,
       "miss": 1.25,
       "comp": 5.00,
-      "tiered_threshold": 128000,
+      "tiered_threshold": 0,
       "tiered_miss": 2.50,
       "tiered_comp": 10.00
     }

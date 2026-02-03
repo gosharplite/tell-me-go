@@ -147,7 +147,7 @@ func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, op
 	}
 
 	// Resolve tiered threshold from pricing
-	threshold := 128000 // Default
+	threshold := config.DefaultTieredThreshold
 	if mPricing, ok := pricing.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
 		threshold = int(mPricing.TieredThreshold)
 	} else {

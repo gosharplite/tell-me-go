@@ -81,7 +81,7 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	if threshold > 0 {
+	if threshold >= 0 {
 		cs.tieredThreshold = threshold
 	}
 }
