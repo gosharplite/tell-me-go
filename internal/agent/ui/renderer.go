@@ -145,6 +145,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		printSystemLine(status.Tokens, false)
 	} else if status.Metrics != nil {
 		m := status.Metrics
+		fmt.Fprintln(r.stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		miss := m.PromptTokens - m.CachedTokens

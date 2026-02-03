@@ -124,8 +124,12 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 			},
 			StartTime: r.now().Add(-5 * time.Second),
 		})
-		if !strings.Contains(stderr.String(), "Ready") {
-			t.Errorf("expected stderr to contain 'Ready', got %q", stderr.String())
+		output := stderr.String()
+		if !strings.HasPrefix(output, "\n") {
+			t.Errorf("expected stderr to start with a newline, got %q", output)
+		}
+		if !strings.Contains(output, "Ready") {
+			t.Errorf("expected stderr to contain 'Ready', got %q", output)
 		}
 	})
 
