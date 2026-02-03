@@ -42,3 +42,36 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 
 	return tools.ToolResult{Text: res}, nil
 }
+
+// ManageHistory manages conversation history by pinning or unpinning specific turns.
+func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Action string  `json:"action"`
+		Index  float64 `json:"index"`
+	}
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	index := int(params.Index)
+	var pinned bool
+
+	switch params.Action {
+	case "pin":
+		pinned = true
+	case "unpin":
+		pinned = false
+	default:
+		return tools.ToolResult{}, fmt.Errorf("unsupported action: %s", params.Action)
+	}
+
+	if err := t.ctxManager.History.SetPinned(ctx, index, pinned); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	status := "unpinned"
+	if pinned {
+		status = "pinned"
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Turn %d has been successfully %s.", index, status)}, nil
+}
