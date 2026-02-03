@@ -265,10 +265,11 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		TotalO:      3000,
 		Metrics: &llm.Metrics{
 			PromptTokens: 10, // Just to satisfy printSystemLine
+			Cost:         0.0123,
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
-		t.Errorf("expected output to contain aggregate metrics and hit rate, got %q", output)
+	if !strings.Contains(output, "$0.0123 $0.1234") || !strings.Contains(output, "66.7%") {
+		t.Errorf("expected output to contain both turn cost and session cost, got %q", output)
 	}
 }

@@ -171,9 +171,9 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 				hitRate = float64(status.TotalH) / float64(total) * 100
 			}
 			green := "\033[0;32m"
-			costStr = fmt.Sprintf(" %s(%s$%.4f%s M: %d H: %d %s%.1f%%%s O: %d)%s",
+			costStr = fmt.Sprintf(" %s(%s$%.4f $%.4f%s M: %d H: %d %s%.1f%%%s O: %d)%s",
 				gray,
-				green, status.SessionCost, gray,
+				green, status.Metrics.Cost, status.SessionCost, gray,
 				status.TotalM,
 				status.TotalH,
 				green, hitRate, gray,

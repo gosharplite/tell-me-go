@@ -61,6 +61,7 @@ func TestUIRendererGolden(t *testing.T) {
 				TotalTokens:    1700,
 				Duration:       1.5,
 				ToolDuration:   0.5,
+				Cost:           0.0032,
 			},
 		})
 		verifyGolden(t, "turn_status_post.golden", stderr.String())
