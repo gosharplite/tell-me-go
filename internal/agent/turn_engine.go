@@ -159,6 +159,7 @@ type TurnEngine struct {
 	pricingOverrides map[string]llm.ModelPricing
 	costTracker      *framework.SessionCostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
+	taskCost         float64 // Cumulative cost for the current Run() call.
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -285,9 +286,9 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 		})
 
 		e.middleware = append(e.middleware,
-			WithStreaming(e.events),
-			WithStatusReporter(e.events),
-			WithMetrics(e.events),
+			e.WithStreaming(),
+			e.WithStatusReporter(),
+			e.WithMetrics(),
 			WithLoopDetector(),
 		)
 	}
@@ -305,6 +306,10 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
+	e.mu.Lock()
+	e.taskCost = 0
+	e.mu.Unlock()
+
 	totalRetries := 0
 	var lastState *TurnState
 	for i := 0; ; i++ {
@@ -633,12 +638,12 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *Turn, delay time.
 }
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
-func WithStreaming(bus events.EventBus) TurnMiddleware {
+func (e *TurnEngine) WithStreaming() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
-			if turn.State.Phase == PhaseInference && bus != nil {
+			if turn.State.Phase == PhaseInference && e.events != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
-					bus.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
+					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
 			return next.Process(ctx, turn)
@@ -647,11 +652,11 @@ func WithStreaming(bus events.EventBus) TurnMiddleware {
 }
 
 // WithStatusReporter returns a middleware that publishes turn status events.
-func WithStatusReporter(bus events.EventBus) TurnMiddleware {
+func (e *TurnEngine) WithStatusReporter() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			res := next.Process(ctx, turn)
-			if bus == nil || res.Error != nil {
+			if e.events == nil || res.Error != nil {
 				return res
 			}
 
@@ -669,10 +674,15 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
-				bus.Publish(events.TurnStatusEvent{
+				e.mu.RLock()
+				currentTaskCost := e.taskCost
+				e.mu.RUnlock()
+
+				e.events.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
+						SessionTurns:     len(turn.CtxManager.History.GetContents()) / 2,
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,
@@ -681,6 +691,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 						IsPostCall:       turn.State.Phase == PhasePersisting,
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
+						TaskCost:         currentTaskCost,
 						TotalM:           totalM,
 						TotalH:           totalH,
 						TotalO:           totalO,
@@ -693,12 +704,23 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 }
 
 // WithMetrics returns a middleware that publishes usage metrics.
-func WithMetrics(bus events.EventBus) TurnMiddleware {
+func (e *TurnEngine) WithMetrics() TurnMiddleware {
 	return func(next TurnProcessor) TurnProcessor {
 		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 			res := next.Process(ctx, turn)
-			if bus != nil && turn.State.Phase == PhasePersisting && turn.State.Metrics != nil {
-				bus.Publish(events.UsageMetricsEvent{
+			if e.events != nil && turn.State.Phase == PhasePersisting && turn.State.Metrics != nil {
+				if turn.CostTracker != nil {
+					e.mu.Lock()
+					// Calculate the cost for this specific turn
+					turnCost := turn.CostTracker.CalculateCost(*turn.State.Metrics)
+					// Populate the field so the UI can display it
+					turn.State.Metrics.Cost = turnCost
+					// Accumulate into the task total
+					e.taskCost += turnCost
+					e.mu.Unlock()
+				}
+
+				e.events.Publish(events.UsageMetricsEvent{
 					Metrics:   turn.State.Metrics,
 					StartTime: turn.StartTime,
 				})

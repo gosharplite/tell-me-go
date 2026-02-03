@@ -144,6 +144,21 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.totalCost += calc.CalculateMetrics(mt).TotalCost
 }
 
+// CalculateCost returns the cost of a single metrics entry without accumulating it.
+func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = t.modelName
+	}
+	p := GetModelPricing(mtModel, t.pricing)
+
+	calc := &CostCalculator{Pricing: t.pricing, Model: p}
+	return calc.CalculateMetrics(mt).TotalCost
+}
+
 // Calculate performs pricing arithmetic based on Vertex AI SKUs.
 func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 	cb := CostBreakdown{Stats: stats}
@@ -438,8 +453,8 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 
 	var sb strings.Builder
 	sb.WriteString("### AI Usage Cost Summary (by Date)\n\n")
-	sb.WriteString("| Date | M | H | O | Total Cost (USD) |\n")
-	sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
+	sb.WriteString("| Date | Miss | Hit | Other | Eff % | Total Cost (USD) |\n")
+	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	// Sort dates descending
 	var dates []string
@@ -457,14 +472,23 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 		mTokens := u.PromptTokens - u.CachedTokens
 		hTokens := u.CachedTokens
 		oTokens := u.ResponseTokens + u.ThinkingTokens
+		eff := 0.0
+		if total := mTokens + hTokens; total > 0 {
+			eff = float64(hTokens) / float64(total) * 100
+		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | $%.4f |\n", d, mTokens, hTokens, oTokens, cost))
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", d, mTokens, hTokens, oTokens, eff, cost))
 		grandTotal += cost
 		totalM += mTokens
 		totalH += hTokens
 		totalO += oTokens
 	}
-	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **$%.4f** |\n", totalM, totalH, totalO, grandTotal))
+
+	totalEff := 0.0
+	if total := totalM + totalH; total > 0 {
+		totalEff = float64(totalH) / float64(total) * 100
+	}
+	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
 
 	return sb.String(), nil
 }

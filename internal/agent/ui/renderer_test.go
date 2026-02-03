@@ -71,12 +71,13 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		r.LogTurnStatus(events.TurnStatus{
 			Timestamp:        r.now(),
 			CurrentTurns:     0,
+			SessionTurns:     0,
 			MaxHistoryTurns:  10,
 			Tokens:           100,
 			MaxHistoryTokens: 1000,
 		})
-		if !strings.Contains(stderr.String(), "Turn 1/10") {
-			t.Errorf("expected stderr to contain 'Turn 1/10', got %q", stderr.String())
+		if !strings.Contains(stderr.String(), "Session: 1/10 turns") {
+			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", stderr.String())
 		}
 	})
 
@@ -123,8 +124,12 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 			},
 			StartTime: r.now().Add(-5 * time.Second),
 		})
-		if !strings.Contains(stderr.String(), "Ready") {
-			t.Errorf("expected stderr to contain 'Ready', got %q", stderr.String())
+		output := stderr.String()
+		if !strings.HasPrefix(output, "\n") {
+			t.Errorf("expected stderr to start with a newline, got %q", output)
+		}
+		if !strings.Contains(output, "Ready") {
+			t.Errorf("expected stderr to contain 'Ready', got %q", output)
 		}
 	})
 
@@ -254,16 +259,18 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:   r.now(),
 		IsPostCall:  true,
+		TaskCost:    0.0001,
 		SessionCost: 0.1234,
 		TotalM:      1000,
 		TotalH:      2000,
 		TotalO:      3000,
 		Metrics: &llm.Metrics{
 			PromptTokens: 10, // Just to satisfy printSystemLine
+			Cost:         0.0123,
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "($0.1234 M: 1000 H: 2000 O: 3000)") {
-		t.Errorf("expected output to contain aggregate metrics, got %q", output)
+	if !strings.Contains(output, "$0.0123 $0.0001") || !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
+		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
 	}
 }

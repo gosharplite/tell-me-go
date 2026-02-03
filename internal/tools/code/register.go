@@ -133,7 +133,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, sea.SearchUsagesGlobally)
 
 	r.Register(&tools.ToolDeclaration{
-		Name:        "semantic_diff",
+		Name:        "get_semantic_diff",
 		Description: "Analyzes Go code changes between the current state and a Git target using AST comparison. Summarizes logical changes rather than raw line diffs.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
@@ -204,7 +204,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, inf.GoDoc)
 
 	r.Register(&tools.ToolDeclaration{
-		Name:        "analyze_complexity",
+		Name:        "get_complexity_metrics",
 		Description: "Calculates the cyclomatic complexity of Go functions in a file or directory.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",

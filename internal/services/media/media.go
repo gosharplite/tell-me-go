@@ -17,13 +17,15 @@ import (
 
 // Service handles image generation and storage.
 type Service struct {
-	client llm.LLMClient
+	client    llm.LLMClient
+	assetsDir string
 }
 
 // NewService creates a new media service.
-func NewService(client llm.LLMClient) *Service {
+func NewService(client llm.LLMClient, assetsDir string) *Service {
 	return &Service{
-		client: client,
+		client:    client,
+		assetsDir: assetsDir,
 	}
 }
 
@@ -60,11 +62,13 @@ func (s *Service) GenerateImage(ctx context.Context, args map[string]interface{}
 			MIMEType: "image/png",
 			Data:     data,
 		})
-		// Auto-save to assets/generated
-		filename := fmt.Sprintf("assets/generated/image_%d_%d.png", time.Now().Unix(), i)
-		_ = os.MkdirAll("assets/generated", 0755)
-		_ = os.WriteFile(filename, data, 0644)
-		result.Text += fmt.Sprintf("\nSaved to %s", filename)
+		// Auto-save to assetsDir
+		if s.assetsDir != "" {
+			filename := filepath.Join(s.assetsDir, fmt.Sprintf("image_%d_%d.png", time.Now().Unix(), i))
+			_ = os.MkdirAll(s.assetsDir, 0755)
+			_ = os.WriteFile(filename, data, 0644)
+			result.Text += fmt.Sprintf("\nSaved to %s", filename)
+		}
 	}
 
 	return result, nil

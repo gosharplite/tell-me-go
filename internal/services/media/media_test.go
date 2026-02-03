@@ -42,7 +42,8 @@ func TestMediaService_GenerateImage(t *testing.T) {
 			return [][]byte{[]byte("fake-image-data")}, nil
 		},
 	}
-	s := NewService(mockClient)
+	assetsDir := t.TempDir()
+	s := NewService(mockClient, assetsDir)
 
 	args := map[string]interface{}{
 		"prompt": "a test prompt",
@@ -59,13 +60,10 @@ func TestMediaService_GenerateImage(t *testing.T) {
 	if result.BinaryData[0].MIMEType != "image/png" {
 		t.Errorf("Expected MIME type image/png, got %s", result.BinaryData[0].MIMEType)
 	}
-
-	// Clean up generated assets if any
-	_ = os.RemoveAll("assets/generated")
 }
 
 func TestMediaService_ReadImage(t *testing.T) {
-	s := NewService(nil)
+	s := NewService(nil, "")
 
 	tmpFile := "test_image.png"
 	err := os.WriteFile(tmpFile, []byte("fake-image-data"), 0644)

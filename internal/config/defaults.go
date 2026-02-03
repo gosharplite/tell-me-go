@@ -20,7 +20,7 @@ func DefaultPricing() llm.PricingData {
 				Hit:             0.025,
 				Miss:            0.10,
 				Comp:            0.40,
-				TieredThreshold: 128000,
+				TieredThreshold: 0,
 				TieredMiss:      0.20,
 				TieredComp:      0.80,
 			},
@@ -28,7 +28,7 @@ func DefaultPricing() llm.PricingData {
 				Hit:             0.125,
 				Miss:            1.25,
 				Comp:            10.00,
-				TieredThreshold: 128000,
+				TieredThreshold: 0,
 				TieredMiss:      2.50,
 				TieredComp:      15.00,
 			},
@@ -36,15 +36,12 @@ func DefaultPricing() llm.PricingData {
 				Hit:             0.125,
 				Miss:            1.25,
 				Comp:            10.00,
-				TieredThreshold: 128000,
+				TieredThreshold: 0,
 				TieredMiss:      2.50,
 				TieredComp:      15.00,
 			},
 		},
 		ThinkingBudgets: map[string]int{
-			"gemini-2.0-flash":       24576,
-			"gemini-2.5-flash":       24576,
-			"gemini-2.5-pro":         32768,
 			"gemini-3-flash-preview": 32768,
 			"gemini-3-pro-preview":   65536,
 		},
@@ -59,7 +56,7 @@ const (
 	DefaultMaxHistoryTokens   = 100000
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30
-	DefaultTieredThreshold    = 128000
+	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
 	WarningRatio              = 0.78 // ~100k for 128k cliff
 )

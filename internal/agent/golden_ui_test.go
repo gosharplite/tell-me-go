@@ -51,6 +51,7 @@ func TestUIRendererGolden(t *testing.T) {
 			IsPostCall:       true,
 			StartTime:        fixedTime.Add(-5 * time.Second),
 			SessionCost:      0.0123,
+			TaskCost:         0.0045,
 			TotalM:           500,
 			TotalH:           1000,
 			TotalO:           200,
@@ -61,6 +62,7 @@ func TestUIRendererGolden(t *testing.T) {
 				TotalTokens:    1700,
 				Duration:       1.5,
 				ToolDuration:   0.5,
+				Cost:           0.0032,
 			},
 		})
 		verifyGolden(t, "turn_status_post.golden", stderr.String())

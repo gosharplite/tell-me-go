@@ -208,7 +208,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 
 	t.Run("Inject turn warning", func(t *testing.T) {
 		req := &ContextRequest{
-			Turn: 7, // 3 remaining
+			Turn: 8, // 2 remaining
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
 			},
@@ -224,7 +224,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Error("expected warnings in metadata")
 		}
 		lastContent := req.History[len(req.History)-1]
-		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "3 turns remaining") {
+		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "Only 2 turns remain") {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
 	})

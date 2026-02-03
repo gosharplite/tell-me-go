@@ -168,14 +168,13 @@ func (cs *ContextStrategy) getPriceWarningLocked(tokens int) string {
 
 func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 	remaining := cs.maxToolTurns - turn
-	// ... (implementation remains same but uses field)
 	switch remaining {
 	case 3:
-		return "[SYSTEM NOTICE: You are approaching the operational turn limit. You have 3 turns remaining. Please begin finalizing your current task, update the scratchpad and task list with your status, and avoid starting any new multi-step operations.]"
+		return "[SYSTEM NOTICE: You are approaching the operational turn limit (3 turns remaining). Please begin finalizing your current task and use this turn to perform any final state checks or file reads needed for your summary.]"
 	case 2:
-		return "[URGENT SYSTEM NOTICE: Operational limit imminent. Only 2 turns remaining. You must prioritize completing the current objective or documenting progress. You MUST document unfinished sub-tasks in 'manage_tasks' now. New tool sequences will be cut off.]"
+		return "[URGENT SYSTEM NOTICE: Only 2 turns remain. You MUST now use 'manage_scratchpad' and 'manage_tasks' to document the distilled state of the project (architecture, progress, and next steps). This ensures context efficiency and continuity for the user in future sessions, as conversation history may be pruned.]"
 	case 1:
-		return "[FINAL SYSTEM WARNING: This is your absolute final turn. Provide your final conclusion or progress summary now. Process execution will terminate after this response.]"
+		return "[FINAL SYSTEM WARNING: This is your absolute final turn. You are forbidden from using any more tools. Provide a concise final conclusion or progress summary to the user now. Execution will terminate immediately after this response.]"
 	default:
 		return ""
 	}

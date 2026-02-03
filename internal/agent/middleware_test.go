@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
 type mockEventBus struct {
@@ -31,7 +32,8 @@ func (m *mockProcessor) Process(ctx context.Context, turn *Turn) ProcessResult {
 
 func TestWithStreaming(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithStreaming(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithStreaming()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	ctx := context.Background()
@@ -58,11 +60,13 @@ func TestWithStreaming(t *testing.T) {
 
 func TestWithStatusReporter(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithStatusReporter(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithStatusReporter()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	cs := NewContextStrategy(nil, nil)
-	cm := &ContextManager{Strategy: cs}
+	h := history.NewManager("")
+	cm := &ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {
 		name       string
@@ -92,7 +96,8 @@ func TestWithStatusReporter(t *testing.T) {
 
 func TestWithMetrics(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithMetrics(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithMetrics()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	tests := []struct {

@@ -141,10 +141,11 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if !status.IsPostCall {
 		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
-		fmt.Fprintf(r.stderr, "%s╭─⠿ %sTurn %d/%d%s\n", gray, reset, status.CurrentTurns+1, status.MaxHistoryTurns, gray)
+		fmt.Fprintf(r.stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", gray, reset, status.SessionTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
 	} else if status.Metrics != nil {
 		m := status.Metrics
+		fmt.Fprintln(r.stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		miss := m.PromptTokens - m.CachedTokens
@@ -165,7 +166,22 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 		costStr := ""
 		if status.SessionCost > 0 {
-			costStr = fmt.Sprintf(" %s($%.4f M: %d H: %d O: %d)%s", "\033[0;32m", status.SessionCost, status.TotalM, status.TotalH, status.TotalO, gray)
+			hitRate := 0.0
+			if total := status.TotalM + status.TotalH; total > 0 {
+				hitRate = float64(status.TotalH) / float64(total) * 100
+			}
+			green := "\033[0;32m"
+			// Format: (TurnCost TaskCost SessionCost M: ... H: ... O: ...)
+			// Highlight ONLY the SessionCost ($1.4745 in user example).
+			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+				gray,
+				status.Metrics.Cost, status.TaskCost,
+				green, status.SessionCost, gray,
+				status.TotalM,
+				status.TotalH,
+				hitRate,
+				status.TotalO,
+				gray)
 		}
 		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", gray, reset, costStr)
 	}
@@ -364,8 +380,8 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	cyan := "\033[0;36m"
 	reset := "\033[0m"
 
-	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		cyan, r.now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxTurns, strings.Join(names, ", "), reset)
+	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (Step %d/%d)] Calling: %s%s\n",
+		cyan, r.now().Format("15:04:05"), cyan, turn+1, maxTurns, strings.Join(names, ", "), reset)
 
 	if showTools {
 		for _, fc := range calls {
