@@ -77,7 +77,7 @@ func (t *SessionCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, 
 	// If not initiated, we do a synchronous warmup as a fallback,
 	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -92,7 +92,7 @@ func (t *SessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -166,10 +166,20 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
+		Parameters: &tools.Schema{
+			Type: "object",
+			Properties: map[string]*tools.Schema{
+				"billing": {
+					Type:        "boolean",
+					Description: "If true, aggregates costs using Google Billing timezone (UTC-8).",
+				},
+			},
+		},
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
-		res, err := m.getCostSummary(ctx)
+		billing, _ := args["billing"].(bool)
+		res, err := m.getCostSummary(ctx, billing)
 		return tools.ToolResult{Text: res}, err
 	})
 }
@@ -182,6 +192,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
+		ledger:           NewLedgerStore(sm, model, pricingOverrides),
 	}
 
 	// 1. Record to global ledger (detailed breakdown)
@@ -203,7 +214,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 		}
 
 		var err error
-		usage, totalCost, _, err = ParseUsage(logPath, pd, model)
+		usage, totalCost, _, _, err = ParseUsage(logPath, pd, model)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
@@ -338,7 +349,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 }
 
-func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
+func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bool) (string, error) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
@@ -379,18 +390,35 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	// Aggregate by Date
 	dailyTotals := make(map[string]float64)
 	dailyUsage := make(map[string]pricing.UsageStats) // Track usage per day
+
+	offset := 0 // Default to local
+	if useGoogleBilling {
+		offset = -16 // Shift CST (UTC+8) to PST (UTC-8)
+	}
+
 	for _, r := range history {
-		dailyTotals[r.Date] += r.TotalCost
-		u := dailyUsage[r.Date]
+		// Determine the effective date for this record
+		effectiveDate := r.Date // Fallback for old records
+		if !r.Timestamp.IsZero() {
+			effectiveDate = r.Timestamp.Add(time.Duration(offset) * time.Hour).Format("2006-01-02")
+		}
+
+		dailyTotals[effectiveDate] += r.TotalCost
+		u := dailyUsage[effectiveDate]
 		u.PromptTokens += r.Usage.PromptTokens
 		u.ResponseTokens += r.Usage.ResponseTokens
 		u.CachedTokens += r.Usage.CachedTokens
 		u.ThinkingTokens += r.Usage.ThinkingTokens
-		dailyUsage[r.Date] = u
+		dailyUsage[effectiveDate] = u
+	}
+
+	title := "AI Usage Cost Summary (by Date)"
+	if useGoogleBilling {
+		title = "AI Usage Cost Summary (Google Billing Cycle - UTC-8)"
 	}
 
 	var sb strings.Builder
-	sb.WriteString("### AI Usage Cost Summary (by Date)\n\n")
+	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
 	sb.WriteString("| Date | Miss | Hit | Other | Eff % | Total Cost (USD) |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
@@ -450,7 +478,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	}
 
 	// 1. Parse usage from log
-	usage, totalCost, detectedModel, err := ParseUsage(resolvedLog, pd, m.model)
+	usage, totalCost, detectedModel, timestamp, err := ParseUsage(resolvedLog, pd, m.model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -473,8 +501,12 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		if sessionID == "" {
 			sessionID = filepath.ToSlash(filepath.Join(m.mode, filepath.Base(m.logFile)))
 		}
+		if timestamp.IsZero() {
+			timestamp = time.Now()
+		}
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
-			Date:      time.Now().Format("2006-01-02"),
+			Date:      timestamp.Format("2006-01-02"),
+			Timestamp: timestamp,
 			Session:   sessionID,
 			Model:     detectedModel,
 			TotalCost: breakdown.TotalCost,

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -26,16 +27,17 @@ func GetModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPric
 }
 
 // ParseUsage extracts usage statistics and calculates total cost from a log file.
-func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (pricing.UsageStats, float64, string, error) {
+func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (pricing.UsageStats, float64, string, time.Time, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return pricing.UsageStats{}, 0, "", err
+		return pricing.UsageStats{}, 0, "", time.Time{}, err
 	}
 	defer f.Close()
 
 	var stats pricing.UsageStats
 	var totalCost float64
 	var detectedModel string
+	var firstTimestamp time.Time
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -46,6 +48,13 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 			if mt.IsSummary {
 				continue
 			}
+
+			if firstTimestamp.IsZero() && mt.Timestamp != "" {
+				if t, err := time.Parse(time.RFC3339, mt.Timestamp); err == nil {
+					firstTimestamp = t
+				}
+			}
+
 			mtModel := mt.Model
 			if mtModel == "" {
 				mtModel = defaultModel
@@ -65,7 +74,7 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 			continue
 		}
 	}
-	return stats, totalCost, detectedModel, scanner.Err()
+	return stats, totalCost, detectedModel, firstTimestamp, scanner.Err()
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
