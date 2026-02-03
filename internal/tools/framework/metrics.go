@@ -4,7 +4,6 @@
 package framework
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
@@ -132,14 +130,6 @@ func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
 	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	return calculateMetrics(calc, mt).TotalCost
 }
-
-// calculateMetrics calculates the cost for a single metrics entry.
-func calculateMetrics(c *pricing.CostCalculator, mt llm.Metrics) pricing.CostBreakdown {
-	var stats pricing.UsageStats
-	Accumulate(&stats, mt, c.Model)
-	return c.Calculate(stats)
-}
-
 
 type metricsManager struct {
 	sm               *security.SecurityManager
@@ -425,17 +415,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
-// GetPricing returns the hardcoded fallback pricing data.
-func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) pricing.PricingData {
-	return config.DefaultPricing()
-}
-
 func (m *metricsManager) getModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPricing {
-	return pd.GetModelPricing(modelName)
-}
-
-// GetModelPricing finds the best pricing match for a model name.
-func GetModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPricing {
 	return pd.GetModelPricing(modelName)
 }
 
@@ -490,58 +470,6 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	return m.renderReport(pd, breakdown), nil
 }
 
-// ParseUsage extracts usage statistics and calculates total cost from a log file.
-func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (pricing.UsageStats, float64, string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return pricing.UsageStats{}, 0, "", err
-	}
-	defer f.Close()
-
-	var stats pricing.UsageStats
-	var totalCost float64
-	var detectedModel string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		var mt llm.Metrics
-
-		// Try JSON first (SOP: Structured over Procedural)
-		if err := json.Unmarshal([]byte(line), &mt); err == nil {
-			if mt.IsSummary {
-				continue
-			}
-			mtModel := mt.Model
-			if mtModel == "" {
-				mtModel = defaultModel
-			}
-			if detectedModel == "" && mtModel != "" {
-				detectedModel = mtModel
-			}
-
-			p := GetModelPricing(mtModel, pd)
-			Accumulate(&stats, mt, p)
-			calc := &pricing.CostCalculator{Pricing: pd, Model: p}
-			if mt.Cost > 0 {
-				totalCost += mt.Cost
-			} else {
-				totalCost += calculateMetrics(calc, mt).TotalCost
-			}
-			continue
-		}
-	}
-	return stats, totalCost, detectedModel, scanner.Err()
-}
-
-// Accumulate adds metrics to usage statistics.
-func Accumulate(stats *pricing.UsageStats, mt llm.Metrics, p pricing.ModelPricing) {
-	stats.PromptTokens += int64(mt.PromptTokens)
-	stats.ResponseTokens += int64(mt.ResponseTokens)
-	stats.CachedTokens += int64(mt.CachedTokens)
-	stats.SearchQueries += int64(mt.SearchQueries)
-	stats.ThinkingTokens += int64(mt.ThinkingTokens)
-}
-
 func (m *metricsManager) renderReport(pricing pricing.PricingData, breakdown pricing.CostBreakdown) string {
 	p := m.getModelPricing(m.model, pricing)
 	stats := breakdown.Stats
@@ -562,5 +490,3 @@ func (m *metricsManager) renderReport(pricing pricing.PricingData, breakdown pri
 
 	return sb.String()
 }
-
-

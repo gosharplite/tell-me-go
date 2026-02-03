@@ -70,14 +70,14 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 	}
 	defer recoveryInProgress.Delete(historyPath)
 
-	var history []SessionCostRecord
-	if content, err := os.ReadFile(historyPath); err == nil {
-		_ = json.Unmarshal(content, &history)
-	}
-
 	seen := make(map[string]bool)
-	for _, r := range history {
-		seen[r.Session] = true
+	if content, err := os.ReadFile(historyPath); err == nil {
+		var existing []SessionCostRecord
+		if err := json.Unmarshal(content, &existing); err == nil {
+			for _, r := range existing {
+				seen[r.Session] = true
+			}
+		}
 	}
 
 	// Fetch pricing once for all calculations
@@ -86,11 +86,50 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 		pricing.Models[k] = v
 	}
 
-	// 1. Walk through all subdirectories
-	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+	files, err := ls.findLogFiles(globalDir)
+	if err != nil {
+		log.Printf("Recovery: walk failed: %v\n", err)
+	}
+
+	var discovered []SessionCostRecord
+	for _, path := range files {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			break
 		}
+
+		// Prevent redundant parsing by checking sessionID first
+		sessionID := ls.getSessionID(path, globalDir)
+		if seen[sessionID] {
+			continue
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+
+		record, err := ls.processLogFile(path, info, globalDir, pricing)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				log.Printf("Recovery: failed to parse %s: %v\n", path, err)
+			}
+			continue
+		}
+
+		if record != nil {
+			discovered = append(discovered, *record)
+			seen[record.Session] = true
+		}
+	}
+
+	if len(discovered) > 0 {
+		ls.persistMergedLedger(ctx, historyPath, discovered)
+	}
+}
+
+func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
@@ -98,87 +137,91 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
 			return nil
 		}
-		if info.IsDir() || !strings.HasSuffix(info.Name(), "tokens.log") {
-			return nil
-		}
-
-		rel, _ := filepath.Rel(globalDir, path)
-		rel = filepath.ToSlash(rel)
-		sessionID := rel
-		if strings.HasPrefix(rel, "backups/") {
-			sessionID = "backup/" + rel[len("backups/"):]
-		}
-
-		if seen[sessionID] {
-			return nil
-		}
-
-		usage, totalCost, detectedModel, err := ParseUsage(path, pricing, ls.model)
-		if err == nil {
-			modelToUse := detectedModel
-			if modelToUse == "" {
-				modelToUse = ls.model
-			}
-
-			// Extract date from path or mod time
-			date := info.ModTime().Format("2006-01-02")
-			if matches := dateRegex.FindStringSubmatch(rel); len(matches) > 3 {
-				date = fmt.Sprintf("%s-%s-%s", matches[1], matches[2], matches[3])
-			}
-
-			history = append(history, SessionCostRecord{
-				Date:      date,
-				Session:   sessionID,
-				Model:     modelToUse,
-				TotalCost: totalCost,
-				Usage:     usage,
-			})
-			seen[sessionID] = true
-		} else if !os.IsNotExist(err) {
-			log.Printf("Recovery: failed to parse %s: %v\n", path, err)
+		if !info.IsDir() && strings.HasSuffix(info.Name(), "tokens.log") {
+			files = append(files, path)
 		}
 		return nil
 	})
+	return files, err
+}
 
+func (ls *LedgerStore) getSessionID(path, globalDir string) string {
+	rel, err := filepath.Rel(globalDir, path)
 	if err != nil {
-		log.Printf("Recovery: walk failed: %v\n", err)
+		return path // Fallback
+	}
+	rel = filepath.ToSlash(rel)
+	sessionID := rel
+	if strings.HasPrefix(rel, "backups/") {
+		sessionID = "backup/" + rel[len("backups/"):]
+	}
+	return sessionID
+}
+
+func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing pricing.PricingData) (*SessionCostRecord, error) {
+	sessionID := ls.getSessionID(path, globalDir)
+
+	usage, totalCost, detectedModel, err := ParseUsage(path, pricing, ls.model)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(history) > 0 {
-		ledgerMu.Lock()
-		defer ledgerMu.Unlock()
+	modelToUse := detectedModel
+	if modelToUse == "" {
+		modelToUse = ls.model
+	}
 
-		lockPath := historyPath + ".lock"
-		breakStaleLock(lockPath)
-		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		if err != nil {
-			return // Another process is writing; skip this background update
-		}
-		defer func() {
-			lock.Close()
-			os.Remove(lockPath)
-		}()
+	// Extract date from path or mod time
+	date := info.ModTime().Format("2006-01-02")
+	rel, _ := filepath.Rel(globalDir, path)
+	rel = filepath.ToSlash(rel)
+	if matches := dateRegex.FindStringSubmatch(rel); len(matches) > 3 {
+		date = fmt.Sprintf("%s-%s-%s", matches[1], matches[2], matches[3])
+	}
 
-		// Re-read and merge in case of concurrent updates during walk
-		if content, err := os.ReadFile(historyPath); err == nil {
-			var latest []SessionCostRecord
-			if err := json.Unmarshal(content, &latest); err == nil {
-				mergedMap := make(map[string]SessionCostRecord)
-				for _, r := range history {
-					mergedMap[r.Session] = r
-				}
-				for _, r := range latest {
-					mergedMap[r.Session] = r
-				}
-				history = make([]SessionCostRecord, 0, len(mergedMap))
-				for _, r := range mergedMap {
-					history = append(history, r)
-				}
-			}
-		}
+	return &SessionCostRecord{
+		Date:      date,
+		Session:   sessionID,
+		Model:     modelToUse,
+		TotalCost: totalCost,
+		Usage:     usage,
+	}, nil
+}
 
-		if bytes, err := json.Marshal(history); err == nil {
-			_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
-		}
+func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath string, newRecords []SessionCostRecord) {
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+
+	lockPath := historyPath + ".lock"
+	breakStaleLock(lockPath)
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return // Another process is writing; skip this background update
+	}
+	defer func() {
+		lock.Close()
+		os.Remove(lockPath)
+	}()
+
+	var history []SessionCostRecord
+	if content, err := os.ReadFile(historyPath); err == nil {
+		_ = json.Unmarshal(content, &history)
+	}
+
+	mergedMap := make(map[string]SessionCostRecord)
+	for _, r := range history {
+		mergedMap[r.Session] = r
+	}
+	for _, r := range newRecords {
+		mergedMap[r.Session] = r
+	}
+
+	history = make([]SessionCostRecord, 0, len(mergedMap))
+	for _, r := range mergedMap {
+		history = append(history, r)
+	}
+
+	if bytes, err := json.Marshal(history); err == nil {
+		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 	}
 }
