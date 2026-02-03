@@ -511,7 +511,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 		{"Large context, under limit", 100000, 98000, false},
 		{"Large context, over safety limit (99000)", 100000, 99500, true},
 		{"Very Large context, under limit", 128000, 126500, false}, // 128000 - 1000 = 127000. 126500 < 127000.
-		{"Very Large context, over limit", 128000, 127500, true},  // 127500 > 127000.
+		{"Very Large context, over limit", 128000, 127500, true},   // 127500 > 127000.
 	}
 
 	for _, tt := range tests {
@@ -550,7 +550,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 
 	// Populate history with 10 pinned turns (~20 messages)
 	// Heuristic counter: turns approx 350 tokens each (default in my head, let's verify).
-	// Actually, HeuristicTokenCounter counts chars. 
+	// Actually, HeuristicTokenCounter counts chars.
 	// To exceed 90% of 2000 (1800), we need > 5760 chars (1800 * 3.2).
 	h := make([]*llm.Content, 20)
 	longText := strings.Repeat("A", 400) // 400 chars * 20 = 8000 chars. 8000 / 3.2 = 2500 tokens.
@@ -581,7 +581,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	// So at exactly 1800, it triggers summarization, fails, then checks safety limit (1800) and passes if <= 1800.
 	// Let's use MT=10000. 90% = 9000. Buffer = 1000. Safety limit = 9000.
 	// It's still tight. Let's use MT=20000. 90% = 18000. Safety limit = 19000.
-	
+
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
 	tg := pipeline.transformers[2].(*TokenGatekeeper)
@@ -593,7 +593,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	for i := range h2 {
 		h2[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: text2}}, Pinned: true}
 	}
-	
+
 	req2 := &ContextRequest{History: h2, Turn: 1}
 	err = pipeline.Execute(ctx, req2)
 	if err != nil {

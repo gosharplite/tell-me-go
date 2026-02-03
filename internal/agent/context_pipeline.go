@@ -12,16 +12,16 @@ import (
 
 // ContextMetadata provides observability into how the context was processed.
 type ContextMetadata struct {
-	OriginalTokenCount int
-	FinalTokenCount    int
-	FinalTurnCount     int
-	PrunedTurns        int
+	OriginalTokenCount     int
+	FinalTokenCount        int
+	FinalTurnCount         int
+	PrunedTurns            int
 	SummarizedTurns        int
 	SummarizationAttempted bool // Set to true if autoSummarize just ran successfully
 	MaintenanceBlocked     bool // Set to true if autoSummarize was blocked (e.g. by pins)
 	InjectedPrefixCount    int  // Number of messages injected at the start of history (e.g. instructions)
 	Warnings               []string
-	APIContents        []*llm.Content
+	APIContents            []*llm.Content
 }
 
 // ContextRequest carries state through the context transformation pipeline.
