@@ -71,25 +71,25 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	// Verify the injected sequence:
 	// 0: User Instructions (Injected by SystemInstructionInjector)
-	// 1: User "call tool"
-	// 2: Model Call
-	// 3: User Notice (Injected)
-	// 4: Model Ack (Injected)
-	// 5: User Response (Original index 2)
+	// 1: Model Ack (Injected by SystemInstructionInjector)
+	// 2: User "call tool" (Original index 0)
+	// 3: Model Call (Original index 1)
+	// 4: User Notice (Injected by WarningInjector)
+	// 5: Model Ack (Injected by WarningInjector)
+	// 6: User Response (Original index 2)
 
-	// Note: SystemInstructionInjector adds one turn at the beginning by default in my implementation.
-	if len(apiContents) != 6 {
-		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents))
+	if len(apiContents) != 7 {
+		t.Fatalf("Expected 7 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[3].Parts[0].Text, "Only 2 turns remain") {
-		t.Errorf("Expected User Notice turn at index 3, got %v", apiContents[3].Parts[0].Text)
+	if apiContents[4].Role != "user" || !strings.Contains(apiContents[4].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[4].Parts[0].Text, "Only 2 turns remain") {
+		t.Errorf("Expected User Notice turn at index 4, got %v", apiContents[4].Parts[0].Text)
 	}
-	if apiContents[4].Role != "model" || !strings.Contains(apiContents[4].Parts[0].Text, "Understood") {
-		t.Errorf("Expected Model Ack turn at index 4, got %v", apiContents[4])
+	if apiContents[5].Role != "model" || !strings.Contains(apiContents[5].Parts[0].Text, "Understood") {
+		t.Errorf("Expected Model Ack turn at index 5, got %v", apiContents[5])
 	}
-	if apiContents[5].Role != "user" || apiContents[5].Parts[0].FunctionResponse == nil {
-		t.Errorf("Expected User Response at index 5, got %v", apiContents[5])
+	if apiContents[6].Role != "user" || apiContents[6].Parts[0].FunctionResponse == nil {
+		t.Errorf("Expected User Response at index 6, got %v", apiContents[6])
 	}
 }
 

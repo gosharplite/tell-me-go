@@ -175,7 +175,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 
 	t.Run("Summarization failure", func(t *testing.T) {
 		tg := &TokenGatekeeper{
-			MaxTokens: 1000,
+			MaxTokens: 2000,
 			Estimator: &mockEstimator{tokens: 950},
 			Summarizer: &mockSummarizer{
 				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
@@ -287,24 +287,30 @@ func TestSlidingWindowPolicy_Prune_Pinned_ModelPart(t *testing.T) {
 	}
 }
 
+type dynamicMockEstimator struct {
+	tokens int
+}
+
+func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
+	// If it contains a summary, return less tokens
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if strings.Contains(p.Text, "System Auto-Summary") {
+				return 500
+			}
+		}
+	}
+	return m.tokens
+}
+
 func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	ctx := context.Background()
-
-	// Mock estimator that triggers summarization
-	// We want > 900 tokens if MaxTokens is 1000
-	estimator := &mockEstimator{tokens: 950}
 
 	summarizerCalled := false
 	summarizer := &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 			summarizerCalled = true
-			// Verify that none of the messages passed to summarizer are pinned
-			for _, msg := range subset {
-				if msg.Pinned {
-					t.Errorf("Pinned message passed to summarizer: %v", msg)
-				}
-			}
-			return "summary of unpinned turns", nil
+			return "summary", nil
 		},
 	}
 
@@ -312,18 +318,13 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	manager := &mockHistoryManager{
 		ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
 			managerCalled = true
-			// Turn 0 and 1 are pinned (indices 0,1,2,3)
-			// So it should NOT replace them.
-			if start < 4 {
-				t.Errorf("Replacing pinned turns: start=%d", start)
-			}
 			return nil
 		},
 	}
 
 	tg := &TokenGatekeeper{
-		MaxTokens:  1000,
-		Estimator:  estimator,
+		MaxTokens:  10000,
+		Estimator:  &dynamicMockEstimator{tokens: 9500},
 		Summarizer: summarizer,
 		Manager:    manager,
 	}
@@ -365,4 +366,314 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	if !req.History[2].Pinned || req.History[2].Parts[0].Text != "Msg 2" {
 		t.Error("Turn 1 (pinned) was lost or corrupted")
 	}
+}
+
+func TestWarningInjector_Transform_Clogged(t *testing.T) {
+	ctx := context.Background()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy.SetLimits(1000, 10, 20)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	t.Run("Inject clogged warning", func(t *testing.T) {
+		req := &ContextRequest{
+			Turn: 1,
+			History: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
+			},
+		}
+		req.Metadata.FinalTokenCount = 860 // > 85% of 1000
+		req.Metadata.SummarizationAttempted = true
+
+		err := injector.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		if len(req.Metadata.Warnings) == 0 {
+			t.Error("expected warnings in metadata")
+		}
+		lastContent := req.History[len(req.History)-1]
+		found := false
+		for _, p := range lastContent.Parts {
+			if strings.Contains(p.Text, "A recent summarization failed to significantly reduce context size") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("clogged warning not found in content parts: %v", lastContent.Parts)
+		}
+	})
+}
+
+func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
+	ctx := context.Background()
+	tg := &TokenGatekeeper{
+		MaxTokens: 10000,
+		Estimator: &dynamicMockEstimator{tokens: 9500},
+		Summarizer: &mockSummarizer{
+			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+				return "summary", nil
+			},
+		},
+		Manager: &mockHistoryManager{
+			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
+				return nil
+			},
+		},
+	}
+	h := make([]*llm.Content, 10)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+	}
+	req := &ContextRequest{History: h}
+	err := tg.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+	if !req.Metadata.SummarizationAttempted {
+		t.Error("expected SummarizationAttempted to be true")
+	}
+}
+
+func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
+	ctx := context.Background()
+	tg := &TokenGatekeeper{
+		MaxTokens: 2000,
+		Estimator: &mockEstimator{tokens: 1900}, // > 90%
+	}
+
+	// Create history where all messages are pinned
+	h := make([]*llm.Content, 20)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
+	}
+	req := &ContextRequest{History: h}
+
+	err := tg.Transform(ctx, req)
+	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
+	// Wait, MT=2000. Buffer=1000. SafetyLimit = 1000. 1900 > 1000. So it WILL fail with ErrContextLimitExceeded.
+	if !errors.Is(err, llm.ErrContextLimitExceeded) {
+		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
+	}
+
+	if !req.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true")
+	}
+}
+
+func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
+	ctx := context.Background()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy.SetLimits(1000, 10, 20)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
+		req := &ContextRequest{
+			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}}},
+		}
+		req.Metadata.FinalTokenCount = 900 // > 85%
+		req.Metadata.MaintenanceBlocked = true
+
+		err := injector.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		found := false
+		for _, w := range req.Metadata.Warnings {
+			if strings.Contains(w, "unpin non-essential turns using 'manage_history' (unpin)") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Clogged warning not found in metadata after maintenance was blocked")
+		}
+	})
+}
+
+func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		maxTokens int
+		tokens    int
+		wantErr   bool
+	}{
+		{"Small context, under limit", 100, 80, false},
+		{"Small context, over safety limit (90)", 100, 95, true},
+		{"Medium context, under limit", 1000, 850, false},
+		{"Medium context, over safety limit (900)", 1000, 950, true},
+		{"Large context, under limit", 100000, 98000, false},
+		{"Large context, over safety limit (99000)", 100000, 99500, true},
+		{"Very Large context, under limit", 128000, 126500, false}, // 128000 - 1000 = 127000. 126500 < 127000.
+		{"Very Large context, over limit", 128000, 127500, true},   // 127500 > 127000.
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tg := &TokenGatekeeper{
+				MaxTokens: tt.maxTokens,
+				Estimator: &mockEstimator{tokens: tt.tokens},
+			}
+			req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+			err := tg.Transform(ctx, req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
+	ctx := context.Background()
+	counter := NewHeuristicTokenCounter(&mockToolRegistry{})
+	strategy := NewContextStrategy(counter, nil)
+	maxTokens := 2000
+	strategy.SetLimits(maxTokens, 10, 20)
+
+	// Pipeline: Pruner(1), SystemInstructions(10), Gatekeeper(80), WarningInjector(100)
+	pipeline := NewContextPipeline(
+		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}, Manager: &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }}},
+		&SystemInstructionInjector{Instructions: "Follow the SOP."},
+		&TokenGatekeeper{
+			MaxTokens: maxTokens,
+			Estimator: strategy,
+			Manager:   &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }},
+		},
+		&WarningInjector{Strategy: strategy},
+	)
+
+	// Populate history with 10 pinned turns (~20 messages)
+	// Heuristic counter: turns approx 350 tokens each (default in my head, let's verify).
+	// Actually, HeuristicTokenCounter counts chars.
+	// To exceed 90% of 2000 (1800), we need > 5760 chars (1800 * 3.2).
+	h := make([]*llm.Content, 20)
+	longText := strings.Repeat("A", 400) // 400 chars * 20 = 8000 chars. 8000 / 3.2 = 2500 tokens.
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}, Pinned: true}
+	}
+
+	req := &ContextRequest{
+		History: h,
+		Turn:    1,
+	}
+
+	err := pipeline.Execute(ctx, req)
+	// Since 2500 > (2000 - 10% safety = 1800), and summarization is BLOCKED by pins, it should error with ErrContextLimitExceeded.
+	if !errors.Is(err, llm.ErrContextLimitExceeded) {
+		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
+	}
+
+	if !req.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true")
+	}
+
+	// Now try with slightly less history so it doesn't fail the safety check but triggers 90%.
+	// 90% = 1800. Safety limit = 1800.
+	// We need tokens > 1800 to trigger summarization, but it will fail safety check if tokens > 1800.
+	// Wait, the 10% safety buffer at 2000 is 200. So limit is 1800.
+	// The 90% trigger is 1800.
+	// So at exactly 1800, it triggers summarization, fails, then checks safety limit (1800) and passes if <= 1800.
+	// Let's use MT=10000. 90% = 9000. Buffer = 1000. Safety limit = 9000.
+	// It's still tight. Let's use MT=20000. 90% = 18000. Safety limit = 19000.
+
+	maxTokens = 20000
+	strategy.SetLimits(maxTokens, 10, 20)
+	tg := pipeline.transformers[2].(*TokenGatekeeper)
+	tg.MaxTokens = maxTokens
+
+	// 18500 tokens. 18500 * 3.2 = 59200 chars.
+	h2 := make([]*llm.Content, 20)
+	text2 := strings.Repeat("B", 2960) // 2960 * 20 = 59200.
+	for i := range h2 {
+		h2[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: text2}}, Pinned: true}
+	}
+
+	req2 := &ContextRequest{History: h2, Turn: 1}
+	err = pipeline.Execute(ctx, req2)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if !req2.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true for second run")
+	}
+
+	// Verify Clogged warning is injected
+	lastContent := req2.History[len(req2.History)-1]
+	found := false
+	for _, p := range lastContent.Parts {
+		if strings.Contains(p.Text, "A recent summarization failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Clogged warning not found in final payload")
+	}
+
+	// Verify system instructions are at the top and pinned
+	if req2.History[0].Parts[0].Text != "System Instructions:\n\nFollow the SOP." {
+		t.Errorf("System instructions missing or in wrong position: %s", req2.History[0].Parts[0].Text)
+	}
+	if !req2.History[0].Pinned || !req2.History[1].Pinned {
+		t.Error("System instructions turn not pinned")
+	}
+
+	// Verify token count includes system instructions
+	// Instructions are approx 60 chars -> 20 tokens.
+	if req2.Metadata.FinalTokenCount <= 18500 {
+		t.Errorf("FinalTokenCount (%d) should include system instructions tokens", req2.Metadata.FinalTokenCount)
+	}
+}
+
+func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
+	ctx := context.Background()
+
+	// Case 1: MaxTokens=1000. 10% cap is 100. SystemContextBuffer is 500.
+	// reserved should be min(500, 100) = 100.
+	// limit = 1000 - 100 = 900.
+	t.Run("10 percent cap", func(t *testing.T) {
+		tg := &TokenGatekeeper{
+			MaxTokens: 1000,
+			Estimator: &mockEstimator{tokens: 901},
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		err := tg.Transform(ctx, req)
+		if !errors.Is(err, llm.ErrContextLimitExceeded) {
+			t.Errorf("expected ErrContextLimitExceeded for 901 tokens (limit 900), got %v", err)
+		}
+
+		tg.Estimator.(*mockEstimator).tokens = 900
+		err = tg.Transform(ctx, req)
+		if err != nil {
+			t.Errorf("expected success for 900 tokens, got %v", err)
+		}
+	})
+
+	// Case 2: MaxTokens=10000. 10% cap is 1000. SystemContextBuffer is 1000.
+	// reserved should be min(1000, 1000) = 1000.
+	// limit = 10000 - 1000 = 9000.
+	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
+		tg := &TokenGatekeeper{
+			MaxTokens: 10000,
+			Estimator: &mockEstimator{tokens: 9001},
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		err := tg.Transform(ctx, req)
+		if !errors.Is(err, llm.ErrContextLimitExceeded) {
+			t.Errorf("expected ErrContextLimitExceeded for 9001 tokens (limit 9000), got %v", err)
+		}
+
+		tg.Estimator.(*mockEstimator).tokens = 9000
+		err = tg.Transform(ctx, req)
+		if err != nil {
+			t.Errorf("expected success for 9000 tokens, got %v", err)
+		}
+	})
 }

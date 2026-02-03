@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
@@ -132,28 +133,42 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	req.Metadata.OriginalTokenCount = t.Estimator.EstimateTokens(req.History)
 	tokens := req.Metadata.OriginalTokenCount
 
-	if tokens > int(float64(t.MaxTokens)*0.9) {
-		if t.Events != nil {
-			t.Events.Publish(events.SummarizationRequired{
-				Tokens:   tokens,
-				MaxLimit: t.MaxTokens,
-				Reason:   "Pressure high ( > 90%)",
-			})
+	if t.MaxTokens > 0 {
+		if tokens > int(float64(t.MaxTokens)*0.9) {
+			if t.Events != nil {
+				t.Events.Publish(events.SummarizationRequired{
+					Tokens:   tokens,
+					MaxLimit: t.MaxTokens,
+					Reason:   "Pressure high ( > 90%)",
+				})
+			}
+
+			if err := t.autoSummarize(ctx, req); err == nil {
+				tokens = t.Estimator.EstimateTokens(req.History)
+				req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+			}
 		}
 
-		if err := t.autoSummarize(ctx, req); err == nil {
-			tokens = t.Estimator.EstimateTokens(req.History)
-			req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+		limit := t.MaxTokens
+		if limit > 0 {
+			reserved := config.SystemContextBuffer
+			// Ensure we don't reserve so much space that the agent becomes unusable in small contexts.
+			// We reserve up to 10% of the context for system overhead, capped at the SystemContextBuffer.
+			maxReserved := int(float64(t.MaxTokens) * 0.1)
+			if reserved > maxReserved {
+				reserved = maxReserved
+			}
+			limit -= reserved
 		}
 
-		if tokens > t.MaxTokens {
+		if tokens > limit {
 			if t.Events != nil {
 				t.Events.Publish(events.TokenLimitReachedEvent{
 					Tokens:   tokens,
 					MaxLimit: t.MaxTokens,
 				})
 				t.Events.Publish(events.SystemMessageEvent{
-					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, t.MaxTokens),
+					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 					Level:   "error",
 				})
 			}
@@ -170,7 +185,7 @@ func (t *TokenGatekeeper) Priority() int { return 80 }
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
 	contents := req.History
 	if len(contents) < 10 {
-		return fmt.Errorf("not enough history to auto-summarize")
+		return fmt.Errorf("not enough history to auto-summarize (got %d)", len(contents))
 	}
 
 	// Group into turns (pairs of messages)
@@ -222,6 +237,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	}
 
 	if startTurn == -1 || numTurns < 2 {
+		req.Metadata.MaintenanceBlocked = true
 		return fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
 	}
 
@@ -256,9 +272,10 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
+	if err := t.Manager.ReplaceRange(ctx, startIdx-req.Metadata.InjectedPrefixCount, endIdx-req.Metadata.InjectedPrefixCount, newMsgs); err != nil {
 		return err
 	}
+	req.Metadata.SummarizationAttempted = true // Flag the attempt
 
 	// Update the request history after replacement in the manager
 	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
@@ -280,19 +297,27 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
-	warnings := t.Strategy.GetWarnings(req.Turn, tokens, currentTurns)
-
-	if len(warnings) == 0 {
-		return nil
-	}
 
 	var combined string
-	for _, w := range warnings {
-		if combined != "" {
-			combined += "\n"
+	maxTokens, _, _ := t.Strategy.GetLimits()
+
+	// Prioritize the Clogged warning if maintenance failed to reduce size OR was blocked by pins,
+	// and we are still near capacity.
+	if (req.Metadata.SummarizationAttempted || req.Metadata.MaintenanceBlocked) && float64(tokens) > float64(maxTokens)*0.85 {
+		combined = t.Strategy.GetCloggedWarning()
+		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
+	} else {
+		warnings := t.Strategy.GetWarnings(req.Turn, tokens, currentTurns)
+		if len(warnings) == 0 {
+			return nil
 		}
-		combined += w.Message
-		req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
+		for _, w := range warnings {
+			if combined != "" {
+				combined += "\n"
+			}
+			combined += w.Message
+			req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
+		}
 	}
 
 	apiContents := make([]*llm.Content, len(req.History))
@@ -354,15 +379,22 @@ func (t *SystemInstructionInjector) Transform(ctx context.Context, req *ContextR
 	}
 
 	instr := &llm.Content{
-		Role:  "user",
-		Parts: []*llm.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+		Role:   "user",
+		Parts:  []*llm.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+		Pinned: true,
+	}
+	ack := &llm.Content{
+		Role:   "model",
+		Parts:  []*llm.Part{{Text: "Understood. I will follow these instructions."}},
+		Pinned: true,
 	}
 
-	req.History = append([]*llm.Content{instr}, req.History...)
+	req.History = append([]*llm.Content{instr, ack}, req.History...)
+	req.Metadata.InjectedPrefixCount += 2
 	return nil
 }
 
-func (t *SystemInstructionInjector) Priority() int { return 110 }
+func (t *SystemInstructionInjector) Priority() int { return 10 }
 
 // ToolDeclarationGenerator injects tool schemas from the registry.
 type ToolDeclarationGenerator struct {
@@ -376,4 +408,4 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return 90 }
+func (t *ToolDeclarationGenerator) Priority() int { return 20 }

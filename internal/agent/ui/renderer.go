@@ -19,7 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
-	"golang.org/x/term"
 )
 
 // sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
@@ -143,6 +142,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
 		fmt.Fprintf(r.stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", gray, reset, status.SessionTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
+		fmt.Fprintln(r.stderr) // Ensure visual gap before response
 	} else if status.Metrics != nil {
 		m := status.Metrics
 		fmt.Fprintln(r.stderr) // Add vertical separation
@@ -224,6 +224,12 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 		aggregated:   &llm.Content{Role: "model"},
 		showThoughts: showThoughts,
 		rawOutput:    rawOutput,
+	}
+
+	if !rawOutput {
+		r.sm.TerminalLock()
+		fmt.Fprint(r.stdout, "\0337")
+		r.sm.TerminalUnlock()
 	}
 
 	var wg sync.WaitGroup
@@ -329,43 +335,10 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 }
 
 func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
-	width := 80
-	if f, ok := r.stdout.(*os.File); ok {
-		if w, _, err := term.GetSize(int(f.Fd())); err == nil {
-			width = w
-		}
-	}
-
-	lines := r.calculateVisualLines(fullText, width)
-
-	if lines > 0 {
-		fmt.Fprintf(r.stdout, "\r\033[%dA\033[J", lines)
-	}
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+	fmt.Fprint(r.stdout, "\0338\033[J")
 	r.renderMarkdown(fullText)
-}
-
-func (r *StdUIRenderer) calculateVisualLines(text string, width int) int {
-	if width <= 0 {
-		width = 80
-	}
-	lines := 0
-	currentLineLen := 0
-	for _, runeValue := range text {
-		if runeValue == '\n' {
-			lines++
-			currentLineLen = 0
-			continue
-		}
-		currentLineLen++
-		if currentLineLen >= width {
-			lines++
-			currentLineLen = 0
-		}
-	}
-	if currentLineLen > 0 {
-		lines++
-	}
-	return lines
 }
 
 func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
