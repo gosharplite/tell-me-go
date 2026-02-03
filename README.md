@@ -23,7 +23,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Intelligence (AST-Powered)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `get_semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `get_complexity_metrics`, `get_package_graph`, `move_definition`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, and `summarize_history`.
+    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, `summarize_history`, and `manage_history`.
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/vertex/tasks.json`, `output/vertex/scratchpad.md`, `output/vertex/config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration**:
@@ -38,10 +38,9 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
 *   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
 *   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
-    *   **Automatic Rollback**: Prevents "Context Overflow" by checking the estimated payload size against `MAX_HISTORY_TOKENS`. If exceeded, the history is restored to the previous turn and an error is returned.
-    *   **Pre-Limit Warnings**: 
-        *   **AI Awareness**: When `MAX_TURNS` or `MAX_HISTORY_TOKENS` (90%+) is nearing, the agent injects escalating **System Notices** into the AI's volatile history. 
-        *   **Graceful Exit**: This instructs the model to prioritize state persistence (scratchpad/tasks) before the process terminates or rolls back.
+    *   **Automatic Maintenance (Self-Healing)**: Prevents "Context Overflow" by automatically summarizing older unpinned conversation turns when the payload exceeds 90% of `MAX_HISTORY_TOKENS`. This relieves pressure without losing the semantic core of the session.
+    *   **Turn-Aligned Pinning**: Critical instructions and user-selected turns can be **pinned** (using `manage_history`) to protect them from pruning or summarization, ensuring they remain in the model's active context.
+    *   **Clogged Context Detection**: If the history becomes "clogged" with pinned turns and maintenance cannot reduce the size below 85% of capacity, the agent injects an **URGENT SYSTEM NOTICE** instructing the model to persist state and stop before a hard rollback occurs.
     *   **Infinite Loop Protection**: 
         *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
         *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
