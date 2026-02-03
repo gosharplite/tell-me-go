@@ -16,11 +16,7 @@ import (
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "summary_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -112,11 +108,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 }
 
 func TestGetCostSummary_GoogleBilling(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "billing_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")

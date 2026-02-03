@@ -6,6 +6,7 @@ package framework
 import (
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/pricing"
@@ -89,11 +90,10 @@ func TestParseUsage_Robustness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile, err := os.CreateTemp("", "test-usage-*.log")
+			tmpFile, err := os.Create(filepath.Join(t.TempDir(), "test-usage.log"))
 			if err != nil {
 				t.Fatalf("failed to create temp file: %v", err)
 			}
-			defer os.Remove(tmpFile.Name())
 
 			if _, err := tmpFile.WriteString(tt.content); err != nil {
 				t.Fatalf("failed to write to temp file: %v", err)
@@ -135,11 +135,10 @@ func TestParseUsage_InvalidPath(t *testing.T) {
 }
 
 func TestParseUsage_EmptyFile(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "empty-*.log")
+	tmpFile, err := os.Create(filepath.Join(t.TempDir(), "empty.log"))
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
 	stats, totalCost, detectedModel, timestamp, err := ParseUsage(tmpFile.Name(), pricing.PricingData{}, "gpt-4")
