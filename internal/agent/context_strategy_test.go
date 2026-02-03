@@ -151,6 +151,9 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 		if w901 == "" {
 			t.Error("expected warning at 90.1%")
 		}
+		if !contains(w901, "manage_history") {
+			t.Error("expected 90% token warning to mention manage_history")
+		}
 	})
 
 	t.Run("Exact Boundaries - 95%", func(t *testing.T) {
@@ -173,6 +176,9 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 		w90 := cs.getHistoryTurnWarning(91)
 		if !contains(w90, "90%") {
 			t.Errorf("expected 90%% turn warning at 91 turns, got %q", w90)
+		}
+		if !contains(w90, "manage_history") {
+			t.Error("expected 90% turn warning to mention manage_history")
 		}
 
 		// 95.1 turns -> ratio 0.951
@@ -197,8 +203,8 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 		}
 		// turn 8 -> 2 remaining
 		w2 := cs.getTurnWarning(8)
-		if !contains(w2, "URGENT") || !contains(w2, "2 turns remain") || !contains(w2, "distilled state") {
-			t.Errorf("expected urgent warning at 2 turns remaining with distilled state, got %q", w2)
+		if !contains(w2, "URGENT") || !contains(w2, "2 turns remain") || !contains(w2, "distilled state") || !contains(w2, "manage_history") {
+			t.Errorf("expected urgent warning at 2 turns remaining with distilled state and manage_history, got %q", w2)
 		}
 		// turn 9 -> 1 remaining
 		w1 := cs.getTurnWarning(9)
