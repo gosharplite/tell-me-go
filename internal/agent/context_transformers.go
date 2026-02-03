@@ -285,7 +285,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	var combined string
 	maxTokens, _, _ := t.Strategy.GetLimits()
 
-	if req.Metadata.SummarizationAttempted && float64(tokens) > float64(maxTokens)*0.90 {
+	if req.Metadata.SummarizationAttempted && float64(tokens) > float64(maxTokens)*0.85 {
 		combined = t.Strategy.GetCloggedWarning()
 		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
 	} else {

@@ -381,7 +381,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
 			},
 		}
-		req.Metadata.FinalTokenCount = 950 // > 90% of 1000
+		req.Metadata.FinalTokenCount = 860 // > 85% of 1000
 		req.Metadata.SummarizationAttempted = true
 
 		err := injector.Transform(ctx, req)
