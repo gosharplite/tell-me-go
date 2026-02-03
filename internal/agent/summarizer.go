@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
@@ -25,12 +26,7 @@ func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
 
 // Summarize uses the LLM to compress a subset of history.
 func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-	if s.events != nil {
-		s.events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)),
-			Level:   "info",
-		})
-	}
+	startTime := time.Now()
 
 	// Transform history to text-only to avoid INVALID_ARGUMENT
 	summarizerInput := make([]*llm.Content, len(subset))
@@ -73,9 +69,17 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	// Drain the channel; we don't stream summarization to the UI.
 	for range respCh {
 	}
-	respContent, _, err := finalize()
+	respContent, metrics, err := finalize()
 	if err != nil {
 		return "", fmt.Errorf("summarization request failed: %w", err)
+	}
+
+	// Emit metrics to the event bus
+	if s.events != nil && metrics != nil {
+		s.events.Publish(events.UsageMetricsEvent{
+			Metrics:   metrics,
+			StartTime: startTime,
+		})
 	}
 
 	if len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {

@@ -215,3 +215,27 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+
+	// First set to a non-zero value
+	cs.SetTieredThreshold(100)
+	if got := cs.GetTieredThreshold(); got != 100 {
+		t.Errorf("expected tieredThreshold to be 100, got %d", got)
+	}
+
+	// Set threshold to 0 (disable)
+	cs.SetTieredThreshold(0)
+	if got := cs.GetTieredThreshold(); got != 0 {
+		t.Errorf("expected tieredThreshold to be 0, got %d", got)
+	}
+
+	// Verify no price warning is generated when threshold is 0
+	warnings := cs.GetWarnings(1, 200000, 1) // High token count
+	for _, w := range warnings {
+		if contains(w.Message, "ECONOMIC") {
+			t.Errorf("expected no economic warnings when threshold is 0, but got: %q", w.Message)
+		}
+	}
+}

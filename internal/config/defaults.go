@@ -53,7 +53,7 @@ func DefaultPricing() llm.PricingData {
 const (
 	DefaultMaxToolTurns       = 10
 	DefaultMaxHistoryTurns    = 20
-	DefaultMaxHistoryTokens   = 100000
+	DefaultMaxHistoryTokens   = 120000
 	DefaultMaxConcurrentTools = 5
 	DefaultToolTimeoutSeconds = 30
 	DefaultTieredThreshold    = 0

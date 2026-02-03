@@ -302,3 +302,21 @@ func (m *Manager) GetResolver() llm.AssetResolver {
 	}
 	return nil
 }
+
+// SetPinned toggles the pinned status of a turn (a pair of messages).
+func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Turns are pairs. Turn 0 is messages 0 and 1.
+	startIdx := turnIndex * 2
+	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
+		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
+	}
+
+	m.Contents[startIdx].Pinned = pinned
+	m.Contents[startIdx+1].Pinned = pinned
+
+	// Save to disk if persistence is enabled
+	return m.saveLocked(ctx)
+}

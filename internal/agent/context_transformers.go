@@ -231,6 +231,15 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		endIdx = len(contents)
 	}
 
+	// Add transparency logging for automatic maintenance
+	if t.Events != nil {
+		subsetTokens := t.Estimator.EstimateTokens(contents[startIdx:endIdx])
+		t.Events.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("Auto-summarizing %d turns (~%d tokens) due to context pressure...", numTurns, subsetTokens),
+			Level:   "info",
+		})
+	}
+
 	summary, err := t.Summarizer.Summarize(ctx, contents[startIdx:endIdx], "")
 	if err != nil {
 		return err

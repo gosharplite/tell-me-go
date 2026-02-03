@@ -242,6 +242,26 @@ func (a *Agent) registerInternalTools() {
 			Required: []string{"turns"},
 		},
 	}, it.SummarizeHistory)
+
+	a.registry.Register(&tools.ToolDeclaration{
+		Name:        "manage_history",
+		Description: "Manages conversation history by pinning or unpinning specific turns to protect them from summarization/pruning.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"action": {
+					Type:        "STRING",
+					Description: "The action to perform: 'pin' or 'unpin'.",
+					Enum:        []string{"pin", "unpin"},
+				},
+				"index": {
+					Type:        "NUMBER",
+					Description: "The 0-based index of the turn to manage.",
+				},
+			},
+			Required: []string{"action", "index"},
+		},
+	}, it.ManageHistory)
 }
 
 // SetLimits sets the operational limits for the agent.

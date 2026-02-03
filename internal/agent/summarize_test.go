@@ -6,14 +6,18 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -128,5 +132,122 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSummarizeRange_SafetyCheck(t *testing.T) {
+	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
+
+	mockCounter := &mockTokenCounter{count: 950000} // Above 90% of 1M
+	strategy := NewContextStrategy(mockCounter, nil)
+	hManager := history.NewManager(historyFile)
+
+	ctx := context.Background()
+	// Add 2 turns (4 messages)
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "2"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "3"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
+
+	cm := &ContextManager{
+		Strategy:   strategy,
+		History:    hManager,
+		Summarizer: &mockSafetySummarizer{},
+	}
+
+	_, err := cm.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Fatal("expected error due to safety check, got nil")
+	}
+
+	expectedErr := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
+	if err.Error() != expectedErr {
+		t.Errorf("expected error %q, got %q", expectedErr, err.Error())
+	}
+}
+
+type mockTokenCounter struct {
+	count int
+}
+
+func (m *mockTokenCounter) Count(contents []*llm.Content) int {
+	return m.count
+}
+
+type mockSafetySummarizer struct{}
+
+func (m *mockSafetySummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
+	return "summary", nil
+}
+
+func TestSummarizeRange_Logging(t *testing.T) {
+	historyFile := filepath.Join(t.TempDir(), "test_logging_history.json")
+	hManager := history.NewManager(historyFile)
+	ctx := context.Background()
+
+	// Add 2 turns (4 messages)
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "2"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "3"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
+
+	tokenCount := 1234
+	mockCounter := &mockTokenCounter{count: tokenCount}
+	strategy := NewContextStrategy(mockCounter, nil)
+	bus := &events.TestEventBus{}
+
+	// Use real summarizer but mock gateway
+	mockG := &mockLogGateway{}
+	summarizer := NewSummarizer(mockG, bus)
+
+	cm := &ContextManager{
+		Strategy:   strategy,
+		History:    hManager,
+		Summarizer: summarizer,
+		Events:     bus,
+	}
+
+	turns := 1
+	_, err := cm.SummarizeRange(ctx, turns, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	evs := bus.FilterEvents(reflect.TypeOf(events.SystemMessageEvent{}))
+	if len(evs) == 0 {
+		t.Fatal("expected SystemMessageEvent to be published")
+	}
+
+	found := false
+	expectedMsg := fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, tokenCount)
+	for _, e := range evs {
+		se := e.(events.SystemMessageEvent)
+		if se.Message == expectedMsg {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("expected log message %q not found in published events", expectedMsg)
+	}
+
+	// Verify that the OLD log message is NOT present
+	oldMsgPrefix := "Summarizing"
+	for _, e := range evs {
+		se := e.(events.SystemMessageEvent)
+		if len(se.Message) >= len(oldMsgPrefix) && se.Message[:len(oldMsgPrefix)] == oldMsgPrefix {
+			t.Errorf("found old log message %q which should have been removed", se.Message)
+		}
+	}
+}
+
+type mockLogGateway struct{}
+
+func (m *mockLogGateway) Generate(ctx context.Context, input []*llm.Content, tlds []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	ch := make(chan *llm.Content)
+	close(ch)
+	return ch, func() (*llm.Content, *llm.Metrics, error) {
+		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "summary"}}}, &llm.Metrics{}, nil
 	}
 }
