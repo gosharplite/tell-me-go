@@ -31,14 +31,15 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
-		sm:    sm,
-		model: "test-model",
+		sm:     sm,
+		model:  "test-model",
+		ledger: NewLedgerStore(sm, "test-model", nil),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	m.recoverLedger(ctx, tempDir)
+	m.ledger.RecoverLedger(ctx, tempDir)
 
 	// The ledger should NOT have been created if it was cancelled immediately
 	historyPath := filepath.Join(tempDir, "global_costs.json")
@@ -97,9 +98,10 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
-		sm:    sm,
-		model: "test-model",
-		mode:  "test-mode",
+		sm:     sm,
+		model:  "test-model",
+		mode:   "test-mode",
+		ledger: NewLedgerStore(sm, "test-model", nil),
 	}
 
 	outputDir := filepath.Join(tempDir, "test-mode")

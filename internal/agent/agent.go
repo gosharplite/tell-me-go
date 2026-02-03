@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -46,7 +47,7 @@ type RuntimeConfig struct {
 	MainConfigPath       string
 	Model                string
 	Mode                 string
-	PricingOverrides     map[string]llm.ModelPricing
+	PricingOverrides     map[string]pricing.ModelPricing
 	HardBudgetLimit      float64
 	SystemInstructions   string
 }
@@ -71,7 +72,7 @@ type Agent struct {
 type AgentOption func(*Agent)
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]llm.ModelPricing) AgentOption {
+func WithPricing(model, mode string, overrides map[string]pricing.ModelPricing) AgentOption {
 	return func(a *Agent) {
 		a.config.Model = model
 		a.config.Mode = mode

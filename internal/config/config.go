@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,9 +34,9 @@ type Config struct {
 
 // ModelConfig defines capabilities and limits for a specific model.
 type ModelConfig struct {
-	MaxThinkingBudget int              `yaml:"MAX_THINKING_BUDGET"`
-	ContextWindow     int              `yaml:"CONTEXT_WINDOW"`
-	Pricing           llm.ModelPricing `yaml:"PRICING"`
+	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`
+	ContextWindow     int                  `yaml:"CONTEXT_WINDOW"`
+	Pricing           pricing.ModelPricing `yaml:"PRICING"`
 }
 
 // Load reads and parses the configuration file.
@@ -70,7 +70,7 @@ func Load(path string) (*Config, error) {
 }
 
 // ResolveThinkingBudget returns the best matching thinking budget for the model.
-func (c *Config) ResolveThinkingBudget(model string, pricingData llm.PricingData) int {
+func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.PricingData) int {
 	// 1. Check for exact model match in config
 	if mCfg, ok := c.Models[model]; ok && mCfg.MaxThinkingBudget > 0 {
 		return mCfg.MaxThinkingBudget

@@ -17,6 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
@@ -156,7 +157,7 @@ type TurnEngine struct {
 	sm               *security.SecurityManager
 	logFile          string
 	model            string
-	pricingOverrides map[string]llm.ModelPricing
+	pricingOverrides map[string]pricing.ModelPricing
 	costTracker      *framework.SessionCostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 	taskCost         float64 // Cumulative cost for the current Run() call.
@@ -211,7 +212,7 @@ func WithHardBudget(limit float64) EngineOption {
 }
 
 // WithConfig sets the security and usage configuration for the engine.
-func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]llm.ModelPricing) EngineOption {
+func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
 		e.mu.Lock()
 		defer e.mu.Unlock()

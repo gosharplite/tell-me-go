@@ -3,13 +3,15 @@
 
 package config
 
-import "github.com/gosharplite/tell-me-go/internal/domain/llm"
+import (
+	"github.com/gosharplite/tell-me-go/internal/pricing"
+)
 
 // DefaultPricing returns the hardcoded fallback pricing data.
-func DefaultPricing() llm.PricingData {
-	return llm.PricingData{
+func DefaultPricing() pricing.PricingData {
+	return pricing.PricingData{
 		UpdatedAt: "Hardcoded Fallback",
-		Models: map[string]llm.ModelPricing{
+		Models: map[string]pricing.ModelPricing{
 			"gemini-3-flash-preview": {
 				Hit:             0.05,
 				Miss:            0.50,

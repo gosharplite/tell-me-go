@@ -18,7 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
@@ -84,7 +84,7 @@ func (a *App) setupSecurity(paths *sessionPaths, opts *cliOptions, cfg *config.C
 	a.sm.RegisterReadOnlyPath(opts.configPath)
 }
 
-func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingOverrides map[string]llm.ModelPricing) {
+func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	// Record cost with a unique ID including the timestamp before archiving
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.logPath))
@@ -93,7 +93,7 @@ func (a *App) handleNewSession(paths *sessionPaths, cfg *config.Config, pricingO
 	a.cleanupOldBackups(a.homeDir, cfg.Mode)
 }
 
-func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]llm.ModelPricing) *registry.Registry {
+func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
 	reg := registry.New()
 
 	files.Register(reg, a.sm)
@@ -111,7 +111,7 @@ func (a *App) setupRegistry(client *api.Client, cfg *config.Config, paths *sessi
 	return reg
 }
 
-func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing llm.PricingData) {
+func (a *App) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing pricing.PricingData) {
 	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
 	chatAgent.SetMainConfigPath(opts.configPath)
 	chatAgent.SetLogFile(paths.logPath)
