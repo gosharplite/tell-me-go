@@ -56,22 +56,20 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	a := New(client, hManager, reg, sm, true)
 
 	// Set a token limit to trigger auto-summarization.
-	// With a 2000 token limit, the 90% threshold is 1800.
-	a.SetLimits(10, 2000, 20)
+	// Use 100000. Safety limit = 99000. 90% = 90000.
+	a.SetLimits(10, 100000, 20)
 
-	// Fill history with enough content to exceed 1800 tokens.
-	// Estimation: tokens = (charCount / 3.2) to be conservative.
-	// 6000 chars / 3.2 ≈ 1875 tokens, safely triggering the logic.
-	longText := strings.Repeat("A", 1000)
-	for i := 0; i < 6; i++ { // 12 messages
+	// Add 95k tokens of history.
+	longText := strings.Repeat("A", 32000) // approx 10k tokens
+	for i := 0; i < 9; i++ {
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
 	}
 
 	// Verify initial count
 	initialContents := hManager.GetContents()
-	if len(initialContents) != 12 {
-		t.Fatalf("expected 12 messages, got %d", len(initialContents))
+	if len(initialContents) != 18 {
+		t.Fatalf("expected 18 messages, got %d", len(initialContents))
 	}
 
 	// Call Prepare, which should trigger AutoSummarize
@@ -84,11 +82,11 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 
 	// Check if history was replaced
 	newContents := hManager.GetContents()
-	// AutoSummarize takes (len / 4) * 2 messages. 12 / 4 = 3. 3 * 2 = 6 messages.
-	// 6 messages replaced by 2.
-	// Total: 12 - 6 + 2 = 8 messages.
-	if len(newContents) != 8 {
-		t.Errorf("expected 8 messages after auto-summarization, got %d", len(newContents))
+	// AutoSummarize takes (len / 4) * 2 messages. 18 / 4 = 4. 4 * 2 = 8 messages.
+	// 8 messages replaced by 2.
+	// Total: 18 - 8 + 2 = 12 messages.
+	if len(newContents) != 12 {
+		t.Errorf("expected 12 messages after auto-summarization, got %d", len(newContents))
 	}
 
 	if !strings.Contains(newContents[0].Parts[0].Text, "System Auto-Summary") {
@@ -120,12 +118,12 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	}
 	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 
-	// Set a limit to trigger auto-summarization (90% threshold = 1080 tokens)
-	a.SetLimits(10, 1200, 20)
+	// Set a limit to trigger auto-summarization (90% threshold = 90k tokens)
+	a.SetLimits(10, 100000, 20)
 
-	// Add enough turns to exceed 900 tokens (including ~400 token base overhead)
-	longText := strings.Repeat("A", 400)
-	for i := 0; i < 5; i++ {
+	// Add enough turns to exceed 90k tokens
+	longText := strings.Repeat("A", 32000) // approx 10k tokens
+	for i := 0; i < 9; i++ {
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
 	}

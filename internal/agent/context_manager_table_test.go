@@ -44,10 +44,10 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 		tokens      int
 		shouldError bool
 	}{
-		{"Well under limit", 1000, 500, false},
-		{"Exactly at limit", 1000, 1000, false},
-		{"One over limit", 1000, 1001, true},
-		{"Zero limit", 0, 100, true},
+		{"Well under limit", 2000, 500, false},
+		{"Exactly at safety limit", 2000, 1000, false}, // 1000 < 1800 (no check)
+		{"Over safety limit", 2000, 1900, true},      // 1900 > 1800 (check) AND 1900 > 1000 (error)
+		{"Zero limit", 0, 1, false},                   // MaxTokens 0 means no limit
 	}
 
 	for _, tt := range tests {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
@@ -132,28 +133,35 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	req.Metadata.OriginalTokenCount = t.Estimator.EstimateTokens(req.History)
 	tokens := req.Metadata.OriginalTokenCount
 
-	if tokens > int(float64(t.MaxTokens)*0.9) {
-		if t.Events != nil {
-			t.Events.Publish(events.SummarizationRequired{
-				Tokens:   tokens,
-				MaxLimit: t.MaxTokens,
-				Reason:   "Pressure high ( > 90%)",
-			})
+	if t.MaxTokens > 0 {
+		if tokens > int(float64(t.MaxTokens)*0.9) {
+			if t.Events != nil {
+				t.Events.Publish(events.SummarizationRequired{
+					Tokens:   tokens,
+					MaxLimit: t.MaxTokens,
+					Reason:   "Pressure high ( > 90%)",
+				})
+			}
+
+			if err := t.autoSummarize(ctx, req); err == nil {
+				tokens = t.Estimator.EstimateTokens(req.History)
+				req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+			}
 		}
 
-		if err := t.autoSummarize(ctx, req); err == nil {
-			tokens = t.Estimator.EstimateTokens(req.History)
-			req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+		limit := t.MaxTokens
+		if limit > config.SystemContextBuffer {
+			limit -= config.SystemContextBuffer
 		}
 
-		if tokens > t.MaxTokens {
+		if tokens > limit {
 			if t.Events != nil {
 				t.Events.Publish(events.TokenLimitReachedEvent{
 					Tokens:   tokens,
 					MaxLimit: t.MaxTokens,
 				})
 				t.Events.Publish(events.SystemMessageEvent{
-					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds limit (%d)!", tokens, t.MaxTokens),
+					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 					Level:   "error",
 				})
 			}

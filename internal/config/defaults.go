@@ -59,4 +59,5 @@ const (
 	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
 	WarningRatio              = 0.78 // ~100k for 128k cliff
+	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )
