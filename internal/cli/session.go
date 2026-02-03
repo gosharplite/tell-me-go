@@ -51,26 +51,18 @@ func (a *App) initPaths(cfg *config.Config) (*sessionPaths, error) {
 
 func (a *App) loadPersistentConfig(paths *sessionPaths, cfg *config.Config) (map[string]string, error) {
 	pCfg := make(map[string]string)
-	if data, err := os.ReadFile(paths.persistentConfigPath); err == nil {
-		_ = json.Unmarshal(data, &pCfg)
+	data, err := os.ReadFile(paths.persistentConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return pCfg, nil // No overrides yet, this is fine
+		}
+		return nil, err
 	}
 
-	updated := false
-	seedLimit := func(key string, val int) {
-		if _, ok := pCfg[key]; !ok {
-			pCfg[key] = fmt.Sprintf("%d", val)
-			updated = true
-		}
+	if err := json.Unmarshal(data, &pCfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal persistent config: %w", err)
 	}
-	seedLimit("MAX_HISTORY_TOKENS", cfg.MaxHistoryTokens)
-	seedLimit("MAX_TOOL_TURNS", cfg.MaxToolTurns)
-	seedLimit("MAX_HISTORY_TURNS", cfg.MaxHistoryTurns)
 
-	if updated {
-		if data, err := json.MarshalIndent(pCfg, "", "  "); err == nil {
-			_ = os.WriteFile(paths.persistentConfigPath, data, 0644)
-		}
-	}
 	return pCfg, nil
 }
 
