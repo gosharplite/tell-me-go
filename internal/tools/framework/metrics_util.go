@@ -55,12 +55,12 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 			}
 
 			p := GetModelPricing(mtModel, pd)
-			Accumulate(&stats, mt, p)
-			calc := &pricing.CostCalculator{Pricing: pd, Model: p}
+			turnStats := Accumulate(&stats, mt)
 			if mt.Cost > 0 {
 				totalCost += mt.Cost
 			} else {
-				totalCost += calculateMetrics(calc, mt).TotalCost
+				calc := &pricing.CostCalculator{Pricing: pd, Model: p}
+				totalCost += calc.Calculate(turnStats).TotalCost
 			}
 			continue
 		}
@@ -68,18 +68,19 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 	return stats, totalCost, detectedModel, scanner.Err()
 }
 
-// Accumulate adds metrics to usage statistics.
-func Accumulate(stats *pricing.UsageStats, mt llm.Metrics, p pricing.ModelPricing) {
-	stats.PromptTokens += int64(mt.PromptTokens)
-	stats.ResponseTokens += int64(mt.ResponseTokens)
-	stats.CachedTokens += int64(mt.CachedTokens)
-	stats.SearchQueries += int64(mt.SearchQueries)
-	stats.ThinkingTokens += int64(mt.ThinkingTokens)
-}
-
-// calculateMetrics calculates the cost for a single metrics entry.
-func calculateMetrics(c *pricing.CostCalculator, mt llm.Metrics) pricing.CostBreakdown {
-	var stats pricing.UsageStats
-	Accumulate(&stats, mt, c.Model)
-	return c.Calculate(stats)
+// Accumulate adds metrics to usage statistics and returns the newly added stats.
+func Accumulate(stats *pricing.UsageStats, mt llm.Metrics) pricing.UsageStats {
+	turn := pricing.UsageStats{
+		PromptTokens:   int64(mt.PromptTokens),
+		ResponseTokens: int64(mt.ResponseTokens),
+		CachedTokens:   int64(mt.CachedTokens),
+		SearchQueries:  int64(mt.SearchQueries),
+		ThinkingTokens: int64(mt.ThinkingTokens),
+	}
+	stats.PromptTokens += turn.PromptTokens
+	stats.ResponseTokens += turn.ResponseTokens
+	stats.CachedTokens += turn.CachedTokens
+	stats.SearchQueries += turn.SearchQueries
+	stats.ThinkingTokens += turn.ThinkingTokens
+	return turn
 }

@@ -53,8 +53,6 @@ func TestCostCalculator_Calculate(t *testing.T) {
 }
 
 func TestAccumulate(t *testing.T) {
-	p := pricing.ModelPricing{}
-
 	tests := []struct {
 		name         string
 		mt           llm.Metrics
@@ -84,7 +82,7 @@ func TestAccumulate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stats := &pricing.UsageStats{}
-			Accumulate(stats, tt.mt, p)
+			Accumulate(stats, tt.mt)
 
 			if stats.PromptTokens != tt.wantPrompt {
 				t.Errorf("PromptTokens = %v, want %v", stats.PromptTokens, tt.wantPrompt)

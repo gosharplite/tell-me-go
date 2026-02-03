@@ -129,7 +129,7 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 
 func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
 	var files []string
-	err := filepath.Walk(globalDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(globalDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
@@ -137,7 +137,7 @@ func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
 			log.Printf("Recovery: error accessing path %q: %v\n", path, err)
 			return nil
 		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), "tokens.log") {
+		if !d.IsDir() && strings.HasSuffix(d.Name(), "tokens.log") {
 			files = append(files, path)
 		}
 		return nil
@@ -205,7 +205,9 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 
 	var history []SessionCostRecord
 	if content, err := os.ReadFile(historyPath); err == nil {
-		_ = json.Unmarshal(content, &history)
+		if err := json.Unmarshal(content, &history); err != nil {
+			log.Printf("Warning: Failed to parse ledger %s: %v", historyPath, err)
+		}
 	}
 
 	mergedMap := make(map[string]SessionCostRecord)
@@ -221,7 +223,10 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 		history = append(history, r)
 	}
 
-	if bytes, err := json.Marshal(history); err == nil {
-		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	bytes, err := json.Marshal(history)
+	if err != nil {
+		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
+		return
 	}
+	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 }

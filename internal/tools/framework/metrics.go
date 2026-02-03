@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -110,10 +111,10 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 	}
 	p := GetModelPricing(mtModel, t.pricing)
 
-	Accumulate(&t.stats, mt, p)
+	turnStats := Accumulate(&t.stats, mt)
 
 	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
-	t.totalCost += calculateMetrics(calc, mt).TotalCost
+	t.totalCost += calc.Calculate(turnStats).TotalCost
 }
 
 // CalculateCost returns the cost of a single metrics entry without accumulating it.
@@ -128,7 +129,9 @@ func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
 	p := GetModelPricing(mtModel, t.pricing)
 
 	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
-	return calculateMetrics(calc, mt).TotalCost
+	var dummy pricing.UsageStats
+	turnStats := Accumulate(&dummy, mt)
+	return calc.Calculate(turnStats).TotalCost
 }
 
 type metricsManager struct {
@@ -225,7 +228,10 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 		IsSummary:      true,
 	}
 
-	summaryBytes, _ := json.Marshal(summary)
+	summaryBytes, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cost summary: %w", err)
+	}
 	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -317,9 +323,12 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	}
 
 	// 5. Write back atomically
-	if bytes, err := json.Marshal(history); err == nil {
-		_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	bytes, err := json.Marshal(history)
+	if err != nil {
+		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
+		return
 	}
+	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 }
 
 func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
