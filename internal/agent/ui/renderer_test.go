@@ -270,7 +270,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "$0.0123 $0.0001 $0.1234") || !strings.Contains(output, "66.7%") {
+	if !strings.Contains(output, "$0.0123 $0.0001") || !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
 		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
 	}
 }

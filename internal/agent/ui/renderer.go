@@ -172,12 +172,14 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			}
 			green := "\033[0;32m"
 			// Format: (TurnCost TaskCost SessionCost M: ... H: ... O: ...)
-			costStr = fmt.Sprintf(" %s(%s$%.4f $%.4f $%.4f%s M: %d H: %d %s%.1f%%%s O: %d)%s",
+			// Highlight ONLY the SessionCost ($1.4745 in user example).
+			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
 				gray,
-				green, status.Metrics.Cost, status.TaskCost, status.SessionCost, gray,
+				status.Metrics.Cost, status.TaskCost,
+				green, status.SessionCost, gray,
 				status.TotalM,
 				status.TotalH,
-				green, hitRate, gray,
+				hitRate,
 				status.TotalO,
 				gray)
 		}
