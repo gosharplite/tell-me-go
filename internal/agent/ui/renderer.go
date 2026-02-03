@@ -141,7 +141,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 
 	if !status.IsPostCall {
 		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
-		fmt.Fprintf(r.stderr, "%s╭─⠿ %sTurn %d/%d%s\n", gray, reset, status.CurrentTurns+1, status.MaxHistoryTurns, gray)
+		fmt.Fprintf(r.stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", gray, reset, status.SessionTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
 	} else if status.Metrics != nil {
 		m := status.Metrics
@@ -376,8 +376,8 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	cyan := "\033[0;36m"
 	reset := "\033[0m"
 
-	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (%s%d%s/%d)] Calling: %s%s\n",
-		cyan, r.now().Format("15:04:05"), cyan, reset, turn+1, cyan, maxTurns, strings.Join(names, ", "), reset)
+	fmt.Fprintf(r.stderr, "%s[%s] %s[Tool Engine (Step %d/%d)] Calling: %s%s\n",
+		cyan, r.now().Format("15:04:05"), cyan, turn+1, maxTurns, strings.Join(names, ", "), reset)
 
 	if showTools {
 		for _, fc := range calls {

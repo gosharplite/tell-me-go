@@ -71,12 +71,13 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 		r.LogTurnStatus(events.TurnStatus{
 			Timestamp:        r.now(),
 			CurrentTurns:     0,
+			SessionTurns:     0,
 			MaxHistoryTurns:  10,
 			Tokens:           100,
 			MaxHistoryTokens: 1000,
 		})
-		if !strings.Contains(stderr.String(), "Turn 1/10") {
-			t.Errorf("expected stderr to contain 'Turn 1/10', got %q", stderr.String())
+		if !strings.Contains(stderr.String(), "Session: 1/10 turns") {
+			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", stderr.String())
 		}
 	})
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
 type mockEventBus struct {
@@ -62,7 +63,8 @@ func TestWithStatusReporter(t *testing.T) {
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	cs := NewContextStrategy(nil, nil)
-	cm := &ContextManager{Strategy: cs}
+	h := history.NewManager("")
+	cm := &ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {
 		name       string

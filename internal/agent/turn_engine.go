@@ -673,6 +673,7 @@ func WithStatusReporter(bus events.EventBus) TurnMiddleware {
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
+						SessionTurns:     len(turn.CtxManager.History.GetContents()) / 2,
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,

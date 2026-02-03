@@ -34,6 +34,7 @@ type ConfigUpdated struct {
 type TurnStatus struct {
 	Timestamp        time.Time
 	CurrentTurns     int
+	SessionTurns     int // New: Total turns in history
 	MaxHistoryTurns  int
 	Tokens           int
 	MaxHistoryTokens int
