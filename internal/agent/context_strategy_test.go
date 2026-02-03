@@ -218,7 +218,7 @@ func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
 
 func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
-	
+
 	// First set to a non-zero value
 	cs.SetTieredThreshold(100)
 	if got := cs.GetTieredThreshold(); got != 100 {

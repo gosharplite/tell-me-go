@@ -121,7 +121,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 
 	// Set a limit to trigger auto-summarization (90% threshold = 900 tokens)
-	a.SetLimits(10, 1000, 20) 
+	a.SetLimits(10, 1000, 20)
 
 	// Add enough turns to exceed 900 tokens (including ~400 token base overhead)
 	longText := strings.Repeat("A", 400)

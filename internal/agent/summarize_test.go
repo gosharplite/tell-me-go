@@ -141,7 +141,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	mockCounter := &mockTokenCounter{count: 950000} // Above 90% of 1M
 	strategy := NewContextStrategy(mockCounter, nil)
 	hManager := history.NewManager(historyFile)
-	
+
 	ctx := context.Background()
 	// Add 2 turns (4 messages)
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
