@@ -17,8 +17,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/config"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -30,8 +30,8 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]llm.ModelPricing) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error)
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
 	sm      *security.SecurityManager
@@ -67,10 +67,10 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]llm.ModelPricing) agent.Chatter {
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing) agent.Chatter {
 			return agent.New(client, hManager, reg, sm, disableStreaming, agent.WithPricing(model, mode, pricingOverrides))
 		},
-		ClientFactory: func(cfg *config.Config, pricing llm.PricingData) (*api.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
 			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
@@ -136,7 +136,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	// 4. Initialize Security & Session
 	a.setupSecurity(paths, opts, cfg)
 
-	pricingOverrides := make(map[string]llm.ModelPricing)
+	pricingOverrides := make(map[string]pricing.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
 			pricingOverrides[k] = v.Pricing

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
 func TestSessionCostTracker(t *testing.T) {
@@ -21,14 +22,14 @@ func TestSessionCostTracker(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
-	model := llm.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	model := pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"test-model": model,
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricingData)
 
 	// 1. Initial cost should be 0
 	cost := tracker.GetTotalCost(context.Background())
@@ -70,9 +71,9 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
-	model := llm.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	model := pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"test-model": model,
 		},
 	}
@@ -86,7 +87,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	data, _ := json.Marshal(initialMetrics)
 	os.WriteFile(logFile, append(data, '\n'), 0644)
 
-	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricingData)
 
 	// Lazy init should pick up existing log
 	cost := tracker.GetTotalCost(context.Background())
@@ -114,14 +115,14 @@ func TestSessionCostTracker_MixedModels(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"model-a": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
 			"model-b": {Hit: 10.0, Miss: 20.0, Comp: 30.0},
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, "model-a", pricing.Models["model-a"], pricing)
+	tracker := NewSessionCostTracker(nil, logFile, "model-a", pricingData.Models["model-a"], pricingData)
 
 	// turn 1: model-a
 	tracker.Accumulate(llm.Metrics{
@@ -156,8 +157,8 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	logFile := filepath.Join(tmpDir, "tokens.log")
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"model-a": {Hit: 1.0, Miss: 2.0, Comp: 3.0},
 			"model-b": {Hit: 10.0, Miss: 20.0, Comp: 30.0},
 		},
@@ -178,7 +179,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	content := string(d1) + "\n" + string(d2) + "\n" + string(d3) + "\n"
 	os.WriteFile(logFile, []byte(content), 0644)
 
-	stats, totalCost, _, err := ParseUsage(logFile, pricing, "model-a")
+	stats, totalCost, _, err := ParseUsage(logFile, pricingData, "model-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,14 +198,14 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 }
 
 func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
-	model := llm.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	model := pricing.ModelPricing{Hit: 1.0, Miss: 2.0, Comp: 3.0}
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"test-model": model,
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, "", "test-model", model, pricing)
+	tracker := NewSessionCostTracker(nil, "", "test-model", model, pricingData)
 
 	tracker.Accumulate(llm.Metrics{
 		PromptTokens:   100,

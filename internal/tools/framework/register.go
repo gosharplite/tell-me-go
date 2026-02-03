@@ -4,8 +4,8 @@
 package framework
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
@@ -16,7 +16,7 @@ type Config struct {
 	Model            string
 	Mode             string
 	OutputDir        string
-	PricingOverrides map[string]llm.ModelPricing
+	PricingOverrides map[string]pricing.ModelPricing
 }
 
 // Register adds framework-related tools (policy, metrics, state) to the registry.

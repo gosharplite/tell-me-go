@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
-func TestBreakStaleLock(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "stale_lock_test")
+func TestIsStale(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "is_stale_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +32,9 @@ func TestBreakStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 2. breakStaleLock should NOT remove it if it's new
-	breakStaleLock(lockPath)
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-		t.Error("breakStaleLock removed a fresh lock")
+	// 2. isStale should be false if it's new
+	if isStale(lockPath) {
+		t.Error("isStale returned true for a fresh lock")
 	}
 
 	// 3. Make it old
@@ -44,10 +44,9 @@ func TestBreakStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 4. breakStaleLock should now remove it
-	breakStaleLock(lockPath)
-	if _, err := os.Stat(lockPath); err == nil {
-		t.Error("breakStaleLock failed to remove a stale lock")
+	// 4. isStale should now be true
+	if !isStale(lockPath) {
+		t.Error("isStale returned false for a stale lock")
 	}
 }
 
@@ -118,21 +117,23 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 	data, _ := json.Marshal(metrics)
 	_ = os.WriteFile(logPath, append(data, '\n'), 0644)
 
+	sm := security.NewSecurityManager(os.Stdin)
 	m := &metricsManager{
-		sm:    security.NewSecurityManager(os.Stdin),
+		sm:    sm,
 		model: "default-model", // This is the current session model
 	}
 
 	// We need a pricing override for "gpt-4-special" to test recalculation
-	m.pricingOverrides = map[string]llm.ModelPricing{
+	m.pricingOverrides = map[string]pricing.ModelPricing{
 		"gpt-4-special": {
 			Hit:  10.0,
 			Miss: 100.0,
 			Comp: 200.0,
 		},
 	}
+	m.ledger = NewLedgerStore(sm, m.model, m.pricingOverrides)
 
-	m.recoverLedger(context.Background(), globalDir)
+	m.ledger.RecoverLedger(context.Background(), globalDir)
 
 	// Wait for background recovery (though here it might be sync if it's small)
 	// Actually recoverLedger is sync when called directly like this, but wait, it uses a sync.Map to prevent double recovery.

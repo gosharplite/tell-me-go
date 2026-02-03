@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {
@@ -28,7 +30,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session1",
 			Model:     "model1",
 			TotalCost: 1.5,
-			Usage: UsageStats{
+			Usage: pricing.UsageStats{
 				PromptTokens:   1000,
 				CachedTokens:   200,
 				ResponseTokens: 300,
@@ -40,7 +42,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session2",
 			Model:     "model1",
 			TotalCost: 0.5,
-			Usage: UsageStats{
+			Usage: pricing.UsageStats{
 				PromptTokens:   500,
 				CachedTokens:   0,
 				ResponseTokens: 100,
@@ -52,7 +54,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session3",
 			Model:     "model1",
 			TotalCost: 2.0,
-			Usage: UsageStats{
+			Usage: pricing.UsageStats{
 				PromptTokens:   2000,
 				CachedTokens:   500,
 				ResponseTokens: 400,

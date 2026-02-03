@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -38,13 +39,13 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	// Setup cost tracker with a high rate
-	pricing := llm.PricingData{
-		Models: map[string]llm.ModelPricing{
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
 			"test-model": {Miss: 1.0, Comp: 1.0}, // $1 per million tokens
 		},
 	}
-	modelPricing := pricing.Models["test-model"]
-	tracker := framework.NewSessionCostTracker(nil, "", "test-model", modelPricing, pricing)
+	modelPricing := pricingData.Models["test-model"]
+	tracker := framework.NewSessionCostTracker(nil, "", "test-model", modelPricing, pricingData)
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001)) // Very low budget
 	engine.costTracker = tracker

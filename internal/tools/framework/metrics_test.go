@@ -7,31 +7,32 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
 func TestCostCalculator_Calculate(t *testing.T) {
-	pricing := llm.PricingData{
+	pricingData := pricing.PricingData{
 		SearchQuery: 0.01,
 	}
-	modelPricing := llm.ModelPricing{
+	modelPricing := pricing.ModelPricing{
 		Hit:  0.1,
 		Miss: 1.0,
 		Comp: 2.0,
 	}
 
-	calc := &CostCalculator{
-		Pricing: pricing,
+	calc := &pricing.CostCalculator{
+		Pricing: pricingData,
 		Model:   modelPricing,
 	}
 
 	tests := []struct {
 		name     string
-		stats    UsageStats
+		stats    pricing.UsageStats
 		wantCost float64
 	}{
 		{
 			name: "Standard usage",
-			stats: UsageStats{
+			stats: pricing.UsageStats{
 				CachedTokens:   1000000, // $0.1
 				PromptTokens:   2000000, // 1000000 miss * $1.0 = $1.0
 				ResponseTokens: 1000000, // $2.0
@@ -52,8 +53,6 @@ func TestCostCalculator_Calculate(t *testing.T) {
 }
 
 func TestAccumulate(t *testing.T) {
-	p := llm.ModelPricing{}
-
 	tests := []struct {
 		name         string
 		mt           llm.Metrics
@@ -82,8 +81,8 @@ func TestAccumulate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stats := &UsageStats{}
-			Accumulate(stats, tt.mt, p)
+			stats := &pricing.UsageStats{}
+			Accumulate(stats, tt.mt)
 
 			if stats.PromptTokens != tt.wantPrompt {
 				t.Errorf("PromptTokens = %v, want %v", stats.PromptTokens, tt.wantPrompt)

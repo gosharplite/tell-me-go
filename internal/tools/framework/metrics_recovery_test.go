@@ -5,6 +5,7 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRecoverLedger_ContextCancellation(t *testing.T) {
@@ -31,14 +34,15 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
-		sm:    sm,
-		model: "test-model",
+		sm:     sm,
+		model:  "test-model",
+		ledger: NewLedgerStore(sm, "test-model", nil),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	m.recoverLedger(ctx, tempDir)
+	m.ledger.RecoverLedger(ctx, tempDir)
 
 	// The ledger should NOT have been created if it was cancelled immediately
 	historyPath := filepath.Join(tempDir, "global_costs.json")
@@ -97,9 +101,10 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
-		sm:    sm,
-		model: "test-model",
-		mode:  "test-mode",
+		sm:     sm,
+		model:  "test-model",
+		mode:   "test-mode",
+		ledger: NewLedgerStore(sm, "test-model", nil),
 	}
 
 	outputDir := filepath.Join(tempDir, "test-mode")
@@ -132,5 +137,111 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 
 	if !success {
 		t.Errorf("global_costs.json should have been created by background recovery despite cancelled parent context")
+	}
+}
+
+func TestRecoverLedger_TableDriven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		setup          func(t *testing.T, baseDir string)
+		expectedCount  int
+		expectedCost   float64
+		validateResult func(t *testing.T, results []SessionCostRecord)
+	}{
+		{
+			name: "Corrupted Log",
+			setup: func(t *testing.T, baseDir string) {
+				logDir := filepath.Join(baseDir, "mode1")
+				require.NoError(t, os.MkdirAll(logDir, 0755))
+				content := `{"prompt_tokens": 100, "response_tokens": 50}
+invalid json line
+{"prompt_tokens": 200, "response_tokens": 100}`
+				require.NoError(t, os.WriteFile(filepath.Join(logDir, "tokens.log"), []byte(content), 0644))
+			},
+			expectedCount: 1,
+			validateResult: func(t *testing.T, results []SessionCostRecord) {
+				assert.Equal(t, "mode1/tokens.log", results[0].Session)
+				// 100+200 prompt, 50+100 response.
+				// Pricing for default model is needed to check exact cost.
+			},
+		},
+		{
+			name: "Duplicate Sessions",
+			setup: func(t *testing.T, baseDir string) {
+				// Same session in backups and main mode dir
+				backupDir := filepath.Join(baseDir, "backups/2023/10/27/mode1")
+				mainDir := filepath.Join(baseDir, "mode1")
+				require.NoError(t, os.MkdirAll(backupDir, 0755))
+				require.NoError(t, os.MkdirAll(mainDir, 0755))
+
+				logContent := `{"prompt_tokens": 100, "response_tokens": 50}`
+				// Both have same relative path inside their respective roots?
+				// Actually getSessionID logic:
+				// if starts with backups/ -> backup/ + rel
+				// else -> rel
+				// So they might NOT be considered duplicates if one is in backups/ and other is not,
+				// UNLESS they have the same session ID.
+				// getSessionID(path, globalDir)
+
+				require.NoError(t, os.WriteFile(filepath.Join(backupDir, "tokens.log"), []byte(logContent), 0644))
+				require.NoError(t, os.WriteFile(filepath.Join(mainDir, "tokens.log"), []byte(logContent), 0644))
+			},
+			expectedCount: 2, // Currently they are distinct: "backup/2023/10/27/mode1/tokens.log" vs "mode1/tokens.log"
+		},
+		{
+			name: "Missing Models",
+			setup: func(t *testing.T, baseDir string) {
+				logDir := filepath.Join(baseDir, "mode2")
+				require.NoError(t, os.MkdirAll(logDir, 0755))
+				content := `{"prompt_tokens": 100, "response_tokens": 50}` // No model field
+				require.NoError(t, os.WriteFile(filepath.Join(logDir, "tokens.log"), []byte(content), 0644))
+			},
+			expectedCount: 1,
+			validateResult: func(t *testing.T, results []SessionCostRecord) {
+				assert.Equal(t, "test-model", results[0].Model)
+			},
+		},
+		{
+			name: "Deep Hierarchy",
+			setup: func(t *testing.T, baseDir string) {
+				deepDir := filepath.Join(baseDir, "backups/2023/11/01/deep/path/mode3")
+				require.NoError(t, os.MkdirAll(deepDir, 0755))
+				content := `{"prompt_tokens": 10, "response_tokens": 5}`
+				require.NoError(t, os.WriteFile(filepath.Join(deepDir, "tokens.log"), []byte(content), 0644))
+			},
+			expectedCount: 1,
+			validateResult: func(t *testing.T, results []SessionCostRecord) {
+				assert.Contains(t, results[0].Session, "backup/2023/11/01/deep/path/mode3/tokens.log")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tempDir := t.TempDir()
+			tt.setup(t, tempDir)
+
+			sm := security.NewSecurityManager(strings.NewReader(""))
+			sm.RegisterSafePath(tempDir)
+			ls := NewLedgerStore(sm, "test-model", nil)
+
+			ls.RecoverLedger(context.Background(), tempDir)
+
+			historyPath := filepath.Join(tempDir, "global_costs.json")
+			content, err := os.ReadFile(historyPath)
+			require.NoError(t, err)
+
+			var results []SessionCostRecord
+			require.NoError(t, json.Unmarshal(content, &results))
+
+			assert.Len(t, results, tt.expectedCount)
+			if tt.validateResult != nil {
+				tt.validateResult(t, results)
+			}
+		})
 	}
 }
