@@ -292,9 +292,13 @@ type dynamicMockEstimator struct {
 }
 
 func (m *dynamicMockEstimator) EstimateTokens(contents []*llm.Content) int {
-	// If it's a small history (summary), return less tokens
-	if len(contents) < 5 {
-		return 500
+	// If it contains a summary, return less tokens
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if strings.Contains(p.Text, "System Auto-Summary") {
+				return 500
+			}
+		}
 	}
 	return m.tokens
 }
@@ -319,8 +323,8 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	}
 
 	tg := &TokenGatekeeper{
-		MaxTokens:  1000,
-		Estimator:  &dynamicMockEstimator{tokens: 950},
+		MaxTokens:  10000,
+		Estimator:  &dynamicMockEstimator{tokens: 9500},
 		Summarizer: summarizer,
 		Manager:    manager,
 	}
@@ -406,8 +410,8 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	ctx := context.Background()
 	tg := &TokenGatekeeper{
-		MaxTokens: 1000,
-		Estimator: &dynamicMockEstimator{tokens: 950},
+		MaxTokens: 10000,
+		Estimator: &dynamicMockEstimator{tokens: 9500},
 		Summarizer: &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 				return "summary", nil
@@ -430,5 +434,95 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	}
 	if !req.Metadata.SummarizationAttempted {
 		t.Error("expected SummarizationAttempted to be true")
+	}
+}
+
+func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
+	ctx := context.Background()
+	tg := &TokenGatekeeper{
+		MaxTokens: 2000,
+		Estimator: &mockEstimator{tokens: 1900}, // > 90%
+	}
+
+	// Create history where all messages are pinned
+	h := make([]*llm.Content, 20)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
+	}
+	req := &ContextRequest{History: h}
+
+	err := tg.Transform(ctx, req)
+	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
+	// Wait, MT=2000. Buffer=1000. SafetyLimit = 1000. 1900 > 1000. So it WILL fail with ErrContextLimitExceeded.
+	if !errors.Is(err, llm.ErrContextLimitExceeded) {
+		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
+	}
+
+	if !req.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true")
+	}
+}
+
+func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
+	ctx := context.Background()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy.SetLimits(1000, 10, 20)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
+		req := &ContextRequest{
+			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}}},
+		}
+		req.Metadata.FinalTokenCount = 900 // > 85%
+		req.Metadata.MaintenanceBlocked = true
+
+		err := injector.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		found := false
+		for _, w := range req.Metadata.Warnings {
+			if strings.Contains(w, "unpin non-essential turns using 'manage_history' (unpin)") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Clogged warning not found in metadata after maintenance was blocked")
+		}
+	})
+}
+
+func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		maxTokens int
+		tokens    int
+		wantErr   bool
+	}{
+		{"Small context, under limit", 100, 80, false},
+		{"Small context, over safety limit (90)", 100, 95, true},
+		{"Medium context, under limit", 1000, 850, false},
+		{"Medium context, over safety limit (900)", 1000, 950, true},
+		{"Large context, under limit", 100000, 98000, false},
+		{"Large context, over safety limit (99000)", 100000, 99500, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tg := &TokenGatekeeper{
+				MaxTokens: tt.maxTokens,
+				Estimator: &mockEstimator{tokens: tt.tokens},
+			}
+			req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+			err := tg.Transform(ctx, req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }

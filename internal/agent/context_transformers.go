@@ -150,8 +150,15 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 		}
 
 		limit := t.MaxTokens
-		if limit > config.SystemContextBuffer {
-			limit -= config.SystemContextBuffer
+		if limit > 0 {
+			reserved := config.SystemContextBuffer
+			// Ensure we don't reserve so much space that the agent becomes unusable in small contexts.
+			// We reserve up to 10% of the context for system overhead, capped at the SystemContextBuffer.
+			maxReserved := int(float64(t.MaxTokens) * 0.1)
+			if reserved > maxReserved {
+				reserved = maxReserved
+			}
+			limit -= reserved
 		}
 
 		if tokens > limit {
@@ -230,6 +237,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	}
 
 	if startTurn == -1 || numTurns < 2 {
+		req.Metadata.MaintenanceBlocked = true
 		return fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
 	}
 
@@ -293,7 +301,9 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	var combined string
 	maxTokens, _, _ := t.Strategy.GetLimits()
 
-	if req.Metadata.SummarizationAttempted && float64(tokens) > float64(maxTokens)*0.85 {
+	// Prioritize the Clogged warning if maintenance failed to reduce size OR was blocked by pins,
+	// and we are still near capacity.
+	if (req.Metadata.SummarizationAttempted || req.Metadata.MaintenanceBlocked) && float64(tokens) > float64(maxTokens)*0.85 {
 		combined = t.Strategy.GetCloggedWarning()
 		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
 	} else {

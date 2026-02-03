@@ -172,7 +172,7 @@ func (cs *ContextStrategy) getTurnWarningLocked(turn int) string {
 	case 3:
 		return "[SYSTEM NOTICE: You are approaching the operational turn limit (3 turns remaining). Please begin finalizing your current task and use this turn to perform any final state checks or file reads needed for your summary.]"
 	case 2:
-		return "[URGENT SYSTEM NOTICE: Only 2 turns remain. You MUST now use 'manage_scratchpad' and 'manage_tasks' to document the distilled state, or use 'manage_history' to pin critical conversation turns to protect them from pruning. This ensures context efficiency and continuity for the user in future sessions, as conversation history may be pruned.]"
+		return "[URGENT SYSTEM NOTICE: Only 2 turns remain. You MUST now use 'manage_scratchpad' and 'manage_tasks' to document the distilled state, or use 'manage_history' (pin) to pin critical conversation turns to protect them from pruning. This ensures context efficiency and continuity for the user in future sessions, as conversation history may be pruned.]"
 	case 1:
 		return "[FINAL SYSTEM WARNING: This is your absolute final turn. You are forbidden from using any more tools. Provide a concise final conclusion or progress summary to the user now. Execution will terminate immediately after this response.]"
 	default:
@@ -205,9 +205,9 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string 
 	if ratio >= 1.0 {
 		return "[SYSTEM NOTICE: The history turn limit has been reached and the oldest messages in this conversation have been deleted. If you are missing previous context or architectural details, please refer to 'manage_scratchpad', 'manage_tasks', or pinned turns for the latest status and pending tasks.]"
 	} else if ratio > 0.95 {
-		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad, task list, or pinned via 'manage_history' immediately.]"
+		return "[URGENT SYSTEM NOTICE: Conversation history is at 95% of the turn limit. Pruning is imminent. The oldest messages in this thread will be DELETED after this turn. Move all essential long-term memory to the scratchpad, task list, or pinned via 'manage_history' (pin) immediately.]"
 	} else if ratio > 0.90 {
-		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad, 'manage_tasks', or pinned via 'manage_history'.]"
+		return "[SYSTEM NOTICE: Conversation history is at 90% of the turn limit. To prevent loss of context during upcoming pruning, ensure critical architectural decisions and progress are documented in the scratchpad, 'manage_tasks', or pinned via 'manage_history' (pin).]"
 	}
 	return ""
 }
