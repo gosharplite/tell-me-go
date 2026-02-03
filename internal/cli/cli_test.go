@@ -172,7 +172,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	// We don't set TELL_ME_HOME, so it might use "." but we want to be sure it doesn't create "output"
 	// in the current working directory.
 	// To avoid polluting the project root during tests, we can change the working directory.
-	
+
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
@@ -183,7 +183,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 
 	app := New("test")
 	app.Stdin = strings.NewReader("\n") // Empty prompt
-	
+
 	// Create a dummy config in tmpDir
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
 	os.WriteFile(configPath, []byte("mode: test-mode\n"), 0644)

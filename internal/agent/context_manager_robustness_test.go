@@ -79,7 +79,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 
 	// Note: SystemInstructionInjector adds one turn at the beginning by default in my implementation.
 	if len(apiContents) != 6 {
-		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents) )
+		t.Fatalf("Expected 6 contents after injection, got %d", len(apiContents))
 	}
 
 	if apiContents[3].Role != "user" || !strings.Contains(apiContents[3].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[3].Parts[0].Text, "Only 2 turns remain") {
