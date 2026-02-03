@@ -19,8 +19,8 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Interactive Safety**: 
         *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
         *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
-    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `grep_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
-    *   **Intelligence (AST-Powered)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `analyze_complexity`, `get_package_graph`, `move_definition`.
+    *   **FileSystem**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `get_definitions`, `get_file_skeleton`, `get_file_diff`, `undo_file_change`.
+    *   **Intelligence (AST-Powered)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `search_usages_globally`, `get_semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `get_complexity_metrics`, `get_package_graph`, `move_definition`.
     *   **Git**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_commit`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, and `summarize_history`.

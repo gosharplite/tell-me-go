@@ -25,7 +25,7 @@ Every tool must be defined using a standard JSON schema that matches the Gemini 
 - **Location**: Tool definitions are registered within the `internal/tools` package.
 - **Categories**:
     - **FileSystem**: `list_files`, `read_file`, `write_file`, `replace_text`, etc.
-    - **Intelligence (AST)**: `find_usages`, `get_type_info`, `semantic_diff`, `rename_symbol`, etc.
+    - **Intelligence (AST)**: `find_usages`, `get_type_info`, `get_semantic_diff`, `rename_symbol`, etc.
     - **Git**: `get_git_status`, `git_commit`, `get_git_diff`, etc.
     - **Dev**: `run_tests`, `run_linter`, `go_tidy`, etc.
     - **State**: `manage_tasks`, `manage_scratchpad`, `manage_config`.

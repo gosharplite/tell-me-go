@@ -16,7 +16,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "execute_command",
-		Description: "Executes a single shell command without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
+		Description: "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{

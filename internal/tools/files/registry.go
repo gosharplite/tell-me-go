@@ -29,7 +29,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_files",
-		Description: "Returns a shallow list of filenames and directory names in a specific path. Useful for confirming file existence before reading.",
+		Description: "Returns a shallow list of filenames and directory names (similar to 'ls') in a specific path. Useful for confirming file existence before reading.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -61,7 +61,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "read_file",
-		Description: "Reads the full content of a specific file.",
+		Description: "Reads the full content of a specific file (similar to 'cat').",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -140,7 +140,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, m.reader.findFile)
 
 	r.Register(&tools.ToolDeclaration{
-		Name:        "grep_definitions",
+		Name:        "get_definitions",
 		Description: "Performs a regex-based search for symbol declarations (func, type, class) across files. Faster than AST tools for broad navigation but may return false positives.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
