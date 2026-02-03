@@ -43,8 +43,13 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			Tokens:           100,
 			MaxHistoryTokens: 1000,
 		})
-		if !strings.Contains(stderr.String(), "Session: 1/10 turns") {
-			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", stderr.String())
+		output := stderr.String()
+		if !strings.Contains(output, "Session: 1/10 turns") {
+			t.Errorf("expected stderr to contain 'Session: 1/10 turns', got %q", output)
+		}
+		// Check for the trailing newline (visual gap)
+		if !strings.HasSuffix(output, "\n\n") {
+			t.Errorf("expected stderr to end with double newline for visual gap, got %q", output)
 		}
 	})
 

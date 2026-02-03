@@ -142,6 +142,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		fmt.Fprintf(r.stderr, "\n\033[0;90m────────────────────────────────────────────────────────────────────────────────\033[0m\n")
 		fmt.Fprintf(r.stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", gray, reset, status.SessionTurns+1, status.MaxHistoryTurns, gray)
 		printSystemLine(status.Tokens, false)
+		fmt.Fprintln(r.stderr) // Ensure visual gap before response
 	} else if status.Metrics != nil {
 		m := status.Metrics
 		fmt.Fprintln(r.stderr) // Add vertical separation
