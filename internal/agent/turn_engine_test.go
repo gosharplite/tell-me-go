@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -834,17 +835,17 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	// Cost per turn: (1000 * 0.075 / 1e6) + (500 * 0.3 / 1e6) = 0.000075 + 0.00015 = 0.000225
-	// Total Task Cost: 0.00045
-	expectedTaskCost := 0.00045
-	if e.taskCost != expectedTaskCost {
+	// Cost per turn: (1000 * 0.10 / 1e6) + (500 * 0.40 / 1e6) = 0.0001 + 0.0002 = 0.0003
+	// Total Task Cost (2 turns): 0.0006
+	expectedTaskCost := 0.0006
+	if fmt.Sprintf("%.6f", e.taskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
 		t.Errorf("expected task cost %f, got %f", expectedTaskCost, e.taskCost)
 	}
 
 	// Run again, taskCost should reset
 	turnCount = 0
 	_ = e.Run(context.Background(), time.Now())
-	if e.taskCost != expectedTaskCost {
+	if fmt.Sprintf("%.6f", e.taskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
 		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, e.taskCost)
 	}
 }
