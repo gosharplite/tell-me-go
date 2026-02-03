@@ -22,8 +22,6 @@ type SecurityManager struct {
 	bypassFile   string
 	bypassActive bool
 	bypassMu     sync.RWMutex
-
-	pricingMu sync.Mutex
 }
 
 // NewSecurityManager creates a new SecurityManager.
@@ -34,11 +32,6 @@ func NewSecurityManager(input io.Reader) *SecurityManager {
 		Interaction: NewInteractionHandler(input, auditor),
 		Auditor:     auditor,
 	}
-}
-
-// PricingMu returns the pricing mutex.
-func (sm *SecurityManager) PricingMu() *sync.Mutex {
-	return &sm.pricingMu
 }
 
 // IsPathSafe checks if a path is safe.
