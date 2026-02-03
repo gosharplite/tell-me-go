@@ -12,9 +12,9 @@ import (
 func TestGetModelPricing(t *testing.T) {
 	p := PricingData{
 		Models: map[string]ModelPricing{
-			"default": {Miss: 1.0},
+			"default":        {Miss: 1.0},
 			"gemini-1.5-pro": {Miss: 2.0},
-			"flash": {Miss: 0.5},
+			"flash":          {Miss: 0.5},
 		},
 	}
 

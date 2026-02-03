@@ -177,14 +177,14 @@ invalid json line
 				require.NoError(t, os.MkdirAll(mainDir, 0755))
 
 				logContent := `{"prompt_tokens": 100, "response_tokens": 50}`
-				// Both have same relative path inside their respective roots? 
+				// Both have same relative path inside their respective roots?
 				// Actually getSessionID logic:
 				// if starts with backups/ -> backup/ + rel
 				// else -> rel
-				// So they might NOT be considered duplicates if one is in backups/ and other is not, 
+				// So they might NOT be considered duplicates if one is in backups/ and other is not,
 				// UNLESS they have the same session ID.
 				// getSessionID(path, globalDir)
-				
+
 				require.NoError(t, os.WriteFile(filepath.Join(backupDir, "tokens.log"), []byte(logContent), 0644))
 				require.NoError(t, os.WriteFile(filepath.Join(mainDir, "tokens.log"), []byte(logContent), 0644))
 			},
