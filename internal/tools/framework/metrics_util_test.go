@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/pricing"
@@ -157,5 +158,37 @@ func TestParseUsage_EmptyFile(t *testing.T) {
 	}
 	if stats.PromptTokens != 0 {
 		t.Errorf("stats.PromptTokens = %d, want 0", stats.PromptTokens)
+	}
+}
+
+func TestParseUsage_LargeLine(t *testing.T) {
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "large.log")
+
+	// Create a log entry larger than the default 64KB limit (e.g., 70KB)
+	largeField := strings.Repeat("a", 70*1024)
+	content := `{"model":"gpt-4", "prompt_tokens":100, "thinking_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
+
+	err := os.WriteFile(logFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("failed to write large log file: %v", err)
+	}
+
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
+			"gpt-4": {Miss: 10.0, Comp: 30.0},
+		},
+	}
+
+	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "gpt-4")
+	if err != nil {
+		t.Fatalf("ParseUsage failed on large line: %v", err)
+	}
+
+	if totalCost != 0.5 {
+		t.Errorf("expected cost 0.5, got %v", totalCost)
+	}
+	if stats.PromptTokens != 100 {
+		t.Errorf("expected 100 prompt tokens, got %d", stats.PromptTokens)
 	}
 }

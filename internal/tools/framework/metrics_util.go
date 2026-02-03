@@ -40,6 +40,11 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 	var detectedModel string
 	var firstTimestamp time.Time
 	scanner := bufio.NewScanner(f)
+	// Increase buffer capacity to 1MB to handle large JSON log entries
+	const maxCapacity = 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
