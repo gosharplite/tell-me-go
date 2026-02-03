@@ -56,8 +56,8 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, m.getGitLog)
 
 	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_commit",
-		Description: "Shows the full details (diff and metadata) of a specific commit hash.",
+		Name:        "get_git_show",
+		Description: "Shows the full details (diff and metadata) of a specific commit hash (runs git show).",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
