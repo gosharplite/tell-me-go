@@ -27,12 +27,6 @@ func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
 // Summarize uses the LLM to compress a subset of history.
 func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 	startTime := time.Now()
-	if s.events != nil {
-		s.events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("Summarizing %d history entries to free up context...", len(subset)),
-			Level:   "info",
-		})
-	}
 
 	// Transform history to text-only to avoid INVALID_ARGUMENT
 	summarizerInput := make([]*llm.Content, len(subset))

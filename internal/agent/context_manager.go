@@ -119,6 +119,13 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, turns int, focus s
 		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", turns, subsetTokens, safetyLimit)
 	}
 
+	if cm.Events != nil {
+		cm.Events.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, subsetTokens),
+			Level:   "info",
+		})
+	}
+
 	summary, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
 		return "", err

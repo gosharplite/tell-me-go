@@ -21,7 +21,7 @@ TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
 # --- Safety & History ---
 MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
 MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
-MAX_HISTORY_TOKENS: 100000 # Pre-flight limit. Prevents sending too much context.
+MAX_HISTORY_TOKENS: 120000 # Pre-flight limit. Prevents sending too much context.
                            # Combined with THINKING_BUDGET, this keeps you safely below the 128k price cliff.
 
 # --- Authentication ---
