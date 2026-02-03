@@ -198,7 +198,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 	// 1. Record to global ledger (detailed breakdown)
 	_, err := m.EstimateCost(ctx, true, sessionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to estimate and record session cost: %w", err)
 	}
 
 	// 2. Append legacy summary to the log file itself
@@ -219,7 +219,7 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 			if os.IsNotExist(err) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("failed to parse usage log for summary: %w", err)
 		}
 	}
 
@@ -245,12 +245,15 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 	}
 	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
 	}
 	defer fAppend.Close()
 
 	_, err = fAppend.WriteString(string(summaryBytes) + "\n")
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to write cost summary to log: %w", err)
+	}
+	return nil
 }
 
 func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record SessionCostRecord) {
