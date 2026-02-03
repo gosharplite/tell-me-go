@@ -17,39 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
-func TestCalculateVisualLines(t *testing.T) {
-	tests := []struct {
-		name  string
-		text  string
-		width int
-		want  int
-	}{
-		{"empty", "", 80, 0},
-		{"short", "hello", 80, 1},
-		{"exact wrap", "12345", 5, 1},
-		{"wrap over", "123456", 5, 2},
-		{"newlines", "a\nb\nc", 80, 3},
-		{"zero width fallback", "abc", 0, 1},
-	}
-	r := &StdUIRenderer{}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := r.calculateVisualLines(tt.text, tt.width); got != tt.want {
-				t.Errorf("got %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func FuzzCalculateVisualLines(f *testing.F) {
-	f.Add("standard text sample", 80)
-	f.Fuzz(func(t *testing.T, text string, width int) {
-		r := &StdUIRenderer{}
-		// Ensure it never panics regardless of input or width
-		_ = r.calculateVisualLines(text, width)
-	})
-}
-
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	sm := security.NewSecurityManager(nil)
@@ -273,4 +240,53 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	if !strings.Contains(output, "$0.0123 $0.0001") || !strings.Contains(output, "$0.1234") || !strings.Contains(output, "66.7%") {
 		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
 	}
+}
+
+func TestStreamResponseCursorAnchoring(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+
+	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
+		stdout.Reset()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ch, finalize := r.StreamResponse(ctx, false, false)
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
+		_ = finalize()
+
+		output := stdout.String()
+		// Should contain Save Cursor
+		if !strings.Contains(output, "\0337") {
+			t.Errorf("Expected output to contain DEC Save Cursor (\\0337), got %q", output)
+		}
+		// Should contain Restore Cursor
+		if !strings.Contains(output, "\0338") {
+			t.Errorf("Expected output to contain DEC Restore Cursor (\\0338), got %q", output)
+		}
+		// Should contain Clear to End of Screen
+		if !strings.Contains(output, "\033[J") {
+			t.Errorf("Expected output to contain Clear to End of Screen (\\033[J), got %q", output)
+		}
+	})
+
+	t.Run("Anchoring disabled when rawOutput is true", func(t *testing.T) {
+		stdout.Reset()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ch, finalize := r.StreamResponse(ctx, false, true)
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Streaming chunk"}}}
+		_ = finalize()
+
+		output := stdout.String()
+		if strings.Contains(output, "\0337") {
+			t.Errorf("Expected output NOT to contain DEC Save Cursor, got %q", output)
+		}
+		if strings.Contains(output, "\0338") {
+			t.Errorf("Expected output NOT to contain DEC Restore Cursor, got %q", output)
+		}
+	})
 }
