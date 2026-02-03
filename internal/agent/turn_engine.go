@@ -306,6 +306,10 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
+	e.mu.Lock()
+	e.taskCost = 0
+	e.mu.Unlock()
+
 	totalRetries := 0
 	var lastState *TurnState
 	for i := 0; ; i++ {

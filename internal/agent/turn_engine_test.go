@@ -791,6 +791,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
+		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
 	})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 

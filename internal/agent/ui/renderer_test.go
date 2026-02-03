@@ -259,7 +259,6 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:   r.now(),
 		IsPostCall:  true,
-		TurnCost:    0.0123,
 		TaskCost:    0.0001,
 		SessionCost: 0.1234,
 		TotalM:      1000,
