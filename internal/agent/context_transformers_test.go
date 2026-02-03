@@ -631,3 +631,49 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		t.Errorf("FinalTokenCount (%d) should include system instructions tokens", req2.Metadata.FinalTokenCount)
 	}
 }
+
+func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
+	ctx := context.Background()
+
+	// Case 1: MaxTokens=1000. 10% cap is 100. SystemContextBuffer is 500.
+	// reserved should be min(500, 100) = 100.
+	// limit = 1000 - 100 = 900.
+	t.Run("10 percent cap", func(t *testing.T) {
+		tg := &TokenGatekeeper{
+			MaxTokens: 1000,
+			Estimator: &mockEstimator{tokens: 901},
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		err := tg.Transform(ctx, req)
+		if !errors.Is(err, llm.ErrContextLimitExceeded) {
+			t.Errorf("expected ErrContextLimitExceeded for 901 tokens (limit 900), got %v", err)
+		}
+
+		tg.Estimator.(*mockEstimator).tokens = 900
+		err = tg.Transform(ctx, req)
+		if err != nil {
+			t.Errorf("expected success for 900 tokens, got %v", err)
+		}
+	})
+
+	// Case 2: MaxTokens=10000. 10% cap is 1000. SystemContextBuffer is 1000.
+	// reserved should be min(1000, 1000) = 1000.
+	// limit = 10000 - 1000 = 9000.
+	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
+		tg := &TokenGatekeeper{
+			MaxTokens: 10000,
+			Estimator: &mockEstimator{tokens: 9001},
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		err := tg.Transform(ctx, req)
+		if !errors.Is(err, llm.ErrContextLimitExceeded) {
+			t.Errorf("expected ErrContextLimitExceeded for 9001 tokens (limit 9000), got %v", err)
+		}
+
+		tg.Estimator.(*mockEstimator).tokens = 9000
+		err = tg.Transform(ctx, req)
+		if err != nil {
+			t.Errorf("expected success for 9000 tokens, got %v", err)
+		}
+	})
+}

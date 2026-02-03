@@ -254,10 +254,24 @@ func TestToolOrchestrationLoop(t *testing.T) {
 		var body struct {
 			Contents []interface{} `json:"contents"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Failed to decode request body: %v", err)
+			return
+		}
+
+		// State-based detection
+		isToolResponse := false
+		if len(body.Contents) > 0 {
+			lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+			if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+				if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+					isToolResponse = true
+				}
+			}
+		}
 
 		response := `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"list_files","args":{"path":"."}}}]}}]}`
-		if len(body.Contents) > 2 {
+		if isToolResponse {
 			response = `{"candidates":[{"content":{"role":"model","parts":[{"text":"I have listed the files."}]}}]}`
 		}
 		fmt.Fprint(w, response)
@@ -294,10 +308,24 @@ func TestWriteFileConfirmation(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			isToolResponse := false
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						isToolResponse = true
+					}
+				}
+			}
+
+			if !isToolResponse {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -362,10 +390,24 @@ func TestWriteFileDenial(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			var toolResponse map[string]interface{}
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						toolResponse = resp.(map[string]interface{})
+					}
+				}
+			}
+
+			if toolResponse == nil {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -380,11 +422,8 @@ func TestWriteFileDenial(t *testing.T) {
 					}]
 				}`)
 			} else {
-				// We check the tool response in Turn 2
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				parts := lastTurn["parts"].([]interface{})
-				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
-				result := resp["response"].(map[string]interface{})["result"].(string)
+				// We check the tool response
+				result := toolResponse["response"].(map[string]interface{})["result"].(string)
 
 				if result == "Action denied by user." {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
@@ -431,10 +470,24 @@ func TestSecurityGate(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			var toolResponse map[string]interface{}
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						toolResponse = resp.(map[string]interface{})
+					}
+				}
+			}
+
+			if toolResponse == nil {
 				// Turn 1: Return a malicious function call
 				fmt.Fprint(w, `{
 					"candidates": [{
@@ -451,10 +504,7 @@ func TestSecurityGate(t *testing.T) {
 				}`)
 			} else {
 				// Turn 2: Capture the error response sent by the agent
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				parts := lastTurn["parts"].([]interface{})
-				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
-				receivedResponse = resp["response"].(map[string]interface{})["result"].(string)
+				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
 
 				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Security error caught."}]}}]}`)
 			}
@@ -488,10 +538,24 @@ func TestSymlinkAttack(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			var toolResponse map[string]interface{}
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						toolResponse = resp.(map[string]interface{})
+					}
+				}
+			}
+
+			if toolResponse == nil {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -506,10 +570,7 @@ func TestSymlinkAttack(t *testing.T) {
 					}]
 				}`)
 			} else {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				parts := lastTurn["parts"].([]interface{})
-				resp := parts[0].(map[string]interface{})["functionResponse"].(map[string]interface{})
-				receivedResponse = resp["response"].(map[string]interface{})["result"].(string)
+				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
 				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
 			}
 			return
@@ -545,10 +606,24 @@ func TestManageTasks(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			isToolResponse := false
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						isToolResponse = true
+					}
+				}
+			}
+
+			if !isToolResponse {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
@@ -613,10 +688,24 @@ func TestManageScratchpad(t *testing.T) {
 			var body struct {
 				Contents []interface{} `json:"contents"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if len(body.Contents) <= 2 {
+
+			// State-based detection
+			isToolResponse := false
+			if len(body.Contents) > 0 {
+				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
+				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
+					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
+						isToolResponse = true
+					}
+				}
+			}
+
+			if !isToolResponse {
 				fmt.Fprint(w, `{
 					"candidates": [{
 						"content": {
