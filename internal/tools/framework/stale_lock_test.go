@@ -17,8 +17,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
-func TestBreakStaleLock(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "stale_lock_test")
+func TestIsStale(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "is_stale_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,10 +32,9 @@ func TestBreakStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 2. breakStaleLock should NOT remove it if it's new
-	breakStaleLock(lockPath)
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
-		t.Error("breakStaleLock removed a fresh lock")
+	// 2. isStale should be false if it's new
+	if isStale(lockPath) {
+		t.Error("isStale returned true for a fresh lock")
 	}
 
 	// 3. Make it old
@@ -45,10 +44,9 @@ func TestBreakStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 4. breakStaleLock should now remove it
-	breakStaleLock(lockPath)
-	if _, err := os.Stat(lockPath); err == nil {
-		t.Error("breakStaleLock failed to remove a stale lock")
+	// 4. isStale should now be true
+	if !isStale(lockPath) {
+		t.Error("isStale returned false for a stale lock")
 	}
 }
 

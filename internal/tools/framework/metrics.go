@@ -255,8 +255,14 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock (with stale lock protection)
-	breakStaleLock(lockPath)
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil && os.IsExist(err) {
+		if isStale(lockPath) {
+			_ = os.Remove(lockPath)
+			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		}
+	}
+
 	if err != nil {
 		return
 	}
@@ -270,6 +276,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	// 2. Read existing history (or recover if missing)
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
+			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
 			_ = os.Rename(historyPath, historyPath+".bak")
 			history = []SessionCostRecord{}
 		}

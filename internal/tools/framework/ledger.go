@@ -53,13 +53,12 @@ func NewLedgerStore(sm *security.SecurityManager, model string, pricingOverrides
 	}
 }
 
-// breakStaleLock removes a lock file if it's older than 5 minutes to prevent deadlocks after crashes.
-func breakStaleLock(lockPath string) {
-	if info, err := os.Stat(lockPath); err == nil {
-		if time.Since(info.ModTime()) > 5*time.Minute {
-			_ = os.Remove(lockPath)
-		}
+// isStale checks if a file is older than 5 minutes.
+func isStale(path string) bool {
+	if info, err := os.Stat(path); err == nil {
+		return time.Since(info.ModTime()) > 5*time.Minute
 	}
+	return false
 }
 
 // RecoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
@@ -73,7 +72,9 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 	seen := make(map[string]bool)
 	if content, err := os.ReadFile(historyPath); err == nil {
 		var existing []SessionCostRecord
-		if err := json.Unmarshal(content, &existing); err == nil {
+		if err := json.Unmarshal(content, &existing); err != nil {
+			log.Printf("Warning: Failed to parse existing ledger during recovery: %v", err)
+		} else {
 			for _, r := range existing {
 				seen[r.Session] = true
 			}
@@ -193,13 +194,19 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	defer ledgerMu.Unlock()
 
 	lockPath := historyPath + ".lock"
-	breakStaleLock(lockPath)
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil && os.IsExist(err) {
+		if isStale(lockPath) {
+			_ = os.Remove(lockPath)
+			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		}
+	}
+
 	if err != nil {
-		return // Another process is writing; skip this background update
+		return // Another process is writing or we failed to break the lock
 	}
 	defer func() {
-		lock.Close()
+		f.Close()
 		os.Remove(lockPath)
 	}()
 
