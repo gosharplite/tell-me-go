@@ -510,6 +510,8 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 		{"Medium context, over safety limit (900)", 1000, 950, true},
 		{"Large context, under limit", 100000, 98000, false},
 		{"Large context, over safety limit (99000)", 100000, 99500, true},
+		{"Very Large context, under limit", 128000, 126500, false}, // 128000 - 1000 = 127000. 126500 < 127000.
+		{"Very Large context, over limit", 128000, 127500, true},  // 127500 > 127000.
 	}
 
 	for _, tt := range tests {
@@ -524,5 +526,108 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
+	ctx := context.Background()
+	counter := NewHeuristicTokenCounter(&mockToolRegistry{})
+	strategy := NewContextStrategy(counter, nil)
+	maxTokens := 2000
+	strategy.SetLimits(maxTokens, 10, 20)
+
+	// Pipeline: Pruner(1), SystemInstructions(10), Gatekeeper(80), WarningInjector(100)
+	pipeline := NewContextPipeline(
+		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}, Manager: &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }}},
+		&SystemInstructionInjector{Instructions: "Follow the SOP."},
+		&TokenGatekeeper{
+			MaxTokens: maxTokens,
+			Estimator: strategy,
+			Manager:   &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }},
+		},
+		&WarningInjector{Strategy: strategy},
+	)
+
+	// Populate history with 10 pinned turns (~20 messages)
+	// Heuristic counter: turns approx 350 tokens each (default in my head, let's verify).
+	// Actually, HeuristicTokenCounter counts chars. 
+	// To exceed 90% of 2000 (1800), we need > 5760 chars (1800 * 3.2).
+	h := make([]*llm.Content, 20)
+	longText := strings.Repeat("A", 400) // 400 chars * 20 = 8000 chars. 8000 / 3.2 = 2500 tokens.
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}, Pinned: true}
+	}
+
+	req := &ContextRequest{
+		History: h,
+		Turn:    1,
+	}
+
+	err := pipeline.Execute(ctx, req)
+	// Since 2500 > (2000 - 10% safety = 1800), and summarization is BLOCKED by pins, it should error with ErrContextLimitExceeded.
+	if !errors.Is(err, llm.ErrContextLimitExceeded) {
+		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
+	}
+
+	if !req.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true")
+	}
+
+	// Now try with slightly less history so it doesn't fail the safety check but triggers 90%.
+	// 90% = 1800. Safety limit = 1800.
+	// We need tokens > 1800 to trigger summarization, but it will fail safety check if tokens > 1800.
+	// Wait, the 10% safety buffer at 2000 is 200. So limit is 1800.
+	// The 90% trigger is 1800.
+	// So at exactly 1800, it triggers summarization, fails, then checks safety limit (1800) and passes if <= 1800.
+	// Let's use MT=10000. 90% = 9000. Buffer = 1000. Safety limit = 9000.
+	// It's still tight. Let's use MT=20000. 90% = 18000. Safety limit = 19000.
+	
+	maxTokens = 20000
+	strategy.SetLimits(maxTokens, 10, 20)
+	tg := pipeline.transformers[2].(*TokenGatekeeper)
+	tg.MaxTokens = maxTokens
+
+	// 18500 tokens. 18500 * 3.2 = 59200 chars.
+	h2 := make([]*llm.Content, 20)
+	text2 := strings.Repeat("B", 2960) // 2960 * 20 = 59200.
+	for i := range h2 {
+		h2[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: text2}}, Pinned: true}
+	}
+	
+	req2 := &ContextRequest{History: h2, Turn: 1}
+	err = pipeline.Execute(ctx, req2)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if !req2.Metadata.MaintenanceBlocked {
+		t.Error("expected MaintenanceBlocked to be true for second run")
+	}
+
+	// Verify Clogged warning is injected
+	lastContent := req2.History[len(req2.History)-1]
+	found := false
+	for _, p := range lastContent.Parts {
+		if strings.Contains(p.Text, "A recent summarization failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Clogged warning not found in final payload")
+	}
+
+	// Verify system instructions are at the top and pinned
+	if req2.History[0].Parts[0].Text != "System Instructions:\n\nFollow the SOP." {
+		t.Errorf("System instructions missing or in wrong position: %s", req2.History[0].Parts[0].Text)
+	}
+	if !req2.History[0].Pinned || !req2.History[1].Pinned {
+		t.Error("System instructions turn not pinned")
+	}
+
+	// Verify token count includes system instructions
+	// Instructions are approx 60 chars -> 20 tokens.
+	if req2.Metadata.FinalTokenCount <= 18500 {
+		t.Errorf("FinalTokenCount (%d) should include system instructions tokens", req2.Metadata.FinalTokenCount)
 	}
 }

@@ -185,7 +185,7 @@ func (t *TokenGatekeeper) Priority() int { return 80 }
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
 	contents := req.History
 	if len(contents) < 10 {
-		return fmt.Errorf("not enough history to auto-summarize")
+		return fmt.Errorf("not enough history to auto-summarize (got %d)", len(contents))
 	}
 
 	// Group into turns (pairs of messages)
@@ -272,7 +272,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
+	if err := t.Manager.ReplaceRange(ctx, startIdx-req.Metadata.InjectedPrefixCount, endIdx-req.Metadata.InjectedPrefixCount, newMsgs); err != nil {
 		return err
 	}
 	req.Metadata.SummarizationAttempted = true // Flag the attempt
@@ -379,15 +379,22 @@ func (t *SystemInstructionInjector) Transform(ctx context.Context, req *ContextR
 	}
 
 	instr := &llm.Content{
-		Role:  "user",
-		Parts: []*llm.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+		Role:   "user",
+		Parts:  []*llm.Part{{Text: "System Instructions:\n\n" + t.Instructions}},
+		Pinned: true,
+	}
+	ack := &llm.Content{
+		Role:   "model",
+		Parts:  []*llm.Part{{Text: "Understood. I will follow these instructions."}},
+		Pinned: true,
 	}
 
-	req.History = append([]*llm.Content{instr}, req.History...)
+	req.History = append([]*llm.Content{instr, ack}, req.History...)
+	req.Metadata.InjectedPrefixCount += 2
 	return nil
 }
 
-func (t *SystemInstructionInjector) Priority() int { return 110 }
+func (t *SystemInstructionInjector) Priority() int { return 10 }
 
 // ToolDeclarationGenerator injects tool schemas from the registry.
 type ToolDeclarationGenerator struct {
@@ -401,4 +408,4 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return 90 }
+func (t *ToolDeclarationGenerator) Priority() int { return 20 }
