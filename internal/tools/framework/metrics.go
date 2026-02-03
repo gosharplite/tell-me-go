@@ -144,6 +144,12 @@ type metricsManager struct {
 	ledger           *LedgerStore
 }
 
+type costSummaryArgs struct {
+	Billing bool `json:"billing"`
+}
+
+type estimateCostArgs struct{}
+
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
 func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) {
 	m := &metricsManager{
@@ -159,6 +165,10 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		var eArgs estimateCostArgs
+		if err := registry.UnmarshalArgs(args, &eArgs); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
+		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
 	})
@@ -176,10 +186,14 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		var sArgs costSummaryArgs
+		if err := registry.UnmarshalArgs(args, &sArgs); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
+		}
+
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
-		billing, _ := args["billing"].(bool)
-		res, err := m.getCostSummary(ctx, billing)
+		res, err := m.getCostSummary(ctx, sArgs.Billing)
 		return tools.ToolResult{Text: res}, err
 	})
 }
