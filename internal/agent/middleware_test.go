@@ -32,7 +32,8 @@ func (m *mockProcessor) Process(ctx context.Context, turn *Turn) ProcessResult {
 
 func TestWithStreaming(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithStreaming(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithStreaming()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	ctx := context.Background()
@@ -59,7 +60,8 @@ func TestWithStreaming(t *testing.T) {
 
 func TestWithStatusReporter(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithStatusReporter(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithStatusReporter()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	cs := NewContextStrategy(nil, nil)
@@ -94,7 +96,8 @@ func TestWithStatusReporter(t *testing.T) {
 
 func TestWithMetrics(t *testing.T) {
 	bus := &mockEventBus{}
-	mw := WithMetrics(bus)
+	e := &TurnEngine{events: bus}
+	mw := e.WithMetrics()
 	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
 
 	tests := []struct {

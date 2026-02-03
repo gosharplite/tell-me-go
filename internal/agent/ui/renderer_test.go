@@ -259,6 +259,8 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:   r.now(),
 		IsPostCall:  true,
+		TurnCost:    0.0123,
+		TaskCost:    0.0001,
 		SessionCost: 0.1234,
 		TotalM:      1000,
 		TotalH:      2000,
@@ -269,7 +271,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		},
 	})
 	output = stderr.String()
-	if !strings.Contains(output, "$0.0123 $0.1234") || !strings.Contains(output, "66.7%") {
-		t.Errorf("expected output to contain both turn cost and session cost, got %q", output)
+	if !strings.Contains(output, "$0.0123 $0.0001 $0.1234") || !strings.Contains(output, "66.7%") {
+		t.Errorf("expected output to contain turn, task and session cost, got %q", output)
 	}
 }

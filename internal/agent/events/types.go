@@ -43,6 +43,7 @@ type TurnStatus struct {
 	IsPostCall       bool
 	StartTime        time.Time
 	SessionCost      float64
+	TaskCost         float64
 	TotalM           int64
 	TotalH           int64
 	TotalO           int64

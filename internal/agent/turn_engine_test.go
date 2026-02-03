@@ -13,9 +13,11 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
+	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
 // MockGateway implements gateway.LLMGateway for testing.
@@ -778,5 +780,70 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	// Transitions: Refining to Inference, Inference to Complete
 	if hook.transCalled != 2 {
 		t.Errorf("expected 2 transitions with stop signal, got %d", hook.transCalled)
+	}
+}
+
+func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{
+		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
+	})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	pricing := config.DefaultPricing()
+	modelName := "gemini-1.5-flash"
+	modelPricing := framework.GetModelPricing(modelName, pricing)
+	// We need internal/tools/framework imported as framework
+	tracker := framework.NewSessionCostTracker(nil, "", modelName, modelPricing, pricing)
+
+	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+	e.costTracker = tracker
+
+	// First turn: 1000 prompt tokens, 500 response tokens
+	// Second turn: 1000 prompt tokens, 500 response tokens
+	turnCount := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content)
+		close(ch)
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			turnCount++
+			content := &llm.Content{Role: "model"}
+			if turnCount == 1 {
+				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}
+			} else {
+				content.Parts = []*llm.Part{{Text: "done"}}
+			}
+			return content, &llm.Metrics{
+				PromptTokens:   1000,
+				ResponseTokens: 500,
+			}, nil
+		}
+	}
+
+	e.executor.(*MockExecutor).ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+		return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "t"}}}}, nil
+	}
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	// Cost per turn: (1000 * 0.075 / 1e6) + (500 * 0.3 / 1e6) = 0.000075 + 0.00015 = 0.000225
+	// Total Task Cost: 0.00045
+	expectedTaskCost := 0.00045
+	if e.taskCost != expectedTaskCost {
+		t.Errorf("expected task cost %f, got %f", expectedTaskCost, e.taskCost)
+	}
+
+	// Run again, taskCost should reset
+	turnCount = 0
+	_ = e.Run(context.Background(), time.Now())
+	if e.taskCost != expectedTaskCost {
+		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, e.taskCost)
 	}
 }

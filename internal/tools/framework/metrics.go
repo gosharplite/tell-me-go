@@ -144,6 +144,21 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.totalCost += calc.CalculateMetrics(mt).TotalCost
 }
 
+// CalculateCost returns the cost of a single metrics entry without accumulating it.
+func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = t.modelName
+	}
+	p := GetModelPricing(mtModel, t.pricing)
+
+	calc := &CostCalculator{Pricing: t.pricing, Model: p}
+	return calc.CalculateMetrics(mt).TotalCost
+}
+
 // Calculate performs pricing arithmetic based on Vertex AI SKUs.
 func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 	cb := CostBreakdown{Stats: stats}
