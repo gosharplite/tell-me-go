@@ -259,6 +259,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
 		return err
 	}
+	req.Metadata.SummarizationAttempted = true // Flag the attempt
 
 	// Update the request history after replacement in the manager
 	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
@@ -280,19 +281,25 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
-	warnings := t.Strategy.GetWarnings(req.Turn, tokens, currentTurns)
-
-	if len(warnings) == 0 {
-		return nil
-	}
 
 	var combined string
-	for _, w := range warnings {
-		if combined != "" {
-			combined += "\n"
+	maxTokens, _, _ := t.Strategy.GetLimits()
+
+	if req.Metadata.SummarizationAttempted && float64(tokens) > float64(maxTokens)*0.90 {
+		combined = t.Strategy.GetCloggedWarning()
+		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
+	} else {
+		warnings := t.Strategy.GetWarnings(req.Turn, tokens, currentTurns)
+		if len(warnings) == 0 {
+			return nil
 		}
-		combined += w.Message
-		req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
+		for _, w := range warnings {
+			if combined != "" {
+				combined += "\n"
+			}
+			combined += w.Message
+			req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
+		}
 	}
 
 	apiContents := make([]*llm.Content, len(req.History))

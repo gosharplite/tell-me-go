@@ -366,3 +366,72 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		t.Error("Turn 1 (pinned) was lost or corrupted")
 	}
 }
+
+func TestWarningInjector_Transform_Clogged(t *testing.T) {
+	ctx := context.Background()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy.SetLimits(1000, 10, 20)
+
+	injector := &WarningInjector{Strategy: strategy}
+
+	t.Run("Inject clogged warning", func(t *testing.T) {
+		req := &ContextRequest{
+			Turn: 1,
+			History: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
+			},
+		}
+		req.Metadata.FinalTokenCount = 950 // > 90% of 1000
+		req.Metadata.SummarizationAttempted = true
+
+		err := injector.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		if len(req.Metadata.Warnings) == 0 {
+			t.Error("expected warnings in metadata")
+		}
+		lastContent := req.History[len(req.History)-1]
+		found := false
+		for _, p := range lastContent.Parts {
+			if strings.Contains(p.Text, "A recent summarization failed to significantly reduce context size") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("clogged warning not found in content parts: %v", lastContent.Parts)
+		}
+	})
+}
+
+func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
+	ctx := context.Background()
+	tg := &TokenGatekeeper{
+		MaxTokens: 1000,
+		Estimator: &mockEstimator{tokens: 950},
+		Summarizer: &mockSummarizer{
+			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+				return "summary", nil
+			},
+		},
+		Manager: &mockHistoryManager{
+			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
+				return nil
+			},
+		},
+	}
+	h := make([]*llm.Content, 10)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+	}
+	req := &ContextRequest{History: h}
+	err := tg.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+	if !req.Metadata.SummarizationAttempted {
+		t.Error("expected SummarizationAttempted to be true")
+	}
+}

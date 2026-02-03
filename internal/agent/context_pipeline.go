@@ -16,8 +16,9 @@ type ContextMetadata struct {
 	FinalTokenCount    int
 	FinalTurnCount     int
 	PrunedTurns        int
-	SummarizedTurns    int
-	Warnings           []string
+	SummarizedTurns        int
+	SummarizationAttempted bool // Set to true if autoSummarize or a tool call just ran
+	Warnings               []string
 	APIContents        []*llm.Content
 }
 
