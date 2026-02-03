@@ -130,3 +130,48 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 		})
 	}
 }
+
+func TestSummarizeRange_SafetyCheck(t *testing.T) {
+	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
+
+	mockCounter := &mockTokenCounter{count: 950000} // Above 90% of 1M
+	strategy := NewContextStrategy(mockCounter, nil)
+	hManager := history.NewManager(historyFile)
+	
+	ctx := context.Background()
+	// Add 2 turns (4 messages)
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "2"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "3"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
+
+	cm := &ContextManager{
+		Strategy:   strategy,
+		History:    hManager,
+		Summarizer: &mockSafetySummarizer{},
+	}
+
+	_, err := cm.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Fatal("expected error due to safety check, got nil")
+	}
+
+	expectedErr := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
+	if err.Error() != expectedErr {
+		t.Errorf("expected error %q, got %q", expectedErr, err.Error())
+	}
+}
+
+type mockTokenCounter struct {
+	count int
+}
+
+func (m *mockTokenCounter) Count(contents []*llm.Content) int {
+	return m.count
+}
+
+type mockSafetySummarizer struct{}
+
+func (m *mockSafetySummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
+	return "summary", nil
+}

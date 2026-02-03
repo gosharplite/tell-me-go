@@ -14,6 +14,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
+// Add a constant for the absolute model safety limit if not already defined elsewhere
+const AbsoluteModelCapacity = 1000000 // Adjust based on the actual model used (e.g., 1M for Flash/Pro)
+
 // ContextManager encapsulates context preparation, policy enforcement, and summarization.
 type ContextManager struct {
 	mu         sync.RWMutex
@@ -105,7 +108,18 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, turns int, focus s
 
 	msgsToSummarize := turns * 2
 
-	summary, err := cm.Summarizer.Summarize(ctx, contents[:msgsToSummarize], focus)
+	// Safety Pre-check
+	subset := contents[:msgsToSummarize]
+	subsetTokens := cm.Strategy.EstimateTokens(subset)
+
+	// We leave 10% room for the summarization prompt and overhead
+	safetyLimit := int(float64(AbsoluteModelCapacity) * 0.9)
+
+	if subsetTokens > safetyLimit {
+		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", turns, subsetTokens, safetyLimit)
+	}
+
+	summary, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
 		return "", err
 	}
