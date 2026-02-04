@@ -485,3 +485,37 @@ func TestHistoryManager_SetPinned(t *testing.T) {
 		t.Error("expected error for negative turn index")
 	}
 }
+
+func TestHistoryManager_ClonePersistent(t *testing.T) {
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	content := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "persistent"}},
+		TransientParts: []*llm.Part{{Text: "transient"}},
+	}
+
+	err := m.AddContent(ctx, content)
+	if err != nil {
+		t.Fatalf("AddContent failed: %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(contents))
+	}
+
+	if len(contents[0].TransientParts) != 0 {
+		t.Error("TransientParts should have been omitted in history")
+	}
+
+	if len(contents[0].Parts) != 1 || contents[0].Parts[0].Text != "persistent" {
+		t.Error("persistent parts should be preserved")
+	}
+
+	// Verify original content was not mutated
+	if len(content.TransientParts) != 1 {
+		t.Error("original content TransientParts should not be mutated")
+	}
+}

@@ -185,7 +185,7 @@ func (fc *FunctionCall) Clone() *FunctionCall {
 	if fc.Args != nil {
 		clone.Args = make(map[string]interface{}, len(fc.Args))
 		for k, v := range fc.Args {
-			clone.Args[k] = v // Shallow copy of values is usually enough for simple types used in JSON
+			clone.Args[k] = cloneValue(v)
 		}
 	}
 	return clone
@@ -202,8 +202,29 @@ func (fr *FunctionResponse) Clone() *FunctionResponse {
 	if fr.Response != nil {
 		clone.Response = make(map[string]interface{}, len(fr.Response))
 		for k, v := range fr.Response {
-			clone.Response[k] = v
+			clone.Response[k] = cloneValue(v)
 		}
 	}
 	return clone
+}
+
+func cloneValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		newMap := make(map[string]interface{}, len(val))
+		for mk, mv := range val {
+			newMap[mk] = cloneValue(mv)
+		}
+		return newMap
+	case []interface{}:
+		newSlice := make([]interface{}, len(val))
+		for i, sv := range val {
+			newSlice[i] = cloneValue(sv)
+		}
+		return newSlice
+	default:
+		// For primitive types (string, float64, bool, nil) which are common in JSON,
+		// shallow copy is sufficient as they are immutable in Go.
+		return v
+	}
 }

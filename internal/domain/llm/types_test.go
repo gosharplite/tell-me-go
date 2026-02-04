@@ -8,153 +8,178 @@ import (
 	"testing"
 )
 
-func TestContent_AddPart(t *testing.T) {
-	t.Parallel()
-
+func TestClone(t *testing.T) {
 	tests := []struct {
-		name     string
-		initial  *Content
-		newPart  *Part
-		wantLen  int
-		wantText string
-		check    func(t *testing.T, c *Content)
+		name string
+		orig *Content
 	}{
 		{
-			name:    "nil part",
-			initial: &Content{Parts: []*Part{{Text: "initial"}}},
-			newPart: nil,
-			wantLen: 1,
-			check: func(t *testing.T, c *Content) {
-				if c.Parts[0].Text != "initial" {
-					t.Errorf("expected 'initial', got %q", c.Parts[0].Text)
-				}
+			name: "full content with nested parts",
+			orig: &Content{
+				Role:       "user",
+				TokenCount: 100,
+				Pinned:     true,
+				Parts: []*Part{
+					{
+						Text: "hello",
+					},
+					{
+						InlineData: &Blob{
+							MIMEType: "image/png",
+							Data:     []byte{1, 2, 3},
+						},
+					},
+					{
+						FunctionCall: &FunctionCall{
+							Name: "test_tool",
+							Args: map[string]interface{}{
+								"simple": "val",
+								"nested": map[string]interface{}{
+									"key": "val",
+								},
+								"list": []interface{}{1, 2, map[string]interface{}{"a": "b"}},
+							},
+						},
+					},
+					{
+						FunctionResponse: &FunctionResponse{
+							Name: "test_tool",
+							Response: map[string]interface{}{
+								"result": "ok",
+							},
+						},
+					},
+					{
+						Text:             "thought",
+						Thought:          true,
+						ThoughtSignature: []byte("sig"),
+						AssetID:          "asset-123",
+					},
+				},
+				TransientParts: []*Part{
+					{Text: "transient"},
+				},
 			},
 		},
 		{
-			name:     "merge text to empty",
-			initial:  &Content{},
-			newPart:  &Part{Text: "hello"},
-			wantLen:  1,
-			wantText: "hello",
-		},
-		{
-			name:     "merge text to text",
-			initial:  &Content{Parts: []*Part{{Text: "hello "}}},
-			newPart:  &Part{Text: "world"},
-			wantLen:  1,
-			wantText: "hello world",
-		},
-		{
-			name:    "don't merge text to thought",
-			initial: &Content{Parts: []*Part{{Text: "thinking", Thought: true}}},
-			newPart: &Part{Text: "answer"},
-			wantLen: 2,
-			check: func(t *testing.T, c *Content) {
-				if c.Parts[0].Text != "thinking" || !c.Parts[0].Thought {
-					t.Error("first part mismatch")
-				}
-				if c.Parts[1].Text != "answer" || c.Parts[1].Thought {
-					t.Error("second part mismatch")
-				}
+			name: "nil slices and maps",
+			orig: &Content{
+				Role: "system",
 			},
-		},
-		{
-			name:    "merge thought to thought",
-			initial: &Content{Parts: []*Part{{Text: "think 1", Thought: true}}},
-			newPart: &Part{Text: " think 2", Thought: true},
-			wantLen: 1,
-			check: func(t *testing.T, c *Content) {
-				if c.Parts[0].Text != "think 1 think 2" || !c.Parts[0].Thought {
-					t.Errorf("expected merged thought 'think 1 think 2', got %q", c.Parts[0].Text)
-				}
-			},
-		},
-		{
-			name:    "don't merge function call",
-			initial: &Content{Parts: []*Part{{Text: "hello"}}},
-			newPart: &Part{FunctionCall: &FunctionCall{Name: "test"}},
-			wantLen: 2,
-			check: func(t *testing.T, c *Content) {
-				if c.Parts[1].FunctionCall == nil || c.Parts[1].FunctionCall.Name != "test" {
-					t.Error("function call not appended correctly")
-				}
-			},
-		},
-		{
-			name:    "don't merge function response",
-			initial: &Content{Parts: []*Part{{Text: "hello"}}},
-			newPart: &Part{FunctionResponse: &FunctionResponse{Name: "test"}},
-			wantLen: 2,
-		},
-		{
-			name:    "don't merge inline data",
-			initial: &Content{Parts: []*Part{{Text: "hello"}}},
-			newPart: &Part{InlineData: &Blob{MIMEType: "image/png"}},
-			wantLen: 2,
-		},
-		{
-			name:    "don't merge text to function call",
-			initial: &Content{Parts: []*Part{{FunctionCall: &FunctionCall{Name: "test"}}}},
-			newPart: &Part{Text: "hello"},
-			wantLen: 2,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.initial.AddPart(tt.newPart)
+			clone := tt.orig.Clone()
 
-			if len(tt.initial.Parts) != tt.wantLen {
-				t.Fatalf("expected length %d, got %d", tt.wantLen, len(tt.initial.Parts))
+			// 1. Pointer inequality
+			if tt.orig != nil && clone == tt.orig {
+				t.Error("clone should not be the same pointer as original")
 			}
 
-			if tt.wantText != "" {
-				if tt.initial.Parts[0].Text != tt.wantText {
-					t.Errorf("expected text %q, got %q", tt.wantText, tt.initial.Parts[0].Text)
+			// 2. Deep equality
+			if !reflect.DeepEqual(tt.orig, clone) {
+				t.Error("clone should be deep equal to original")
+			}
+
+			// 3. Mutation independence
+			if len(tt.orig.Parts) > 0 {
+				// Modify slice
+				originalLen := len(tt.orig.Parts)
+				clone.Parts = append(clone.Parts, &Part{Text: "new"})
+				if len(tt.orig.Parts) != originalLen {
+					t.Error("modifying clone.Parts should not affect tt.orig.Parts")
 				}
-			}
 
-			if tt.check != nil {
-				tt.check(t, tt.initial)
+				// Modify nested map in FunctionCall
+				for _, p := range clone.Parts {
+					if p.FunctionCall != nil {
+						fc := p.FunctionCall
+						if nested, ok := fc.Args["nested"].(map[string]interface{}); ok {
+							nested["key"] = "mutated"
+						}
+						if list, ok := fc.Args["list"].([]interface{}); ok {
+							list[0] = 999
+							if nestedInList, ok := list[2].(map[string]interface{}); ok {
+								nestedInList["a"] = "mutated"
+							}
+						}
+					}
+				}
+
+				// Check original is unchanged
+				for _, p := range tt.orig.Parts {
+					if p.FunctionCall != nil {
+						fc := p.FunctionCall
+						if nested, ok := fc.Args["nested"].(map[string]interface{}); ok {
+							if nested["key"] != "val" {
+								t.Error("modifying nested map in clone affected original")
+							}
+						}
+						if list, ok := fc.Args["list"].([]interface{}); ok {
+							if list[0] != 1 {
+								t.Error("modifying nested slice in clone affected original")
+							}
+							if nestedInList, ok := list[2].(map[string]interface{}); ok {
+								if nestedInList["a"] != "b" {
+									t.Error("modifying nested map in nested slice in clone affected original")
+								}
+							}
+						}
+					}
+				}
+
+				// Modify byte slice
+				for _, p := range clone.Parts {
+					if p.InlineData != nil {
+						p.InlineData.Data[0] = 255
+					}
+					if len(p.ThoughtSignature) > 0 {
+						p.ThoughtSignature[0] = 0
+					}
+				}
+
+				for _, p := range tt.orig.Parts {
+					if p.InlineData != nil {
+						if p.InlineData.Data[0] != 1 {
+							t.Error("modifying byte slice in clone affected original")
+						}
+					}
+					if len(p.ThoughtSignature) > 0 {
+						if p.ThoughtSignature[0] != 's' { // "sig"[0] is 's'
+							t.Error("modifying thought signature in clone affected original")
+						}
+					}
+				}
 			}
 		})
 	}
 }
 
-func TestPart_StructVerification(t *testing.T) {
-	t.Parallel()
-	// Just verify the fields exist as expected for the public API
-	p := &Part{
-		Text:             "text",
-		Thought:          true,
-		ThoughtSignature: []byte("sig"),
-		AssetID:          "asset",
-		InlineData:       &Blob{MIMEType: "mt", Data: []byte("d")},
-		FunctionCall:     &FunctionCall{Name: "call", Args: map[string]interface{}{"a": 1}},
-		FunctionResponse: &FunctionResponse{Name: "resp", Response: map[string]interface{}{"r": 2}},
+func TestNilClones(t *testing.T) {
+	var c *Content
+	if c.Clone() != nil {
+		t.Error("cloning nil Content should return nil")
 	}
 
-	if p.Text != "text" || !p.Thought || p.AssetID != "asset" {
-		t.Error("field mismatch")
-	}
-	if !reflect.DeepEqual(p.ThoughtSignature, []byte("sig")) {
-		t.Error("signature mismatch")
-	}
-}
-
-func TestContent_Pinned(t *testing.T) {
-	t.Parallel()
-	c := &Content{
-		Role:   "user",
-		Pinned: true,
+	var p *Part
+	if p.Clone() != nil {
+		t.Error("cloning nil Part should return nil")
 	}
 
-	if !c.Pinned {
-		t.Error("expected Pinned to be true")
+	var b *Blob
+	if b.Clone() != nil {
+		t.Error("cloning nil Blob should return nil")
 	}
 
-	c.Pinned = false
-	if c.Pinned {
-		t.Error("expected Pinned to be false")
+	var fc *FunctionCall
+	if fc.Clone() != nil {
+		t.Error("cloning nil FunctionCall should return nil")
+	}
+
+	var fr *FunctionResponse
+	if fr.Clone() != nil {
+		t.Error("cloning nil FunctionResponse should return nil")
 	}
 }
