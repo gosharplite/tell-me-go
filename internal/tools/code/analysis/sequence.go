@@ -10,10 +10,10 @@ import (
 	"go/types"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -34,20 +34,21 @@ func (p *RealPackageProvider) LoadPackages(ctx context.Context, patterns ...stri
 type SequenceAnalyzer struct {
 	SP       security.SecurityProvider
 	Exec     CommandExecutor
-	Cache    *astutil.ASTCache
 	Provider PackageProvider
 
-	pkgMu   sync.RWMutex
-	pkgs    []*packages.Package
-	modName string
+	pkgMu    sync.RWMutex
+	pkgs     []*packages.Package
+	modName  string
+	lastLoad time.Time
+	cacheTTL time.Duration
 }
 
-func NewSequenceAnalyzer(exec CommandExecutor, cache *astutil.ASTCache, sp security.SecurityProvider) *SequenceAnalyzer {
+func NewSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *SequenceAnalyzer {
 	return &SequenceAnalyzer{
 		SP:       sp,
 		Exec:     exec,
-		Cache:    cache,
 		Provider: &RealPackageProvider{},
+		cacheTTL: 5 * time.Minute,
 	}
 }
 
@@ -79,57 +80,114 @@ func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[str
 	return tools.ToolResult{Text: a.generateSequenceDiagram(frames)}, nil
 }
 
-func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
-	a.pkgMu.Lock()
-	if a.pkgs == nil {
-		// 0. Get module name
-		modOut, _ := a.Exec.Output(ctx, "go", "list", "-m")
-		a.modName = strings.TrimSpace(string(modOut))
-
-		// 1. Load packages
-		pkgs, err := a.Provider.LoadPackages(ctx, "./...")
-		if err != nil {
-			a.pkgMu.Unlock()
-			return nil, fmt.Errorf("loading packages: %w", err)
-		}
-		a.pkgs = pkgs
+func (a *SequenceAnalyzer) loadPackages(ctx context.Context) error {
+	a.pkgMu.RLock()
+	if a.pkgs != nil && time.Since(a.lastLoad) < a.cacheTTL {
+		a.pkgMu.RUnlock()
+		return nil
 	}
+	a.pkgMu.RUnlock()
+
+	a.pkgMu.Lock()
+	defer a.pkgMu.Unlock()
+
+	// Double-check
+	if a.pkgs != nil && time.Since(a.lastLoad) < a.cacheTTL {
+		return nil
+	}
+
+	// 0. Get module name
+	modOut, err := a.Exec.Output(ctx, "go", "list", "-m")
+	if err != nil {
+		return fmt.Errorf("failed to get module name: %w", err)
+	}
+	a.modName = strings.TrimSpace(string(modOut))
+
+	// 1. Load packages
+	pkgs, err := a.Provider.LoadPackages(ctx, "./...")
+	if err != nil {
+		return fmt.Errorf("loading packages: %w", err)
+	}
+	a.pkgs = pkgs
+	a.lastLoad = time.Now()
+	return nil
+}
+
+func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
+	if err := a.loadPackages(ctx); err != nil {
+		return nil, err
+	}
+
+	a.pkgMu.RLock()
 	pkgs := a.pkgs
 	modName := a.modName
-	a.pkgMu.Unlock()
+	a.pkgMu.RUnlock()
 
 	// 2. Find start function
 	var startPkg *packages.Package
 	var startFunc *ast.FuncDecl
-	var pkgPath, funcName string
 
-	// Split startSymbol (e.g., "internal/api/handler.CreateUser" or full path)
-	lastDot := strings.LastIndex(startSymbol, ".")
-	if lastDot == -1 {
-		return nil, fmt.Errorf("invalid start_symbol format: %s (expected pkg.Func or pkg.(*Type).Func)", startSymbol)
+	// Robustly find package and function name
+	var remaining string
+	for _, p := range pkgs {
+		if strings.HasPrefix(startSymbol, p.PkgPath+".") {
+			if startPkg == nil || len(p.PkgPath) > len(startPkg.PkgPath) {
+				startPkg = p
+				remaining = startSymbol[len(p.PkgPath)+1:]
+			}
+		}
 	}
-	pkgPath = startSymbol[:lastDot]
-	funcName = startSymbol[lastDot+1:]
 
-	// Handle pointer receiver in name like pkg.(*Type).Func
+	if startPkg == nil {
+		// Fallback for symbols without full package path (maybe just pkg.Func)
+		lastDot := strings.LastIndex(startSymbol, ".")
+		if lastDot != -1 {
+			pkgPath := startSymbol[:lastDot]
+			remaining = startSymbol[lastDot+1:]
+			for _, p := range pkgs {
+				if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
+					startPkg = p
+					break
+				}
+			}
+		}
+	}
+
+	if startPkg == nil {
+		return nil, fmt.Errorf("start symbol package not found: %s", startSymbol)
+	}
+
+	funcName := remaining
+	if dot := strings.LastIndex(funcName, "."); dot != -1 {
+		funcName = funcName[dot+1:]
+	}
 	funcName = strings.TrimPrefix(funcName, "(")
 	funcName = strings.TrimSuffix(funcName, ")")
 	if dot := strings.LastIndex(funcName, "."); dot != -1 {
 		funcName = funcName[dot+1:]
 	}
 
-	for _, p := range pkgs {
-		if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
-			startPkg = p
-			for _, file := range p.Syntax {
-				for _, decl := range file.Decls {
-					if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName {
-						startFunc = fd
-						break
+	for _, file := range startPkg.Syntax {
+		for _, decl := range file.Decls {
+			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName {
+				// If we have a receiver type in the symbol, try to match it
+				if strings.Contains(remaining, ".") {
+					recvName := a.getReceiverTypeName(fd.Recv)
+					if recvName != "" {
+						// Normalize both for flexible matching (e.g., Handler vs *Handler)
+						cleanRecv := strings.TrimPrefix(recvName, "*")
+						cleanRemaining := strings.ReplaceAll(remaining, "*", "")
+						if strings.Contains(cleanRemaining, cleanRecv) {
+							startFunc = fd
+							break
+						}
 					}
-				}
-				if startFunc != nil {
+				} else if fd.Recv == nil {
+					startFunc = fd
 					break
+				} else {
+					// leniant match if no better candidate found
+					startFunc = fd 
 				}
 			}
 		}
@@ -373,6 +431,23 @@ func (a *SequenceAnalyzer) shortenPkg(pkgPath string) string {
 func (a *SequenceAnalyzer) generateSequenceDiagram(frames []CallFrame) string {
 	var b strings.Builder
 	b.WriteString("sequenceDiagram\n")
+
+	participants := make(map[string]bool)
+	var orderedParticipants []string
+	for _, f := range frames {
+		if !participants[f.From] {
+			participants[f.From] = true
+			orderedParticipants = append(orderedParticipants, f.From)
+		}
+		if !participants[f.To] {
+			participants[f.To] = true
+			orderedParticipants = append(orderedParticipants, f.To)
+		}
+	}
+
+	for _, p := range orderedParticipants {
+		b.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
+	}
 	
 	inLoop := false
 	for _, f := range frames {
@@ -384,19 +459,44 @@ func (a *SequenceAnalyzer) generateSequenceDiagram(frames []CallFrame) string {
 			inLoop = false
 		}
 
+		from := sanitize(f.From)
+		to := sanitize(f.To)
+
 		if f.Async {
-			b.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", f.From, f.To, f.Function))
+			b.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", from, to, f.Function))
 		} else {
-			b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", f.From, f.To, f.Function))
+			b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", from, to, f.Function))
 			ret := f.Return
 			if ret == "" {
 				ret = " "
 			}
-			b.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", f.To, f.From, ret))
+			b.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", to, from, ret))
 		}
 	}
 	if inLoop {
 		b.WriteString("    end\n")
 	}
 	return b.String()
+}
+
+func (a *SequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	t := recv.List[0].Type
+	return a.exprToString(t)
+}
+
+func (a *SequenceAnalyzer) exprToString(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.StarExpr:
+		return "*" + a.exprToString(t.X)
+	case *ast.SelectorExpr:
+		return a.exprToString(t.X) + "." + t.Sel.Name
+	case *ast.IndexExpr:
+		return a.exprToString(t.X)
+	}
+	return ""
 }

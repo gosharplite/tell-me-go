@@ -58,9 +58,9 @@ func GenerateMermaid(graph map[string][]string) string {
 	for _, root := range layerNames {
 		pkgs := layers[root]
 		sort.Strings(pkgs)
-		builder.WriteString(fmt.Sprintf("  subgraph %s\n", sanitize(root)))
+		builder.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", sanitize(root), root))
 		for _, p := range pkgs {
-			builder.WriteString(fmt.Sprintf("    %s\n", sanitize(p)))
+			builder.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", sanitize(p), p))
 		}
 		builder.WriteString("  end\n")
 	}
@@ -112,7 +112,12 @@ func GenerateMermaid(graph map[string][]string) string {
 }
 
 func sanitize(name string) string {
-	return strings.NewReplacer("/", "_", ".", "_", "-", "_").Replace(name)
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '_'
+	}, name)
 }
 
 func findCycles(graph map[string][]string) [][]string {

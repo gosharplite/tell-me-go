@@ -48,7 +48,7 @@ func NewAnalysisManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp secur
 	return &AnalysisManager{
 		Complexity: NewComplexityAnalyzer(cache, sp),
 		Dependency: NewDependencyAnalyzer(exec, sp),
-		Sequence:   NewSequenceAnalyzer(exec, cache, sp),
+		Sequence:   NewSequenceAnalyzer(exec, sp),
 		Change:     NewChangeAnalyzer(cache, exec),
 		Types:      NewTypeManager(idx, cache, sp),
 	}

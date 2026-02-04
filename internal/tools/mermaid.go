@@ -13,32 +13,29 @@ import (
 // GenerateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
 // It is registered as a tool.
 func GenerateMermaidDiagram(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var graph map[string][]string
-	
 	rawGraph, ok := args["graph"]
 	if !ok {
 		return tools.ToolResult{Text: "Error: missing 'graph' argument"}, nil
 	}
 
-	// Manual conversion from interface{} to map[string][]string
-	graph = make(map[string][]string)
-	if m, ok := rawGraph.(map[string]interface{}); ok {
+	graph := make(map[string][]string)
+	switch m := rawGraph.(type) {
+	case map[string][]string:
+		graph = m
+	case map[string]interface{}:
 		for k, v := range m {
-			if deps, ok := v.([]interface{}); ok {
-				var depStrings []string
+			switch deps := v.(type) {
+			case []string:
+				graph[k] = deps
+			case []interface{}:
 				for _, d := range deps {
 					if s, ok := d.(string); ok {
-						depStrings = append(depStrings, s)
+						graph[k] = append(graph[k], s)
 					}
 				}
-				graph[k] = depStrings
-			} else if deps, ok := v.([]string); ok {
-				graph[k] = deps
 			}
 		}
-	} else if m, ok := rawGraph.(map[string][]string); ok {
-		graph = m
-	} else {
+	default:
 		return tools.ToolResult{Text: "Error: 'graph' argument must be a map of string to string list"}, nil
 	}
 

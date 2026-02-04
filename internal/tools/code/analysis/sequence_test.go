@@ -67,7 +67,7 @@ func AsyncFunc() {}
 			return []byte("example.com/test"), nil
 		},
 	}
-	a := NewSequenceAnalyzer(exec, nil, sp)
+	a := NewSequenceAnalyzer(exec, sp)
 	a.Provider = &MockPackageProvider{Pkgs: []*packages.Package{pkg}}
 
 	ctx := context.Background()
@@ -131,7 +131,7 @@ func C() {}
 			return []byte("example.com/test"), nil
 		},
 	}
-	a := NewSequenceAnalyzer(exec, nil, sp)
+	a := NewSequenceAnalyzer(exec, sp)
 	a.Provider = &MockPackageProvider{Pkgs: []*packages.Package{pkg}}
 
 	ctx := context.Background()
@@ -196,7 +196,7 @@ func Main(r Runner) {
 			return []byte("example.com/test"), nil
 		},
 	}
-	a := NewSequenceAnalyzer(exec, nil, sp)
+	a := NewSequenceAnalyzer(exec, sp)
 	a.Provider = &MockPackageProvider{Pkgs: []*packages.Package{pkg}}
 
 	ctx := context.Background()
