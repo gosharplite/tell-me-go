@@ -6,6 +6,7 @@ package system
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -233,7 +234,7 @@ func TestRunCommand_Append(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	executor := NewProcessExecutor()
-	
+
 	config1 := ExecutionConfig{
 		OutputFile: tmpFile,
 	}
@@ -417,5 +418,114 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 
 	if res.ExitCode == 0 {
 		t.Error("expected non-zero exit code or error for cancelled context, got 0")
+	}
+}
+
+func TestRunCommand_FileWriteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "readonly.txt")
+	os.WriteFile(outputPath, []byte("init"), 0444) // Read-only
+
+	var feedback safeBuffer
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		OutputFile: outputPath,
+		Feedback:   &feedback,
+	}
+
+	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello"}, config)
+
+	// 1. Executor should not fail just because file write failed
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	// 2. Output should still be captured in memory
+	if !strings.Contains(res.Output, "hello") {
+		t.Error("Output missing")
+	}
+	// 3. Feedback should contain the warning
+	if !strings.Contains(feedback.String(), "[Warning] Failed to write to output file") {
+		t.Errorf("Warning missing from feedback: %q", feedback.String())
+	}
+}
+
+func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
+	executor := NewProcessExecutor()
+	pipedParts := [][]string{
+		{"sh", "-c", "echo err0 >&2; echo out0"},
+		{"sh", "-c", "echo err1 >&2; cat"},
+	}
+
+	res, err := executor.RunPipeline(context.Background(), pipedParts, ExecutionConfig{})
+	if err != nil {
+		t.Fatalf("RunPipeline failed: %v", err)
+	}
+
+	// Stderr from both commands should be captured with prefixes
+	if !strings.Contains(res.Output, "[0] err0") {
+		t.Errorf("expected [0] err0 in output, got %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "[1] err1") {
+		t.Errorf("expected [1] err1 in output, got %q", res.Output)
+	}
+	// Final stdout should be there
+	if !strings.Contains(res.Output, "out0") {
+		t.Errorf("expected out0 in output, got %q", res.Output)
+	}
+}
+
+func TestRunPipeline_FileWriteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "readonly_pipe.txt")
+	os.WriteFile(outputPath, []byte("init"), 0444)
+
+	var feedback safeBuffer
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		OutputFile: outputPath,
+		Feedback:   &feedback,
+	}
+
+	pipedParts := [][]string{
+		{"echo", "hello"},
+		{"cat"},
+	}
+
+	res, err := executor.RunPipeline(context.Background(), pipedParts, config)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if !strings.Contains(res.Output, "hello") {
+		t.Error("Output missing")
+	}
+	if !strings.Contains(feedback.String(), "[Warning] Failed to write to output file") {
+		t.Errorf("Warning missing from feedback: %q", feedback.String())
+	}
+}
+
+func TestRunCommand_WriteFailureSuppression(t *testing.T) {
+	outputPath := "/dev/full"
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Skip("/dev/full not available")
+	}
+
+	var feedback safeBuffer
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		OutputFile: outputPath,
+		Feedback:   &feedback,
+	}
+
+	// Run a command that produces multiple lines of output
+	_, err := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo line1; echo line2"}, config)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Warning should only appear once
+	warningCount := strings.Count(feedback.String(), "[Warning] Failed to write to output file")
+	if warningCount != 1 {
+		t.Errorf("Expected exactly 1 warning, got %d", warningCount)
 	}
 }

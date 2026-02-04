@@ -61,7 +61,9 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 
 	file, err := e.openOutputFile(config)
 	if err != nil {
-		return ExecutionResult{}, err
+		if config.Feedback != nil {
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+		}
 	}
 	if file != nil {
 		defer file.Close()
@@ -149,7 +151,9 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	file, err := e.openOutputFile(config)
 	if err != nil {
-		return ExecutionResult{}, err
+		if config.Feedback != nil {
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+		}
 	}
 	if file != nil {
 		defer file.Close()

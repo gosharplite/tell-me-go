@@ -74,18 +74,18 @@ func TestParseUsage_Robustness(t *testing.T) {
 			expectedModel:    "gpt-4",
 		},
 		{
-			name: "Calculated cost (cost field missing)",
+			name:           "Calculated cost (cost field missing)",
 			content:        `{"model":"gpt-4", "prompt_tokens":1000000, "response_tokens":0}`,
 			expectedCost:   10.0, // 1M tokens * $10/1M
 			expectedPrompt: 1000000,
 			expectedModel:  "gpt-4",
 		},
 		{
-			name:           "Detected Model and Timestamp",
-			content:        "{\"model\":\"gpt-4-custom\", \"timestamp\":\"2026-01-02T15:04:05Z\", \"cost\":0.1}\n",
-			expectedCost:   0.1,
-			expectedModel:  "gpt-4-custom",
-			expectedTime:   true,
+			name:          "Detected Model and Timestamp",
+			content:       "{\"model\":\"gpt-4-custom\", \"timestamp\":\"2026-01-02T15:04:05Z\", \"cost\":0.1}\n",
+			expectedCost:  0.1,
+			expectedModel: "gpt-4-custom",
+			expectedTime:  true,
 		},
 	}
 
