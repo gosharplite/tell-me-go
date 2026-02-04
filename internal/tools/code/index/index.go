@@ -222,9 +222,15 @@ func (idx *Indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	}
 
 	for _, loc := range usages {
-		rel, err := filepath.Rel(searchPath, loc.Path)
-		if err == nil && !strings.HasPrefix(rel, "..") {
+		// Optimized path check instead of filepath.Rel
+		if loc.Path == searchPath {
 			results = append(results, loc)
+			continue
+		}
+		if strings.HasPrefix(loc.Path, searchPath) {
+			if len(loc.Path) > len(searchPath) && loc.Path[len(searchPath)] == filepath.Separator {
+				results = append(results, loc)
+			}
 		}
 	}
 
@@ -321,9 +327,9 @@ func (h *harvester) handleIdent(d *ast.Ident) {
 
 func (h *harvester) toLocation(pos token.Pos) Location {
 	p := h.fset.Position(pos)
-	abs, _ := filepath.Abs(p.Filename)
+	// Optimization: use h.currentPath which is already absolute
 	return Location{
-		Path:   abs,
+		Path:   h.currentPath,
 		Line:   p.Line,
 		Column: p.Column,
 	}

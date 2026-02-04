@@ -671,16 +671,16 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 func TestAgent_WithSessionCostTracker(t *testing.T) {
 	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
-	
+
 	// Mock cost tracker
 	tracker := &mockCostTracker{}
-	
+
 	a := New(nil, nil, reg, sm, false, WithSessionCostTracker(tracker))
-	
+
 	if a.tracker != tracker {
 		t.Error("WithSessionCostTracker failed to store tracker in Agent")
 	}
-	
+
 	if a.engine.costTracker != tracker {
 		t.Error("WithSessionCostTracker failed to inject tracker into engine")
 	}
@@ -688,7 +688,7 @@ func TestAgent_WithSessionCostTracker(t *testing.T) {
 	// Verify that tracker is actually called
 	metrics := llm.Metrics{PromptTokens: 100, ResponseTokens: 50}
 	a.events.Publish(events.UsageMetricsEvent{Metrics: &metrics})
-	
+
 	// Wait a bit for event propagation (SimpleEventBus is synchronous in its current implementation but good practice)
 	if tracker.accumulateCalls == 0 {
 		t.Error("CostTracker was not notified of metrics")
@@ -729,10 +729,10 @@ type mockCostTracker struct {
 	accumulateCalls int
 }
 
-func (m *mockCostTracker) Accumulate(metrics llm.Metrics) { m.accumulateCalls++ }
+func (m *mockCostTracker) Accumulate(metrics llm.Metrics)           { m.accumulateCalls++ }
 func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
 func (m *mockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0
 }
 func (m *mockCostTracker) CalculateCost(metrics llm.Metrics) float64 { return 0 }
-func (m *mockCostTracker) Warmup() {}
+func (m *mockCostTracker) Warmup()                                   {}
