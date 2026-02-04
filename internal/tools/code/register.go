@@ -245,6 +245,25 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, ana.GetPackageGraph)
 
+	r.Register(&tools.ToolDeclaration{
+		Name:        "analyze_sequence_flow",
+		Description: "Trace a specific function call across package boundaries to generate a Mermaid Sequence Diagram.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"start_symbol": {
+					Type:        "STRING",
+					Description: "The fully qualified name of a function (e.g., 'internal/api/handler.CreateUser').",
+				},
+				"max_depth": {
+					Type:        "INTEGER",
+					Description: "Maximum recursion depth (default 5).",
+				},
+			},
+			Required: []string{"start_symbol"},
+		},
+	}, ana.AnalyzeSequenceFlow)
+
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "move_definition",
 		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
