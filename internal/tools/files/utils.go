@@ -187,8 +187,7 @@ func (p *searchPipeline) scanFile(path string) error {
 		lineNum := 0
 		for scanner.Scan() {
 			lineNum++
-			data := scanner.Bytes()
-			line := string(data)
+			line := scanner.Text()
 			if p.matcher(path, line) {
 				select {
 				case p.resultsChan <- formatMatch(path, lineNum, line):

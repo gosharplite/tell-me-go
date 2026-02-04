@@ -34,6 +34,8 @@ type ProcessExecutor struct{}
 
 const maxScannerCapacity = 10 * 1024 * 1024
 
+var newline = []byte{'\n'}
+
 // NewProcessExecutor creates a new ProcessExecutor.
 func NewProcessExecutor() *ProcessExecutor {
 	return &ProcessExecutor{}
@@ -78,15 +80,19 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
 		}
 		if sb.Len() < maxCapture {
-			toWrite := string(data) + "\n"
-			if sb.Len()+len(toWrite) > maxCapture {
-				toWrite = toWrite[:maxCapture-sb.Len()]
+			remaining := maxCapture - sb.Len()
+			canWrite := len(data)
+			if canWrite > remaining {
+				canWrite = remaining
 			}
-			sb.WriteString(toWrite)
+			sb.Write(data[:canWrite])
+			if canWrite < remaining && sb.Len() < maxCapture {
+				sb.WriteByte('\n')
+			}
 		}
 		if file != nil {
 			file.Write(data)
-			file.WriteString("\n")
+			file.Write(newline)
 		}
 	}
 
@@ -249,12 +255,16 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
 				}
-				if stderrStr.Len() < maxCapture {
-					toWrite := string(data) + "\n"
-					if stderrStr.Len()+len(toWrite) > maxCapture {
-						toWrite = toWrite[:maxCapture-stderrStr.Len()]
+				remaining := maxCapture - stderrStr.Len()
+				if remaining > 0 {
+					canWrite := len(data)
+					if canWrite > remaining {
+						canWrite = remaining
 					}
-					stderrStr.WriteString(toWrite)
+					stderrStr.Write(data[:canWrite])
+					if canWrite < remaining && stderrStr.Len() < maxCapture {
+						stderrStr.WriteByte('\n')
+					}
 				}
 				mu.Unlock()
 			}
@@ -268,20 +278,26 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	scanner.Buffer(buf, maxScannerCapacity)
 	for scanner.Scan() {
 		data := scanner.Bytes()
+
+		if file != nil {
+			file.Write(data)
+			file.Write(newline)
+		}
+
 		mu.Lock()
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
 		}
-		if stdoutStr.Len() < maxCapture {
-			toWrite := string(data) + "\n"
-			if stdoutStr.Len()+len(toWrite) > maxCapture {
-				toWrite = toWrite[:maxCapture-stdoutStr.Len()]
+		remaining := maxCapture - stdoutStr.Len()
+		if remaining > 0 {
+			canWrite := len(data)
+			if canWrite > remaining {
+				canWrite = remaining
 			}
-			stdoutStr.WriteString(toWrite)
-		}
-		if file != nil {
-			file.Write(data)
-			file.WriteString("\n")
+			stdoutStr.Write(data[:canWrite])
+			if canWrite < remaining && stdoutStr.Len() < maxCapture {
+				stdoutStr.WriteByte('\n')
+			}
 		}
 		mu.Unlock()
 	}

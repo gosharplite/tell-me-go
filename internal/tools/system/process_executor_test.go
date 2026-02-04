@@ -5,6 +5,7 @@ package system
 
 import (
 	"context"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -172,4 +173,80 @@ func (b *safeBuffer) Write(p []byte) (n int, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.Builder.Write(p)
+}
+
+func TestRunCommand_Basic(t *testing.T) {
+	executor := NewProcessExecutor()
+	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello world"}, ExecutionConfig{})
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+	if !strings.Contains(res.Output, "hello world") {
+		t.Errorf("expected output to contain 'hello world', got %q", res.Output)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", res.ExitCode)
+	}
+}
+
+func TestRunCommand_MaxCapture(t *testing.T) {
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		MaxCapture: 5,
+	}
+	res, err := executor.RunCommand(context.Background(), []string{"echo", "1234567890"}, config)
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+	if len(res.Output) != 5 {
+		t.Errorf("expected output length 5, got %d: %q", len(res.Output), res.Output)
+	}
+	if res.Output != "12345" {
+		t.Errorf("expected output '12345', got %q", res.Output)
+	}
+}
+
+func TestRunCommand_OutputFile(t *testing.T) {
+	tmpFile := "test_output.txt"
+	defer os.Remove(tmpFile)
+
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		OutputFile: tmpFile,
+	}
+	_, err := executor.RunCommand(context.Background(), []string{"echo", "file content"}, config)
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+
+	content, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+	if !strings.Contains(string(content), "file content") {
+		t.Errorf("expected file to contain 'file content', got %q", string(content))
+	}
+}
+
+func TestRunCommand_Append(t *testing.T) {
+	tmpFile := "test_append.txt"
+	defer os.Remove(tmpFile)
+
+	executor := NewProcessExecutor()
+	
+	config1 := ExecutionConfig{
+		OutputFile: tmpFile,
+	}
+	executor.RunCommand(context.Background(), []string{"echo", "line 1"}, config1)
+
+	config2 := ExecutionConfig{
+		OutputFile: tmpFile,
+		Append:     true,
+	}
+	executor.RunCommand(context.Background(), []string{"echo", "line 2"}, config2)
+
+	content, _ := os.ReadFile(tmpFile)
+	if !strings.Contains(string(content), "line 1") || !strings.Contains(string(content), "line 2") {
+		t.Errorf("expected file to contain both lines, got %q", string(content))
+	}
 }

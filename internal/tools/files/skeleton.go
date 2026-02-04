@@ -80,8 +80,7 @@ func scanForDefinitions(r io.Reader, ext string) (string, error) {
 	var lastComments []string
 
 	for scanner.Scan() {
-		data := scanner.Bytes()
-		line := string(data)
+		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
