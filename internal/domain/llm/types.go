@@ -13,10 +13,11 @@ import (
 // Shared API models for LLM interactions.
 
 type Content struct {
-	Role       string  `json:"role"`
-	Parts      []*Part `json:"parts,omitempty"`
-	TokenCount int     `json:"token_count,omitempty"`
-	Pinned     bool    `json:"pinned,omitempty"`
+	Role           string  `json:"role"`
+	Parts          []*Part `json:"parts,omitempty"`
+	TokenCount     int     `json:"token_count,omitempty"`
+	Pinned         bool    `json:"pinned,omitempty"`
+	TransientParts []*Part `json:"-"`
 }
 
 type Part struct {

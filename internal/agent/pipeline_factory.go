@@ -31,10 +31,28 @@ type PipelineFactory struct {
 
 // BuildStandardPipeline creates the default context transformation pipeline.
 func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPipeline {
+	// 1. Calculate window size based on profile
+	windowTurns := limits.MaxHistoryTurns
+	if f.Profile == ProfilePrecise {
+		// Precise mode: Shrink the sliding window to 50% (min 2)
+		// to give ImportanceRankPolicy more token budget.
+		windowTurns = limits.MaxHistoryTurns / 2
+		if windowTurns < 2 {
+			windowTurns = 2
+		}
+	}
+
 	transformers := []ContextTransformer{
 		&HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: limits.MaxHistoryTurns},
-			Manager: f.History,
+			Policy: &CompositePruningPolicy{
+				Policies: []PruningPolicy{
+					// 2. Use the profile-adjusted window size
+					&SlidingWindowPolicy{MaxTurns: windowTurns},
+					&PinningPolicy{},
+					&ImportanceRankPolicy{},
+				},
+			},
+			Events: f.Events,
 		},
 	}
 
@@ -43,13 +61,14 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 			MaxTokens:  limits.MaxHistoryTokens,
 			Estimator:  f.Estimator,
 			Summarizer: f.Summarizer,
-			Manager:    f.History,
 			Events:     f.Events,
 		},
-		&ToolDeclarationGenerator{
-			Registry: f.Registry,
-		},
+		&EmptyTurnFilter{},
 		&WarningInjector{
+			Strategy: f.Estimator.(*ContextStrategy),
+		},
+		&TransientMerger{},
+		&FinalContextValidator{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
 	)

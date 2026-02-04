@@ -24,18 +24,23 @@ type ConfigWatcher struct {
 	maxToolTurns         int
 	maxHistoryTurns      int
 	tieredThreshold      int
+	contextWindow        int
 	defaultHistoryTokens int
 	defaultToolTurns     int
 	defaultHistoryTurns  int
 	defaultThreshold     int
+	defaultWindow        int
 }
 
 // NewConfigWatcher creates a new ConfigWatcher with default values.
 func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
+	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {
-		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
-			defaultThreshold = int(m.TieredThreshold)
+		if m, ok := dp.Models["default"]; ok {
+			if m.TieredThreshold > 0 {
+				defaultThreshold = int(m.TieredThreshold)
+			}
 		}
 	}
 
@@ -44,10 +49,12 @@ func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
 		tieredThreshold:      defaultThreshold,
+		contextWindow:        defaultWindow,
 		defaultHistoryTokens: tokens,
 		defaultToolTurns:     toolTurns,
 		defaultHistoryTurns:  historyTurns,
 		defaultThreshold:     defaultThreshold,
+		defaultWindow:        defaultWindow,
 	}
 }
 
@@ -60,7 +67,7 @@ func (cw *ConfigWatcher) SetPaths(main, session string) {
 }
 
 // Refresh checks for file changes and updates cached values if necessary.
-func (cw *ConfigWatcher) Refresh() {
+func (cw *ConfigWatcher) Refresh(model string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 
@@ -75,6 +82,12 @@ func (cw *ConfigWatcher) Refresh() {
 					cw.maxHistoryTokens = cfg.MaxHistoryTokens
 					cw.maxToolTurns = cfg.MaxToolTurns
 					cw.maxHistoryTurns = cfg.MaxHistoryTurns
+
+					// Update context window from model config if available
+					if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
+						cw.contextWindow = mCfg.ContextWindow
+					}
+
 					changed = true
 				}
 			}
@@ -160,4 +173,10 @@ func (cw *ConfigWatcher) GetTieredThreshold() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.tieredThreshold
+}
+
+func (cw *ConfigWatcher) GetContextWindow() int {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	return cw.contextWindow
 }

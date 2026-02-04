@@ -1,47 +1,65 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
+// Package agent coordinates the interaction between the LLM client, tools, and history.
 package agent
 
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
-// Add a constant for the absolute model safety limit if not already defined elsewhere
-const AbsoluteModelCapacity = 1000000 // Adjust based on the actual model used (e.g., 1M for Flash/Pro)
-
-// ContextManager encapsulates context preparation, policy enforcement, and summarization.
+// ContextManager handles the preparation of context for the LLM.
 type ContextManager struct {
-	mu         sync.RWMutex
+	mu         sync.Mutex
+	version    int
 	Strategy   *ContextStrategy
-	History    *history.Manager
-	Summarizer HistorySummarizer
-	Pipeline   *ContextPipeline
+	History    HistoryManager
+	Gateway    llm.LLMClient
 	Events     events.EventBus
-	factory    *PipelineFactory
+	Pipeline   *ContextPipeline
+	Factory    *PipelineFactory
+	Summarizer HistorySummarizer
 }
 
-// NewContextManager creates a new ContextManager.
-func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+// HistoryManager defines the interface for interacting with history.
+type HistoryManager interface {
+	GetContents() []*llm.Content
+	SetContents(ctx context.Context, contents []*llm.Content) error
+	Snapshot()
+	Rollback(ctx context.Context)
+	AddContent(ctx context.Context, content *llm.Content) error
+	GetResolver() llm.AssetResolver
+	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
+}
+
+// NewContextManager creates a new context manager.
+func NewContextManager(strategy *ContextStrategy, history HistoryManager, gateway llm.LLMClient, bus events.EventBus, factory *PipelineFactory) *ContextManager {
 	cm := &ContextManager{
-		Strategy:   s,
-		History:    h,
-		Summarizer: NewSummarizer(g, bus),
-		Events:     bus,
-		factory:    factory,
+		Strategy: strategy,
+		History:  history,
+		Gateway:  gateway,
+		Events:   bus,
+		Factory:  factory,
+	}
+
+	if factory != nil && factory.Summarizer != nil {
+		cm.Summarizer = factory.Summarizer
 	}
 
 	if bus != nil {
 		bus.Subscribe(func(e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
-				cm.onConfigUpdated(cfg)
+				cm.mu.Lock()
+				defer cm.mu.Unlock()
+				if cm.Factory != nil {
+					cm.Pipeline = cm.Factory.BuildStandardPipeline(cfg.Limits)
+				}
 			}
 		})
 	}
@@ -49,129 +67,234 @@ func NewContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGate
 	return cm
 }
 
-func (cm *ContextManager) onConfigUpdated(e events.ConfigUpdated) {
+// Prepare prepares the history for the given turn, applying pruning and summarization.
+func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if cm.factory != nil {
-		cm.Pipeline = cm.factory.BuildStandardPipeline(e.Limits)
-	}
-}
 
-// Prepare calculates the current context, enforces limits, and handles auto-summarization using a pipeline.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
-	maxTokens, _, _ := cm.Strategy.GetLimits()
-
+	// Initialize request with current history
 	req := &ContextRequest{
 		Turn:    turn,
 		History: cm.History.GetContents(),
 	}
 
-	cm.mu.RLock()
-	pipeline := cm.Pipeline
-	cm.mu.RUnlock()
-
-	if pipeline == nil {
-		return nil, nil, fmt.Errorf("context pipeline not configured")
+	if cm.Pipeline == nil {
+		return req.History, &req.Metadata, nil
 	}
 
-	if err := pipeline.Execute(ctx, req); err != nil {
+	// We execute the pipeline. Since some transformers might modify history
+	// and want it persisted (Pruner, Gatekeeper), but others only want it
+	// for the API (WarningInjector), we handle persistence carefully through the pipeline.
+	err := cm.Pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+		cm.version++
+		return cm.History.SetContents(ctx, h)
+	})
+	if err != nil {
 		return nil, nil, err
 	}
 
-	// Filter out turns with no content (no text, no function calls/responses, no blobs)
-	// This prevents the SDK from receiving empty turns which would trigger its defensive "[empty]" injection.
-	var filteredHistory []*llm.Content
-	for i := 0; i < len(req.History); i += 2 {
-		if i+1 >= len(req.History) {
-			filteredHistory = append(filteredHistory, req.History[i])
-			break
-		}
-
-		turnEmpty := true
-		for _, msg := range req.History[i : i+2] {
-			for _, p := range msg.Parts {
-				if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
-					turnEmpty = false
-					break
-				}
-			}
-			if !turnEmpty {
-				break
-			}
-		}
-
-		if !turnEmpty {
-			filteredHistory = append(filteredHistory, req.History[i:i+2]...)
-		}
-	}
-
-	req.Result = filteredHistory
-
-	// Final token estimation check
-	finalTokens := cm.Strategy.EstimateTokens(req.Result)
-	req.Metadata.FinalTokenCount = finalTokens
-
-	if finalTokens > maxTokens {
-		return nil, nil, fmt.Errorf("%w: %d > %d", llm.ErrContextLimitExceeded, finalTokens, maxTokens)
-	}
-
-	req.Metadata.FinalTurnCount = len(req.Result) / 2
-	return req.Result, &req.Metadata, nil
+	return req.History, &req.Metadata, nil
 }
 
-// SummarizeRange compresses a range of history turns into a single summary block.
-func (cm *ContextManager) SummarizeRange(ctx context.Context, turns int, focus string) (string, error) {
-	contents := cm.History.GetContents()
-	// We must leave at least the last turn (2 messages) and the current prompt
-	// to maintain context continuity.
-	maxSummarizable := (len(contents) - 2) / 2
-	if turns > maxSummarizable {
-		turns = maxSummarizable
+// AddContent appends content to the history in a thread-safe manner.
+func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.version++
+	return cm.History.AddContent(ctx, content)
+}
+
+// SetPipeline sets the context transformation pipeline.
+func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.Pipeline = p
+}
+
+// TokenEstimator defines the interface for token counting.
+type TokenEstimator interface {
+	EstimateTokens(contents []*llm.Content) int
+}
+
+// HistorySummarizer defines the interface for summarizing history.
+type HistorySummarizer interface {
+	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error)
+}
+
+// PruningPolicy defines how to mark turns for pruning.
+type PruningPolicy interface {
+	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int
+	Name() string
+}
+
+// RegisterToolRegistry updates the pipeline if it contains a ToolDeclarationGenerator.
+func (cm *ContextManager) RegisterToolRegistry(reg ToolRegistry) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.Pipeline == nil {
+		return
+	}
+	for _, t := range cm.Pipeline.transformers {
+		if tg, ok := t.(*ToolDeclarationGenerator); ok {
+			tg.Registry = reg
+		}
+	}
+}
+
+// Ensure Standard Pipeline is built if not present
+func (cm *ContextManager) EnsureStandardPipeline(limits events.Limits) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.Pipeline == nil && cm.Factory != nil {
+		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
+	}
+}
+
+func (cm *ContextManager) GetLimits() events.Limits {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	tokens, turns, histTurns := cm.Strategy.GetLimits()
+	return events.Limits{
+		MaxHistoryTokens: tokens,
+		MaxToolTurns:     turns,
+		MaxHistoryTurns:  histTurns,
+		TieredThreshold:  cm.Strategy.GetTieredThreshold(),
+	}
+}
+
+// Summarize performs an ad-hoc summarization of the given content.
+func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
+	if cm.Summarizer == nil {
+		return "", nil
+	}
+	return cm.Summarizer.Summarize(ctx, contents, focus)
+}
+
+// SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
+func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, error) {
+	if cm.Summarizer == nil {
+		return "", fmt.Errorf("summarizer not initialized")
 	}
 
-	if turns <= 0 {
+	cm.mu.Lock()
+	contents := cm.History.GetContents()
+	startVersion := cm.version
+	totalMsgs := len(contents)
+	totalTurns := totalMsgs / 2
+
+	if totalTurns < 1 {
+		cm.mu.Unlock()
 		return "History is too short to summarize yet.", nil
 	}
 
-	msgsToSummarize := turns * 2
+	// Clamp to available turns, but leave at least 1 turn if possible
+	if numTurns >= totalTurns {
+		numTurns = totalTurns - 1
+	}
 
-	// Safety Pre-check
-	subset := contents[:msgsToSummarize]
-	subsetTokens := cm.Strategy.EstimateTokens(subset)
+	if numTurns < 1 {
+		cm.mu.Unlock()
+		return "History is too short to summarize yet.", nil
+	}
 
-	// We leave 10% room for the summarization prompt and overhead
-	safetyLimit := int(float64(AbsoluteModelCapacity) * 0.9)
+	// Safety check: estimate tokens of selected turns
+	endIdx := numTurns * 2
+	subset := contents[:endIdx]
+	tokens := cm.Strategy.EstimateTokens(subset)
 
-	if subsetTokens > safetyLimit {
-		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", turns, subsetTokens, safetyLimit)
+	window := cm.Strategy.GetContextWindow()
+	safetyLimit := int(float64(window) * 0.9)
+	if tokens > safetyLimit {
+		cm.mu.Unlock()
+		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit)
 	}
 
 	if cm.Events != nil {
 		cm.Events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", turns, subsetTokens),
-			Level:   "info",
+			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", numTurns, tokens),
 		})
 	}
+	cm.mu.Unlock()
 
+	// Slow LLM call outside the lock
 	summary, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("summarization failed: %w", err)
 	}
 
-	newMsgs := []*llm.Content{
-		{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: "System Summary of previous context:\n\n" + summary}},
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Check if history was modified during summarization
+	if cm.version != startVersion {
+		// History changed. We need to be careful.
+		// Since we summarized the FIRST N turns, we should check if they are still the same.
+		currentContents := cm.History.GetContents()
+		if len(currentContents) < endIdx {
+			return "", fmt.Errorf("summarization aborted: history was pruned while summarizing")
+		}
+		// Robust check: did the messages we summarized change?
+		for i := 0; i < endIdx; i++ {
+			if !cm.isContentEqual(currentContents[i], subset[i]) {
+				return "", fmt.Errorf("summarization aborted: history content changed while summarizing")
+			}
+		}
+		// If they are the same, we can proceed to replace them.
+		contents = currentContents
+	}
+
+	// Create summary message
+	summaryMsg := &llm.Content{
+		Role: "user",
+		Parts: []*llm.Part{
+			{Text: fmt.Sprintf("System Auto-Summary (context limit reached):\n\n%s", summary)},
 		},
-		{
-			Role:  "model",
-			Parts: []*llm.Part{{Text: "Understood. I have integrated the summarized context."}},
+	}
+	// And a model acknowledgement
+	ackMsg := &llm.Content{
+		Role: "model",
+		Parts: []*llm.Part{
+			{Text: "Understood. Context compressed."},
 		},
 	}
 
-	if err := cm.History.ReplaceRange(ctx, 0, msgsToSummarize, newMsgs); err != nil {
-		return "", fmt.Errorf("failed to update history with summary: %w", err)
+	// Reconstruct history: [summary, ack, remaining...]
+	newHistory := append([]*llm.Content{summaryMsg, ackMsg}, contents[endIdx:]...)
+	cm.version++
+	if err := cm.History.SetContents(ctx, newHistory); err != nil {
+		return "", fmt.Errorf("failed to update history after summarization: %w", err)
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", turns), nil
+	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), nil
+}
+
+func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
+	if c1 == nil || c2 == nil {
+		return c1 == c2
+	}
+	if c1.Role != c2.Role || len(c1.Parts) != len(c2.Parts) {
+		return false
+	}
+	for i := range c1.Parts {
+		p1, p2 := c1.Parts[i], c2.Parts[i]
+		if p1.Text != p2.Text || p1.Thought != p2.Thought {
+			return false
+		}
+		if (p1.InlineData == nil) != (p2.InlineData == nil) {
+			return false
+		}
+		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || string(p1.InlineData.Data) != string(p2.InlineData.Data)) {
+			return false
+		}
+		if !reflect.DeepEqual(p1.FunctionCall, p2.FunctionCall) {
+			return false
+		}
+		if !reflect.DeepEqual(p1.FunctionResponse, p2.FunctionResponse) {
+			return false
+		}
+	}
+	return true
 }

@@ -186,16 +186,22 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 func (a *Agent) applyConfig() {
 	a.mu.Lock()
 	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
-	a.configWatcher.Refresh()
+	a.configWatcher.Refresh(a.config.Model)
 
 	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
 	threshold := a.configWatcher.GetTieredThreshold()
+	window := a.configWatcher.GetContextWindow()
 
 	// Update config from watcher if it changed
 	a.config.Limits.MaxHistoryTokens = tokens
 	a.config.Limits.MaxToolTurns = toolTurns
 	a.config.Limits.MaxHistoryTurns = histTurns
 	a.config.Limits.TieredThreshold = threshold
+
+	// Update strategy with latest context window
+	if a.strategy != nil {
+		a.strategy.SetContextWindow(window)
+	}
 
 	// Capture values for engine reconfiguration outside of lock
 	logFile := a.config.LogFile

@@ -21,6 +21,9 @@ func ToSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolve
 	for _, p := range c.Parts {
 		res.Parts = append(res.Parts, ToSDKPart(ctx, p, resolver))
 	}
+	for _, p := range c.TransientParts {
+		res.Parts = append(res.Parts, ToSDKPart(ctx, p, resolver))
+	}
 	return res
 }
 

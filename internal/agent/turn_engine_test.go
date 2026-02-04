@@ -30,6 +30,20 @@ func (m *MockGateway) Generate(ctx context.Context, input []*llm.Content, t []*t
 	return m.GenerateFunc(ctx, input, t, resolver)
 }
 
+func (m *MockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return nil, nil, nil
+}
+
+func (m *MockGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	return nil, nil
+}
+
+func (m *MockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
+
+func (m *MockGateway) RefreshAuth() error { return nil }
+
 func (m *MockGateway) SetSystemInstructions(instr string) {}
 
 // MockRegistry implements ToolRegistry for testing.
@@ -123,7 +137,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 					RetryCount:   0,
 					LastError:    &AgentError{Category: ErrTransient, Message: "transient error"}, // only for recovery
 					Metadata: &ContextMetadata{
-						APIContents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
+						History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 					},
 				},
 				CtxManager: &ContextManager{
@@ -438,7 +452,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		State: &TurnState{
 			Phase: PhaseInference,
 			Metadata: &ContextMetadata{
-				APIContents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
+				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
 		Gateway:    mockGw,
@@ -586,7 +600,7 @@ func minimalPipeline() *ContextPipeline {
 	return NewContextPipeline()
 }
 
-func newTestContextManager(s *ContextStrategy, h *history.Manager, g gateway.LLMGateway, bus events.EventBus) *ContextManager {
+func newTestContextManager(s *ContextStrategy, h *history.Manager, g llm.LLMClient, bus events.EventBus) *ContextManager {
 	cm := NewContextManager(s, h, g, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
@@ -646,7 +660,7 @@ func TestTurnEngine_WithProcessor(t *testing.T) {
 	customRefiner := TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
 		customRefinerCalled = true
 		turn.State.Metadata = &ContextMetadata{
-			APIContents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
+			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
 		}
 		return ProcessResult{NextPhase: PhaseInference}
 	})

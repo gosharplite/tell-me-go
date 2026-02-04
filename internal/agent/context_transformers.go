@@ -5,7 +5,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -14,78 +16,38 @@ import (
 
 // HistoryPruner enforces history turn limits using a policy.
 type HistoryPruner struct {
-	Policy  PruningPolicy
-	Manager interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
-	} // Decouple from history.Manager
+	Policy PruningPolicy
+	Events events.EventBus
 }
 
 func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) error {
 	initialLen := len(req.History)
-	newHistory, pruned := t.Policy.Prune(ctx, req.History)
-
-	if pruned > 0 {
-		// We replace the entire history range to ensure the manager stays in sync
-		// with non-contiguous pruning (pinned turns kept in the middle/start).
-		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
-			return err
-		}
-	}
-
-	req.History = newHistory
-	req.Metadata.PrunedTurns += pruned
-	return nil
-}
-
-func (t *HistoryPruner) Priority() int { return 1 }
-
-// SlidingWindowPolicy keeps the last N turns, prioritizing pinned content.
-type SlidingWindowPolicy struct {
-	MaxTurns int
-}
-
-func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	if p.MaxTurns <= 0 {
-		return history, 0
-	}
-
-	if len(history) <= p.MaxTurns*2 {
-		return history, 0
+	if initialLen == 0 {
+		return nil
 	}
 
 	// Group messages into turns (pairs)
 	var turns [][]*llm.Content
-	for i := 0; i < len(history); i += 2 {
+	for i := 0; i < len(req.History); i += 2 {
 		end := i + 2
-		if end > len(history) {
-			end = len(history)
+		if end > len(req.History) {
+			end = len(req.History)
 		}
-		turns = append(turns, history[i:end])
+		turns = append(turns, req.History[i:end])
 	}
 
-	totalTurns := len(turns)
-	keep := make([]bool, totalTurns)
-
-	// Rule 1: Keep last N turns (Sliding Window)
-	startWindow := totalTurns - p.MaxTurns
-	if startWindow < 0 {
-		startWindow = 0
-	}
-	for i := startWindow; i < totalTurns; i++ {
-		keep[i] = true
+	keep := make([]bool, len(turns))
+	if req.Metadata.KeptByPolicy == nil {
+		req.Metadata.KeptByPolicy = make(map[string]int)
 	}
 
-	// Rule 2: Keep any turn that has a Pinned message
-	for i := 0; i < totalTurns; i++ {
-		if keep[i] {
-			continue
+	// If it's a composite policy, we track sub-policies individually.
+	if cp, ok := t.Policy.(*CompositePruningPolicy); ok {
+		for _, p := range cp.Policies {
+			req.Metadata.KeptByPolicy[p.Name()] = p.MarkTurns(ctx, turns, keep)
 		}
-		for _, msg := range turns[i] {
-			if msg.Pinned {
-				keep[i] = true
-				break
-			}
-		}
+	} else {
+		req.Metadata.KeptByPolicy[t.Policy.Name()] = t.Policy.MarkTurns(ctx, turns, keep)
 	}
 
 	// Construct new history and count pruned turns
@@ -94,44 +56,154 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content)
 	for i, k := range keep {
 		if k {
 			newHistory = append(newHistory, turns[i]...)
+			req.Metadata.TotalTurnsKept++
 		} else {
 			prunedCount++
 		}
 	}
 
-	return newHistory, prunedCount
+	if prunedCount > 0 {
+		req.History = newHistory
+		req.Metadata.PrunedTurns += prunedCount
+		req.PersistHistory = true
+
+		if t.Events != nil {
+			t.Events.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
+				Level:   "info",
+			})
+		}
+	}
+
+	return nil
 }
 
-// ImportanceRankPolicy (placeholder for future implementation)
+func (t *HistoryPruner) Priority() int { return 1 }
+
+// CompositePruningPolicy aggregates multiple policies using OR logic.
+type CompositePruningPolicy struct {
+	Policies []PruningPolicy
+}
+
+func (p *CompositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	totalMarked := 0
+	for _, policy := range p.Policies {
+		totalMarked += policy.MarkTurns(ctx, turns, keep)
+	}
+	return totalMarked
+}
+
+func (p *CompositePruningPolicy) Name() string { return "Composite" }
+
+// SlidingWindowPolicy keeps the last N turns.
+type SlidingWindowPolicy struct {
+	MaxTurns int
+}
+
+func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	if p.MaxTurns <= 0 {
+		return 0
+	}
+
+	totalTurns := len(turns)
+	startWindow := totalTurns - p.MaxTurns
+	if startWindow < 0 {
+		startWindow = 0
+	}
+
+	count := 0
+	for i := startWindow; i < totalTurns; i++ {
+		keep[i] = true
+		count++
+	}
+	return count
+}
+
+func (p *SlidingWindowPolicy) Name() string { return "SlidingWindow" }
+
+// ImportanceRankPolicy keeps turns containing function calls, responses, or data.
 type ImportanceRankPolicy struct{}
 
-func (p *ImportanceRankPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	// TODO: Implement importance-based pruning
-	return history, 0
+func (p *ImportanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	count := 0
+	for i, turn := range turns {
+		important := false
+		for _, msg := range turn {
+			for _, part := range msg.Parts {
+				if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
+					important = true
+					break
+				}
+			}
+			if important {
+				break
+			}
+		}
+
+		if important {
+			keep[i] = true
+			count++
+		}
+	}
+	return count
 }
 
-// PinningPolicy (placeholder for future implementation)
+func (p *ImportanceRankPolicy) Name() string { return "Importance" }
+
+// PinningPolicy keeps turns that have at least one pinned message.
 type PinningPolicy struct{}
 
-func (p *PinningPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	// TODO: Implement pinning-based pruning
-	return history, 0
+func (p *PinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	count := 0
+	for i, turn := range turns {
+		pinned := false
+		for _, msg := range turn {
+			if msg.Pinned {
+				pinned = true
+				break
+			}
+		}
+
+		if pinned {
+			keep[i] = true
+			count++
+		}
+	}
+	return count
 }
+
+func (p *PinningPolicy) Name() string { return "Pinning" }
 
 // TokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type TokenGatekeeper struct {
 	MaxTokens  int
 	Estimator  TokenEstimator
 	Summarizer HistorySummarizer
-	Manager    interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
-	}
-	Events events.EventBus
+	Events     events.EventBus
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
 	req.Metadata.OriginalTokenCount = t.Estimator.EstimateTokens(req.History)
 	tokens := req.Metadata.OriginalTokenCount
+
+	// Nuanced check for TieredThreshold
+	if cs, ok := t.Estimator.(*ContextStrategy); ok {
+		tiered := cs.GetTieredThreshold()
+		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
+			if t.Events != nil {
+				t.Events.Publish(events.SummarizationRequired{
+					Tokens:   tokens,
+					MaxLimit: tiered,
+					Reason:   "High-tier pricing threshold reached",
+				})
+			}
+			// Attempt auto-summarization to try and get back into the cheap tier
+			if err := t.autoSummarize(ctx, req); err == nil {
+				tokens = t.Estimator.EstimateTokens(req.History)
+				req.Metadata.SummarizedTurns = 1
+			}
+		}
+	}
 
 	if t.MaxTokens > 0 {
 		if tokens > int(float64(t.MaxTokens)*0.9) {
@@ -139,13 +211,15 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 				t.Events.Publish(events.SummarizationRequired{
 					Tokens:   tokens,
 					MaxLimit: t.MaxTokens,
-					Reason:   "Pressure high ( > 90%)",
+					Reason:   "Safety limit pressure (> 90%)",
 				})
 			}
 
-			if err := t.autoSummarize(ctx, req); err == nil {
-				tokens = t.Estimator.EstimateTokens(req.History)
-				req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+			if !req.Metadata.SummarizationAttempted {
+				if err := t.autoSummarize(ctx, req); err == nil {
+					tokens = t.Estimator.EstimateTokens(req.History)
+					req.Metadata.SummarizedTurns = 1
+				}
 			}
 		}
 
@@ -272,17 +346,15 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
-		return err
-	}
 	req.Metadata.SummarizationAttempted = true // Flag the attempt
 
-	// Update the request history after replacement in the manager
+	// Update the request history
 	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
 	updatedHistory = append(updatedHistory, contents[:startIdx]...)
 	updatedHistory = append(updatedHistory, newMsgs...)
 	updatedHistory = append(updatedHistory, contents[endIdx:]...)
 	req.History = updatedHistory
+	req.PersistHistory = true
 	return nil
 }
 
@@ -320,21 +392,27 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		}
 	}
 
-	apiContents := make([]*llm.Content, len(req.History))
-	copy(apiContents, req.History)
+	// 1. Clone the target message to avoid "History Pollution" in long-term memory.
+	// We only modify the content for the current API call.
+	lastIdx := len(req.History) - 1
+	orig := req.History[lastIdx]
 
-	lastIdx := len(apiContents) - 1
-	orig := apiContents[lastIdx]
+	cloned := &llm.Content{
+		Role:  orig.Role,
+		Parts: append([]*llm.Part{}, orig.Parts...), // Shallow clone parts
+	}
 
 	hasFunctionResponse := false
-	for _, p := range orig.Parts {
+	for _, p := range cloned.Parts {
 		if p.FunctionResponse != nil {
 			hasFunctionResponse = true
 			break
 		}
 	}
 
-	if hasFunctionResponse && len(apiContents) > 1 {
+	if hasFunctionResponse && len(req.History) > 1 {
+		// If the last message is a function response, we inject warnings as a separate turn
+		// to avoid breaking the tool response structure.
 		warningMsgs := []*llm.Content{
 			{
 				Role:  "user",
@@ -345,28 +423,23 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 				Parts: []*llm.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
 			},
 		}
-		newContents := make([]*llm.Content, 0, len(apiContents)+2)
-		newContents = append(newContents, apiContents[:lastIdx]...)
+		newContents := make([]*llm.Content, 0, len(req.History)+2)
+		newContents = append(newContents, req.History[:lastIdx]...)
 		newContents = append(newContents, warningMsgs...)
-		newContents = append(newContents, apiContents[lastIdx])
-		apiContents = newContents
+		newContents = append(newContents, req.History[lastIdx])
+		req.History = newContents
 	} else {
-		cloned := &llm.Content{
-			Role:  orig.Role,
-			Parts: make([]*llm.Part, len(orig.Parts)),
-		}
-		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &llm.Part{
+		// Append to TransientParts instead of regular Parts
+		cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
 			Text: "\n\n" + combined,
 		})
-		apiContents[lastIdx] = cloned
+		req.History[lastIdx] = cloned
 	}
 
-	req.History = apiContents
 	return nil
 }
 
-func (t *WarningInjector) Priority() int { return 100 }
+func (t *WarningInjector) Priority() int { return PriorityTransientThreshold }
 
 // ToolDeclarationGenerator injects tool schemas from the registry.
 type ToolDeclarationGenerator struct {
@@ -374,10 +447,123 @@ type ToolDeclarationGenerator struct {
 }
 
 func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRequest) error {
-	// This transformer might just be a placeholder if tools are passed separately to the API,
-	// but the requirement says "Injects tool schemas from the registry".
-	// If the model needs them in-context (e.g. for certain models), we do it here.
+	if t.Registry == nil {
+		return nil
+	}
+
+	// Safety: check for typed nil (e.g., *registry.Registry(nil))
+	v := reflect.ValueOf(t.Registry)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		return nil
+	}
+
+	decls := t.Registry.GetDeclarations()
+	if len(decls) == 0 || len(req.History) == 0 {
+		return nil
+	}
+
+	// 1. Serialize tools to a readable format
+	toolJSON, err := json.MarshalIndent(decls, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize tools: %w", err)
+	}
+
+	injection := fmt.Sprintf("\n\n# AVAILABLE_TOOLS\nYou may use the following tools via function calls:\n%s", string(toolJSON))
+
+	// 2. Clone the first message to avoid "History Pollution" in long-term memory.
+	// We replace the pointer in the current request's history slice.
+	firstMsg := req.History[0]
+	cloned := &llm.Content{
+		Role:           firstMsg.Role,
+		Parts:          append([]*llm.Part{}, firstMsg.Parts...), // Shallow clone parts
+		TransientParts: append([]*llm.Part{}, firstMsg.TransientParts...),
+	}
+
+	// 3. Append the tool schemas to TransientParts
+	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{Text: injection})
+
+	// 4. Update the request history slice
+	req.History[0] = cloned
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return 20 }
+func (t *ToolDeclarationGenerator) Priority() int { return 75 }
+
+// EmptyTurnFilter removes turns where both user and model messages have no meaningful content.
+type EmptyTurnFilter struct{}
+
+func (t *EmptyTurnFilter) Transform(ctx context.Context, req *ContextRequest) error {
+	var filtered []*llm.Content
+	for i := 0; i < len(req.History); i += 2 {
+		// Handle trailing single message (usually the user's current prompt)
+		if i+1 >= len(req.History) {
+			filtered = append(filtered, req.History[i])
+			break
+		}
+
+		// A turn is empty if neither the user nor model message has content
+		turnEmpty := true
+		for _, msg := range req.History[i : i+2] {
+			for _, p := range msg.Parts {
+				if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+					turnEmpty = false
+					break
+				}
+			}
+			if !turnEmpty {
+				break
+			}
+		}
+
+		if !turnEmpty {
+			filtered = append(filtered, req.History[i:i+2]...)
+		}
+	}
+	if len(filtered) != len(req.History) {
+		req.History = filtered
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *EmptyTurnFilter) Priority() int { return 90 }
+
+// FinalContextValidator ensures the context is within limits after all transformations.
+type FinalContextValidator struct {
+	Strategy *ContextStrategy
+}
+
+func (t *FinalContextValidator) Transform(ctx context.Context, req *ContextRequest) error {
+	maxTokens, _, _ := t.Strategy.GetLimits()
+	finalTokens := t.Strategy.EstimateTokens(req.History)
+
+	req.Metadata.FinalTokenCount = finalTokens
+	req.Metadata.FinalTurnCount = len(req.History) / 2
+
+	if finalTokens > maxTokens {
+		return fmt.Errorf("%w: %d > %d", llm.ErrContextLimitExceeded, finalTokens, maxTokens)
+	}
+	return nil
+}
+
+func (t *FinalContextValidator) Priority() int { return PriorityTransientThreshold + 10 } // Run last
+
+// TransientMerger merges TransientParts into Parts for the final API payload.
+type TransientMerger struct{}
+
+func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) error {
+	for i, msg := range req.History {
+		if len(msg.TransientParts) > 0 {
+			// Clone to avoid modifying the original if it was somehow shared
+			cloned := &llm.Content{
+				Role:  msg.Role,
+				Parts: append([]*llm.Part{}, msg.Parts...),
+			}
+			cloned.Parts = append(cloned.Parts, msg.TransientParts...)
+			req.History[i] = cloned
+		}
+	}
+	return nil
+}
+
+func (t *TransientMerger) Priority() int { return PriorityTransientThreshold + 5 }
