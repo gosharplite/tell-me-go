@@ -5,6 +5,7 @@ package code
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,12 @@ type HealthManager struct {
 }
 
 func (m *HealthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	select {
+	case <-ctx.Done():
+		return tools.ToolResult{Text: "Operation cancelled: " + ctx.Err().Error()}, nil
+	default:
+	}
+
 	// 1 & 2. Run Tests with Coverage (One execution for efficiency)
 	testStatus, testDetails, coverageStatus, coverageDetails := m.runTestsAndCoverage(ctx)
 
@@ -61,13 +68,22 @@ func (m *HealthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 }
 
 func (m *HealthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
+	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
+		return "PASS", "Skipped (test mode)", "80.0%", "Mocked"
+	}
+
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
-	_ = os.Remove("coverage.out")
-	defer os.Remove("coverage.out")
+	f, err := os.CreateTemp("", "coverage-*.out")
+	if err != nil {
+		return "ERROR", "Failed to create temp coverage file", "ERROR", ""
+	}
+	tempPath := f.Name()
+	f.Close()
+	defer os.Remove(tempPath)
 
-	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", "./...")
+	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile="+tempPath, "./...")
 	out, err := cmd.CombinedOutput()
 	outStr := string(out)
 
@@ -83,12 +99,20 @@ func (m *HealthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 		}
 		tDetails = fmt.Sprintf("%d packages passed", passed)
 	} else {
-		tStatus = "FAIL"
-		tDetails = "Some tests failed. Run `run_tests` for details."
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			tStatus = "TIMEOUT"
+			tDetails = "Tests timed out"
+		} else if errors.Is(ctx.Err(), context.Canceled) {
+			tStatus = "CANCELLED"
+			tDetails = "Tests cancelled"
+		} else {
+			tStatus = "FAIL"
+			tDetails = "Some tests failed. Run `run_tests` for details."
+		}
 	}
 
 	// Coverage parsing
-	sumCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func=coverage.out")
+	sumCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func="+tempPath)
 	sumOut, err := sumCmd.CombinedOutput()
 	if err != nil {
 		cStatus = "ERROR"
@@ -110,6 +134,10 @@ func (m *HealthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 }
 
 func (m *HealthManager) runLint(ctx context.Context) (string, string) {
+	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
+		return "CLEAN", "Skipped (test mode)"
+	}
+
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
@@ -168,11 +196,15 @@ func (m *HealthManager) checkComplexity(ctx context.Context) (string, string, []
 }
 
 func (m *HealthManager) checkSecurity(ctx context.Context) (string, string) {
+	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
+		return "CLEAN", "Skipped (test mode)"
+	}
+
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {
-		return "SKIP", "govulncheck not installed"
+		return "SKIP", "govulncheck not installed (run 'go install golang.org/x/vuln/cmd/govulncheck@latest')"
 	}
 
 	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
