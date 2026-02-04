@@ -54,4 +54,19 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir s
 	code.Register(r, sm)
 	network.Register(r, sm)
 	media.Register(r, sm, gateway)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "generate_mermaid_diagram",
+		Description: "Transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"graph": {
+					Type:        "OBJECT",
+					Description: "A map where keys are package names and values are lists of dependencies.",
+				},
+			},
+			Required: []string{"graph"},
+		},
+	}, GenerateMermaidDiagram)
 }

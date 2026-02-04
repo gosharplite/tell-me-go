@@ -233,6 +233,16 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"format": {
+					Type:        "STRING",
+					Description: "Output format: 'text' (default) or 'mermaid'.",
+					Enum:        []string{"text", "mermaid"},
+				},
+			},
+		},
 	}, ana.GetPackageGraph)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
