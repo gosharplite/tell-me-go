@@ -319,12 +319,11 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 
 		turn := e.createTurn(i, startTime)
 		if lastState != nil {
-			turn.State.ToolCallCount = lastState.ToolCallCount
+			// Only carry over response hashes to detect text/turn repetition loops
 			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
 		}
-		if turn.State.ToolCallCount == nil {
-			turn.State.ToolCallCount = make(map[string]int)
-		}
+		// Tool calls are tracked per-turn to catch immediate recursion/loops
+		turn.State.ToolCallCount = make(map[string]int)
 
 		e.notifyBeforeTurn(turn)
 
