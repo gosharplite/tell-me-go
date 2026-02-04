@@ -179,11 +179,16 @@ func (p *searchPipeline) scanFile(path string) error {
 	defer file.Close()
 
 	if isBin, err := checkBinary(file); err == nil && !isBin {
+		const maxScannerCapacity = 10 * 1024 * 1024
 		scanner := bufio.NewScanner(file)
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, maxScannerCapacity)
+
 		lineNum := 0
 		for scanner.Scan() {
 			lineNum++
-			line := scanner.Text()
+			data := scanner.Bytes()
+			line := string(data)
 			if p.matcher(path, line) {
 				select {
 				case p.resultsChan <- formatMatch(path, lineNum, line):

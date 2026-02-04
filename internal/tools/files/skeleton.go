@@ -71,12 +71,17 @@ func (s *fileSkeleton) extractGenericSkeleton(ctx context.Context, path string) 
 }
 
 func scanForDefinitions(r io.Reader, ext string) (string, error) {
+	const maxScannerCapacity = 10 * 1024 * 1024
 	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
+
 	var sb strings.Builder
 	var lastComments []string
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		data := scanner.Bytes()
+		line := string(data)
 		trimmed := strings.TrimSpace(line)
 
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
