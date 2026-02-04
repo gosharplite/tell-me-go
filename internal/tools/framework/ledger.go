@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 // SessionCostRecord represents a single session's financial footprint.
@@ -40,13 +40,13 @@ const ledgerRecoveryTimeout = 10 * time.Minute
 
 // LedgerStore handles persistence and recovery of cost metrics.
 type LedgerStore struct {
-	sm               *security.SecurityManager
+	sm               security.ISecurityManager
 	model            string
 	pricingOverrides map[string]pricing.ModelPricing
 }
 
 // NewLedgerStore creates a new LedgerStore.
-func NewLedgerStore(sm *security.SecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) *LedgerStore {
+func NewLedgerStore(sm security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) *LedgerStore {
 	return &LedgerStore{
 		sm:               sm,
 		model:            model,

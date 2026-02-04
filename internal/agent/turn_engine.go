@@ -9,17 +9,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
 // Clock provides a way to get the current time, facilitating deterministic testing.
@@ -128,11 +128,11 @@ type Turn struct {
 	CtxManager   *ContextManager
 	Gateway      gateway.LLMGateway
 	Executor     IToolExecutor
-	Registry     ToolRegistry
+	Registry     tools.IToolRegistry
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        Clock
-	CostTracker  *framework.SessionCostTracker
+	CostTracker  domain_pricing.ICostTracker
 	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
@@ -148,18 +148,18 @@ type TurnEngine struct {
 	ctxManager       *ContextManager
 	gateway          gateway.LLMGateway
 	executor         IToolExecutor
-	registry         ToolRegistry
+	registry         tools.IToolRegistry
 	events           events.EventBus
 	processors       map[TurnPhase]TurnProcessor
 	middleware       []TurnMiddleware
 	hooks            []TurnHook
 	retryPolicy      RetryPolicy
 	clock            Clock
-	sm               *security.SecurityManager
+	sm               security.ISecurityManager
 	logFile          string
 	model            string
 	pricingOverrides map[string]pricing.ModelPricing
-	costTracker      *framework.SessionCostTracker
+	costTracker      domain_pricing.ICostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 	taskCost         float64 // Cumulative cost for the current Run() call.
 }
@@ -212,8 +212,17 @@ func WithHardBudget(limit float64) EngineOption {
 	}
 }
 
+// WithCostTracker sets the cost tracker for the engine.
+func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
+	return func(e *TurnEngine) {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.costTracker = tracker
+	}
+}
+
 // WithConfig sets the security and usage configuration for the engine.
-func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
+func WithConfig(sm security.ISecurityManager, logFile, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -222,17 +231,6 @@ func WithConfig(sm *security.SecurityManager, logFile, model string, pricingOver
 		e.logFile = logFile
 		e.model = model
 		e.pricingOverrides = pricingOverrides
-
-		// Initialize cost tracker if we have the necessary info
-		if sm != nil && logFile != "" && model != "" {
-			pricing := framework.GetPricing(context.Background(), sm, filepath.Dir(logFile))
-			for k, v := range pricingOverrides {
-				pricing.Models[k] = v
-			}
-			p := framework.GetModelPricing(model, pricing)
-			e.costTracker = framework.NewSessionCostTracker(sm, logFile, model, p, pricing)
-			go e.costTracker.Warmup()
-		}
 	}
 }
 
@@ -244,7 +242,7 @@ func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
-func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg ToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
+func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:     gw,
 		executor:    ex,
@@ -777,7 +775,7 @@ func WithLoopDetector() TurnMiddleware {
 }
 
 // GetCostTracker returns the session cost tracker used by the engine.
-func (e *TurnEngine) GetCostTracker() *framework.SessionCostTracker {
+func (e *TurnEngine) GetCostTracker() domain_pricing.ICostTracker {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.costTracker

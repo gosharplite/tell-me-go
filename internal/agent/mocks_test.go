@@ -18,6 +18,21 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return m.declarations
 }
 
+func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
+}
+
+func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func (m *mockToolRegistry) IsSerial(name string) bool {
+	return false
+}
+
+func (m *mockToolRegistry) IsLongRunning(name string) bool {
+	return false
+}
+
 type mockSummarizer struct {
 	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, error)
 }

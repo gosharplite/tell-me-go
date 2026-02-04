@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -31,9 +31,7 @@ type ContextStrategy struct {
 }
 
 // ToolRegistry defines the interface for accessing tool declarations.
-type ToolRegistry interface {
-	GetDeclarations() []*tools.ToolDeclaration
-}
+type ToolRegistry = tools.IToolRegistry
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {

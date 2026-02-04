@@ -9,17 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -35,7 +34,7 @@ type Chatter interface {
 	SetMainConfigPath(path string)
 	SetSystemInstructions(instr string)
 	Subscribe(sub func(events.Event))
-	GetCostTracker() *framework.SessionCostTracker
+	GetCostTracker() domain_pricing.ICostTracker
 }
 
 // RuntimeConfig consolidates all agent configuration parameters.
@@ -58,8 +57,8 @@ type Agent struct {
 	gateway       *gateway.ResilientClient
 	engine        *TurnEngine
 	ctxManager    *ContextManager
-	registry      *registry.Registry
-	sm            *security.SecurityManager
+	registry      tools.IToolRegistry
+	sm            security.ISecurityManager
 	configWatcher *ConfigWatcher
 	strategy      *ContextStrategy
 	executor      *executor.ToolExecutor
@@ -126,7 +125,7 @@ func WithMainConfigPath(path string) AgentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
+func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 
@@ -346,7 +345,7 @@ func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 }
 
 // GetCostTracker returns the session cost tracker used by the agent's engine.
-func (a *Agent) GetCostTracker() *framework.SessionCostTracker {
+func (a *Agent) GetCostTracker() domain_pricing.ICostTracker {
 	return a.engine.GetCostTracker()
 }
 
@@ -365,5 +364,14 @@ func (a *Agent) SetSystemInstructions(instr string) {
 func WithSystemInstructions(instr string) AgentOption {
 	return func(a *Agent) {
 		a.config.SystemInstructions = instr
+	}
+}
+
+// WithSessionCostTracker sets the cost tracker for the agent.
+func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
+	return func(a *Agent) {
+		if a.engine != nil {
+			a.engine.Reconfigure(WithCostTracker(tracker))
+		}
 	}
 }

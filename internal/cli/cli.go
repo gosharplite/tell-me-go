@@ -17,11 +17,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	internal_security "github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 // App represents the tell-me-go application.
@@ -30,11 +32,11 @@ type App struct {
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing) agent.Chatter
+	AgentFactory  func(client *api.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error)
 	// Internal properties for better testability
 	homeDir string
-	sm      *security.SecurityManager
+	sm      *internal_security.SecurityManager
 }
 
 type sessionPaths struct {
@@ -58,7 +60,7 @@ func New(version string) *App {
 		homeDir = "."
 	}
 
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := internal_security.NewSecurityManager(os.Stdin)
 
 	return &App{
 		Version: version,
@@ -67,8 +69,11 @@ func New(version string) *App {
 		Stderr:  os.Stderr,
 		homeDir: homeDir,
 		sm:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing) agent.Chatter {
-			return agent.New(client, hManager, reg, sm, disableStreaming, agent.WithPricing(model, mode, pricingOverrides))
+		AgentFactory: func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming,
+				agent.WithPricing(model, mode, pricingOverrides),
+				agent.WithSessionCostTracker(tracker),
+			)
 		},
 		ClientFactory: func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error) {
 			authenticator := &auth.VertexAuth{}
@@ -174,7 +179,11 @@ func (a *App) run(ctx context.Context, args []string) error {
 
 	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
 
-	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides)
+	modelPricing := framework.GetModelPricing(cfg.Model, pricing)
+	tracker := framework.NewSessionCostTracker(a.sm, paths.logPath, cfg.Model, modelPricing, pricing)
+	tracker.Warmup()
+
+	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides, tracker)
 	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pricing)
 
 	// 7. Execute & Finalize

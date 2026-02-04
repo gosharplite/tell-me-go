@@ -13,12 +13,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 // GetPricing returns the hardcoded fallback pricing data.
-func GetPricing(ctx context.Context, sm *security.SecurityManager, outputDir string) pricing.PricingData {
+func GetPricing(ctx context.Context, sm security.ISecurityManager, outputDir string) pricing.PricingData {
 	return config.DefaultPricing()
 }
 

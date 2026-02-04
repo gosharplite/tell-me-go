@@ -14,14 +14,14 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -103,7 +103,7 @@ func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
 func (m *mockChatter) SetSystemInstructions(instr string)                   {}
 func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
-func (m *mockChatter) GetCostTracker() *framework.SessionCostTracker        { return nil }
+func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	// Setup temporary directory for config and output
@@ -120,7 +120,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	app.Stderr = &errOut
 
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg *registry.Registry, sm *security.SecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing) agent.Chatter {
+	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 		return mock
 	}
 	app.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*api.Client, error) {

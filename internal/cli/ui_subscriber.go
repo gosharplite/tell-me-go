@@ -4,8 +4,8 @@
 package cli
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
 // UISubscriber translates domain events into UI updates.

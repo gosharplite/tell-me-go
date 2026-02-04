@@ -12,7 +12,7 @@ import (
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+type ToolFunc = tools.ToolFunc
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {

@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
@@ -45,7 +46,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 		},
 	}
 	modelPricing := pricingData.Models["test-model"]
-	tracker := framework.NewSessionCostTracker(nil, "", "test-model", modelPricing, pricingData)
+	var tracker domain_pricing.ICostTracker = framework.NewSessionCostTracker(nil, "", "test-model", modelPricing, pricingData)
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001)) // Very low budget
 	engine.costTracker = tracker

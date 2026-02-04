@@ -16,12 +16,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -34,12 +35,12 @@ type SessionCostTracker struct {
 	model     pricing.ModelPricing
 	modelName string
 	logFile   string
-	sm        *security.SecurityManager
+	sm        security.ISecurityManager
 	initiated bool
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm *security.SecurityManager, logFile string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
+func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
 	return &SessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
@@ -135,7 +136,7 @@ func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
 }
 
 type metricsManager struct {
-	sm               *security.SecurityManager
+	sm               security.ISecurityManager
 	metricsMu        sync.Mutex
 	logFile          string
 	model            string
@@ -151,7 +152,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) {
+func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -199,7 +200,7 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracker *SessionCostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]pricing.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
