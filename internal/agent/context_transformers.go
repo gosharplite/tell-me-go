@@ -271,7 +271,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	}
 
 	// 3. Service Call
-	summary, err := t.Summarizer.Summarize(ctx, req.History[start:end], "")
+	summary, _, err := t.Summarizer.Summarize(ctx, req.History[start:end], "")
 	if err != nil {
 		return 0, err
 	}

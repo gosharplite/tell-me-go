@@ -112,6 +112,31 @@ func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.
 	_, _ = f.WriteString("\n")
 }
 
+func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
+	if m == nil {
+		return
+	}
+	gray := "\033[0;90m"
+	reset := "\033[0m"
+	timestamp := r.now().Format("15:04:05")
+
+	miss := m.PromptTokens - m.CachedTokens
+
+	hColor := gray
+	if miss > m.CachedTokens {
+		hColor = reset
+	}
+
+	totalDuration := r.now().Sub(startTime).Seconds()
+	durationStr := fmt.Sprintf("%.2fs", m.Duration)
+	if m.ToolDuration > 3.0 {
+		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
+	}
+
+	fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
+		gray, timestamp, miss, hColor, m.CachedTokens, gray, m.ResponseTokens, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+}
+
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	gray := "\033[0;90m"
 	reset := "\033[0m"
@@ -148,21 +173,7 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		fmt.Fprintln(r.stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
-		miss := m.PromptTokens - m.CachedTokens
-
-		hColor := gray
-		if miss > m.CachedTokens {
-			hColor = reset
-		}
-
-		totalDuration := r.now().Sub(status.StartTime).Seconds()
-		durationStr := fmt.Sprintf("%.2fs", m.Duration)
-		if m.ToolDuration > 3.0 {
-			durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
-		}
-
-		fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
-			gray, timestamp, miss, hColor, m.CachedTokens, gray, m.ResponseTokens, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+		r.renderMetricsLine(m, status.StartTime)
 
 		costStr := ""
 		if status.SessionCost > 0 {
@@ -396,6 +407,10 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 	for _, b := range result.BinaryData {
 		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
 			cyan, timestamp, name, b.MIMEType, len(b.Data), reset)
+	}
+
+	if m, ok := result.Metadata["metrics"].(*llm.Metrics); ok {
+		r.renderMetricsLine(m, time.Now()) // Render the usage line after the result
 	}
 }
 

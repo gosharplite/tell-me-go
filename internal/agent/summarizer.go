@@ -25,7 +25,7 @@ func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
 }
 
 // Summarize uses the LLM to compress a subset of history.
-func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	startTime := time.Now()
 
 	// Transform history to text-only to avoid INVALID_ARGUMENT
@@ -71,7 +71,7 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	}
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return "", fmt.Errorf("summarization request failed: %w", err)
+		return "", nil, fmt.Errorf("summarization request failed: %w", err)
 	}
 
 	// Emit metrics to the event bus
@@ -83,10 +83,10 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	}
 
 	if len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {
-		return "", fmt.Errorf("summarization returned empty content")
+		return "", nil, fmt.Errorf("summarization returned empty content")
 	}
 
-	return respContent.Parts[0].Text, nil
+	return respContent.Parts[0].Text, metrics, nil
 }
 
 // SummarizationPrompt is the system instruction for history compression.

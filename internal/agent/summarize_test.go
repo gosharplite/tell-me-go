@@ -154,7 +154,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 		Summarizer: &mockSummarizer{},
 	}
 
-	_, err := cm.SummarizeRange(ctx, 1, "")
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
 		t.Fatal("expected error due to safety check, got nil")
 	}
@@ -193,7 +193,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	}
 
 	turns := 1
-	_, err := cm.SummarizeRange(ctx, turns, "")
+	_, _, err := cm.SummarizeRange(ctx, turns, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

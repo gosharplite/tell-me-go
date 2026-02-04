@@ -35,12 +35,15 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, fmt.Errorf("invalid 'turns' parameter: must be > 0")
 	}
 
-	res, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
+	res, metrics, err := t.ctxManager.SummarizeRange(ctx, targetTurns, params.Focus)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	return tools.ToolResult{Text: res}, nil
+	return tools.ToolResult{
+		Text:     res,
+		Metadata: map[string]interface{}{"metrics": metrics},
+	}, nil
 }
 
 // ManageHistory manages conversation history by pinning or unpinning specific turns.

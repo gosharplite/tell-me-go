@@ -112,7 +112,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, g, bus, nil)
 	cm.Summarizer = NewSummarizer(gateway.NewResilientClient(g, true), bus)
-	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
+	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
 		t.Fatal("Generate was not called")
@@ -230,12 +230,12 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	window := strategy.GetContextWindow()
 	counter.tokens = int(float64(window) * 0.89)
 	cm.Summarizer = &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-			return "summary", nil
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "summary", &llm.Metrics{}, nil
 		},
 	}
 
-	_, err := cm.SummarizeRange(ctx, 1, "")
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err != nil {
 		t.Errorf("expected success below safety limit, got %v", err)
 	}
@@ -252,7 +252,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	counter.tokens = int(float64(window) * 0.91)
 	t.Logf("ContextWindow: %d, counter.tokens: %d, safetyLimit: %d", window, counter.tokens, int(float64(window)*0.9))
-	_, err = cm2.SummarizeRange(ctx, 1, "")
+	_, _, err = cm2.SummarizeRange(ctx, 1, "")
 	if err == nil {
 		t.Errorf("expected safety limit error, got nil")
 	} else if !strings.Contains(err.Error(), "exceeds the safety limit") {

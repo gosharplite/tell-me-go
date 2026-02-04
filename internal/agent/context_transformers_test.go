@@ -198,8 +198,8 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 1100}, // Always returns 1100
 			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-					return "summary", nil
+				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+					return "summary", &llm.Metrics{}, nil
 				},
 			},
 		}
@@ -220,8 +220,8 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 			MaxTokens: 2000,
 			Estimator: &mockEstimator{tokens: 950},
 			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-					return "", errors.New("summarize error")
+				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+					return "", nil, errors.New("summarize error")
 				},
 			},
 		}
@@ -300,9 +300,9 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 
 	summarizerCalled := false
 	summarizer := &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 			summarizerCalled = true
-			return "summary", nil
+			return "summary", &llm.Metrics{}, nil
 		},
 	}
 
@@ -400,8 +400,8 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 		MaxTokens: 10000,
 		Estimator: &dynamicMockEstimator{tokens: 9500},
 		Summarizer: &mockSummarizer{
-			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-				return "summary", nil
+			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+				return "summary", &llm.Metrics{}, nil
 			},
 		},
 	}

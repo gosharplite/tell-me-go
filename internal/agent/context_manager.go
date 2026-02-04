@@ -118,7 +118,7 @@ type TokenEstimator interface {
 
 // HistorySummarizer defines the interface for summarizing history.
 type HistorySummarizer interface {
-	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error)
+	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error)
 }
 
 // PruningPolicy defines how to mark turns for pruning.
@@ -166,17 +166,17 @@ func (cm *ContextManager) GetLimits() events.Limits {
 }
 
 // Summarize performs an ad-hoc summarization of the given content.
-func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
+func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	return cm.Summarizer.Summarize(ctx, contents, focus)
 }
 
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
-func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, error) {
+func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", fmt.Errorf("summarizer not initialized")
+		return "", nil, fmt.Errorf("summarizer not initialized")
 	}
 
 	cm.mu.Lock()
@@ -188,7 +188,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 	if totalTurns < 1 {
 		cm.mu.Unlock()
-		return "History is too short to summarize yet.", nil
+		return "History is too short to summarize yet.", nil, nil
 	}
 
 	// Clamp to available turns, but leave at least 1 turn if possible
@@ -198,7 +198,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 	if numTurns < 1 {
 		cm.mu.Unlock()
-		return "History is too short to summarize yet.", nil
+		return "History is too short to summarize yet.", nil, nil
 	}
 
 	// Calculate endIdx from logical turns
@@ -214,7 +214,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
 		cm.mu.Unlock()
-		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit)
+		return "", nil, fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit)
 	}
 
 	if cm.Events != nil {
@@ -225,9 +225,9 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	cm.mu.Unlock()
 
 	// Slow LLM call outside the lock
-	summary, err := cm.Summarizer.Summarize(ctx, subset, focus)
+	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		return "", fmt.Errorf("summarization failed: %w", err)
+		return "", nil, fmt.Errorf("summarization failed: %w", err)
 	}
 
 	cm.mu.Lock()
@@ -239,12 +239,12 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		// Since we summarized the FIRST N turns, we should check if they are still the same.
 		currentContents := cm.History.GetContents()
 		if len(currentContents) < endIdx {
-			return "", fmt.Errorf("summarization aborted: history was pruned while summarizing")
+			return "", nil, fmt.Errorf("summarization aborted: history was pruned while summarizing")
 		}
 		// Robust check: did the messages we summarized change?
 		for i := 0; i < endIdx; i++ {
 			if !cm.isContentEqual(currentContents[i], subset[i]) {
-				return "", fmt.Errorf("summarization aborted: history content changed while summarizing")
+				return "", nil, fmt.Errorf("summarization aborted: history content changed while summarizing")
 			}
 		}
 		// If they are the same, we can proceed to replace them.
@@ -255,10 +255,10 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	newHistory := applySummaryToHistory(contents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
-		return "", fmt.Errorf("failed to update history after summarization: %w", err)
+		return "", nil, fmt.Errorf("failed to update history after summarization: %w", err)
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), nil
+	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), metrics, nil
 }
 
 func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
