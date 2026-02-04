@@ -5,7 +5,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -423,13 +425,46 @@ type ToolDeclarationGenerator struct {
 }
 
 func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRequest) error {
-	// TODO: Implement tool schema injection if required by the model in-context.
-	// This transformer currently serves as a placeholder as most Gemini models
-	// receive tools via a separate API parameter.
+	if t.Registry == nil {
+		return nil
+	}
+
+	// Safety: check for typed nil (e.g., *registry.Registry(nil))
+	v := reflect.ValueOf(t.Registry)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		return nil
+	}
+
+	decls := t.Registry.GetDeclarations()
+	if len(decls) == 0 || len(req.History) == 0 {
+		return nil
+	}
+
+	// 1. Serialize tools to a readable format
+	toolJSON, err := json.MarshalIndent(decls, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize tools: %w", err)
+	}
+
+	injection := fmt.Sprintf("\n\n# AVAILABLE_TOOLS\nYou may use the following tools via function calls:\n%s", string(toolJSON))
+
+	// 2. Clone the first message to avoid "History Pollution"
+	// We only modify the slice for the current API call.
+	firstMsg := req.History[0]
+	cloned := &llm.Content{
+		Role:  firstMsg.Role,
+		Parts: append([]*llm.Part{}, firstMsg.Parts...), // Shallow clone parts
+	}
+
+	// 3. Append the tool schemas to the first message
+	cloned.Parts = append(cloned.Parts, &llm.Part{Text: injection})
+
+	// 4. Update the request history (this replaces the pointer in the API payload only)
+	req.History[0] = cloned
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return 20 }
+func (t *ToolDeclarationGenerator) Priority() int { return PriorityTransientThreshold + 5 }
 
 // EmptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type EmptyTurnFilter struct{}

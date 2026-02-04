@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -278,7 +279,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, reg, sm, false)
-	a.SetLimits(2, 1000, 20) // Max 2 turns
+	a.SetLimits(2, 2000, 20) // Max 2 turns
 
 	sess := NewSession(hManager)
 	err := a.Chat(context.Background(), sess, "Run tool")
@@ -513,7 +514,7 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	// Create agent with limit of 2 turns (4 messages)
-	a := New(nil, hManager, reg, sm, false, WithLimits(10, 1000, 2))
+	a := New(nil, hManager, reg, sm, false, WithLimits(10, 2000, 2))
 	ctx := context.Background()
 
 	// 1. Add 5 turns to history (10 messages)
@@ -581,5 +582,86 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	}
 	if !foundT5 {
 		t.Error("Turn 5 (Window) not found in prepared history")
+	}
+}
+
+func TestToolInjection_NoPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.jsonl")
+	hManager := history.NewManager(historyFile)
+	reg := registry.New()
+	sm := security.NewSecurityManager(nil)
+
+	// Register a tool
+	reg.Register(&tools.ToolDeclaration{
+		Name: "test_tool",
+		Description: "A test tool",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "ok"}, nil
+	})
+
+	mockClient := &MockLLMClient{
+		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+			callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Done"}}})
+			return &llm.Metrics{}, nil
+		},
+	}
+
+	a := New(mockClient, hManager, reg, sm, false)
+	sess := NewSession(hManager)
+	
+	err := a.Chat(context.Background(), sess, "Hello")
+	if err != nil {
+		t.Fatalf("Chat failed: %v", err)
+	}
+
+	// Read the history file
+	data, err := os.ReadFile(historyFile)
+	if err != nil {
+		t.Fatalf("failed to read history file: %v", err)
+	}
+
+	if strings.Contains(string(data), "# AVAILABLE_TOOLS") {
+		t.Error("History file contains tool schemas (# AVAILABLE_TOOLS), but they should be transient!")
+	}
+}
+
+func TestOptimizationProfile_Precise(t *testing.T) {
+	bus := &events.SimpleEventBus{}
+	h := history.NewManager(t.TempDir() + "/history.jsonl")
+	counter := &HeuristicTokenCounter{}
+	strategy := NewContextStrategy(counter, bus)
+	
+	factory := &PipelineFactory{
+		History:   h,
+		Events:    bus,
+		Estimator: strategy,
+		Profile:   ProfilePrecise,
+	}
+
+	limits := events.Limits{MaxHistoryTurns: 10}
+	pipeline := factory.BuildStandardPipeline(limits)
+
+	// In Precise mode, windowTurns = 10 / 2 = 5.
+	// We need to inspect the pipeline's transformers to find the HistoryPruner and its SlidingWindowPolicy.
+	
+	found := false
+	for _, tr := range pipeline.transformers {
+		if pruner, ok := tr.(*HistoryPruner); ok {
+			if composite, ok := pruner.Policy.(*CompositePruningPolicy); ok {
+				for _, p := range composite.Policies {
+					if swp, ok := p.(*SlidingWindowPolicy); ok {
+						if swp.MaxTurns != 5 {
+							t.Errorf("expected MaxTurns 5 in Precise profile, got %d", swp.MaxTurns)
+						}
+						found = true
+					}
+				}
+			}
+		}
+	}
+	
+	if !found {
+		t.Error("could not find SlidingWindowPolicy in pipeline")
 	}
 }
