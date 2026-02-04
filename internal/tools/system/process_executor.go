@@ -318,14 +318,14 @@ func (p *pipeline) wait() (int, error) {
 			continue
 		}
 		err := p.cmds[i].Wait()
+		if err != nil && exitCode == 0 {
+			exitCode = 1
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			}
+		}
 		if i == len(p.cmds)-1 {
 			lastErr = err
-			if lastErr != nil {
-				exitCode = 1
-				if exitErr, ok := lastErr.(*exec.ExitError); ok {
-					exitCode = exitErr.ExitCode()
-				}
-			}
 		}
 	}
 	return exitCode, lastErr
