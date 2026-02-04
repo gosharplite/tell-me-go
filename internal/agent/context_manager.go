@@ -182,8 +182,9 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	cm.mu.Lock()
 	contents := cm.History.GetContents()
 	startVersion := cm.version
-	totalMsgs := len(contents)
-	totalTurns := totalMsgs / 2
+
+	turns := groupTurns(contents)
+	totalTurns := len(turns)
 
 	if totalTurns < 1 {
 		cm.mu.Unlock()
@@ -200,8 +201,12 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "History is too short to summarize yet.", nil
 	}
 
-	// Safety check: estimate tokens of selected turns
-	endIdx := numTurns * 2
+	// Calculate endIdx from logical turns
+	endIdx := 0
+	for i := 0; i < numTurns; i++ {
+		endIdx += len(turns[i])
+	}
+
 	subset := contents[:endIdx]
 	tokens := cm.Strategy.EstimateTokens(subset)
 
@@ -246,23 +251,8 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		contents = currentContents
 	}
 
-	// Create summary message
-	summaryMsg := &llm.Content{
-		Role: "user",
-		Parts: []*llm.Part{
-			{Text: fmt.Sprintf("System Auto-Summary (context limit reached):\n\n%s", summary)},
-		},
-	}
-	// And a model acknowledgement
-	ackMsg := &llm.Content{
-		Role: "model",
-		Parts: []*llm.Part{
-			{Text: "Understood. Context compressed."},
-		},
-	}
-
-	// Reconstruct history: [summary, ack, remaining...]
-	newHistory := append([]*llm.Content{summaryMsg, ackMsg}, contents[endIdx:]...)
+	// Reconstruct history using the robust helper
+	newHistory := applySummaryToHistory(contents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
 		return "", fmt.Errorf("failed to update history after summarization: %w", err)
