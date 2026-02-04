@@ -12,6 +12,7 @@ import (
 // Analyzer interfaces for segregation and testing
 type IComplexityAnalyzer interface {
 	Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	GatherComplexities(ctx context.Context, root string) ([]FuncComplexity, error)
 }
 
 type IDependencyAnalyzer interface {

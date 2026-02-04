@@ -21,6 +21,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
+	hea := &HealthManager{SP: sm, Ana: ana}
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_code_health",
+		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
+	}, hea.GetCodeHealth)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "find_usages",
