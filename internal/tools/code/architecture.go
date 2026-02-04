@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
@@ -27,6 +28,7 @@ const (
 type ArchitectureManager struct {
 	SP         security.SecurityProvider
 	ModulePath string
+	once       sync.Once
 }
 
 type pkgInfo struct {
@@ -94,7 +96,9 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 		}
 
 		if m.ModulePath == "" && p.Module != nil {
-			m.ModulePath = p.Module.Path
+			m.once.Do(func() {
+				m.ModulePath = p.Module.Path
+			})
 		}
 
 		// Only track packages within this module and containing "internal/" or "cmd/"
@@ -123,12 +127,29 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 }
 
 func isLayer(pkgPath, layerName string) bool {
-	parts := strings.Split(pkgPath, "/")
-	for i, part := range parts {
-		if part == "internal" && i+1 < len(parts) && parts[i+1] == layerName {
-			return true
-		}
+	// Pre-check for "internal/" to avoid splitting if not needed
+	const internalSegment = "internal/"
+	idx := strings.Index(pkgPath, internalSegment)
+	if idx == -1 {
+		return false
 	}
+
+	// Ensure it's exactly the segment "internal/"
+	if idx > 0 && pkgPath[idx-1] != '/' {
+		return false
+	}
+
+	remaining := pkgPath[idx+len(internalSegment):]
+	// check if it starts with layerName and then a slash or end of string
+	if !strings.HasPrefix(remaining, layerName) {
+		return false
+	}
+
+	layerEnd := len(layerName)
+	if len(remaining) == layerEnd || remaining[layerEnd] == '/' {
+		return true
+	}
+
 	return false
 }
 

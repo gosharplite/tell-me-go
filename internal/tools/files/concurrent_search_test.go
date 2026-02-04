@@ -94,6 +94,7 @@ func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, d
 }
 func (s *mockSP) TerminalLock()   {}
 func (s *mockSP) TerminalUnlock() {}
+func (s *mockSP) IsCommandAllowed(command string) bool { return true }
 
 func TestConcurrentSearch(t *testing.T) {
 	sp := &mockSP{}
