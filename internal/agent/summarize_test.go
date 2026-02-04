@@ -17,7 +17,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -138,7 +137,7 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
-	mockCounter := &mockTokenCounter{count: 950000} // Above 90% of 1M
+	mockCounter := &mockTokenCounter{tokens: 950000} // Above 90% of 1M
 	strategy := NewContextStrategy(mockCounter, nil)
 	hManager := history.NewManager(historyFile)
 
@@ -152,7 +151,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	cm := &ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
-		Summarizer: &mockSafetySummarizer{},
+		Summarizer: &mockSummarizer{},
 	}
 
 	_, err := cm.SummarizeRange(ctx, 1, "")
@@ -164,20 +163,6 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	if err.Error() != expectedErr {
 		t.Errorf("expected error %q, got %q", expectedErr, err.Error())
 	}
-}
-
-type mockTokenCounter struct {
-	count int
-}
-
-func (m *mockTokenCounter) Count(contents []*llm.Content) int {
-	return m.count
-}
-
-type mockSafetySummarizer struct{}
-
-func (m *mockSafetySummarizer) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
-	return "summary", nil
 }
 
 func TestSummarizeRange_Logging(t *testing.T) {
@@ -192,12 +177,12 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
 
 	tokenCount := 1234
-	mockCounter := &mockTokenCounter{count: tokenCount}
+	mockCounter := &mockTokenCounter{tokens: tokenCount}
 	strategy := NewContextStrategy(mockCounter, nil)
 	bus := &events.TestEventBus{}
 
 	// Use real summarizer but mock gateway
-	mockG := &mockLogGateway{}
+	mockG := &mockGateway{}
 	summarizer := NewSummarizer(mockG, bus)
 
 	cm := &ContextManager{
@@ -241,15 +226,3 @@ func TestSummarizeRange_Logging(t *testing.T) {
 		}
 	}
 }
-
-type mockLogGateway struct{}
-
-func (m *mockLogGateway) Generate(ctx context.Context, input []*llm.Content, tlds []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	ch := make(chan *llm.Content)
-	close(ch)
-	return ch, func() (*llm.Content, *llm.Metrics, error) {
-		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "summary"}}}, &llm.Metrics{}, nil
-	}
-}
-
-func (m *mockLogGateway) SetSystemInstructions(instr string) {}

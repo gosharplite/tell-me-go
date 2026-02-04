@@ -15,14 +15,6 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-type mockToolRegistry struct {
-	declarations []*tools.ToolDeclaration
-}
-
-func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return m.declarations
-}
-
 func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
 	htc := &HeuristicTokenCounter{}
 	tests := []struct {

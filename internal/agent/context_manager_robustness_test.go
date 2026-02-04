@@ -15,16 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
-type mockGateway struct {
-	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
-}
-
-func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return m.generateFn(ctx, input, tools, resolver)
-}
-
-func (m *mockGateway) SetSystemInstructions(instr string) {}
-
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
@@ -35,7 +25,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
-	reg := &mockRegistry{}
+	reg := &mockToolRegistry{}
 	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	strategy.SetLimits(1000, 5, 20) // Turn 3/5 (remaining 2) -> Triggers warning
@@ -123,7 +113,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	}
 
 	bus := &events.SimpleEventBus{}
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockRegistry{}), bus), hManager, g, bus, nil)
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, g, bus, nil)
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
@@ -165,13 +155,6 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	}
 }
 
-type mockRegistry struct {
-}
-
-func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return nil
-}
-
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
@@ -184,8 +167,8 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	}
 
 	bus := events.NewCountingEventBus()
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockRegistry{}), bus)
-	
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
+
 	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
 
 	// Configure pipeline with a pruner that will prune history
@@ -227,5 +210,102 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 	if bus.GetCount() < 1 {
 		t.Error("Expected at least one pruning event to be published")
+	}
+}
+
+func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	ctx := context.Background()
+
+	counter := &mockTokenCounter{}
+	strategy := NewContextStrategy(counter, nil)
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+
+	// Add 4 messages (2 turns)
+	for i := 0; i < 2; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+	}
+
+	// Test case: Exactly below threshold (0.9 * AbsoluteModelCapacity)
+	counter.tokens = int(float64(AbsoluteModelCapacity) * 0.89)
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+			return "summary", nil
+		},
+	}
+
+	_, err := cm.SummarizeRange(ctx, 1, "")
+	if err != nil {
+		t.Errorf("expected success below safety limit, got %v", err)
+	}
+
+	// Test case: Above threshold
+	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
+	hManager2 := history.NewManager(tmpDir + "/history2.json")
+	for i := 0; i < 2; i++ {
+		_ = hManager2.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager2.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+	}
+	cm2 := NewContextManager(strategy, hManager2, &mockGateway{}, nil, nil)
+
+	counter.tokens = int(float64(AbsoluteModelCapacity) * 0.91)
+	t.Logf("AbsoluteModelCapacity: %d, counter.tokens: %d, safetyLimit: %d", AbsoluteModelCapacity, counter.tokens, int(float64(AbsoluteModelCapacity)*0.9))
+	_, err = cm2.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Errorf("expected safety limit error, got nil")
+	} else if !strings.Contains(err.Error(), "exceeds the safety limit") {
+		t.Errorf("expected safety limit error, got %v", err)
+	}
+}
+
+func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	ctx := context.Background()
+
+	// Initial history: 1 turn
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hi"}}})
+
+	counter := &mockTokenCounter{tokens: 100}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetLimits(1000, 10, 20)
+
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+
+	// Pipeline with WarningInjector (Transient)
+	cm.Pipeline = NewContextPipeline(
+		&WarningInjector{Strategy: strategy},
+	)
+
+	// Prepare at turn 8 (2 remaining -> triggers warning "Only 2 turns remain")
+	apiContents, _, err := cm.Prepare(ctx, 8)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	// Verify warning exists in apiContents
+	foundWarning := false
+	for _, c := range apiContents {
+		for _, p := range c.Parts {
+			if strings.Contains(p.Text, "Only 2 turns remain") {
+				foundWarning = true
+			}
+		}
+	}
+	if !foundWarning {
+		t.Error("Expected warning 'Only 2 turns remain' in prepared context")
+	}
+
+	// Verify history in manager is NOT changed (it shouldn't have the warning)
+	persistedHistory := hManager.GetContents()
+	for _, c := range persistedHistory {
+		for _, p := range c.Parts {
+			if strings.Contains(p.Text, "Only 2 turns remain") {
+				t.Error("Warning was persisted to history manager, but it should be transient!")
+			}
+		}
 	}
 }

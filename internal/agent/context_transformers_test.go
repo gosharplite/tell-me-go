@@ -175,14 +175,6 @@ func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	}
 }
 
-type mockSummarizer struct {
-	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, error)
-}
-
-func (m *mockSummarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
-	return m.summarizeFn(ctx, subset, focus)
-}
-
 func TestTokenGatekeeper_Transform(t *testing.T) {
 	ctx := context.Background()
 
@@ -688,7 +680,7 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 					Parts: []*llm.Part{
 						{
 							FunctionResponse: &llm.FunctionResponse{
-								Name: "test",
+								Name:     "test",
 								Response: map[string]interface{}{"result": "Error..."},
 							},
 						},
@@ -746,17 +738,9 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 	}
 }
 
-type mockContextTransformerCounter struct {
-	tokens int
-}
-
-func (m *mockContextTransformerCounter) Count(contents []*llm.Content) int {
-	return m.tokens
-}
-
 func TestFinalContextValidator_Transform(t *testing.T) {
 	t.Parallel()
-	counter := &mockContextTransformerCounter{}
+	counter := &mockTokenCounter{}
 	strategy := NewContextStrategy(counter, nil)
 	validator := &FinalContextValidator{Strategy: strategy}
 
@@ -825,5 +809,25 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 	}
 	if req.History[0].Parts[0].Text != "3" {
 		t.Errorf("expected message '3', got %s", req.History[0].Parts[0].Text)
+	}
+}
+
+func TestToolDeclarationGenerator_Transform_SafeWithNilRegistry(t *testing.T) {
+	t.Parallel()
+	tg := &ToolDeclarationGenerator{Registry: nil}
+	req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+	err := tg.Transform(context.Background(), req)
+	if err != nil {
+		t.Errorf("expected no error for nil registry, got %v", err)
+	}
+}
+
+func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) {
+	t.Parallel()
+	tg := &ToolDeclarationGenerator{Registry: &mockToolRegistry{}}
+	req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+	err := tg.Transform(context.Background(), req)
+	if err != nil {
+		t.Errorf("expected no error for empty registry, got %v", err)
 	}
 }

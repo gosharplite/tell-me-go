@@ -17,8 +17,8 @@ type ContextMetadata struct {
 	FinalTurnCount         int
 	PrunedTurns            int
 	SummarizedTurns        int
-	SummarizationAttempted bool           // Set to true if autoSummarize just ran successfully
-	MaintenanceBlocked     bool           // Set to true if autoSummarize was blocked (e.g. by pins)
+	SummarizationAttempted bool // Set to true if autoSummarize just ran successfully
+	MaintenanceBlocked     bool // Set to true if autoSummarize was blocked (e.g. by pins)
 	Warnings               []string
 	APIContents            []*llm.Content
 	KeptByPolicy           map[string]int // Stats on why turns were preserved
@@ -26,11 +26,11 @@ type ContextMetadata struct {
 
 // ContextRequest carries state through the context transformation pipeline.
 type ContextRequest struct {
-	Turn            int
-	History         []*llm.Content
-	Result          []*llm.Content
-	Metadata        ContextMetadata
-	PersistHistory  bool // Flag to persist History back to the history.Manager
+	Turn           int
+	History        []*llm.Content
+	Result         []*llm.Content
+	Metadata       ContextMetadata
+	PersistHistory bool // Flag to persist History back to the history.Manager
 }
 
 // ContextTransformer defines a stage in the context preparation pipeline.
@@ -90,6 +90,34 @@ func (p *ContextPipeline) Execute(ctx context.Context, req *ContextRequest) erro
 			return err
 		}
 	}
+	return nil
+}
+
+// ExecuteWithPersistence runs the pipeline and handles deferred history persistence at the transient boundary.
+func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *ContextRequest, persistFn func(context.Context, []*llm.Content) error) error {
+	for _, t := range p.transformers {
+		// Transient cutoff: priority >= PriorityTransientThreshold
+		// We persist any pending changes before transient transformers run.
+		if t.Priority() >= PriorityTransientThreshold && req.PersistHistory {
+			if err := persistFn(ctx, req.History); err != nil {
+				return err
+			}
+			req.PersistHistory = false
+		}
+
+		if err := t.Transform(ctx, req); err != nil {
+			return err
+		}
+	}
+
+	// Final check for persistence if no transient transformers ran or if they didn't trigger persistence
+	if req.PersistHistory {
+		if err := persistFn(ctx, req.History); err != nil {
+			return err
+		}
+		req.PersistHistory = false
+	}
+
 	return nil
 }
 

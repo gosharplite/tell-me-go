@@ -39,11 +39,3 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 		})
 	}
 }
-
-type mockEstimator struct {
-	tokens int
-}
-
-func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
-	return m.tokens
-}
