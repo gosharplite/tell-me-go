@@ -83,6 +83,16 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 
 	capture := func(r io.Reader, isStderr bool) {
 		defer wg.Done()
+
+		handleWriteError := func(err error) {
+			if config.Feedback != nil {
+				fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			}
+			mu.Lock()
+			writeFailed = true
+			mu.Unlock()
+		}
+
 		scanner := bufio.NewScanner(r)
 		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, maxScannerCapacity)
@@ -96,13 +106,12 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			if file != nil && !writeFailed {
 				if _, err := file.Write(lineData); err != nil {
 					mu.Unlock()
-					if config.Feedback != nil {
-						fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-					}
+					handleWriteError(err)
 					mu.Lock()
-					writeFailed = true
-				} else {
-					file.Write(newline)
+				} else if _, err := file.Write(newline); err != nil {
+					mu.Unlock()
+					handleWriteError(err)
+					mu.Lock()
 				}
 			}
 
@@ -143,7 +152,14 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 				fmt.Fprintln(config.Feedback, msg)
 			}
 			mu.Lock()
-			sb.WriteString(msg + "\n")
+			remaining := maxCapture - sb.Len()
+			if remaining > 0 {
+				content := msg + "\n"
+				if len(content) > remaining {
+					content = content[:remaining]
+				}
+				sb.WriteString(content)
+			}
 			mu.Unlock()
 		}
 	}
@@ -302,6 +318,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		}
 	}
 
+	handleWriteError := func(err error) {
+		if config.Feedback != nil {
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+		}
+		mu.Lock()
+		writeFailed = true
+		mu.Unlock()
+	}
+
 	// Capture Stderr in parallel
 	for i, r := range p.stderrPipes {
 		wg.Add(1)
@@ -319,13 +344,12 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				if file != nil && !writeFailed {
 					if _, err := file.Write(lineData); err != nil {
 						mu.Unlock()
-						if config.Feedback != nil {
-							fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-						}
+						handleWriteError(err)
 						mu.Lock()
-						writeFailed = true
-					} else {
-						file.Write(newline)
+					} else if _, err := file.Write(newline); err != nil {
+						mu.Unlock()
+						handleWriteError(err)
+						mu.Lock()
 					}
 				}
 
@@ -371,13 +395,12 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		if file != nil && !writeFailed {
 			if _, err := file.Write(lineData); err != nil {
 				mu.Unlock()
-				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-				}
+				handleWriteError(err)
 				mu.Lock()
-				writeFailed = true
-			} else {
-				file.Write(newline)
+			} else if _, err := file.Write(newline); err != nil {
+				mu.Unlock()
+				handleWriteError(err)
+				mu.Lock()
 			}
 		}
 

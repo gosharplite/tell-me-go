@@ -536,10 +536,10 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 	// then writes to stdout. With sequential reading (stdout then stderr),
 	// it would deadlock because the process blocks on stderr write while
 	// the executor blocks on stdout read.
-	
+
 	// We use 128KB to be safe.
 	cmd := []string{"sh", "-c", "python3 -c \"import sys; print('e' * 128 * 1024, file=sys.stderr); print('done')\""}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -577,7 +577,7 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 	// Since we can't easily access the raw builders, we check the result string.
 	// "Output:\n" (8) + stdout + "\nErrors:\n" (9) + stderr
 	// Wait, the formatting also takes space.
-	
+
 	// If it's NOT shared, both will likely be fully captured if they are 10 each and MaxCapture is 15.
 	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[stderr:0] 0123456789") {
 		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
@@ -586,7 +586,7 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 
 func TestStderrPrefixConsistency(t *testing.T) {
 	executor := NewProcessExecutor()
-	
+
 	// Test RunCommand prefix
 	resCmd, _ := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo err >&2"}, ExecutionConfig{})
 	if !strings.Contains(resCmd.Output, "[stderr] err") {
@@ -612,7 +612,7 @@ func TestRunCommand_SharedMaxCapture(t *testing.T) {
 	}
 	// Total 20 bytes raw + prefixes
 	cmd := []string{"sh", "-c", "echo 0123456789; echo 0123456789 >&2"}
-	
+
 	res, err := executor.RunCommand(context.Background(), cmd, config)
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
@@ -621,8 +621,38 @@ func TestRunCommand_SharedMaxCapture(t *testing.T) {
 	if len(res.Output) > 15 {
 		t.Errorf("Expected output length <= 15, got %d: %q", len(res.Output), res.Output)
 	}
-	
+
 	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[stderr] 0123456789") {
 		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
+	}
+}
+
+func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
+	outputPath := "/dev/full"
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Skip("/dev/full not available")
+	}
+
+	var feedback safeBuffer
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		OutputFile: outputPath,
+		Feedback:   &feedback,
+	}
+
+	pipedParts := [][]string{
+		{"sh", "-c", "echo line1; echo line2"},
+		{"cat"},
+	}
+
+	_, err := executor.RunPipeline(context.Background(), pipedParts, config)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Warning should only appear once
+	warningCount := strings.Count(feedback.String(), "[Warning] Failed to write to output file")
+	if warningCount != 1 {
+		t.Errorf("Expected exactly 1 warning, got %d. Feedback: %q", warningCount, feedback.String())
 	}
 }
