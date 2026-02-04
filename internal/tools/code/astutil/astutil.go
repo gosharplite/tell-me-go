@@ -15,65 +15,97 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Global AST Cache to improve performance of AST-based tools
 type cachedFile struct {
 	file    *ast.File
+	fset    *token.FileSet
 	modTime time.Time
 }
 
 type ASTCache struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	files   map[string]cachedFile
-	fset    *token.FileSet
+	sf      singleflight.Group
 	maxSize int
 }
 
 func NewASTCache() *ASTCache {
 	return &ASTCache{
 		files:   make(map[string]cachedFile),
-		fset:    token.NewFileSet(),
 		maxSize: 1000,
 	}
 }
 
 func (c *ASTCache) Get(path string) (*ast.File, *token.FileSet, error) {
-	// 1. Stat the file (I/O) - outside lock
-	info, err := os.Stat(path)
+	// 1. Fast path: Check cache with RLock
+	c.mu.RLock()
+	entry, ok := c.files[path]
+	if ok {
+		// Check if still valid (Stat is fast)
+		info, err := os.Stat(path)
+		if err == nil && entry.modTime.Equal(info.ModTime()) {
+			c.mu.RUnlock()
+			return entry.file, entry.fset, nil
+		}
+	}
+	c.mu.RUnlock()
+
+	// 2. Slow path: Use singleflight to deduplicate concurrent requests for the same path
+	res, err, _ := c.sf.Do(path, func() (interface{}, error) {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+
+		// Double check cache inside singleflight just in case another SF call finished
+		c.mu.RLock()
+		entry, ok := c.files[path]
+		if ok && entry.modTime.Equal(info.ModTime()) {
+			c.mu.RUnlock()
+			return entry, nil
+		}
+		c.mu.RUnlock()
+
+		// Parse using a local FileSet to allow full concurrency across DIFFERENT files.
+		// Since FileSet.AddFile is the only non-thread-safe part of parsing,
+		// using a local FileSet here removes the bottleneck entirely.
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return nil, err
+		}
+
+		c.mu.Lock()
+		defer c.mu.Unlock()
+
+		// Eviction policy
+		if len(c.files) >= c.maxSize {
+			for k := range c.files {
+				delete(c.files, k)
+				break
+			}
+		}
+
+		newEntry := cachedFile{
+			file:    f,
+			fset:    fset,
+			modTime: info.ModTime(),
+		}
+		c.files[path] = newEntry
+
+		return newEntry, nil
+	})
+
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 2. Lock for both check and update to ensure fset safety
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	entry, ok := c.files[path]
-	if ok && entry.modTime.Equal(info.ModTime()) {
-		return entry.file, c.fset, nil
-	}
-
-	// 3. Slow path: Parse while holding lock to protect c.fset
-	f, err := parser.ParseFile(c.fset, path, nil, parser.ParseComments)
-	if err != nil {
-		return nil, c.fset, err
-	}
-
-	// Eviction policy
-	if len(c.files) >= c.maxSize {
-		for k := range c.files {
-			delete(c.files, k)
-			break
-		}
-	}
-
-	c.files[path] = cachedFile{
-		file:    f,
-		modTime: info.ModTime(),
-	}
-
-	return f, c.fset, nil
+	cf := res.(cachedFile)
+	return cf.file, cf.fset, nil
 }
 
 func ExprToString(expr ast.Expr) string {
