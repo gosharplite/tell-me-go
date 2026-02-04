@@ -108,11 +108,11 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 	// 1. Technical Validation: Split and check structure
 	parts, err := m.validator.Split(command)
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
+		return tools.ToolResult{}, fmt.Errorf("error parsing command: %v", err)
 	}
 
 	if err := m.validator.ValidateStructure(parts); err != nil {
-		return tools.ToolResult{Text: err.Error()}, nil
+		return tools.ToolResult{}, err
 	}
 
 	baseCmd := parts[0]

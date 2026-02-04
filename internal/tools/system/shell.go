@@ -53,11 +53,11 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	// 1. Technical Validation: Split and check structure before authorization
 	parts, err := t.validator.Split(params.Command)
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
+		return tools.ToolResult{}, fmt.Errorf("error parsing command: %v", err)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {
-		return tools.ToolResult{Text: err.Error()}, nil
+		return tools.ToolResult{}, err
 	}
 
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
