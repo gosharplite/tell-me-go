@@ -304,8 +304,8 @@ func TestRunPipeline_StderrCapture(t *testing.T) {
 		t.Fatalf("RunPipeline failed: %v", err)
 	}
 
-	if !strings.Contains(res.Output, "error_msg") {
-		t.Errorf("expected result output to contain 'error_msg', got %q", res.Output)
+	if !strings.Contains(res.Output, "[0] error_msg") {
+		t.Errorf("expected result output to contain '[0] error_msg', got %q", res.Output)
 	}
 	if !strings.Contains(res.Output, "success_msg") {
 		t.Errorf("expected result output to contain 'success_msg', got %q", res.Output)

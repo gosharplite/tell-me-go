@@ -282,14 +282,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
 				}
+				line := fmt.Sprintf("[%d] %s", idx, data)
 				remaining := maxCapture - stderrStr.Len()
 				if remaining > 0 {
-					canWrite := len(data)
-					if canWrite > remaining {
-						canWrite = remaining
+					content := line
+					if len(content) > remaining {
+						content = content[:remaining]
 					}
-					stderrStr.Write(data[:canWrite])
-					if canWrite < remaining && stderrStr.Len() < maxCapture {
+					stderrStr.WriteString(content)
+					if len(content) < remaining && stderrStr.Len() < maxCapture {
 						stderrStr.WriteByte('\n')
 					}
 				}
