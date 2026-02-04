@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -210,15 +211,30 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		if e.registry.IsSerial(fc.Name) {
 			// Wait for all previous tools to finish before starting serial tool
 			wg.Wait()
+			var tr domaintools.ToolResult
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: i, name: fc.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						tr = domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}
 					}
 				}()
-				tr := e.executeTool(ctx, fc)
-				resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+				tr = e.executeTool(ctx, fc)
 			}()
+			resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+
+			// If the serial tool timed out or context was cancelled, we CANNOT safely
+			// continue because the serial tool's goroutine is still running in the background.
+			if ctx.Err() != nil || strings.Contains(tr.Text, "execution timed out") {
+				// Fill remaining slots in resChan so the collector doesn't hang
+				for j := i + 1; j < len(calls); j++ {
+					resChan <- toolExecResult{
+						index: j,
+						name:  calls[j].Name,
+						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool timeout or cancellation."},
+					}
+				}
+				return // Exit the execution plan early
+			}
 		} else {
 			wg.Add(1)
 			idx, call := i, fc // captured for closure
@@ -227,6 +243,16 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			e.mu.RUnlock()
 			pool.Submit(func(_ context.Context) {
 				defer wg.Done()
+
+				if ctx.Err() != nil {
+					resChan <- toolExecResult{
+						index: idx,
+						name:  call.Name,
+						tr:    domaintools.ToolResult{Text: "Skipped: Context cancelled"},
+					}
+					return
+				}
+
 				defer func() {
 					if r := recover(); r != nil {
 						resChan <- toolExecResult{index: idx, name: call.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
