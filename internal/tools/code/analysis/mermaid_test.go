@@ -63,3 +63,23 @@ func TestGenerateMermaid(t *testing.T) {
 		t.Error("Expected result to contain class internal_api transport")
 	}
 }
+
+func TestGenerateMermaidWithCycles(t *testing.T) {
+	graph := map[string][]string{
+		"pkg/a": {"pkg/b"},
+		"pkg/b": {"pkg/c"},
+		"pkg/c": {"pkg/a"},
+	}
+
+	result := GenerateMermaid(graph)
+
+	if !strings.Contains(result, "-->|cycle|") {
+		t.Error("Expected result to contain cycle label")
+	}
+	if !strings.Contains(result, "linkStyle") {
+		t.Error("Expected result to contain linkStyle for cycle highlighting")
+	}
+	if !strings.Contains(result, "stroke:#f00") {
+		t.Error("Expected result to contain red stroke for cycles")
+	}
+}
