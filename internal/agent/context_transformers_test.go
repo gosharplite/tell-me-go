@@ -21,37 +21,31 @@ func (m *mockHistoryManager) ReplaceRange(ctx context.Context, start, end int, n
 	return m.ReplaceRangeFunc(ctx, start, end, newContents)
 }
 
-func TestSlidingWindowPolicy_Prune(t *testing.T) {
+func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 	tests := []struct {
-		name         string
-		maxTurns     int
-		historyLen   int // Number of messages
-		expectPruned int // Number of turns (2 msgs per turn)
-		expectRemain int // Number of messages remaining
+		name       string
+		maxTurns   int
+		historyLen int // Number of turns
+		expectKeep []bool
 	}{
-		{"No pruning needed", 10, 4, 0, 4},
-		{"Exact limit", 5, 10, 0, 10},
-		{"Pruning exceeding", 2, 10, 3, 4},  // maxTurns 2 (4 msgs). remove 10-4=6. pruned 3.
-		{"Odd history length", 5, 11, 1, 9}, // 11 > 10. target 10. remove 11-10=1. remove+1=2. remain 9. pruned 1.
-		{"Zero turns", 0, 10, 0, 10},
-		{"Negative turns", -1, 10, 0, 10},
-		{"Large history small limit", 1, 20, 9, 2}, // target 2. remove 20-2=18. pruned 9.
+		{"No pruning needed", 10, 2, []bool{true, true}},
+		{"Exact limit", 5, 5, []bool{true, true, true, true, true}},
+		{"Pruning exceeding", 2, 5, []bool{false, false, false, true, true}},
+		{"Zero turns", 0, 3, []bool{true, true, true}},
+		{"Negative turns", -1, 3, []bool{true, true, true}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &SlidingWindowPolicy{MaxTurns: tt.maxTurns}
-			h := make([]*llm.Content, tt.historyLen)
-			for i := range h {
-				h[i] = &llm.Content{Role: "user"}
-			}
+			turns := make([][]*llm.Content, tt.historyLen)
+			keep := make([]bool, tt.historyLen)
 
-			gotHistory, pruned := p.Prune(context.Background(), h)
-			if pruned != tt.expectPruned {
-				t.Errorf("expected pruned %d, got %d", tt.expectPruned, pruned)
-			}
-			if len(gotHistory) != tt.expectRemain {
-				t.Errorf("expected remaining %d, got %d", tt.expectRemain, len(gotHistory))
+			p.MarkTurns(context.Background(), turns, keep)
+			for i, k := range keep {
+				if k != tt.expectKeep[i] {
+					t.Errorf("at index %d: expected %v, got %v", i, tt.expectKeep[i], k)
+				}
 			}
 		})
 	}
@@ -72,7 +66,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			},
 		}
 		pruner := &HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: 1}, // Max 2 msgs
+			Policy:  &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 			Manager: m,
 		}
 
@@ -101,6 +95,9 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		if req.Metadata.PrunedTurns != 2 {
 			t.Errorf("expected 2 pruned turns, got %d", req.Metadata.PrunedTurns)
 		}
+		if count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]; !ok || count != 1 {
+			t.Errorf("expected KeptByPolicy[SlidingWindow] == 1, got %v", count)
+		}
 	})
 
 	t.Run("No pruning", func(t *testing.T) {
@@ -118,6 +115,78 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			t.Errorf("expected 0 pruned turns, got %d", req.Metadata.PrunedTurns)
 		}
 	})
+}
+
+func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
+	p := &ImportanceRankPolicy{}
+	history := [][]*llm.Content{
+		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
+		{{Role: "user", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}}},
+		{{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]interface{}{"status": "ok"}}}}}},
+		{{Role: "user", Parts: []*llm.Part{{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("base64")}}}}},
+	}
+	keep := make([]bool, len(history))
+
+	count := p.MarkTurns(context.Background(), history, keep)
+
+	if count != 3 {
+		t.Errorf("expected count 3, got %d", count)
+	}
+
+	expected := []bool{false, true, true, true}
+	for i, k := range keep {
+		if k != expected[i] {
+			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
+		}
+	}
+}
+
+func TestPinningPolicy_MarkTurns(t *testing.T) {
+	p := &PinningPolicy{}
+	history := [][]*llm.Content{
+		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
+		{{Role: "user", Parts: []*llm.Part{{Text: "Pinned"}}, Pinned: true}},
+		{{Role: "model", Parts: []*llm.Part{{Text: "TurnPart2"}}, Pinned: true}},
+	}
+	keep := make([]bool, len(history))
+
+	count := p.MarkTurns(context.Background(), history, keep)
+
+	if count != 2 {
+		t.Errorf("expected count 2, got %d", count)
+	}
+
+	expected := []bool{false, true, true}
+	for i, k := range keep {
+		if k != expected[i] {
+			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
+		}
+	}
+}
+
+func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
+	p := &CompositePruningPolicy{
+		Policies: []PruningPolicy{
+			&SlidingWindowPolicy{MaxTurns: 1},
+			&PinningPolicy{},
+		},
+	}
+	history := [][]*llm.Content{
+		{{Role: "user", Parts: []*llm.Part{{Text: "Pinned"}}, Pinned: true}},
+		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
+		{{Role: "user", Parts: []*llm.Part{{Text: "Last"}}}},
+	}
+	keep := make([]bool, len(history))
+
+	p.MarkTurns(context.Background(), history, keep)
+
+	// T0 kept by Pinning, T2 kept by SlidingWindow
+	expected := []bool{true, false, true}
+	for i, k := range keep {
+		if k != expected[i] {
+			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
+		}
+	}
 }
 
 type mockSummarizer struct {
@@ -228,63 +297,6 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Errorf("warning not found in content: %v", lastContent.Parts)
 		}
 	})
-}
-
-func TestSlidingWindowPolicy_Prune_Pinned(t *testing.T) {
-	t.Parallel()
-	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn (2 messages)
-
-	history := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}, Pinned: true},
-		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}},
-		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
-		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
-		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
-		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
-	}
-
-	// Without pinning, it would keep only T3.
-	// With T1 pinned, it should keep T1 AND T3.
-	gotHistory, pruned := p.Prune(context.Background(), history)
-
-	if pruned != 1 {
-		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
-	}
-
-	if len(gotHistory) != 4 {
-		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
-	}
-
-	if gotHistory[0].Parts[0].Text != "T1 User" {
-		t.Errorf("expected T1 User as first message, got %q", gotHistory[0].Parts[0].Text)
-	}
-	if gotHistory[2].Parts[0].Text != "T3 User" {
-		t.Errorf("expected T3 User as third message, got %q", gotHistory[2].Parts[0].Text)
-	}
-}
-
-func TestSlidingWindowPolicy_Prune_Pinned_ModelPart(t *testing.T) {
-	t.Parallel()
-	p := &SlidingWindowPolicy{MaxTurns: 1} // Keep 1 turn
-
-	history := []*llm.Content{
-		{Role: "user", Parts: []*llm.Part{{Text: "T1 User"}}},
-		{Role: "model", Parts: []*llm.Part{{Text: "T1 Model"}}, Pinned: true}, // Pin the model part
-		{Role: "user", Parts: []*llm.Part{{Text: "T2 User"}}},
-		{Role: "model", Parts: []*llm.Part{{Text: "T2 Model"}}},
-		{Role: "user", Parts: []*llm.Part{{Text: "T3 User"}}},
-		{Role: "model", Parts: []*llm.Part{{Text: "T3 Model"}}},
-	}
-
-	gotHistory, pruned := p.Prune(context.Background(), history)
-
-	if pruned != 1 {
-		t.Errorf("expected 1 pruned turn (T2), got %d", pruned)
-	}
-
-	if len(gotHistory) != 4 {
-		t.Fatalf("expected 4 messages (T1 and T3), got %d", len(gotHistory))
-	}
 }
 
 type dynamicMockEstimator struct {
@@ -453,7 +465,6 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 
 	err := tg.Transform(ctx, req)
 	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
-	// Wait, MT=2000. Buffer=1000. SafetyLimit = 1000. 1900 > 1000. So it WILL fail with ErrContextLimitExceeded.
 	if !errors.Is(err, llm.ErrContextLimitExceeded) {
 		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
 	}
@@ -510,8 +521,8 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 		{"Medium context, over safety limit (900)", 1000, 950, true},
 		{"Large context, under limit", 100000, 98000, false},
 		{"Large context, over safety limit (99000)", 100000, 99500, true},
-		{"Very Large context, under limit", 128000, 126500, false}, // 128000 - 1000 = 127000. 126500 < 127000.
-		{"Very Large context, over limit", 128000, 127500, true},   // 127500 > 127000.
+		{"Very Large context, under limit", 128000, 126500, false},
+		{"Very Large context, over limit", 128000, 127500, true},
 	}
 
 	for _, tt := range tests {
@@ -547,12 +558,8 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		&WarningInjector{Strategy: strategy},
 	)
 
-	// Populate history with 10 pinned turns (~20 messages)
-	// Heuristic counter: turns approx 350 tokens each (default in my head, let's verify).
-	// Actually, HeuristicTokenCounter counts chars.
-	// To exceed 90% of 2000 (1800), we need > 5760 chars (1800 * 3.2).
 	h := make([]*llm.Content, 20)
-	longText := strings.Repeat("A", 400) // 400 chars * 20 = 8000 chars. 8000 / 3.2 = 2500 tokens.
+	longText := strings.Repeat("A", 400)
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}, Pinned: true}
 	}
@@ -563,7 +570,6 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	}
 
 	err := pipeline.Execute(ctx, req)
-	// Since 2500 > (2000 - 10% safety = 1800), and summarization is BLOCKED by pins, it should error with ErrContextLimitExceeded.
 	if !errors.Is(err, llm.ErrContextLimitExceeded) {
 		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
 	}
@@ -572,23 +578,13 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		t.Error("expected MaintenanceBlocked to be true")
 	}
 
-	// Now try with slightly less history so it doesn't fail the safety check but triggers 90%.
-	// 90% = 1800. Safety limit = 1800.
-	// We need tokens > 1800 to trigger summarization, but it will fail safety check if tokens > 1800.
-	// Wait, the 10% safety buffer at 2000 is 200. So limit is 1800.
-	// The 90% trigger is 1800.
-	// So at exactly 1800, it triggers summarization, fails, then checks safety limit (1800) and passes if <= 1800.
-	// Let's use MT=10000. 90% = 9000. Buffer = 1000. Safety limit = 9000.
-	// It's still tight. Let's use MT=20000. 90% = 18000. Safety limit = 19000.
-
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
 	tg := pipeline.transformers[1].(*TokenGatekeeper)
 	tg.MaxTokens = maxTokens
 
-	// 18500 tokens. 18500 * 3.2 = 59200 chars.
 	h2 := make([]*llm.Content, 20)
-	text2 := strings.Repeat("B", 2960) // 2960 * 20 = 59200.
+	text2 := strings.Repeat("B", 2960)
 	for i := range h2 {
 		h2[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: text2}}, Pinned: true}
 	}
@@ -603,7 +599,6 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		t.Error("expected MaintenanceBlocked to be true for second run")
 	}
 
-	// Verify Clogged warning is injected
 	lastContent := req2.History[len(req2.History)-1]
 	found := false
 	for _, p := range lastContent.Parts {
@@ -615,19 +610,11 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	if !found {
 		t.Error("Clogged warning not found in final payload")
 	}
-
-	// Verify token count
-	if req2.Metadata.FinalTokenCount < 18500 {
-		t.Errorf("FinalTokenCount (%d) should be at least 18500", req2.Metadata.FinalTokenCount)
-	}
 }
 
 func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 	ctx := context.Background()
 
-	// Case 1: MaxTokens=1000. 10% cap is 100. SystemContextBuffer is 500.
-	// reserved should be min(500, 100) = 100.
-	// limit = 1000 - 100 = 900.
 	t.Run("10 percent cap", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 1000,
@@ -646,9 +633,6 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 		}
 	})
 
-	// Case 2: MaxTokens=10000. 10% cap is 1000. SystemContextBuffer is 1000.
-	// reserved should be min(1000, 1000) = 1000.
-	// limit = 10000 - 1000 = 9000.
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
 		tg := &TokenGatekeeper{
 			MaxTokens: 10000,

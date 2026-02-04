@@ -17,10 +17,11 @@ type ContextMetadata struct {
 	FinalTurnCount         int
 	PrunedTurns            int
 	SummarizedTurns        int
-	SummarizationAttempted bool // Set to true if autoSummarize just ran successfully
-	MaintenanceBlocked     bool // Set to true if autoSummarize was blocked (e.g. by pins)
+	SummarizationAttempted bool           // Set to true if autoSummarize just ran successfully
+	MaintenanceBlocked     bool           // Set to true if autoSummarize was blocked (e.g. by pins)
 	Warnings               []string
 	APIContents            []*llm.Content
+	KeptByPolicy           map[string]int // Stats on why turns were preserved
 }
 
 // ContextRequest carries state through the context transformation pipeline.
@@ -42,9 +43,10 @@ type TokenEstimator interface {
 	EstimateTokens(contents []*llm.Content) int
 }
 
-// PruningPolicy defines a strategy for reducing history size.
+// PruningPolicy defines a strategy for identifying turns to keep in history.
 type PruningPolicy interface {
-	Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int)
+	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int
+	Name() string
 }
 
 // HistorySummarizer defines the interface for the summarization service.

@@ -18,74 +18,37 @@ type HistoryPruner struct {
 	Manager interface {
 		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
 	} // Decouple from history.Manager
+	Events events.EventBus
 }
 
 func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) error {
 	initialLen := len(req.History)
-	newHistory, pruned := t.Policy.Prune(ctx, req.History)
-
-	if pruned > 0 {
-		// We replace the entire history range to ensure the manager stays in sync
-		// with non-contiguous pruning (pinned turns kept in the middle/start).
-		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
-			return err
-		}
-	}
-
-	req.History = newHistory
-	req.Metadata.PrunedTurns += pruned
-	return nil
-}
-
-func (t *HistoryPruner) Priority() int { return 1 }
-
-// SlidingWindowPolicy keeps the last N turns, prioritizing pinned content.
-type SlidingWindowPolicy struct {
-	MaxTurns int
-}
-
-func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	if p.MaxTurns <= 0 {
-		return history, 0
-	}
-
-	if len(history) <= p.MaxTurns*2 {
-		return history, 0
+	if initialLen == 0 {
+		return nil
 	}
 
 	// Group messages into turns (pairs)
 	var turns [][]*llm.Content
-	for i := 0; i < len(history); i += 2 {
+	for i := 0; i < len(req.History); i += 2 {
 		end := i + 2
-		if end > len(history) {
-			end = len(history)
+		if end > len(req.History) {
+			end = len(req.History)
 		}
-		turns = append(turns, history[i:end])
+		turns = append(turns, req.History[i:end])
 	}
 
-	totalTurns := len(turns)
-	keep := make([]bool, totalTurns)
-
-	// Rule 1: Keep last N turns (Sliding Window)
-	startWindow := totalTurns - p.MaxTurns
-	if startWindow < 0 {
-		startWindow = 0
-	}
-	for i := startWindow; i < totalTurns; i++ {
-		keep[i] = true
+	keep := make([]bool, len(turns))
+	if req.Metadata.KeptByPolicy == nil {
+		req.Metadata.KeptByPolicy = make(map[string]int)
 	}
 
-	// Rule 2: Keep any turn that has a Pinned message
-	for i := 0; i < totalTurns; i++ {
-		if keep[i] {
-			continue
+	// If it's a composite policy, we track sub-policies individually.
+	if cp, ok := t.Policy.(*CompositePruningPolicy); ok {
+		for _, p := range cp.Policies {
+			req.Metadata.KeptByPolicy[p.Name()] = p.MarkTurns(ctx, turns, keep)
 		}
-		for _, msg := range turns[i] {
-			if msg.Pinned {
-				keep[i] = true
-				break
-			}
-		}
+	} else {
+		req.Metadata.KeptByPolicy[t.Policy.Name()] = t.Policy.MarkTurns(ctx, turns, keep)
 	}
 
 	// Construct new history and count pruned turns
@@ -99,24 +62,124 @@ func (p *SlidingWindowPolicy) Prune(ctx context.Context, history []*llm.Content)
 		}
 	}
 
-	return newHistory, prunedCount
+	if prunedCount > 0 {
+		// We replace the entire history range to ensure the manager stays in sync
+		// with non-contiguous pruning (pinned turns kept in the middle/start).
+		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
+			return err
+		}
+
+		if t.Events != nil {
+			t.Events.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
+				Level:   "info",
+			})
+		}
+	}
+
+	req.History = newHistory
+	req.Metadata.PrunedTurns += prunedCount
+	return nil
 }
 
-// ImportanceRankPolicy (placeholder for future implementation)
+func (t *HistoryPruner) Priority() int { return 1 }
+
+// CompositePruningPolicy aggregates multiple policies using OR logic.
+type CompositePruningPolicy struct {
+	Policies []PruningPolicy
+}
+
+func (p *CompositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	totalMarked := 0
+	for _, policy := range p.Policies {
+		totalMarked += policy.MarkTurns(ctx, turns, keep)
+	}
+	return totalMarked
+}
+
+func (p *CompositePruningPolicy) Name() string { return "Composite" }
+
+// SlidingWindowPolicy keeps the last N turns.
+type SlidingWindowPolicy struct {
+	MaxTurns int
+}
+
+func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	if p.MaxTurns <= 0 {
+		for i := range keep {
+			keep[i] = true
+		}
+		return len(turns)
+	}
+
+	totalTurns := len(turns)
+	startWindow := totalTurns - p.MaxTurns
+	if startWindow < 0 {
+		startWindow = 0
+	}
+
+	count := 0
+	for i := startWindow; i < totalTurns; i++ {
+		keep[i] = true
+		count++
+	}
+	return count
+}
+
+func (p *SlidingWindowPolicy) Name() string { return "SlidingWindow" }
+
+// ImportanceRankPolicy keeps turns containing function calls, responses, or data.
 type ImportanceRankPolicy struct{}
 
-func (p *ImportanceRankPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	// TODO: Implement importance-based pruning
-	return history, 0
+func (p *ImportanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	count := 0
+	for i, turn := range turns {
+		important := false
+		for _, msg := range turn {
+			for _, part := range msg.Parts {
+				if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
+					important = true
+					break
+				}
+			}
+			if important {
+				break
+			}
+		}
+
+		if important {
+			keep[i] = true
+			count++
+		}
+	}
+	return count
 }
 
-// PinningPolicy (placeholder for future implementation)
+func (p *ImportanceRankPolicy) Name() string { return "Importance" }
+
+// PinningPolicy keeps turns that have at least one pinned message.
 type PinningPolicy struct{}
 
-func (p *PinningPolicy) Prune(ctx context.Context, history []*llm.Content) ([]*llm.Content, int) {
-	// TODO: Implement pinning-based pruning
-	return history, 0
+func (p *PinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+	count := 0
+	for i, turn := range turns {
+		pinned := false
+		for _, msg := range turn {
+			if msg.Pinned {
+				pinned = true
+				break
+			}
+		}
+
+		if pinned {
+			keep[i] = true
+			count++
+		}
+	}
+	return count
 }
+
+func (p *PinningPolicy) Name() string { return "Pinning" }
 
 // TokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type TokenGatekeeper struct {
@@ -381,3 +444,59 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 }
 
 func (t *ToolDeclarationGenerator) Priority() int { return 20 }
+
+// EmptyTurnFilter removes turns where both user and model messages have no meaningful content.
+type EmptyTurnFilter struct{}
+
+func (t *EmptyTurnFilter) Transform(ctx context.Context, req *ContextRequest) error {
+	var filtered []*llm.Content
+	for i := 0; i < len(req.History); i += 2 {
+		// Handle trailing single message (usually the user's current prompt)
+		if i+1 >= len(req.History) {
+			filtered = append(filtered, req.History[i])
+			break
+		}
+
+		// A turn is empty if neither the user nor model message has content
+		turnEmpty := true
+		for _, msg := range req.History[i : i+2] {
+			for _, p := range msg.Parts {
+				if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+					turnEmpty = false
+					break
+				}
+			}
+			if !turnEmpty {
+				break
+			}
+		}
+
+		if !turnEmpty {
+			filtered = append(filtered, req.History[i:i+2]...)
+		}
+	}
+	req.History = filtered
+	return nil
+}
+
+func (t *EmptyTurnFilter) Priority() int { return 90 }
+
+// FinalContextValidator ensures the context is within limits after all transformations.
+type FinalContextValidator struct {
+	Strategy *ContextStrategy
+}
+
+func (t *FinalContextValidator) Transform(ctx context.Context, req *ContextRequest) error {
+	maxTokens, _, _ := t.Strategy.GetLimits()
+	finalTokens := t.Strategy.EstimateTokens(req.History)
+
+	req.Metadata.FinalTokenCount = finalTokens
+	req.Metadata.FinalTurnCount = len(req.History) / 2
+
+	if finalTokens > maxTokens {
+		return fmt.Errorf("%w: %d > %d", llm.ErrContextLimitExceeded, finalTokens, maxTokens)
+	}
+	return nil
+}
+
+func (t *FinalContextValidator) Priority() int { return 110 } // Run last

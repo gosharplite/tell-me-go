@@ -33,7 +33,13 @@ type PipelineFactory struct {
 func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPipeline {
 	transformers := []ContextTransformer{
 		&HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: limits.MaxHistoryTurns},
+			Policy: &CompositePruningPolicy{
+				Policies: []PruningPolicy{
+					&SlidingWindowPolicy{MaxTurns: limits.MaxHistoryTurns},
+					&PinningPolicy{},
+					&ImportanceRankPolicy{},
+				},
+			},
 			Manager: f.History,
 		},
 	}
@@ -49,7 +55,11 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&ToolDeclarationGenerator{
 			Registry: f.Registry,
 		},
+		&EmptyTurnFilter{},
 		&WarningInjector{
+			Strategy: f.Estimator.(*ContextStrategy),
+		},
+		&FinalContextValidator{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
 	)
