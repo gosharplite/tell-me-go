@@ -29,6 +29,8 @@ func NewShellTool(sm *security.SecurityManager) *ShellTool {
 	}
 }
 
+const maxShellOutput = 50000
+
 func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
@@ -72,6 +74,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
+			MaxCapture: maxShellOutput,
 		})
 	})
 
@@ -126,6 +129,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
+			MaxCapture: maxShellOutput,
 		})
 	})
 
@@ -205,8 +209,8 @@ func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 
 func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	output := res.Output
-	if len(output) > 50000 {
-		output = output[:50000] + "\n... (truncated)"
+	if len(output) >= maxShellOutput {
+		output += "\n... (truncated)"
 	}
 	if isPipeline {
 		return fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, output)
