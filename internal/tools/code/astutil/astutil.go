@@ -61,15 +61,6 @@ func (c *ASTCache) Get(path string) (*ast.File, *token.FileSet, error) {
 			return nil, err
 		}
 
-		// Double check cache inside singleflight just in case another SF call finished
-		c.mu.RLock()
-		entry, ok := c.files[path]
-		if ok && entry.modTime.Equal(info.ModTime()) {
-			c.mu.RUnlock()
-			return entry, nil
-		}
-		c.mu.RUnlock()
-
 		// Parse using a local FileSet to allow full concurrency across DIFFERENT files.
 		// Since FileSet.AddFile is the only non-thread-safe part of parsing,
 		// using a local FileSet here removes the bottleneck entirely.
