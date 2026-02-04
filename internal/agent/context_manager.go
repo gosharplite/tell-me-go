@@ -76,9 +76,9 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	// and want it persisted (Pruner, Gatekeeper), but others only want it
 	// for the API (WarningInjector), we handle persistence carefully.
 	for _, t := range pipeline.transformers {
-		// Transient cutoff: priority >= 100 (e.g., WarningInjector)
+		// Transient cutoff: priority >= PriorityTransientThreshold (e.g., WarningInjector)
 		// We persist any pending changes before transient transformers run.
-		if t.Priority() >= 100 && req.PersistHistory {
+		if t.Priority() >= PriorityTransientThreshold && req.PersistHistory {
 			if err := cm.History.SetContents(ctx, req.History); err != nil {
 				return nil, nil, fmt.Errorf("failed to persist history changes: %w", err)
 			}

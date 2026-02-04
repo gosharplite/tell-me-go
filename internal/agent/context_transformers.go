@@ -14,10 +14,7 @@ import (
 
 // HistoryPruner enforces history turn limits using a policy.
 type HistoryPruner struct {
-	Policy  PruningPolicy
-	Manager interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
-	} // Decouple from history.Manager
+	Policy PruningPolicy
 	Events events.EventBus
 }
 
@@ -179,10 +176,7 @@ type TokenGatekeeper struct {
 	MaxTokens  int
 	Estimator  TokenEstimator
 	Summarizer HistorySummarizer
-	Manager    interface {
-		ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error
-	}
-	Events events.EventBus
+	Events     events.EventBus
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
@@ -420,7 +414,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	return nil
 }
 
-func (t *WarningInjector) Priority() int { return 100 }
+func (t *WarningInjector) Priority() int { return PriorityTransientThreshold }
 
 // ToolDeclarationGenerator injects tool schemas from the registry.
 type ToolDeclarationGenerator struct {
@@ -490,4 +484,4 @@ func (t *FinalContextValidator) Transform(ctx context.Context, req *ContextReque
 	return nil
 }
 
-func (t *FinalContextValidator) Priority() int { return 110 } // Run last
+func (t *FinalContextValidator) Priority() int { return PriorityTransientThreshold + 10 } // Run last

@@ -40,7 +40,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 					&ImportanceRankPolicy{},
 				},
 			},
-			Manager: f.History,
+			Events: f.Events,
 		},
 	}
 
@@ -49,7 +49,6 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 			MaxTokens:  limits.MaxHistoryTokens,
 			Estimator:  f.Estimator,
 			Summarizer: f.Summarizer,
-			Manager:    f.History,
 			Events:     f.Events,
 		},
 		&ToolDeclarationGenerator{

@@ -13,14 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
-type mockHistoryManager struct {
-	ReplaceRangeFunc func(ctx context.Context, start, end int, newContents []*llm.Content) error
-}
-
-func (m *mockHistoryManager) ReplaceRange(ctx context.Context, start, end int, newContents []*llm.Content) error {
-	return m.ReplaceRangeFunc(ctx, start, end, newContents)
-}
-
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -56,14 +48,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Pruning occurred", func(t *testing.T) {
-		m := &mockHistoryManager{
-			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-				return nil
-			},
-		}
 		pruner := &HistoryPruner{
-			Policy:  &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
-			Manager: m,
+			Policy: &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 		}
 
 		req := &ContextRequest{
@@ -223,11 +209,6 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 					return "summary", nil
 				},
 			},
-			Manager: &mockHistoryManager{
-				ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-					return nil
-				},
-			},
 		}
 		// 10 messages to allow summarization trigger (>= 10)
 		h := make([]*llm.Content, 10)
@@ -325,17 +306,10 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		},
 	}
 
-	manager := &mockHistoryManager{
-		ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-			return nil
-		},
-	}
-
 	tg := &TokenGatekeeper{
 		MaxTokens:  10000,
 		Estimator:  &dynamicMockEstimator{tokens: 9500},
 		Summarizer: summarizer,
-		Manager:    manager,
 	}
 
 	// Create 10 turns (20 messages)
@@ -424,11 +398,6 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 		Summarizer: &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 				return "summary", nil
-			},
-		},
-		Manager: &mockHistoryManager{
-			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-				return nil
 			},
 		},
 	}
@@ -546,11 +515,10 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 
 	// Pipeline: Pruner(1), Gatekeeper(80), WarningInjector(100)
 	pipeline := NewContextPipeline(
-		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}, Manager: &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }}},
+		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}},
 		&TokenGatekeeper{
 			MaxTokens: maxTokens,
 			Estimator: strategy,
-			Manager:   &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }},
 		},
 		&WarningInjector{Strategy: strategy},
 	)

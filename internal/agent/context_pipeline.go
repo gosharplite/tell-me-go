@@ -39,6 +39,13 @@ type ContextTransformer interface {
 	Priority() int
 }
 
+const (
+	// PriorityTransientThreshold marks the boundary between transformers that modify
+	// the canonical history (pruning, summarization) and those that only modify
+	// the transient API payload (warnings, injections).
+	PriorityTransientThreshold = 100
+)
+
 // TokenEstimator decouples the manager from specific counting logic.
 type TokenEstimator interface {
 	EstimateTokens(contents []*llm.Content) int
