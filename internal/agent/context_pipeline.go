@@ -22,6 +22,7 @@ type ContextMetadata struct {
 	Warnings               []string
 	APIContents            []*llm.Content
 	KeptByPolicy           map[string]int // Stats on why turns were preserved
+	TotalTurnsKept         int            // Actual number of turns kept after all policies applied
 }
 
 // ContextRequest carries state through the context transformation pipeline.

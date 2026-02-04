@@ -54,6 +54,7 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	for i, k := range keep {
 		if k {
 			newHistory = append(newHistory, turns[i]...)
+			req.Metadata.TotalTurnsKept++
 		} else {
 			prunedCount++
 		}
@@ -460,7 +461,10 @@ func (t *EmptyTurnFilter) Transform(ctx context.Context, req *ContextRequest) er
 			filtered = append(filtered, req.History[i:i+2]...)
 		}
 	}
-	req.History = filtered
+	if len(filtered) != len(req.History) {
+		req.History = filtered
+		req.PersistHistory = true
+	}
 	return nil
 }
 

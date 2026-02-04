@@ -228,8 +228,9 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
 	}
 
-	// Test case: Exactly below threshold (0.9 * AbsoluteModelCapacity)
-	counter.tokens = int(float64(AbsoluteModelCapacity) * 0.89)
+	// Test case: Exactly below threshold (0.9 * contextWindow)
+	window := strategy.GetContextWindow()
+	counter.tokens = int(float64(window) * 0.89)
 	cm.Summarizer = &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
 			return "summary", nil
@@ -250,8 +251,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	}
 	cm2 := NewContextManager(strategy, hManager2, &mockGateway{}, nil, nil)
 
-	counter.tokens = int(float64(AbsoluteModelCapacity) * 0.91)
-	t.Logf("AbsoluteModelCapacity: %d, counter.tokens: %d, safetyLimit: %d", AbsoluteModelCapacity, counter.tokens, int(float64(AbsoluteModelCapacity)*0.9))
+	counter.tokens = int(float64(window) * 0.91)
+	t.Logf("ContextWindow: %d, counter.tokens: %d, safetyLimit: %d", window, counter.tokens, int(float64(window)*0.9))
 	_, err = cm2.SummarizeRange(ctx, 1, "")
 	if err == nil {
 		t.Errorf("expected safety limit error, got nil")

@@ -26,6 +26,7 @@ type ContextStrategy struct {
 	maxToolTurns     int
 	maxHistoryTurns  int
 	tieredThreshold  int
+	contextWindow    int
 	prunedTurns      int
 }
 
@@ -37,9 +38,13 @@ type ToolRegistry interface {
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
 	defaultThreshold := config.DefaultTieredThreshold
+	defaultWindow := 1000000 // Default to 1M if unknown
 	if dp := config.DefaultPricing(); dp.Models != nil {
-		if m, ok := dp.Models["default"]; ok && m.TieredThreshold > 0 {
-			defaultThreshold = int(m.TieredThreshold)
+		if m, ok := dp.Models["default"]; ok {
+			if m.TieredThreshold > 0 {
+				defaultThreshold = int(m.TieredThreshold)
+			}
+			// Note: Pricing might not have context window, it's in config.ModelConfig
 		}
 	}
 
@@ -49,6 +54,7 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 		maxToolTurns:     config.DefaultMaxToolTurns,
 		maxHistoryTurns:  config.DefaultMaxHistoryTurns,
 		tieredThreshold:  defaultThreshold,
+		contextWindow:    defaultWindow,
 	}
 
 	if bus != nil {
@@ -56,11 +62,29 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
 				cs.SetTieredThreshold(cfg.Limits.TieredThreshold)
+				// We don't have context window in events.Limits yet, but we could add it if needed.
+				// For now, let's just allow setting it.
 			}
 		})
 	}
 
 	return cs
+}
+
+// SetContextWindow updates the model's absolute context window limit.
+func (cs *ContextStrategy) SetContextWindow(window int) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if window > 0 {
+		cs.contextWindow = window
+	}
+}
+
+// GetContextWindow returns the model's absolute context window limit.
+func (cs *ContextStrategy) GetContextWindow() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.contextWindow
 }
 
 // SetLimits updates the operational limits.

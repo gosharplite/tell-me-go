@@ -29,7 +29,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw.Refresh()
+	cw.Refresh("default")
 	tokens, _, _ = cw.GetLimits()
 	if tokens != 200 {
 		t.Errorf("expected 200 tokens after refresh, got %d", tokens)
@@ -41,7 +41,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw.Refresh()
+	cw.Refresh("default")
 	tokens, _, _ = cw.GetLimits()
 	if tokens != 300 {
 		t.Errorf("expected 300 tokens after second refresh, got %d", tokens)
@@ -61,7 +61,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 	}
 
 	// Should not panic and should keep old values
-	cw.Refresh()
+	cw.Refresh("default")
 	tokens, _, _ := cw.GetLimits()
 	if tokens != 100 {
 		t.Errorf("expected 100 tokens to be preserved, got %d", tokens)
@@ -74,7 +74,7 @@ func TestConfigWatcher_MissingFile(t *testing.T) {
 	cw.SetPaths("", "non-existent.json")
 
 	// Should not panic
-	cw.Refresh()
+	cw.Refresh("default")
 	tokens, _, _ := cw.GetLimits()
 	if tokens != 100 {
 		t.Errorf("expected 100 tokens, got %d", tokens)
