@@ -78,7 +78,34 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		return nil, nil, err
 	}
 
-	req.Result = req.History
+	// Filter out turns with no content (no text, no function calls/responses, no blobs)
+	// This prevents the SDK from receiving empty turns which would trigger its defensive "[empty]" injection.
+	var filteredHistory []*llm.Content
+	for i := 0; i < len(req.History); i += 2 {
+		if i+1 >= len(req.History) {
+			filteredHistory = append(filteredHistory, req.History[i])
+			break
+		}
+		
+		turnEmpty := true
+		for _, msg := range req.History[i : i+2] {
+			for _, p := range msg.Parts {
+				if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+					turnEmpty = false
+					break
+				}
+			}
+			if !turnEmpty {
+				break
+			}
+		}
+
+		if !turnEmpty {
+			filteredHistory = append(filteredHistory, req.History[i:i+2]...)
+		}
+	}
+
+	req.Result = filteredHistory
 
 	// Final token estimation check
 	finalTokens := cm.Strategy.EstimateTokens(req.Result)
