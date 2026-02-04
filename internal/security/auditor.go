@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 // Auditor handles security logging.
@@ -40,7 +42,7 @@ func (a *Auditor) LogAudit(label1, val1, label2, val2 string) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	f, err := os.OpenFile(a.logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\033[0;31m[Warning] Failed to open command log file: %v\033[0m\n", err)
+		fmt.Fprintf(os.Stderr, "%s[Warning] Failed to open command log file: %v%s\n", colors.ColorRed, err, colors.ColorReset)
 		return
 	}
 	defer f.Close()

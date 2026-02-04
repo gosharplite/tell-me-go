@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type devManager struct {
@@ -127,7 +128,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running Tests: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
 	}()
 
 	// Execute the command directly without shell wrapper
@@ -152,7 +153,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go mod tidy and go fmt%s\n", colors.ColorCyan, colors.ColorReset)
 	}()
 
 	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
@@ -184,7 +185,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Getting test coverage for %s%s\n", colors.ColorCyan, path, colors.ColorReset)
 	}()
 
 	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", path)
@@ -216,7 +217,7 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running linter%s\n", colors.ColorCyan, colors.ColorReset)
 	}()
 
 	// Try golangci-lint first, fallback to staticcheck
@@ -263,7 +264,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
 	}()
 
 	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
@@ -279,7 +280,7 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Checking for vulnerabilities with govulncheck%s\n", colors.ColorCyan, colors.ColorReset)
 	}()
 
 	if _, err := exec.LookPath("govulncheck"); err != nil {

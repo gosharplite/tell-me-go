@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 	"golang.org/x/term"
 )
 
@@ -59,20 +60,20 @@ func (h *InteractionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 
 	if bypass {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).\033[0m\n", action, target)
+		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).%s\n", colors.ColorGreen, action, target, colors.ColorReset)
 		if h.auditor != nil {
 			h.auditor.LogAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
 		}
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[1;33m[CONFIRMATION REQUIRED]\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s[CONFIRMATION REQUIRED]%s\n", colors.ColorBoldYellow, colors.ColorReset)
 	fmt.Fprintf(os.Stderr, "AI is requesting to %s: %s\n", action, target)
 	if detail != "" {
 		if len(detail) > 1000 {
 			detail = detail[:1000] + "\n... (truncated)"
 		}
-		fmt.Fprintf(os.Stderr, "\033[90m%s\033[0m\n", detail)
+		fmt.Fprintf(os.Stderr, "%s%s%s\n", colors.ColorGray, detail, colors.ColorReset)
 	}
 	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
 

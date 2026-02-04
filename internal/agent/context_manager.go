@@ -208,7 +208,12 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		endIdx += len(turns[i])
 	}
 
-	subset := contents[:endIdx]
+	// Deep clone the subset to ensure mutation safety during the slow LLM call
+	subset := make([]*llm.Content, endIdx)
+	for i := 0; i < endIdx; i++ {
+		subset[i] = contents[i].Clone()
+	}
+
 	tokens := cm.Strategy.EstimateTokens(subset)
 
 	window := cm.Strategy.GetContextWindow()

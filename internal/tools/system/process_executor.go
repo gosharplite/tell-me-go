@@ -15,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
+
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 // ExecutionConfig defines parameters for command or pipeline execution.
@@ -106,10 +108,10 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			var content string
 			var feedbackMsg string
 			if isStderr {
-				feedbackMsg = fmt.Sprintf("  \033[31m[stderr] %s\033[0m\n", rawLine)
+				feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", colors.ColorRed, rawLine, colors.ColorReset)
 				content = fmt.Sprintf("[stderr] %s\n", rawLine)
 			} else {
-				feedbackMsg = fmt.Sprintf("  \033[90m%s\033[0m\n", rawLine)
+				feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
 				content = string(lineBuf)
 			}
 
@@ -340,7 +342,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 
 				feedbackMsg := ""
 				if config.Feedback != nil {
-					feedbackMsg = fmt.Sprintf("  \033[31m[stderr:%d] %s\033[0m\n", idx, rawLine)
+					feedbackMsg = fmt.Sprintf("  %s[stderr:%d] %s%s\n", colors.ColorRed, idx, rawLine, colors.ColorReset)
 				}
 
 				remaining := maxCapture - totalCaptured
@@ -384,7 +386,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 
 		feedbackMsg := ""
 		if config.Feedback != nil {
-			feedbackMsg = fmt.Sprintf("  \033[90m%s\033[0m\n", rawLine)
+			feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
 		}
 
 		remaining := maxCapture - totalCaptured

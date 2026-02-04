@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type ShellTool struct {
@@ -170,24 +171,24 @@ func (t *ShellTool) handleAuthResult(approved bool, err error, label string) (to
 
 func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] %s auto-approved (bypass_confirmation enabled).\033[0m\n", label)
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved (bypass_confirmation enabled).%s\n", colors.ColorGreen, label, colors.ColorReset)
 		return true, nil
 	}
 	if isSafe {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Auto-Approved] Safe %s detected.\033[0m\n", strings.ToLower(label))
+		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Safe %s detected.%s\n", colors.ColorGreen, strings.ToLower(label), colors.ColorReset)
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[0;36mExecute %s: \033[0m%s\n", label, detail)
+	fmt.Fprintf(os.Stderr, "%sExecute %s: %s%s\n", colors.ColorCyan, label, colors.ColorReset, detail)
 	if reason != "" {
-		fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+		fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", colors.ColorYellow, reason, colors.ColorReset)
 	}
 	if outputFile != "" {
 		redir := ">"
 		if append {
 			redir = ">>"
 		}
-		fmt.Fprintf(os.Stderr, "\033[0;34mRedirect: %s %s\033[0m\n", redir, outputFile)
+		fmt.Fprintf(os.Stderr, "%sRedirect: %s %s%s\n", colors.ColorBlue, redir, outputFile, colors.ColorReset)
 	}
 	fmt.Fprintf(os.Stderr, "⚠️  Execute this %s? (y/N) ", strings.ToLower(label))
 
@@ -200,10 +201,10 @@ func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
-	fmt.Fprintf(os.Stderr, "\033[90m%s... (Output shown below)\033[0m\n", msg)
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s%s... (Output shown below)%s\n", colors.ColorGray, msg, colors.ColorReset)
+	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", colors.ColorGray, colors.ColorReset)
 	res, err := runFn()
-	fmt.Fprintf(os.Stderr, "\033[90m------------------------------------------------------------\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", colors.ColorGray, colors.ColorReset)
 	return res, err
 }
 
