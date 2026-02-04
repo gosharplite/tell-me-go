@@ -88,12 +88,18 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 		scanner.Buffer(buf, maxScannerCapacity)
 		for scanner.Scan() {
 			data := scanner.Bytes()
+			// Copy data because scanner.Bytes() is reused
+			lineData := make([]byte, len(data))
+			copy(lineData, data)
+
 			mu.Lock()
 			if file != nil && !writeFailed {
-				if _, err := file.Write(data); err != nil {
+				if _, err := file.Write(lineData); err != nil {
+					mu.Unlock()
 					if config.Feedback != nil {
 						fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
 					}
+					mu.Lock()
 					writeFailed = true
 				} else {
 					file.Write(newline)
@@ -101,16 +107,13 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			}
 
 			var line string
+			var feedbackMsg string
 			if isStderr {
-				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "  \033[31m[stderr] %s\033[0m\n", data)
-				}
-				line = fmt.Sprintf("[stderr] %s", data)
+				feedbackMsg = fmt.Sprintf("  \033[31m[stderr] %s\033[0m\n", lineData)
+				line = fmt.Sprintf("[stderr] %s", lineData)
 			} else {
-				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
-				}
-				line = string(data)
+				feedbackMsg = fmt.Sprintf("  \033[90m%s\033[0m\n", lineData)
+				line = string(lineData)
 			}
 
 			if sb.Len() < maxCapture {
@@ -125,6 +128,10 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 				}
 			}
 			mu.Unlock()
+
+			if config.Feedback != nil {
+				fmt.Fprint(config.Feedback, feedbackMsg)
+			}
 		}
 
 		if err := scanner.Err(); err != nil {
@@ -132,10 +139,10 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			if err == bufio.ErrTooLong {
 				msg = "\n[Warning] Output line too long for scanner; truncated."
 			}
-			mu.Lock()
 			if config.Feedback != nil {
 				fmt.Fprintln(config.Feedback, msg)
 			}
+			mu.Lock()
 			sb.WriteString(msg + "\n")
 			mu.Unlock()
 		}
@@ -263,8 +270,9 @@ func (p *pipeline) start() error {
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
 	var wg sync.WaitGroup
 	var stdoutStr, stderrStr strings.Builder
-	var mu sync.Mutex // Protects builders, feedback, file, and writeFailed
+	var mu sync.Mutex // Protects builders, feedback, file, writeFailed, and totalCaptured
 	var writeFailed bool
+	var totalCaptured int
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024
@@ -278,12 +286,20 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		if err == bufio.ErrTooLong {
 			msg = "\n[Warning] Output line too long for scanner; truncated."
 		}
-		mu.Lock()
-		defer mu.Unlock()
 		if config.Feedback != nil {
 			fmt.Fprintln(config.Feedback, msg)
 		}
-		sb.WriteString(msg + "\n")
+		mu.Lock()
+		defer mu.Unlock()
+		if totalCaptured < maxCapture {
+			remaining := maxCapture - totalCaptured
+			content := msg + "\n"
+			if len(content) > remaining {
+				content = content[:remaining]
+			}
+			sb.WriteString(content)
+			totalCaptured += len(content)
+		}
 	}
 
 	// Capture Stderr in parallel
@@ -296,33 +312,47 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 			scanner.Buffer(buf, maxScannerCapacity)
 			for scanner.Scan() {
 				data := scanner.Bytes()
+				lineData := make([]byte, len(data))
+				copy(lineData, data)
+
 				mu.Lock()
 				if file != nil && !writeFailed {
-					if _, err := file.Write(data); err != nil {
+					if _, err := file.Write(lineData); err != nil {
+						mu.Unlock()
 						if config.Feedback != nil {
 							fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
 						}
+						mu.Lock()
 						writeFailed = true
 					} else {
 						file.Write(newline)
 					}
 				}
+
+				feedbackMsg := ""
 				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
+					feedbackMsg = fmt.Sprintf("  \033[31m[stderr:%d] %s\033[0m\n", idx, lineData)
 				}
-				line := fmt.Sprintf("[%d] %s", idx, data)
-				remaining := maxCapture - stderrStr.Len()
+
+				line := fmt.Sprintf("[stderr:%d] %s", idx, lineData)
+				remaining := maxCapture - totalCaptured
 				if remaining > 0 {
 					content := line
 					if len(content) > remaining {
 						content = content[:remaining]
 					}
 					stderrStr.WriteString(content)
-					if len(content) < remaining && stderrStr.Len() < maxCapture {
+					totalCaptured += len(content)
+					if len(content) < remaining && totalCaptured < maxCapture {
 						stderrStr.WriteByte('\n')
+						totalCaptured++
 					}
 				}
 				mu.Unlock()
+
+				if feedbackMsg != "" {
+					fmt.Fprint(config.Feedback, feedbackMsg)
+				}
 			}
 			appendErr(&stderrStr, scanner.Err())
 		}(i, r)
@@ -334,33 +364,46 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	scanner.Buffer(buf, maxScannerCapacity)
 	for scanner.Scan() {
 		data := scanner.Bytes()
+		lineData := make([]byte, len(data))
+		copy(lineData, data)
 
 		mu.Lock()
 		if file != nil && !writeFailed {
-			if _, err := file.Write(data); err != nil {
+			if _, err := file.Write(lineData); err != nil {
+				mu.Unlock()
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
 				}
+				mu.Lock()
 				writeFailed = true
 			} else {
 				file.Write(newline)
 			}
 		}
+
+		feedbackMsg := ""
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
+			feedbackMsg = fmt.Sprintf("  \033[90m%s\033[0m\n", lineData)
 		}
-		remaining := maxCapture - stdoutStr.Len()
+
+		remaining := maxCapture - totalCaptured
 		if remaining > 0 {
-			canWrite := len(data)
-			if canWrite > remaining {
-				canWrite = remaining
+			content := string(lineData)
+			if len(content) > remaining {
+				content = content[:remaining]
 			}
-			stdoutStr.Write(data[:canWrite])
-			if canWrite < remaining && stdoutStr.Len() < maxCapture {
+			stdoutStr.WriteString(content)
+			totalCaptured += len(content)
+			if len(content) < remaining && totalCaptured < maxCapture {
 				stdoutStr.WriteByte('\n')
+				totalCaptured++
 			}
 		}
 		mu.Unlock()
+
+		if feedbackMsg != "" {
+			fmt.Fprint(config.Feedback, feedbackMsg)
+		}
 	}
 	appendErr(&stdoutStr, scanner.Err())
 

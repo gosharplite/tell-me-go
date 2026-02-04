@@ -305,8 +305,8 @@ func TestRunPipeline_StderrCapture(t *testing.T) {
 		t.Fatalf("RunPipeline failed: %v", err)
 	}
 
-	if !strings.Contains(res.Output, "[0] error_msg") {
-		t.Errorf("expected result output to contain '[0] error_msg', got %q", res.Output)
+	if !strings.Contains(res.Output, "[stderr:0] error_msg") {
+		t.Errorf("expected result output to contain '[stderr:0] error_msg', got %q", res.Output)
 	}
 	if !strings.Contains(res.Output, "success_msg") {
 		t.Errorf("expected result output to contain 'success_msg', got %q", res.Output)
@@ -462,11 +462,11 @@ func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
 	}
 
 	// Stderr from both commands should be captured with prefixes
-	if !strings.Contains(res.Output, "[0] err0") {
-		t.Errorf("expected [0] err0 in output, got %q", res.Output)
+	if !strings.Contains(res.Output, "[stderr:0] err0") {
+		t.Errorf("expected [stderr:0] err0 in output, got %q", res.Output)
 	}
-	if !strings.Contains(res.Output, "[1] err1") {
-		t.Errorf("expected [1] err1 in output, got %q", res.Output)
+	if !strings.Contains(res.Output, "[stderr:1] err1") {
+		t.Errorf("expected [stderr:1] err1 in output, got %q", res.Output)
 	}
 	// Final stdout should be there
 	if !strings.Contains(res.Output, "out0") {
@@ -538,9 +538,7 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 	// the executor blocks on stdout read.
 	
 	// We use 128KB to be safe.
-	cmd := []string{"sh", "-c", "dd if=/dev/zero bs=1k count=128 2>/tmp/stderr_temp && cat /tmp/stderr_temp >&2 && echo done"}
-	// Actually, easier:
-	cmd = []string{"sh", "-c", "python3 -c \"import sys; print('e' * 128 * 1024, file=sys.stderr); print('done')\""}
+	cmd := []string{"sh", "-c", "python3 -c \"import sys; print('e' * 128 * 1024, file=sys.stderr); print('done')\""}
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -555,5 +553,54 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "[stderr]") {
 		t.Errorf("expected output to contain '[stderr]', got %q", res.Output)
+	}
+}
+
+func TestRunPipeline_SharedMaxCapture(t *testing.T) {
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		MaxCapture: 15, // Large enough for some formatting but less than both combined
+	}
+	// Total 20 bytes (10 out, 10 err)
+	pipedParts := [][]string{
+		{"sh", "-c", "echo 0123456789; echo 0123456789 >&2"},
+		{"cat"},
+	}
+
+	res, err := executor.RunPipeline(context.Background(), pipedParts, config)
+	if err != nil {
+		t.Fatalf("RunPipeline failed: %v", err)
+	}
+
+	// We can't easily predict the exact length because of order of execution,
+	// but the total raw captured bytes should not exceed MaxCapture.
+	// Since we can't easily access the raw builders, we check the result string.
+	// "Output:\n" (8) + stdout + "\nErrors:\n" (9) + stderr
+	// Wait, the formatting also takes space.
+	
+	// If it's NOT shared, both will likely be fully captured if they are 10 each and MaxCapture is 15.
+	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[0] 0123456789") {
+		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
+	}
+}
+
+func TestStderrPrefixConsistency(t *testing.T) {
+	executor := NewProcessExecutor()
+	
+	// Test RunCommand prefix
+	resCmd, _ := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo err >&2"}, ExecutionConfig{})
+	if !strings.Contains(resCmd.Output, "[stderr] err") {
+		t.Errorf("RunCommand stderr prefix mismatch, got %q", resCmd.Output)
+	}
+
+	// Test RunPipeline prefix
+	pipedParts := [][]string{
+		{"sh", "-c", "echo err >&2"},
+		{"cat"},
+	}
+	resPipe, _ := executor.RunPipeline(context.Background(), pipedParts, ExecutionConfig{})
+	// New expected format: [stderr:0] err
+	if !strings.Contains(resPipe.Output, "[stderr:0] err") {
+		t.Errorf("RunPipeline stderr prefix mismatch, got %q", resPipe.Output)
 	}
 }
