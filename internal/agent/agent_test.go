@@ -594,7 +594,7 @@ func TestToolInjection_NoPersistence(t *testing.T) {
 
 	// Register a tool
 	reg.Register(&tools.ToolDeclaration{
-		Name: "test_tool",
+		Name:        "test_tool",
 		Description: "A test tool",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		return tools.ToolResult{Text: "ok"}, nil
@@ -609,7 +609,7 @@ func TestToolInjection_NoPersistence(t *testing.T) {
 
 	a := New(mockClient, hManager, reg, sm, false)
 	sess := NewSession(hManager)
-	
+
 	err := a.Chat(context.Background(), sess, "Hello")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -632,7 +632,7 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 	h := history.NewManager(tmpDir + "/history.jsonl")
 	counter := &HeuristicTokenCounter{}
 	strategy := NewContextStrategy(counter, bus)
-	
+
 	factory := &PipelineFactory{
 		History:   h,
 		Events:    bus,

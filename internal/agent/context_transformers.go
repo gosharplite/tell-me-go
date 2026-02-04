@@ -396,7 +396,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	// We only modify the content for the current API call.
 	lastIdx := len(req.History) - 1
 	orig := req.History[lastIdx]
-	
+
 	cloned := &llm.Content{
 		Role:  orig.Role,
 		Parts: append([]*llm.Part{}, orig.Parts...), // Shallow clone parts

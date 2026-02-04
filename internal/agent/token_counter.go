@@ -42,14 +42,14 @@ func (c *HeuristicTokenCounter) Count(contents []*llm.Content) int {
 
 		// Heuristic: ~3.2 chars per token
 		tokenCount := int(float64(charCount) / 3.2)
-		
-		// Cache the token count only if there are no transient parts, 
+
+		// Cache the token count only if there are no transient parts,
 		// otherwise the cache would be incorrect for subsequent calls without transients.
 		// Actually, since transients are used in the Prepare phase, they might vary.
 		if len(content.TransientParts) == 0 {
 			content.TokenCount = tokenCount
 		}
-		
+
 		totalTokens += tokenCount
 	}
 
