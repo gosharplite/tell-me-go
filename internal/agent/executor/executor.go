@@ -214,22 +214,26 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						tr = domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}
+						err := fmt.Errorf("panic: %v", r)
+						tr = domaintools.ToolResult{
+							Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+							Error: err,
+						}
 					}
 				}()
 				tr = e.executeTool(ctx, fc)
 			}()
 			resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
 
-			// If the serial tool timed out or context was cancelled, we CANNOT safely
-			// continue because the serial tool's goroutine is still running in the background.
-			if ctx.Err() != nil || tr.Error == context.DeadlineExceeded || tr.Error == context.Canceled {
+			// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
+			// continue (especially for timeouts/cancellations where the goroutine is orphaned).
+			if ctx.Err() != nil || tr.Error != nil {
 				// Fill remaining slots in resChan so the collector doesn't hang
 				for j := i + 1; j < len(calls); j++ {
 					resChan <- toolExecResult{
 						index: j,
 						name:  calls[j].Name,
-						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool timeout or cancellation."},
+						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
 					}
 				}
 				return // Exit the execution plan early
@@ -254,7 +258,15 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: idx, name: call.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						err := fmt.Errorf("panic: %v", r)
+						resChan <- toolExecResult{
+							index: idx,
+							name:  call.Name,
+							tr: domaintools.ToolResult{
+								Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+								Error: err,
+							},
+						}
 					}
 				}()
 				tr := e.executeTool(ctx, call)
@@ -289,7 +301,12 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- res{tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+				resChan <- res{
+					tr: domaintools.ToolResult{
+						Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+						Error: fmt.Errorf("panic: %v", r),
+					},
+				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
