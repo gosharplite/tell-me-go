@@ -341,14 +341,9 @@ func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) erro
 }
 
 func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
-	if c == nil {
-		return nil
+	cloned := c.Clone()
+	if cloned != nil {
+		cloned.TransientParts = nil
 	}
-	return &llm.Content{
-		Role:       c.Role,
-		Parts:      append([]*llm.Part{}, c.Parts...),
-		TokenCount: c.TokenCount,
-		Pinned:     c.Pinned,
-		// TransientParts are explicitly omitted to ensure they never reach memory/disk storage
-	}
+	return cloned
 }

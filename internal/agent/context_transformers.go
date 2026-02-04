@@ -359,10 +359,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	// Handle role alternation at the start of the injection
 	if len(updated) > 0 && updated[len(updated)-1].Role == "user" {
 		last := updated[len(updated)-1]
-		cloned := &llm.Content{
-			Role:  last.Role,
-			Parts: append([]*llm.Part{}, last.Parts...),
-		}
+		cloned := last.Clone()
 		cloned.Parts = append(cloned.Parts, &llm.Part{Text: "\n\n" + sumUser.Parts[0].Text})
 		updated[len(updated)-1] = cloned
 		updated = append(updated, sumModel)
@@ -374,10 +371,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	remainder := history[end:]
 	if len(remainder) > 0 && remainder[0].Role == "model" {
 		first := remainder[0]
-		cloned := &llm.Content{
-			Role:  first.Role,
-			Parts: append([]*llm.Part{}, first.Parts...),
-		}
+		cloned := first.Clone()
 		// Prepend acknowledgment text
 		cloned.Parts = append([]*llm.Part{{Text: sumModel.Parts[0].Text + "\n\n"}}, cloned.Parts...)
 
@@ -432,10 +426,7 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	lastIdx := len(req.History) - 1
 	orig := req.History[lastIdx]
 
-	cloned := &llm.Content{
-		Role:  orig.Role,
-		Parts: append([]*llm.Part{}, orig.Parts...), // Shallow clone parts
-	}
+	cloned := orig.Clone()
 
 	hasFunctionResponse := false
 	for _, p := range cloned.Parts {
@@ -508,11 +499,7 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 	// 2. Clone the first message to avoid "History Pollution" in long-term memory.
 	// We replace the pointer in the current request's history slice.
 	firstMsg := req.History[0]
-	cloned := &llm.Content{
-		Role:           firstMsg.Role,
-		Parts:          append([]*llm.Part{}, firstMsg.Parts...), // Shallow clone parts
-		TransientParts: append([]*llm.Part{}, firstMsg.TransientParts...),
-	}
+	cloned := firstMsg.Clone()
 
 	// 3. Append the tool schemas to TransientParts
 	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{Text: injection})
@@ -577,11 +564,8 @@ func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) er
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
-			cloned := &llm.Content{
-				Role:  msg.Role,
-				Parts: append([]*llm.Part{}, msg.Parts...),
-			}
-			cloned.Parts = append(cloned.Parts, msg.TransientParts...)
+			cloned := msg.Clone()
+			cloned.Parts = append(cloned.Parts, cloned.TransientParts...)
 			req.History[i] = cloned
 		}
 	}
