@@ -30,6 +30,8 @@ func (m *MockGateway) Generate(ctx context.Context, input []*llm.Content, t []*t
 	return m.GenerateFunc(ctx, input, t, resolver)
 }
 
+func (m *MockGateway) SetSystemInstructions(instr string) {}
+
 // MockRegistry implements ToolRegistry for testing.
 type MockRegistry struct {
 	Declarations []*tools.ToolDeclaration

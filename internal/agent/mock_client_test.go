@@ -39,6 +39,7 @@ func (m *MockClient) StreamChat(ctx context.Context, history []*llm.Content, too
 }
 
 func (m *MockClient) RefreshAuth() error { return nil }
+func (m *MockClient) SetSystemInstructions(instr string) {}
 func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
@@ -48,6 +49,7 @@ type MockLLMClient struct {
 	SendChatFn    func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 	StreamChatFn  func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
 	RefreshAuthFn func() error
+	SetSystemInstructionsFn func(instr string)
 }
 
 func (m *MockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -81,4 +83,10 @@ func (m *MockLLMClient) RefreshAuth() error {
 		return m.RefreshAuthFn()
 	}
 	return nil
+}
+
+func (m *MockLLMClient) SetSystemInstructions(instr string) {
+	if m.SetSystemInstructionsFn != nil {
+		m.SetSystemInstructionsFn(instr)
+	}
 }

@@ -536,10 +536,9 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	maxTokens := 2000
 	strategy.SetLimits(maxTokens, 10, 20)
 
-	// Pipeline: Pruner(1), SystemInstructions(10), Gatekeeper(80), WarningInjector(100)
+	// Pipeline: Pruner(1), Gatekeeper(80), WarningInjector(100)
 	pipeline := NewContextPipeline(
 		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}, Manager: &mockHistoryManager{ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error { return nil }}},
-		&SystemInstructionInjector{Instructions: "Follow the SOP."},
 		&TokenGatekeeper{
 			MaxTokens: maxTokens,
 			Estimator: strategy,
@@ -584,7 +583,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
-	tg := pipeline.transformers[2].(*TokenGatekeeper)
+	tg := pipeline.transformers[1].(*TokenGatekeeper)
 	tg.MaxTokens = maxTokens
 
 	// 18500 tokens. 18500 * 3.2 = 59200 chars.
@@ -617,18 +616,9 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		t.Error("Clogged warning not found in final payload")
 	}
 
-	// Verify system instructions are at the top and pinned
-	if req2.History[0].Parts[0].Text != "System Instructions:\n\nFollow the SOP." {
-		t.Errorf("System instructions missing or in wrong position: %s", req2.History[0].Parts[0].Text)
-	}
-	if !req2.History[0].Pinned || !req2.History[1].Pinned {
-		t.Error("System instructions turn not pinned")
-	}
-
-	// Verify token count includes system instructions
-	// Instructions are approx 60 chars -> 20 tokens.
-	if req2.Metadata.FinalTokenCount <= 18500 {
-		t.Errorf("FinalTokenCount (%d) should include system instructions tokens", req2.Metadata.FinalTokenCount)
+	// Verify token count
+	if req2.Metadata.FinalTokenCount < 18500 {
+		t.Errorf("FinalTokenCount (%d) should be at least 18500", req2.Metadata.FinalTokenCount)
 	}
 }
 

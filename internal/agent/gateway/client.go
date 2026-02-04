@@ -183,3 +183,8 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
 	return finalContent, metrics, err
 }
+
+// SetSystemInstructions updates the system instructions in the underlying LLM client.
+func (r *ResilientClient) SetSystemInstructions(instr string) {
+	r.client.SetSystemInstructions(instr)
+}

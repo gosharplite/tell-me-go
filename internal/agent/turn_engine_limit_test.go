@@ -33,6 +33,10 @@ func (m *mockLLMGateway) Generate(ctx context.Context, input []*llm.Content, too
 	return ch.(<-chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
 }
 
+func (m *mockLLMGateway) SetSystemInstructions(instr string) {
+	m.Called(instr)
+}
+
 type mockExecutor struct {
 	mock.Mock
 }

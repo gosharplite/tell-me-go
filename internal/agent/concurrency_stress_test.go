@@ -96,6 +96,8 @@ func (m *mockLLMClient) RefreshAuth() error {
 	return nil
 }
 
+func (m *mockLLMClient) SetSystemInstructions(instr string) {}
+
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &events.TestEventBus{}

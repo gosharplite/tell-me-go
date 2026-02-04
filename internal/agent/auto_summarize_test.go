@@ -82,13 +82,12 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 
 	// Check if history was replaced
 	newContents := hManager.GetContents()
-	// Initial 18 messages. Instruction turn (2 msgs) prepended to req.History.
-	// Turn 0 (Instr + Ack) is pinned.
-	// Turns 1-5 (10 messages in req.History, which are Msg 0-9 in hManager) are summarized.
-	// 10 messages replaced by 2.
-	// Total: 18 - 10 + 2 = 10 messages.
-	if len(newContents) != 10 {
-		t.Errorf("expected 10 messages after auto-summarization, got %d", len(newContents))
+	// Initial 18 messages (9 turns). 
+	// maxTurnsToSummarize = 9 / 2 = 4.
+	// 4 turns (8 messages) replaced by 2.
+	// Total: 18 - 8 + 2 = 12 messages.
+	if len(newContents) != 12 {
+		t.Errorf("expected 12 messages after auto-summarization, got %d", len(newContents))
 	}
 
 	// Index 0 should be the auto-summary user message
