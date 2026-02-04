@@ -85,12 +85,15 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 		defer wg.Done()
 
 		handleWriteError := func(err error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if writeFailed {
+				return
+			}
+			writeFailed = true
 			if config.Feedback != nil {
 				fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
 			}
-			mu.Lock()
-			writeFailed = true
-			mu.Unlock()
 		}
 
 		scanner := bufio.NewScanner(r)
@@ -103,15 +106,14 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			copy(lineData, data)
 
 			mu.Lock()
-			if file != nil && !writeFailed {
+			failed := writeFailed
+			mu.Unlock()
+
+			if file != nil && !failed {
 				if _, err := file.Write(lineData); err != nil {
-					mu.Unlock()
 					handleWriteError(err)
-					mu.Lock()
 				} else if _, err := file.Write(newline); err != nil {
-					mu.Unlock()
 					handleWriteError(err)
-					mu.Lock()
 				}
 			}
 
@@ -125,16 +127,14 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 				line = string(lineData)
 			}
 
+			mu.Lock()
 			if sb.Len() < maxCapture {
 				remaining := maxCapture - sb.Len()
-				content := line
+				content := line + "\n"
 				if len(content) > remaining {
 					content = content[:remaining]
 				}
 				sb.WriteString(content)
-				if len(content) < remaining && sb.Len() < maxCapture {
-					sb.WriteByte('\n')
-				}
 			}
 			mu.Unlock()
 
@@ -307,8 +307,8 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		if totalCaptured < maxCapture {
-			remaining := maxCapture - totalCaptured
+		remaining := maxCapture - totalCaptured
+		if remaining > 0 {
 			content := msg + "\n"
 			if len(content) > remaining {
 				content = content[:remaining]
@@ -319,12 +319,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	}
 
 	handleWriteError := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if writeFailed {
+			return
+		}
+		writeFailed = true
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
 		}
-		mu.Lock()
-		writeFailed = true
-		mu.Unlock()
 	}
 
 	// Capture Stderr in parallel
@@ -341,15 +344,14 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				copy(lineData, data)
 
 				mu.Lock()
-				if file != nil && !writeFailed {
+				failed := writeFailed
+				mu.Unlock()
+
+				if file != nil && !failed {
 					if _, err := file.Write(lineData); err != nil {
-						mu.Unlock()
 						handleWriteError(err)
-						mu.Lock()
 					} else if _, err := file.Write(newline); err != nil {
-						mu.Unlock()
 						handleWriteError(err)
-						mu.Lock()
 					}
 				}
 
@@ -358,19 +360,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 					feedbackMsg = fmt.Sprintf("  \033[31m[stderr:%d] %s\033[0m\n", idx, lineData)
 				}
 
-				line := fmt.Sprintf("[stderr:%d] %s", idx, lineData)
+				mu.Lock()
 				remaining := maxCapture - totalCaptured
 				if remaining > 0 {
-					content := line
+					content := fmt.Sprintf("[stderr:%d] %s\n", idx, lineData)
 					if len(content) > remaining {
 						content = content[:remaining]
 					}
 					stderrStr.WriteString(content)
 					totalCaptured += len(content)
-					if len(content) < remaining && totalCaptured < maxCapture {
-						stderrStr.WriteByte('\n')
-						totalCaptured++
-					}
 				}
 				mu.Unlock()
 
@@ -392,15 +390,14 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		copy(lineData, data)
 
 		mu.Lock()
-		if file != nil && !writeFailed {
+		failed := writeFailed
+		mu.Unlock()
+
+		if file != nil && !failed {
 			if _, err := file.Write(lineData); err != nil {
-				mu.Unlock()
 				handleWriteError(err)
-				mu.Lock()
 			} else if _, err := file.Write(newline); err != nil {
-				mu.Unlock()
 				handleWriteError(err)
-				mu.Lock()
 			}
 		}
 
@@ -409,18 +406,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 			feedbackMsg = fmt.Sprintf("  \033[90m%s\033[0m\n", lineData)
 		}
 
+		mu.Lock()
 		remaining := maxCapture - totalCaptured
 		if remaining > 0 {
-			content := string(lineData)
+			content := string(lineData) + "\n"
 			if len(content) > remaining {
 				content = content[:remaining]
 			}
 			stdoutStr.WriteString(content)
 			totalCaptured += len(content)
-			if len(content) < remaining && totalCaptured < maxCapture {
-				stdoutStr.WriteByte('\n')
-				totalCaptured++
-			}
 		}
 		mu.Unlock()
 
