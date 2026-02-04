@@ -72,6 +72,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	var sb strings.Builder
+	var writeFailed bool
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024 // Default 1MB
@@ -96,9 +97,15 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 				sb.WriteByte('\n')
 			}
 		}
-		if file != nil {
-			file.Write(data)
-			file.Write(newline)
+		if file != nil && !writeFailed {
+			if _, err := file.Write(data); err != nil {
+				if config.Feedback != nil {
+					fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+				}
+				writeFailed = true
+			} else {
+				file.Write(newline)
+			}
 		}
 	}
 
@@ -228,7 +235,8 @@ func (p *pipeline) start() error {
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
 	var wg sync.WaitGroup
 	var stdoutStr, stderrStr strings.Builder
-	var mu sync.Mutex // Protects builders, feedback, and file
+	var mu sync.Mutex // Protects builders, feedback, file, and writeFailed
+	var writeFailed bool
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024
@@ -261,9 +269,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 			for scanner.Scan() {
 				data := scanner.Bytes()
 				mu.Lock()
-				if file != nil {
-					file.Write(data)
-					file.Write(newline)
+				if file != nil && !writeFailed {
+					if _, err := file.Write(data); err != nil {
+						if config.Feedback != nil {
+							fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+						}
+						writeFailed = true
+					} else {
+						file.Write(newline)
+					}
 				}
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
@@ -293,9 +307,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		data := scanner.Bytes()
 
 		mu.Lock()
-		if file != nil {
-			file.Write(data)
-			file.Write(newline)
+		if file != nil && !writeFailed {
+			if _, err := file.Write(data); err != nil {
+				if config.Feedback != nil {
+					fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+				}
+				writeFailed = true
+			} else {
+				file.Write(newline)
+			}
 		}
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
