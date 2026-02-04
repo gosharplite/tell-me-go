@@ -52,7 +52,12 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 		{"ls >> out.txt", true},
 		{"cat < in.txt", true},
 		{"sleep 10 &", true},
-		{"grep \"foo && bar\" file.go", false}, // Contains operator but not standalone
+		{"ls 2> err.txt", true},
+		{"ls &> all.txt", true},
+		{"ls |& grep foo", true},
+		{"ls;echo", true},                  // Attached operator in first token
+		{"ls>out", true},                   // Attached operator in first token
+		{"grep \"foo && bar\" file.go", false}, // Contains operator but not standalone and NOT in first token
 		{"sh -c \"ls && echo hi\"", false},      // Operator is inside another string
 	}
 

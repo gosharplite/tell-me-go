@@ -53,7 +53,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	// 1. Technical Validation: Split and check structure before authorization
 	parts, err := t.validator.Split(params.Command)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("error parsing command: %v", err)
+		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
 	}
 
 	if err := t.validator.ValidateStructure(parts); err != nil {
@@ -160,7 +160,7 @@ func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
 	for i, cmdStr := range commands {
 		parts, err := t.validator.Split(cmdStr)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing command at index %d: %v", i, err)
+			return nil, fmt.Errorf("error parsing command at index %d: %w", i, err)
 		}
 		pipedParts[i] = parts
 	}

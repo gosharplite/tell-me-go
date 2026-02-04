@@ -71,7 +71,7 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	}
 
 	// 6. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	if safe, reason := v.checkPathSafety(parts); !safe {
+	if safe, reason := v.CheckPathSafety(parts); !safe {
 		return false, reason
 	}
 
@@ -82,7 +82,7 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 func (v *CommandValidator) Split(cmd string) ([]string, error) {
 	parts, err := shlex.Split(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("shlex split error: %w", err)
 	}
 	return parts, nil
 }
@@ -91,21 +91,36 @@ func (v *CommandValidator) Split(cmd string) ([]string, error) {
 // that would be misinterpreted during direct binary execution.
 func (v *CommandValidator) ValidateStructure(parts []string) error {
 	forbidden := map[string]string{
-		"&&": "logical AND",
-		"||": "logical OR",
-		";":  "command separator",
-		"|":  "pipe",
-		">":  "output redirection",
-		">>": "append redirection",
-		"<":  "input redirection",
-		"&":  "background execution",
+		"&&":  "logical AND",
+		"||":  "logical OR",
+		";":   "command separator",
+		"|":   "pipe",
+		">":   "output redirection",
+		">>":  "append redirection",
+		"<":   "input redirection",
+		"&":   "background execution",
+		"2>":  "error redirection",
+		"&>":  "combined redirection",
+		"|&":  "combined pipe",
+		"1>":  "output redirection",
+		"1>>": "append redirection",
+		"2>>": "error append redirection",
 	}
 
-	for _, part := range parts {
+	for i, part := range parts {
 		if desc, found := forbidden[part]; found {
 			return fmt.Errorf("standalone shell operator '%s' (%s) detected. "+
 				"This tool executes binaries directly and does not support shell features. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part, desc)
+		}
+
+		// Check for attached operators or interpolation like "ls;echo" or "ls>out"
+		// We only apply this to the first token (the command) to minimize false positives
+		// in arguments (e.g., grep "a;b") while still catching common mistakes.
+		if i == 0 && strings.ContainsAny(part, ";&|><$`\n\r") {
+			return fmt.Errorf("shell operator or interpolation detected inside command token '%s'. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", part)
 		}
 	}
 	return nil
@@ -183,7 +198,8 @@ func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
 	return true, ""
 }
 
-func (v *CommandValidator) checkPathSafety(parts []string) (bool, string) {
+// CheckPathSafety ensures all arguments stay within allowed boundaries.
+func (v *CommandValidator) CheckPathSafety(parts []string) (bool, string) {
 	for i := 1; i < len(parts); i++ {
 		arg := parts[i]
 		if arg == "" || (strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=")) {

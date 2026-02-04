@@ -13,6 +13,7 @@ import (
 
 func TestRunTestsVulnerability(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true) // Bypass confirmation for tests
 	m := &devManager{
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
@@ -24,7 +25,7 @@ func TestRunTestsVulnerability(t *testing.T) {
 	}{
 		{
 			name:    "Safe command",
-			command: "go test ./internal/config",
+			command: "go help",
 			wantErr: false,
 		},
 		{
@@ -56,6 +57,7 @@ func TestRunTestsVulnerability(t *testing.T) {
 
 func TestRunTests_EdgeCases(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true) // Bypass confirmation for tests
 	m := &devManager{
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
