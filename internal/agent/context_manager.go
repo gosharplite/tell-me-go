@@ -7,6 +7,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
@@ -235,10 +236,9 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		if len(currentContents) < endIdx {
 			return "", fmt.Errorf("summarization aborted: history was pruned while summarizing")
 		}
-		// Basic check: did the messages we summarized change?
+		// Robust check: did the messages we summarized change?
 		for i := 0; i < endIdx; i++ {
-			// This is a bit expensive but safe. A better way would be content hashing.
-			if currentContents[i].Role != subset[i].Role || len(currentContents[i].Parts) != len(subset[i].Parts) {
+			if !cm.isContentEqual(currentContents[i], subset[i]) {
 				return "", fmt.Errorf("summarization aborted: history content changed while summarizing")
 			}
 		}
@@ -269,4 +269,32 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	}
 
 	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), nil
+}
+
+func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
+	if c1 == nil || c2 == nil {
+		return c1 == c2
+	}
+	if c1.Role != c2.Role || len(c1.Parts) != len(c2.Parts) {
+		return false
+	}
+	for i := range c1.Parts {
+		p1, p2 := c1.Parts[i], c2.Parts[i]
+		if p1.Text != p2.Text || p1.Thought != p2.Thought {
+			return false
+		}
+		if (p1.InlineData == nil) != (p2.InlineData == nil) {
+			return false
+		}
+		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || string(p1.InlineData.Data) != string(p2.InlineData.Data)) {
+			return false
+		}
+		if !reflect.DeepEqual(p1.FunctionCall, p2.FunctionCall) {
+			return false
+		}
+		if !reflect.DeepEqual(p1.FunctionResponse, p2.FunctionResponse) {
+			return false
+		}
+	}
+	return true
 }

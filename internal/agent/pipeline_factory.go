@@ -63,9 +63,6 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 			Summarizer: f.Summarizer,
 			Events:     f.Events,
 		},
-		&ToolDeclarationGenerator{
-			Registry: f.Registry,
-		},
 		&EmptyTurnFilter{},
 		&WarningInjector{
 			Strategy: f.Estimator.(*ContextStrategy),

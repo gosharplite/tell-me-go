@@ -178,8 +178,8 @@ func (m *Manager) addContentLocked(content *llm.Content) (bool, error) {
 		return false, fmt.Errorf("first message must be 'user', got '%s'", content.Role)
 	}
 
-	// 2. Add entry
-	m.Contents = append(m.Contents, content)
+	// 2. Add entry (Cloned to ensure no transient state persistence)
+	m.Contents = append(m.Contents, m.clonePersistentContentLocked(content))
 
 	return false, nil
 }
@@ -283,8 +283,11 @@ func (m *Manager) ReplaceRange(ctx context.Context, start, end int, newContents 
 		}
 	}
 
-	// 3. Commit change
-	m.Contents = candidate
+	// 3. Commit change (Cloned to ensure no transient state persistence)
+	m.Contents = make([]*llm.Content, len(candidate))
+	for i, c := range candidate {
+		m.Contents[i] = m.clonePersistentContentLocked(c)
+	}
 	return m.saveLocked(ctx) // Persist replacement
 }
 
@@ -325,6 +328,27 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Contents = contents
+
+	// Deepish copy to avoid "History Pollution" with transient state (like tool declarations)
+	// that should only exist during a single API turn.
+	newContents := make([]*llm.Content, len(contents))
+	for i, c := range contents {
+		newContents[i] = m.clonePersistentContentLocked(c)
+	}
+
+	m.Contents = newContents
 	return m.saveLocked(ctx)
+}
+
+func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
+	if c == nil {
+		return nil
+	}
+	return &llm.Content{
+		Role:       c.Role,
+		Parts:      append([]*llm.Part{}, c.Parts...),
+		TokenCount: c.TokenCount,
+		Pinned:     c.Pinned,
+		// TransientParts are explicitly omitted to ensure they never reach memory/disk storage
+	}
 }
