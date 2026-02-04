@@ -24,6 +24,7 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 		{"No pruning needed", 10, 2, []bool{true, true}},
 		{"Exact limit", 5, 5, []bool{true, true, true, true, true}},
 		{"Pruning exceeding", 2, 5, []bool{false, false, false, true, true}},
+		{"Unbalanced history", 1, 2, []bool{false, true}}, // 2 turns, but last turn might be 1 msg
 		{"Zero turns", 0, 3, []bool{false, false, false}},
 		{"Negative turns", -1, 3, []bool{false, false, false}},
 	}
@@ -674,6 +675,29 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 			expected: 1,
 		},
 		{
+			name: "Keep repaired turn from history.Manager",
+			input: []*llm.Content{
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{Name: "test"}},
+					},
+				},
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{
+							FunctionResponse: &llm.FunctionResponse{
+								Name: "test",
+								Response: map[string]interface{}{"result": "Error..."},
+							},
+						},
+					},
+				},
+			},
+			expected: 2,
+		},
+		{
 			name: "Mixed history",
 			input: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: ""}}}, // Turn 1 (Empty)
@@ -719,5 +743,87 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 		if k != expected[i] {
 			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
 		}
+	}
+}
+
+type mockContextTransformerCounter struct {
+	tokens int
+}
+
+func (m *mockContextTransformerCounter) Count(contents []*llm.Content) int {
+	return m.tokens
+}
+
+func TestFinalContextValidator_Transform(t *testing.T) {
+	t.Parallel()
+	counter := &mockContextTransformerCounter{}
+	strategy := NewContextStrategy(counter, nil)
+	validator := &FinalContextValidator{Strategy: strategy}
+
+	tests := []struct {
+		name      string
+		maxTokens int
+		tokens    int
+		wantErr   bool
+	}{
+		{"Under limit", 1000, 500, false},
+		{"Exactly at limit", 1000, 1000, false},
+		{"Over limit", 1000, 1001, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			strategy.SetLimits(tt.maxTokens, 10, 20)
+			counter.tokens = tt.tokens
+
+			req := &ContextRequest{
+				History: []*llm.Content{
+					{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+					{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+				},
+			}
+
+			err := validator.Transform(context.Background(), req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
+			}
+
+			if !tt.wantErr {
+				if req.Metadata.FinalTokenCount != tt.tokens {
+					t.Errorf("expected FinalTokenCount %d, got %d", tt.tokens, req.Metadata.FinalTokenCount)
+				}
+				if req.Metadata.FinalTurnCount != 1 {
+					t.Errorf("expected FinalTurnCount 1, got %d", req.Metadata.FinalTurnCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHistoryPruner_Unbalanced(t *testing.T) {
+	ctx := context.Background()
+	pruner := &HistoryPruner{
+		Policy: &SlidingWindowPolicy{MaxTurns: 1},
+	}
+
+	req := &ContextRequest{
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "3"}}},
+		},
+	}
+
+	err := pruner.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	// Grouping: [1,2], [3]. MaxTurns 1 keeps the last turn: [3].
+	if len(req.History) != 1 {
+		t.Errorf("expected 1 message remaining, got %d", len(req.History))
+	}
+	if req.History[0].Parts[0].Text != "3" {
+		t.Errorf("expected message '3', got %s", req.History[0].Parts[0].Text)
 	}
 }

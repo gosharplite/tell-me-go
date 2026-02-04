@@ -183,7 +183,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "model"}}})
 	}
 
-	bus := &events.SimpleEventBus{}
+	bus := events.NewCountingEventBus()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockRegistry{}), bus)
 	
 	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
@@ -192,6 +192,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	cm.Pipeline = NewContextPipeline(
 		&HistoryPruner{
 			Policy: &SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
+			Events: bus,
 		},
 	)
 
@@ -222,5 +223,9 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 	if len(errs) > 0 {
 		t.Errorf("Caught %d errors during concurrent Prepare: %v", len(errs), errs)
+	}
+
+	if bus.GetCount() < 1 {
+		t.Error("Expected at least one pruning event to be published")
 	}
 }

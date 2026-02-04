@@ -76,3 +76,42 @@ func (b *TestEventBus) FilterEvents(t reflect.Type) []Event {
 	}
 	return res
 }
+
+// CountingEventBus records the number of events published and allows waiting for a target count.
+type CountingEventBus struct {
+	SimpleEventBus
+	count int
+	cond  *sync.Cond
+}
+
+// NewCountingEventBus creates a new CountingEventBus.
+func NewCountingEventBus() *CountingEventBus {
+	cb := &CountingEventBus{}
+	cb.cond = sync.NewCond(&cb.mu)
+	return cb
+}
+
+// Publish notifies subscribers and increments the internal counter.
+func (b *CountingEventBus) Publish(e Event) {
+	b.SimpleEventBus.Publish(e)
+	b.mu.Lock()
+	b.count++
+	b.cond.Broadcast()
+	b.mu.Unlock()
+}
+
+// WaitCount blocks until at least target events have been published.
+func (b *CountingEventBus) WaitCount(target int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for b.count < target {
+		b.cond.Wait()
+	}
+}
+
+// GetCount returns the current number of published events.
+func (b *CountingEventBus) GetCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.count
+}
