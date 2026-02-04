@@ -186,19 +186,40 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 	req.Metadata.OriginalTokenCount = t.Estimator.EstimateTokens(req.History)
 	tokens := req.Metadata.OriginalTokenCount
 
+	// Nuanced check for TieredThreshold
+	if cs, ok := t.Estimator.(*ContextStrategy); ok {
+		tiered := cs.GetTieredThreshold()
+		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
+			if t.Events != nil {
+				t.Events.Publish(events.SummarizationRequired{
+					Tokens:   tokens,
+					MaxLimit: tiered,
+					Reason:   "High-tier pricing threshold reached",
+				})
+			}
+			// Attempt auto-summarization to try and get back into the cheap tier
+			if err := t.autoSummarize(ctx, req); err == nil {
+				tokens = t.Estimator.EstimateTokens(req.History)
+				req.Metadata.SummarizedTurns = 1
+			}
+		}
+	}
+
 	if t.MaxTokens > 0 {
 		if tokens > int(float64(t.MaxTokens)*0.9) {
 			if t.Events != nil {
 				t.Events.Publish(events.SummarizationRequired{
 					Tokens:   tokens,
 					MaxLimit: t.MaxTokens,
-					Reason:   "Pressure high ( > 90%)",
+					Reason:   "Safety limit pressure (> 90%)",
 				})
 			}
 
-			if err := t.autoSummarize(ctx, req); err == nil {
-				tokens = t.Estimator.EstimateTokens(req.History)
-				req.Metadata.SummarizedTurns = 1 // Simplified: we replaced a chunk with one summary turn
+			if !req.Metadata.SummarizationAttempted {
+				if err := t.autoSummarize(ctx, req); err == nil {
+					tokens = t.Estimator.EstimateTokens(req.History)
+					req.Metadata.SummarizedTurns = 1
+				}
 			}
 		}
 

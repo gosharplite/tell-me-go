@@ -580,13 +580,13 @@ type PersistenceStep struct{}
 
 func (p *PersistenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	if turn.State.Response != nil {
-		if err := turn.CtxManager.History.AddContent(ctx, turn.State.Response); err != nil {
+		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			return ProcessResult{Error: fmt.Errorf("history error: %w", err)}
 		}
 	}
 
 	if turn.State.ToolResponse != nil {
-		if err := turn.CtxManager.History.AddContent(ctx, turn.State.ToolResponse); err != nil {
+		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
 			return ProcessResult{Error: fmt.Errorf("failed to persist tool results: %w", err)}
 		}
 	}
