@@ -49,8 +49,14 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 
 	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return ExecutionResult{}, fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return ExecutionResult{}, fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
 	multi := io.MultiReader(stdout, stderr)
 
 	file, err := e.openOutputFile(config)
@@ -180,9 +186,12 @@ func (e *ProcessExecutor) newPipeline(ctx context.Context, pipedParts [][]string
 		}
 		p.cmds[i] = exec.CommandContext(ctx, parts[0], parts[1:]...)
 
-		stderr, _ := p.cmds[i].StderrPipe()
+		stderr, err := p.cmds[i].StderrPipe()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get stderr pipe for command %d: %w", i, err)
+		}
 		p.stderrPipes = append(p.stderrPipes, stderr)
-		p.pipes = append(p.pipes, stderr.(io.Closer))
+		p.pipes = append(p.pipes, stderr)
 
 		if i > 0 {
 			p.cmds[i].Stdin = p.pipes[len(p.pipes)-2].(io.Reader)
