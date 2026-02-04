@@ -38,7 +38,7 @@ func (m *MockClient) StreamChat(ctx context.Context, history []*llm.Content, too
 	return &llm.Metrics{TotalTokens: 100}, nil
 }
 
-func (m *MockClient) RefreshAuth() error { return nil }
+func (m *MockClient) RefreshAuth() error                 { return nil }
 func (m *MockClient) SetSystemInstructions(instr string) {}
 func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
@@ -46,9 +46,9 @@ func (m *MockClient) GenerateImages(ctx context.Context, model, prompt string, m
 
 // MockLLMClient is a flexible mock for testing.
 type MockLLMClient struct {
-	SendChatFn    func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	StreamChatFn  func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
-	RefreshAuthFn func() error
+	SendChatFn              func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	StreamChatFn            func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
+	RefreshAuthFn           func() error
 	SetSystemInstructionsFn func(instr string)
 }
 

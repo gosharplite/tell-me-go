@@ -135,7 +135,7 @@ func C() {}
 	a.Provider = &MockPackageProvider{Pkgs: []*packages.Package{pkg}}
 
 	ctx := context.Background()
-	
+
 	// Test depth 1 (should only show A calls B)
 	args := map[string]interface{}{
 		"start_symbol": "example.com/test.A",

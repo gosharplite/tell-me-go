@@ -17,7 +17,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 	tool := NewShellTool(sm)
 
 	// "世界" is 6 bytes. "世" is 3 bytes, "界" is 3 bytes.
-	
+
 	ctx := context.Background()
 	// Use sh -c to echo the multi-byte string exactly.
 	// In UTF-8: 世 = \xe4\xb8\x96, 界 = \xe7\x95\x8c
@@ -84,12 +84,12 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 			if tt.forbiddenPart != "" && strings.Contains(res.Text, tt.forbiddenPart) {
 				t.Errorf("output contains %q, truncation failed", tt.forbiddenPart)
 			}
-			
+
 			hasIndicator := strings.Contains(res.Text, "(truncated)")
 			if tt.wantTruncated != hasIndicator {
 				t.Errorf("wantTruncated=%v, but hasIndicator=%v. Output: %q", tt.wantTruncated, hasIndicator, res.Text)
 			}
-			
+
 			// Verify exact bytes for the "truncate middle of char" case
 			if tt.name == "truncate middle of char" {
 				// The output part before "Exit Code" and headers should be exactly "世"
@@ -100,7 +100,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 				}
 				actualOutput := strings.TrimPrefix(res.Text, prefix)
 				actualOutput = strings.TrimSuffix(actualOutput, "\n... (truncated)")
-				
+
 				if actualOutput != "世" {
 					t.Errorf("expected exactly '世' (3 bytes), got %q (%d bytes)", actualOutput, len(actualOutput))
 				}

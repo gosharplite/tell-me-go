@@ -10,10 +10,10 @@ import (
 
 func TestGenerateMermaid(t *testing.T) {
 	graph := map[string][]string{
-		"cmd/app":           {"internal/api", "internal/domain"},
-		"internal/api":       {"internal/domain"},
-		"internal/domain":    {},
-		"internal/infra":     {"internal/domain"},
+		"cmd/app":         {"internal/api", "internal/domain"},
+		"internal/api":    {"internal/domain"},
+		"internal/domain": {},
+		"internal/infra":  {"internal/domain"},
 	}
 
 	result := GenerateMermaid(graph)
@@ -54,7 +54,7 @@ func TestGenerateMermaid(t *testing.T) {
 			t.Errorf("Expected result to contain subgraph %s, but it didn't", sg)
 		}
 	}
-	
+
 	// Check styling
 	if !strings.Contains(result, "classDef transport") {
 		t.Error("Expected result to contain classDef transport")

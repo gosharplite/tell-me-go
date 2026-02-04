@@ -729,7 +729,7 @@ done
 
 func TestOpenOutputFile_Security(t *testing.T) {
 	executor := NewProcessExecutor()
-	
+
 	// Run in a temporary directory to avoid polluting the project and to have a controlled environment
 	tmpDir := t.TempDir()
 	oldWd, _ := os.Getwd()

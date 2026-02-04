@@ -41,4 +41,3 @@ func GenerateMermaidDiagram(ctx context.Context, args map[string]interface{}) (t
 
 	return tools.ToolResult{Text: analysis.GenerateMermaid(graph)}, nil
 }
-

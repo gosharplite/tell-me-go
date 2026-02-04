@@ -92,8 +92,8 @@ func (s *mockSP) IsPathWritable(path string) (string, error) {
 func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSP) TerminalLock()   {}
-func (s *mockSP) TerminalUnlock() {}
+func (s *mockSP) TerminalLock()                        {}
+func (s *mockSP) TerminalUnlock()                      {}
 func (s *mockSP) IsCommandAllowed(command string) bool { return true }
 
 func TestConcurrentSearch(t *testing.T) {

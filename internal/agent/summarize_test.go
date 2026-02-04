@@ -253,4 +253,3 @@ func (m *mockLogGateway) Generate(ctx context.Context, input []*llm.Content, tld
 }
 
 func (m *mockLogGateway) SetSystemInstructions(instr string) {}
-

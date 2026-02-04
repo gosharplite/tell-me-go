@@ -86,7 +86,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 			filteredHistory = append(filteredHistory, req.History[i])
 			break
 		}
-		
+
 		turnEmpty := true
 		for _, msg := range req.History[i : i+2] {
 			for _, p := range msg.Parts {

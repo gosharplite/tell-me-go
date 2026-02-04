@@ -187,7 +187,7 @@ func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 					break
 				} else {
 					// leniant match if no better candidate found
-					startFunc = fd 
+					startFunc = fd
 				}
 			}
 		}
@@ -202,7 +202,7 @@ func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 
 	var frames []CallFrame
 	visited := make(map[string]bool)
-	
+
 	a.walk(startPkg, startFunc, 0, maxDepth, &frames, visited, pkgs, modName)
 
 	return frames, nil
@@ -448,7 +448,7 @@ func (a *SequenceAnalyzer) generateSequenceDiagram(frames []CallFrame) string {
 	for _, p := range orderedParticipants {
 		b.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
 	}
-	
+
 	inLoop := false
 	for _, f := range frames {
 		if f.InLoop && !inLoop {

@@ -893,29 +893,29 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		return ch, func() (*llm.Content, *llm.Metrics, error) {
 			attemptsInTurn++
 			totalAttempts++
-			
+
 			// Turn 0: Fail twice, then tool call
 			if turnIndex == 0 {
 				if attemptsInTurn <= 2 {
 					return nil, nil, gateway.ErrTransient
 				}
 				return &llm.Content{
-					Role: "model",
+					Role:  "model",
 					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
 				}, &llm.Metrics{}, nil
 			}
-			
+
 			// Turn 1: Fail twice, then success
 			if turnIndex == 1 {
 				if attemptsInTurn <= 2 {
 					return nil, nil, gateway.ErrTransient
 				}
 				return &llm.Content{
-					Role: "model",
+					Role:  "model",
 					Parts: []*llm.Part{{Text: "done"}},
 				}, &llm.Metrics{}, nil
 			}
-			
+
 			return nil, nil, fmt.Errorf("unexpected turn")
 		}
 	}
@@ -925,7 +925,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 			turnIndex++
 			attemptsInTurn = 0
 			return &llm.Content{
-				Role: "user",
+				Role:  "user",
 				Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]interface{}{"result": "ok"}}}},
 			}, nil
 		},
@@ -933,9 +933,9 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 
 	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
 	// Default MaxRetries is 3.
-	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0, 
+	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0,
 	// and Turn 1's first failure would set it to 3, then second would hit limit.
-	
+
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
@@ -960,7 +960,7 @@ func TestTurnEngine_ToolCallCountResetPerTurn(t *testing.T) {
 
 	mockGw := &MockGateway{}
 	mockEx := &MockExecutor{}
-	
+
 	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
 	strategy.SetLimits(1000, 5, 10)
 
@@ -998,7 +998,7 @@ func TestTurnEngine_ToolCallCountResetPerTurn(t *testing.T) {
 
 	mockEx.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 		return &llm.Content{
-			Role: "user",
+			Role:  "user",
 			Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}},
 		}, nil
 	}
@@ -1027,7 +1027,7 @@ func TestTurnEngine_ToolCallLoopDetection_WithinTurn(t *testing.T) {
 
 	mockGw := &MockGateway{}
 	mockEx := &MockExecutor{}
-	
+
 	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
 	strategy.SetLimits(1000, 10, 10)
 

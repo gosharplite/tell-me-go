@@ -16,11 +16,11 @@ func TestIndexer_Refresh_ContextCancel(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F() {}\n"), 0644)
 
 	idx, _ := NewIndexer(tmpDir)
-	
+
 	// Use a context that cancels very quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel()
-	
+
 	err := idx.Refresh(ctx)
 	if err == nil {
 		t.Log("Refresh finished before cancellation, which is fine")

@@ -82,7 +82,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 
 	// Check if history was replaced
 	newContents := hManager.GetContents()
-	// Initial 18 messages (9 turns). 
+	// Initial 18 messages (9 turns).
 	// maxTurnsToSummarize = 9 / 2 = 4.
 	// 4 turns (8 messages) replaced by 2.
 	// Total: 18 - 8 + 2 = 12 messages.
@@ -177,7 +177,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	// Set initial system instructions
 	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
-	
+
 	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 	a.SetLimits(10, 3500, 20) // Limit to trigger summarization
 
@@ -205,7 +205,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	if !strings.Contains(newContents[0].Parts[0].Text, "System Auto-Summary") {
 		t.Errorf("first message should be auto-summary, got: %s", newContents[0].Parts[0].Text)
 	}
-	
+
 	// Ensure no "system" role messages in history (system instructions are client-side)
 	for _, c := range newContents {
 		if c.Role == "system" {

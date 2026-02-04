@@ -167,7 +167,7 @@ func TestCheckCircularDependencies(t *testing.T) {
 }
 
 func TestVerifyArchitecture_Integration(t *testing.T) {
-	// Smoke test against the live codebase. 
+	// Smoke test against the live codebase.
 	// We don't assert failure/success strictly here because the codebase changes.
 	// Instead, we verify it runs and returns a result.
 
