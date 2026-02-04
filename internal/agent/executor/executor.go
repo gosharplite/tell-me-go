@@ -6,7 +6,6 @@ package executor
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -224,7 +223,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 			// If the serial tool timed out or context was cancelled, we CANNOT safely
 			// continue because the serial tool's goroutine is still running in the background.
-			if ctx.Err() != nil || strings.Contains(tr.Text, "execution timed out") {
+			if ctx.Err() != nil || tr.Error == context.DeadlineExceeded || tr.Error == context.Canceled {
 				// Fill remaining slots in resChan so the collector doesn't hang
 				for j := i + 1; j < len(calls); j++ {
 					resChan <- toolExecResult{
@@ -300,13 +299,23 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 	select {
 	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			return domaintools.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)}
+		err := ctx.Err()
+		if err == context.DeadlineExceeded {
+			return domaintools.ToolResult{
+				Text:  fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout),
+				Error: err,
+			}
 		}
-		return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
+		return domaintools.ToolResult{
+			Text:  fmt.Sprintf("Error: %v", err),
+			Error: err,
+		}
 	case r := <-resChan:
 		if r.err != nil {
-			return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", r.err)}
+			return domaintools.ToolResult{
+				Text:  fmt.Sprintf("Error: %v", r.err),
+				Error: r.err,
+			}
 		}
 		return r.tr
 	}

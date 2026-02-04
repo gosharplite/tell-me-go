@@ -30,6 +30,7 @@ type Schema struct {
 type ToolResult struct {
 	Text       string
 	BinaryData []BinaryData
+	Error      error // Optional: captures the error that occurred during execution
 }
 
 // BinaryData represents multi-modal content.

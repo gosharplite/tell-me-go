@@ -8,6 +8,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -169,5 +170,63 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestToolExecutor_SerialTimeoutHalt(t *testing.T) {
+	reg := registry.New()
+	// slow_tool is Serial and will wait until context is cancelled
+	reg.RegisterWithOptions(&tools.ToolDeclaration{
+		Name: "slow_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		<-ctx.Done()
+		return tools.ToolResult{Text: "Finished eventually"}, ctx.Err()
+	}, registry.ToolOptions{Serial: true})
+
+	// fast_tool should be skipped if slow_tool times out
+	fastExecuted := false
+	reg.Register(&tools.ToolDeclaration{
+		Name: "fast_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		fastExecuted = true
+		return tools.ToolResult{Text: "Fast result"}, nil
+	})
+
+	sm := security.NewSecurityManager(nil)
+	bus := &events.SimpleEventBus{}
+	exec := NewToolExecutor(reg, sm, bus)
+	exec.SetConcurrency(2, 100*time.Millisecond) // Short timeout for tools
+
+	calls := []*llm.FunctionCall{
+		{Name: "slow_tool"},
+		{Name: "fast_tool"},
+	}
+
+	resChan := make(chan toolExecResult, len(calls))
+	exec.runExecutionPlan(context.Background(), calls, resChan)
+
+	// Collect results
+	results := make([]toolExecResult, len(calls))
+	for i := 0; i < len(calls); i++ {
+		results[i] = <-resChan
+	}
+
+	// Verify slow_tool timed out
+	if results[0].name != "slow_tool" {
+		t.Errorf("expected slow_tool, got %s", results[0].name)
+	}
+	if results[0].tr.Error != context.DeadlineExceeded {
+		t.Errorf("expected context.DeadlineExceeded, got %v", results[0].tr.Error)
+	}
+
+	// Verify fast_tool was skipped
+	if results[1].name != "fast_tool" {
+		t.Errorf("expected fast_tool, got %s", results[1].name)
+	}
+	if !strings.Contains(results[1].tr.Text, "Skipped: Execution halted") {
+		t.Errorf("expected skipped message, got %s", results[1].tr.Text)
+	}
+	if fastExecuted {
+		t.Error("fast_tool was executed but should have been skipped")
 	}
 }
