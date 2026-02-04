@@ -26,7 +26,7 @@ const (
 
 type ArchitectureManager struct {
 	SP         security.SecurityProvider
-	modulePath string
+	ModulePath string
 }
 
 type pkgInfo struct {
@@ -76,10 +76,10 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start go list: %w", err)
 	}
 
 	pkgs := make(map[string][]string)
@@ -90,15 +90,15 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 			if err == io.EOF {
 				break
 			}
-			return nil, err
+			return nil, fmt.Errorf("failed to decode go list output: %w", err)
 		}
 
-		if m.modulePath == "" && p.Module != nil {
-			m.modulePath = p.Module.Path
+		if m.ModulePath == "" && p.Module != nil {
+			m.ModulePath = p.Module.Path
 		}
 
 		// Only track packages within this module and containing "internal/" or "cmd/"
-		if strings.HasPrefix(p.ImportPath, m.modulePath) {
+		if strings.HasPrefix(p.ImportPath, m.ModulePath) {
 			isInternal := strings.Contains(p.ImportPath, "internal/")
 			isCmd := strings.Contains(p.ImportPath, "cmd/")
 
@@ -106,7 +106,7 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 				var trackedImports []string
 				for _, imp := range p.Imports {
 					// Only care about imports within the same module
-					if strings.HasPrefix(imp, m.modulePath) {
+					if strings.HasPrefix(imp, m.ModulePath) {
 						trackedImports = append(trackedImports, imp)
 					}
 				}
@@ -116,7 +116,7 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 	}
 
 	if err := cmd.Wait(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("go list command failed: %w", err)
 	}
 
 	return pkgs, nil
@@ -194,8 +194,8 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 			}
 		}
 
-		// General rule: internal packages (except Domain) must not import cmd/
-		if strings.Contains(pkg, "internal/") && !isLayer(pkg, LayerDomain) {
+		// General rule: all internal packages must not import cmd/
+		if strings.Contains(pkg, "internal/") {
 			for _, imp := range imports {
 				if m.isCmd(imp) {
 					// Avoid duplicates if already caught by rules above
@@ -279,8 +279,8 @@ func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string
 }
 
 func (m *ArchitectureManager) shorten(pkg string) string {
-	if m.modulePath != "" && strings.HasPrefix(pkg, m.modulePath) {
-		return strings.TrimPrefix(strings.TrimPrefix(pkg, m.modulePath), "/")
+	if m.ModulePath != "" && strings.HasPrefix(pkg, m.ModulePath) {
+		return strings.TrimPrefix(strings.TrimPrefix(pkg, m.ModulePath), "/")
 	}
 	idx := strings.Index(pkg, "internal/")
 	if idx != -1 {
