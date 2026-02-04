@@ -277,6 +277,18 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	// 1. Security Check
+	e.mu.RLock()
+	sm := e.sm
+	e.mu.RUnlock()
+
+	if sm != nil && !sm.IsCommandAllowed(call.Name) {
+		return domaintools.ToolResult{
+			Text:  fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name),
+			Error: fmt.Errorf("security policy: command %q is not allowed", call.Name),
+		}
+	}
+
 	e.mu.RLock()
 	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()

@@ -95,3 +95,22 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
 func (m *mockGateway) SetSystemInstructions(instr string) {}
+
+type MockSecurityManager struct {
+	AllowAll bool
+}
+
+func (m *MockSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+	return true, nil
+}
+func (m *MockSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
+func (m *MockSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
+func (m *MockSecurityManager) TerminalLock()                              {}
+func (m *MockSecurityManager) TerminalUnlock()                            {}
+func (m *MockSecurityManager) IsBypassActive() bool                       { return true }
+func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
+	if m.AllowAll {
+		return true
+	}
+	return false
+}

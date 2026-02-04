@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/security"
 	internaltools "github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -63,7 +62,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// Client returns a simple response
 	client := &api.Client{} // Using real client type but we won't call real API
 
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	a := New(client, h, registry, sm, false)
 	a.SetLimits(10, 100000, 2) // Limit history to 2 turns
 
@@ -99,7 +98,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	})
 
 	h := history.NewManager(t.TempDir() + "/history.json")
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
 	mockClient := &MockLLMClient{
