@@ -12,17 +12,22 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type devManager struct {
-	sm *security.SecurityManager
+	sm        *security.SecurityManager
+	validator *framework.CommandValidator
 }
 
 // Register adds developer-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
-	m := &devManager{sm: sm}
+	m := &devManager{
+		sm:        sm,
+		validator: framework.NewCommandValidator(sm),
+	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",
@@ -100,15 +105,14 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
-	// Safety check: block shell metacharacters to prevent command chaining
-	if strings.ContainsAny(command, ";|&><`$") {
-		return tools.ToolResult{}, fmt.Errorf("security violation: command contains forbidden shell characters")
+	// 1. Technical Validation: Split and check structure
+	parts, err := m.validator.Split(command)
+	if err != nil {
+		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
 	}
 
-	// Split command into parts to avoid shell interpretation
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("invalid command")
+	if err := m.validator.ValidateStructure(parts); err != nil {
+		return tools.ToolResult{Text: err.Error()}, nil
 	}
 
 	baseCmd := parts[0]

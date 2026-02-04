@@ -50,12 +50,22 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
+	// 1. Technical Validation: Split and check structure before authorization
+	parts, err := t.validator.Split(params.Command)
+	if err != nil {
+		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
+	}
+
+	if err := t.validator.ValidateStructure(parts); err != nil {
+		return tools.ToolResult{Text: err.Error()}, nil
+	}
+
 	outputFile, err := t.resolveOutputFile(params.OutputFile)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	// 1. Authorize
+	// 2. Authorize
 	safe, _ := t.validator.IsSafe(params.Command)
 	approved, err := t.authorize(ctx, "Command", params.Command, params.Reason, safe, outputFile, params.Append)
 	if err != nil || !approved {
@@ -64,12 +74,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 
 	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
 
-	// 2. Execute
-	parts, err := t.validator.Split(params.Command)
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error parsing command: %v", err)}, nil
-	}
-
+	// 3. Execute
 	res, err := t.runWithFeedback(ctx, "Executing", func() (ExecutionResult, error) {
 		return t.executor.RunCommand(ctx, parts, ExecutionConfig{
 			OutputFile: outputFile,

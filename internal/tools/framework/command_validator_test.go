@@ -35,3 +35,36 @@ func TestCommandValidator(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandValidator_ValidateStructure(t *testing.T) {
+	v := NewCommandValidator(nil)
+
+	tests := []struct {
+		cmd     string
+		wantErr bool
+	}{
+		{"ls -la", false},
+		{"ls && echo hi", true},
+		{"ls || echo hi", true},
+		{"ls ; echo hi", true},
+		{"ls | grep foo", true},
+		{"ls > out.txt", true},
+		{"ls >> out.txt", true},
+		{"cat < in.txt", true},
+		{"sleep 10 &", true},
+		{"grep \"foo && bar\" file.go", false}, // Contains operator but not standalone
+		{"sh -c \"ls && echo hi\"", false},      // Operator is inside another string
+	}
+
+	for _, tt := range tests {
+		parts, err := v.Split(tt.cmd)
+		if err != nil {
+			t.Errorf("Split(%q) error: %v", tt.cmd, err)
+			continue
+		}
+		err = v.ValidateStructure(parts)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateStructure(%q) error = %v, wantErr %v", tt.cmd, err, tt.wantErr)
+		}
+	}
+}

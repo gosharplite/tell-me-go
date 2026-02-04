@@ -87,6 +87,30 @@ func (v *CommandValidator) Split(cmd string) ([]string, error) {
 	return parts, nil
 }
 
+// ValidateStructure ensures the command does not contain standalone shell operators
+// that would be misinterpreted during direct binary execution.
+func (v *CommandValidator) ValidateStructure(parts []string) error {
+	forbidden := map[string]string{
+		"&&": "logical AND",
+		"||": "logical OR",
+		";":  "command separator",
+		"|":  "pipe",
+		">":  "output redirection",
+		">>": "append redirection",
+		"<":  "input redirection",
+		"&":  "background execution",
+	}
+
+	for _, part := range parts {
+		if desc, found := forbidden[part]; found {
+			return fmt.Errorf("standalone shell operator '%s' (%s) detected. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", part, desc)
+		}
+	}
+	return nil
+}
+
 func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
 	sub := ""
 	for i := 1; i < len(parts); i++ {
