@@ -105,6 +105,31 @@ func (sm *SecurityManager) SetBypassActive(active bool) {
 	sm.bypassActive = active
 }
 
+// IsCommandAllowed checks if a base command is allowed for execution.
+func (sm *SecurityManager) IsCommandAllowed(command string) bool {
+	// Whitelist of allowed base commands
+	allowed := map[string]bool{
+		"go":      true,
+		"git":     true,
+		"ls":      true,
+		"grep":    true,
+		"cat":     true,
+		"diff":    true,
+		"whoami":  true,
+		"stat":    true,
+		"find":    true,
+		"sh":      true,
+		"make":    true,
+		"npm":     true,
+		"node":    true,
+		"cargo":   true,
+		"pytest":  true,
+		"python":  true,
+		"python3": true,
+	}
+	return allowed[command]
+}
+
 // TerminalLock locks the terminal.
 func (sm *SecurityManager) TerminalLock() {
 	sm.Interaction.TerminalLock()

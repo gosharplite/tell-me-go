@@ -19,7 +19,6 @@ type ContextMetadata struct {
 	SummarizedTurns        int
 	SummarizationAttempted bool // Set to true if autoSummarize just ran successfully
 	MaintenanceBlocked     bool // Set to true if autoSummarize was blocked (e.g. by pins)
-	InjectedPrefixCount    int  // Number of messages injected at the start of history (e.g. instructions)
 	Warnings               []string
 	APIContents            []*llm.Content
 }

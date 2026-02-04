@@ -27,11 +27,11 @@ func NewComplexityAnalyzer(cache *astutil.ASTCache, sp security.SecurityProvider
 	}
 }
 
-type funcComplexity struct {
-	line       int
-	name       string
-	complexity int
-	filePath   string
+type FuncComplexity struct {
+	Line       int
+	Name       string
+	Complexity int
+	FilePath   string
 }
 
 func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -47,7 +47,7 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 		return tools.ToolResult{}, err
 	}
 
-	complexities, err := a.gatherComplexities(ctx, resolvedPath)
+	complexities, err := a.GatherComplexities(ctx, resolvedPath)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -59,8 +59,8 @@ func (a *ComplexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
 }
 
-func (a *ComplexityAnalyzer) gatherComplexities(ctx context.Context, root string) ([]funcComplexity, error) {
-	var complexities []funcComplexity
+func (a *ComplexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]FuncComplexity, error) {
+	var complexities []FuncComplexity
 	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		select {
 		case <-ctx.Done():
@@ -78,13 +78,13 @@ func (a *ComplexityAnalyzer) gatherComplexities(ctx context.Context, root string
 	return complexities, err
 }
 
-func (a *ComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
+func (a *ComplexityAnalyzer) analyzeFile(filePath string) []FuncComplexity {
 	f, fset, err := a.Cache.Get(filePath)
 	if err != nil {
 		return nil
 	}
 
-	var fileComplexities []funcComplexity
+	var fileComplexities []FuncComplexity
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
 			complexity := astutil.CalculateComplexity(fd)
@@ -93,24 +93,24 @@ func (a *ComplexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
 				recvType := astutil.ExprToString(fd.Recv.List[0].Type)
 				funcName = fmt.Sprintf("(%s).%s", recvType, funcName)
 			}
-			fileComplexities = append(fileComplexities, funcComplexity{
-				line:       fset.Position(fd.Pos()).Line,
-				name:       funcName,
-				complexity: complexity,
-				filePath:   filePath,
+			fileComplexities = append(fileComplexities, FuncComplexity{
+				Line:       fset.Position(fd.Pos()).Line,
+				Name:       funcName,
+				Complexity: complexity,
+				FilePath:   filePath,
 			})
 		}
 	}
 	return fileComplexities
 }
 
-func (a *ComplexityAnalyzer) formatResults(complexities []funcComplexity) string {
+func (a *ComplexityAnalyzer) formatResults(complexities []FuncComplexity) string {
 	// Sort by complexity descending
 	sort.Slice(complexities, func(i, j int) bool {
-		if complexities[i].complexity != complexities[j].complexity {
-			return complexities[i].complexity > complexities[j].complexity
+		if complexities[i].Complexity != complexities[j].Complexity {
+			return complexities[i].Complexity > complexities[j].Complexity
 		}
-		return complexities[i].name < complexities[j].name
+		return complexities[i].Name < complexities[j].Name
 	})
 
 	limit := 100
@@ -122,7 +122,7 @@ func (a *ComplexityAnalyzer) formatResults(complexities []funcComplexity) string
 
 	var results []string
 	for _, c := range complexities {
-		results = append(results, fmt.Sprintf("%s:%d: %s - Complexity: %d", c.filePath, c.line, c.name, c.complexity))
+		results = append(results, fmt.Sprintf("%s:%d: %s - Complexity: %d", c.FilePath, c.Line, c.Name, c.Complexity))
 	}
 	if truncated {
 		results = append(results, "... (truncated)")

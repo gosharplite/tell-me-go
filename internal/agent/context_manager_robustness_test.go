@@ -22,6 +22,8 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools 
 	return m.generateFn(ctx, input, tools, resolver)
 }
 
+func (m *mockGateway) SetSystemInstructions(instr string) {}
+
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
@@ -45,9 +47,6 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 			Policy:  &SlidingWindowPolicy{MaxTurns: 20},
 			Manager: cm.History,
 		},
-		&SystemInstructionInjector{
-			Instructions: "System Instructions",
-		},
 		&TokenGatekeeper{
 			MaxTokens:  1000,
 			Estimator:  strategy,
@@ -70,26 +69,24 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	}
 
 	// Verify the injected sequence:
-	// 0: User Instructions (Injected by SystemInstructionInjector)
-	// 1: Model Ack (Injected by SystemInstructionInjector)
-	// 2: User "call tool" (Original index 0)
-	// 3: Model Call (Original index 1)
-	// 4: User Notice (Injected by WarningInjector)
-	// 5: Model Ack (Injected by WarningInjector)
-	// 6: User Response (Original index 2)
+	// 0: User "call tool" (Original index 0)
+	// 1: Model Call (Original index 1)
+	// 2: User Notice (Injected by WarningInjector)
+	// 3: Model Ack (Injected by WarningInjector)
+	// 4: User Response (Original index 2)
 
-	if len(apiContents) != 7 {
-		t.Fatalf("Expected 7 contents after injection, got %d", len(apiContents))
+	if len(apiContents) != 5 {
+		t.Fatalf("Expected 5 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[4].Role != "user" || !strings.Contains(apiContents[4].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[4].Parts[0].Text, "Only 2 turns remain") {
-		t.Errorf("Expected User Notice turn at index 4, got %v", apiContents[4].Parts[0].Text)
+	if apiContents[2].Role != "user" || !strings.Contains(apiContents[2].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[2].Parts[0].Text, "Only 2 turns remain") {
+		t.Errorf("Expected User Notice turn at index 2, got %v", apiContents[2].Parts[0].Text)
 	}
-	if apiContents[5].Role != "model" || !strings.Contains(apiContents[5].Parts[0].Text, "Understood") {
-		t.Errorf("Expected Model Ack turn at index 5, got %v", apiContents[5])
+	if apiContents[3].Role != "model" || !strings.Contains(apiContents[3].Parts[0].Text, "Understood") {
+		t.Errorf("Expected Model Ack turn at index 3, got %v", apiContents[3])
 	}
-	if apiContents[6].Role != "user" || apiContents[6].Parts[0].FunctionResponse == nil {
-		t.Errorf("Expected User Response at index 6, got %v", apiContents[6])
+	if apiContents[4].Role != "user" || apiContents[4].Parts[0].FunctionResponse == nil {
+		t.Errorf("Expected User Response at index 4, got %v", apiContents[4])
 	}
 }
 

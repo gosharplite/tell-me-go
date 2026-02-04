@@ -179,7 +179,11 @@ func (p *searchPipeline) scanFile(path string) error {
 	defer file.Close()
 
 	if isBin, err := checkBinary(file); err == nil && !isBin {
+		const maxScannerCapacity = 10 * 1024 * 1024
 		scanner := bufio.NewScanner(file)
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, maxScannerCapacity)
+
 		lineNum := 0
 		for scanner.Scan() {
 			lineNum++

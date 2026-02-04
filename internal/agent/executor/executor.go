@@ -210,15 +210,34 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		if e.registry.IsSerial(fc.Name) {
 			// Wait for all previous tools to finish before starting serial tool
 			wg.Wait()
+			var tr domaintools.ToolResult
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: i, name: fc.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						err := fmt.Errorf("panic: %v", r)
+						tr = domaintools.ToolResult{
+							Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+							Error: err,
+						}
 					}
 				}()
-				tr := e.executeTool(ctx, fc)
-				resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+				tr = e.executeTool(ctx, fc)
 			}()
+			resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+
+			// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
+			// continue (especially for timeouts/cancellations where the goroutine is orphaned).
+			if ctx.Err() != nil || tr.Error != nil {
+				// Fill remaining slots in resChan so the collector doesn't hang
+				for j := i + 1; j < len(calls); j++ {
+					resChan <- toolExecResult{
+						index: j,
+						name:  calls[j].Name,
+						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+					}
+				}
+				return // Exit the execution plan early
+			}
 		} else {
 			wg.Add(1)
 			idx, call := i, fc // captured for closure
@@ -227,9 +246,27 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			e.mu.RUnlock()
 			pool.Submit(func(_ context.Context) {
 				defer wg.Done()
+
+				if ctx.Err() != nil {
+					resChan <- toolExecResult{
+						index: idx,
+						name:  call.Name,
+						tr:    domaintools.ToolResult{Text: "Skipped: Context cancelled"},
+					}
+					return
+				}
+
 				defer func() {
 					if r := recover(); r != nil {
-						resChan <- toolExecResult{index: idx, name: call.Name, tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+						err := fmt.Errorf("panic: %v", r)
+						resChan <- toolExecResult{
+							index: idx,
+							name:  call.Name,
+							tr: domaintools.ToolResult{
+								Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+								Error: err,
+							},
+						}
 					}
 				}()
 				tr := e.executeTool(ctx, call)
@@ -264,7 +301,12 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- res{tr: domaintools.ToolResult{Text: fmt.Sprintf("Error: Panic detected: %v", r)}}
+				resChan <- res{
+					tr: domaintools.ToolResult{
+						Text:  fmt.Sprintf("Error: Panic detected: %v", r),
+						Error: fmt.Errorf("panic: %v", r),
+					},
+				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
@@ -274,13 +316,23 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 	select {
 	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			return domaintools.ToolResult{Text: fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)}
+		err := ctx.Err()
+		if err == context.DeadlineExceeded {
+			return domaintools.ToolResult{
+				Text:  fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout),
+				Error: err,
+			}
 		}
-		return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", ctx.Err())}
+		return domaintools.ToolResult{
+			Text:  fmt.Sprintf("Error: %v", err),
+			Error: err,
+		}
 	case r := <-resChan:
 		if r.err != nil {
-			return domaintools.ToolResult{Text: fmt.Sprintf("Error: %v", r.err)}
+			return domaintools.ToolResult{
+				Text:  fmt.Sprintf("Error: %v", r.err),
+				Error: r.err,
+			}
 		}
 		return r.tr
 	}

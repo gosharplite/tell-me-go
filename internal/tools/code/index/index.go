@@ -89,21 +89,22 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 		return nil
 	}
 
-	pkgs, err := idx.loadPackages(ctx)
+	fset := token.NewFileSet()
+	pkgs, err := idx.loadPackages(ctx, fset)
 	if err != nil {
 		return err
 	}
 
-	h := newHarvester(idx.fset)
+	h := newHarvester(fset)
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
-			filename := idx.fset.File(file.Pos()).Name()
+			filename := fset.File(file.Pos()).Name()
 			h.currentPath, _ = filepath.Abs(filename)
 			ast.Inspect(file, h.visit)
 		}
 	}
 
-	idx.updateState(pkgs, h)
+	idx.updateState(pkgs, h, fset)
 	return nil
 }
 
@@ -334,20 +335,21 @@ func (idx *Indexer) needsRefresh() bool {
 	return time.Since(idx.lastRefresh) > refreshTTL
 }
 
-func (idx *Indexer) loadPackages(ctx context.Context) ([]*packages.Package, error) {
+func (idx *Indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*packages.Package, error) {
 	cfg := &packages.Config{
 		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
 		Dir:     idx.dir,
-		Fset:    idx.fset,
+		Fset:    fset,
 		Context: ctx,
 	}
 	return packages.Load(cfg, "./...")
 }
 
-func (idx *Indexer) updateState(pkgs []*packages.Package, h *harvester) {
+func (idx *Indexer) updateState(pkgs []*packages.Package, h *harvester, fset *token.FileSet) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	idx.pkgs = pkgs
+	idx.fset = fset
 	idx.symbolsByPath = h.symbolsByPath
 	idx.usagesByName = h.usagesByName
 	idx.lastRefresh = time.Now()

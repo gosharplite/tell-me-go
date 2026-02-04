@@ -10,16 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "summary_test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
@@ -70,7 +67,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
 	}
 
-	summary, err := m.getCostSummary(context.Background())
+	summary, err := m.getCostSummary(context.Background(), false)
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
@@ -107,5 +104,111 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 	expectedGrand := "| **Grand Total** | **2800** | **700** | **1100** | **20.0%** | **$4.0000** |"
 	if !strings.Contains(summary, expectedGrand) {
 		t.Errorf("summary missing expected grand total: %s", summary)
+	}
+}
+
+func TestGetCostSummary_GoogleBilling(t *testing.T) {
+	tempDir := t.TempDir()
+
+	globalDir := tempDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	// Create a record at 2023-10-27 08:00:00 CST (UTC+8)
+	// CST is 16 hours ahead of PST (UTC-8)
+	// 2023-10-27 08:00:00 CST -> 2023-10-26 16:00:00 PST
+	ts := time.Date(2023, 10, 27, 8, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	history := []SessionCostRecord{
+		{
+			Date:      "2023-10-27",
+			Timestamp: ts,
+			Session:   "session-pst",
+			Model:     "model1",
+			TotalCost: 1.0,
+			Usage: pricing.UsageStats{
+				PromptTokens: 1000,
+			},
+		},
+	}
+
+	data, _ := json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	m := &metricsManager{
+		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
+	}
+
+	// 1. Regular summary (standardized to UTC)
+	summary, err := m.getCostSummary(context.Background(), false)
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+	// ts is 2023-10-27 08:00:00 CST which is exactly 2023-10-27 00:00:00 UTC.
+	// Standardizing to UTC should yield 2023-10-27 regardless of local machine timezone.
+	if !strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Expected 2023-10-27 in regular UTC-based summary, got:\n%s", summary)
+	}
+
+	// 2. Google Billing summary (offset -16)
+	summary, err = m.getCostSummary(context.Background(), true)
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+	// 2023-10-27 08:00 - 16h = 2023-10-26 16:00
+	if !strings.Contains(summary, "2023-10-26") {
+		t.Errorf("Expected 2023-10-26 in billing summary, got:\n%s", summary)
+	}
+	if strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Did not expect 2023-10-27 in billing summary, got:\n%s", summary)
+	}
+
+	// 3. New test case for UTC timestamp that was previously buggy
+	// Timestamp: 2023-10-27 10:00:00 UTC
+	// In UTC-8, this is 2023-10-27 02:00:00.
+	ts2 := time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC)
+	history = append(history, SessionCostRecord{
+		Date:      "2023-10-27",
+		Timestamp: ts2,
+		Session:   "session-utc",
+		Model:     "model1",
+		TotalCost: 1.0,
+		Usage: pricing.UsageStats{
+			PromptTokens: 1000,
+		},
+	})
+	data, _ = json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	summary, err = m.getCostSummary(context.Background(), true)
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+	// The new record should be 2023-10-27 in UTC-8
+	if !strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Expected 2023-10-27 in billing summary for 10:00 UTC timestamp, got:\n%s", summary)
+	}
+	// 4. Test UTC rollover
+	// Timestamp: 2023-10-27 23:59:59 UTC
+	ts3 := time.Date(2023, 10, 27, 23, 59, 59, 0, time.UTC)
+	history = append(history, SessionCostRecord{
+		Date:      "2023-10-28", // Local date might be different
+		Timestamp: ts3,
+		Session:   "session-rollover",
+		Model:     "model1",
+		TotalCost: 1.0,
+		Usage: pricing.UsageStats{
+			PromptTokens: 1000,
+		},
+	})
+	data, _ = json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	summary, err = m.getCostSummary(context.Background(), false)
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+	// It should still be attributed to 2023-10-27 because we use UTC()
+	if !strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Expected 2023-10-27 in regular summary for 23:59:59 UTC timestamp, got:\n%s", summary)
 	}
 }

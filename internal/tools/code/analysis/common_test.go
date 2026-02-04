@@ -32,3 +32,4 @@ func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 	}
 	return nil, nil
 }
+func (s *mockSecurityProvider) IsCommandAllowed(command string) bool { return true }

@@ -19,6 +19,7 @@ type ShellTool struct {
 	sm        *security.SecurityManager
 	validator *framework.CommandValidator
 	executor  *ProcessExecutor
+	maxOutput int
 }
 
 func NewShellTool(sm *security.SecurityManager) *ShellTool {
@@ -26,6 +27,7 @@ func NewShellTool(sm *security.SecurityManager) *ShellTool {
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
 		executor:  NewProcessExecutor(),
+		maxOutput: 50000,
 	}
 }
 
@@ -72,6 +74,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
+			MaxCapture: t.maxOutput,
 		})
 	})
 
@@ -126,6 +129,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
+			MaxCapture: t.maxOutput,
 		})
 	})
 
@@ -205,8 +209,8 @@ func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 
 func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	output := res.Output
-	if len(output) > 50000 {
-		output = output[:50000] + "\n... (truncated)"
+	if res.Truncated {
+		output += "\n... (truncated)"
 	}
 	if isPipeline {
 		return fmt.Sprintf("Pipeline result. Exit Code: %d\n%s", res.ExitCode, output)

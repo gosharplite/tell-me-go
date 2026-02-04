@@ -12,10 +12,15 @@ import (
 // Analyzer interfaces for segregation and testing
 type IComplexityAnalyzer interface {
 	Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	GatherComplexities(ctx context.Context, root string) ([]FuncComplexity, error)
 }
 
 type IDependencyAnalyzer interface {
 	GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+}
+
+type ISequenceAnalyzer interface {
+	AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
 type IChangeAnalyzer interface {
@@ -33,6 +38,7 @@ type ITypeManager interface {
 type AnalysisManager struct {
 	Complexity IComplexityAnalyzer
 	Dependency IDependencyAnalyzer
+	Sequence   ISequenceAnalyzer
 	Change     IChangeAnalyzer
 	Types      ITypeManager
 }
@@ -42,6 +48,7 @@ func NewAnalysisManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp secur
 	return &AnalysisManager{
 		Complexity: NewComplexityAnalyzer(cache, sp),
 		Dependency: NewDependencyAnalyzer(exec, sp),
+		Sequence:   NewSequenceAnalyzer(exec, sp),
 		Change:     NewChangeAnalyzer(cache, exec),
 		Types:      NewTypeManager(idx, cache, sp),
 	}
@@ -53,6 +60,10 @@ func (m *AnalysisManager) AnalyzeComplexity(ctx context.Context, args map[string
 
 func (m *AnalysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Dependency.GetPackageGraph(ctx, args)
+}
+
+func (m *AnalysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	return m.Sequence.AnalyzeSequenceFlow(ctx, args)
 }
 
 func (m *AnalysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

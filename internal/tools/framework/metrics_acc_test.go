@@ -179,7 +179,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 	content := string(d1) + "\n" + string(d2) + "\n" + string(d3) + "\n"
 	os.WriteFile(logFile, []byte(content), 0644)
 
-	stats, totalCost, _, err := ParseUsage(logFile, pricingData, "model-a")
+	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "model-a")
 	if err != nil {
 		t.Fatal(err)
 	}

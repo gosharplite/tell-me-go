@@ -457,7 +457,14 @@ func TestAgent_SystemInstructions(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	a := New(nil, hManager, reg, sm, false)
+
+	var capturedInstr string
+	mockClient := &MockLLMClient{
+		SetSystemInstructionsFn: func(instr string) {
+			capturedInstr = instr
+		},
+	}
+	a := New(mockClient, hManager, reg, sm, false)
 
 	customInstr := "You are a specialized Go expert."
 	a.SetSystemInstructions(customInstr)
@@ -466,8 +473,8 @@ func TestAgent_SystemInstructions(t *testing.T) {
 		t.Errorf("expected config instructions %q, got %q", customInstr, a.config.SystemInstructions)
 	}
 
-	if a.ctxManager.factory.SystemInstructions != customInstr {
-		t.Errorf("expected factory instructions %q, got %q", customInstr, a.ctxManager.factory.SystemInstructions)
+	if capturedInstr != customInstr {
+		t.Errorf("expected captured instructions %q, got %q", customInstr, capturedInstr)
 	}
 
 	// Prepare history to trigger pipeline execution
@@ -479,21 +486,11 @@ func TestAgent_SystemInstructions(t *testing.T) {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	// First message should be the system instructions
-	if len(prepared) == 0 {
-		t.Fatal("expected prepared history, got empty")
-	}
-
-	found := false
+	// System instructions should NOT be in the prepared history anymore
 	for _, c := range prepared {
 		if c.Role == "user" && len(c.Parts) > 0 && strings.Contains(c.Parts[0].Text, customInstr) {
-			found = true
-			break
+			t.Error("system instructions found in prepared history, but should be handled by the client")
 		}
-	}
-
-	if !found {
-		t.Error("custom system instructions not found in prepared history")
 	}
 }
 
@@ -501,14 +498,11 @@ func TestAgent_WithSystemInstructions(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	reg := registry.New()
 	instr := "Initial instructions"
-	a := New(nil, nil, reg, sm, false, WithSystemInstructions(instr))
+
+	a := New(&MockLLMClient{}, nil, reg, sm, false, WithSystemInstructions(instr))
 
 	if a.config.SystemInstructions != instr {
 		t.Errorf("expected config instructions %q, got %q", instr, a.config.SystemInstructions)
-	}
-
-	if a.ctxManager.factory.SystemInstructions != instr {
-		t.Errorf("expected factory instructions %q, got %q", instr, a.ctxManager.factory.SystemInstructions)
 	}
 }
 
@@ -550,7 +544,6 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	// Turn 1 (Pinned)
 	// Turn 4 (Window)
 	// Turn 5 (Window)
-	// System Instructions (injected by transformer)
 
 	// Turn 2 and 3 should be pruned.
 

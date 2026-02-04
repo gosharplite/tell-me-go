@@ -21,6 +21,18 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
+	hea := &HealthManager{SP: sm, Ana: ana}
+	arc := &ArchitectureManager{SP: sm}
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "verify_architecture",
+		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
+	}, arc.VerifyArchitecture)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_code_health",
+		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
+	}, hea.GetCodeHealth)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "find_usages",
@@ -221,7 +233,36 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_package_graph",
 		Description: "Returns a mapping of internal package dependencies.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"format": {
+					Type:        "STRING",
+					Description: "Output format: 'text' (default) or 'mermaid'.",
+					Enum:        []string{"text", "mermaid"},
+				},
+			},
+		},
 	}, ana.GetPackageGraph)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "analyze_sequence_flow",
+		Description: "Trace a specific function call across package boundaries to generate a Mermaid Sequence Diagram.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"start_symbol": {
+					Type:        "STRING",
+					Description: "The fully qualified name of a function (e.g., 'internal/api/handler.CreateUser').",
+				},
+				"max_depth": {
+					Type:        "INTEGER",
+					Description: "Maximum recursion depth (default 5).",
+				},
+			},
+			Required: []string{"start_symbol"},
+		},
+	}, ana.AnalyzeSequenceFlow)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "move_definition",

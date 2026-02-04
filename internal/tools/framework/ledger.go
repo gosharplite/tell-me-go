@@ -22,7 +22,8 @@ import (
 
 // SessionCostRecord represents a single session's financial footprint.
 type SessionCostRecord struct {
-	Date      string             `json:"date"`
+	Date      string             `json:"date"`      // Keep for backward compatibility
+	Timestamp time.Time          `json:"timestamp"` // New source of truth
 	Session   string             `json:"session"`
 	Model     string             `json:"model"`
 	TotalCost float64            `json:"total_cost"`
@@ -162,7 +163,7 @@ func (ls *LedgerStore) getSessionID(path, globalDir string) string {
 func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing pricing.PricingData) (*SessionCostRecord, error) {
 	sessionID := ls.getSessionID(path, globalDir)
 
-	usage, totalCost, detectedModel, err := ParseUsage(path, pricing, ls.model)
+	usage, totalCost, detectedModel, timestamp, err := ParseUsage(path, pricing, ls.model)
 	if err != nil {
 		return nil, err
 	}
@@ -180,8 +181,14 @@ func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir s
 		date = fmt.Sprintf("%s-%s-%s", matches[1], matches[2], matches[3])
 	}
 
+	if timestamp.IsZero() {
+		// Fallback to mod time if no timestamp found in logs
+		timestamp = info.ModTime()
+	}
+
 	return &SessionCostRecord{
 		Date:      date,
+		Timestamp: timestamp,
 		Session:   sessionID,
 		Model:     modelToUse,
 		TotalCost: totalCost,

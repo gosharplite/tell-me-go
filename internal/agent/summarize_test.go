@@ -251,3 +251,5 @@ func (m *mockLogGateway) Generate(ctx context.Context, input []*llm.Content, tld
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "summary"}}}, &llm.Metrics{}, nil
 	}
 }
+
+func (m *mockLogGateway) SetSystemInstructions(instr string) {}

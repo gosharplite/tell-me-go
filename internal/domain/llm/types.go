@@ -71,6 +71,7 @@ type LLMClient interface {
 	StreamChat(ctx context.Context, history []*Content, tools []*tools.ToolDeclaration, resolver AssetResolver, callback func(*Content)) (*Metrics, error)
 	GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	RefreshAuth() error
+	SetSystemInstructions(instr string)
 }
 
 var (

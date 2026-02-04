@@ -159,13 +159,17 @@ func New(client llm.LLMClient, hManager *history.Manager, reg *registry.Registry
 		opt(a)
 	}
 
+	// Sync initial system instructions to gateway
+	if a.config.SystemInstructions != "" {
+		a.gateway.SetSystemInstructions(a.config.SystemInstructions)
+	}
+
 	factory := &PipelineFactory{
-		Registry:           reg,
-		History:            hManager,
-		Summarizer:         NewSummarizer(gw, bus),
-		Estimator:          strategy,
-		Events:             bus,
-		SystemInstructions: a.config.SystemInstructions,
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
 	}
 
 	ctxManager := NewContextManager(strategy, hManager, gw, bus, factory)
@@ -344,8 +348,8 @@ func (a *Agent) GetCostTracker() *framework.SessionCostTracker {
 func (a *Agent) SetSystemInstructions(instr string) {
 	a.mu.Lock()
 	a.config.SystemInstructions = instr
-	if a.ctxManager != nil && a.ctxManager.factory != nil {
-		a.ctxManager.factory.SystemInstructions = instr
+	if a.gateway != nil {
+		a.gateway.SetSystemInstructions(instr)
 	}
 	a.mu.Unlock()
 	a.applyConfig()

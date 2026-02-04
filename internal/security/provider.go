@@ -12,4 +12,5 @@ type SecurityProvider interface {
 	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
 	TerminalLock()
 	TerminalUnlock()
+	IsCommandAllowed(command string) bool
 }

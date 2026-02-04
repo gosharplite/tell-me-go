@@ -77,7 +77,7 @@ func (t *SessionCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, 
 	// If not initiated, we do a synchronous warmup as a fallback,
 	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -92,7 +92,7 @@ func (t *SessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -144,6 +144,12 @@ type metricsManager struct {
 	ledger           *LedgerStore
 }
 
+type costSummaryArgs struct {
+	Billing bool `json:"billing"`
+}
+
+type estimateCostArgs struct{}
+
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
 func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) {
 	m := &metricsManager{
@@ -159,6 +165,10 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		var eArgs estimateCostArgs
+		if err := registry.UnmarshalArgs(args, &eArgs); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
+		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
 	})
@@ -166,10 +176,24 @@ func RegisterMetrics(r *registry.Registry, sm *security.SecurityManager, logFile
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
+		Parameters: &tools.Schema{
+			Type: "object",
+			Properties: map[string]*tools.Schema{
+				"billing": {
+					Type:        "boolean",
+					Description: "If true, aggregates costs using Google Billing timezone (UTC-8).",
+				},
+			},
+		},
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		var sArgs costSummaryArgs
+		if err := registry.UnmarshalArgs(args, &sArgs); err != nil {
+			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
+		}
+
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
-		res, err := m.getCostSummary(ctx)
+		res, err := m.getCostSummary(ctx, sArgs.Billing)
 		return tools.ToolResult{Text: res}, err
 	})
 }
@@ -182,12 +206,13 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
+		ledger:           NewLedgerStore(sm, model, pricingOverrides),
 	}
 
 	// 1. Record to global ledger (detailed breakdown)
 	_, err := m.EstimateCost(ctx, true, sessionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to estimate and record session cost: %w", err)
 	}
 
 	// 2. Append legacy summary to the log file itself
@@ -203,12 +228,12 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 		}
 
 		var err error
-		usage, totalCost, _, err = ParseUsage(logPath, pd, model)
+		usage, totalCost, _, _, err = ParseUsage(logPath, pd, model)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("failed to parse usage log for summary: %w", err)
 		}
 	}
 
@@ -234,12 +259,15 @@ func RecordSessionCost(ctx context.Context, sm *security.SecurityManager, tracke
 	}
 	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
 	}
 	defer fAppend.Close()
 
 	_, err = fAppend.WriteString(string(summaryBytes) + "\n")
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to write cost summary to log: %w", err)
+	}
+	return nil
 }
 
 func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record SessionCostRecord) {
@@ -338,7 +366,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 }
 
-func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
+func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bool) (string, error) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
@@ -379,18 +407,39 @@ func (m *metricsManager) getCostSummary(ctx context.Context) (string, error) {
 	// Aggregate by Date
 	dailyTotals := make(map[string]float64)
 	dailyUsage := make(map[string]pricing.UsageStats) // Track usage per day
+
+	// Define the Google Billing timezone (typically PST/PDT)
+	// Using a fixed -8 offset is safer than a hardcoded subtraction
+	// if we can't load "America/Los_Angeles" from the system database.
+	billingZone := time.FixedZone("UTC-8", -8*3600)
+
 	for _, r := range history {
-		dailyTotals[r.Date] += r.TotalCost
-		u := dailyUsage[r.Date]
+		// Determine the effective date for this record
+		effectiveDate := r.Date // Fallback for old records
+		if !r.Timestamp.IsZero() {
+			if useGoogleBilling {
+				effectiveDate = r.Timestamp.In(billingZone).Format("2006-01-02")
+			} else {
+				effectiveDate = r.Timestamp.UTC().Format("2006-01-02")
+			}
+		}
+
+		dailyTotals[effectiveDate] += r.TotalCost
+		u := dailyUsage[effectiveDate]
 		u.PromptTokens += r.Usage.PromptTokens
 		u.ResponseTokens += r.Usage.ResponseTokens
 		u.CachedTokens += r.Usage.CachedTokens
 		u.ThinkingTokens += r.Usage.ThinkingTokens
-		dailyUsage[r.Date] = u
+		dailyUsage[effectiveDate] = u
+	}
+
+	title := "AI Usage Cost Summary (by Date)"
+	if useGoogleBilling {
+		title = "AI Usage Cost Summary (Google Billing Cycle - UTC-8)"
 	}
 
 	var sb strings.Builder
-	sb.WriteString("### AI Usage Cost Summary (by Date)\n\n")
+	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
 	sb.WriteString("| Date | Miss | Hit | Other | Eff % | Total Cost (USD) |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
@@ -450,7 +499,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	}
 
 	// 1. Parse usage from log
-	usage, totalCost, detectedModel, err := ParseUsage(resolvedLog, pd, m.model)
+	usage, totalCost, detectedModel, timestamp, err := ParseUsage(resolvedLog, pd, m.model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -473,8 +522,12 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		if sessionID == "" {
 			sessionID = filepath.ToSlash(filepath.Join(m.mode, filepath.Base(m.logFile)))
 		}
+		if timestamp.IsZero() {
+			timestamp = time.Now()
+		}
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
-			Date:      time.Now().Format("2006-01-02"),
+			Date:      timestamp.Format("2006-01-02"),
+			Timestamp: timestamp,
 			Session:   sessionID,
 			Model:     detectedModel,
 			TotalCost: breakdown.TotalCost,

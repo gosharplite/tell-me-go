@@ -24,4 +24,5 @@ var (
 type LLMGateway interface {
 	// Generate handles auth retries and returns a content stream and a finalizer.
 	Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
+	SetSystemInstructions(instr string)
 }

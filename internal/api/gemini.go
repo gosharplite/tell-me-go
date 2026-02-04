@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
@@ -20,6 +21,7 @@ import (
 
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
+	mu                sync.RWMutex
 	sdkClient         *genai.Client
 	authenticator     auth.Authenticator
 	apiURL            string
@@ -65,9 +67,13 @@ func (c *Client) initSDK() error {
 	backend := genai.BackendGeminiAPI
 	var project, location, baseURL string
 
-	if strings.Contains(c.apiURL, "aiplatform.googleapis.com") {
+	c.mu.RLock()
+	apiURL := c.apiURL
+	c.mu.RUnlock()
+
+	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
 		backend = genai.BackendVertexAI
-		parts := strings.Split(c.apiURL, "/")
+		parts := strings.Split(apiURL, "/")
 		for i, p := range parts {
 			if p == "projects" && i+1 < len(parts) {
 				project = parts[i+1]
@@ -76,8 +82,8 @@ func (c *Client) initSDK() error {
 				location = parts[i+1]
 			}
 		}
-		if idx := strings.Index(c.apiURL, "/v1/"); idx != -1 {
-			baseURL = c.apiURL[:idx+1]
+		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
+			baseURL = apiURL[:idx+1]
 		}
 	}
 
@@ -86,13 +92,14 @@ func (c *Client) initSDK() error {
 		baseURL = mockURL
 	}
 
-	c.backend = backend
-
 	// 2. Prepare Auth Headers
 	authReq := &auth.Request{
 		Headers: make(map[string]string),
 	}
-	c.authenticator.Apply(authReq)
+	c.mu.RLock()
+	authenticator := c.authenticator
+	c.mu.RUnlock()
+	authenticator.Apply(authReq)
 
 	// 3. Initialize SDK Client
 	headers := make(http.Header)
@@ -116,13 +123,19 @@ func (c *Client) initSDK() error {
 		return fmt.Errorf("failed to create genai client: %w", err)
 	}
 
+	c.mu.Lock()
+	c.backend = backend
 	c.sdkClient = sdkClient
+	c.mu.Unlock()
 	return nil
 }
 
 // RefreshAuth invalidates the current token and re-initializes the SDK client.
 func (c *Client) RefreshAuth() error {
-	c.authenticator.Invalidate()
+	c.mu.RLock()
+	authenticator := c.authenticator
+	c.mu.RUnlock()
+	authenticator.Invalidate()
 	return c.initSDK()
 }
 
@@ -130,8 +143,13 @@ func (c *Client) RefreshAuth() error {
 func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
+	c.mu.RLock()
+	sdkClient := c.sdkClient
+	model := c.model
+	c.mu.RUnlock()
+
 	startTime := time.Now()
-	resp, err := c.sdkClient.Models.GenerateContent(ctx, c.model, sdkHistory, config)
+	resp, err := sdkClient.Models.GenerateContent(ctx, model, sdkHistory, config)
 	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
@@ -165,10 +183,19 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+	c.mu.RLock()
+	useSearch := c.useSearch
+	instr := c.systemInstruction
+	thinkingLevel := c.thinkingLevel
+	thinkingBudget := c.thinkingBudget
+	maxThinkingBudget := c.maxThinkingBudget
+	model := c.model
+	c.mu.RUnlock()
+
 	// Add Search tool
 	var activeTools []*genai.Tool
 	activeTools = append(activeTools, toSDKTool(tools)...)
-	if c.useSearch {
+	if useSearch {
 		activeTools = append(activeTools, &genai.Tool{
 			GoogleSearch: &genai.GoogleSearch{},
 		})
@@ -176,28 +203,28 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
-		SystemInstruction: ToSDKContent(ctx, c.systemInstruction, resolver),
+		SystemInstruction: ToSDKContent(ctx, instr, resolver),
 	}
 
 	// Apply Thinking Config
-	if c.thinkingLevel != "" || c.thinkingBudget > 0 {
+	if thinkingLevel != "" || thinkingBudget > 0 {
 		config.ThinkingConfig = &genai.ThinkingConfig{
 			IncludeThoughts: true,
 		}
 
-		actualBudget := c.thinkingBudget
+		actualBudget := thinkingBudget
 		if actualBudget > 0 {
-			maxBudget := c.maxThinkingBudget
+			maxBudget := maxThinkingBudget
 			if maxBudget > 0 && actualBudget > maxBudget {
-				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, c.model, maxBudget, maxBudget)
+				fmt.Fprintf(os.Stderr, "\033[0;33m[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.\033[0m\n", actualBudget, model, maxBudget, maxBudget)
 				actualBudget = maxBudget
 			}
 		}
 
 		if actualBudget > 0 {
 			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(actualBudget))
-		} else if c.thinkingLevel != "" {
-			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(c.thinkingLevel)
+		} else if thinkingLevel != "" {
+			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(thinkingLevel)
 		}
 	}
 
@@ -205,6 +232,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 	for i, h := range history {
 		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
 		// Defensive check: Ensure all content objects have at least one part for the SDK.
+		// NOTE: ContextManager should have already filtered out truly empty turns.
 		if len(sdkHistory[i].Parts) == 0 {
 			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
 		}
@@ -217,8 +245,13 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	config, sdkHistory := c.prepareRequest(ctx, history, tools, resolver)
 
+	c.mu.RLock()
+	sdkClient := c.sdkClient
+	model := c.model
+	c.mu.RUnlock()
+
 	startTime := time.Now()
-	iter := c.sdkClient.Models.GenerateContentStream(ctx, c.model, sdkHistory, config)
+	iter := sdkClient.Models.GenerateContentStream(ctx, model, sdkHistory, config)
 
 	var lastMetrics *llm.Metrics
 
@@ -292,11 +325,15 @@ func toSDKSchema(s *tools.Schema) *genai.Schema {
 
 // GenerateImages calls the Imagen model to generate images from a prompt.
 func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	c.mu.RLock()
+	sdkClient := c.sdkClient
+	c.mu.RUnlock()
+
 	config := &genai.GenerateImagesConfig{
 		OutputMIMEType: mimeType,
 	}
 
-	resp, err := c.sdkClient.Models.GenerateImages(ctx, model, prompt, config)
+	resp, err := sdkClient.Models.GenerateImages(ctx, model, prompt, config)
 	if err != nil {
 		return nil, err
 	}
@@ -313,4 +350,18 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 	}
 
 	return results, nil
+}
+
+// SetSystemInstructions updates the system instruction used by the client.
+func (c *Client) SetSystemInstructions(instr string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if instr == "" {
+		c.systemInstruction = nil
+		return
+	}
+	c.systemInstruction = &llm.Content{
+		Role:  "system",
+		Parts: []*llm.Part{{Text: instr}},
+	}
 }
