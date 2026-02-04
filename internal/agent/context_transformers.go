@@ -191,9 +191,9 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 				})
 			}
 			// Attempt auto-summarization to try and get back into the cheap tier
-			if err := t.autoSummarize(ctx, req); err == nil {
+			if n, err := t.autoSummarize(ctx, req); err == nil {
 				tokens = t.Estimator.EstimateTokens(req.History)
-				req.Metadata.SummarizedTurns = 1
+				req.Metadata.SummarizedTurns = n
 			}
 		}
 	}
@@ -209,9 +209,9 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 			}
 
 			if !req.Metadata.SummarizationAttempted {
-				if err := t.autoSummarize(ctx, req); err == nil {
+				if n, err := t.autoSummarize(ctx, req); err == nil {
 					tokens = t.Estimator.EstimateTokens(req.History)
-					req.Metadata.SummarizedTurns = 1
+					req.Metadata.SummarizedTurns = n
 				}
 			}
 		}
@@ -249,23 +249,23 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 
 func (t *TokenGatekeeper) Priority() int { return 80 }
 
-func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
+func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) (int, error) {
 	if len(req.History) < 10 {
-		return fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
+		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
 	}
 
 	// 1. Locate the block
-	start, end, err := t.findSummarizableRange(req.History)
+	start, end, numTurns, err := t.findSummarizableRange(req.History)
 	if err != nil {
 		req.Metadata.MaintenanceBlocked = true
-		return err
+		return 0, err
 	}
 
 	// 2. Logging
 	if t.Events != nil {
 		subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
 		t.Events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", (end-start)/2, start, end, subsetTokens),
+			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
 		})
 	}
@@ -273,17 +273,17 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	// 3. Service Call
 	summary, err := t.Summarizer.Summarize(ctx, req.History[start:end], "")
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// 4. State Mutation
 	req.History = t.applySummary(req.History, start, end, summary)
 	req.Metadata.SummarizationAttempted = true
 	req.PersistHistory = true
-	return nil
+	return numTurns, nil
 }
 
-func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, error) {
+func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, int, error) {
 	// 1. Group into turns (pairs of messages)
 	turns := groupTurns(history)
 
@@ -318,7 +318,7 @@ func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 	}
 
 	if startTurn == -1 || numTurns < 2 {
-		return 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
+		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
 	}
 
 	startIdx := startTurn * 2
@@ -327,7 +327,7 @@ func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 		endIdx = len(history)
 	}
 
-	return startIdx, endIdx, nil
+	return startIdx, endIdx, numTurns, nil
 }
 
 func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
@@ -570,7 +570,7 @@ func groupTurns(history []*llm.Content) [][]*llm.Content {
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		for _, p := range msg.Parts {
-			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil || p.AssetID != "" || p.Thought {
 				return false
 			}
 		}

@@ -342,6 +342,10 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		t.Error("expected PersistHistory to be true")
 	}
 
+	if req.Metadata.SummarizedTurns != 5 {
+		t.Errorf("expected 5 summarized turns, got %d", req.Metadata.SummarizedTurns)
+	}
+
 	// Verify pinned turns still exist at the beginning of req.History
 	if !req.History[0].Pinned || req.History[0].Parts[0].Text != "Msg 0" {
 		t.Error("Turn 0 (pinned) was lost or corrupted")
@@ -838,4 +842,98 @@ func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) 
 	if err != nil {
 		t.Errorf("expected no error for empty registry, got %v", err)
 	}
+}
+
+func TestInternalHelpers(t *testing.T) {
+	t.Run("groupTurns", func(t *testing.T) {
+		history := []*llm.Content{{Role: "u"}, {Role: "m"}, {Role: "u"}}
+		turns := groupTurns(history)
+		if len(turns) != 2 {
+			t.Errorf("expected 2 turns, got %d", len(turns))
+		}
+		if len(turns[1]) != 1 {
+			t.Errorf("expected last turn to have 1 message, got %d", len(turns[1]))
+		}
+	})
+
+	t.Run("isTurnEmpty", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			turn     []*llm.Content
+			expected bool
+		}{
+			{"Empty", []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, true},
+			{"Text", []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, false},
+			{"AssetID", []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, false},
+			{"Thought", []*llm.Content{{Parts: []*llm.Part{{Thought: true}}}}, false},
+			{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
+		}
+		for _, tt := range tests {
+			if got := isTurnEmpty(tt.turn); got != tt.expected {
+				t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
+			}
+		}
+	})
+
+	t.Run("findSummarizableRange", func(t *testing.T) {
+		tg := &TokenGatekeeper{}
+		// 10 turns (20 msgs)
+		history := make([]*llm.Content, 20)
+		for i := range history {
+			history[i] = &llm.Content{}
+		}
+
+		// No pins, should find range
+		start, end, numTurns, err := tg.findSummarizableRange(history)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if numTurns != 5 {
+			t.Errorf("expected 5 turns, got %d", numTurns)
+		}
+		if start != 0 || end != 10 {
+			t.Errorf("expected [0:10], got [%d:%d]", start, end)
+		}
+
+		// Pin Turn 0
+		history[0].Pinned = true
+		start, end, numTurns, err = tg.findSummarizableRange(history)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if start != 2 {
+			t.Errorf("expected start 2, got %d", start)
+		}
+
+		// Pin enough to make it fail
+		for i := 0; i < 20; i++ {
+			history[i].Pinned = true
+		}
+		_, _, _, err = tg.findSummarizableRange(history)
+		if err == nil {
+			t.Error("expected error when all turns are pinned")
+		}
+	})
+
+	t.Run("applySummary", func(t *testing.T) {
+		tg := &TokenGatekeeper{}
+		history := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "0"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "1"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "2"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "3"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "4"}}},
+		}
+		// Replace turns [0,1] (msgs 0,1,2,3)
+		newHist := tg.applySummary(history, 0, 4, "summary")
+		if len(newHist) != 3 { // [SummaryUser, SummaryModel, Msg4]
+			t.Errorf("expected 3 messages, got %d", len(newHist))
+		}
+		if !strings.Contains(newHist[0].Parts[0].Text, "summary") {
+			t.Errorf("summary not found in first message: %s", newHist[0].Parts[0].Text)
+		}
+		if newHist[2].Parts[0].Text != "4" {
+			t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
+		}
+	})
 }
