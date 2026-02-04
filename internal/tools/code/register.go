@@ -22,6 +22,12 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	inf := &InfoManager{SP: sm}
 	sea := &SearchManager{SP: sm}
 	hea := &HealthManager{SP: sm, Ana: ana}
+	arc := &ArchitectureManager{SP: sm}
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "verify_architecture",
+		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
+	}, arc.VerifyArchitecture)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_code_health",
