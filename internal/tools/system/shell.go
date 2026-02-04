@@ -19,6 +19,7 @@ type ShellTool struct {
 	sm        *security.SecurityManager
 	validator *framework.CommandValidator
 	executor  *ProcessExecutor
+	maxOutput int
 }
 
 func NewShellTool(sm *security.SecurityManager) *ShellTool {
@@ -26,10 +27,9 @@ func NewShellTool(sm *security.SecurityManager) *ShellTool {
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
 		executor:  NewProcessExecutor(),
+		maxOutput: 50000,
 	}
 }
-
-const maxShellOutput = 50000
 
 func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
@@ -74,7 +74,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
-			MaxCapture: maxShellOutput,
+			MaxCapture: t.maxOutput,
 		})
 	})
 
@@ -129,7 +129,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
-			MaxCapture: maxShellOutput,
+			MaxCapture: t.maxOutput,
 		})
 	})
 
@@ -209,7 +209,7 @@ func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 
 func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	output := res.Output
-	if len(output) >= maxShellOutput {
+	if res.Truncated {
 		output += "\n... (truncated)"
 	}
 	if isPipeline {

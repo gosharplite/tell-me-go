@@ -26,9 +26,10 @@ type ExecutionConfig struct {
 
 // ExecutionResult holds the outcome of an execution.
 type ExecutionResult struct {
-	Output   string
-	Error    string
-	ExitCode int
+	Output    string
+	Error     string
+	ExitCode  int
+	Truncated bool
 }
 
 // ProcessExecutor handles running external commands and pipelines.
@@ -75,6 +76,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	var sb strings.Builder
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	var truncated bool
 	wt := &writeTracker{feedback: config.Feedback}
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
@@ -112,8 +114,13 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 
 			if sb.Len() < maxCapture {
 				remaining := maxCapture - sb.Len()
+				if len(content) > remaining {
+					truncated = true
+				}
 				content = truncateToValidUTF8(content, remaining)
 				sb.WriteString(content)
+			} else {
+				truncated = true
 			}
 
 			if config.Feedback != nil {
@@ -134,8 +141,13 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			}
 			remaining := maxCapture - sb.Len()
 			if remaining > 0 {
+				if len(msg+"\n") > remaining {
+					truncated = true
+				}
 				content := truncateToValidUTF8(msg+"\n", remaining)
 				sb.WriteString(content)
+			} else {
+				truncated = true
 			}
 			mu.Unlock()
 		}
@@ -156,8 +168,9 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	return ExecutionResult{
-		Output:   sb.String(),
-		ExitCode: exitCode,
+		Output:    sb.String(),
+		ExitCode:  exitCode,
+		Truncated: truncated,
 	}, nil
 }
 
@@ -188,7 +201,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		return ExecutionResult{ExitCode: 1, Error: err.Error()}, nil
 	}
 
-	stdoutStr, stderrStr := p.capture(config, file)
+	stdoutStr, stderrStr, truncated := p.capture(config, file)
 	exitCode, waitErr := p.wait()
 
 	output := stdoutStr
@@ -201,7 +214,11 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		exitCode = 1
 	}
 
-	return ExecutionResult{Output: output, ExitCode: exitCode}, nil
+	return ExecutionResult{
+		Output:    output,
+		ExitCode:  exitCode,
+		Truncated: truncated,
+	}, nil
 }
 
 // Internal pipeline state manager
@@ -260,10 +277,11 @@ func (p *pipeline) start() error {
 	return nil
 }
 
-func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
+func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string, bool) {
 	var wg sync.WaitGroup
 	var stdoutStr, stderrStr strings.Builder
 	var mu sync.Mutex // Protects builders, feedback, file, writeTracker, and totalCaptured
+	var truncated bool
 	wt := &writeTracker{feedback: config.Feedback}
 	var totalCaptured int
 	maxCapture := config.MaxCapture
@@ -287,9 +305,14 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		}
 		remaining := maxCapture - totalCaptured
 		if remaining > 0 {
+			if len(msg+"\n") > remaining {
+				truncated = true
+			}
 			content := truncateToValidUTF8(msg+"\n", remaining)
 			sb.WriteString(content)
 			totalCaptured += len(content)
+		} else {
+			truncated = true
 		}
 	}
 
@@ -321,9 +344,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 
 				remaining := maxCapture - totalCaptured
 				if remaining > 0 {
-					content := truncateToValidUTF8(fmt.Sprintf("[stderr:%d] %s\n", idx, rawLine), remaining)
+					content := fmt.Sprintf("[stderr:%d] %s\n", idx, rawLine)
+					if len(content) > remaining {
+						truncated = true
+					}
+					content = truncateToValidUTF8(content, remaining)
 					stderrStr.WriteString(content)
 					totalCaptured += len(content)
+				} else {
+					truncated = true
 				}
 
 				if feedbackMsg != "" {
@@ -359,9 +388,15 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 
 		remaining := maxCapture - totalCaptured
 		if remaining > 0 {
-			content := truncateToValidUTF8(string(lineBuf), remaining)
+			content := string(lineBuf)
+			if len(content) > remaining {
+				truncated = true
+			}
+			content = truncateToValidUTF8(content, remaining)
 			stdoutStr.WriteString(content)
 			totalCaptured += len(content)
+		} else {
+			truncated = true
 		}
 
 		if feedbackMsg != "" {
@@ -372,7 +407,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	appendErr(&stdoutStr, scanner.Err())
 
 	wg.Wait()
-	return stdoutStr.String(), stderrStr.String()
+	return stdoutStr.String(), stderrStr.String(), truncated
 }
 
 func (p *pipeline) wait() (int, error) {
