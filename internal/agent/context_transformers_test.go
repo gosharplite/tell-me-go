@@ -429,7 +429,11 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 	// Create history where all messages are pinned
 	h := make([]*llm.Content, 20)
 	for i := range h {
-		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
+		role := "user"
+		if i%2 == 1 {
+			role = "model"
+		}
+		h[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
 	}
 	req := &ContextRequest{History: h}
 
@@ -531,7 +535,11 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	h := make([]*llm.Content, 20)
 	longText := strings.Repeat("A", 400)
 	for i := range h {
-		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}, Pinned: true}
+		role := "user"
+		if i%2 == 1 {
+			role = "model"
+		}
+		h[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: longText}}, Pinned: true}
 	}
 
 	req := &ContextRequest{
@@ -556,7 +564,11 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	h2 := make([]*llm.Content, 20)
 	text2 := strings.Repeat("B", 2960)
 	for i := range h2 {
-		h2[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: text2}}, Pinned: true}
+		role := "user"
+		if i%2 == 1 {
+			role = "model"
+		}
+		h2[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: text2}}, Pinned: true}
 	}
 
 	req2 := &ContextRequest{History: h2, Turn: 1}
@@ -846,7 +858,7 @@ func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) 
 
 func TestInternalHelpers(t *testing.T) {
 	t.Run("groupTurns", func(t *testing.T) {
-		history := []*llm.Content{{Role: "u"}, {Role: "m"}, {Role: "u"}}
+		history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
 		turns := groupTurns(history)
 		if len(turns) != 2 {
 			t.Errorf("expected 2 turns, got %d", len(turns))
@@ -880,7 +892,11 @@ func TestInternalHelpers(t *testing.T) {
 		// 10 turns (20 msgs)
 		history := make([]*llm.Content, 20)
 		for i := range history {
-			history[i] = &llm.Content{}
+			role := "user"
+			if i%2 == 1 {
+				role = "model"
+			}
+			history[i] = &llm.Content{Role: role}
 		}
 
 		// No pins, should find range
@@ -897,7 +913,7 @@ func TestInternalHelpers(t *testing.T) {
 
 		// Pin Turn 0
 		history[0].Pinned = true
-		start, end, numTurns, err = tg.findSummarizableRange(history)
+		start, _, _, err = tg.findSummarizableRange(history)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -916,7 +932,6 @@ func TestInternalHelpers(t *testing.T) {
 	})
 
 	t.Run("applySummary", func(t *testing.T) {
-		tg := &TokenGatekeeper{}
 		history := []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "0"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "1"}}},
@@ -925,7 +940,7 @@ func TestInternalHelpers(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{{Text: "4"}}},
 		}
 		// Replace turns [0,1] (msgs 0,1,2,3)
-		newHist := tg.applySummary(history, 0, 4, "summary")
+		newHist := applySummaryToHistory(history, 0, 4, "summary")
 		if len(newHist) != 3 { // [SummaryUser, SummaryModel, Msg4]
 			t.Errorf("expected 3 messages, got %d", len(newHist))
 		}

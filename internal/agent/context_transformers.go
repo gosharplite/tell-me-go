@@ -277,7 +277,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	}
 
 	// 4. State Mutation
-	req.History = t.applySummary(req.History, start, end, summary)
+	req.History = applySummaryToHistory(req.History, start, end, summary)
 	req.Metadata.SummarizationAttempted = true
 	req.PersistHistory = true
 	return numTurns, nil
@@ -321,10 +321,14 @@ func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
 	}
 
-	startIdx := startTurn * 2
-	endIdx := (startTurn + numTurns) * 2
-	if endIdx > len(history) {
-		endIdx = len(history)
+	startIdx := 0
+	for i := 0; i < startTurn; i++ {
+		startIdx += len(turns[i])
+	}
+
+	endIdx := startIdx
+	for i := startTurn; i < startTurn+numTurns; i++ {
+		endIdx += len(turns[i])
 	}
 
 	return startIdx, endIdx, numTurns, nil
@@ -339,22 +343,53 @@ func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
 	return false
 }
 
-func (t *TokenGatekeeper) applySummary(history []*llm.Content, start, end int, summary string) []*llm.Content {
-	newMsgs := []*llm.Content{
-		{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
-		},
-		{
-			Role:  "model",
-			Parts: []*llm.Part{{Text: "Understood. Context compressed."}},
-		},
+func applySummaryToHistory(history []*llm.Content, start, end int, summary string) []*llm.Content {
+	updated := make([]*llm.Content, 0, len(history)-(end-start)+2)
+	updated = append(updated, history[:start]...)
+
+	sumUser := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "System Auto-Summary (context limit reached):\n\n" + summary}},
+	}
+	sumModel := &llm.Content{
+		Role:  "model",
+		Parts: []*llm.Part{{Text: "Understood. Context compressed."}},
 	}
 
-	updated := make([]*llm.Content, 0, len(history)-(end-start)+len(newMsgs))
-	updated = append(updated, history[:start]...)
-	updated = append(updated, newMsgs...)
-	updated = append(updated, history[end:]...)
+	// Handle role alternation at the start of the injection
+	if len(updated) > 0 && updated[len(updated)-1].Role == "user" {
+		last := updated[len(updated)-1]
+		cloned := &llm.Content{
+			Role:  last.Role,
+			Parts: append([]*llm.Part{}, last.Parts...),
+		}
+		cloned.Parts = append(cloned.Parts, &llm.Part{Text: "\n\n" + sumUser.Parts[0].Text})
+		updated[len(updated)-1] = cloned
+		updated = append(updated, sumModel)
+	} else {
+		updated = append(updated, sumUser, sumModel)
+	}
+
+	// Handle role alternation at the end of the injection
+	remainder := history[end:]
+	if len(remainder) > 0 && remainder[0].Role == "model" {
+		first := remainder[0]
+		cloned := &llm.Content{
+			Role:  first.Role,
+			Parts: append([]*llm.Part{}, first.Parts...),
+		}
+		// Prepend acknowledgment text
+		cloned.Parts = append([]*llm.Part{{Text: sumModel.Parts[0].Text + "\n\n"}}, cloned.Parts...)
+		
+		// If we just appended sumModel in the previous step, we now have:
+		// [..., sumModel, cloned(model)] which is still consecutive.
+		// So we should replace the last sumModel we just added with cloned.
+		updated[len(updated)-1] = cloned
+		updated = append(updated, remainder[1:]...)
+	} else {
+		updated = append(updated, remainder...)
+	}
+
 	return updated
 }
 
@@ -556,13 +591,37 @@ func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) er
 func (t *TransientMerger) Priority() int { return PriorityTransientThreshold + 5 }
 
 func groupTurns(history []*llm.Content) [][]*llm.Content {
+	if len(history) == 0 {
+		return nil
+	}
 	var turns [][]*llm.Content
-	for i := 0; i < len(history); i += 2 {
-		end := i + 2
-		if end > len(history) {
-			end = len(history)
+	var current []*llm.Content
+
+	for _, msg := range history {
+		if (msg.Role == "user" || msg.Role == "system") && len(current) > 0 {
+			// Check if previous message was a Model message with FunctionCall.
+			// If it was, and the current message is a User message, it's likely a tool response
+			// and should stay in the same turn.
+			lastWasToolCall := false
+			last := current[len(current)-1]
+			if last.Role == "model" {
+				for _, p := range last.Parts {
+					if p.FunctionCall != nil {
+						lastWasToolCall = true
+						break
+					}
+				}
+			}
+
+			if !lastWasToolCall || msg.Role == "system" {
+				turns = append(turns, current)
+				current = nil
+			}
 		}
-		turns = append(turns, history[i:end])
+		current = append(current, msg)
+	}
+	if len(current) > 0 {
+		turns = append(turns, current)
 	}
 	return turns
 }
@@ -570,7 +629,7 @@ func groupTurns(history []*llm.Content) [][]*llm.Content {
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		for _, p := range msg.Parts {
-			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil || p.AssetID != "" || p.Thought {
+			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil || p.AssetID != "" || p.Thought || len(p.ThoughtSignature) > 0 {
 				return false
 			}
 		}
