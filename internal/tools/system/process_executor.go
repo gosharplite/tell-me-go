@@ -75,7 +75,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	var sb strings.Builder
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	var writeFailed bool
+	wt := &writeTracker{feedback: config.Feedback}
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024 // Default 1MB
@@ -95,19 +95,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			lineBuf = append(lineBuf, '\n')
 
 			mu.Lock()
-			failed := writeFailed
-			if file != nil && !failed {
-				if _, err := file.Write(lineBuf); err != nil {
-					// handleWriteError needs to be called without lock or we need to inline it
-					// but handleWriteError also locks. Let's inline or adjust.
-					if !writeFailed {
-						writeFailed = true
-						if config.Feedback != nil {
-							fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-						}
-					}
-				}
-			}
+			wt.Write(file, lineBuf)
 
 			// Slice to remove the newline for other uses
 			rawLine := lineBuf[:len(data)]
@@ -139,7 +127,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			if err == bufio.ErrTooLong {
 				msg = "\n[Warning] Output line too long for scanner; truncated."
 			}
-			
+
 			mu.Lock()
 			if config.Feedback != nil {
 				fmt.Fprintln(config.Feedback, msg)
@@ -275,8 +263,8 @@ func (p *pipeline) start() error {
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string) {
 	var wg sync.WaitGroup
 	var stdoutStr, stderrStr strings.Builder
-	var mu sync.Mutex // Protects builders, feedback, file, writeFailed, and totalCaptured
-	var writeFailed bool
+	var mu sync.Mutex // Protects builders, feedback, file, writeTracker, and totalCaptured
+	wt := &writeTracker{feedback: config.Feedback}
 	var totalCaptured int
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
@@ -291,7 +279,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		if err == bufio.ErrTooLong {
 			msg = "\n[Warning] Output line too long for scanner; truncated."
 		}
-		
+
 		mu.Lock()
 		defer mu.Unlock()
 		if config.Feedback != nil {
@@ -321,17 +309,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				lineBuf = append(lineBuf, '\n')
 
 				mu.Lock()
-				failed := writeFailed
-				if file != nil && !failed {
-					if _, err := file.Write(lineBuf); err != nil {
-						if !writeFailed {
-							writeFailed = true
-							if config.Feedback != nil {
-								fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-							}
-						}
-					}
-				}
+				wt.Write(file, lineBuf)
 
 				// Slice to remove the newline for other uses
 				rawLine := lineBuf[:len(data)]
@@ -369,17 +347,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		lineBuf = append(lineBuf, '\n')
 
 		mu.Lock()
-		failed := writeFailed
-		if file != nil && !failed {
-			if _, err := file.Write(lineBuf); err != nil {
-				if !writeFailed {
-					writeFailed = true
-					if config.Feedback != nil {
-						fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
-					}
-				}
-			}
-		}
+		wt.Write(file, lineBuf)
 
 		// Slice to remove the newline for other uses
 		rawLine := lineBuf[:len(data)]
@@ -439,13 +407,48 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 		return nil, nil
 	}
 	path := filepath.Clean(config.OutputFile)
+
+	// Simple security check: prevent escaping the current directory via relative paths.
+	// We allow absolute paths as the agent may need to write to specific system locations
+	// if authorized, but relative paths should stay within the project structure.
+	if !filepath.IsAbs(path) && (strings.HasPrefix(path, ".."+string(filepath.Separator)) || path == "..") {
+		return nil, fmt.Errorf("output file path cannot escape current directory: %s", config.OutputFile)
+	}
+
 	flags := os.O_CREATE | os.O_WRONLY
 	if config.Append {
 		flags |= os.O_APPEND
 	} else {
 		flags |= os.O_TRUNC
 	}
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+
 	return os.OpenFile(path, flags, 0644)
+}
+
+// writeTracker tracks if a write to a shared output file has failed,
+// ensuring only one warning is issued.
+type writeTracker struct {
+	failed   bool
+	feedback io.Writer
+}
+
+// Write attempts to write to w. If it fails, it sets the failed flag and
+// optionally sends a warning to feedback.
+func (wt *writeTracker) Write(w io.Writer, p []byte) {
+	if wt.failed || w == nil {
+		return
+	}
+	if _, err := w.Write(p); err != nil {
+		wt.failed = true
+		if wt.feedback != nil {
+			fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+		}
+	}
 }
 
 // truncateToValidUTF8 ensures that a string is truncated to a maximum number of bytes
