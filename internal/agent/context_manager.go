@@ -5,6 +5,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -270,13 +271,16 @@ func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
 	}
 	for i := range c1.Parts {
 		p1, p2 := c1.Parts[i], c2.Parts[i]
-		if p1.Text != p2.Text || p1.Thought != p2.Thought {
+		if p1.Text != p2.Text || p1.Thought != p2.Thought || p1.AssetID != p2.AssetID {
+			return false
+		}
+		if !bytes.Equal(p1.ThoughtSignature, p2.ThoughtSignature) {
 			return false
 		}
 		if (p1.InlineData == nil) != (p2.InlineData == nil) {
 			return false
 		}
-		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || string(p1.InlineData.Data) != string(p2.InlineData.Data)) {
+		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || !bytes.Equal(p1.InlineData.Data, p2.InlineData.Data)) {
 			return false
 		}
 		if !reflect.DeepEqual(p1.FunctionCall, p2.FunctionCall) {

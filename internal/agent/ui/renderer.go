@@ -127,14 +127,19 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 		hColor = reset
 	}
 
-	totalDuration := r.now().Sub(startTime).Seconds()
 	durationStr := fmt.Sprintf("%.2fs", m.Duration)
 	if m.ToolDuration > 3.0 {
 		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
 	}
 
-	fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s%s%s / %.2fs%s]%s\n",
-		gray, timestamp, miss, hColor, m.CachedTokens, gray, m.ResponseTokens, m.ThinkingTokens, gray, reset, durationStr, gray, totalDuration, gray, reset)
+	timingStr := fmt.Sprintf("%s%s%s", reset, durationStr, gray)
+	if !startTime.IsZero() {
+		totalDuration := r.now().Sub(startTime).Seconds()
+		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", reset, durationStr, gray, totalDuration, gray)
+	}
+
+	fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
+		gray, timestamp, miss, hColor, m.CachedTokens, gray, m.ResponseTokens, m.ThinkingTokens, gray, timingStr, reset)
 }
 
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
@@ -410,7 +415,7 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 	}
 
 	if m, ok := result.Metadata["metrics"].(*llm.Metrics); ok {
-		r.renderMetricsLine(m, time.Now()) // Render the usage line after the result
+		r.renderMetricsLine(m, time.Time{}) // Render the usage line after the result
 	}
 }
 

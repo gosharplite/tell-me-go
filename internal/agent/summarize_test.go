@@ -89,6 +89,11 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 					Candidates: []*genai.Candidate{
 						{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
 					},
+					UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+						PromptTokenCount:     100,
+						CandidatesTokenCount: 50,
+						TotalTokenCount:      150,
+					},
 				}
 				json.NewEncoder(w).Encode(apiResp)
 			}))
@@ -128,6 +133,12 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 				contents := hManager.GetContents()
 				if len(contents) != tt.expectedMsgs {
 					t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
+				}
+				// Verify metadata propagation
+				if m, ok := resp.Metadata["metrics"].(*llm.Metrics); !ok || m == nil {
+					t.Errorf("expected metrics in tool result metadata, got: %v", resp.Metadata["metrics"])
+				} else if m.PromptTokens != 100 {
+					t.Errorf("expected PromptTokens 100 in metrics, got %d", m.PromptTokens)
 				}
 			}
 		})
