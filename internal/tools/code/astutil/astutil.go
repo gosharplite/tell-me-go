@@ -42,27 +42,23 @@ func (c *ASTCache) Get(path string) (*ast.File, *token.FileSet, error) {
 	// 1. Stat the file (I/O) - outside lock
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, c.fset, err
+		return nil, nil, err
 	}
 
-	// 2. Fast path: Check cache
+	// 2. Lock for both check and update to ensure fset safety
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	entry, ok := c.files[path]
 	if ok && entry.modTime.Equal(info.ModTime()) {
-		c.mu.Unlock()
 		return entry.file, c.fset, nil
 	}
-	c.mu.Unlock()
 
-	// 3. Slow path: Parse without holding lock
+	// 3. Slow path: Parse while holding lock to protect c.fset
 	f, err := parser.ParseFile(c.fset, path, nil, parser.ParseComments)
 	if err != nil {
 		return nil, c.fset, err
 	}
-
-	// 4. Update cache
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	// Eviction policy
 	if len(c.files) >= c.maxSize {

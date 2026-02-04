@@ -20,6 +20,8 @@ type SearchManager struct {
 	SP security.SecurityProvider
 }
 
+var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
+
 func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
@@ -33,9 +35,8 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	re := regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 	results, err := files.ConcurrentSearch(ctx, m.SP, fsutil.DefaultFileSystem, path, func(_, line string) bool {
-		return re.MatchString(line)
+		return todoRegex.MatchString(line)
 	}, 500)
 
 	if err != nil && err.Error() != "too many results" {
