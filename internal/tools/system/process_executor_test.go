@@ -579,7 +579,7 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 	// Wait, the formatting also takes space.
 	
 	// If it's NOT shared, both will likely be fully captured if they are 10 each and MaxCapture is 15.
-	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[0] 0123456789") {
+	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[stderr:0] 0123456789") {
 		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
 	}
 }
@@ -602,5 +602,27 @@ func TestStderrPrefixConsistency(t *testing.T) {
 	// New expected format: [stderr:0] err
 	if !strings.Contains(resPipe.Output, "[stderr:0] err") {
 		t.Errorf("RunPipeline stderr prefix mismatch, got %q", resPipe.Output)
+	}
+}
+
+func TestRunCommand_SharedMaxCapture(t *testing.T) {
+	executor := NewProcessExecutor()
+	config := ExecutionConfig{
+		MaxCapture: 15,
+	}
+	// Total 20 bytes raw + prefixes
+	cmd := []string{"sh", "-c", "echo 0123456789; echo 0123456789 >&2"}
+	
+	res, err := executor.RunCommand(context.Background(), cmd, config)
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+
+	if len(res.Output) > 15 {
+		t.Errorf("Expected output length <= 15, got %d: %q", len(res.Output), res.Output)
+	}
+	
+	if strings.Contains(res.Output, "0123456789") && strings.Contains(res.Output, "[stderr] 0123456789") {
+		t.Errorf("Expected shared MaxCapture to limit total output, but both streams were fully captured")
 	}
 }
