@@ -27,14 +27,7 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	}
 
 	// Group messages into turns (pairs)
-	var turns [][]*llm.Content
-	for i := 0; i < len(req.History); i += 2 {
-		end := i + 2
-		if end > len(req.History) {
-			end = len(req.History)
-		}
-		turns = append(turns, req.History[i:end])
-	}
+	turns := groupTurns(req.History)
 
 	keep := make([]bool, len(turns))
 	if req.Metadata.KeptByPolicy == nil {
@@ -257,20 +250,42 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 func (t *TokenGatekeeper) Priority() int { return 80 }
 
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) error {
-	contents := req.History
-	if len(contents) < 10 {
-		return fmt.Errorf("not enough history to auto-summarize (got %d)", len(contents))
+	if len(req.History) < 10 {
+		return fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
 	}
 
-	// Group into turns (pairs of messages)
-	var turns [][]*llm.Content
-	for i := 0; i < len(contents); i += 2 {
-		end := i + 2
-		if end > len(contents) {
-			end = len(contents)
-		}
-		turns = append(turns, contents[i:end])
+	// 1. Locate the block
+	start, end, err := t.findSummarizableRange(req.History)
+	if err != nil {
+		req.Metadata.MaintenanceBlocked = true
+		return err
 	}
+
+	// 2. Logging
+	if t.Events != nil {
+		subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
+		t.Events.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", (end-start)/2, start, end, subsetTokens),
+			Level:   "info",
+		})
+	}
+
+	// 3. Service Call
+	summary, err := t.Summarizer.Summarize(ctx, req.History[start:end], "")
+	if err != nil {
+		return err
+	}
+
+	// 4. State Mutation
+	req.History = t.applySummary(req.History, start, end, summary)
+	req.Metadata.SummarizationAttempted = true
+	req.PersistHistory = true
+	return nil
+}
+
+func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, error) {
+	// 1. Group into turns (pairs of messages)
+	turns := groupTurns(history)
 
 	// Find the first contiguous block of at least 2 turns that contains no pinned messages.
 	// We want to summarize about 50% of the history, but at least 2 turns.
@@ -283,15 +298,7 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	numTurns := 0
 
 	for i := 0; i < len(turns); i++ {
-		isPinned := false
-		for _, msg := range turns[i] {
-			if msg.Pinned {
-				isPinned = true
-				break
-			}
-		}
-
-		if !isPinned {
+		if !t.isTurnPinned(turns[i]) {
 			if startTurn == -1 {
 				startTurn = i
 			}
@@ -311,30 +318,28 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 	}
 
 	if startTurn == -1 || numTurns < 2 {
-		req.Metadata.MaintenanceBlocked = true
-		return fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
+		return 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
 	}
 
 	startIdx := startTurn * 2
 	endIdx := (startTurn + numTurns) * 2
-	if endIdx > len(contents) {
-		endIdx = len(contents)
+	if endIdx > len(history) {
+		endIdx = len(history)
 	}
 
-	// Add transparency logging for automatic maintenance
-	if t.Events != nil {
-		subsetTokens := t.Estimator.EstimateTokens(contents[startIdx:endIdx])
-		t.Events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("Auto-summarizing %d turns (~%d tokens) due to context pressure...", numTurns, subsetTokens),
-			Level:   "info",
-		})
-	}
+	return startIdx, endIdx, nil
+}
 
-	summary, err := t.Summarizer.Summarize(ctx, contents[startIdx:endIdx], "")
-	if err != nil {
-		return err
+func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
+	for _, msg := range turn {
+		if msg.Pinned {
+			return true
+		}
 	}
+	return false
+}
 
+func (t *TokenGatekeeper) applySummary(history []*llm.Content, start, end int, summary string) []*llm.Content {
 	newMsgs := []*llm.Content{
 		{
 			Role:  "user",
@@ -346,16 +351,11 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	req.Metadata.SummarizationAttempted = true // Flag the attempt
-
-	// Update the request history
-	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
-	updatedHistory = append(updatedHistory, contents[:startIdx]...)
-	updatedHistory = append(updatedHistory, newMsgs...)
-	updatedHistory = append(updatedHistory, contents[endIdx:]...)
-	req.History = updatedHistory
-	req.PersistHistory = true
-	return nil
+	updated := make([]*llm.Content, 0, len(history)-(end-start)+len(newMsgs))
+	updated = append(updated, history[:start]...)
+	updated = append(updated, newMsgs...)
+	updated = append(updated, history[end:]...)
+	return updated
 }
 
 // WarningInjector adds safety warnings to the context.
@@ -493,30 +493,17 @@ func (t *ToolDeclarationGenerator) Priority() int { return 75 }
 type EmptyTurnFilter struct{}
 
 func (t *EmptyTurnFilter) Transform(ctx context.Context, req *ContextRequest) error {
+	turns := groupTurns(req.History)
 	var filtered []*llm.Content
-	for i := 0; i < len(req.History); i += 2 {
-		// Handle trailing single message (usually the user's current prompt)
-		if i+1 >= len(req.History) {
-			filtered = append(filtered, req.History[i])
-			break
+	for i, turn := range turns {
+		// Always keep a trailing single message (usually the current user prompt)
+		if len(turn) == 1 && i == len(turns)-1 {
+			filtered = append(filtered, turn...)
+			continue
 		}
 
-		// A turn is empty if neither the user nor model message has content
-		turnEmpty := true
-		for _, msg := range req.History[i : i+2] {
-			for _, p := range msg.Parts {
-				if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
-					turnEmpty = false
-					break
-				}
-			}
-			if !turnEmpty {
-				break
-			}
-		}
-
-		if !turnEmpty {
-			filtered = append(filtered, req.History[i:i+2]...)
+		if !isTurnEmpty(turn) {
+			filtered = append(filtered, turn...)
 		}
 	}
 	if len(filtered) != len(req.History) {
@@ -567,3 +554,26 @@ func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) er
 }
 
 func (t *TransientMerger) Priority() int { return PriorityTransientThreshold + 5 }
+
+func groupTurns(history []*llm.Content) [][]*llm.Content {
+	var turns [][]*llm.Content
+	for i := 0; i < len(history); i += 2 {
+		end := i + 2
+		if end > len(history) {
+			end = len(history)
+		}
+		turns = append(turns, history[i:end])
+	}
+	return turns
+}
+
+func isTurnEmpty(turn []*llm.Content) bool {
+	for _, msg := range turn {
+		for _, p := range msg.Parts {
+			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
