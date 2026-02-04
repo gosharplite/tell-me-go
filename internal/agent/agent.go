@@ -63,6 +63,7 @@ type Agent struct {
 	strategy      *ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
+	tracker       domain_pricing.ICostTracker
 
 	config RuntimeConfig
 }
@@ -175,7 +176,10 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus, WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides))
+	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus,
+		WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides),
+		WithCostTracker(a.tracker),
+	)
 
 	a.registerInternalTools()
 	a.applyConfig() // Broadcast initial config
@@ -220,6 +224,7 @@ func (a *Agent) applyConfig() {
 		a.engine.Reconfigure(
 			WithConfig(a.sm, logFile, model, overrides),
 			WithHardBudget(budget),
+			WithCostTracker(a.tracker),
 		)
 	}
 }
@@ -370,6 +375,7 @@ func WithSystemInstructions(instr string) AgentOption {
 // WithSessionCostTracker sets the cost tracker for the agent.
 func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
 	return func(a *Agent) {
+		a.tracker = tracker
 		if a.engine != nil {
 			a.engine.Reconfigure(WithCostTracker(tracker))
 		}

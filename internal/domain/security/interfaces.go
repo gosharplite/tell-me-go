@@ -12,4 +12,5 @@ type ISecurityManager interface {
 	TerminalLock()
 	TerminalUnlock()
 	IsBypassActive() bool
+	IsCommandAllowed(command string) bool
 }

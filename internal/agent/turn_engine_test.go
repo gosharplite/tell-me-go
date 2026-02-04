@@ -827,8 +827,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// We need internal/tools/framework imported as framework
 	tracker := framework.NewSessionCostTracker(nil, "", modelName, modelPricing, pricing)
 
-	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
-	e.costTracker = tracker
+	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus, WithCostTracker(tracker))
 
 	var turnCosts []float64
 	bus.Subscribe(func(ev events.Event) {

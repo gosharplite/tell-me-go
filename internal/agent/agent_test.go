@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
@@ -666,3 +667,31 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 		t.Errorf("expected 10 messages (5 turns) kept in Precise profile, got %d", len(req.History))
 	}
 }
+
+func TestAgent_WithSessionCostTracker(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	reg := registry.New()
+	
+	// Mock cost tracker
+	tracker := &mockCostTracker{}
+	
+	a := New(nil, nil, reg, sm, false, WithSessionCostTracker(tracker))
+	
+	if a.tracker != tracker {
+		t.Error("WithSessionCostTracker failed to store tracker in Agent")
+	}
+	
+	if a.engine.costTracker != tracker {
+		t.Error("WithSessionCostTracker failed to inject tracker into engine")
+	}
+}
+
+type mockCostTracker struct{}
+
+func (m *mockCostTracker) Accumulate(metrics llm.Metrics) {}
+func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
+func (m *mockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
+	return pricing.UsageStats{}, 0
+}
+func (m *mockCostTracker) CalculateCost(metrics llm.Metrics) float64 { return 0 }
+func (m *mockCostTracker) Warmup() {}
