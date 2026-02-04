@@ -529,3 +529,31 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 		t.Errorf("Expected exactly 1 warning, got %d", warningCount)
 	}
 }
+
+func TestRunCommand_DeadlockPrevention(t *testing.T) {
+	executor := NewProcessExecutor()
+	// This command writes more than the typical pipe buffer (64KB) to stderr,
+	// then writes to stdout. With sequential reading (stdout then stderr),
+	// it would deadlock because the process blocks on stderr write while
+	// the executor blocks on stdout read.
+	
+	// We use 128KB to be safe.
+	cmd := []string{"sh", "-c", "dd if=/dev/zero bs=1k count=128 2>/tmp/stderr_temp && cat /tmp/stderr_temp >&2 && echo done"}
+	// Actually, easier:
+	cmd = []string{"sh", "-c", "python3 -c \"import sys; print('e' * 128 * 1024, file=sys.stderr); print('done')\""}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, err := executor.RunCommand(ctx, cmd, ExecutionConfig{})
+	if err != nil {
+		t.Fatalf("RunCommand failed: %v", err)
+	}
+
+	if !strings.Contains(res.Output, "done") {
+		t.Errorf("expected output to contain 'done', got %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "[stderr]") {
+		t.Errorf("expected output to contain '[stderr]', got %q", res.Output)
+	}
+}

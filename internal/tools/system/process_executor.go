@@ -57,7 +57,6 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
-	multi := io.MultiReader(stdout, stderr)
 
 	file, err := e.openOutputFile(config)
 	if err != nil {
@@ -74,53 +73,78 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	var sb strings.Builder
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	var writeFailed bool
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024 // Default 1MB
 	}
 
-	scanner := bufio.NewScanner(multi)
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, maxScannerCapacity)
-	for scanner.Scan() {
-		data := scanner.Bytes()
-		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
-		}
-		if sb.Len() < maxCapture {
-			remaining := maxCapture - sb.Len()
-			canWrite := len(data)
-			if canWrite > remaining {
-				canWrite = remaining
-			}
-			sb.Write(data[:canWrite])
-			if canWrite < remaining && sb.Len() < maxCapture {
-				sb.WriteByte('\n')
-			}
-		}
-		if file != nil && !writeFailed {
-			if _, err := file.Write(data); err != nil {
-				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+	capture := func(r io.Reader, isStderr bool) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, maxScannerCapacity)
+		for scanner.Scan() {
+			data := scanner.Bytes()
+			mu.Lock()
+			if file != nil && !writeFailed {
+				if _, err := file.Write(data); err != nil {
+					if config.Feedback != nil {
+						fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+					}
+					writeFailed = true
+				} else {
+					file.Write(newline)
 				}
-				writeFailed = true
-			} else {
-				file.Write(newline)
 			}
+
+			var line string
+			if isStderr {
+				if config.Feedback != nil {
+					fmt.Fprintf(config.Feedback, "  \033[31m[stderr] %s\033[0m\n", data)
+				}
+				line = fmt.Sprintf("[stderr] %s", data)
+			} else {
+				if config.Feedback != nil {
+					fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
+				}
+				line = string(data)
+			}
+
+			if sb.Len() < maxCapture {
+				remaining := maxCapture - sb.Len()
+				content := line
+				if len(content) > remaining {
+					content = content[:remaining]
+				}
+				sb.WriteString(content)
+				if len(content) < remaining && sb.Len() < maxCapture {
+					sb.WriteByte('\n')
+				}
+			}
+			mu.Unlock()
+		}
+
+		if err := scanner.Err(); err != nil {
+			msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+			if err == bufio.ErrTooLong {
+				msg = "\n[Warning] Output line too long for scanner; truncated."
+			}
+			mu.Lock()
+			if config.Feedback != nil {
+				fmt.Fprintln(config.Feedback, msg)
+			}
+			sb.WriteString(msg + "\n")
+			mu.Unlock()
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
-		if err == bufio.ErrTooLong {
-			msg = "\n[Warning] Output line too long for scanner; truncated."
-		}
-		if config.Feedback != nil {
-			fmt.Fprintln(config.Feedback, msg)
-		}
-		sb.WriteString(msg + "\n")
-	}
+	wg.Add(2)
+	go capture(stdout, false)
+	go capture(stderr, true)
+	wg.Wait()
 
 	waitErr := cmd.Wait()
 	exitCode := 0
