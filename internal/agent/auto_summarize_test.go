@@ -157,3 +157,59 @@ func TestAutoSummarize_Logging(t *testing.T) {
 		t.Fatal("Timeout: Auto-summarization log event was never emitted")
 	}
 }
+
+func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history_sys.json"))
+	reg := registry.New()
+	ctx := context.Background()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Summary"}}}},
+			},
+		}
+		json.NewEncoder(w).Encode(apiResp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	// Set initial system instructions
+	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
+	
+	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
+	a.SetLimits(10, 3500, 20) // Limit to trigger summarization
+
+	// Add some turns (approx 3451 tokens with base overhead and tools)
+	longText := strings.Repeat("A", 1600) // approx 500 tokens
+	for i := 0; i < 6; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
+	}
+
+	// Trigger Prepare
+	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	newContents := hManager.GetContents()
+	// Should have summarized 6/2 = 3 turns (6 messages) replaced by 2 messages.
+	// Total: 12 - 6 + 2 = 8 messages.
+	if len(newContents) != 8 {
+		t.Errorf("expected 8 messages, got %d", len(newContents))
+	}
+
+	// First message should be the auto-summary
+	if !strings.Contains(newContents[0].Parts[0].Text, "System Auto-Summary") {
+		t.Errorf("first message should be auto-summary, got: %s", newContents[0].Parts[0].Text)
+	}
+	
+	// Ensure no "system" role messages in history (system instructions are client-side)
+	for _, c := range newContents {
+		if c.Role == "system" {
+			t.Errorf("found system role message in history, which should be avoided")
+		}
+	}
+}

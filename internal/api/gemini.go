@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/auth"
@@ -20,6 +21,7 @@ import (
 
 // Client represents a Gemini API client using the GenAI SDK.
 type Client struct {
+	mu                sync.RWMutex
 	sdkClient         *genai.Client
 	authenticator     auth.Authenticator
 	apiURL            string
@@ -174,9 +176,13 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 		})
 	}
 
+	c.mu.RLock()
+	instr := c.systemInstruction
+	c.mu.RUnlock()
+
 	config := &genai.GenerateContentConfig{
 		Tools:             activeTools,
-		SystemInstruction: ToSDKContent(ctx, c.systemInstruction, resolver),
+		SystemInstruction: ToSDKContent(ctx, instr, resolver),
 	}
 
 	// Apply Thinking Config
@@ -317,6 +323,8 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 
 // SetSystemInstructions updates the system instruction used by the client.
 func (c *Client) SetSystemInstructions(instr string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if instr == "" {
 		c.systemInstruction = nil
 		return

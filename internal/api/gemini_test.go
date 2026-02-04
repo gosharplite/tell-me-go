@@ -111,7 +111,27 @@ func TestSendChat_FinishReason(t *testing.T) {
 }
 
 func TestSystemInstruction(t *testing.T) {
+	expectedInstruction := "Be helpful and concise"
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify payload
+		var req struct {
+			SystemInstruction struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"systemInstruction"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+		}
+
+		if len(req.SystemInstruction.Parts) == 0 {
+			t.Error("expected system instruction parts, got none")
+		} else if req.SystemInstruction.Parts[0].Text != expectedInstruction {
+			t.Errorf("expected instruction %q, got %q", expectedInstruction, req.SystemInstruction.Parts[0].Text)
+		}
+
 		resp := genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
 		}
@@ -120,7 +140,7 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "Be helpful", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false)
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
