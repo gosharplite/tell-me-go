@@ -94,7 +94,7 @@ func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (s
 	return prompt, nil
 }
 
-func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
+func (a *App) showHistory(hManager *history.Manager, n int, raw bool, showThoughts bool) {
 	contents := hManager.GetContents()
 	if len(contents) == 0 {
 		fmt.Fprintln(a.Stdout, "No history found.")
@@ -122,6 +122,11 @@ func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 		}
 		fmt.Fprintf(a.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
 		for _, p := range c.Parts {
+			// Skip thinking parts if the user hasn't enabled them in config
+			if p.Thought && !showThoughts {
+				continue
+			}
+
 			if p.Text != "" {
 				if raw || r == nil {
 					fmt.Fprint(a.Stdout, p.Text)
