@@ -109,8 +109,5 @@ func (m *MockSecurityManager) TerminalLock()                              {}
 func (m *MockSecurityManager) TerminalUnlock()                            {}
 func (m *MockSecurityManager) IsBypassActive() bool                       { return true }
 func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
-	if m.AllowAll {
-		return true
-	}
-	return false
+	return m.AllowAll
 }

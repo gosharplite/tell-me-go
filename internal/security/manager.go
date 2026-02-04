@@ -105,111 +105,129 @@ func (sm *SecurityManager) SetBypassActive(active bool) {
 	sm.bypassActive = active
 }
 
+var allowedCommands = map[string]bool{
+	// Shell commands (for execute_command/pipe_commands)
+	"go":      true,
+	"git":     true,
+	"ls":      true,
+	"grep":    true,
+	"cat":     true,
+	"diff":    true,
+	"whoami":  true,
+	"stat":    true,
+	"find":    true,
+	"sh":      true,
+	"make":    true,
+	"npm":     true,
+	"node":    true,
+	"cargo":   true,
+	"pytest":  true,
+	"python":  true,
+	"python3": true,
+	"pwd":     true,
+	"echo":    true,
+	"head":    true,
+	"tail":    true,
+	"wc":      true,
+	"date":    true,
+	"cp":      true,
+	"mv":      true,
+	"rm":      true,
+	"mkdir":   true,
+	"touch":   true,
+	"chmod":   true,
+	"chown":   true,
+	"tar":     true,
+	"zip":     true,
+	"unzip":   true,
+	"curl":    true,
+	"wget":    true,
+
+	// Filesystem Tools
+	"list_files":        true,
+	"get_tree":          true,
+	"read_file":         true,
+	"search_files":      true,
+	"replace_text":      true,
+	"find_file":         true,
+	"write_file":        true,
+	"append_text":       true,
+	"get_file_diff":     true,
+	"undo_file_change":  true,
+	"register_safepath": true,
+	"list_safepaths":    true,
+	"remove_safepath":   true,
+	"register_readpath": true,
+	"list_readpaths":    true,
+	"remove_readpath":   true,
+
+	// Code Analysis Tools
+	"get_definitions":         true,
+	"get_file_skeleton":       true,
+	"verify_architecture":     true,
+	"get_code_health":         true,
+	"find_usages":             true,
+	"find_definitions":        true,
+	"list_symbols":            true,
+	"list_implementations":    true,
+	"get_type_info":           true,
+	"get_project_summary":     true,
+	"search_usages_globally":  true,
+	"get_semantic_diff":       true,
+	"rename_symbol":           true,
+	"list_todos":              true,
+	"go_doc":                  true,
+	"get_complexity_metrics":  true,
+	"get_package_graph":       true,
+	"analyze_sequence_flow":   true,
+	"move_definition":         true,
+	"check_vulnerabilities":   true,
+	"run_linter":              true,
+
+	// Development Tools
+	"execute_command": true,
+	"pipe_commands":   true,
+	"run_tests":       true,
+	"go_tidy":         true,
+	"get_coverage":    true,
+	"run_benchmark":   true,
+
+	// Git Tools
+	"get_git_status":    true,
+	"get_git_diff":      true,
+	"get_git_log":       true,
+	"get_git_show":      true,
+	"get_git_blame":     true,
+	"git_commit":        true,
+	"git_create_branch": true,
+
+	// Communication & External Tools
+	"send_teams_message": true,
+	"read_external_docs": true,
+	"http_request":       true,
+
+	// Session & Management Tools
+	"get_session_info":         true,
+	"manage_scratchpad":        true,
+	"manage_config":            true,
+	"manage_tasks":             true,
+	"ask_user":                 true,
+	"bypass_confirmation":      true,
+	"revoke_bypass":            true,
+	"estimate_cost":            true,
+	"get_cost_summary":         true,
+	"verify_release_readiness": true,
+	"summarize_history":        true,
+	"manage_history":           true,
+
+	// Media Tools
+	"create_image": true,
+	"read_image":   true,
+}
+
 // IsCommandAllowed checks if a base command is allowed for execution.
 func (sm *SecurityManager) IsCommandAllowed(command string) bool {
-	// Whitelist of allowed base commands and registered tools
-	allowed := map[string]bool{
-		// Shell commands (for execute_command/pipe_commands)
-		"go":      true,
-		"git":     true,
-		"ls":      true,
-		"grep":    true,
-		"cat":     true,
-		"diff":    true,
-		"whoami":  true,
-		"stat":    true,
-		"find":    true,
-		"sh":      true,
-		"make":    true,
-		"npm":     true,
-		"node":    true,
-		"cargo":   true,
-		"pytest":  true,
-		"python":  true,
-		"python3": true,
-
-		// Filesystem Tools
-		"list_files":        true,
-		"get_tree":          true,
-		"read_file":         true,
-		"search_files":      true,
-		"replace_text":      true,
-		"find_file":         true,
-		"write_file":        true,
-		"append_text":       true,
-		"get_file_diff":     true,
-		"undo_file_change":  true,
-		"register_safepath": true,
-		"list_safepaths":    true,
-		"remove_safepath":   true,
-		"register_readpath": true,
-		"list_readpaths":    true,
-		"remove_readpath":   true,
-
-		// Code Analysis Tools
-		"get_definitions":         true,
-		"get_file_skeleton":       true,
-		"verify_architecture":     true,
-		"get_code_health":         true,
-		"find_usages":             true,
-		"find_definitions":        true,
-		"list_symbols":            true,
-		"list_implementations":    true,
-		"get_type_info":           true,
-		"get_project_summary":     true,
-		"search_usages_globally":  true,
-		"get_semantic_diff":       true,
-		"rename_symbol":           true,
-		"list_todos":              true,
-		"go_doc":                  true,
-		"get_complexity_metrics":  true,
-		"get_package_graph":       true,
-		"analyze_sequence_flow":   true,
-		"move_definition":         true,
-		"check_vulnerabilities":   true,
-		"run_linter":              true,
-
-		// Development Tools
-		"execute_command": true,
-		"pipe_commands":   true,
-		"run_tests":       true,
-		"go_tidy":         true,
-		"get_coverage":    true,
-		"run_benchmark":   true,
-
-		// Git Tools
-		"get_git_status":    true,
-		"get_git_diff":      true,
-		"get_git_log":       true,
-		"get_git_show":      true,
-		"get_git_blame":     true,
-		"git_commit":        true,
-		"git_create_branch": true,
-
-		// Communication & External Tools
-		"send_teams_message": true,
-		"read_external_docs": true,
-		"http_request":       true,
-
-		// Session & Management Tools
-		"get_session_info":        true,
-		"manage_scratchpad":       true,
-		"manage_config":           true,
-		"manage_tasks":            true,
-		"ask_user":                true,
-		"bypass_confirmation":     true,
-		"revoke_bypass":           true,
-		"estimate_cost":           true,
-		"get_cost_summary":        true,
-		"verify_release_readiness": true,
-		"summarize_history":       true,
-		"manage_history":          true,
-
-		// Media Tools
-		"create_image": true,
-		"read_image":   true,
-	}
-	return allowed[command]
+	return allowedCommands[command]
 }
 
 // TerminalLock locks the terminal.
