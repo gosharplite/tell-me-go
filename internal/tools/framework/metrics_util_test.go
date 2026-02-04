@@ -192,3 +192,35 @@ func TestParseUsage_LargeLine(t *testing.T) {
 		t.Errorf("expected 100 prompt tokens, got %d", stats.PromptTokens)
 	}
 }
+
+func TestParseUsage_VeryLargeLine(t *testing.T) {
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "very_large.log")
+
+	// Create a log entry larger than the previous 1MB limit (e.g., 2MB)
+	largeField := strings.Repeat("a", 2*1024*1024)
+	content := `{"model":"gpt-4", "prompt_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
+
+	err := os.WriteFile(logFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("failed to write very large log file: %v", err)
+	}
+
+	pricingData := pricing.PricingData{
+		Models: map[string]pricing.ModelPricing{
+			"gpt-4": {Miss: 10.0, Comp: 30.0},
+		},
+	}
+
+	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "gpt-4")
+	if err != nil {
+		t.Fatalf("ParseUsage failed on very large line: %v", err)
+	}
+
+	if totalCost != 0.5 {
+		t.Errorf("expected cost 0.5, got %v", totalCost)
+	}
+	if stats.PromptTokens != 100 {
+		t.Errorf("expected 100 prompt tokens, got %d", stats.PromptTokens)
+	}
+}

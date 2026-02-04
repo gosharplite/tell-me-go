@@ -32,6 +32,8 @@ type ExecutionResult struct {
 // ProcessExecutor handles running external commands and pipelines.
 type ProcessExecutor struct{}
 
+const maxScannerCapacity = 10 * 1024 * 1024
+
 // NewProcessExecutor creates a new ProcessExecutor.
 func NewProcessExecutor() *ProcessExecutor {
 	return &ProcessExecutor{}
@@ -68,16 +70,23 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	scanner := bufio.NewScanner(multi)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
 	for scanner.Scan() {
-		line := scanner.Text()
+		data := scanner.Bytes()
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", line)
+			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
 		}
 		if sb.Len() < maxCapture {
-			sb.WriteString(line + "\n")
+			toWrite := string(data) + "\n"
+			if sb.Len()+len(toWrite) > maxCapture {
+				toWrite = toWrite[:maxCapture-sb.Len()]
+			}
+			sb.WriteString(toWrite)
 		}
 		if file != nil {
-			file.WriteString(line + "\n")
+			file.Write(data)
+			file.WriteString("\n")
 		}
 	}
 
@@ -232,14 +241,16 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		go func(idx int, src io.Reader) {
 			defer wg.Done()
 			scanner := bufio.NewScanner(src)
+			buf := make([]byte, 64*1024)
+			scanner.Buffer(buf, maxScannerCapacity)
 			for scanner.Scan() {
-				line := scanner.Text()
+				data := scanner.Bytes()
 				mu.Lock()
 				if config.Feedback != nil {
-					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, line)
+					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
 				}
 				if stderrStr.Len() < maxCapture {
-					toWrite := line + "\n"
+					toWrite := string(data) + "\n"
 					if stderrStr.Len()+len(toWrite) > maxCapture {
 						toWrite = toWrite[:maxCapture-stderrStr.Len()]
 					}
@@ -253,21 +264,24 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 
 	// Capture Stdout sequentially (main thread)
 	scanner := bufio.NewScanner(p.stdoutPipe)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
 	for scanner.Scan() {
-		line := scanner.Text()
+		data := scanner.Bytes()
 		mu.Lock()
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", line)
+			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
 		}
 		if stdoutStr.Len() < maxCapture {
-			toWrite := line + "\n"
+			toWrite := string(data) + "\n"
 			if stdoutStr.Len()+len(toWrite) > maxCapture {
 				toWrite = toWrite[:maxCapture-stdoutStr.Len()]
 			}
 			stdoutStr.WriteString(toWrite)
 		}
 		if file != nil {
-			file.WriteString(line + "\n")
+			file.Write(data)
+			file.WriteString("\n")
 		}
 		mu.Unlock()
 	}

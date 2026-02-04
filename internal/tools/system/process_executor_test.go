@@ -68,13 +68,13 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"cat"},
 			},
 			check: func(t *testing.T, res ExecutionResult) {
-				// We expect a warning about line being too long
-				if !strings.Contains(res.Output, "too long") && !strings.Contains(res.Output, "truncated") {
-					// Skip if python3 is missing, but if it ran, it should have the warning
+				// Now that we increased the limit to 10MB, 70KB should NOT trigger a warning
+				if strings.Contains(res.Output, "too long") || strings.Contains(res.Output, "truncated") {
+					t.Errorf("did not expect truncation warning for 70KB line, but got: %q", res.Output)
+				}
+				if !strings.Contains(res.Output, strings.Repeat("a", 70000)) {
 					if !strings.Contains(res.Error, "not found") {
-						// This might be tricky if python3 is missing.
-						// Let's assume it's there or just log it.
-						t.Logf("Output: %s", res.Output)
+						t.Errorf("output does not contain the expected long line")
 					}
 				}
 			},
