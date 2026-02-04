@@ -311,14 +311,13 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	e.taskCost = 0
 	e.mu.Unlock()
 
-	totalRetries := 0
 	var lastState *TurnState
 	for i := 0; ; i++ {
 		if err := e.checkLimits(ctx, i); err != nil {
 			return err
 		}
 
-		turn := e.createTurn(i, startTime, totalRetries)
+		turn := e.createTurn(i, startTime)
 		if lastState != nil {
 			turn.State.ToolCallCount = lastState.ToolCallCount
 			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
@@ -336,7 +335,6 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 			return err
 		}
 
-		totalRetries = turn.State.RetryCount
 		lastState = turn.State
 		if e.shouldStopRunning(turn) {
 			break
@@ -374,7 +372,7 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	return nil
 }
 
-func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int) *Turn {
+func (e *TurnEngine) createTurn(index int, startTime time.Time) *Turn {
 	e.mu.RLock()
 	tracker := e.costTracker
 	model := e.model
@@ -383,7 +381,7 @@ func (e *TurnEngine) createTurn(index int, startTime time.Time, totalRetries int
 	turn := &Turn{
 		Index:       index,
 		StartTime:   startTime,
-		State:       &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: totalRetries},
+		State:       &TurnState{CurrentTurns: index, Phase: PhaseRefining, RetryCount: 0},
 		CtxManager:  e.ctxManager,
 		Gateway:     e.gateway,
 		Executor:    e.executor,

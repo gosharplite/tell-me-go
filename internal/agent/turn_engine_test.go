@@ -874,3 +874,74 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		t.Errorf("expected 2 usage metrics events on second run, got %d", len(turnCosts))
 	}
 }
+
+func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	attemptsInTurn := 0
+	turnIndex := 0
+	totalAttempts := 0
+
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content)
+		close(ch)
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			attemptsInTurn++
+			totalAttempts++
+			
+			// Turn 0: Fail twice, then tool call
+			if turnIndex == 0 {
+				if attemptsInTurn <= 2 {
+					return nil, nil, gateway.ErrTransient
+				}
+				return &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}},
+				}, &llm.Metrics{}, nil
+			}
+			
+			// Turn 1: Fail twice, then success
+			if turnIndex == 1 {
+				if attemptsInTurn <= 2 {
+					return nil, nil, gateway.ErrTransient
+				}
+				return &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{{Text: "done"}},
+				}, &llm.Metrics{}, nil
+			}
+			
+			return nil, nil, fmt.Errorf("unexpected turn")
+		}
+	}
+
+	mockEx := &MockExecutor{
+		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			turnIndex++
+			attemptsInTurn = 0
+			return &llm.Content{
+				Role: "user",
+				Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]interface{}{"result": "ok"}}}},
+			}, nil
+		},
+	}
+
+	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	// Default MaxRetries is 3.
+	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0, 
+	// and Turn 1's first failure would set it to 3, then second would hit limit.
+	
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if totalAttempts != 6 {
+		t.Errorf("expected 6 total attempts (3 per turn), got %d", totalAttempts)
+	}
+}
