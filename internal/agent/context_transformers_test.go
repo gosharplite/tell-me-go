@@ -56,13 +56,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Pruning occurred", func(t *testing.T) {
-		managerCalled := false
 		m := &mockHistoryManager{
 			ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-				managerCalled = true
-				if start != 0 || end != 6 || len(newContents) != 2 {
-					t.Errorf("unexpected ReplaceRange call: start=%d, end=%d, len=%d", start, end, len(newContents))
-				}
 				return nil
 			},
 		}
@@ -87,8 +82,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			t.Fatalf("Transform failed: %v", err)
 		}
 
-		if !managerCalled {
-			t.Error("Manager.ReplaceRange was not called")
+		if !req.PersistHistory {
+			t.Error("expected PersistHistory to be true")
 		}
 		if len(req.History) != 2 {
 			t.Errorf("expected 2 messages remaining, got %d", len(req.History))
@@ -330,10 +325,8 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		},
 	}
 
-	managerCalled := false
 	manager := &mockHistoryManager{
 		ReplaceRangeFunc: func(ctx context.Context, start, end int, newContents []*llm.Content) error {
-			managerCalled = true
 			return nil
 		},
 	}
@@ -371,8 +364,8 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	if !summarizerCalled {
 		t.Error("Summarizer was not called")
 	}
-	if !managerCalled {
-		t.Error("Manager.ReplaceRange was not called")
+	if !req.PersistHistory {
+		t.Error("expected PersistHistory to be true")
 	}
 
 	// Verify pinned turns still exist at the beginning of req.History

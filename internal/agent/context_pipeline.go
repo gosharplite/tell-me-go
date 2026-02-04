@@ -26,10 +26,11 @@ type ContextMetadata struct {
 
 // ContextRequest carries state through the context transformation pipeline.
 type ContextRequest struct {
-	Turn     int
-	History  []*llm.Content
-	Result   []*llm.Content
-	Metadata ContextMetadata
+	Turn            int
+	History         []*llm.Content
+	Result          []*llm.Content
+	Metadata        ContextMetadata
+	PersistHistory  bool // Flag to persist History back to the history.Manager
 }
 
 // ContextTransformer defines a stage in the context preparation pipeline.

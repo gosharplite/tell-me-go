@@ -320,3 +320,11 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	// Save to disk if persistence is enabled
 	return m.saveLocked(ctx)
 }
+
+// SetContents replaces the entire history and persists it to disk.
+func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Contents = contents
+	return m.saveLocked(ctx)
+}

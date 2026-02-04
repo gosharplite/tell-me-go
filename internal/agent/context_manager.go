@@ -71,8 +71,30 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		History: cm.History.GetContents(),
 	}
 
-	if err := cm.Pipeline.Execute(ctx, req); err != nil {
-		return nil, nil, err
+	pipeline := cm.Pipeline
+	// We execute the pipeline. Since some transformers might modify history
+	// and want it persisted (Pruner, Gatekeeper), but others only want it
+	// for the API (WarningInjector), we handle persistence carefully.
+	for _, t := range pipeline.transformers {
+		// Transient cutoff: priority >= 100 (e.g., WarningInjector)
+		// We persist any pending changes before transient transformers run.
+		if t.Priority() >= 100 && req.PersistHistory {
+			if err := cm.History.SetContents(ctx, req.History); err != nil {
+				return nil, nil, fmt.Errorf("failed to persist history changes: %w", err)
+			}
+			req.PersistHistory = false
+		}
+
+		if err := t.Transform(ctx, req); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// Final check for persistence if no transient transformers ran
+	if req.PersistHistory {
+		if err := cm.History.SetContents(ctx, req.History); err != nil {
+			return nil, nil, fmt.Errorf("failed to persist history changes: %w", err)
+		}
 	}
 
 	return req.History, &req.Metadata, nil

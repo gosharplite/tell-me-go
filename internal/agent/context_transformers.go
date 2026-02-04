@@ -63,11 +63,9 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 	}
 
 	if prunedCount > 0 {
-		// We replace the entire history range to ensure the manager stays in sync
-		// with non-contiguous pruning (pinned turns kept in the middle/start).
-		if err := t.Manager.ReplaceRange(ctx, 0, initialLen, newHistory); err != nil {
-			return err
-		}
+		req.History = newHistory
+		req.Metadata.PrunedTurns += prunedCount
+		req.PersistHistory = true
 
 		if t.Events != nil {
 			t.Events.Publish(events.SystemMessageEvent{
@@ -77,8 +75,6 @@ func (t *HistoryPruner) Transform(ctx context.Context, req *ContextRequest) erro
 		}
 	}
 
-	req.History = newHistory
-	req.Metadata.PrunedTurns += prunedCount
 	return nil
 }
 
@@ -332,17 +328,15 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 		},
 	}
 
-	if err := t.Manager.ReplaceRange(ctx, startIdx, endIdx, newMsgs); err != nil {
-		return err
-	}
 	req.Metadata.SummarizationAttempted = true // Flag the attempt
 
-	// Update the request history after replacement in the manager
+	// Update the request history
 	updatedHistory := make([]*llm.Content, 0, len(contents)-(endIdx-startIdx)+len(newMsgs))
 	updatedHistory = append(updatedHistory, contents[:startIdx]...)
 	updatedHistory = append(updatedHistory, newMsgs...)
 	updatedHistory = append(updatedHistory, contents[endIdx:]...)
 	req.History = updatedHistory
+	req.PersistHistory = true
 	return nil
 }
 
