@@ -491,8 +491,8 @@ func TestHistoryManager_ClonePersistent(t *testing.T) {
 	ctx := context.Background()
 
 	content := &llm.Content{
-		Role:  "user",
-		Parts: []*llm.Part{{Text: "persistent"}},
+		Role:           "user",
+		Parts:          []*llm.Part{{Text: "persistent"}},
 		TransientParts: []*llm.Part{{Text: "transient"}},
 	}
 

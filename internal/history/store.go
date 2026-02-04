@@ -143,33 +143,27 @@ func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
 	return err
 }
 
-// prepareForStorage offloads binary data to AssetStore and returns a shallow clone for JSON marshaling.
+// prepareForStorage offloads binary data to AssetStore and returns a clone for JSON marshaling.
 func (s *JSONLStore) prepareForStorage(ctx context.Context, c *llm.Content) (*llm.Content, error) {
 	if c == nil {
 		return nil, nil
 	}
 
-	clone := &llm.Content{
-		Role:   c.Role,
-		Parts:  make([]*llm.Part, len(c.Parts)),
-		Pinned: c.Pinned,
-	}
+	// Use the existing deep clone implementation
+	clone := c.Clone()
 
-	for i, p := range c.Parts {
-		pClone := *p // Shallow copy
-
-		if p.InlineData != nil && len(p.InlineData.Data) > 0 {
-			id, err := s.assetStore.Put(ctx, p.InlineData.Data)
-			if err != nil {
-				return nil, err
-			}
-			pClone.AssetID = id
-			// Null out data in the storage clone to save space
-			dataLessBlob := *p.InlineData
-			dataLessBlob.Data = nil
-			pClone.InlineData = &dataLessBlob
+	for _, p := range clone.Parts {
+		if p == nil || p.InlineData == nil || len(p.InlineData.Data) == 0 {
+			continue
 		}
-		clone.Parts[i] = &pClone
+
+		id, err := s.assetStore.Put(ctx, p.InlineData.Data)
+		if err != nil {
+			return nil, err
+		}
+		p.AssetID = id
+		// Null out data in the storage clone to save space
+		p.InlineData.Data = nil
 	}
 
 	return clone, nil
