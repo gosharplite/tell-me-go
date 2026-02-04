@@ -5,6 +5,8 @@ package code
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,22 @@ import (
 )
 
 func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
+	// Go to project root to ensure all packages are found
+	cwd, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			break
+		}
+		cwd = parent
+	}
+	oldCwd, _ := os.Getwd()
+	os.Chdir(cwd)
+	defer os.Chdir(oldCwd)
+
 	sm := security.NewSecurityManager(nil)
 	arc := &ArchitectureManager{SP: sm}
 

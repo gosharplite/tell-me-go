@@ -16,13 +16,26 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
+const (
+	LayerDomain   = "domain"
+	LayerAgent    = "agent"
+	LayerTools    = "tools"
+	LayerFsutil   = "fsutil"
+	LayerSecurity = "security"
+)
+
 type ArchitectureManager struct {
-	SP security.SecurityProvider
+	SP         security.SecurityProvider
+	modulePath string
 }
 
 type pkgInfo struct {
 	ImportPath string
 	Imports    []string
+	Module     *struct {
+		Path string
+		Dir  string
+	}
 }
 
 type violation struct {
@@ -30,6 +43,12 @@ type violation struct {
 	category string
 	target   string
 	reason   string
+}
+
+type Rule struct {
+	SourceLayer string
+	Forbidden   []string // Layer names or "cmd"
+	Reason      string
 }
 
 func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -49,21 +68,12 @@ func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[s
 }
 
 func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[string][]string, error) {
-	// Find module name and root
-	rootCmd := exec.CommandContext(ctx, "go", "list", "-m", "-f", "{{.Path}}\n{{.Dir}}")
-	rootOut, err := rootCmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to find module root: %w", err)
+	if !m.SP.IsCommandAllowed("go") {
+		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
 	}
-	lines := strings.Split(strings.TrimSpace(string(rootOut)), "\n")
-	if len(lines) < 2 {
-		return nil, fmt.Errorf("unexpected go list -m output")
-	}
-	modulePath := lines[0]
-	moduleRoot := lines[1]
 
+	// Use a single call to go list -json ./...
 	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
-	cmd.Dir = moduleRoot
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -83,15 +93,25 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 			return nil, err
 		}
 
-		// Only track packages within this module and containing "internal/"
-		if strings.HasPrefix(p.ImportPath, modulePath) && strings.Contains(p.ImportPath, "internal/") {
-			var internalImports []string
-			for _, imp := range p.Imports {
-				if strings.HasPrefix(imp, modulePath) && strings.Contains(imp, "internal/") {
-					internalImports = append(internalImports, imp)
+		if m.modulePath == "" && p.Module != nil {
+			m.modulePath = p.Module.Path
+		}
+
+		// Only track packages within this module and containing "internal/" or "cmd/"
+		if strings.HasPrefix(p.ImportPath, m.modulePath) {
+			isInternal := strings.Contains(p.ImportPath, "internal/")
+			isCmd := strings.Contains(p.ImportPath, "cmd/")
+
+			if isInternal || isCmd {
+				var trackedImports []string
+				for _, imp := range p.Imports {
+					// Only care about imports within the same module
+					if strings.HasPrefix(imp, m.modulePath) {
+						trackedImports = append(trackedImports, imp)
+					}
 				}
+				pkgs[p.ImportPath] = trackedImports
 			}
-			pkgs[p.ImportPath] = internalImports
 		}
 	}
 
@@ -102,51 +122,99 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 	return pkgs, nil
 }
 
-func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
-	var violations []violation
+func isLayer(pkgPath, layerName string) bool {
+	parts := strings.Split(pkgPath, "/")
+	for i, part := range parts {
+		if part == "internal" && i+1 < len(parts) && parts[i+1] == layerName {
+			return true
+		}
+	}
+	return false
+}
 
+func (m *ArchitectureManager) isCmd(pkgPath string) bool {
+	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
+}
+
+func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
+	rules := []Rule{
+		{
+			SourceLayer: LayerDomain,
+			Forbidden:   []string{LayerAgent, LayerTools, LayerFsutil, LayerSecurity},
+			Reason:      "Domain must not depend on other internal layers.",
+		},
+		{
+			SourceLayer: LayerAgent,
+			Forbidden:   []string{LayerTools, LayerFsutil, "cmd"},
+			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
+		},
+		{
+			SourceLayer: LayerTools,
+			Forbidden:   []string{LayerAgent, "cmd"},
+			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+		},
+		{
+			SourceLayer: LayerFsutil,
+			Forbidden:   []string{LayerAgent, "cmd"},
+			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+		},
+		{
+			SourceLayer: LayerSecurity,
+			Forbidden:   []string{LayerAgent, "cmd"},
+			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
+		},
+	}
+
+	var violations []violation
 	for pkg, imports := range pkgs {
 		shortPkg := m.shorten(pkg)
 
-		for _, imp := range imports {
-			shortImp := m.shorten(imp)
+		// Apply defined rules
+		for _, rule := range rules {
+			if isLayer(pkg, rule.SourceLayer) {
+				for _, imp := range imports {
+					for _, forbidden := range rule.Forbidden {
+						match := false
+						if forbidden == "cmd" {
+							match = m.isCmd(imp)
+						} else {
+							match = isLayer(imp, forbidden)
+						}
 
-			// Rule 1: Domain must not import anything else in internal/ except other domain packages
-			if strings.HasPrefix(shortPkg, "internal/domain") {
-				if !strings.HasPrefix(shortImp, "internal/domain") {
-					violations = append(violations, violation{
-						pkg:      shortPkg,
-						category: "[LAYER VIOLATION]",
-						target:   shortImp,
-						reason:   "Domain must not depend on other internal layers.",
-					})
+						if match {
+							violations = append(violations, violation{
+								pkg:      shortPkg,
+								category: "[LAYER VIOLATION]",
+								target:   m.shorten(imp),
+								reason:   rule.Reason,
+							})
+						}
+					}
 				}
 			}
+		}
 
-			// Rule 2: Agent must not import Tools or Fsutil
-			if strings.HasPrefix(shortPkg, "internal/agent") {
-				if strings.HasPrefix(shortImp, "internal/tools") || strings.HasPrefix(shortImp, "internal/fsutil") {
-					violations = append(violations, violation{
-						pkg:      shortPkg,
-						category: "[LAYER VIOLATION]",
-						target:   shortImp,
-						reason:   "Application/Agent layer must not depend on Infrastructure/Tools implementations.",
-					})
+		// General rule: internal packages (except Domain) must not import cmd/
+		if strings.Contains(pkg, "internal/") && !isLayer(pkg, LayerDomain) {
+			for _, imp := range imports {
+				if m.isCmd(imp) {
+					// Avoid duplicates if already caught by rules above
+					alreadyReported := false
+					for _, v := range violations {
+						if v.pkg == shortPkg && v.target == m.shorten(imp) {
+							alreadyReported = true
+							break
+						}
+					}
+					if !alreadyReported {
+						violations = append(violations, violation{
+							pkg:      shortPkg,
+							category: "[LAYER VIOLATION]",
+							target:   m.shorten(imp),
+							reason:   "Composition Root (cmd) should not be imported by internal packages.",
+						})
+					}
 				}
-			}
-
-			// Rule 3: Tools/Fsutil/Security must not import Agent
-			isInfra := strings.HasPrefix(shortPkg, "internal/tools") ||
-				strings.HasPrefix(shortPkg, "internal/fsutil") ||
-				strings.HasPrefix(shortPkg, "internal/security")
-
-			if isInfra && strings.HasPrefix(shortImp, "internal/agent") {
-				violations = append(violations, violation{
-					pkg:      shortPkg,
-					category: "[LAYER VIOLATION]",
-					target:   shortImp,
-					reason:   "Infrastructure layers must not depend on Application/Agent logic.",
-				})
 			}
 		}
 	}
@@ -156,11 +224,7 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 
 func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
 	var violations []violation
-	
-	// Simplistic circular check: only check A -> B -> A for now, 
-	// or more comprehensive DFS if needed.
-	// For production we should do a full cycle detection.
-	
+
 	visited := make(map[string]bool)
 	onStack := make(map[string]bool)
 	var path []string
@@ -215,11 +279,18 @@ func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string
 }
 
 func (m *ArchitectureManager) shorten(pkg string) string {
-	idx := strings.Index(pkg, "internal/")
-	if idx == -1 {
-		return pkg
+	if m.modulePath != "" && strings.HasPrefix(pkg, m.modulePath) {
+		return strings.TrimPrefix(strings.TrimPrefix(pkg, m.modulePath), "/")
 	}
-	return pkg[idx:]
+	idx := strings.Index(pkg, "internal/")
+	if idx != -1 {
+		return pkg[idx:]
+	}
+	idx = strings.Index(pkg, "cmd/")
+	if idx != -1 {
+		return pkg[idx:]
+	}
+	return pkg
 }
 
 func (m *ArchitectureManager) shortenList(pkgs []string) []string {
