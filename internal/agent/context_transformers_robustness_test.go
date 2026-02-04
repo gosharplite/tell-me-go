@@ -120,7 +120,7 @@ func TestApplySummary_RoleAlternation(t *testing.T) {
 		}
 		// Summarize [U1, M1] (indices 1, 2)
 		newHist := applySummaryToHistory(history, 1, 3, "summary")
-		
+
 		// Expected: [system, U_sum, M_sum, U2, M2]
 		roles := []string{}
 		for _, msg := range newHist {
@@ -142,7 +142,7 @@ func TestApplySummary_RoleAlternation(t *testing.T) {
 		}
 		// Summarize [U1, M1] (indices 0, 2)
 		newHist := applySummaryToHistory(history, 0, 2, "summary")
-		
+
 		// Expected: [U_sum, M_sum, U2, M2]
 		roles := []string{}
 		for _, msg := range newHist {

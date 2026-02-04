@@ -380,7 +380,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 		}
 		// Prepend acknowledgment text
 		cloned.Parts = append([]*llm.Part{{Text: sumModel.Parts[0].Text + "\n\n"}}, cloned.Parts...)
-		
+
 		// If we just appended sumModel in the previous step, we now have:
 		// [..., sumModel, cloned(model)] which is still consecutive.
 		// So we should replace the last sumModel we just added with cloned.
