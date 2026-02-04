@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -54,6 +54,15 @@ type MockRegistry struct {
 func (m *MockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return m.Declarations
 }
+
+func (m *MockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
+
+func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func (m *MockRegistry) IsSerial(name string) bool      { return false }
+func (m *MockRegistry) IsLongRunning(name string) bool { return false }
 
 // MockExecutor implements IToolExecutor for testing.
 type MockExecutor struct {
@@ -818,8 +827,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// We need internal/tools/framework imported as framework
 	tracker := framework.NewSessionCostTracker(nil, "", modelName, modelPricing, pricing)
 
-	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
-	e.costTracker = tracker
+	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus, WithCostTracker(tracker))
 
 	var turnCosts []float64
 	bus.Subscribe(func(ev events.Event) {

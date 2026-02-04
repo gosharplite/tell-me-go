@@ -14,16 +14,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func TestAgent_Setters(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 	a := New(nil, nil, reg, sm, false)
 
@@ -51,7 +52,7 @@ func TestAgent_EstimateTokens(t *testing.T) {
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	a := New(nil, nil, reg, sm, false)
 
 	contents := []*llm.Content{
@@ -75,7 +76,7 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	authCalls := 0
 	mockClient := &MockLLMClient{
@@ -108,7 +109,7 @@ func TestAgent_Chat_ToolTimeout(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Tool that hangs
 	reg.Register(&tools.ToolDeclaration{
@@ -154,7 +155,7 @@ func TestAgent_Chat_ImageInjection(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	reg.Register(&tools.ToolDeclaration{
 		Name: "gen_image",
@@ -206,7 +207,7 @@ func TestAgentToolLoop(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "history.json")
 	hManager := history.NewManager(historyFile)
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Register a dummy tool
 	reg.Register(&tools.ToolDeclaration{
@@ -258,7 +259,7 @@ func TestAgent_Chat_MaxToolTurns(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	reg.Register(&tools.ToolDeclaration{
 		Name: "infinite_tool",
@@ -292,7 +293,7 @@ func TestAgent_Chat_APIError(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	mockClient := &MockLLMClient{
 		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
@@ -312,7 +313,7 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Tool that takes some time
 	running := make(chan struct{})
@@ -367,7 +368,7 @@ func TestAgent_RefreshLimits(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 	a := New(nil, nil, reg, sm, false)
 	a.SetLimits(10, 1000, 20)
@@ -396,7 +397,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	yamlPath := filepath.Join(tmpDir, "config.yaml")
 
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 	a := New(nil, nil, reg, sm, false)
 	a.SetLimits(10, 1000, 20)
@@ -425,7 +426,7 @@ func TestAgent_RefreshLimits_YAML(t *testing.T) {
 }
 
 func TestAgent_FunctionalOptions(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 
 	a := New(nil, nil, reg, sm, false,
@@ -457,7 +458,7 @@ func TestAgent_SystemInstructions(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	var capturedInstr string
 	mockClient := &MockLLMClient{
@@ -511,7 +512,7 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Create agent with limit of 2 turns (4 messages)
 	a := New(nil, hManager, reg, sm, false, WithLimits(10, 2000, 2))
@@ -590,7 +591,7 @@ func TestToolInjection_NoPersistence(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	hManager := history.NewManager(historyFile)
 	reg := registry.New()
-	sm := security.NewSecurityManager(nil)
+	sm := &MockSecurityManager{AllowAll: true}
 
 	// Register a tool
 	reg.Register(&tools.ToolDeclaration{
@@ -666,3 +667,72 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 		t.Errorf("expected 10 messages (5 turns) kept in Precise profile, got %d", len(req.History))
 	}
 }
+
+func TestAgent_WithSessionCostTracker(t *testing.T) {
+	sm := &MockSecurityManager{AllowAll: true}
+	reg := registry.New()
+
+	// Mock cost tracker
+	tracker := &mockCostTracker{}
+
+	a := New(nil, nil, reg, sm, false, WithSessionCostTracker(tracker))
+
+	if a.tracker != tracker {
+		t.Error("WithSessionCostTracker failed to store tracker in Agent")
+	}
+
+	if a.engine.costTracker != tracker {
+		t.Error("WithSessionCostTracker failed to inject tracker into engine")
+	}
+
+	// Verify that tracker is actually called
+	metrics := llm.Metrics{PromptTokens: 100, ResponseTokens: 50}
+	a.events.Publish(events.UsageMetricsEvent{Metrics: &metrics})
+
+	// Wait a bit for event propagation (SimpleEventBus is synchronous in its current implementation but good practice)
+	if tracker.accumulateCalls == 0 {
+		t.Error("CostTracker was not notified of metrics")
+	}
+}
+
+func TestAgent_OperationalMethods(t *testing.T) {
+	sm := &MockSecurityManager{AllowAll: true}
+	reg := registry.New()
+	tracker := &mockCostTracker{}
+	a := New(nil, nil, reg, sm, false, WithSessionCostTracker(tracker))
+
+	t.Run("GetCostTracker", func(t *testing.T) {
+		if a.GetCostTracker() != tracker {
+			t.Error("GetCostTracker returned wrong tracker")
+		}
+	})
+
+	t.Run("SetHardBudgetLimit", func(t *testing.T) {
+		a.SetHardBudgetLimit(5.0)
+		if a.config.HardBudgetLimit != 5.0 {
+			t.Errorf("expected budget 5.0, got %f", a.config.HardBudgetLimit)
+		}
+		if a.engine.HardBudgetLimit != 5.0 {
+			t.Errorf("expected engine budget 5.0, got %f", a.engine.HardBudgetLimit)
+		}
+	})
+
+	t.Run("SetTieredThreshold", func(t *testing.T) {
+		a.SetTieredThreshold(100)
+		if a.config.Limits.TieredThreshold != 100 {
+			t.Errorf("expected threshold 100, got %d", a.config.Limits.TieredThreshold)
+		}
+	})
+}
+
+type mockCostTracker struct {
+	accumulateCalls int
+}
+
+func (m *mockCostTracker) Accumulate(metrics llm.Metrics)           { m.accumulateCalls++ }
+func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
+func (m *mockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
+	return pricing.UsageStats{}, 0
+}
+func (m *mockCostTracker) CalculateCost(metrics llm.Metrics) float64 { return 0 }
+func (m *mockCostTracker) Warmup()                                   {}

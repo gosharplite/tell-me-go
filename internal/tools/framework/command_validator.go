@@ -22,17 +22,15 @@ func NewCommandValidator(sm *security.SecurityManager) *CommandValidator {
 	return &CommandValidator{sm: sm}
 }
 
+var autoApprovableCommands = map[string]bool{
+	"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
+	"head": true, "tail": true, "wc": true, "stat": true, "date": true,
+	"whoami": true, "diff": true, "git": true, "go": true,
+}
+
 // IsSafe checks if a command is safe for auto-approval.
 // Returns (isSafe, reason if unsafe).
 func (v *CommandValidator) IsSafe(command string) (bool, string) {
-	// Whitelist of allowed base commands (strict exact match)
-	// Side-effect-free inspection tools only for auto-approval.
-	safeCommands := map[string]bool{
-		"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
-		"head": true, "tail": true, "wc": true, "stat": true, "date": true,
-		"whoami": true, "diff": true, "git": true, "go": true,
-	}
-
 	parts, err := v.Split(command)
 	if err != nil {
 		return false, fmt.Sprintf("failed to parse command: %v", err)
@@ -42,31 +40,36 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	}
 	base := parts[0]
 
-	// 1. Check against whitelist
-	if !safeCommands[base] {
+	// 1. Check against central security policy whitelist (Single Source of Truth)
+	if !v.sm.IsCommandAllowed(base) {
+		return false, fmt.Sprintf("command '%s' is not allowed by security policy", base)
+	}
+
+	// 2. Check if the command is side-effect-free (inspection only) for auto-approval.
+	if !autoApprovableCommands[base] {
 		return false, fmt.Sprintf("command '%s' is not in the auto-approval whitelist", base)
 	}
 
-	// 2. Specialized Check for 'git'
+	// 3. Specialized Check for 'git'
 	if base == "git" {
 		if safe, reason := v.isSafeGit(parts); !safe {
 			return false, reason
 		}
 	}
 
-	// 3. Specialized check for 'go'
+	// 4. Specialized check for 'go'
 	if base == "go" {
 		if safe, reason := v.isSafeGo(parts); !safe {
 			return false, reason
 		}
 	}
 
-	// 4. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	// 5. Check for unsafe characters (pipes, redirects, expansion, etc.)
 	if safe, reason := v.hasUnsafeChars(command); !safe {
 		return false, reason
 	}
 
-	// 5. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	// 6. Path Safety Check: Ensure all arguments stay within allowed boundaries.
 	if safe, reason := v.checkPathSafety(parts); !safe {
 		return false, reason
 	}

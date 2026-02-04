@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -117,6 +117,8 @@ type limitMockRegistry struct {
 func (m *limitMockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
 }
+
+func (m *limitMockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
 
 func (m *limitMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil

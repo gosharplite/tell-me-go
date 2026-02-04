@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	internaltools "github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 type toolExecResult struct {
@@ -25,8 +24,8 @@ type toolExecResult struct {
 // ToolExecutor handles the execution of tools, using a WorkerPool for concurrency.
 type ToolExecutor struct {
 	mu                 sync.RWMutex
-	registry           *registry.Registry
-	sm                 *internaltools.SecurityManager
+	registry           domaintools.IToolRegistry
+	sm                 security.ISecurityManager
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -35,7 +34,7 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry *registry.Registry, sm *internaltools.SecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityManager, bus events.EventBus) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
@@ -278,6 +277,18 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	// 1. Security Check
+	e.mu.RLock()
+	sm := e.sm
+	e.mu.RUnlock()
+
+	if sm != nil && !sm.IsCommandAllowed(call.Name) {
+		return domaintools.ToolResult{
+			Text:  fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name),
+			Error: fmt.Errorf("security policy: command %q is not allowed", call.Name),
+		}
+	}
+
 	e.mu.RLock()
 	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()

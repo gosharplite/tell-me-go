@@ -17,24 +17,12 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-type PackageProvider interface {
-	LoadPackages(ctx context.Context, patterns ...string) ([]*packages.Package, error)
-}
-
-type RealPackageProvider struct{}
-
-func (p *RealPackageProvider) LoadPackages(ctx context.Context, patterns ...string) ([]*packages.Package, error) {
-	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
-		Context: ctx,
-	}
-	return packages.Load(cfg, patterns...)
-}
-
+// SequenceAnalyzer performs static analysis to trace function call flows.
 type SequenceAnalyzer struct {
-	SP       security.SecurityProvider
-	Exec     CommandExecutor
-	Provider PackageProvider
+	SP        security.SecurityProvider
+	Exec      CommandExecutor
+	Provider  PackageProvider
+	Formatter *MermaidFormatter
 
 	pkgMu    sync.RWMutex
 	pkgs     []*packages.Package
@@ -43,24 +31,18 @@ type SequenceAnalyzer struct {
 	cacheTTL time.Duration
 }
 
+// NewSequenceAnalyzer creates a new SequenceAnalyzer with default dependencies.
 func NewSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *SequenceAnalyzer {
 	return &SequenceAnalyzer{
-		SP:       sp,
-		Exec:     exec,
-		Provider: &RealPackageProvider{},
-		cacheTTL: 5 * time.Minute,
+		SP:        sp,
+		Exec:      exec,
+		Provider:  &RealPackageProvider{},
+		Formatter: NewMermaidFormatter(),
+		cacheTTL:  5 * time.Minute,
 	}
 }
 
-type CallFrame struct {
-	From     string
-	To       string
-	Function string
-	Async    bool
-	InLoop   bool
-	Return   string
-}
-
+// AnalyzeSequenceFlow is the entry point for the analyze_sequence_flow tool.
 func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	startSymbol, _ := args["start_symbol"].(string)
 	maxDepth, ok := args["max_depth"].(float64)
@@ -77,7 +59,7 @@ func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[str
 		return tools.ToolResult{Text: fmt.Sprintf("Error tracing flow: %v", err)}, nil
 	}
 
-	return tools.ToolResult{Text: a.generateSequenceDiagram(frames)}, nil
+	return tools.ToolResult{Text: a.Formatter.Format(frames)}, nil
 }
 
 func (a *SequenceAnalyzer) loadPackages(ctx context.Context) error {
@@ -426,57 +408,6 @@ func (a *SequenceAnalyzer) shortenPkg(pkgPath string) string {
 		return parts[len(parts)-1]
 	}
 	return pkgPath
-}
-
-func (a *SequenceAnalyzer) generateSequenceDiagram(frames []CallFrame) string {
-	var b strings.Builder
-	b.WriteString("sequenceDiagram\n")
-
-	participants := make(map[string]bool)
-	var orderedParticipants []string
-	for _, f := range frames {
-		if !participants[f.From] {
-			participants[f.From] = true
-			orderedParticipants = append(orderedParticipants, f.From)
-		}
-		if !participants[f.To] {
-			participants[f.To] = true
-			orderedParticipants = append(orderedParticipants, f.To)
-		}
-	}
-
-	for _, p := range orderedParticipants {
-		b.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
-	}
-
-	inLoop := false
-	for _, f := range frames {
-		if f.InLoop && !inLoop {
-			b.WriteString("    loop for each\n")
-			inLoop = true
-		} else if !f.InLoop && inLoop {
-			b.WriteString("    end\n")
-			inLoop = false
-		}
-
-		from := sanitize(f.From)
-		to := sanitize(f.To)
-
-		if f.Async {
-			b.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", from, to, f.Function))
-		} else {
-			b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", from, to, f.Function))
-			ret := f.Return
-			if ret == "" {
-				ret = " "
-			}
-			b.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", to, from, ret))
-		}
-	}
-	if inLoop {
-		b.WriteString("    end\n")
-	}
-	return b.String()
 }
 
 func (a *SequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {

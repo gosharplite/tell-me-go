@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -30,7 +30,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		panic("intentional serial panic")
 	}, registry.ToolOptions{Serial: true})
 
-	sm := security.NewSecurityManager(nil)
+	sm := &mockSecurityManager{allowAll: true}
 	bus := &events.SimpleEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 	exec.SetConcurrency(2, 0)
@@ -192,7 +192,7 @@ func TestToolExecutor_SerialTimeoutHalt(t *testing.T) {
 		return tools.ToolResult{Text: "Fast result"}, nil
 	})
 
-	sm := security.NewSecurityManager(nil)
+	sm := &mockSecurityManager{allowAll: true}
 	bus := &events.SimpleEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 	exec.SetConcurrency(2, 100*time.Millisecond) // Short timeout for tools
@@ -247,7 +247,7 @@ func TestToolExecutor_SerialPanicHalt(t *testing.T) {
 		return tools.ToolResult{Text: "Fast result"}, nil
 	})
 
-	sm := security.NewSecurityManager(nil)
+	sm := &mockSecurityManager{allowAll: true}
 	bus := &events.SimpleEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 
@@ -277,4 +277,58 @@ func TestToolExecutor_SerialPanicHalt(t *testing.T) {
 	if fastExecuted {
 		t.Error("fast_tool was executed after a serial panic")
 	}
+}
+
+func TestToolExecutor_SecurityBlocking(t *testing.T) {
+	reg := registry.New()
+	reg.Register(&tools.ToolDeclaration{
+		Name: "allowed_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "Allowed"}, nil
+	})
+	reg.Register(&tools.ToolDeclaration{
+		Name: "forbidden_tool",
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		return tools.ToolResult{Text: "Should not run"}, nil
+	})
+
+	mockSM := &mockSecurityManager{
+		allowedCommands: map[string]bool{
+			"allowed_tool": true,
+		},
+	}
+	exec := NewToolExecutor(reg, mockSM, nil)
+
+	t.Run("Allowed Tool", func(t *testing.T) {
+		res := exec.executeTool(context.Background(), &llm.FunctionCall{Name: "allowed_tool"})
+		if res.Error != nil {
+			t.Errorf("expected no error for allowed tool, got: %v", res.Error)
+		}
+		if res.Text != "Allowed" {
+			t.Errorf("expected 'Allowed', got: %s", res.Text)
+		}
+	})
+
+	t.Run("Forbidden Tool", func(t *testing.T) {
+		res := exec.executeTool(context.Background(), &llm.FunctionCall{Name: "forbidden_tool"})
+		if res.Error == nil {
+			t.Error("expected error for forbidden tool, got nil")
+		}
+		if !strings.Contains(res.Error.Error(), "security policy: command \"forbidden_tool\" is not allowed") {
+			t.Errorf("expected security policy error, got: %v", res.Error)
+		}
+	})
+}
+
+type mockSecurityManager struct {
+	domain_security.ISecurityManager
+	allowedCommands map[string]bool
+	allowAll        bool
+}
+
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
+	if m.allowAll {
+		return true
+	}
+	return m.allowedCommands[command]
 }

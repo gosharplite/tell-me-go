@@ -4,9 +4,9 @@
 package agent
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 // OptimizationProfile defines the behavior of the context pipeline.
@@ -21,7 +21,7 @@ const (
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
-	Registry   *registry.Registry
+	Registry   tools.IToolRegistry
 	History    *history.Manager
 	Summarizer HistorySummarizer
 	Estimator  TokenEstimator

@@ -55,3 +55,14 @@ func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
 }
 
 var ErrNotImplemented = fmt.Errorf("not implemented")
+
+// ToolFunc is the signature for Go functions that can be called by the model.
+type ToolFunc func(ctx context.Context, args map[string]interface{}) (ToolResult, error)
+
+type IToolRegistry interface {
+	Register(def *ToolDeclaration, handler ToolFunc)
+	Execute(ctx context.Context, name string, args map[string]interface{}) (ToolResult, error)
+	IsSerial(name string) bool
+	IsLongRunning(name string) bool
+	GetDeclarations() []*ToolDeclaration
+}
