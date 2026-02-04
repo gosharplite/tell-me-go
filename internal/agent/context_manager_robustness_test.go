@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
@@ -171,4 +172,58 @@ type mockRegistry struct {
 
 func (m *mockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 	return nil
+}
+
+func TestContextManager_Prepare_Concurrency(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	ctx := context.Background()
+
+	// 1. Fill history with 10 messages (5 turns)
+	for i := 0; i < 5; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "user"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "model"}}})
+	}
+
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockRegistry{}), bus)
+	
+	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+
+	// Configure pipeline with a pruner that will prune history
+	cm.Pipeline = NewContextPipeline(
+		&HistoryPruner{
+			Policy:  &SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
+			Manager: cm.History,
+		},
+	)
+
+	// 2. Call Prepare concurrently
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	errors := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_, _, err := cm.Prepare(ctx, 1)
+			if err != nil {
+				errors <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errors)
+
+	var errs []error
+	for err := range errors {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		t.Errorf("Caught %d errors during concurrent Prepare: %v", len(errs), errs)
+	}
 }

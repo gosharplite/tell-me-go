@@ -59,20 +59,19 @@ func (cm *ContextManager) onConfigUpdated(e events.ConfigUpdated) {
 
 // Prepare calculates the current context, enforces limits, and handles auto-summarization using a pipeline.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.Pipeline == nil {
+		return nil, nil, fmt.Errorf("context pipeline not configured")
+	}
+
 	req := &ContextRequest{
 		Turn:    turn,
 		History: cm.History.GetContents(),
 	}
 
-	cm.mu.RLock()
-	pipeline := cm.Pipeline
-	cm.mu.RUnlock()
-
-	if pipeline == nil {
-		return nil, nil, fmt.Errorf("context pipeline not configured")
-	}
-
-	if err := pipeline.Execute(ctx, req); err != nil {
+	if err := cm.Pipeline.Execute(ctx, req); err != nil {
 		return nil, nil, err
 	}
 

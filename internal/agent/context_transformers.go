@@ -106,10 +106,7 @@ type SlidingWindowPolicy struct {
 
 func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
 	if p.MaxTurns <= 0 {
-		for i := range keep {
-			keep[i] = true
-		}
-		return len(turns)
+		return 0
 	}
 
 	totalTurns := len(turns)
@@ -437,9 +434,9 @@ type ToolDeclarationGenerator struct {
 }
 
 func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRequest) error {
-	// This transformer might just be a placeholder if tools are passed separately to the API,
-	// but the requirement says "Injects tool schemas from the registry".
-	// If the model needs them in-context (e.g. for certain models), we do it here.
+	// TODO: Implement tool schema injection if required by the model in-context.
+	// This transformer currently serves as a placeholder as most Gemini models
+	// receive tools via a separate API parameter.
 	return nil
 }
 

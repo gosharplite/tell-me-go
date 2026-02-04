@@ -22,6 +22,7 @@ func (m *mockHistoryManager) ReplaceRange(ctx context.Context, start, end int, n
 }
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		maxTurns   int
@@ -31,8 +32,8 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 		{"No pruning needed", 10, 2, []bool{true, true}},
 		{"Exact limit", 5, 5, []bool{true, true, true, true, true}},
 		{"Pruning exceeding", 2, 5, []bool{false, false, false, true, true}},
-		{"Zero turns", 0, 3, []bool{true, true, true}},
-		{"Negative turns", -1, 3, []bool{true, true, true}},
+		{"Zero turns", 0, 3, []bool{false, false, false}},
+		{"Negative turns", -1, 3, []bool{false, false, false}},
 	}
 
 	for _, tt := range tests {
@@ -118,6 +119,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 }
 
 func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
+	t.Parallel()
 	p := &ImportanceRankPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -142,6 +144,7 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestPinningPolicy_MarkTurns(t *testing.T) {
+	t.Parallel()
 	p := &PinningPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
@@ -165,6 +168,7 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
+	t.Parallel()
 	p := &CompositePruningPolicy{
 		Policies: []PruningPolicy{
 			&SlidingWindowPolicy{MaxTurns: 1},
@@ -650,4 +654,109 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 			t.Errorf("expected success for 9000 tokens, got %v", err)
 		}
 	})
+}
+
+func TestEmptyTurnFilter_Transform(t *testing.T) {
+	ctx := context.Background()
+	filter := &EmptyTurnFilter{}
+
+	tests := []struct {
+		name     string
+		input    []*llm.Content
+		expected int // Expected message count
+	}{
+		{
+			name: "Prune completely empty turn",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 0,
+		},
+		{
+			name: "Keep partial turn (user has text)",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 2,
+		},
+		{
+			name: "Keep partial turn (model has text)",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
+			},
+			expected: 2,
+		},
+		{
+			name: "Keep turn with function call",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}},
+			},
+			expected: 2,
+		},
+		{
+			name: "Keep turn with function response",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}},
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 2,
+		},
+		{
+			name: "Keep trailing single message",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}},
+			},
+			expected: 1,
+		},
+		{
+			name: "Mixed history",
+			input: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: ""}}}, // Turn 1 (Empty)
+				{Role: "model", Parts: []*llm.Part{{Text: ""}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "Real"}}}, // Turn 2 (Keep)
+				{Role: "model", Parts: []*llm.Part{{Text: "Content"}}},
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &ContextRequest{History: tt.input}
+			err := filter.Transform(ctx, req)
+			if err != nil {
+				t.Fatalf("Transform failed: %v", err)
+			}
+			if len(req.History) != tt.expected {
+				t.Errorf("expected %d messages, got %d", tt.expected, len(req.History))
+			}
+		})
+	}
+}
+
+func TestImportanceRankPolicy_MixedContent(t *testing.T) {
+	p := &ImportanceRankPolicy{}
+	history := [][]*llm.Content{
+		{
+			{Role: "user", Parts: []*llm.Part{{Text: "Text and call"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}},
+		},
+		{
+			{Role: "user", Parts: []*llm.Part{{Text: "Just text"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "Just text"}}},
+		},
+	}
+	keep := make([]bool, len(history))
+
+	p.MarkTurns(context.Background(), history, keep)
+
+	expected := []bool{true, false}
+	for i, k := range keep {
+		if k != expected[i] {
+			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
+		}
+	}
 }
