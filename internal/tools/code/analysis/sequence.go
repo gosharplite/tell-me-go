@@ -9,14 +9,46 @@ import (
 	"go/ast"
 	"go/types"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"golang.org/x/tools/go/packages"
 )
 
+type PackageProvider interface {
+	LoadPackages(ctx context.Context, patterns ...string) ([]*packages.Package, error)
+}
+
+type RealPackageProvider struct{}
+
+func (p *RealPackageProvider) LoadPackages(ctx context.Context, patterns ...string) ([]*packages.Package, error) {
+	cfg := &packages.Config{
+		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
+		Context: ctx,
+	}
+	return packages.Load(cfg, patterns...)
+}
+
 type SequenceAnalyzer struct {
-	SP security.SecurityProvider
+	SP       security.SecurityProvider
+	Exec     CommandExecutor
+	Cache    *astutil.ASTCache
+	Provider PackageProvider
+
+	pkgMu   sync.RWMutex
+	pkgs    []*packages.Package
+	modName string
+}
+
+func NewSequenceAnalyzer(exec CommandExecutor, cache *astutil.ASTCache, sp security.SecurityProvider) *SequenceAnalyzer {
+	return &SequenceAnalyzer{
+		SP:       sp,
+		Exec:     exec,
+		Cache:    cache,
+		Provider: &RealPackageProvider{},
+	}
 }
 
 type CallFrame struct {
@@ -48,20 +80,23 @@ func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[str
 }
 
 func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
-	// 0. Get module name
-	exec := &RealExecutor{}
-	modOut, _ := exec.Output(ctx, "go", "list", "-m")
-	modName := strings.TrimSpace(string(modOut))
+	a.pkgMu.Lock()
+	if a.pkgs == nil {
+		// 0. Get module name
+		modOut, _ := a.Exec.Output(ctx, "go", "list", "-m")
+		a.modName = strings.TrimSpace(string(modOut))
 
-	// 1. Load packages
-	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
-		Context: ctx,
+		// 1. Load packages
+		pkgs, err := a.Provider.LoadPackages(ctx, "./...")
+		if err != nil {
+			a.pkgMu.Unlock()
+			return nil, fmt.Errorf("loading packages: %w", err)
+		}
+		a.pkgs = pkgs
 	}
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil {
-		return nil, fmt.Errorf("loading packages: %w", err)
-	}
+	pkgs := a.pkgs
+	modName := a.modName
+	a.pkgMu.Unlock()
 
 	// 2. Find start function
 	var startPkg *packages.Package
@@ -233,23 +268,24 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 		return
 	}
 
-	// Check for interface
+	// Check for interface call
 	isInterface := false
-	if tv, ok := v.pkg.TypesInfo.Types[call.Fun]; ok {
-		if _, ok := tv.Type.Underlying().(*types.Interface); ok {
-			isInterface = true
+	var interfaceTypeName string
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
+			if _, ok := tv.Type.Underlying().(*types.Interface); ok {
+				isInterface = true
+				interfaceTypeName = v.analyzer.getTypeName(tv.Type)
+			}
 		}
 	}
 
 	displayFunc := targetFunc
 	if isInterface {
-		typeName := "Interface"
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-			if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
-				typeName = v.analyzer.getTypeName(tv.Type)
-			}
+		if interfaceTypeName == "" {
+			interfaceTypeName = "Interface"
 		}
-		displayFunc = fmt.Sprintf("%s.%s", typeName, targetFunc)
+		displayFunc = fmt.Sprintf("%s.%s", interfaceTypeName, targetFunc)
 	}
 
 	// Get return type
