@@ -250,3 +250,76 @@ func TestRunCommand_Append(t *testing.T) {
 		t.Errorf("expected file to contain both lines, got %q", string(content))
 	}
 }
+
+func TestRunPipeline_Basic(t *testing.T) {
+	executor := NewProcessExecutor()
+	tmpDir := t.TempDir()
+	outputFile := tmpDir + "/output.txt"
+
+	config := ExecutionConfig{
+		OutputFile: outputFile,
+	}
+
+	pipedParts := [][]string{
+		{"echo", "hello"},
+		{"grep", "hello"},
+	}
+
+	res, err := executor.RunPipeline(context.Background(), pipedParts, config)
+	if err != nil {
+		t.Fatalf("RunPipeline failed: %v", err)
+	}
+
+	if !strings.Contains(res.Output, "hello") {
+		t.Errorf("expected output to contain 'hello', got %q", res.Output)
+	}
+
+	content, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "hello") {
+		t.Errorf("expected file content to contain 'hello', got %q", string(content))
+	}
+}
+
+func TestRunPipeline_StderrCapture(t *testing.T) {
+	executor := NewProcessExecutor()
+	tmpDir := t.TempDir()
+	outputFile := tmpDir + "/stderr_output.txt"
+
+	config := ExecutionConfig{
+		OutputFile: outputFile,
+	}
+
+	// First command writes to stderr
+	pipedParts := [][]string{
+		{"sh", "-c", "echo error_msg >&2; echo success_msg"},
+		{"cat"},
+	}
+
+	res, err := executor.RunPipeline(context.Background(), pipedParts, config)
+	if err != nil {
+		t.Fatalf("RunPipeline failed: %v", err)
+	}
+
+	if !strings.Contains(res.Output, "error_msg") {
+		t.Errorf("expected result output to contain 'error_msg', got %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "success_msg") {
+		t.Errorf("expected result output to contain 'success_msg', got %q", res.Output)
+	}
+
+	content, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "error_msg") {
+		t.Errorf("expected file content to contain 'error_msg', got %q", string(content))
+	}
+	if !strings.Contains(string(content), "success_msg") {
+		t.Errorf("expected file content to contain 'success_msg', got %q", string(content))
+	}
+}

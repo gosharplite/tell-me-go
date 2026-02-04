@@ -252,6 +252,10 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 			for scanner.Scan() {
 				data := scanner.Bytes()
 				mu.Lock()
+				if file != nil {
+					file.Write(data)
+					file.Write(newline)
+				}
 				if config.Feedback != nil {
 					fmt.Fprintf(config.Feedback, "  \033[31m[%d] %s\033[0m\n", idx, data)
 				}
@@ -279,12 +283,11 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	for scanner.Scan() {
 		data := scanner.Bytes()
 
+		mu.Lock()
 		if file != nil {
 			file.Write(data)
 			file.Write(newline)
 		}
-
-		mu.Lock()
 		if config.Feedback != nil {
 			fmt.Fprintf(config.Feedback, "  \033[90m%s\033[0m\n", data)
 		}
