@@ -40,9 +40,13 @@ func TestAnalyzeSequenceFlow(t *testing.T) {
 		return
 	}
 	
-	if !strings.Contains(result.Text, "sequenceDiagram") {
-		t.Errorf("Expected sequenceDiagram in output, got: %s", result.Text)
+	if !strings.Contains(result.Text, "loop for each") {
+		t.Errorf("Expected loop for each in output, got: %s", result.Text)
 	}
 	
+	if !strings.Contains(result.Text, "[][]string") {
+		t.Errorf("Expected return type [][]string in output, got: %s", result.Text)
+	}
+
 	t.Logf("Result:\n%s", result.Text)
 }

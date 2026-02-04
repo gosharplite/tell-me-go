@@ -23,6 +23,9 @@ type CallFrame struct {
 	From     string
 	To       string
 	Function string
+	Async    bool
+	InLoop   bool
+	Return   string
 }
 
 func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -123,115 +126,175 @@ func (a *SequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, 
 	}
 	visited[key] = true
 
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	v := &sequenceVisitor{
+		pkg:      pkg,
+		modName:  modName,
+		depth:    depth,
+		maxDepth: maxDepth,
+		frames:   frames,
+		visited:  visited,
+		allPkgs:  allPkgs,
+		analyzer: a,
+	}
+	ast.Walk(v, fn.Body)
+}
+
+type sequenceVisitor struct {
+	pkg      *packages.Package
+	modName  string
+	depth    int
+	maxDepth int
+	frames   *[]CallFrame
+	visited  map[string]bool
+	allPkgs  []*packages.Package
+	analyzer *SequenceAnalyzer
+	inLoop   int
+	inGo     bool
+}
+
+func (v *sequenceVisitor) Visit(n ast.Node) ast.Visitor {
+	if n == nil {
+		return nil
+	}
+
+	switch node := n.(type) {
+	case *ast.ForStmt:
+		v.inLoop++
+		ast.Walk(v, node.Init)
+		ast.Walk(v, node.Cond)
+		ast.Walk(v, node.Post)
+		ast.Walk(v, node.Body)
+		v.inLoop--
+		return nil
+	case *ast.RangeStmt:
+		v.inLoop++
+		ast.Walk(v, node.Key)
+		ast.Walk(v, node.Value)
+		ast.Walk(v, node.X)
+		ast.Walk(v, node.Body)
+		v.inLoop--
+		return nil
+	case *ast.GoStmt:
+		wasGo := v.inGo
+		v.inGo = true
+		ast.Walk(v, node.Call)
+		v.inGo = wasGo
+		return nil
+	case *ast.CallExpr:
+		v.handleCall(node)
+		return v
+	default:
+		return v
+	}
+}
+
+func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
+	var targetFunc string
+	var targetPkgPath string
+
+	switch expr := call.Fun.(type) {
+	case *ast.Ident:
+		// Local call in same package
+		targetFunc = expr.Name
+		if obj := v.pkg.TypesInfo.Uses[expr]; obj != nil {
+			if obj.Pkg() != nil {
+				targetPkgPath = obj.Pkg().Path()
+			} else {
+				// Built-in function
+				return
+			}
+		} else {
+			targetPkgPath = v.pkg.PkgPath
 		}
-
-		var targetFunc string
-		var targetPkgPath string
-
-		switch expr := call.Fun.(type) {
-		case *ast.Ident:
-			// Local call in same package
-			targetFunc = expr.Name
-			if obj := pkg.TypesInfo.Uses[expr]; obj != nil {
-				if obj.Pkg() != nil {
-					targetPkgPath = obj.Pkg().Path()
+	case *ast.SelectorExpr:
+		// Cross-package or method call
+		targetFunc = expr.Sel.Name
+		if ident, ok := expr.X.(*ast.Ident); ok {
+			if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
+				if p, ok := obj.(*types.PkgName); ok {
+					targetPkgPath = p.Imported().Path()
 				} else {
-					// Built-in function?
-					return true 
-				}
-			} else {
-				targetPkgPath = pkg.PkgPath
-			}
-		case *ast.SelectorExpr:
-			// Cross-package or method call
-			targetFunc = expr.Sel.Name
-			if ident, ok := expr.X.(*ast.Ident); ok {
-				// Check if ident is a package or a variable
-				if obj := pkg.TypesInfo.Uses[ident]; obj != nil {
-					if p, ok := obj.(*types.PkgName); ok {
-						targetPkgPath = p.Imported().Path()
-					} else {
-						// It's a method call on a variable
-						targetPkgPath = a.getTypePkgPath(obj.Type())
-					}
-				}
-			} else {
-				// Complex expression, try to get type
-				if tv, ok := pkg.TypesInfo.Types[expr.X]; ok {
-					targetPkgPath = a.getTypePkgPath(tv.Type)
+					targetPkgPath = v.analyzer.getTypePkgPath(obj.Type())
 				}
 			}
-		}
-
-		if targetPkgPath == "" {
-			return true
-		}
-
-		// Filter standard library and external packages
-		// Only trace into packages within the same module
-		if !strings.HasPrefix(targetPkgPath, modName) {
-			return true
-		}
-
-		// Check for interface
-		isInterface := false
-		if tv, ok := pkg.TypesInfo.Types[call.Fun]; ok {
-			if _, ok := tv.Type.Underlying().(*types.Interface); ok {
-				isInterface = true
+		} else {
+			if tv, ok := v.pkg.TypesInfo.Types[expr.X]; ok {
+				targetPkgPath = v.analyzer.getTypePkgPath(tv.Type)
 			}
 		}
+	}
 
-		displayFunc := targetFunc
-		if isInterface {
-			// Find the type name
-			typeName := "Interface"
-			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-				if tv, ok := pkg.TypesInfo.Types[sel.X]; ok {
-					typeName = a.getTypeName(tv.Type)
-				}
+	if targetPkgPath == "" {
+		return
+	}
+
+	// Filter only for internal module packages
+	if !strings.HasPrefix(targetPkgPath, v.modName) {
+		return
+	}
+
+	// Check for interface
+	isInterface := false
+	if tv, ok := v.pkg.TypesInfo.Types[call.Fun]; ok {
+		if _, ok := tv.Type.Underlying().(*types.Interface); ok {
+			isInterface = true
+		}
+	}
+
+	displayFunc := targetFunc
+	if isInterface {
+		typeName := "Interface"
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
+				typeName = v.analyzer.getTypeName(tv.Type)
 			}
-			displayFunc = fmt.Sprintf("%s.%s", typeName, targetFunc)
 		}
+		displayFunc = fmt.Sprintf("%s.%s", typeName, targetFunc)
+	}
 
-		frame := CallFrame{
-			From:     a.shortenPkg(pkg.PkgPath),
-			To:       a.shortenPkg(targetPkgPath),
-			Function: displayFunc,
+	// Get return type
+	retType := ""
+	if tv, ok := v.pkg.TypesInfo.Types[call]; ok {
+		retType = v.analyzer.getTypeName(tv.Type)
+		if retType == "()" || retType == "invalid type" {
+			retType = ""
 		}
+	}
 
-		// De-duplication: don't add if the exact same call was the last one added (simplistic loop detection)
-		if len(*frames) > 0 {
-			last := (*frames)[len(*frames)-1]
-			if last.From == frame.From && last.To == frame.To && last.Function == frame.Function {
-				return true
-			}
+	frame := CallFrame{
+		From:     v.analyzer.shortenPkg(v.pkg.PkgPath),
+		To:       v.analyzer.shortenPkg(targetPkgPath),
+		Function: displayFunc,
+		Async:    v.inGo,
+		InLoop:   v.inLoop > 0,
+		Return:   retType,
+	}
+
+	// De-duplication: don't add if the exact same call was the last one added
+	if len(*v.frames) > 0 {
+		last := (*v.frames)[len(*v.frames)-1]
+		if last.From == frame.From && last.To == frame.To && last.Function == frame.Function {
+			return
 		}
+	}
 
-		*frames = append(*frames, frame)
+	*v.frames = append(*v.frames, frame)
 
-		// Recurse if internal
-		if depth+1 < maxDepth {
-			// Find target function decl
-			for _, p := range allPkgs {
-				if p.PkgPath == targetPkgPath {
-					for _, file := range p.Syntax {
-						for _, decl := range file.Decls {
-							if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == targetFunc {
-								a.walk(p, fd, depth+1, maxDepth, frames, visited, allPkgs, modName)
-								return false
-							}
+	// Recurse if internal
+	if v.depth+1 < v.maxDepth {
+		for _, p := range v.allPkgs {
+			if p.PkgPath == targetPkgPath {
+				for _, file := range p.Syntax {
+					for _, decl := range file.Decls {
+						if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == targetFunc {
+							v.analyzer.walk(p, fd, v.depth+1, v.maxDepth, v.frames, v.visited, v.allPkgs, v.modName)
+							return
 						}
 					}
 				}
 			}
 		}
-
-		return true
-	})
+	}
 }
 
 func (a *SequenceAnalyzer) getTypePkgPath(t types.Type) string {
@@ -275,11 +338,29 @@ func (a *SequenceAnalyzer) generateSequenceDiagram(frames []CallFrame) string {
 	var b strings.Builder
 	b.WriteString("sequenceDiagram\n")
 	
-	// Track active participants for activation/deactivation
-	// Simplified: just arrows for now as in the blueprint
+	inLoop := false
 	for _, f := range frames {
-		b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", f.From, f.To, f.Function))
-		b.WriteString(fmt.Sprintf("    %s-->>-%s: \n", f.To, f.From))
+		if f.InLoop && !inLoop {
+			b.WriteString("    loop for each\n")
+			inLoop = true
+		} else if !f.InLoop && inLoop {
+			b.WriteString("    end\n")
+			inLoop = false
+		}
+
+		if f.Async {
+			b.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", f.From, f.To, f.Function))
+		} else {
+			b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", f.From, f.To, f.Function))
+			ret := f.Return
+			if ret == "" {
+				ret = " "
+			}
+			b.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", f.To, f.From, ret))
+		}
+	}
+	if inLoop {
+		b.WriteString("    end\n")
 	}
 	return b.String()
 }
