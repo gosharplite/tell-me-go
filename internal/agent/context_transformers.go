@@ -371,21 +371,27 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		}
 	}
 
-	apiContents := make([]*llm.Content, len(req.History))
-	copy(apiContents, req.History)
-
-	lastIdx := len(apiContents) - 1
-	orig := apiContents[lastIdx]
+	// 1. Clone the target message to avoid "History Pollution" in long-term memory.
+	// We only modify the content for the current API call.
+	lastIdx := len(req.History) - 1
+	orig := req.History[lastIdx]
+	
+	cloned := &llm.Content{
+		Role:  orig.Role,
+		Parts: append([]*llm.Part{}, orig.Parts...), // Shallow clone parts
+	}
 
 	hasFunctionResponse := false
-	for _, p := range orig.Parts {
+	for _, p := range cloned.Parts {
 		if p.FunctionResponse != nil {
 			hasFunctionResponse = true
 			break
 		}
 	}
 
-	if hasFunctionResponse && len(apiContents) > 1 {
+	if hasFunctionResponse && len(req.History) > 1 {
+		// If the last message is a function response, we inject warnings as a separate turn
+		// to avoid breaking the tool response structure.
 		warningMsgs := []*llm.Content{
 			{
 				Role:  "user",
@@ -396,24 +402,19 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 				Parts: []*llm.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
 			},
 		}
-		newContents := make([]*llm.Content, 0, len(apiContents)+2)
-		newContents = append(newContents, apiContents[:lastIdx]...)
+		newContents := make([]*llm.Content, 0, len(req.History)+2)
+		newContents = append(newContents, req.History[:lastIdx]...)
 		newContents = append(newContents, warningMsgs...)
-		newContents = append(newContents, apiContents[lastIdx])
-		apiContents = newContents
+		newContents = append(newContents, req.History[lastIdx])
+		req.History = newContents
 	} else {
-		cloned := &llm.Content{
-			Role:  orig.Role,
-			Parts: make([]*llm.Part, len(orig.Parts)),
-		}
-		copy(cloned.Parts, orig.Parts)
-		cloned.Parts = append(cloned.Parts, &llm.Part{
+		// Append to TransientParts instead of regular Parts
+		cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
 			Text: "\n\n" + combined,
 		})
-		apiContents[lastIdx] = cloned
+		req.History[lastIdx] = cloned
 	}
 
-	req.History = apiContents
 	return nil
 }
 
@@ -448,23 +449,24 @@ func (t *ToolDeclarationGenerator) Transform(ctx context.Context, req *ContextRe
 
 	injection := fmt.Sprintf("\n\n# AVAILABLE_TOOLS\nYou may use the following tools via function calls:\n%s", string(toolJSON))
 
-	// 2. Clone the first message to avoid "History Pollution"
-	// We only modify the slice for the current API call.
+	// 2. Clone the first message to avoid "History Pollution" in long-term memory.
+	// We replace the pointer in the current request's history slice.
 	firstMsg := req.History[0]
 	cloned := &llm.Content{
-		Role:  firstMsg.Role,
-		Parts: append([]*llm.Part{}, firstMsg.Parts...), // Shallow clone parts
+		Role:           firstMsg.Role,
+		Parts:          append([]*llm.Part{}, firstMsg.Parts...), // Shallow clone parts
+		TransientParts: append([]*llm.Part{}, firstMsg.TransientParts...),
 	}
 
-	// 3. Append the tool schemas to the first message
-	cloned.Parts = append(cloned.Parts, &llm.Part{Text: injection})
+	// 3. Append the tool schemas to TransientParts
+	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{Text: injection})
 
-	// 4. Update the request history (this replaces the pointer in the API payload only)
+	// 4. Update the request history slice
 	req.History[0] = cloned
 	return nil
 }
 
-func (t *ToolDeclarationGenerator) Priority() int { return PriorityTransientThreshold + 5 }
+func (t *ToolDeclarationGenerator) Priority() int { return 75 }
 
 // EmptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type EmptyTurnFilter struct{}
@@ -524,3 +526,23 @@ func (t *FinalContextValidator) Transform(ctx context.Context, req *ContextReque
 }
 
 func (t *FinalContextValidator) Priority() int { return PriorityTransientThreshold + 10 } // Run last
+
+// TransientMerger merges TransientParts into Parts for the final API payload.
+type TransientMerger struct{}
+
+func (t *TransientMerger) Transform(ctx context.Context, req *ContextRequest) error {
+	for i, msg := range req.History {
+		if len(msg.TransientParts) > 0 {
+			// Clone to avoid modifying the original if it was somehow shared
+			cloned := &llm.Content{
+				Role:  msg.Role,
+				Parts: append([]*llm.Part{}, msg.Parts...),
+			}
+			cloned.Parts = append(cloned.Parts, msg.TransientParts...)
+			req.History[i] = cloned
+		}
+	}
+	return nil
+}
+
+func (t *TransientMerger) Priority() int { return PriorityTransientThreshold + 5 }

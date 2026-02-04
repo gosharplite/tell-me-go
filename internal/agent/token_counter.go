@@ -32,36 +32,51 @@ func (c *HeuristicTokenCounter) Count(contents []*llm.Content) int {
 	}
 
 	for _, content := range contents {
-		if content.TokenCount > 0 {
-			totalTokens += content.TokenCount
-			continue
-		}
-
 		charCount := 0
 		for _, p := range content.Parts {
-			if p.Text != "" {
-				charCount += len(p.Text)
-			}
-			if p.FunctionCall != nil {
-				charCount += len(p.FunctionCall.Name)
-				charCount += estimateMapSizeInternal(p.FunctionCall.Args)
-			}
-			if p.FunctionResponse != nil {
-				charCount += len(p.FunctionResponse.Name)
-				charCount += estimateMapSizeInternal(p.FunctionResponse.Response)
-			}
-			if p.InlineData != nil {
-				charCount += 160 // Heuristic for blob (roughly 50 tokens)
-			}
+			charCount += c.estimatePartChars(p)
+		}
+		for _, p := range content.TransientParts {
+			charCount += c.estimatePartChars(p)
 		}
 
 		// Heuristic: ~3.2 chars per token
-		content.TokenCount = int(float64(charCount) / 3.2)
-		totalTokens += content.TokenCount
+		tokenCount := int(float64(charCount) / 3.2)
+		
+		// Cache the token count only if there are no transient parts, 
+		// otherwise the cache would be incorrect for subsequent calls without transients.
+		// Actually, since transients are used in the Prepare phase, they might vary.
+		if len(content.TransientParts) == 0 {
+			content.TokenCount = tokenCount
+		}
+		
+		totalTokens += tokenCount
 	}
 
 	totalTokens += 300 // Base overhead
 	return totalTokens
+}
+
+func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
+	if p == nil {
+		return 0
+	}
+	charCount := 0
+	if p.Text != "" {
+		charCount += len(p.Text)
+	}
+	if p.FunctionCall != nil {
+		charCount += len(p.FunctionCall.Name)
+		charCount += estimateMapSizeInternal(p.FunctionCall.Args)
+	}
+	if p.FunctionResponse != nil {
+		charCount += len(p.FunctionResponse.Name)
+		charCount += estimateMapSizeInternal(p.FunctionResponse.Response)
+	}
+	if p.InlineData != nil {
+		charCount += 160 // Heuristic for blob (roughly 50 tokens)
+	}
+	return charCount
 }
 
 func (c *HeuristicTokenCounter) EstimateMapSize(m map[string]interface{}) int {

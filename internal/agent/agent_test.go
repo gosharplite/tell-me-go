@@ -628,7 +628,8 @@ func TestToolInjection_NoPersistence(t *testing.T) {
 
 func TestOptimizationProfile_Precise(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	h := history.NewManager(t.TempDir() + "/history.jsonl")
+	tmpDir := t.TempDir()
+	h := history.NewManager(tmpDir + "/history.jsonl")
 	counter := &HeuristicTokenCounter{}
 	strategy := NewContextStrategy(counter, bus)
 	
@@ -639,29 +640,29 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 		Profile:   ProfilePrecise,
 	}
 
+	// MaxHistoryTurns = 10. In Precise mode, SlidingWindowPolicy should keep only 5 turns.
 	limits := events.Limits{MaxHistoryTurns: 10}
 	pipeline := factory.BuildStandardPipeline(limits)
 
-	// In Precise mode, windowTurns = 10 / 2 = 5.
-	// We need to inspect the pipeline's transformers to find the HistoryPruner and its SlidingWindowPolicy.
-	
-	found := false
-	for _, tr := range pipeline.transformers {
-		if pruner, ok := tr.(*HistoryPruner); ok {
-			if composite, ok := pruner.Policy.(*CompositePruningPolicy); ok {
-				for _, p := range composite.Policies {
-					if swp, ok := p.(*SlidingWindowPolicy); ok {
-						if swp.MaxTurns != 5 {
-							t.Errorf("expected MaxTurns 5 in Precise profile, got %d", swp.MaxTurns)
-						}
-						found = true
-					}
-				}
-			}
-		}
+	// Setup history with 10 turns (20 messages)
+	ctx := context.Background()
+	for i := 1; i <= 10; i++ {
+		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}})
 	}
-	
-	if !found {
-		t.Error("could not find SlidingWindowPolicy in pipeline")
+
+	req := &ContextRequest{
+		History: h.GetContents(),
+	}
+
+	err := pipeline.Execute(ctx, req)
+	if err != nil {
+		t.Fatalf("pipeline execution failed: %v", err)
+	}
+
+	// Since we have no importance and no pins, only the sliding window should keep turns.
+	// 5 turns = 10 messages.
+	if len(req.History) != 10 {
+		t.Errorf("expected 10 messages (5 turns) kept in Precise profile, got %d", len(req.History))
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/events"
+	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -49,6 +50,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 		&WarningInjector{
 			Strategy: strategy,
 		},
+		&TransientMerger{},
 	)
 
 	// Prepare at turn 3 (approaching limit)
@@ -101,19 +103,15 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 
 	var capturedInput []*llm.Content
 	g := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		sendChatFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			capturedInput = input
-			ch := make(chan *llm.Content, 1)
-			ch <- &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}
-			close(ch)
-			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
-			}
+			return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
 		},
 	}
 
 	bus := &events.SimpleEventBus{}
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, g, bus, nil)
+	cm.Summarizer = NewSummarizer(gateway.NewResilientClient(g, true), bus)
 	_, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
@@ -250,6 +248,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 		_ = hManager2.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
 	}
 	cm2 := NewContextManager(strategy, hManager2, &mockGateway{}, nil, nil)
+	cm2.Summarizer = &mockSummarizer{}
 
 	counter.tokens = int(float64(window) * 0.91)
 	t.Logf("ContextWindow: %d, counter.tokens: %d, safetyLimit: %d", window, counter.tokens, int(float64(window)*0.9))
@@ -279,6 +278,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	// Pipeline with WarningInjector (Transient)
 	cm.Pipeline = NewContextPipeline(
 		&WarningInjector{Strategy: strategy},
+		&TransientMerger{},
 	)
 
 	// Prepare at turn 8 (2 remaining -> triggers warning "Only 2 turns remain")

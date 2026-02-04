@@ -70,6 +70,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&WarningInjector{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
+		&TransientMerger{},
 		&FinalContextValidator{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},

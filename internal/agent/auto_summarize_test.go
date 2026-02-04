@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -211,5 +212,76 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 		if c.Role == "system" {
 			t.Errorf("found system role message in history, which should be avoided")
 		}
+	}
+}
+
+func TestToolInjectedTokenBudgetPressure(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "tool_pressure_history.json"))
+	reg := registry.New()
+	
+	// 1. Register many tools to create a large schema (approx 2000 tokens)
+	for i := 0; i < 20; i++ {
+		reg.Register(&tools.ToolDeclaration{
+			Name:        fmt.Sprintf("tool_%d", i),
+			Description: "A tool with a very long description to consume more tokens in the schema " + strings.Repeat("detail ", 20),
+			Parameters:  &tools.Schema{Type: "OBJECT"},
+		}, nil)
+	}
+
+	// 2. Mock server for summarization
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Compressed history summary"}}}},
+			},
+		}
+		json.NewEncoder(w).Encode(apiResp)
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	
+	sm := security.NewSecurityManager(nil)
+	a := New(client, hManager, reg, sm, true)
+
+	// 3. Set a tight token limit. 
+	// Base overhead ~300. 
+	// Tools ~2000.
+	// Total overhead ~2300.
+	// Set limit to 3000.
+	a.SetLimits(10, 3000, 20)
+
+	// 4. Add history (600 tokens)
+	// Total = 2300 (overhead) + 600 (history) = 2900.
+	// 90% of 3000 = 2700.
+	// 2900 > 2700, so it should trigger summarization.
+	ctx := context.Background()
+	longText := strings.Repeat("B", 1920) // approx 600 tokens
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
+	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Short response"}}})
+	
+	// Add more turns to have something to summarize (need at least 10 messages for auto-summarize)
+	for i := 0; i < 4; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn message"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}})
+	}
+	// Total messages = 2 + 8 = 10.
+
+	// 5. Call Prepare. It should trigger auto-summarize because of tool schema injection.
+	_, metadata, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	if !metadata.SummarizationAttempted {
+		t.Errorf("Expected auto-summarization to be attempted due to tool schema token pressure, but it wasn't.")
+	}
+	
+	// Verify that the resulting history is shorter
+	newContents := hManager.GetContents()
+	if len(newContents) >= 10 {
+		t.Errorf("Expected history to be pruned/summarized, but still have %d messages", len(newContents))
 	}
 }

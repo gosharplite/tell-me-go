@@ -188,3 +188,23 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 func (r *ResilientClient) SetSystemInstructions(instr string) {
 	r.client.SetSystemInstructions(instr)
 }
+
+// SendChat delegates to the underlying client.
+func (r *ResilientClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return r.client.SendChat(ctx, history, tools, resolver)
+}
+
+// StreamChat delegates to the underlying client.
+func (r *ResilientClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	return r.client.StreamChat(ctx, history, tools, resolver, callback)
+}
+
+// RefreshAuth delegates to the underlying client.
+func (r *ResilientClient) RefreshAuth() error {
+	return r.client.RefreshAuth()
+}
+
+// GenerateImages delegates to the underlying client.
+func (r *ResilientClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return r.client.GenerateImages(ctx, model, prompt, mimeType)
+}

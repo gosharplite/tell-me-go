@@ -266,8 +266,15 @@ func TestWarningInjector_Transform(t *testing.T) {
 			t.Error("expected warnings in metadata")
 		}
 		lastContent := req.History[len(req.History)-1]
-		if !strings.Contains(lastContent.Parts[len(lastContent.Parts)-1].Text, "Only 2 turns remain") {
-			t.Errorf("warning not found in content: %v", lastContent.Parts)
+		found := false
+		for _, p := range lastContent.TransientParts {
+			if strings.Contains(p.Text, "Only 2 turns remain") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("warning not found in transient parts: %v", lastContent.TransientParts)
 		}
 	})
 }
@@ -371,14 +378,14 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 		}
 		lastContent := req.History[len(req.History)-1]
 		found := false
-		for _, p := range lastContent.Parts {
+		for _, p := range lastContent.TransientParts {
 			if strings.Contains(p.Text, "A recent summarization failed to significantly reduce context size") {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("clogged warning not found in content parts: %v", lastContent.Parts)
+			t.Errorf("clogged warning not found in transient parts: %v", lastContent.TransientParts)
 		}
 	})
 }
@@ -506,7 +513,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	maxTokens := 2000
 	strategy.SetLimits(maxTokens, 10, 20)
 
-	// Pipeline: Pruner(1), Gatekeeper(80), WarningInjector(100)
+	// Pipeline: Pruner(1), Gatekeeper(80), WarningInjector(100), TransientMerger(105)
 	pipeline := NewContextPipeline(
 		&HistoryPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}},
 		&TokenGatekeeper{
@@ -514,6 +521,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 			Estimator: strategy,
 		},
 		&WarningInjector{Strategy: strategy},
+		&TransientMerger{},
 	)
 
 	h := make([]*llm.Content, 20)

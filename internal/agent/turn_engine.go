@@ -96,6 +96,7 @@ type TurnState struct {
 	RetryCount           int              `json:"retry_count"`
 	ToolCallCount        map[string]int   `json:"-"`
 	RecentResponseHashes []string         `json:"-"`
+	PreparedHistory      []*llm.Content   `json:"-"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -474,13 +475,13 @@ func (e *TurnEngine) notifyTransition(from, to TurnPhase, state *TurnState) {
 type ContextRefiner struct{}
 
 func (p *ContextRefiner) Process(ctx context.Context, turn *Turn) ProcessResult {
-	apiContents, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
+	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
 		return ProcessResult{Error: err}
 	}
 	turn.State.Metadata = metadata
 	turn.State.Tokens = metadata.FinalTokenCount
-	turn.State.Metadata.APIContents = apiContents // Stash for InferenceStep
+	turn.State.PreparedHistory = history
 
 	return ProcessResult{NextPhase: PhaseInference}
 }
@@ -500,8 +501,8 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 }
 
 func (p *InferenceStep) invokeModel(ctx context.Context, turn *Turn) (*llm.Content, *llm.Metrics, error) {
-	apiContents := turn.State.Metadata.APIContents
-	respCh, finalize := turn.Gateway.Generate(ctx, apiContents, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
+	history := turn.State.PreparedHistory
+	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
 	if turn.StreamHandler != nil {
 		turn.StreamHandler(ctx, respCh)

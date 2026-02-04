@@ -47,6 +47,7 @@ func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
 
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
+	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
 func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
@@ -59,5 +60,23 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools 
 		return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
 	}
 }
+
+func (m *mockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	if m.sendChatFn != nil {
+		return m.sendChatFn(ctx, history, tools, resolver)
+	}
+	return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}}, &llm.Metrics{}, nil
+}
+
+func (m *mockGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "generated"}}})
+	return &llm.Metrics{}, nil
+}
+
+func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return [][]byte{}, nil
+}
+
+func (m *mockGateway) RefreshAuth() error { return nil }
 
 func (m *mockGateway) SetSystemInstructions(instr string) {}
