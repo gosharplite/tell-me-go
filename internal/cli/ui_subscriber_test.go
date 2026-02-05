@@ -17,16 +17,31 @@ import (
 type mockUIRenderer struct {
 	mu                     sync.Mutex
 	wg                     sync.WaitGroup
+	renderResponseCalled   bool
+	lastRenderContent      *llm.Content
 	streamResponseCalled   bool
 	logUsageCalled         bool
+	lastMetrics            *llm.Metrics
 	logTurnStatusCalled    bool
+	lastTurnStatus         events.TurnStatus
 	logToolCallCalled      bool
+	lastToolCalls          []*llm.FunctionCall
 	logToolResultCalled    bool
+	lastToolName           string
+	lastToolResult         tools.ToolResult
 	logSystemMessageCalled bool
+	lastSystemMessage      string
+	lastSystemLevel        string
 	receivedContent        []*llm.Content
 }
 
-func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {}
+func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.renderResponseCalled = true
+	m.lastRenderContent = respContent
+}
+
 func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
 	m.mu.Lock()
 	m.streamResponseCalled = true
@@ -53,30 +68,37 @@ func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logTurnStatusCalled = true
+	m.lastTurnStatus = status
 }
 
 func (m *mockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logUsageCalled = true
+	m.lastMetrics = metrics
 }
 
 func (m *mockUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logToolCallCalled = true
+	m.lastToolCalls = calls
 }
 
 func (m *mockUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logToolResultCalled = true
+	m.lastToolName = name
+	m.lastToolResult = result
 }
 
 func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logSystemMessageCalled = true
+	m.lastSystemMessage = msg
+	m.lastSystemLevel = level
 }
 
 func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
@@ -102,26 +124,35 @@ func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 		defer renderer.mu.Unlock()
 		if !renderer.logSystemMessageCalled {
 			t.Error("LogSystemMessage was not called for nil context in ResponseStreamEvent")
+		} else if renderer.lastSystemLevel != "warn" {
+			t.Errorf("Expected warn level, got %s", renderer.lastSystemLevel)
 		}
 	})
 
 	t.Run("UsageMetricsEvent with nil context", func(t *testing.T) {
 		renderer.mu.Lock()
 		renderer.logSystemMessageCalled = false
+		renderer.lastMetrics = nil
 		renderer.mu.Unlock()
 
+		metrics := &llm.Metrics{TotalTokens: 100}
 		s.HandleEvent(events.UsageMetricsEvent{
 			Context: nil,
-			Metrics: &llm.Metrics{},
+			Metrics: metrics,
 		})
 
 		renderer.mu.Lock()
 		defer renderer.mu.Unlock()
 		if !renderer.logUsageCalled {
 			t.Error("LogUsage was not called")
+		} else if renderer.lastMetrics != metrics {
+			t.Error("LogUsage called with wrong metrics")
 		}
+
 		if !renderer.logSystemMessageCalled {
 			t.Error("LogSystemMessage was not called for nil context in UsageMetricsEvent")
+		} else if renderer.lastSystemLevel != "warn" {
+			t.Errorf("Expected warn level, got %s", renderer.lastSystemLevel)
 		}
 	})
 }
@@ -130,53 +161,89 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 	renderer := &mockUIRenderer{}
 	s := NewUISubscriber(renderer, true, true, false, "")
 
-	t.Run("TurnStatusEvent", func(t *testing.T) {
-		s.HandleEvent(events.TurnStatusEvent{Status: events.TurnStatus{}})
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		if !renderer.logTurnStatusCalled {
-			t.Error("LogTurnStatus was not called")
-		}
-	})
+	tests := []struct {
+		name     string
+		event    events.Event
+		validate func(t *testing.T, m *mockUIRenderer)
+	}{
+		{
+			name:  "TurnStatusEvent",
+			event: events.TurnStatusEvent{Status: events.TurnStatus{CurrentTurns: 1}},
+			validate: func(t *testing.T, m *mockUIRenderer) {
+				if !m.logTurnStatusCalled {
+					t.Error("LogTurnStatus was not called")
+				}
+				if m.lastTurnStatus.CurrentTurns != 1 {
+					t.Errorf("Expected turn 1, got %d", m.lastTurnStatus.CurrentTurns)
+				}
+			},
+		},
+		{
+			name:  "ToolCallEvent",
+			event: events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}},
+			validate: func(t *testing.T, m *mockUIRenderer) {
+				if !m.logToolCallCalled {
+					t.Error("LogToolCall was not called")
+				}
+				if len(m.lastToolCalls) != 1 || m.lastToolCalls[0].Name != "test" {
+					t.Errorf("Wrong tool calls logged: %+v", m.lastToolCalls)
+				}
+			},
+		},
+		{
+			name:  "ToolResultEvent",
+			event: events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}},
+			validate: func(t *testing.T, m *mockUIRenderer) {
+				if !m.logToolResultCalled {
+					t.Error("LogToolResult was not called")
+				}
+				if m.lastToolName != "test" || m.lastToolResult.Text != "ok" {
+					t.Errorf("Wrong tool result logged: %s, %v", m.lastToolName, m.lastToolResult)
+				}
+			},
+		},
+		{
+			name:  "SystemMessageEvent",
+			event: events.SystemMessageEvent{Message: "msg", Level: "info"},
+			validate: func(t *testing.T, m *mockUIRenderer) {
+				if !m.logSystemMessageCalled {
+					t.Error("LogSystemMessage was not called")
+				}
+				if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
+					t.Errorf("Wrong system message logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
+				}
+			},
+		},
+		{
+			name:  "StatusUpdate",
+			event: events.StatusUpdate{Message: "msg", Level: "info"},
+			validate: func(t *testing.T, m *mockUIRenderer) {
+				if !m.logSystemMessageCalled {
+					t.Error("LogSystemMessage was not called by StatusUpdate")
+				}
+				if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
+					t.Errorf("Wrong status update logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
+				}
+			},
+		},
+	}
 
-	t.Run("ToolCallEvent", func(t *testing.T) {
-		s.HandleEvent(events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}})
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		if !renderer.logToolCallCalled {
-			t.Error("LogToolCall was not called")
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			renderer.mu.Lock()
+			renderer.logTurnStatusCalled = false
+			renderer.logToolCallCalled = false
+			renderer.logToolResultCalled = false
+			renderer.logSystemMessageCalled = false
+			renderer.mu.Unlock()
 
-	t.Run("ToolResultEvent", func(t *testing.T) {
-		s.HandleEvent(events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}})
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		if !renderer.logToolResultCalled {
-			t.Error("LogToolResult was not called")
-		}
-	})
+			s.HandleEvent(tt.event)
 
-	t.Run("SystemMessageEvent", func(t *testing.T) {
-		s.HandleEvent(events.SystemMessageEvent{Message: "msg", Level: "info"})
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		if !renderer.logSystemMessageCalled {
-			t.Error("LogSystemMessage was not called")
-		}
-	})
-
-	t.Run("StatusUpdate", func(t *testing.T) {
-		renderer.mu.Lock()
-		renderer.logSystemMessageCalled = false
-		renderer.mu.Unlock()
-		s.HandleEvent(events.StatusUpdate{Message: "msg", Level: "info"})
-		renderer.mu.Lock()
-		defer renderer.mu.Unlock()
-		if !renderer.logSystemMessageCalled {
-			t.Error("LogSystemMessage was not called by StatusUpdate")
-		}
-	})
+			renderer.mu.Lock()
+			defer renderer.mu.Unlock()
+			tt.validate(t, renderer)
+		})
+	}
 }
 
 func TestUISubscriber_HandleEvent_Cancellation(t *testing.T) {
@@ -227,5 +294,12 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 	defer renderer.mu.Unlock()
 	if len(renderer.receivedContent) != 2 {
 		t.Errorf("Expected 2 content chunks, got %d", len(renderer.receivedContent))
+	} else {
+		if renderer.receivedContent[0] != content1 {
+			t.Error("First content chunk mismatch")
+		}
+		if renderer.receivedContent[1] != content2 {
+			t.Error("Second content chunk mismatch")
+		}
 	}
 }
