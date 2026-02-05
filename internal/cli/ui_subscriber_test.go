@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 )
 
 type mockUIRenderer struct {
+	mu                     sync.Mutex
+	wg                     sync.WaitGroup
 	streamResponseCalled   bool
 	logUsageCalled         bool
 	logTurnStatusCalled    bool
@@ -25,32 +28,62 @@ type mockUIRenderer struct {
 
 func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {}
 func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
+	m.mu.Lock()
 	m.streamResponseCalled = true
+	m.mu.Unlock()
+
 	ch := make(chan *llm.Content, 100)
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
 		for c := range ch {
+			m.mu.Lock()
 			m.receivedContent = append(m.receivedContent, c)
+			m.mu.Unlock()
 		}
 	}()
-	return ch, func() *llm.Content { return &llm.Content{} }
+	return ch, func() *llm.Content {
+		close(ch)
+		m.wg.Wait()
+		return &llm.Content{}
+	}
 }
-func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) { m.logTurnStatusCalled = true }
+
+func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logTurnStatusCalled = true
+}
+
 func (m *mockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.logUsageCalled = true
 }
+
 func (m *mockUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.logToolCallCalled = true
 }
+
 func (m *mockUIRenderer) LogToolResult(name string, result tools.ToolResult, showTools bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.logToolResultCalled = true
 }
-func (m *mockUIRenderer) LogSystemMessage(msg string, level string) { m.logSystemMessageCalled = true }
+
+func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logSystemMessageCalled = true
+}
 
 func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 	renderer := &mockUIRenderer{}
 	s := NewUISubscriber(renderer, false, false, false, "")
 
-	// This should not panic
+	// This should not panic and should log a warning
 	t.Run("ResponseStreamEvent with nil context", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -64,15 +97,31 @@ func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 			Context: nil,
 			Stream:  streamCh,
 		})
+
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
+		if !renderer.logSystemMessageCalled {
+			t.Error("LogSystemMessage was not called for nil context in ResponseStreamEvent")
+		}
 	})
 
 	t.Run("UsageMetricsEvent with nil context", func(t *testing.T) {
+		renderer.mu.Lock()
+		renderer.logSystemMessageCalled = false
+		renderer.mu.Unlock()
+
 		s.HandleEvent(events.UsageMetricsEvent{
 			Context: nil,
 			Metrics: &llm.Metrics{},
 		})
+
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logUsageCalled {
 			t.Error("LogUsage was not called")
+		}
+		if !renderer.logSystemMessageCalled {
+			t.Error("LogSystemMessage was not called for nil context in UsageMetricsEvent")
 		}
 	})
 }
@@ -83,6 +132,8 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 
 	t.Run("TurnStatusEvent", func(t *testing.T) {
 		s.HandleEvent(events.TurnStatusEvent{Status: events.TurnStatus{}})
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logTurnStatusCalled {
 			t.Error("LogTurnStatus was not called")
 		}
@@ -90,6 +141,8 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 
 	t.Run("ToolCallEvent", func(t *testing.T) {
 		s.HandleEvent(events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}})
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logToolCallCalled {
 			t.Error("LogToolCall was not called")
 		}
@@ -97,6 +150,8 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 
 	t.Run("ToolResultEvent", func(t *testing.T) {
 		s.HandleEvent(events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}})
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logToolResultCalled {
 			t.Error("LogToolResult was not called")
 		}
@@ -104,14 +159,20 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 
 	t.Run("SystemMessageEvent", func(t *testing.T) {
 		s.HandleEvent(events.SystemMessageEvent{Message: "msg", Level: "info"})
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logSystemMessageCalled {
 			t.Error("LogSystemMessage was not called")
 		}
 	})
 
 	t.Run("StatusUpdate", func(t *testing.T) {
+		renderer.mu.Lock()
 		renderer.logSystemMessageCalled = false
+		renderer.mu.Unlock()
 		s.HandleEvent(events.StatusUpdate{Message: "msg", Level: "info"})
+		renderer.mu.Lock()
+		defer renderer.mu.Unlock()
 		if !renderer.logSystemMessageCalled {
 			t.Error("LogSystemMessage was not called by StatusUpdate")
 		}
@@ -162,9 +223,8 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 		Stream:  streamCh,
 	})
 
-	// Wait a bit for the background drain goroutine in the mock to finish
-	time.Sleep(10 * time.Millisecond)
-
+	renderer.mu.Lock()
+	defer renderer.mu.Unlock()
 	if len(renderer.receivedContent) != 2 {
 		t.Errorf("Expected 2 content chunks, got %d", len(renderer.receivedContent))
 	}

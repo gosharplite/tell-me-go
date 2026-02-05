@@ -36,6 +36,7 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 	case events.ResponseStreamEvent:
 		ctx := ev.Context
 		if ctx == nil {
+			s.renderer.LogSystemMessage("ResponseStreamEvent missing context", "warn")
 			ctx = context.Background()
 		}
 		uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
@@ -55,6 +56,7 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 	case events.UsageMetricsEvent:
 		ctx := ev.Context
 		if ctx == nil {
+			s.renderer.LogSystemMessage("UsageMetricsEvent missing context", "warn")
 			ctx = context.Background()
 		}
 		s.renderer.LogUsage(ctx, ev.Metrics, s.logFile, ev.StartTime)
