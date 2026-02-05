@@ -57,4 +57,3 @@ verify_release_readiness
 #### 5. Cleanup and Security Restoration
 1.  Verify sync: `git status`.
 2.  Mark tasks as complete.
-3.  **Revoke Automation**: Execute `revoke_bypass`.
