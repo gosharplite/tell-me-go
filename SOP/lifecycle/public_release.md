@@ -33,10 +33,12 @@ verify_release_readiness
 4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
 
 #### 4. Git Tagging and Remote Synchronization
-1.  **Merge into main**:
+1.  **Sync and Merge into main**:
     ```bash
     git checkout main
-    git merge dev
+    git fetch origin
+    git reset --hard origin/main  # Safety: Ensure main matches remote truth and wipe unpushed commits
+    git merge dev --no-ff         # Explicitly create a merge commit for the release record
     ```
 2.  **Tag the release**:
     ```bash
