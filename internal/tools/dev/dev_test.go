@@ -6,7 +6,6 @@ package dev
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -155,10 +154,6 @@ func TestGetCoverage(t *testing.T) {
 				validator: framework.NewCommandValidator(sm),
 				executor:  executor,
 			}
-
-			// Mock coverage.out file because os.Remove is called
-			os.Create("coverage.out")
-			defer os.Remove("coverage.out")
 
 			res, err := m.getCoverage(context.Background(), nil)
 			if (err != nil) != tt.wantErr {
