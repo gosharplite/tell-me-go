@@ -202,10 +202,12 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
-			r.sm.TerminalLock()
-			sanitized := sanitizeForTerminal(part.Text)
-			fmt.Fprintf(r.stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, r.now().Format("15:04:05"), sanitized, colors.ColorReset)
-			r.sm.TerminalUnlock()
+			func() {
+				r.sm.TerminalLock()
+				defer r.sm.TerminalUnlock()
+				sanitized := sanitizeForTerminal(part.Text)
+				fmt.Fprintf(r.stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, r.now().Format("15:04:05"), sanitized, colors.ColorReset)
+			}()
 		}
 	}
 	for _, part := range respContent.Parts {
@@ -222,10 +224,12 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 		}
 
 		if part.InlineData != nil {
-			r.sm.TerminalLock()
-			fmt.Fprintf(r.stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
-				colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
-			r.sm.TerminalUnlock()
+			func() {
+				r.sm.TerminalLock()
+				defer r.sm.TerminalUnlock()
+				fmt.Fprintf(r.stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
+					colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
+			}()
 		}
 	}
 }
@@ -239,9 +243,11 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	}
 
 	if !rawOutput {
-		r.sm.TerminalLock()
-		fmt.Fprint(r.stdout, colors.TermSaveCursor)
-		r.sm.TerminalUnlock()
+		func() {
+			r.sm.TerminalLock()
+			defer r.sm.TerminalUnlock()
+			fmt.Fprint(r.stdout, colors.TermSaveCursor)
+		}()
 	}
 
 	var wg sync.WaitGroup

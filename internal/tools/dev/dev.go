@@ -18,9 +18,10 @@ import (
 )
 
 type devManager struct {
-	sm        *security.SecurityManager
-	validator *framework.CommandValidator
-	executor  Executor
+	sm              *security.SecurityManager
+	validator       *framework.CommandValidator
+	executor        Executor
+	createTempFile func(dir, pattern string) (*os.File, error)
 }
 
 // Executor defines the interface for command execution to allow mocking in tests.
@@ -42,9 +43,10 @@ func (e *realExecutor) LookPath(file string) (string, error) {
 // Register adds developer-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  &realExecutor{},
+		sm:              sm,
+		validator:       framework.NewCommandValidator(sm),
+		executor:        &realExecutor{},
+		createTempFile: os.CreateTemp,
 	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -167,9 +169,11 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 
 	m.sm.LogAudit("ACTION", "run_tests", "COMMAND", command)
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Running Tests: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running Tests: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
+	}()
 
 	// Execute the command directly without shell wrapper
 	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
@@ -196,9 +200,11 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", command)
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go mod tidy and go fmt%s\n", colors.ColorCyan, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go mod tidy and go fmt%s\n", colors.ColorCyan, colors.ColorReset)
+	}()
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", framework.TruncateOutput(string(out), 50))
@@ -236,12 +242,14 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 
 	m.sm.LogAudit("ACTION", "get_coverage", "PATH", path)
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Getting test coverage for %s%s\n", colors.ColorCyan, path, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Getting test coverage for %s%s\n", colors.ColorCyan, path, colors.ColorReset)
+	}()
 
 	// Use a temporary file for coverage profile
-	f, err := os.CreateTemp("", "coverage-*.out")
+	f, err := m.createTempFile("", "coverage-*.out")
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -290,9 +298,11 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 
 	m.sm.LogAudit("ACTION", "run_linter", "COMMAND", fullCmd)
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Running linter: %s%s\n", colors.ColorCyan, fullCmd, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running linter: %s%s\n", colors.ColorCyan, fullCmd, colors.ColorReset)
+	}()
 
 	out, err := m.executor.Execute(ctx, command, argsList...)
 	if err != nil && len(out) == 0 {
@@ -339,9 +349,11 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
+	}()
 
 	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", command)
 
@@ -370,9 +382,11 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 
 	m.sm.LogAudit("ACTION", "check_vulnerabilities", "COMMAND", command)
 
-	m.sm.TerminalLock()
-	fmt.Fprintf(os.Stderr, "%s[Tool Action] Checking for vulnerabilities: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
-	m.sm.TerminalUnlock()
+	func() {
+		m.sm.TerminalLock()
+		defer m.sm.TerminalUnlock()
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Checking for vulnerabilities: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
+	}()
 
 	out, err := m.executor.Execute(ctx, "govulncheck", "./...")
 

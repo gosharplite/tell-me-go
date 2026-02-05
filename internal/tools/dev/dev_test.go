@@ -6,6 +6,7 @@ package dev
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -84,9 +85,10 @@ func TestCheckVulnerabilities(t *testing.T) {
 				},
 			}
 			m := &devManager{
-				sm:        sm,
-				validator: framework.NewCommandValidator(sm),
-				executor:  executor,
+				sm:             sm,
+				validator:      framework.NewCommandValidator(sm),
+				executor:       executor,
+				createTempFile: os.CreateTemp,
 			}
 
 			res, err := m.checkVulnerabilities(context.Background(), nil)
@@ -134,6 +136,11 @@ func TestGetCoverage(t *testing.T) {
 			wantSubstr: "failed to generate coverage summary",
 			wantErr:    true,
 		},
+		{
+			name:       "Temp file failure",
+			wantSubstr: "failed to create temp file",
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -153,6 +160,12 @@ func TestGetCoverage(t *testing.T) {
 				sm:        sm,
 				validator: framework.NewCommandValidator(sm),
 				executor:  executor,
+				createTempFile: func(dir, pattern string) (*os.File, error) {
+					if tt.name == "Temp file failure" {
+						return nil, errors.New("failed to create temp file")
+					}
+					return os.CreateTemp(dir, pattern)
+				},
 			}
 
 			res, err := m.getCoverage(context.Background(), nil)
@@ -175,9 +188,10 @@ func TestGoTidy(t *testing.T) {
 
 	executor := &mockDevExecutor{}
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  executor,
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		createTempFile: os.CreateTemp,
 	}
 
 	res, err := m.goTidy(context.Background(), nil)
@@ -200,9 +214,10 @@ func TestRunBenchmark(t *testing.T) {
 		},
 	}
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  executor,
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		createTempFile: os.CreateTemp,
 	}
 
 	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"})
@@ -269,9 +284,10 @@ func TestRunLinter(t *testing.T) {
 				},
 			}
 			m := &devManager{
-				sm:        sm,
-				validator: framework.NewCommandValidator(sm),
-				executor:  executor,
+				sm:             sm,
+				validator:      framework.NewCommandValidator(sm),
+				executor:       executor,
+				createTempFile: os.CreateTemp,
 			}
 
 			res, err := m.runLinter(context.Background(), nil)
@@ -318,9 +334,10 @@ func TestGoTidy_Errors(t *testing.T) {
 				},
 			}
 			m := &devManager{
-				sm:        sm,
-				validator: framework.NewCommandValidator(sm),
-				executor:  executor,
+				sm:             sm,
+				validator:      framework.NewCommandValidator(sm),
+				executor:       executor,
+				createTempFile: os.CreateTemp,
 			}
 
 			_, err := m.goTidy(context.Background(), nil)
@@ -342,9 +359,10 @@ func TestRunBenchmark_Error(t *testing.T) {
 		},
 	}
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  executor,
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		createTempFile: os.CreateTemp,
 	}
 
 	_, err := m.runBenchmark(context.Background(), nil)
@@ -364,9 +382,10 @@ func TestRunTests(t *testing.T) {
 		},
 	}
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  executor,
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		createTempFile: os.CreateTemp,
 	}
 
 	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
@@ -384,9 +403,10 @@ func TestRunTests_Violations(t *testing.T) {
 	sm.RegisterSafePath(".")
 
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  &mockDevExecutor{},
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       &mockDevExecutor{},
+		createTempFile: os.CreateTemp,
 	}
 
 	tests := []struct {
@@ -428,9 +448,10 @@ func TestRunTests_Failure(t *testing.T) {
 		},
 	}
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  executor,
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		createTempFile: os.CreateTemp,
 	}
 
 	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
