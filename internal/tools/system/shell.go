@@ -225,6 +225,10 @@ func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 }
 
 func (t *ShellTool) resolveOutputFile(path string) (string, error) {
+	// Hardened sanitation: trim whitespace and remove null bytes
+	path = strings.TrimSpace(path)
+	path = strings.ReplaceAll(path, "\x00", "")
+
 	if path == "" {
 		return "", nil
 	}

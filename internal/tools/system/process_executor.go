@@ -71,7 +71,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	file, err := e.openOutputFile(config)
 	if err != nil {
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
 		}
 	}
 	if file != nil {
@@ -106,7 +106,9 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			lineBuf = append(lineBuf, '\n')
 
 			mu.Lock()
-			wt.Write(file, lineBuf)
+			if file != nil {
+				wt.Write(file, lineBuf)
+			}
 
 			// Slice to remove the newline for other uses
 			rawLine := lineBuf[:len(data)]
@@ -198,7 +200,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	file, err := e.openOutputFile(config)
 	if err != nil {
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
 		}
 	}
 	if file != nil {
@@ -341,7 +343,9 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				lineBuf = append(lineBuf, '\n')
 
 				mu.Lock()
-				wt.Write(file, lineBuf)
+				if file != nil {
+					wt.Write(file, lineBuf)
+				}
 
 				// Slice to remove the newline for other uses
 				rawLine := lineBuf[:len(data)]
@@ -385,7 +389,9 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		lineBuf = append(lineBuf, '\n')
 
 		mu.Lock()
-		wt.Write(file, lineBuf)
+		if file != nil {
+			wt.Write(file, lineBuf)
+		}
 
 		// Slice to remove the newline for other uses
 		rawLine := lineBuf[:len(data)]
