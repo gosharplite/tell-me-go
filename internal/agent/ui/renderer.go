@@ -140,7 +140,6 @@ func (r *StdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 	}
 
 	m.Timestamp = r.nowSafe().Format(time.RFC3339)
-	m.IsSummary = false
 
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -154,6 +153,11 @@ func (r *StdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 	defer f.Close()
 	_, _ = f.Write(data)
 	_, _ = f.WriteString("\n")
+
+	// If it's a summary (background task), print the line to terminal
+	if m.IsSummary {
+		r.renderMetricsLine(m, startTime)
+	}
 }
 
 func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
@@ -181,8 +185,14 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", colors.ColorReset, durationStr, colors.ColorGray, totalDuration, colors.ColorGray)
 	}
 
-	fmt.Fprintf(stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
-		colors.ColorGray, timestamp, miss, hColor, m.CachedTokens, colors.ColorGray, m.ResponseTokens, m.ThinkingTokens, colors.ColorGray, timingStr, colors.ColorReset)
+	// Prepare cost string
+	costStr := ""
+	if m.Cost > 0 {
+		costStr = fmt.Sprintf(" %s($%.4f)%s", colors.ColorGray, m.Cost, colors.ColorGray)
+	}
+
+	fmt.Fprintf(stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
+		colors.ColorGray, timestamp, miss, hColor, m.CachedTokens, colors.ColorGray, m.ResponseTokens, m.ThinkingTokens, costStr, colors.ColorGray, timingStr, colors.ColorReset)
 }
 
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {

@@ -280,6 +280,8 @@ func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, 
 				tracker := e.costTracker
 				e.mu.RUnlock()
 				if tracker != nil && um.Metrics != nil {
+					// Calculate cost for the UI before accumulation
+					um.Metrics.Cost = tracker.CalculateCost(*um.Metrics)
 					tracker.Accumulate(*um.Metrics)
 				}
 			}

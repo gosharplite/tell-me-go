@@ -223,14 +223,15 @@ func TestResilientClient_RetryIdempotency(t *testing.T) {
 
 		// To simulate the 'emitted' logic in executeWithTransparentRetry with SendChat,
 		// we need a case where attemptCall returns err=nil, then the loop returns.
-		// If attemptCall returns err != nil, 'emitted' will be false for SendChat because 
+		// If attemptCall returns err != nil, 'emitted' will be false for SendChat because
 		// the outCh <- content only happens if err == nil.
-		
+
 		client := NewResilientClient(mock, true)
 		outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
-		for range outCh {}
+		for range outCh {
+		}
 		_, _, err := finalize()
-		
+
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}

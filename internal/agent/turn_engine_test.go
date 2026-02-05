@@ -1112,14 +1112,13 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 	}
 }
 
-
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
 	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	
+
 	persistedContents := []*llm.Content{}
 	hManager.SetStore(&MockStore{
 		AppendFunc: func(ctx context.Context, content *llm.Content) error {
@@ -1129,19 +1128,19 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 		LoadFunc: func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
 		SaveFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
 	})
-	
+
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	mockGw.GenerateFunc = func(c context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 		ch := make(chan *llm.Content, 1)
 		// Simulate partial response before cancellation
 		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial"}}}
-		
+
 		// Cancel the context to simulate interruption
 		cancel()
-		
+
 		return ch, func() (*llm.Content, *llm.Metrics, error) {
 			// Even though canceled, the gateway should return what it got so far
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial response"}}}, &llm.Metrics{}, context.Canceled
