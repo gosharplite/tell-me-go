@@ -49,7 +49,11 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 				if !ok {
 					break streamLoop
 				}
-				uiCh <- c
+				select {
+				case uiCh <- c:
+				case <-ctx.Done():
+					break streamLoop
+				}
 			}
 		}
 		_ = uiFinalize()

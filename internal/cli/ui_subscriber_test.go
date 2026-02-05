@@ -33,6 +33,7 @@ type mockUIRenderer struct {
 	lastSystemMessage      string
 	lastSystemLevel        string
 	receivedContent        []*llm.Content
+	skipConsumer           bool
 }
 
 func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
@@ -44,22 +45,27 @@ func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, 
 
 func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.streamResponseCalled = true
+	skip := m.skipConsumer
+	m.mu.Unlock()
 
-	ch := make(chan *llm.Content, 100)
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		for c := range ch {
-			m.mu.Lock()
-			m.receivedContent = append(m.receivedContent, c)
-			m.mu.Unlock()
-		}
-	}()
+	ch := make(chan *llm.Content)
+	if !skip {
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			for c := range ch {
+				m.mu.Lock()
+				m.receivedContent = append(m.receivedContent, c)
+				m.mu.Unlock()
+			}
+		}()
+	}
 	return ch, func() *llm.Content {
-		close(ch)
-		m.wg.Wait()
+		if !skip {
+			close(ch)
+			m.wg.Wait()
+		}
 		return &llm.Content{}
 	}
 }
@@ -285,7 +291,7 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 	streamCh := make(chan *llm.Content, 2)
 	content1 := &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
 	content2 := &llm.Content{Parts: []*llm.Part{{Text: " world"}}}
-	
+
 	streamCh <- content1
 	streamCh <- content2
 	close(streamCh)
@@ -306,5 +312,45 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 		if renderer.receivedContent[1] != content2 {
 			t.Error("Second content chunk mismatch")
 		}
+	}
+}
+
+func TestUISubscriber_HandleEvent_CancellationDuringBlock(t *testing.T) {
+	renderer := &mockUIRenderer{skipConsumer: true}
+	s := NewUISubscriber(renderer, false, false, false, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	streamCh := make(chan *llm.Content)
+
+	done := make(chan struct{})
+	go func() {
+		s.HandleEvent(events.ResponseStreamEvent{
+			Context: ctx,
+			Stream:  streamCh,
+		})
+		close(done)
+	}()
+
+	// Send one item. It should block in HandleEvent because skipConsumer is true.
+	content := &llm.Content{Parts: []*llm.Part{{Text: "blocking"}}}
+
+	// We need to send it in a goroutine because it might block here if the subscriber isn't ready.
+	// But in HandleEvent, it first checks ctx.Done(), then reads from ev.Stream.
+	// So it will be waiting on ev.Stream.
+	select {
+	case streamCh <- content:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timed out sending content to streamCh")
+	}
+
+	// Now it should be blocked at `uiCh <- c` in HandleEvent.
+	// We cancel the context.
+	cancel()
+
+	select {
+	case <-done:
+		// Success: HandleEvent returned despite being blocked on channel send.
+	case <-time.After(1 * time.Second):
+		t.Error("HandleEvent did not terminate on context cancellation while blocked on send")
 	}
 }
