@@ -212,15 +212,19 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
-			if rawOutput {
-				fmt.Fprint(r.stdout, part.Text)
-				if !strings.HasSuffix(part.Text, "\n") {
-					fmt.Fprintln(r.stdout)
+			func() {
+				r.sm.TerminalLock()
+				defer r.sm.TerminalUnlock()
+				if rawOutput {
+					fmt.Fprint(r.stdout, part.Text)
+					if !strings.HasSuffix(part.Text, "\n") {
+						fmt.Fprintln(r.stdout)
+					}
+				} else {
+					sanitized := sanitizeForTerminal(part.Text)
+					r.renderMarkdown(sanitized)
 				}
-			} else {
-				sanitized := sanitizeForTerminal(part.Text)
-				r.renderMarkdown(sanitized)
-			}
+			}()
 		}
 
 		if part.InlineData != nil {
@@ -318,7 +322,11 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	if !state.rawOutput {
 		output = sanitizeForTerminal(part.Text)
 	}
-	fmt.Fprint(r.stdout, output)
+	func() {
+		r.sm.TerminalLock()
+		defer r.sm.TerminalUnlock()
+		fmt.Fprint(r.stdout, output)
+	}()
 	state.totalText.WriteString(part.Text)
 }
 
@@ -348,7 +356,11 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 			sanitized := sanitizeForTerminal(fullText)
 			r.clearAndRenderMarkdown(sanitized)
 		}
-		fmt.Fprintln(r.stdout)
+		func() {
+			r.sm.TerminalLock()
+			defer r.sm.TerminalUnlock()
+			fmt.Fprintln(r.stdout)
+		}()
 	}
 }
 

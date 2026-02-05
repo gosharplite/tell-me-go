@@ -6,6 +6,7 @@ package dev
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -88,6 +89,7 @@ func TestCheckVulnerabilities(t *testing.T) {
 				sm:             sm,
 				validator:      framework.NewCommandValidator(sm),
 				executor:       executor,
+				stderr:         io.Discard,
 				createTempFile: os.CreateTemp,
 			}
 
@@ -160,6 +162,7 @@ func TestGetCoverage(t *testing.T) {
 				sm:        sm,
 				validator: framework.NewCommandValidator(sm),
 				executor:  executor,
+				stderr:    io.Discard,
 				createTempFile: func(dir, pattern string) (*os.File, error) {
 					if tt.name == "Temp file failure" {
 						return nil, errors.New("failed to create temp file")
@@ -191,6 +194,7 @@ func TestGoTidy(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       executor,
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
@@ -217,6 +221,7 @@ func TestRunBenchmark(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       executor,
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
@@ -287,6 +292,7 @@ func TestRunLinter(t *testing.T) {
 				sm:             sm,
 				validator:      framework.NewCommandValidator(sm),
 				executor:       executor,
+				stderr:         io.Discard,
 				createTempFile: os.CreateTemp,
 			}
 
@@ -337,6 +343,7 @@ func TestGoTidy_Errors(t *testing.T) {
 				sm:             sm,
 				validator:      framework.NewCommandValidator(sm),
 				executor:       executor,
+				stderr:         io.Discard,
 				createTempFile: os.CreateTemp,
 			}
 
@@ -362,6 +369,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       executor,
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
@@ -385,6 +393,7 @@ func TestRunTests(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       executor,
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
@@ -406,6 +415,7 @@ func TestRunTests_Violations(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       &mockDevExecutor{},
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
@@ -451,6 +461,7 @@ func TestRunTests_Failure(t *testing.T) {
 		sm:             sm,
 		validator:      framework.NewCommandValidator(sm),
 		executor:       executor,
+		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
 	}
 
