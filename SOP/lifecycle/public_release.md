@@ -19,7 +19,7 @@ This SOP defines the automated workflow for publishing a new public release of t
 2.  **Enable Automation**: Execute `bypass_confirmation`.
 3.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
 4.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
-5.  **Confirm Versioning**: Use `ask_user` to confirm the target release version (e.g., `1.81.0`) and the subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad` for reference.
+5.  **Confirm Versioning**: Read `cmd/tell-me-go/main.go` to identify the current version. Use `ask_user` to present the current version and propose the target release (e.g., `1.81.0`) and subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad`.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
