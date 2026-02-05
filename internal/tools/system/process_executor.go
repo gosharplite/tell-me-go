@@ -71,7 +71,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	file, err := e.openOutputFile(config)
 	if err != nil {
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
 		}
 	}
 	if file != nil {
@@ -86,7 +86,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback}
+	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024 // Default 1MB
@@ -106,7 +106,9 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 			lineBuf = append(lineBuf, '\n')
 
 			mu.Lock()
-			wt.Write(file, lineBuf)
+			if file != nil {
+				wt.Write(file, lineBuf)
+			}
 
 			// Slice to remove the newline for other uses
 			rawLine := lineBuf[:len(data)]
@@ -198,7 +200,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	file, err := e.openOutputFile(config)
 	if err != nil {
 		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
 		}
 	}
 	if file != nil {
@@ -291,7 +293,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	var stdoutStr, stderrStr strings.Builder
 	var mu sync.Mutex // Protects builders, feedback, file, writeTracker, and totalCaptured
 	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback}
+	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
 	var totalCaptured int
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
@@ -341,7 +343,9 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 				lineBuf = append(lineBuf, '\n')
 
 				mu.Lock()
-				wt.Write(file, lineBuf)
+				if file != nil {
+					wt.Write(file, lineBuf)
+				}
 
 				// Slice to remove the newline for other uses
 				rawLine := lineBuf[:len(data)]
@@ -385,7 +389,9 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 		lineBuf = append(lineBuf, '\n')
 
 		mu.Lock()
-		wt.Write(file, lineBuf)
+		if file != nil {
+			wt.Write(file, lineBuf)
+		}
 
 		// Slice to remove the newline for other uses
 		rawLine := lineBuf[:len(data)]
@@ -450,13 +456,18 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 	if config.OutputFile == "" {
 		return nil, nil
 	}
-	path := filepath.Clean(config.OutputFile)
+	path := strings.TrimSpace(config.OutputFile)
+	path = strings.ReplaceAll(path, "\x00", "")
+	if path == "" {
+		return nil, nil
+	}
+	path = filepath.Clean(path)
 
 	// Simple security check: prevent escaping the current directory via relative paths.
 	// We allow absolute paths as the agent may need to write to specific system locations
 	// if authorized, but relative paths should stay within the project structure.
 	if !filepath.IsAbs(path) && (strings.HasPrefix(path, ".."+string(filepath.Separator)) || path == "..") {
-		return nil, fmt.Errorf("output file path cannot escape current directory: %s", config.OutputFile)
+		return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
 	}
 
 	flags := os.O_CREATE | os.O_WRONLY
@@ -477,20 +488,28 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 // writeTracker tracks if a write to a shared output file has failed,
 // ensuring only one warning is issued.
 type writeTracker struct {
-	failed   bool
+	failed   atomic.Bool
 	feedback io.Writer
+	filePath string
 }
 
 // Write attempts to write to w. If it fails, it sets the failed flag and
 // optionally sends a warning to feedback.
 func (wt *writeTracker) Write(w io.Writer, p []byte) {
-	if wt.failed || w == nil {
+	if wt.failed.Load() || w == nil {
 		return
 	}
+
+	// Robustness check for typed nils (e.g., *os.File(nil) passed as io.Writer)
+	if f, ok := w.(*os.File); ok && f == nil {
+		return
+	}
+
 	if _, err := w.Write(p); err != nil {
-		wt.failed = true
-		if wt.feedback != nil {
-			fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+		if wt.failed.CompareAndSwap(false, true) {
+			if wt.feedback != nil {
+				fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file %q: %v\n", wt.filePath, err)
+			}
 		}
 	}
 }

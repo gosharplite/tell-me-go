@@ -5,6 +5,7 @@ package system
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -204,4 +205,67 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 			t.Error("expected error for invalid output path")
 		}
 	})
+}
+
+func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := NewShellTool(sm)
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "Normal path",
+			input:    "out.txt",
+			expected: "out.txt",
+			wantErr:  false,
+		},
+		{
+			name:     "With spaces",
+			input:    "  out.txt  ",
+			expected: "out.txt",
+			wantErr:  false,
+		},
+		{
+			name:     "With null bytes",
+			input:    "out\x00.txt",
+			expected: "out.txt",
+			wantErr:  false,
+		},
+		{
+			name:     "With both",
+			input:    "  out\x00.txt  ",
+			expected: "out.txt",
+			wantErr:  false,
+		},
+		{
+			name:     "Becomes empty after sanitation",
+			input:    "  \x00  ",
+			expected: "",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tool.resolveOutputFile(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("resolveOutputFile() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.expected == "" {
+				if got != "" {
+					t.Errorf("resolveOutputFile() got = %q, want empty", got)
+				}
+				return
+			}
+			if filepath.Base(got) != tt.expected {
+				t.Errorf("resolveOutputFile() got = %q, base should be %q", got, tt.expected)
+			}
+		})
+	}
 }
