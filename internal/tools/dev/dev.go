@@ -195,11 +195,11 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	}()
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", framework.TruncateOutput(string(out), 50))
 	}
 
 	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", framework.TruncateOutput(string(out), 50))
 	}
 
 	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil

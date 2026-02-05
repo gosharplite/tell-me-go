@@ -6,6 +6,7 @@ package dev
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,14 +25,26 @@ func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, err
 	if data, ok := m.files[name]; ok {
 		return data, nil
 	}
+	// Also check base name if absolute path is provided
+	base := filepath.Base(name)
+	if data, ok := m.files[base]; ok {
+		return data, nil
+	}
 	return nil, os.ErrNotExist
 }
 
 func (m *mockFileSystem) Walk(ctx context.Context, root string, fn fsutil.WalkFunc) error {
 	for path, data := range m.files {
-		// In mock, we ignore root and visit all registered files
-		info := &mockFileInfo{name: path, size: int64(len(data))}
-		if err := fn(path, info, nil); err != nil {
+		fullPath := path
+		if root != "." && root != "" && !filepath.IsAbs(path) {
+			fullPath = filepath.Join(root, path)
+		}
+		// Mock walk: respect root if it's not "."
+		if root != "." && root != "" && !strings.HasPrefix(fullPath, root) {
+			continue
+		}
+		info := &mockFileInfo{name: fullPath, size: int64(len(data))}
+		if err := fn(fullPath, info, nil); err != nil {
 			return err
 		}
 	}
