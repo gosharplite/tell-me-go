@@ -15,9 +15,11 @@ This SOP defines the automated workflow for publishing a new public release of t
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Enable Automation**: Execute `bypass_confirmation`.
-2.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
-3.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
+1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
+2.  **Enable Automation**: Execute `bypass_confirmation`.
+3.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
+4.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
+5.  **Confirm Versioning**: Use `ask_user` to confirm the target release version (e.g., `1.81.0`) and the subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad` for reference.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -27,16 +29,19 @@ verify_release_readiness
 **CRITICAL**: All checks in the generated report MUST return **[OK]**. If any check returns **[FAIL]**, you MUST fix the issue before proceeding.
 
 #### 3. Version Stabilization
-1.  Update `Version` in `cmd/tell-me-go/main.go` (remove `-dev` suffix).
+1.  Update `Version` in `cmd/tell-me-go/main.go` (remove `-dev` suffix, set to the confirmed release version).
 2.  Run `go mod tidy`.
 3.  **Note**: This project relies on Git history and tags for version tracking. A manual `CHANGELOG.md` is NOT maintained to ensure the Git log remains the single source of truth.
-4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
+4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"` (use confirmed version).
+5.  **Push to Remote**: `git push origin dev`.
 
 #### 4. Git Tagging and Remote Synchronization
-1.  **Merge into main**:
+1.  **Sync and Merge into main**:
     ```bash
     git checkout main
-    git merge dev
+    git fetch origin
+    git reset --hard origin/main  # Safety: Ensure main matches remote truth and wipe unpushed commits
+    git merge dev --no-ff         # Explicitly create a merge commit for the release record
     ```
 2.  **Tag the release**:
     ```bash
@@ -49,11 +54,12 @@ verify_release_readiness
 4.  **Return to dev and Bump Version**:
     ```bash
     git checkout dev
-    # Bump version in main.go to next cycle (e.g., "1.66.0-dev")
+    # Increment Version in cmd/tell-me-go/main.go to the confirmed next cycle version (e.g., "1.82.0-dev")
     git commit -am "Chore: Start next development cycle"
     git push origin dev
     ```
 
 #### 5. Cleanup and Security Restoration
-1.  Verify sync: `git status`.
-2.  Mark tasks as complete.
+1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
+2.  **Restore Security**: Execute `revoke_bypass` to re-enable interactive prompts.
+3.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
