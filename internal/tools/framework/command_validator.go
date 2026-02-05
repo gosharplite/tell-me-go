@@ -136,15 +136,25 @@ func (v *CommandValidator) ValidateStructure(parts []string) error {
 }
 
 // TruncateOutput limits a string to a maximum number of lines, appending a truncation message if needed.
+// It is designed to be memory-efficient by avoiding a full split of the string.
 func TruncateOutput(output string, maxLines int) string {
 	if output == "" {
 		return ""
 	}
-	lines := strings.Split(output, "\n")
-	if len(lines) <= maxLines {
-		return output
+	if maxLines <= 0 {
+		return "\n... (Output truncated) ..."
 	}
-	return strings.Join(lines[:maxLines], "\n") + "\n... (Output truncated) ..."
+
+	count := 0
+	for i := 0; i < len(output); i++ {
+		if output[i] == '\n' {
+			count++
+			if count >= maxLines {
+				return output[:i] + "\n... (Output truncated) ..."
+			}
+		}
+	}
+	return output
 }
 
 func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {

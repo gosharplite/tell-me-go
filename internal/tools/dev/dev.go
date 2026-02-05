@@ -183,7 +183,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
 	}
 
-	return tools.ToolResult{Text: "PASS"}, nil
+	return tools.ToolResult{Text: framework.TruncateOutput(outStr, 100)}, nil
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

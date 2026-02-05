@@ -17,7 +17,7 @@ import (
 type SecurityManager struct {
 	Policy      *PathPolicy
 	Interaction *InteractionHandler
-	Auditor     *Auditor
+	Auditor     AuditLogger
 
 	bypassFile   string
 	bypassActive bool

@@ -90,6 +90,39 @@ func TestRunTests_EdgeCases(t *testing.T) {
 	})
 }
 
+type mockAuditor struct {
+	lastAction string
+}
+
+func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
+	if label1 == "ACTION" {
+		m.lastAction = val1
+	}
+}
+func (m *mockAuditor) SetLogFile(path string) {}
+
+func TestRunTests_Audit(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	auditor := &mockAuditor{}
+	sm.Auditor = auditor
+
+	m := &devManager{
+		sm:        sm,
+		validator: framework.NewCommandValidator(sm),
+		executor:  &mockExecutor{},
+	}
+
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
+	if err != nil {
+		t.Fatalf("runTests failed: %v", err)
+	}
+
+	if auditor.lastAction != "run_tests" {
+		t.Errorf("expected audit action 'run_tests', got %q", auditor.lastAction)
+	}
+}
+
 type mockExecutor struct {
 	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
 	lookPathFunc func(file string) (string, error)

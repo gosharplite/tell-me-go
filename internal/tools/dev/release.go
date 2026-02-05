@@ -35,7 +35,7 @@ func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 type releaseManager struct {
 	sm       *security.SecurityManager
 	fs       fsutil.FileSystem
-	executor *system.ProcessExecutor
+	executor system.CommandExecutor
 }
 
 type ReadinessCheck interface {
@@ -166,7 +166,7 @@ func (c *DependencyChecker) Run(ctx context.Context) CheckResult {
 
 // BuildChecker implementation
 type BuildChecker struct {
-	executor *system.ProcessExecutor
+	executor system.CommandExecutor
 }
 
 func (c *BuildChecker) Name() string { return "Clean Room Build Simulation" }
@@ -186,7 +186,7 @@ func (c *BuildChecker) Run(ctx context.Context) CheckResult {
 
 // TestRunner implementation
 type TestRunner struct {
-	executor *system.ProcessExecutor
+	executor system.CommandExecutor
 }
 
 func (c *TestRunner) Name() string { return "Test Suite Verification" }
