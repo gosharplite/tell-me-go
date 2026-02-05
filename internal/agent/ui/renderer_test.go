@@ -24,7 +24,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogSystemMessage", func(t *testing.T) {
 		stdout.Reset()
@@ -80,7 +80,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogTurnStatus_PostCall", func(t *testing.T) {
 		stderr.Reset()
@@ -147,7 +147,7 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("StreamResponse_Simple", func(t *testing.T) {
 		stdout.Reset()
@@ -212,7 +212,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) })
 
 	r.LogTurnStatus(events.TurnStatus{
 		Timestamp:       r.now(),
@@ -323,7 +323,7 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
 		stderr.Reset()
@@ -377,7 +377,7 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := NewStdUIRenderer(sm)
 	r.SetWriters(&stdout, &stderr)
-	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("Tool metrics omit total duration", func(t *testing.T) {
 		stderr.Reset()
@@ -466,9 +466,9 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 
 	t.Run("Mocked time", func(t *testing.T) {
 		r := &StdUIRenderer{
-			sm:  sm,
-			now: func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) },
+			sm: sm,
 		}
+		r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) })
 		got := r.getTimestamp()
 		want := "12:34:56"
 		if got != want {
@@ -484,4 +484,44 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 			t.Errorf("getTimestamp() with nil now returned invalid format: %q", got)
 		}
 	})
+}
+
+func TestStdUIRenderer_NilRendererFallback(t *testing.T) {
+	var stdout bytes.Buffer
+	r := &StdUIRenderer{
+		stdout:   &stdout,
+		renderer: nil, // Explicitly nil
+	}
+
+	testText := "# Hello World"
+	r.renderMarkdown(testText)
+
+	output := stdout.String()
+	if !strings.Contains(output, testText) {
+		t.Errorf("Expected raw text output when renderer is nil, got: %q", output)
+	}
+}
+
+func TestStdUIRenderer_NowSafeRace(t *testing.T) {
+	r := &StdUIRenderer{}
+	stop := make(chan bool)
+
+	// Goroutine 1: Rapidly swap the 'now' function
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				r.SetNow(func() time.Time { return time.Now() })
+				r.SetNow(nil)
+			}
+		}
+	}()
+
+	// Goroutine 2: Rapidly call nowSafe
+	for i := 0; i < 1000; i++ {
+		r.nowSafe()
+	}
+	close(stop)
 }
