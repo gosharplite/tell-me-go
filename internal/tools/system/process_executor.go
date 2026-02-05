@@ -493,10 +493,16 @@ func (wt *writeTracker) Write(w io.Writer, p []byte) {
 	if wt.failed || w == nil {
 		return
 	}
+
+	// Robustness check for typed nils (e.g., *os.File(nil) passed as io.Writer)
+	if f, ok := w.(*os.File); ok && f == nil {
+		return
+	}
+
 	if _, err := w.Write(p); err != nil {
 		wt.failed = true
 		if wt.feedback != nil {
-			fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file: %v\n", err)
+			fmt.Fprintf(wt.feedback, "\n[Warning] Write failed to output file: %v\n", err)
 		}
 	}
 }
