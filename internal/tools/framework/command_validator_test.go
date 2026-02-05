@@ -56,10 +56,10 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 		{"ls 2> err.txt", true},
 		{"ls &> all.txt", true},
 		{"ls |& grep foo", true},
-		{"ls;echo", true},                  // Attached operator in first token
-		{"ls>out", true},                   // Attached operator in first token
+		{"ls;echo", true},                      // Attached operator in first token
+		{"ls>out", true},                       // Attached operator in first token
 		{"grep \"foo && bar\" file.go", false}, // Contains operator but not standalone and NOT in first token
-		{"sh -c \"ls && echo hi\"", false},      // Operator is inside another string
+		{"sh -c \"ls && echo hi\"", false},     // Operator is inside another string
 	}
 
 	for _, tt := range tests {
@@ -91,7 +91,7 @@ func TestCommandValidator_Go(t *testing.T) {
 		{"go run main.go", false},
 		{"go build", false},
 		{"go install", false},
-		{"go test", true}, 
+		{"go test", true},
 	}
 
 	for _, tt := range tests {
@@ -170,7 +170,7 @@ func TestCommandValidator_SplitError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for unclosed quote")
 	}
-	
+
 	allowed, reason := v.IsSafe("ls 'unclosed quote")
 	if allowed {
 		t.Error("expected IsSafe to return false for invalid command")
@@ -195,14 +195,14 @@ func TestCommandValidator_EmptyCommand(t *testing.T) {
 func TestCommandValidator_UnsafeChars(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
-	
+
 	unsafe := []string{
 		"ls\n",
 		"ls\r",
 		"ls $VAR",
 		"ls `whoami`",
 	}
-	
+
 	for _, cmd := range unsafe {
 		allowed, _ := v.IsSafe(cmd)
 		if allowed {
