@@ -591,3 +591,22 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 		}
 	})
 }
+
+func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
+
+	t.Run("LogUsage terminal output for summaries", func(t *testing.T) {
+		stderr.Reset()
+		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100, Cost: 0.05}
+		r.LogUsage(context.Background(), metrics, t.TempDir()+"/test.log", time.Now())
+
+		output := stderr.String()
+		if !strings.Contains(output, "$0.0500") {
+			t.Errorf("expected terminal output to contain cost, got %q", output)
+		}
+	})
+}

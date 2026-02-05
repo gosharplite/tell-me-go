@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
@@ -1169,4 +1170,49 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	if !found {
 		t.Error("emergency checkpoint failed: partial response was not persisted to history")
 	}
+}
+
+type mockEngineCostTracker struct {
+	accumulatedCount int
+}
+
+func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
+	return 0.05
+}
+
+func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
+	m.accumulatedCount++
+}
+
+func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
+	return 0
+}
+
+func (m *mockEngineCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
+	return pricing.UsageStats{}, 0
+}
+
+func (m *mockEngineCostTracker) Warmup() {}
+
+func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
+	bus := &events.SimpleEventBus{}
+	tracker := &mockEngineCostTracker{}
+	reg := &MockRegistry{}
+	hManager := history.NewManager(t.TempDir() + "/history.json")
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	cm := newTestContextManager(strategy, hManager, &MockGateway{}, bus)
+
+	_ = NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus, WithCostTracker(tracker))
+
+	t.Run("Background cost tracking via event", func(t *testing.T) {
+		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}
+		bus.Publish(events.UsageMetricsEvent{Metrics: metrics})
+
+		if metrics.Cost <= 0 {
+			t.Errorf("expected cost to be populated in event metrics, got %f", metrics.Cost)
+		}
+		if tracker.accumulatedCount != 1 {
+			t.Errorf("expected tracker.Accumulate to be called once, got %d", tracker.accumulatedCount)
+		}
+	})
 }

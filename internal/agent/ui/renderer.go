@@ -156,6 +156,8 @@ func (r *StdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 
 	// If it's a summary (background task), print the line to terminal
 	if m.IsSummary {
+		r.sm.TerminalLock()
+		defer r.sm.TerminalUnlock()
 		r.renderMetricsLine(m, startTime)
 	}
 }
