@@ -34,11 +34,15 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 	case events.TurnStatusEvent:
 		s.renderer.LogTurnStatus(ev.Status)
 	case events.ResponseStreamEvent:
-		uiCh, uiFinalize := s.renderer.StreamResponse(ev.Context, s.showThoughts, s.rawOutput)
+		ctx := ev.Context
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
 	streamLoop:
 		for {
 			select {
-			case <-ev.Context.Done():
+			case <-ctx.Done():
 				break streamLoop
 			case c, ok := <-ev.Stream:
 				if !ok {
