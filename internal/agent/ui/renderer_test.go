@@ -525,3 +525,44 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 	}
 	close(stop)
 }
+
+func TestStreamResponse_ScrollAware(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+
+	t.Run("Redraw on no scroll", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+		ch, finalize := r.StreamResponse(ctx, false, false)
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Small response"}}}
+		_ = finalize()
+
+		// Should contain Restore Cursor
+		if !strings.Contains(stdout.String(), "\0338") {
+			t.Errorf("expected restore cursor code, got %q", stdout.String())
+		}
+		if strings.Contains(stderr.String(), "── (formatted) ──") {
+			t.Errorf("did not expect scroll separator, got %q", stderr.String())
+		}
+	})
+
+	t.Run("Failover on scroll", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		ctx := context.Background()
+		ch, finalize := r.StreamResponse(ctx, false, false)
+		
+		// Send 30 newlines to trigger hasScrolled
+		longText := strings.Repeat("line\n", 30)
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: longText}}}
+		_ = finalize()
+
+		// Should NOT contain Restore Cursor in the finalization phase (it might be there from the start of stream, but let's check the separator)
+		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+			t.Errorf("expected scroll separator, got %q", stderr.String())
+		}
+	})
+}

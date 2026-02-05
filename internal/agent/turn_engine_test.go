@@ -281,6 +281,8 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 						}
 						return nil
 					},
+					SaveFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
+					LoadFunc: func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
 				})
 			},
 			wantErr: "history error",

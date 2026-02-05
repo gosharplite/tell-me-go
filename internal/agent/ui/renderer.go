@@ -69,6 +69,8 @@ type streamState struct {
 	thoughtActive bool
 	showThoughts  bool
 	rawOutput     bool
+	lineCount     int
+	hasScrolled   bool
 }
 
 // NewStdUIRenderer creates a new StdUIRenderer.
@@ -351,7 +353,7 @@ func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 	}
 	if state.showThoughts {
 		sanitized := sanitizeForTerminal(part.Text)
-		r.safePrintStderr(fmt.Sprintf("%s%s%s", colors.ColorGray, sanitized, colors.ColorReset))
+		r.safePrintStderr(sanitized)
 	}
 }
 
@@ -367,6 +369,14 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 		defer r.sm.TerminalUnlock()
 		fmt.Fprint(stdout, output)
 	}()
+
+	// Track scrolling: If we exceed a reasonable line count, we assume the terminal
+	// has scrolled, making the saved cursor position for redraws invalid.
+	state.lineCount += strings.Count(part.Text, "\n")
+	if state.lineCount > 25 {
+		state.hasScrolled = true
+	}
+
 	state.totalText.WriteString(part.Text)
 }
 
@@ -395,7 +405,16 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 		fullText := state.totalText.String()
 		if fullText != "" {
 			sanitized := sanitizeForTerminal(fullText)
-			r.clearAndRenderMarkdown(sanitized)
+
+			if state.hasScrolled {
+				// FAIL-SAFE: Terminal scrolled. Redrawing would cause overlap.
+				// Just print a separator and append the final formatted text.
+				r.safePrintStderr("\n" + colors.ColorGray + "── (formatted) ──" + colors.ColorReset + "\n")
+				r.renderMarkdown(sanitized)
+			} else {
+				// Normal path: Cursor is still valid, do a clean redraw.
+				r.clearAndRenderMarkdown(sanitized)
+			}
 		}
 		stdout := r.getStdout()
 		func() {

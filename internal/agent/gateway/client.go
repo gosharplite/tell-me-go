@@ -138,9 +138,16 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, to
 func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		content, metrics, err := r.attemptCall(ctx, input, tools, resolver, outCh)
+		content, metrics, emitted, err := r.attemptCall(ctx, input, tools, resolver, outCh)
 		if err == nil {
 			return content, metrics, nil
+		}
+
+		// [ARCHITECTURAL GUARD]
+		// If we've already emitted data, we CANNOT retry transparently.
+		// Doing so would cause duplicated text in the UI and history.
+		if emitted {
+			return nil, nil, r.WrapError(err)
 		}
 
 		wrapped := r.WrapError(err)
@@ -155,23 +162,27 @@ func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input
 	return nil, nil, lastErr
 }
 
-func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
 	if r.disableStreaming {
 		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
+		var emitted bool
 		if err == nil {
 			select {
 			case outCh <- content:
+				emitted = true
 			case <-ctx.Done():
 			}
 		}
-		return content, metrics, err
+		return content, metrics, emitted, err
 	}
 	return r.performStreamingCall(ctx, input, tools, resolver, outCh)
 }
 
-func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
 	finalContent := &llm.Content{Role: "model"}
+	var emitted bool
 	callback := func(c *llm.Content) {
+		emitted = true // Mark that data has left the gateway
 		for _, p := range c.Parts {
 			finalContent.AddPart(p)
 		}
@@ -181,7 +192,7 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 		}
 	}
 	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
-	return finalContent, metrics, err
+	return finalContent, metrics, emitted, err
 }
 
 // SetSystemInstructions updates the system instructions in the underlying LLM client.
