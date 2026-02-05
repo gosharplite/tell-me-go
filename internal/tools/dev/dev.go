@@ -187,7 +187,17 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", "go mod tidy && go fmt ./...")
+	command := "go mod tidy && go fmt ./..."
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Go Tidy", command, "Tidying project dependencies and formatting", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
+	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", command)
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -216,6 +226,16 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	path := params.Path
 	if path == "" {
 		path = "./..."
+	}
+
+	command := fmt.Sprintf("go test -coverprofile=coverage.out %s", path)
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Test Coverage", command, "Getting test coverage summary", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
 	m.sm.LogAudit("ACTION", "get_coverage", "PATH", path)
@@ -311,13 +331,23 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		bench = "."
 	}
 
+	command := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Benchmark Execution", command, "Running project benchmarks", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
 		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
 	}()
 
-	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", fmt.Sprintf("go test -bench=%s in %s", bench, path))
+	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", command)
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {

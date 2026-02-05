@@ -25,11 +25,6 @@ func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, err
 	if data, ok := m.files[name]; ok {
 		return data, nil
 	}
-	// Also check base name if absolute path is provided
-	base := filepath.Base(name)
-	if data, ok := m.files[base]; ok {
-		return data, nil
-	}
 	return nil, os.ErrNotExist
 }
 
@@ -40,8 +35,11 @@ func (m *mockFileSystem) Walk(ctx context.Context, root string, fn fsutil.WalkFu
 			fullPath = filepath.Join(root, path)
 		}
 		// Mock walk: respect root if it's not "."
-		if root != "." && root != "" && !strings.HasPrefix(fullPath, root) {
-			continue
+		if root != "." && root != "" {
+			rel, err := filepath.Rel(root, fullPath)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				continue
+			}
 		}
 		info := &mockFileInfo{name: fullPath, size: int64(len(data))}
 		if err := fn(fullPath, info, nil); err != nil {
@@ -79,27 +77,29 @@ func (m *mockCommandExecutor) RunCommand(ctx context.Context, parts []string, co
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	
+	cwd, _ := os.Getwd()
+
 	fs := &mockFileSystem{
 		files: map[string][]byte{
-			"go.mod": []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
-			"main.go": []byte("package main\nfunc main() {}"),
+			filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
+			filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
+			"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
 		},
 	}
-	
+
 	executor := &mockCommandExecutor{}
-	
+
 	m := &releaseManager{
 		sm:       sm,
 		fs:       fs,
 		executor: executor,
 	}
-	
+
 	res, err := m.verifyReleaseReadiness(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if !strings.Contains(res.Text, "READY FOR RELEASE") {
 		t.Errorf("expected READY FOR RELEASE, got:\n%s", res.Text)
 	}
@@ -108,32 +108,40 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
+	cwd, _ := os.Getwd()
 
 	tests := []struct {
 		name       string
-		files      map[string][]byte
+		files      func() map[string][]byte
 		exitCode   int
 		wantSubstr string
 	}{
 		{
 			name: "Secret found",
-			files: map[string][]byte{
-				"go.mod": []byte("module test"),
-				"config.go": []byte("apiKey := \"private_key\""),
+			files: func() map[string][]byte {
+				return map[string][]byte{
+					filepath.Join(cwd, "go.mod"):    []byte("module test"),
+					filepath.Join(cwd, "config.go"): []byte("apiKey := \"private_key\""),
+					"go.mod":                        []byte("module test"),
+				}
 			},
 			wantSubstr: "Potential secret",
 		},
 		{
 			name: "Replace directive",
-			files: map[string][]byte{
-				"go.mod": []byte("module test\nreplace foo => ../foo"),
+			files: func() map[string][]byte {
+				return map[string][]byte{
+					"go.mod": []byte("module test\nreplace foo => ../foo"),
+				}
 			},
 			wantSubstr: "contains 'replace' directives",
 		},
 		{
 			name: "Build failure",
-			files: map[string][]byte{
-				"go.mod": []byte("module test"),
+			files: func() map[string][]byte {
+				return map[string][]byte{
+					"go.mod": []byte("module test"),
+				}
 			},
 			exitCode:   1,
 			wantSubstr: "Clean build failed",
@@ -142,25 +150,25 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := &mockFileSystem{files: tt.files}
+			fs := &mockFileSystem{files: tt.files()}
 			executor := &mockCommandExecutor{
 				runFunc: func(ctx context.Context, parts []string, config system.ExecutionConfig) (system.ExecutionResult, error) {
 					// Build and Test are the two commands executed
 					return system.ExecutionResult{ExitCode: tt.exitCode, Output: "failed"}, nil
 				},
 			}
-			
+
 			m := &releaseManager{
 				sm:       sm,
 				fs:       fs,
 				executor: executor,
 			}
-			
+
 			res, err := m.verifyReleaseReadiness(context.Background(), nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			
+
 			if !strings.Contains(res.Text, tt.wantSubstr) {
 				t.Errorf("expected substring %q in report, got:\n%s", tt.wantSubstr, res.Text)
 			}
