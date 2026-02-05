@@ -249,3 +249,111 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 		t.Error("expected second entry Pinned to be true after loading")
 	}
 }
+
+func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "transient_test.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx := context.Background()
+
+	content := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "Hello"}},
+		TransientParts: []*llm.Part{
+			{Text: "Internal thought that should not be saved"},
+		},
+	}
+
+	if err := store.Save(ctx, []*llm.Content{content}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(loaded) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(loaded))
+	}
+
+	if len(loaded[0].TransientParts) != 0 {
+		t.Errorf("expected 0 TransientParts, got %d", len(loaded[0].TransientParts))
+	}
+
+	// Double check raw JSON
+	rawJSON, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawJSON), "Internal thought") {
+		t.Error("JSON contains TransientParts data")
+	}
+}
+
+func TestJSONLStore_PrepareForStorage_EdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "edge_cases.jsonl")
+	store := NewJSONLStore(filePath)
+	ctx := context.Background()
+
+	content := &llm.Content{
+		Role:       "user",
+		TokenCount: 123,
+		Parts: []*llm.Part{
+			nil, // Should not panic
+			{Text: "Hello"},
+			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			{
+				FunctionCall: &llm.FunctionCall{
+					Name: "get_weather",
+					Args: map[string]interface{}{"location": "London"},
+				},
+			},
+			{
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     "get_weather",
+					Response: map[string]interface{}{"temp": 20},
+				},
+			},
+		},
+	}
+
+	prepared, err := store.prepareForStorage(ctx, content)
+	if err != nil {
+		t.Fatalf("prepareForStorage failed: %v", err)
+	}
+
+	if prepared.TokenCount != 123 {
+		t.Errorf("expected TokenCount 123, got %d", prepared.TokenCount)
+	}
+
+	if len(prepared.Parts) != 5 {
+		t.Fatalf("expected 5 parts, got %d", len(prepared.Parts))
+	}
+
+	if prepared.Parts[0] != nil {
+		t.Error("expected first part to be nil")
+	}
+
+	if prepared.Parts[1].Text != "Hello" {
+		t.Errorf("expected second part text 'Hello', got %s", prepared.Parts[1].Text)
+	}
+
+	if prepared.Parts[2].AssetID == "" {
+		t.Error("expected third part to have AssetID")
+	}
+
+	if prepared.Parts[2].InlineData.Data != nil {
+		t.Error("expected third part data to be nil after storage prep")
+	}
+
+	if prepared.Parts[3].FunctionCall == nil || prepared.Parts[3].FunctionCall.Name != "get_weather" {
+		t.Error("FunctionCall not preserved or incorrect")
+	}
+
+	if prepared.Parts[4].FunctionResponse == nil || prepared.Parts[4].FunctionResponse.Name != "get_weather" {
+		t.Error("FunctionResponse not preserved or incorrect")
+	}
+}

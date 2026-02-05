@@ -34,14 +34,14 @@ func (m *mockToolRegistry) IsLongRunning(name string) bool {
 }
 
 type mockSummarizer struct {
-	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, error)
+	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error)
 }
 
-func (m *mockSummarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, error) {
+func (m *mockSummarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	if m.summarizeFn != nil {
 		return m.summarizeFn(ctx, subset, focus)
 	}
-	return "summary", nil
+	return "summary", &llm.Metrics{}, nil
 }
 
 type mockTokenCounter struct {

@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type InfoManager struct {
@@ -101,7 +102,7 @@ func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	func() {
 		m.SP.TerminalLock()
 		defer m.SP.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go doc %s\033[0m\n", symbol)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go doc %s%s\n", colors.ColorCyan, symbol, colors.ColorReset)
 	}()
 
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)

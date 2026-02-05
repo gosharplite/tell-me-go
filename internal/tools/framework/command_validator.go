@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/shlex"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 // CommandValidator handles command validation and security checks.
@@ -26,6 +27,7 @@ var autoApprovableCommands = map[string]bool{
 	"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 	"head": true, "tail": true, "wc": true, "stat": true, "date": true,
 	"whoami": true, "diff": true, "git": true, "go": true,
+	"golangci-lint": true, "staticcheck": true, "govulncheck": true,
 }
 
 // IsSafe checks if a command is safe for auto-approval.
@@ -70,7 +72,7 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	}
 
 	// 6. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	if safe, reason := v.checkPathSafety(parts); !safe {
+	if safe, reason := v.CheckPathSafety(parts); !safe {
 		return false, reason
 	}
 
@@ -81,9 +83,48 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 func (v *CommandValidator) Split(cmd string) ([]string, error) {
 	parts, err := shlex.Split(cmd)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("shlex split error: %w", err)
 	}
 	return parts, nil
+}
+
+// ValidateStructure ensures the command does not contain standalone shell operators
+// that would be misinterpreted during direct binary execution.
+func (v *CommandValidator) ValidateStructure(parts []string) error {
+	forbidden := map[string]string{
+		"&&":  "logical AND",
+		"||":  "logical OR",
+		";":   "command separator",
+		"|":   "pipe",
+		">":   "output redirection",
+		">>":  "append redirection",
+		"<":   "input redirection",
+		"&":   "background execution",
+		"2>":  "error redirection",
+		"&>":  "combined redirection",
+		"|&":  "combined pipe",
+		"1>":  "output redirection",
+		"1>>": "append redirection",
+		"2>>": "error append redirection",
+	}
+
+	for i, part := range parts {
+		if desc, found := forbidden[part]; found {
+			return fmt.Errorf("standalone shell operator '%s' (%s) detected. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", part, desc)
+		}
+
+		// Check for attached operators or interpolation like "ls;echo" or "ls>out"
+		// We only apply this to the first token (the command) to minimize false positives
+		// in arguments (e.g., grep "a;b") while still catching common mistakes.
+		if i == 0 && strings.ContainsAny(part, ";&|><$`\n\r") {
+			return fmt.Errorf("shell operator or interpolation detected inside command token '%s'. "+
+				"This tool executes binaries directly and does not support shell features. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", part)
+		}
+	}
+	return nil
 }
 
 func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
@@ -126,11 +167,33 @@ func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
 	}
 	allowedGo := map[string]bool{
 		"list": true, "help": true, "version": true, "env": true,
-		"vet": true,
+		"vet": true, "test": true, "tool": true,
 	}
 	if !allowedGo[sub] {
 		return false, fmt.Sprintf("go subcommand '%s' is not in the safe whitelist", sub)
 	}
+
+	if sub == "test" {
+		for _, arg := range parts {
+			if strings.HasPrefix(arg, "-o") || strings.HasPrefix(arg, "--output") {
+				return false, "go test with output redirection is not auto-approvable"
+			}
+		}
+	}
+
+	if sub == "tool" {
+		isCover := false
+		for _, arg := range parts {
+			if arg == "cover" {
+				isCover = true
+				break
+			}
+		}
+		if !isCover {
+			return false, "only 'go tool cover' is authorized for auto-approval"
+		}
+	}
+
 	return true, ""
 }
 
@@ -158,7 +221,8 @@ func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
 	return true, ""
 }
 
-func (v *CommandValidator) checkPathSafety(parts []string) (bool, string) {
+// CheckPathSafety ensures all arguments stay within allowed boundaries.
+func (v *CommandValidator) CheckPathSafety(parts []string) (bool, string) {
 	for i := 1; i < len(parts); i++ {
 		arg := parts[i]
 		if arg == "" || (strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=")) {
@@ -177,7 +241,7 @@ func (v *CommandValidator) checkPathSafety(parts []string) (bool, string) {
 		if _, err := v.sm.IsPathSafe(arg); err != nil {
 			// Some args might not be paths, but we try to check them anyway if they look like paths
 			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
-				fmt.Fprintf(os.Stderr, "\033[0;31m[Safety] %v\033[0m\n", err)
+				fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", colors.ColorRed, err, colors.ColorReset)
 				return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 			}
 		}

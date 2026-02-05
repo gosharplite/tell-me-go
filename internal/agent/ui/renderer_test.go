@@ -295,3 +295,101 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 		}
 	})
 }
+
+func TestStdUIRenderer_Colors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+
+	t.Run("Green cost in LogTurnStatus", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			IsPostCall:   true,
+			SessionCost:  1.2345,
+			Metrics:      &llm.Metrics{PromptTokens: 100},
+			SessionTurns: 1,
+		})
+		output := stderr.String()
+		// Green color for cost: \033[0;32m
+		if !strings.Contains(output, "\033[0;32m") {
+			t.Errorf("expected output to contain green color for cost, got %q", output)
+		}
+		if !strings.Contains(output, "$1.2345") {
+			t.Errorf("expected output to contain session cost $1.2345, got %q", output)
+		}
+	})
+
+	t.Run("Yellow warning for token usage", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			Tokens:           850,
+			MaxHistoryTokens: 1000,
+			SessionTurns:     1,
+		})
+		output := stderr.String()
+		// Yellow color: \033[0;33m
+		if !strings.Contains(output, "\033[0;33m") {
+			t.Errorf("expected output to contain yellow color for warning, got %q", output)
+		}
+	})
+
+	t.Run("Red error for token overflow", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			Tokens:           1100,
+			MaxHistoryTokens: 1000,
+			SessionTurns:     1,
+		})
+		output := stderr.String()
+		// Red color: \033[0;31m
+		if !strings.Contains(output, "\033[0;31m") {
+			t.Errorf("expected output to contain red color for overflow, got %q", output)
+		}
+	})
+}
+
+func TestStdUIRenderer_ToolMetrics(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
+
+	t.Run("Tool metrics omit total duration", func(t *testing.T) {
+		stderr.Reset()
+		m := &llm.Metrics{
+			PromptTokens:   100,
+			ResponseTokens: 50,
+			Duration:       1.5,
+		}
+		r.LogToolResult("test_tool", tools.ToolResult{
+			Metadata: map[string]interface{}{"metrics": m},
+		}, true)
+
+		output := stderr.String()
+		if !strings.Contains(output, "1.50s") {
+			t.Errorf("expected output to contain 1.50s, got %q", output)
+		}
+		if strings.Contains(output, "/") {
+			t.Errorf("expected output NOT to contain total duration separator '/', got %q", output)
+		}
+	})
+
+	t.Run("Regular metrics include total duration", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			IsPostCall: true,
+			StartTime:  r.now().Add(-5 * time.Second),
+			Metrics: &llm.Metrics{
+				PromptTokens: 100,
+				Duration:     1.5,
+			},
+		})
+		output := stderr.String()
+		if !strings.Contains(output, "1.50s") || !strings.Contains(output, "5.00s") || !strings.Contains(output, "/") {
+			t.Errorf("expected output to contain 1.50s / 5.00s, got %q", output)
+		}
+	})
+}

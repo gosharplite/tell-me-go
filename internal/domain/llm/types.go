@@ -113,3 +113,118 @@ func (c *Content) AddPart(p *Part) {
 		Thought: p.Thought,
 	})
 }
+
+// Clone returns a deep copy of Content.
+func (c *Content) Clone() *Content {
+	if c == nil {
+		return nil
+	}
+	clone := &Content{
+		Role:       c.Role,
+		TokenCount: c.TokenCount,
+		Pinned:     c.Pinned,
+	}
+	if c.Parts != nil {
+		clone.Parts = make([]*Part, len(c.Parts))
+		for i, p := range c.Parts {
+			clone.Parts[i] = p.Clone()
+		}
+	}
+	if c.TransientParts != nil {
+		clone.TransientParts = make([]*Part, len(c.TransientParts))
+		for i, p := range c.TransientParts {
+			clone.TransientParts[i] = p.Clone()
+		}
+	}
+	return clone
+}
+
+// Clone returns a deep copy of Part.
+func (p *Part) Clone() *Part {
+	if p == nil {
+		return nil
+	}
+	clone := &Part{
+		Text:             p.Text,
+		Thought:          p.Thought,
+		AssetID:          p.AssetID,
+		InlineData:       p.InlineData.Clone(),
+		FunctionCall:     p.FunctionCall.Clone(),
+		FunctionResponse: p.FunctionResponse.Clone(),
+	}
+	if p.ThoughtSignature != nil {
+		clone.ThoughtSignature = make([]byte, len(p.ThoughtSignature))
+		copy(clone.ThoughtSignature, p.ThoughtSignature)
+	}
+	return clone
+}
+
+// Clone returns a deep copy of Blob.
+func (b *Blob) Clone() *Blob {
+	if b == nil {
+		return nil
+	}
+	clone := &Blob{
+		MIMEType: b.MIMEType,
+	}
+	if b.Data != nil {
+		clone.Data = make([]byte, len(b.Data))
+		copy(clone.Data, b.Data)
+	}
+	return clone
+}
+
+// Clone returns a deep copy of FunctionCall.
+func (fc *FunctionCall) Clone() *FunctionCall {
+	if fc == nil {
+		return nil
+	}
+	clone := &FunctionCall{
+		Name: fc.Name,
+	}
+	if fc.Args != nil {
+		clone.Args = make(map[string]interface{}, len(fc.Args))
+		for k, v := range fc.Args {
+			clone.Args[k] = cloneValue(v)
+		}
+	}
+	return clone
+}
+
+// Clone returns a deep copy of FunctionResponse.
+func (fr *FunctionResponse) Clone() *FunctionResponse {
+	if fr == nil {
+		return nil
+	}
+	clone := &FunctionResponse{
+		Name: fr.Name,
+	}
+	if fr.Response != nil {
+		clone.Response = make(map[string]interface{}, len(fr.Response))
+		for k, v := range fr.Response {
+			clone.Response[k] = cloneValue(v)
+		}
+	}
+	return clone
+}
+
+func cloneValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		newMap := make(map[string]interface{}, len(val))
+		for mk, mv := range val {
+			newMap[mk] = cloneValue(mv)
+		}
+		return newMap
+	case []interface{}:
+		newSlice := make([]interface{}, len(val))
+		for i, sv := range val {
+			newSlice[i] = cloneValue(sv)
+		}
+		return newSlice
+	default:
+		// For primitive types (string, float64, bool, nil) which are common in JSON,
+		// shallow copy is sufficient as they are immutable in Go.
+		return v
+	}
+}

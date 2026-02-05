@@ -108,3 +108,100 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 		})
 	}
 }
+
+func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := NewShellTool(sm)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		command string
+		wantErr bool
+	}{
+		{
+			name:    "Safe command",
+			command: "ls -la",
+			wantErr: false,
+		},
+		{
+			name:    "Blocked operator &&",
+			command: "ls && echo hi",
+			wantErr: true,
+		},
+		{
+			name:    "Blocked operator ||",
+			command: "ls || echo hi",
+			wantErr: true,
+		},
+		{
+			name:    "Blocked operator ;",
+			command: "ls ; echo hi",
+			wantErr: true,
+		},
+		{
+			name:    "Blocked operator |",
+			command: "ls | grep foo",
+			wantErr: true,
+		},
+		{
+			name:    "Blocked operator >",
+			command: "ls > out.txt",
+			wantErr: true,
+		},
+		{
+			name:    "Operator inside sh -c",
+			command: `sh -c "ls && echo hi"`,
+			wantErr: false,
+		},
+		{
+			name:    "Operator inside grep pattern",
+			command: `grep "foo && bar" file.go`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+				"command": tt.command,
+				"reason":  "testing validation",
+			})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExecuteCommand(%q) error = %v, wantErr %v", tt.command, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := NewShellTool(sm)
+	ctx := context.Background()
+
+	t.Run("Empty command", func(t *testing.T) {
+		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": ""})
+		if err == nil {
+			t.Error("expected error for empty command")
+		}
+	})
+
+	t.Run("Invalid shlex", func(t *testing.T) {
+		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{"command": "ls 'unclosed"})
+		if err == nil {
+			t.Error("expected error for invalid shlex")
+		}
+	})
+
+	t.Run("Invalid output path", func(t *testing.T) {
+		_, err := tool.ExecuteCommand(ctx, map[string]interface{}{
+			"command":     "ls",
+			"output_file": "/root/secret.txt",
+		})
+		if err == nil {
+			t.Error("expected error for invalid output path")
+		}
+	})
+}

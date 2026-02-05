@@ -12,16 +12,40 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type devManager struct {
-	sm *security.SecurityManager
+	sm        *security.SecurityManager
+	validator *framework.CommandValidator
+	executor  Executor
+}
+
+// Executor defines the interface for command execution to allow mocking in tests.
+type Executor interface {
+	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
+	LookPath(file string) (string, error)
+}
+
+type realExecutor struct{}
+
+func (e *realExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+func (e *realExecutor) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
 }
 
 // Register adds developer-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
-	m := &devManager{sm: sm}
+	m := &devManager{
+		sm:        sm,
+		validator: framework.NewCommandValidator(sm),
+		executor:  &realExecutor{},
+	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",
@@ -99,15 +123,19 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, fmt.Errorf("command argument is required")
 	}
 
-	// Safety check: block shell metacharacters to prevent command chaining
-	if strings.ContainsAny(command, ";|&><`$") {
-		return tools.ToolResult{}, fmt.Errorf("security violation: command contains forbidden shell characters")
+	// 1. Technical Validation: Split and check structure
+	parts, err := m.validator.Split(command)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
 	}
 
-	// Split command into parts to avoid shell interpretation
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return tools.ToolResult{}, fmt.Errorf("invalid command")
+	if err := m.validator.ValidateStructure(parts); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	// 2. Path Safety: Ensure arguments don't escape allowed boundaries
+	if safe, reason := m.validator.CheckPathSafety(parts); !safe {
+		return tools.ToolResult{}, fmt.Errorf("security violation: %s", reason)
 	}
 
 	baseCmd := parts[0]
@@ -120,48 +148,58 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		"make":   true,
 	}
 
-	if !allowedTools[baseCmd] && !strings.HasSuffix(baseCmd, "run_tests.sh") {
+	// Tighten script validation: only allow local run_tests.sh
+	isAllowedScript := baseCmd == "./run_tests.sh" || baseCmd == "run_tests.sh"
+
+	if !allowedTools[baseCmd] && !isAllowedScript {
 		return tools.ToolResult{}, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
+	}
+
+	// 3. User Authorization
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Test Execution", command, "Executing project tests", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running Tests: %s\033[0m\n", command)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running Tests: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
 	}()
 
 	// Execute the command directly without shell wrapper
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-	output, err := cmd.CombinedOutput()
+	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
 
 	outStr := string(output)
-	if err == nil {
-		return tools.ToolResult{Text: "PASS"}, nil
+	if err != nil {
+		// If failed, return truncated output to help diagnose
+		lines := strings.Split(outStr, "\n")
+		if len(lines) > 100 {
+			outStr = strings.Join(lines[:100], "\n") + "\n... (Output truncated) ..."
+		}
+		// Return the failure output in the result, but still return an error for the status
+		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
 	}
 
-	// If failed, return truncated output to help diagnose
-	lines := strings.Split(outStr, "\n")
-	if len(lines) > 100 {
-		outStr = strings.Join(lines[:100], "\n") + "\n... (Output truncated) ..."
-	}
-
-	return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, nil
+	return tools.ToolResult{Text: "PASS"}, nil
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running go mod tidy and go fmt\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go mod tidy and go fmt%s\n", colors.ColorCyan, colors.ColorReset)
 	}()
 
-	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
-	if out, err := tidyCmd.CombinedOutput(); err != nil {
+	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", string(out))
 	}
 
-	fmtCmd := exec.CommandContext(ctx, "go", "fmt", "./...")
-	if out, err := fmtCmd.CombinedOutput(); err != nil {
+	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", string(out))
 	}
 
@@ -184,21 +222,19 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Getting test coverage for %s\033[0m\n", path)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Getting test coverage for %s%s\n", colors.ColorCyan, path, colors.ColorReset)
 	}()
 
-	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile=coverage.out", path)
-	out, err := cmd.CombinedOutput()
+	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile=coverage.out", path)
 
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Tests failed or coverage error:\n%s", string(out))}, nil
+		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, string(out))
 	}
 
 	// Get summary
-	summaryCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func=coverage.out")
-	summaryOut, err := summaryCmd.CombinedOutput()
+	summaryOut, err := m.executor.Execute(ctx, "go", "tool", "cover", "-func=coverage.out")
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Failed to generate coverage summary: %v", err)}, nil
+		return tools.ToolResult{}, fmt.Errorf("failed to generate coverage summary: %w", err)
 	}
 
 	// Clean up
@@ -213,23 +249,40 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	// Try golangci-lint first, fallback to staticcheck
+	var command string
+	var argsList []string
+	if _, lookErr := m.executor.LookPath("golangci-lint"); lookErr == nil {
+		command = "golangci-lint"
+		argsList = []string{"run"}
+	} else if _, lookErr := m.executor.LookPath("staticcheck"); lookErr == nil {
+		command = "staticcheck"
+		argsList = []string{"./..."}
+	} else {
+		return tools.ToolResult{}, fmt.Errorf("no supported linter found (golangci-lint or staticcheck)")
+	}
+
+	fullCmd := command + " " + strings.Join(argsList, " ")
+	isSafe, _ := m.validator.IsSafe(fullCmd)
+	approved, err := m.sm.Authorize(ctx, "Linter Execution", fullCmd, "Running code analysis", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running linter\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running linter: %s%s\n", colors.ColorCyan, fullCmd, colors.ColorReset)
 	}()
 
-	// Try golangci-lint first, fallback to staticcheck
-	var cmd *exec.Cmd
-	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		cmd = exec.CommandContext(ctx, "golangci-lint", "run")
-	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		cmd = exec.CommandContext(ctx, "staticcheck", "./...")
-	} else {
-		return tools.ToolResult{Text: "Error: No supported linter found (golangci-lint or staticcheck)."}, nil
+	out, err := m.executor.Execute(ctx, command, argsList...)
+	if err != nil && len(out) == 0 {
+		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
 	}
 
-	out, _ := cmd.CombinedOutput()
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "Linter passed successfully."}, nil
 	}
@@ -263,31 +316,43 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Running benchmarks (%s) in %s\033[0m\n", bench, path)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
 	}()
 
-	cmd := exec.CommandContext(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
-	out, err := cmd.CombinedOutput()
+	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Benchmark failed:\n%s", string(out))}, nil
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, string(out))
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
 }
 
 func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	if _, err := m.executor.LookPath("govulncheck"); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest")
+	}
+
+	command := "govulncheck ./..."
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Vulnerability Check", command, "Checking for known vulnerabilities", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "\033[0;36m[Tool Action] Checking for vulnerabilities with govulncheck\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Checking for vulnerabilities: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
 	}()
 
-	if _, err := exec.LookPath("govulncheck"); err != nil {
-		return tools.ToolResult{Text: "Error: 'govulncheck' is not installed. Please install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"}, nil
-	}
+	out, err := m.executor.Execute(ctx, "govulncheck", "./...")
 
-	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
-	out, _ := cmd.CombinedOutput()
+	if err != nil && len(out) == 0 {
+		return tools.ToolResult{}, fmt.Errorf("govulncheck failed: %w", err)
+	}
 
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "No vulnerabilities found."}, nil

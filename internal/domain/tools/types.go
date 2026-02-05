@@ -30,7 +30,8 @@ type Schema struct {
 type ToolResult struct {
 	Text       string
 	BinaryData []BinaryData
-	Error      error // Optional: captures the error that occurred during execution
+	Error      error                  // Optional: captures the error that occurred during execution
+	Metadata   map[string]interface{} // Metadata allows passing structured data back to the orchestrator
 }
 
 // BinaryData represents multi-modal content.

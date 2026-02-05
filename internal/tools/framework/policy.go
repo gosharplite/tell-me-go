@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type PolicyTool struct {
@@ -50,12 +51,12 @@ func (t *PolicyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 
 	// 1. Confirmation
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Authorization auto-approved.\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] Authorization auto-approved.%s\n", colors.ColorGreen, colors.ColorReset)
 		// t.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent access to:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting persistent access to:%s %s\n", colors.ColorBoldRed, colors.ColorReset, absPath)
 		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", colors.ColorYellow, reason, colors.ColorReset)
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
 
@@ -69,7 +70,7 @@ func (t *PolicyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 		}
 
 		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.\033[0m (y/N) ")
+		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.%s (y/N) ", colors.ColorBoldRed, colors.ColorReset)
 		char, err = t.sm.ReadSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
@@ -113,10 +114,10 @@ func (t *PolicyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 
 	// Confirmation Gate
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of authorization auto-approved.\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] Removal of authorization auto-approved.%s\n", colors.ColorGreen, colors.ColorReset)
 		// t.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE authorization for:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to REMOVE authorization for:%s %s\n", colors.ColorBoldYellow, colors.ColorReset, absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
 		char, err := t.sm.ReadSingleKey(ctx)
@@ -181,12 +182,12 @@ func (t *PolicyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 
 	// 1. Confirmation
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Read-only authorization auto-approved.\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] Read-only authorization auto-approved.%s\n", colors.ColorGreen, colors.ColorReset)
 		// t.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
 	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting persistent READ-ONLY access to:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting persistent READ-ONLY access to:%s %s\n", colors.ColorBoldRed, colors.ColorReset, absPath)
 		if reason != "" {
-			fmt.Fprintf(os.Stderr, "\033[0;33mReason: %s\033[0m\n", reason)
+			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", colors.ColorYellow, reason, colors.ColorReset)
 		}
 		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
 
@@ -200,7 +201,7 @@ func (t *PolicyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 		}
 
 		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "\033[1;31m[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.\033[0m (y/N) ")
+		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.%s (y/N) ", colors.ColorBoldRed, colors.ColorReset)
 		char, err = t.sm.ReadSingleKey(ctx)
 		fmt.Fprintf(os.Stderr, "\n")
 		if err != nil {
@@ -244,10 +245,10 @@ func (t *PolicyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 
 	// Confirmation Gate
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "\033[0;32m[Bypassed] Removal of read-only authorization auto-approved.\033[0m\n")
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] Removal of read-only authorization auto-approved.%s\n", colors.ColorGreen, colors.ColorReset)
 		// t.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
 	} else {
-		fmt.Fprintf(os.Stderr, "\033[1;33m[SECURITY] AI is requesting to REMOVE read-only authorization for:\033[0m %s\n", absPath)
+		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to REMOVE read-only authorization for:%s %s\n", colors.ColorBoldYellow, colors.ColorReset, absPath)
 		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
 
 		char, err := t.sm.ReadSingleKey(ctx)
@@ -294,7 +295,7 @@ func (t *PolicyTool) BypassConfirmation(ctx context.Context, args map[string]int
 		return tools.ToolResult{Text: "Bypass mode is already enabled."}, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.%s\n", colors.ColorBoldRed, colors.ColorReset)
 	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
 	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
 
@@ -310,7 +311,7 @@ func (t *PolicyTool) BypassConfirmation(ctx context.Context, args map[string]int
 	t.sm.SetBypassActive(true)
 
 	t.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "\033[1;31m[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.%s\n", colors.ColorBoldRed, colors.ColorReset)
 	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
 }
@@ -322,7 +323,7 @@ func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface
 	t.sm.SetBypassActive(false)
 
 	t.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "\033[1;32m[SECURITY] Interactive security prompts have been RE-ENABLED.\033[0m\n")
+	fmt.Fprintf(os.Stderr, "%s[SECURITY] Interactive security prompts have been RE-ENABLED.%s\n", colors.ColorBoldGreen, colors.ColorReset)
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
 }

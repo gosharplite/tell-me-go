@@ -49,6 +49,17 @@ func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action,
 	return sm.Interaction.ConfirmAction(ctx, action, target, detail, sm.IsBypassActive())
 }
 
+// Authorize prompts the user for authorization of a specific command or action.
+func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	if sm.IsBypassActive() {
+		return true, nil
+	}
+	if isSafe {
+		return true, nil
+	}
+	return sm.Interaction.ConfirmAction(ctx, "Execute "+label, detail, reason, false)
+}
+
 // LogAudit writes an audit entry.
 func (sm *SecurityManager) LogAudit(label1, val1, label2, val2 string) {
 	sm.Auditor.LogAudit(label1, val1, label2, val2)
@@ -130,6 +141,9 @@ var allowedCommands = map[string]bool{
 	"tail":    true,
 	"wc":      true,
 	"date":    true,
+	"golangci-lint": true,
+	"staticcheck":   true,
+	"govulncheck":   true,
 	"cp":      true,
 	"mv":      true,
 	"rm":      true,

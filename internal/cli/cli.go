@@ -160,7 +160,7 @@ func (a *App) run(ctx context.Context, args []string) error {
 	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
 
 	if opts.lastN > 0 {
-		a.showHistory(hManager, opts.lastN, opts.rawOutput)
+		a.showHistory(hManager, opts.lastN, opts.rawOutput, cfg.ShowThoughts)
 	}
 
 	if prompt == "" && opts.lastN > 0 {

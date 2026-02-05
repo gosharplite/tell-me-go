@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 	"golang.org/x/term"
 )
 
@@ -57,7 +58,7 @@ func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (s
 		func() {
 			a.sm.TerminalLock()
 			defer a.sm.TerminalUnlock()
-			fmt.Fprintln(a.Stdout, "\033[0;33m[Reading multi-line input. Press Ctrl+D to send]\033[0m")
+			fmt.Fprintf(a.Stdout, "%s[Reading multi-line input. Press Ctrl+D to send]%s\n", colors.ColorYellow, colors.ColorReset)
 		}()
 
 		// Terminal: Read multi-line input until EOF (Ctrl+D)
@@ -89,12 +90,12 @@ func (a *App) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (s
 	func() {
 		a.sm.TerminalLock()
 		defer a.sm.TerminalUnlock()
-		fmt.Fprintf(a.Stderr, "\033[0;32m[%s] Input captured. Processing...\033[0m\n", time.Now().Format("15:04:05"))
+		fmt.Fprintf(a.Stderr, "%s[%s] Input captured. Processing...%s\n", colors.ColorGreen, time.Now().Format("15:04:05"), colors.ColorReset)
 	}()
 	return prompt, nil
 }
 
-func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
+func (a *App) showHistory(hManager *history.Manager, n int, raw bool, showThoughts bool) {
 	contents := hManager.GetContents()
 	if len(contents) == 0 {
 		fmt.Fprintln(a.Stdout, "No history found.")
@@ -116,12 +117,17 @@ func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 
 	for i := start; i < len(contents); i++ {
 		c := contents[i]
-		roleColor := "\033[1;34m" // Blue for User
+		roleColor := colors.ColorBlue // Blue for User
 		if c.Role != "user" {
-			roleColor = "\033[1;35m" // Magenta for Model
+			roleColor = colors.ColorMagenta // Magenta for Model
 		}
-		fmt.Fprintf(a.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), "\033[0m")
+		fmt.Fprintf(a.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c.Role), colors.ColorReset)
 		for _, p := range c.Parts {
+			// Skip thinking parts if the user hasn't enabled them in config
+			if p.Thought && !showThoughts {
+				continue
+			}
+
 			if p.Text != "" {
 				if raw || r == nil {
 					fmt.Fprint(a.Stdout, p.Text)
@@ -138,10 +144,10 @@ func (a *App) showHistory(hManager *history.Manager, n int, raw bool) {
 				}
 			}
 			if p.FunctionCall != nil {
-				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Call] %s\033[0m\n", p.FunctionCall.Name)
+				fmt.Fprintf(a.Stdout, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
 			}
 			if p.FunctionResponse != nil {
-				fmt.Fprintf(a.Stdout, "\033[0;36m[Tool Response] %s\033[0m\n", p.FunctionResponse.Name)
+				fmt.Fprintf(a.Stdout, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
 			}
 		}
 		fmt.Fprintln(a.Stdout)

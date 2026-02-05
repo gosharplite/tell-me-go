@@ -5,6 +5,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
@@ -118,7 +119,7 @@ type TokenEstimator interface {
 
 // HistorySummarizer defines the interface for summarizing history.
 type HistorySummarizer interface {
-	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error)
+	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error)
 }
 
 // PruningPolicy defines how to mark turns for pruning.
@@ -166,17 +167,17 @@ func (cm *ContextManager) GetLimits() events.Limits {
 }
 
 // Summarize performs an ad-hoc summarization of the given content.
-func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, error) {
+func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", nil
+		return "", nil, nil
 	}
 	return cm.Summarizer.Summarize(ctx, contents, focus)
 }
 
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
-func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, error) {
+func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", fmt.Errorf("summarizer not initialized")
+		return "", nil, fmt.Errorf("summarizer not initialized")
 	}
 
 	cm.mu.Lock()
@@ -188,7 +189,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 	if totalTurns < 1 {
 		cm.mu.Unlock()
-		return "History is too short to summarize yet.", nil
+		return "History is too short to summarize yet.", nil, nil
 	}
 
 	// Clamp to available turns, but leave at least 1 turn if possible
@@ -198,7 +199,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 	if numTurns < 1 {
 		cm.mu.Unlock()
-		return "History is too short to summarize yet.", nil
+		return "History is too short to summarize yet.", nil, nil
 	}
 
 	// Calculate endIdx from logical turns
@@ -207,14 +208,19 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		endIdx += len(turns[i])
 	}
 
-	subset := contents[:endIdx]
+	// Deep clone the subset to ensure mutation safety during the slow LLM call
+	subset := make([]*llm.Content, endIdx)
+	for i := 0; i < endIdx; i++ {
+		subset[i] = contents[i].Clone()
+	}
+
 	tokens := cm.Strategy.EstimateTokens(subset)
 
 	window := cm.Strategy.GetContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
 		cm.mu.Unlock()
-		return "", fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit)
+		return "", nil, fmt.Errorf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit)
 	}
 
 	if cm.Events != nil {
@@ -225,9 +231,9 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	cm.mu.Unlock()
 
 	// Slow LLM call outside the lock
-	summary, err := cm.Summarizer.Summarize(ctx, subset, focus)
+	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		return "", fmt.Errorf("summarization failed: %w", err)
+		return "", nil, fmt.Errorf("summarization failed: %w", err)
 	}
 
 	cm.mu.Lock()
@@ -239,12 +245,12 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		// Since we summarized the FIRST N turns, we should check if they are still the same.
 		currentContents := cm.History.GetContents()
 		if len(currentContents) < endIdx {
-			return "", fmt.Errorf("summarization aborted: history was pruned while summarizing")
+			return "", nil, fmt.Errorf("summarization aborted: history was pruned while summarizing")
 		}
 		// Robust check: did the messages we summarized change?
 		for i := 0; i < endIdx; i++ {
 			if !cm.isContentEqual(currentContents[i], subset[i]) {
-				return "", fmt.Errorf("summarization aborted: history content changed while summarizing")
+				return "", nil, fmt.Errorf("summarization aborted: history content changed while summarizing")
 			}
 		}
 		// If they are the same, we can proceed to replace them.
@@ -255,10 +261,10 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	newHistory := applySummaryToHistory(contents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
-		return "", fmt.Errorf("failed to update history after summarization: %w", err)
+		return "", nil, fmt.Errorf("failed to update history after summarization: %w", err)
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), nil
+	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), metrics, nil
 }
 
 func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
@@ -270,13 +276,16 @@ func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
 	}
 	for i := range c1.Parts {
 		p1, p2 := c1.Parts[i], c2.Parts[i]
-		if p1.Text != p2.Text || p1.Thought != p2.Thought {
+		if p1.Text != p2.Text || p1.Thought != p2.Thought || p1.AssetID != p2.AssetID {
+			return false
+		}
+		if !bytes.Equal(p1.ThoughtSignature, p2.ThoughtSignature) {
 			return false
 		}
 		if (p1.InlineData == nil) != (p2.InlineData == nil) {
 			return false
 		}
-		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || string(p1.InlineData.Data) != string(p2.InlineData.Data)) {
+		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || !bytes.Equal(p1.InlineData.Data, p2.InlineData.Data)) {
 			return false
 		}
 		if !reflect.DeepEqual(p1.FunctionCall, p2.FunctionCall) {

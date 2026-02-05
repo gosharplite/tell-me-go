@@ -89,6 +89,11 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 					Candidates: []*genai.Candidate{
 						{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
 					},
+					UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+						PromptTokenCount:     100,
+						CandidatesTokenCount: 50,
+						TotalTokenCount:      150,
+					},
 				}
 				json.NewEncoder(w).Encode(apiResp)
 			}))
@@ -129,6 +134,12 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 				if len(contents) != tt.expectedMsgs {
 					t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
 				}
+				// Verify metadata propagation
+				if m, ok := resp.Metadata["metrics"].(*llm.Metrics); !ok || m == nil {
+					t.Errorf("expected metrics in tool result metadata, got: %v", resp.Metadata["metrics"])
+				} else if m.PromptTokens != 100 {
+					t.Errorf("expected PromptTokens 100 in metrics, got %d", m.PromptTokens)
+				}
 			}
 		})
 	}
@@ -154,7 +165,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 		Summarizer: &mockSummarizer{},
 	}
 
-	_, err := cm.SummarizeRange(ctx, 1, "")
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
 	if err == nil {
 		t.Fatal("expected error due to safety check, got nil")
 	}
@@ -193,7 +204,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	}
 
 	turns := 1
-	_, err := cm.SummarizeRange(ctx, turns, "")
+	_, _, err := cm.SummarizeRange(ctx, turns, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
