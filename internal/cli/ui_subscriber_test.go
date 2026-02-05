@@ -44,8 +44,8 @@ func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, 
 
 func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.streamResponseCalled = true
-	m.mu.Unlock()
 
 	ch := make(chan *llm.Content, 100)
 	m.wg.Add(1)
@@ -170,6 +170,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 			name:  "TurnStatusEvent",
 			event: events.TurnStatusEvent{Status: events.TurnStatus{CurrentTurns: 1}},
 			validate: func(t *testing.T, m *mockUIRenderer) {
+				t.Helper()
 				if !m.logTurnStatusCalled {
 					t.Error("LogTurnStatus was not called")
 				}
@@ -182,6 +183,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 			name:  "ToolCallEvent",
 			event: events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}},
 			validate: func(t *testing.T, m *mockUIRenderer) {
+				t.Helper()
 				if !m.logToolCallCalled {
 					t.Error("LogToolCall was not called")
 				}
@@ -194,6 +196,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 			name:  "ToolResultEvent",
 			event: events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}},
 			validate: func(t *testing.T, m *mockUIRenderer) {
+				t.Helper()
 				if !m.logToolResultCalled {
 					t.Error("LogToolResult was not called")
 				}
@@ -206,6 +209,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 			name:  "SystemMessageEvent",
 			event: events.SystemMessageEvent{Message: "msg", Level: "info"},
 			validate: func(t *testing.T, m *mockUIRenderer) {
+				t.Helper()
 				if !m.logSystemMessageCalled {
 					t.Error("LogSystemMessage was not called")
 				}
@@ -218,6 +222,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 			name:  "StatusUpdate",
 			event: events.StatusUpdate{Message: "msg", Level: "info"},
 			validate: func(t *testing.T, m *mockUIRenderer) {
+				t.Helper()
 				if !m.logSystemMessageCalled {
 					t.Error("LogSystemMessage was not called by StatusUpdate")
 				}
