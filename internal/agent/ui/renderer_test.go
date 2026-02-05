@@ -185,6 +185,26 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 			t.Errorf("expected stderr to contain 'Thinking...', got %q", stderr.String())
 		}
 	})
+
+	t.Run("StreamResponse_WithMedia", func(t *testing.T) {
+		stderr.Reset()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ch, finalize := r.StreamResponse(ctx, false, true)
+		ch <- &llm.Content{Parts: []*llm.Part{{
+			InlineData: &llm.Blob{
+				MIMEType: "image/png",
+				Data:     []byte("fake-image-data"),
+			},
+		}}}
+
+		_ = finalize()
+		output := stderr.String()
+		if !strings.Contains(output, "[Media]") || !strings.Contains(output, "image/png") {
+			t.Errorf("expected stderr to contain '[Media]' and 'image/png', got %q", output)
+		}
+	})
 }
 
 func TestLogTurnStatus_Format(t *testing.T) {
@@ -439,4 +459,29 @@ func TestStdUIRenderer_Concurrency(t *testing.T) {
 	if stderr.Len() == 0 {
 		t.Error("expected some stderr output")
 	}
+}
+
+func TestStdUIRenderer_GetTimestamp(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("Mocked time", func(t *testing.T) {
+		r := &StdUIRenderer{
+			sm:  sm,
+			now: func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) },
+		}
+		got := r.getTimestamp()
+		want := "12:34:56"
+		if got != want {
+			t.Errorf("getTimestamp() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("Nil now fallback", func(t *testing.T) {
+		r := &StdUIRenderer{sm: sm}
+		got := r.getTimestamp()
+		// Just verify it doesn't panic and returns a valid looking timestamp (HH:MM:SS)
+		if len(got) != 8 || got[2] != ':' || got[5] != ':' {
+			t.Errorf("getTimestamp() with nil now returned invalid format: %q", got)
+		}
+	})
 }

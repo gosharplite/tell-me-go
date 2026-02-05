@@ -92,7 +92,14 @@ func (r *StdUIRenderer) SetWriters(stdout, stderr io.Writer) {
 }
 
 func (r *StdUIRenderer) getTimestamp() string {
-	return r.now().Format("15:04:05")
+	return r.nowSafe().Format("15:04:05")
+}
+
+func (r *StdUIRenderer) nowSafe() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
 }
 
 func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.Time) {
@@ -100,7 +107,7 @@ func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.
 		return
 	}
 
-	m.Timestamp = r.now().Format(time.RFC3339)
+	m.Timestamp = r.nowSafe().Format(time.RFC3339)
 	m.IsSummary = false
 
 	data, err := json.Marshal(m)
@@ -137,7 +144,7 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 
 	timingStr := fmt.Sprintf("%s%s%s", colors.ColorReset, durationStr, colors.ColorGray)
 	if !startTime.IsZero() {
-		totalDuration := r.now().Sub(startTime).Seconds()
+		totalDuration := r.nowSafe().Sub(startTime).Seconds()
 		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", colors.ColorReset, durationStr, colors.ColorGray, totalDuration, colors.ColorGray)
 	}
 
