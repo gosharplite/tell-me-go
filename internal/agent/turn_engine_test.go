@@ -1180,6 +1180,11 @@ func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
 	return 0.05
 }
 
+func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
+	m.accumulatedCount++
+	return 0.05
+}
+
 func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
 	m.accumulatedCount++
 }

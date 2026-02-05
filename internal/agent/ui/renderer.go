@@ -198,11 +198,11 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 }
 
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
-	timestamp := status.Timestamp.Format("15:04:05")
-	stderr := r.getStderr()
-
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+
+	timestamp := status.Timestamp.Format("15:04:05")
+	stderr := r.getStderr()
 
 	printSystemLine := func(tks int, isActual bool) {
 		tokenColor := colors.ColorReset
@@ -299,12 +299,10 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	}
 
 	if !rawOutput {
+		r.sm.TerminalLock()
 		stdout := r.getStdout()
-		func() {
-			r.sm.TerminalLock()
-			defer r.sm.TerminalUnlock()
-			fmt.Fprint(stdout, colors.TermSaveCursor)
-		}()
+		fmt.Fprint(stdout, colors.TermSaveCursor)
+		r.sm.TerminalUnlock()
 	}
 
 	var wg sync.WaitGroup
@@ -375,12 +373,11 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	if !state.rawOutput {
 		output = sanitizeForTerminal(part.Text)
 	}
+
+	r.sm.TerminalLock()
 	stdout := r.getStdout()
-	func() {
-		r.sm.TerminalLock()
-		defer r.sm.TerminalUnlock()
-		fmt.Fprint(stdout, output)
-	}()
+	fmt.Fprint(stdout, output)
+	r.sm.TerminalUnlock()
 
 	// Track scrolling: If we exceed a reasonable line count, we assume the terminal
 	// has scrolled, making the saved cursor position for redraws invalid.
@@ -406,9 +403,9 @@ func (r *StdUIRenderer) closeThinking(state *streamState) {
 }
 
 func (r *StdUIRenderer) safePrintStderr(msg string) {
-	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+	stderr := r.getStderr()
 	fmt.Fprint(stderr, msg)
 }
 
@@ -428,27 +425,25 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 				r.clearAndRenderMarkdown(sanitized)
 			}
 		}
+		r.sm.TerminalLock()
 		stdout := r.getStdout()
-		func() {
-			r.sm.TerminalLock()
-			defer r.sm.TerminalUnlock()
-			fmt.Fprintln(stdout)
-		}()
+		fmt.Fprintln(stdout)
+		r.sm.TerminalUnlock()
 	}
 }
 
 func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
-	stdout := r.getStdout()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+	stdout := r.getStdout()
 	fmt.Fprint(stdout, colors.TermRestoreCursor+colors.TermClearForward)
 	r.renderMarkdown(fullText)
 }
 
 func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
-	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+	stderr := r.getStderr()
 
 	ts := r.getTimestamp()
 	var names []string
@@ -480,9 +475,9 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 		return
 	}
 
-	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+	stderr := r.getStderr()
 
 	timestamp := r.getTimestamp()
 
@@ -506,9 +501,9 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 }
 
 func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
-	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
+	stderr := r.getStderr()
 
 	color := colors.ColorGray
 	prefix := "System"

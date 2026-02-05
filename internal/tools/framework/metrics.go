@@ -135,6 +135,28 @@ func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
 	return calc.Calculate(turnStats).TotalCost
 }
 
+// AccumulateAndReturn adds new turn metrics to the running total and returns the cost for this specific turn.
+func (t *SessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = t.modelName
+	}
+	p := GetModelPricing(mtModel, t.pricing)
+
+	var dummy pricing.UsageStats
+	turnStats := Accumulate(&dummy, mt)
+	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
+	turnCost := calc.Calculate(turnStats).TotalCost
+
+	Accumulate(&t.stats, mt)
+	t.totalCost += turnCost
+
+	return turnCost
+}
+
 type metricsManager struct {
 	sm               security.ISecurityManager
 	metricsMu        sync.Mutex

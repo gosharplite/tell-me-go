@@ -735,4 +735,8 @@ func (m *mockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, flo
 	return pricing.UsageStats{}, 0
 }
 func (m *mockCostTracker) CalculateCost(metrics llm.Metrics) float64 { return 0 }
-func (m *mockCostTracker) Warmup()                                   {}
+func (m *mockCostTracker) AccumulateAndReturn(metrics llm.Metrics) float64 {
+	m.accumulateCalls++
+	return 0
+}
+func (m *mockCostTracker) Warmup() {}
