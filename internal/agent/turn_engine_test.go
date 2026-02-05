@@ -970,113 +970,148 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_ToolCallCountPersistsAcrossTurns(t *testing.T) {
-	bus := &events.SimpleEventBus{}
-	reg := &MockRegistry{}
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
-		LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
-		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
-	})
-	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxToolTurns  int
+		toolLimit     int
+		setupGateway  func(gw *MockGateway, turnCount *int)
+		setupExecutor func(ex *MockExecutor, turnIndex *int)
+		wantErr       string
+	}{
+		{
+			name:      "Calls across exactly 2 turns",
+			toolLimit: 5,
+			setupGateway: func(gw *MockGateway, turnCount *int) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+					*turnCount++
+					content := &llm.Content{Role: "model"}
+					// Call tool 3 times in turn 1, then 3 times in turn 2 (total 6 > 5)
+					content.Parts = []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+						{Text: fmt.Sprintf("Turn %d", *turnCount)},
+					}
+					ch := make(chan *llm.Content)
+					close(ch)
+					return ch, func() (*llm.Content, *llm.Metrics, error) {
+						return content, &llm.Metrics{}, nil
+					}
+				}
+			},
+			setupExecutor: func(ex *MockExecutor, turnIndex *int) {
+				ex.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+					return &llm.Content{
+						Role:  "user",
+						Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}},
+					}, nil
+				}
+			},
+			wantErr: "infinite loop detected: tool 'test_tool' called with same arguments 6 times",
+		},
+		{
+			name:      "Calls hitting limit within a single turn",
+			toolLimit: 5,
+			setupGateway: func(gw *MockGateway, turnCount *int) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+					*turnCount++
+					content := &llm.Content{
+						Role: "model",
+						Parts: []*llm.Part{
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+							{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
+						},
+					}
+					ch := make(chan *llm.Content)
+					close(ch)
+					return ch, func() (*llm.Content, *llm.Metrics, error) {
+						return content, &llm.Metrics{}, nil
+					}
+				}
+			},
+			wantErr: "infinite loop detected: tool 'loop_tool' called with same arguments 6 times",
+		},
+		{
+			name:      "Different tools sharing session-level counter",
+			toolLimit: 5,
+			setupGateway: func(gw *MockGateway, turnCount *int) {
+				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+					*turnCount++
+					content := &llm.Content{Role: "model"}
+					// Tool A called 3 times, Tool B called 3 times. Both should be tracked independently.
+					// This case verifies that calling Tool B doesn't reset or interfere with Tool A's counter.
+					content.Parts = []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "tool_A", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+						{FunctionCall: &llm.FunctionCall{Name: "tool_B", Args: map[string]interface{}{"id": 1}}},
+						{Text: fmt.Sprintf("Turn %d", *turnCount)},
+					}
+					ch := make(chan *llm.Content)
+					close(ch)
+					return ch, func() (*llm.Content, *llm.Metrics, error) {
+						return content, &llm.Metrics{}, nil
+					}
+				}
+			},
+			setupExecutor: func(ex *MockExecutor, turnIndex *int) {
+				ex.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+					return &llm.Content{
+						Role:  "user",
+						Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "tool_A", Response: map[string]interface{}{"result": "ok"}}}},
+					}, nil
+				}
+			},
+			wantErr: "infinite loop detected: tool 'tool_A' called with same arguments 6 times",
+		},
+	}
 
-	mockGw := &MockGateway{}
-	mockEx := &MockExecutor{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := &events.SimpleEventBus{}
+			reg := &MockRegistry{}
+			strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+			hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+			hManager.SetStore(&MockStore{
+				AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
+				LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
+				SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
+			})
+			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
-	strategy.SetLimits(1000, 5, 10)
+			mockGw := &MockGateway{}
+			mockEx := &MockExecutor{}
+			turnCount := 0
+			turnIndex := 0
 
-	turnCount := 0
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			turnCount++
-			// In each turn, call the same tool 3 times.
-			// Since tracking is now session-level, total calls will be 3 (Turn 1), then 6 (Turn 2).
-			// Threshold is 5, so Turn 2 should trigger loop detection.
-			content := &llm.Content{
-				Role: "model",
+			if tt.setupGateway != nil {
+				tt.setupGateway(mockGw, &turnCount)
+			}
+			if tt.setupExecutor != nil {
+				tt.setupExecutor(mockEx, &turnIndex)
 			}
 
-			content.Parts = []*llm.Part{
-				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+			e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+			strategy.SetLimits(1000, tt.toolLimit, 10)
+
+			err := e.Run(context.Background(), time.Now())
+			if err == nil {
+				t.Fatal("expected error, got nil")
 			}
-
-			// Add something unique to each turn to avoid ResponseHash loop detection
-			content.Parts = append(content.Parts, &llm.Part{Text: fmt.Sprintf("Turn %d", turnCount)})
-
-			return content, &llm.Metrics{}, nil
-		}
-	}
-
-	mockEx.ExecuteFunc = func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-		return &llm.Content{
-			Role:  "user",
-			Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}},
-		}, nil
-	}
-
-	err := e.Run(context.Background(), time.Now())
-	if err == nil {
-		t.Fatal("expected error due to cumulative tool call count, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "infinite loop detected: tool 'test_tool' called with same arguments 6 times") {
-		t.Errorf("expected cross-turn loop detection error, got %v", err)
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 
-func TestTurnEngine_ToolCallLoopDetection_WithinTurn(t *testing.T) {
-	bus := &events.SimpleEventBus{}
-	reg := &MockRegistry{}
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
-		LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
-		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
-	})
-	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
-
-	mockGw := &MockGateway{}
-	mockEx := &MockExecutor{}
-
-	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
-	strategy.SetLimits(1000, 10, 10)
-
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			// Threshold is 5. We return 6 calls.
-			content := &llm.Content{
-				Role: "model",
-				Parts: []*llm.Part{
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "loop_tool", Args: map[string]interface{}{"x": 1}}},
-				},
-			}
-			return content, &llm.Metrics{}, nil
-		}
-	}
-
-	err := e.Run(context.Background(), time.Now())
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "infinite loop detected: tool 'loop_tool' called with same arguments 6 times") {
-		t.Errorf("expected tool loop error, got %v", err)
-	}
-}
 
 func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 	mockGw := &MockGateway{}

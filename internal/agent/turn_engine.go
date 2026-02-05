@@ -320,9 +320,9 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		turn := e.createTurn(i, startTime)
 		if lastState != nil {
 			// Only carry over response hashes to detect text/turn repetition loops
-			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
+			turn.State.RecentResponseHashes = append([]string(nil), lastState.RecentResponseHashes...)
 		}
-		// Tool calls are tracked per-turn to catch immediate recursion/loops
+		// Tool calls are tracked at the session level to detect loops spanning multiple turn boundaries.
 		turn.State.ToolCallCount = sessionToolCallCount
 
 		e.notifyBeforeTurn(turn)
@@ -419,8 +419,10 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 			// to ensure the write succeeds even though the main context is canceled.
 			if turn.State.Response != nil && len(turn.State.Response.Parts) > 0 {
 				if p, ok := e.processors[PhasePersisting]; ok {
-					// We use context.Background() here because 'ctx' is already canceled.
-					_ = p.Process(context.Background(), turn)
+					// Use a timeout for emergency persistence to prevent hanging the shutdown sequence.
+					saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					defer cancel()
+					_ = p.Process(saveCtx, turn)
 				}
 			}
 			return err

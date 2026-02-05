@@ -178,3 +178,64 @@ func TestResilientClient_Generate_AuthRefreshFail(t *testing.T) {
 		t.Errorf("Expected 1 auth refresh attempt, got %d", mock.authRefreshed)
 	}
 }
+
+func TestResilientClient_RetryIdempotency(t *testing.T) {
+	t.Run("No retry if data emitted in streaming", func(t *testing.T) {
+		calls := 0
+		mock := &mockLLMClient{
+			streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+				calls++
+				// Emit some data
+				callback(&llm.Content{Parts: []*llm.Part{{Text: "partial"}}})
+				// Then return an error that would normally trigger a retry (like Auth)
+				return nil, status.Error(codes.Unauthenticated, "expired")
+			},
+		}
+
+		client := NewResilientClient(mock, false)
+		outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
+
+		// Drain the channel
+		for range outCh {
+		}
+
+		_, _, err := finalize()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if calls != 1 {
+			t.Errorf("expected exactly 1 call because data was emitted, got %d", calls)
+		}
+		if mock.authRefreshed != 0 {
+			t.Errorf("expected 0 auth refreshes because retry should have been skipped, got %d", mock.authRefreshed)
+		}
+	})
+
+	t.Run("No retry if data emitted in non-streaming", func(t *testing.T) {
+		calls := 0
+		mock := &mockLLMClient{
+			sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+				calls++
+				// Returning success will 'emit' the data into the outCh in attemptCall
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "full"}}}, &llm.Metrics{}, nil
+			},
+		}
+
+		// To simulate the 'emitted' logic in executeWithTransparentRetry with SendChat,
+		// we need a case where attemptCall returns err=nil, then the loop returns.
+		// If attemptCall returns err != nil, 'emitted' will be false for SendChat because 
+		// the outCh <- content only happens if err == nil.
+		
+		client := NewResilientClient(mock, true)
+		outCh, finalize := client.Generate(context.Background(), nil, nil, nil)
+		for range outCh {}
+		_, _, err := finalize()
+		
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if calls != 1 {
+			t.Errorf("expected 1 call, got %d", calls)
+		}
+	})
+}

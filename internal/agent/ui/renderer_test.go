@@ -565,4 +565,29 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 			t.Errorf("expected scroll separator, got %q", stderr.String())
 		}
 	})
+
+	t.Run("Long response scroll detection", func(t *testing.T) {
+		stdout.Reset()
+		stderr.Reset()
+		
+		// Set a low threshold for scrolling simulation if possible, 
+		// but since it's hardcoded to 25, we just test that it works at that threshold.
+		// The instruction was: "simulates a 'narrow' terminal to verify behavior."
+		// Since the renderer doesn't actually query terminal size yet, 
+		// "narrow" in this context means many small increments that hit the line count.
+		
+		ctx := context.Background()
+		ch, finalize := r.StreamResponse(ctx, false, false)
+		
+		// Simulate many small chunks each containing a newline
+		for i := 0; i < 26; i++ {
+			ch <- &llm.Content{Parts: []*llm.Part{{Text: "chunk\n"}}}
+		}
+		
+		_ = finalize()
+		
+		if !strings.Contains(stderr.String(), "── (formatted) ──") {
+			t.Errorf("expected scroll separator after 26 lines, got %q", stderr.String())
+		}
+	})
 }
