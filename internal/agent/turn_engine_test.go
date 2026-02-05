@@ -968,7 +968,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_ToolCallCountResetPerTurn(t *testing.T) {
+func TestTurnEngine_ToolCallCountPersistsAcrossTurns(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	reg := &MockRegistry{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
@@ -993,22 +993,16 @@ func TestTurnEngine_ToolCallCountResetPerTurn(t *testing.T) {
 		return ch, func() (*llm.Content, *llm.Metrics, error) {
 			turnCount++
 			// In each turn, call the same tool 3 times.
-			// If it's NOT reset, total calls would be 3, 6 (FAIL).
-			// If it IS reset, each turn sees only 3 calls (PASS, as threshold is 5).
+			// Since tracking is now session-level, total calls will be 3 (Turn 1), then 6 (Turn 2).
+			// Threshold is 5, so Turn 2 should trigger loop detection.
 			content := &llm.Content{
 				Role: "model",
 			}
 
-			if turnCount <= 2 {
-				content.Parts = []*llm.Part{
-					{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-					{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
-				}
-			} else {
-				content.Parts = []*llm.Part{
-					{Text: "All done"},
-				}
+			content.Parts = []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
+				{FunctionCall: &llm.FunctionCall{Name: "test_tool", Args: map[string]interface{}{"id": 1}}},
 			}
 
 			// Add something unique to each turn to avoid ResponseHash loop detection
@@ -1026,12 +1020,12 @@ func TestTurnEngine_ToolCallCountResetPerTurn(t *testing.T) {
 	}
 
 	err := e.Run(context.Background(), time.Now())
-	if err != nil {
-		t.Fatalf("Run failed: %v", err)
+	if err == nil {
+		t.Fatal("expected error due to cumulative tool call count, got nil")
 	}
 
-	if turnCount != 3 {
-		t.Errorf("expected 3 turns, got %d", turnCount)
+	if !strings.Contains(err.Error(), "infinite loop detected: tool 'test_tool' called with same arguments 6 times") {
+		t.Errorf("expected cross-turn loop detection error, got %v", err)
 	}
 }
 
@@ -1079,5 +1073,64 @@ func TestTurnEngine_ToolCallLoopDetection_WithinTurn(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "infinite loop detected: tool 'loop_tool' called with same arguments 6 times") {
 		t.Errorf("expected tool loop error, got %v", err)
+	}
+}
+
+func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	
+	persistedContents := []*llm.Content{}
+	hManager.SetStore(&MockStore{
+		AppendFunc: func(ctx context.Context, content *llm.Content) error {
+			persistedContents = append(persistedContents, content)
+			return nil
+		},
+		LoadFunc: func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
+		SaveFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
+	})
+	
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	mockGw.GenerateFunc = func(c context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content, 1)
+		// Simulate partial response before cancellation
+		ch <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial"}}}
+		
+		// Cancel the context to simulate interruption
+		cancel()
+		
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			// Even though canceled, the gateway should return what it got so far
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "partial response"}}}, &llm.Metrics{}, context.Canceled
+		}
+	}
+
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(ctx, time.Now())
+	if err == nil {
+		t.Fatal("expected error from canceled context, got nil")
+	}
+
+	// Verify that despite the error, the partial response was persisted
+	found := false
+	for _, c := range persistedContents {
+		for _, p := range c.Parts {
+			if strings.Contains(p.Text, "partial response") {
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		t.Error("emergency checkpoint failed: partial response was not persisted to history")
 	}
 }

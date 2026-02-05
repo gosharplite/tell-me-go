@@ -311,6 +311,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	e.mu.Unlock()
 
 	var lastState *TurnState
+	sessionToolCallCount := make(map[string]int)
 	for i := 0; ; i++ {
 		if err := e.checkLimits(ctx, i); err != nil {
 			return err
@@ -322,7 +323,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 			turn.State.RecentResponseHashes = lastState.RecentResponseHashes
 		}
 		// Tool calls are tracked per-turn to catch immediate recursion/loops
-		turn.State.ToolCallCount = make(map[string]int)
+		turn.State.ToolCallCount = sessionToolCallCount
 
 		e.notifyBeforeTurn(turn)
 
@@ -413,6 +414,15 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 	for turn.State.Phase != PhaseComplete {
 		res, err := e.executePhase(ctx, turn)
 		if err != nil {
+			// Emergency save: if we were interrupted (e.g. Ctrl+C) during inference or execution,
+			// we might have partial content. Save it now using a background context
+			// to ensure the write succeeds even though the main context is canceled.
+			if turn.State.Response != nil && len(turn.State.Response.Parts) > 0 {
+				if p, ok := e.processors[PhasePersisting]; ok {
+					// We use context.Background() here because 'ctx' is already canceled.
+					_ = p.Process(context.Background(), turn)
+				}
+			}
 			return err
 		}
 		if e.shouldBreak(turn, res) {
@@ -489,11 +499,13 @@ type InferenceStep struct{}
 
 func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	respContent, metrics, err := p.invokeModel(ctx, turn)
+	if respContent != nil {
+		p.updateState(turn, respContent, metrics)
+	}
+
 	if err != nil {
 		return ProcessResult{Error: err}
 	}
-
-	p.updateState(turn, respContent, metrics)
 
 	return p.routeBasedOnContent(respContent)
 }
@@ -511,7 +523,9 @@ func (p *InferenceStep) invokeModel(ctx context.Context, turn *Turn) (*llm.Conte
 
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return nil, nil, err
+		// We return what we have (partial content) along with the error
+		// so that the engine can attempt an emergency checkpoint.
+		return respContent, metrics, err
 	}
 	if respContent == nil {
 		return nil, nil, fmt.Errorf("api returned nil content")
