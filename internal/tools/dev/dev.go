@@ -165,6 +165,8 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
+	m.sm.LogAudit("ACTION", "run_tests", "COMMAND", command)
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -176,11 +178,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 
 	outStr := string(output)
 	if err != nil {
-		// If failed, return truncated output to help diagnose
-		lines := strings.Split(outStr, "\n")
-		if len(lines) > 100 {
-			outStr = strings.Join(lines[:100], "\n") + "\n... (Output truncated) ..."
-		}
+		outStr = framework.TruncateOutput(outStr, 100)
 		// Return the failure output in the result, but still return an error for the status
 		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
 	}
@@ -189,6 +187,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", "go mod tidy && go fmt ./...")
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -219,6 +218,8 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		path = "./..."
 	}
 
+	m.sm.LogAudit("ACTION", "get_coverage", "PATH", path)
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -228,7 +229,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile=coverage.out", path)
 
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, string(out))
+		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, framework.TruncateOutput(string(out), 50))
 	}
 
 	// Get summary
@@ -240,12 +241,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	// Clean up
 	os.Remove("coverage.out")
 
-	lines := strings.Split(string(summaryOut), "\n")
-	if len(lines) > 50 {
-		return tools.ToolResult{Text: strings.Join(lines[:50], "\n") + "\n... (truncated)"}, nil
-	}
-
-	return tools.ToolResult{Text: string(summaryOut)}, nil
+	return tools.ToolResult{Text: framework.TruncateOutput(string(summaryOut), 100)}, nil
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -272,6 +268,8 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
+	m.sm.LogAudit("ACTION", "run_linter", "COMMAND", fullCmd)
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -283,16 +281,16 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
 	}
 
+	outStr := framework.TruncateOutput(string(out), 100)
+	if err != nil {
+		return tools.ToolResult{Text: outStr}, fmt.Errorf("linter found issues: %w", err)
+	}
+
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "Linter passed successfully."}, nil
 	}
 
-	lines := strings.Split(string(out), "\n")
-	if len(lines) > 100 {
-		return tools.ToolResult{Text: strings.Join(lines[:100], "\n") + "\n... (truncated)"}, nil
-	}
-
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: outStr}, nil
 }
 
 func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -319,9 +317,11 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
 	}()
 
+	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", fmt.Sprintf("go test -bench=%s in %s", bench, path))
+
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, string(out))
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, framework.TruncateOutput(string(out), 100))
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
@@ -342,6 +342,8 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
+	m.sm.LogAudit("ACTION", "check_vulnerabilities", "COMMAND", command)
+
 	func() {
 		m.sm.TerminalLock()
 		defer m.sm.TerminalUnlock()
@@ -354,9 +356,14 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("govulncheck failed: %w", err)
 	}
 
+	outStr := framework.TruncateOutput(string(out), 100)
+	if err != nil {
+		return tools.ToolResult{Text: outStr}, fmt.Errorf("vulnerabilities found: %w", err)
+	}
+
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "No vulnerabilities found."}, nil
 	}
 
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: outStr}, nil
 }

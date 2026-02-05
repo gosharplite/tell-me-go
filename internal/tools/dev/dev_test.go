@@ -182,6 +182,28 @@ func TestRunLinter(t *testing.T) {
 		}
 	})
 
+	t.Run("linter failure with output", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				if file == "golangci-lint" {
+					return "/usr/bin/golangci-lint", nil
+				}
+				return "", fmt.Errorf("not found")
+			},
+			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte("main.go:1:1: error"), fmt.Errorf("exit status 1")
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		res, err := m.runLinter(context.Background(), nil)
+		if err == nil {
+			t.Fatal("expected error for linter failure")
+		}
+		if !strings.Contains(res.Text, "main.go:1:1: error") {
+			t.Errorf("expected linter output, got: %s", res.Text)
+		}
+	})
+
 	t.Run("no linter found", func(t *testing.T) {
 		mock := &mockExecutor{
 			lookPathFunc: func(file string) (string, error) {
@@ -249,8 +271,8 @@ func TestCheckVulnerabilities(t *testing.T) {
 		}
 		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
 		res, err := m.checkVulnerabilities(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("checkVulnerabilities should not return error if output is present: %v", err)
+		if err == nil {
+			t.Fatal("checkVulnerabilities should return error if vulnerabilities are found")
 		}
 		if !strings.Contains(res.Text, "GO-2023-XXXX") {
 			t.Errorf("expected vulnerability details, got: %s", res.Text)

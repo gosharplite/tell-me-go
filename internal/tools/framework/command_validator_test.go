@@ -60,6 +60,8 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 		{"ls>out", true},                       // Attached operator in first token
 		{"grep \"foo && bar\" file.go", false}, // Contains operator but not standalone and NOT in first token
 		{"sh -c \"ls && echo hi\"", false},     // Operator is inside another string
+		{"go test ./$(id)", true},              // $ inside second token (interpolation)
+		{"ls `id` /tmp", true},                 // ` inside token (interpolation)
 	}
 
 	for _, tt := range tests {
@@ -246,6 +248,27 @@ func TestCommandValidator_GranularAuthorization(t *testing.T) {
 		allowed, reason := v.IsSafe(tt.cmd)
 		if allowed != tt.allowed {
 			t.Errorf("IsSafe(%q): allowed=%v, got %v (reason: %s)", tt.cmd, tt.allowed, allowed, reason)
+		}
+	}
+}
+
+func TestTruncateOutput(t *testing.T) {
+	tests := []struct {
+		input    string
+		max      int
+		expected string
+	}{
+		{"a\nb\nc", 2, "a\nb\n... (Output truncated) ..."},
+		{"a\nb\nc", 3, "a\nb\nc"},
+		{"a\nb\nc", 5, "a\nb\nc"},
+		{"", 5, ""},
+		{"a", 0, "\n... (Output truncated) ..."},
+	}
+
+	for _, tt := range tests {
+		got := TruncateOutput(tt.input, tt.max)
+		if got != tt.expected {
+			t.Errorf("TruncateOutput(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.expected)
 		}
 	}
 }
