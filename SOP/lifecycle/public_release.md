@@ -15,9 +15,10 @@ This SOP defines the automated workflow for publishing a new public release of t
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Enable Automation**: Execute `bypass_confirmation`.
-2.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
-3.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
+1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
+2.  **Enable Automation**: Execute `bypass_confirmation`.
+3.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
+4.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -52,11 +53,12 @@ verify_release_readiness
 4.  **Return to dev and Bump Version**:
     ```bash
     git checkout dev
-    # Bump version in main.go to next cycle (e.g., "1.66.0-dev")
+    # Increment Version in cmd/tell-me-go/main.go (e.g., from "1.80.0" to "1.81.0-dev")
     git commit -am "Chore: Start next development cycle"
     git push origin dev
     ```
 
 #### 5. Cleanup and Security Restoration
-1.  Verify sync: `git status`.
-2.  Mark tasks as complete.
+1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
+2.  **Restore Security**: Execute `revoke_bypass` to re-enable interactive prompts.
+3.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
