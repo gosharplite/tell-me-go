@@ -6,8 +6,10 @@ package ui
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -392,4 +394,49 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 			t.Errorf("expected output to contain 1.50s / 5.00s, got %q", output)
 		}
 	})
+}
+
+func TestStdUIRenderer_Concurrency(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	sm := security.NewSecurityManager(nil)
+	r := NewStdUIRenderer(sm)
+	r.SetWriters(&stdout, &stderr)
+
+	const (
+		numGoroutines = 50
+		numIterations = 20
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < numIterations; j++ {
+				content := &llm.Content{
+					Parts: []*llm.Part{
+						{Text: fmt.Sprintf("G%d-I%d-P1 ", id, j)},
+						{Text: fmt.Sprintf("G%d-I%d-P2\n", id, j)},
+					},
+				}
+				// Test RenderResponse (which now locks around both parts)
+				r.RenderResponse(content, false, true)
+
+				// Test LogSystemMessage
+				r.LogSystemMessage(fmt.Sprintf("G%d-I%d-Sys", id, j), "info")
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// If the race detector is enabled, it will catch any issues here.
+	// We can also do a basic check that we didn't crash and got some output.
+	if stdout.Len() == 0 {
+		t.Error("expected some stdout output")
+	}
+	if stderr.Len() == 0 {
+		t.Error("expected some stderr output")
+	}
 }

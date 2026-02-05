@@ -4,6 +4,7 @@
 package dev
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -34,11 +35,23 @@ func (m *mockDevExecutor) LookPath(file string) (string, error) {
 	return "/usr/bin/" + file, nil
 }
 
-func TestCheckVulnerabilities(t *testing.T) {
+func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
+	t.Helper()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(".")
+	executor := &mockDevExecutor{}
+	m := &devManager{
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		stderr:         io.Discard,
+		createTempFile: os.CreateTemp,
+	}
+	return m, executor, sm
+}
 
+func TestCheckVulnerabilities(t *testing.T) {
 	tests := []struct {
 		name         string
 		lookPathErr  error
@@ -77,27 +90,19 @@ func TestCheckVulnerabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := &mockDevExecutor{
-				lookPathFunc: func(file string) (string, error) {
-					return "/usr/bin/" + file, tt.lookPathErr
-				},
-				executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					return []byte(tt.executeOut), tt.executeErr
-				},
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				return "/usr/bin/" + file, tt.lookPathErr
 			}
-			m := &devManager{
-				sm:             sm,
-				validator:      framework.NewCommandValidator(sm),
-				executor:       executor,
-				stderr:         io.Discard,
-				createTempFile: os.CreateTemp,
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(tt.executeOut), tt.executeErr
 			}
 
 			res, err := m.checkVulnerabilities(context.Background(), nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !strings.Contains(res.Text, tt.wantSubstr) && !strings.Contains(err.Error(), tt.wantSubstr) {
+			if !strings.Contains(res.Text, tt.wantSubstr) && (err != nil && !strings.Contains(err.Error(), tt.wantSubstr)) {
 				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
 			}
 		})
@@ -105,10 +110,6 @@ func TestCheckVulnerabilities(t *testing.T) {
 }
 
 func TestGetCoverage(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
 	tests := []struct {
 		name       string
 		executeOut string
@@ -147,28 +148,25 @@ func TestGetCoverage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := &mockDevExecutor{
-				executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					if name == "go" && len(args) > 1 && args[0] == "test" {
-						return []byte(tt.executeOut), tt.executeErr
-					}
-					if name == "go" && len(args) > 1 && args[1] == "cover" {
-						return []byte(tt.summaryOut), tt.summaryErr
-					}
-					return []byte(""), nil
-				},
+			m, executor, _ := setupDevManager(t)
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "go" && len(args) > 1 && args[0] == "test" {
+					return []byte(tt.executeOut), tt.executeErr
+				}
+				if name == "go" && len(args) > 1 && args[1] == "cover" {
+					return []byte(tt.summaryOut), tt.summaryErr
+				}
+				return []byte(""), nil
 			}
-			m := &devManager{
-				sm:        sm,
-				validator: framework.NewCommandValidator(sm),
-				executor:  executor,
-				stderr:    io.Discard,
-				createTempFile: func(dir, pattern string) (*os.File, error) {
-					if tt.name == "Temp file failure" {
-						return nil, errors.New("failed to create temp file")
-					}
-					return os.CreateTemp(dir, pattern)
-				},
+			m.createTempFile = func(dir, pattern string) (*os.File, error) {
+				if tt.name == "Temp file failure" {
+					return nil, errors.New("failed to create temp file")
+				}
+				f, err := os.CreateTemp(dir, pattern)
+				if err == nil {
+					t.Cleanup(func() { os.Remove(f.Name()) })
+				}
+				return f, err
 			}
 
 			res, err := m.getCoverage(context.Background(), nil)
@@ -185,18 +183,7 @@ func TestGetCoverage(t *testing.T) {
 }
 
 func TestGoTidy(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	executor := &mockDevExecutor{}
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       executor,
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
-	}
+	m, _, _ := setupDevManager(t)
 
 	res, err := m.goTidy(context.Background(), nil)
 	if err != nil {
@@ -208,21 +195,9 @@ func TestGoTidy(t *testing.T) {
 }
 
 func TestRunBenchmark(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	executor := &mockDevExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("BenchmarkResult"), nil
-		},
-	}
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       executor,
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("BenchmarkResult"), nil
 	}
 
 	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"})
@@ -235,10 +210,6 @@ func TestRunBenchmark(t *testing.T) {
 }
 
 func TestRunLinter(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
 	tests := []struct {
 		name       string
 		lookPath   string
@@ -277,23 +248,15 @@ func TestRunLinter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := &mockDevExecutor{
-				lookPathFunc: func(file string) (string, error) {
-					if file == tt.lookPath {
-						return "/usr/bin/" + file, nil
-					}
-					return "", errors.New("not found")
-				},
-				executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					return []byte(tt.executeOut), tt.executeErr
-				},
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				if file == tt.lookPath {
+					return "/usr/bin/" + file, nil
+				}
+				return "", errors.New("not found")
 			}
-			m := &devManager{
-				sm:             sm,
-				validator:      framework.NewCommandValidator(sm),
-				executor:       executor,
-				stderr:         io.Discard,
-				createTempFile: os.CreateTemp,
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(tt.executeOut), tt.executeErr
 			}
 
 			res, err := m.runLinter(context.Background(), nil)
@@ -308,10 +271,6 @@ func TestRunLinter(t *testing.T) {
 }
 
 func TestGoTidy_Errors(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
 	tests := []struct {
 		name       string
 		executeErr error
@@ -331,20 +290,12 @@ func TestGoTidy_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := &mockDevExecutor{
-				executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
-						return []byte("failed"), tt.executeErr
-					}
-					return []byte("ok"), nil
-				},
-			}
-			m := &devManager{
-				sm:             sm,
-				validator:      framework.NewCommandValidator(sm),
-				executor:       executor,
-				stderr:         io.Discard,
-				createTempFile: os.CreateTemp,
+			m, executor, _ := setupDevManager(t)
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
+					return []byte("failed"), tt.executeErr
+				}
+				return []byte("ok"), nil
 			}
 
 			_, err := m.goTidy(context.Background(), nil)
@@ -356,21 +307,9 @@ func TestGoTidy_Errors(t *testing.T) {
 }
 
 func TestRunBenchmark_Error(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	executor := &mockDevExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("error output"), errors.New("benchmark failed")
-		},
-	}
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       executor,
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("error output"), errors.New("benchmark failed")
 	}
 
 	_, err := m.runBenchmark(context.Background(), nil)
@@ -380,21 +319,11 @@ func TestRunBenchmark_Error(t *testing.T) {
 }
 
 func TestRunTests(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	executor := &mockDevExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("PASS"), nil
-		},
-	}
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       executor,
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
+	var stderr bytes.Buffer
+	m, executor, _ := setupDevManager(t)
+	m.stderr = &stderr
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("PASS"), nil
 	}
 
 	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
@@ -404,20 +333,14 @@ func TestRunTests(t *testing.T) {
 	if !strings.Contains(res.Text, "PASS") {
 		t.Errorf("expected PASS in result, got %q", res.Text)
 	}
+
+	if !strings.Contains(stderr.String(), "[Tool Action] Running Tests") {
+		t.Errorf("expected tool action log, got %q", stderr.String())
+	}
 }
 
 func TestRunTests_Violations(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       &mockDevExecutor{},
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
-	}
+	m, _, _ := setupDevManager(t)
 
 	tests := []struct {
 		name    string
@@ -448,21 +371,9 @@ func TestRunTests_Violations(t *testing.T) {
 }
 
 func TestRunTests_Failure(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	sm.RegisterSafePath(".")
-
-	executor := &mockDevExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("FAIL"), errors.New("exit status 1")
-		},
-	}
-	m := &devManager{
-		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
-		executor:       executor,
-		stderr:         io.Discard,
-		createTempFile: os.CreateTemp,
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("FAIL"), errors.New("exit status 1")
 	}
 
 	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
