@@ -27,6 +27,7 @@ var autoApprovableCommands = map[string]bool{
 	"grep": true, "ls": true, "pwd": true, "cat": true, "echo": true,
 	"head": true, "tail": true, "wc": true, "stat": true, "date": true,
 	"whoami": true, "diff": true, "git": true, "go": true,
+	"golangci-lint": true, "staticcheck": true, "govulncheck": true,
 }
 
 // IsSafe checks if a command is safe for auto-approval.
@@ -166,11 +167,33 @@ func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
 	}
 	allowedGo := map[string]bool{
 		"list": true, "help": true, "version": true, "env": true,
-		"vet": true,
+		"vet": true, "test": true, "tool": true,
 	}
 	if !allowedGo[sub] {
 		return false, fmt.Sprintf("go subcommand '%s' is not in the safe whitelist", sub)
 	}
+
+	if sub == "test" {
+		for _, arg := range parts {
+			if strings.HasPrefix(arg, "-o") || strings.HasPrefix(arg, "--output") {
+				return false, "go test with output redirection is not auto-approvable"
+			}
+		}
+	}
+
+	if sub == "tool" {
+		isCover := false
+		for _, arg := range parts {
+			if arg == "cover" {
+				isCover = true
+				break
+			}
+		}
+		if !isCover {
+			return false, "only 'go tool cover' is authorized for auto-approval"
+		}
+	}
+
 	return true, ""
 }
 

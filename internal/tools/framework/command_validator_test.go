@@ -91,7 +91,7 @@ func TestCommandValidator_Go(t *testing.T) {
 		{"go run main.go", false},
 		{"go build", false},
 		{"go install", false},
-		{"go test", false}, // 'go test' is allowed in dev tool, but not for auto-approval in IsSafe
+		{"go test", true}, 
 	}
 
 	for _, tt := range tests {
@@ -207,6 +207,45 @@ func TestCommandValidator_UnsafeChars(t *testing.T) {
 		allowed, _ := v.IsSafe(cmd)
 		if allowed {
 			t.Errorf("IsSafe(%q) should be false due to unsafe chars", cmd)
+		}
+	}
+}
+
+func TestCommandValidator_GranularAuthorization(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	v := NewCommandValidator(sm)
+
+	tests := []struct {
+		cmd     string
+		allowed bool
+	}{
+		// New allowed commands
+		{"golangci-lint run", true},
+		{"staticcheck ./...", true},
+		{"govulncheck ./...", true},
+
+		// Expanded 'go' commands
+		{"go test ./...", true},
+		{"go test -v ./...", true},
+		{"go tool cover -func=coverage.out", true},
+
+		// Forbidden 'go test' flags
+		{"go test -o bin ./...", false},
+		{"go test --output bin ./...", false},
+
+		// Forbidden 'go tool' subcommands
+		{"go tool pprof", false},
+		{"go tool compile", false},
+
+		// Existing 'go' commands
+		{"go list ./...", true},
+		{"go build", false},
+	}
+
+	for _, tt := range tests {
+		allowed, reason := v.IsSafe(tt.cmd)
+		if allowed != tt.allowed {
+			t.Errorf("IsSafe(%q): allowed=%v, got %v (reason: %s)", tt.cmd, tt.allowed, allowed, reason)
 		}
 	}
 }
