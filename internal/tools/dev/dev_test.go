@@ -5,6 +5,8 @@ package dev
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/security"
@@ -17,6 +19,7 @@ func TestRunTestsVulnerability(t *testing.T) {
 	m := &devManager{
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
+		executor:  &mockExecutor{},
 	}
 	tests := []struct {
 		name    string
@@ -61,6 +64,7 @@ func TestRunTests_EdgeCases(t *testing.T) {
 	m := &devManager{
 		sm:        sm,
 		validator: framework.NewCommandValidator(sm),
+		executor:  &mockExecutor{},
 	}
 	ctx := context.Background()
 
@@ -84,4 +88,187 @@ func TestRunTests_EdgeCases(t *testing.T) {
 			t.Error("expected error for invalid shlex")
 		}
 	})
+}
+
+type mockExecutor struct {
+	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPathFunc func(file string) (string, error)
+}
+
+func (m *mockExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.executeFunc != nil {
+		return m.executeFunc(ctx, name, args...)
+	}
+	return []byte("mock output"), nil
+}
+
+func (m *mockExecutor) LookPath(file string) (string, error) {
+	if m.lookPathFunc != nil {
+		return m.lookPathFunc(file)
+	}
+	return file, nil
+}
+
+func TestGetCoverage(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	mock := &mockExecutor{
+		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			if name == "go" && args[0] == "test" {
+				return []byte("ok"), nil
+			}
+			if name == "go" && args[0] == "tool" {
+				return []byte("total: (statements) 80.0%"), nil
+			}
+			return nil, nil
+		},
+	}
+	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+
+	res, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "./..."})
+	if err != nil {
+		t.Fatalf("getCoverage failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "80.0%") {
+		t.Errorf("expected coverage summary, got: %s", res.Text)
+	}
+}
+
+func TestRunLinter(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+
+	t.Run("golangci-lint success", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				if file == "golangci-lint" {
+					return "/usr/bin/golangci-lint", nil
+				}
+				return "", fmt.Errorf("not found")
+			},
+			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(""), nil
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		res, err := m.runLinter(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("runLinter failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "passed successfully") {
+			t.Errorf("expected success message, got: %s", res.Text)
+		}
+	})
+
+	t.Run("staticcheck success", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				if file == "staticcheck" {
+					return "/usr/bin/staticcheck", nil
+				}
+				return "", fmt.Errorf("not found")
+			},
+			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(""), nil
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		res, err := m.runLinter(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("runLinter failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "passed successfully") {
+			t.Errorf("expected success message, got: %s", res.Text)
+		}
+	})
+
+	t.Run("no linter found", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				return "", fmt.Errorf("not found")
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		_, err := m.runLinter(context.Background(), nil)
+		if err == nil {
+			t.Fatal("expected error when no linter found")
+		}
+	})
+}
+
+func TestRunBenchmark(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	mock := &mockExecutor{
+		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("BenchmarkTest 1000 100 ns/op"), nil
+		},
+	}
+	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+
+	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"bench": "Test"})
+	if err != nil {
+		t.Fatalf("runBenchmark failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "ns/op") {
+		t.Errorf("expected benchmark results, got: %s", res.Text)
+	}
+}
+
+func TestCheckVulnerabilities(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+
+	t.Run("success", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				return "/usr/bin/govulncheck", nil
+			},
+			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(""), nil
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		res, err := m.checkVulnerabilities(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("checkVulnerabilities failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "No vulnerabilities found") {
+			t.Errorf("expected success message, got: %s", res.Text)
+		}
+	})
+
+	t.Run("vulnerabilities found", func(t *testing.T) {
+		mock := &mockExecutor{
+			lookPathFunc: func(file string) (string, error) {
+				return "/usr/bin/govulncheck", nil
+			},
+			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte("Vulnerability found: GO-2023-XXXX"), fmt.Errorf("exit status 3")
+			},
+		}
+		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+		res, err := m.checkVulnerabilities(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("checkVulnerabilities should not return error if output is present: %v", err)
+		}
+		if !strings.Contains(res.Text, "GO-2023-XXXX") {
+			t.Errorf("expected vulnerability details, got: %s", res.Text)
+		}
+	})
+}
+
+func TestGoTidy(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	mock := &mockExecutor{}
+	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
+
+	res, err := m.goTidy(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("goTidy failed: %v", err)
+	}
+	if !strings.Contains(res.Text, "Success") {
+		t.Errorf("expected success message, got: %s", res.Text)
+	}
 }
