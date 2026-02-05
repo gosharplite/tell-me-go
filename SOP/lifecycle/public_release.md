@@ -31,6 +31,7 @@ verify_release_readiness
 2.  Run `go mod tidy`.
 3.  **Note**: This project relies on Git history and tags for version tracking. A manual `CHANGELOG.md` is NOT maintained to ensure the Git log remains the single source of truth.
 4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
+5.  **Push to Remote**: `git push origin dev`.
 
 #### 4. Git Tagging and Remote Synchronization
 1.  **Sync and Merge into main**:
