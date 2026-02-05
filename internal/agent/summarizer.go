@@ -77,6 +77,7 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	// Emit metrics to the event bus
 	if s.events != nil && metrics != nil {
 		s.events.Publish(events.UsageMetricsEvent{
+			Context:   ctx,
 			Metrics:   metrics,
 			StartTime: startTime,
 		})

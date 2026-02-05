@@ -46,7 +46,7 @@ type UIRenderer interface {
 	RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool)
 	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
 	LogTurnStatus(status events.TurnStatus)
-	LogUsage(m *llm.Metrics, logFile string, startTime time.Time)
+	LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time)
 	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
 	LogToolResult(name string, result tools.ToolResult, showTools bool)
 	LogSystemMessage(msg string, level string)
@@ -132,7 +132,7 @@ func (r *StdUIRenderer) getStderr() io.Writer {
 	return r.stderr
 }
 
-func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.Time) {
+func (r *StdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {
 	if logFile == "" || m == nil {
 		return
 	}
@@ -159,6 +159,7 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 		return
 	}
 	timestamp := r.getTimestamp()
+	stderr := r.getStderr()
 
 	miss := m.PromptTokens - m.CachedTokens
 
@@ -178,7 +179,7 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", colors.ColorReset, durationStr, colors.ColorGray, totalDuration, colors.ColorGray)
 	}
 
-	fmt.Fprintf(r.getStderr(), "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
+	fmt.Fprintf(stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
 		colors.ColorGray, timestamp, miss, hColor, m.CachedTokens, colors.ColorGray, m.ResponseTokens, m.ThinkingTokens, colors.ColorGray, timingStr, colors.ColorReset)
 }
 

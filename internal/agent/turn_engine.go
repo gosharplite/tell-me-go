@@ -718,6 +718,7 @@ func (e *TurnEngine) WithMetrics() TurnMiddleware {
 				}
 
 				e.events.Publish(events.UsageMetricsEvent{
+					Context:   ctx,
 					Metrics:   turn.State.Metrics,
 					StartTime: turn.StartTime,
 				})

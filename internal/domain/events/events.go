@@ -77,6 +77,7 @@ type ToolResultEvent struct {
 
 // UsageMetricsEvent signals that a turn is complete and usage should be recorded.
 type UsageMetricsEvent struct {
+	Context   context.Context
 	Metrics   *llm.Metrics
 	LogFile   string
 	StartTime time.Time

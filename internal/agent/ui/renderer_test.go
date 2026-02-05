@@ -63,7 +63,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 			ResponseTokens: 5,
 			TotalTokens:    15,
 		}
-		r.LogUsage(metrics, tmpFile, r.now())
+		r.LogUsage(context.Background(), metrics, tmpFile, r.now())
 
 		data, err := os.ReadFile(tmpFile)
 		if err != nil {
