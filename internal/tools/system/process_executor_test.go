@@ -768,3 +768,44 @@ func TestOpenOutputFile_Security(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenOutputFile_Sanitization(t *testing.T) {
+	executor := NewProcessExecutor()
+
+	tests := []struct {
+		name     string
+		path     string
+		expected string // partial match of the actual cleaned path
+	}{
+		{"trim whitespace", "  out.txt  ", "out.txt"},
+		{"null bytes", "out\x00.txt", "out.txt"},
+		{"mixed", "  logs/test\x00.log  ", "logs/test.log"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := ExecutionConfig{
+				OutputFile: tt.path,
+			}
+			f, err := executor.openOutputFile(config)
+			if err != nil {
+				t.Fatalf("openOutputFile(%q) error = %v", tt.path, err)
+			}
+			if f != nil {
+				name := f.Name()
+				f.Close()
+				os.Remove(name)
+				if !strings.Contains(name, tt.expected) {
+					t.Errorf("expected path to contain %q, got %q", tt.expected, name)
+				}
+				// Verify no spaces and no null bytes in the final base name
+				base := filepath.Base(name)
+				if strings.Contains(base, " ") || strings.Contains(base, "\x00") {
+					t.Errorf("path %q still contains spaces or null bytes: %q", tt.path, base)
+				}
+			} else {
+				t.Errorf("expected file object, got nil")
+			}
+		})
+	}
+}
