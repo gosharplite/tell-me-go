@@ -86,7 +86,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback}
+	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
 		maxCapture = 1024 * 1024 // Default 1MB
@@ -293,7 +293,7 @@ func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, strin
 	var stdoutStr, stderrStr strings.Builder
 	var mu sync.Mutex // Protects builders, feedback, file, writeTracker, and totalCaptured
 	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback}
+	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
 	var totalCaptured int
 	maxCapture := config.MaxCapture
 	if maxCapture <= 0 {
@@ -483,14 +483,15 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 // writeTracker tracks if a write to a shared output file has failed,
 // ensuring only one warning is issued.
 type writeTracker struct {
-	failed   bool
+	failed   atomic.Bool
 	feedback io.Writer
+	filePath string
 }
 
 // Write attempts to write to w. If it fails, it sets the failed flag and
 // optionally sends a warning to feedback.
 func (wt *writeTracker) Write(w io.Writer, p []byte) {
-	if wt.failed || w == nil {
+	if wt.failed.Load() || w == nil {
 		return
 	}
 
@@ -500,9 +501,10 @@ func (wt *writeTracker) Write(w io.Writer, p []byte) {
 	}
 
 	if _, err := w.Write(p); err != nil {
-		wt.failed = true
-		if wt.feedback != nil {
-			fmt.Fprintf(wt.feedback, "\n[Warning] Write failed to output file: %v\n", err)
+		if wt.failed.CompareAndSwap(false, true) {
+			if wt.feedback != nil {
+				fmt.Fprintf(wt.feedback, "\n[Warning] Failed to write to output file %q: %v\n", wt.filePath, err)
+			}
 		}
 	}
 }

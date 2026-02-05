@@ -525,7 +525,7 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 	}
 
 	// Warning should only appear once
-	warningCount := strings.Count(feedback.String(), "[Warning]")
+	warningCount := strings.Count(feedback.String(), "[Warning] Failed to write to output file")
 	if warningCount != 1 {
 		t.Errorf("Expected exactly 1 warning, got %d. Feedback: %q", warningCount, feedback.String())
 	}
@@ -652,7 +652,7 @@ func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
 	}
 
 	// Warning should only appear once
-	warningCount := strings.Count(feedback.String(), "[Warning]")
+	warningCount := strings.Count(feedback.String(), "[Warning] Failed to write to output file")
 	if warningCount != 1 {
 		t.Errorf("Expected exactly 1 warning, got %d. Feedback: %q", warningCount, feedback.String())
 	}
