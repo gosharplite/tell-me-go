@@ -91,6 +91,10 @@ func (r *StdUIRenderer) SetWriters(stdout, stderr io.Writer) {
 	r.stderr = stderr
 }
 
+func (r *StdUIRenderer) getTimestamp() string {
+	return r.now().Format("15:04:05")
+}
+
 func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.Time) {
 	if logFile == "" || m == nil {
 		return
@@ -117,7 +121,7 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 	if m == nil {
 		return
 	}
-	timestamp := r.now().Format("15:04:05")
+	timestamp := r.getTimestamp()
 
 	miss := m.PromptTokens - m.CachedTokens
 
@@ -203,10 +207,12 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
+	ts := r.getTimestamp()
+
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
 			sanitized := sanitizeForTerminal(part.Text)
-			fmt.Fprintf(r.stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, r.now().Format("15:04:05"), sanitized, colors.ColorReset)
+			fmt.Fprintf(r.stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, ts, sanitized, colors.ColorReset)
 		}
 	}
 	for _, part := range respContent.Parts {
@@ -224,7 +230,7 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 
 		if part.InlineData != nil {
 			fmt.Fprintf(r.stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
-				colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
+				colors.ColorGray, ts, part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
 		}
 	}
 }
@@ -298,7 +304,7 @@ func (r *StdUIRenderer) renderStreamPart(state *streamState, part *llm.Part) {
 
 func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 	if !state.thoughtActive && state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", colors.ColorGray, r.now().Format("15:04:05")))
+		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", colors.ColorGray, r.getTimestamp()))
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
@@ -324,7 +330,7 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
 	r.safePrintStderr(fmt.Sprintf("\n%s[%s] [Media] %s (%d bytes)%s\n",
-		colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset))
+		colors.ColorGray, r.getTimestamp(), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset))
 }
 
 func (r *StdUIRenderer) closeThinking(state *streamState) {
@@ -366,13 +372,14 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
+	ts := r.getTimestamp()
 	var names []string
 	for _, fc := range calls {
 		names = append(names, fc.Name)
 	}
 
 	fmt.Fprintf(r.stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
-		colors.ColorCyan, r.now().Format("15:04:05"), turn+1, maxTurns, strings.Join(names, ", "), colors.ColorReset)
+		colors.ColorCyan, ts, turn+1, maxTurns, strings.Join(names, ", "), colors.ColorReset)
 
 	if showTools {
 		for _, fc := range calls {
@@ -385,7 +392,7 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
 			fmt.Fprintf(r.stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
-				colors.ColorCyan, r.now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
+				colors.ColorCyan, ts, fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
 		}
 	}
 }
@@ -398,7 +405,7 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
-	timestamp := r.now().Format("15:04:05")
+	timestamp := r.getTimestamp()
 
 	if result.Text != "" {
 		snippet := result.Text
@@ -439,7 +446,7 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 	}
 
 	fmt.Fprintf(r.stderr, "%s[%s] [%s] %s%s\n",
-		color, r.now().Format("15:04:05"), prefix, msg, colors.ColorReset)
+		color, r.getTimestamp(), prefix, msg, colors.ColorReset)
 }
 
 func (r *StdUIRenderer) renderMarkdown(text string) {

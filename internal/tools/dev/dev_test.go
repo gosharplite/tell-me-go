@@ -102,7 +102,11 @@ func TestCheckVulnerabilities(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !strings.Contains(res.Text, tt.wantSubstr) && (err != nil && !strings.Contains(err.Error(), tt.wantSubstr)) {
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
 				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
 			}
 		})
@@ -173,10 +177,12 @@ func TestGetCoverage(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getCoverage() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !tt.wantErr && !strings.Contains(res.Text, tt.wantSubstr) {
-				t.Errorf("expected substring %q in %q", tt.wantSubstr, res.Text)
-			} else if tt.wantErr && !strings.Contains(err.Error(), tt.wantSubstr) {
-				t.Errorf("expected substring %q in error %v", tt.wantSubstr, err)
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
+				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
 			}
 		})
 	}
@@ -263,7 +269,11 @@ func TestRunLinter(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("runLinter() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !strings.Contains(res.Text, tt.wantSubstr) && (err != nil && !strings.Contains(err.Error(), tt.wantSubstr)) {
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
 				t.Errorf("expected %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
 			}
 		})
