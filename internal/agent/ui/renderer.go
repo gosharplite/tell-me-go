@@ -72,10 +72,14 @@ type streamState struct {
 
 // NewStdUIRenderer creates a new StdUIRenderer.
 func NewStdUIRenderer(sm *security.SecurityManager) *StdUIRenderer {
-	tr, _ := glamour.NewTermRenderer(
+	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
+	if err != nil {
+		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize glamour renderer: %v\n", err)
+	}
 	return &StdUIRenderer{
 		sm:       sm,
 		stdout:   os.Stdout,
@@ -96,8 +100,9 @@ func (r *StdUIRenderer) getTimestamp() string {
 }
 
 func (r *StdUIRenderer) nowSafe() time.Time {
-	if r.now != nil {
-		return r.now()
+	n := r.now
+	if n != nil {
+		return n()
 	}
 	return time.Now()
 }
@@ -458,6 +463,10 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 
 func (r *StdUIRenderer) renderMarkdown(text string) {
 	fmt.Fprintf(r.stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", colors.ColorGray, colors.ColorReset)
+	if r.renderer == nil {
+		fmt.Fprint(r.stdout, text)
+		return
+	}
 	out, err := r.renderer.Render(text)
 	if err != nil {
 		fmt.Fprint(r.stdout, text)
