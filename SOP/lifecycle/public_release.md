@@ -19,6 +19,7 @@ This SOP defines the automated workflow for publishing a new public release of t
 2.  **Enable Automation**: Execute `bypass_confirmation`.
 3.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
 4.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
+5.  **Confirm Versioning**: Use `ask_user` to confirm the target release version (e.g., `1.81.0`) and the subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad` for reference.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -28,10 +29,10 @@ verify_release_readiness
 **CRITICAL**: All checks in the generated report MUST return **[OK]**. If any check returns **[FAIL]**, you MUST fix the issue before proceeding.
 
 #### 3. Version Stabilization
-1.  Update `Version` in `cmd/tell-me-go/main.go` (remove `-dev` suffix).
+1.  Update `Version` in `cmd/tell-me-go/main.go` (remove `-dev` suffix, set to the confirmed release version).
 2.  Run `go mod tidy`.
 3.  **Note**: This project relies on Git history and tags for version tracking. A manual `CHANGELOG.md` is NOT maintained to ensure the Git log remains the single source of truth.
-4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"`.
+4.  Commit: `git commit -am "Chore: Stabilize version for release v1.x.x"` (use confirmed version).
 5.  **Push to Remote**: `git push origin dev`.
 
 #### 4. Git Tagging and Remote Synchronization
@@ -53,7 +54,7 @@ verify_release_readiness
 4.  **Return to dev and Bump Version**:
     ```bash
     git checkout dev
-    # Increment Version in cmd/tell-me-go/main.go (e.g., from "1.80.0" to "1.81.0-dev")
+    # Increment Version in cmd/tell-me-go/main.go to the confirmed next cycle version (e.g., "1.82.0-dev")
     git commit -am "Chore: Start next development cycle"
     git push origin dev
     ```
