@@ -46,7 +46,7 @@ type UIRenderer interface {
 	RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool)
 	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
 	LogTurnStatus(status events.TurnStatus)
-	LogUsage(m *llm.Metrics, logFile string, startTime time.Time)
+	LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time)
 	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
 	LogToolResult(name string, result tools.ToolResult, showTools bool)
 	LogSystemMessage(msg string, level string)
@@ -59,6 +59,7 @@ type StdUIRenderer struct {
 	stderr   io.Writer
 	now      func() time.Time
 	renderer *glamour.TermRenderer
+	mu       sync.RWMutex
 }
 
 // streamState holds the transient state for a single response stream.
@@ -72,31 +73,71 @@ type streamState struct {
 
 // NewStdUIRenderer creates a new StdUIRenderer.
 func NewStdUIRenderer(sm *security.SecurityManager) *StdUIRenderer {
-	tr, _ := glamour.NewTermRenderer(
+	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
 	)
-	return &StdUIRenderer{
+	r := &StdUIRenderer{
 		sm:       sm,
 		stdout:   os.Stdout,
 		stderr:   os.Stderr,
 		now:      time.Now,
 		renderer: tr,
 	}
+	if err != nil {
+		// Fallback: the renderer will be nil, and we'll handle it in renderMarkdown
+		r.LogSystemMessage(fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
+	}
+	return r
 }
 
 // SetWriters allows overriding the output writers (primarily for testing).
 func (r *StdUIRenderer) SetWriters(stdout, stderr io.Writer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.stdout = stdout
 	r.stderr = stderr
 }
 
-func (r *StdUIRenderer) LogUsage(m *llm.Metrics, logFile string, startTime time.Time) {
+// SetNow allows overriding the time function (primarily for testing).
+func (r *StdUIRenderer) SetNow(now func() time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.now = now
+}
+
+func (r *StdUIRenderer) getTimestamp() string {
+	return r.nowSafe().Format("15:04:05")
+}
+
+func (r *StdUIRenderer) nowSafe() time.Time {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := r.now
+	if n != nil {
+		return n()
+	}
+	return time.Now()
+}
+
+func (r *StdUIRenderer) getStdout() io.Writer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.stdout
+}
+
+func (r *StdUIRenderer) getStderr() io.Writer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.stderr
+}
+
+func (r *StdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time) {
 	if logFile == "" || m == nil {
 		return
 	}
 
-	m.Timestamp = r.now().Format(time.RFC3339)
+	m.Timestamp = r.nowSafe().Format(time.RFC3339)
 	m.IsSummary = false
 
 	data, err := json.Marshal(m)
@@ -117,7 +158,8 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 	if m == nil {
 		return
 	}
-	timestamp := r.now().Format("15:04:05")
+	timestamp := r.getTimestamp()
+	stderr := r.getStderr()
 
 	miss := m.PromptTokens - m.CachedTokens
 
@@ -133,16 +175,17 @@ func (r *StdUIRenderer) renderMetricsLine(m *llm.Metrics, startTime time.Time) {
 
 	timingStr := fmt.Sprintf("%s%s%s", colors.ColorReset, durationStr, colors.ColorGray)
 	if !startTime.IsZero() {
-		totalDuration := r.now().Sub(startTime).Seconds()
+		totalDuration := r.nowSafe().Sub(startTime).Seconds()
 		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", colors.ColorReset, durationStr, colors.ColorGray, totalDuration, colors.ColorGray)
 	}
 
-	fmt.Fprintf(r.stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
+	fmt.Fprintf(stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d %s[%s]%s\n",
 		colors.ColorGray, timestamp, miss, hColor, m.CachedTokens, colors.ColorGray, m.ResponseTokens, m.ThinkingTokens, colors.ColorGray, timingStr, colors.ColorReset)
 }
 
 func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	timestamp := status.Timestamp.Format("15:04:05")
+	stderr := r.getStderr()
 
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
@@ -157,22 +200,22 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 		}
 
 		if isActual {
-			fmt.Fprintf(r.stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
+			fmt.Fprintf(stderr, "%s[%s] Payload: %s%d%s/%d tokens%s\n",
 				colors.ColorGray, timestamp, tokenColor, tks, colors.ColorGray, status.MaxHistoryTokens, colors.ColorReset)
 		} else {
-			fmt.Fprintf(r.stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
+			fmt.Fprintf(stderr, "%s[%s] Payload: ~%s%d%s/%d tokens%s\n",
 				colors.ColorGray, timestamp, tokenColor, tks, colors.ColorGray, status.MaxHistoryTokens, colors.ColorReset)
 		}
 	}
 
 	if !status.IsPostCall {
-		fmt.Fprintf(r.stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", colors.ColorGray, colors.ColorReset)
-		fmt.Fprintf(r.stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", colors.ColorGray, colors.ColorReset, status.SessionTurns+1, status.MaxHistoryTurns, colors.ColorGray)
+		fmt.Fprintf(stderr, "\n%s────────────────────────────────────────────────────────────────────────────────%s\n", colors.ColorGray, colors.ColorReset)
+		fmt.Fprintf(stderr, "%s╭─⠿ %sSession: %d/%d turns%s\n", colors.ColorGray, colors.ColorReset, status.SessionTurns+1, status.MaxHistoryTurns, colors.ColorGray)
 		printSystemLine(status.Tokens, false)
-		fmt.Fprintln(r.stderr) // Ensure visual gap before response
+		fmt.Fprintln(stderr) // Ensure visual gap before response
 	} else if status.Metrics != nil {
 		m := status.Metrics
-		fmt.Fprintln(r.stderr) // Add vertical separation
+		fmt.Fprintln(stderr) // Add vertical separation
 		printSystemLine(int(m.PromptTokens), true)
 
 		r.renderMetricsLine(m, status.StartTime)
@@ -195,25 +238,30 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 				status.TotalO,
 				colors.ColorGray)
 		}
-		fmt.Fprintf(r.stderr, "%s╰─⠿ %sReady%s\n", colors.ColorGray, colors.ColorReset, costStr)
+		fmt.Fprintf(stderr, "%s╰─⠿ %sReady%s\n", colors.ColorGray, colors.ColorReset, costStr)
 	}
 }
 
 func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
+	r.sm.TerminalLock()
+	defer r.sm.TerminalUnlock()
+
+	ts := r.getTimestamp()
+	stdout := r.getStdout()
+	stderr := r.getStderr()
+
 	for _, part := range respContent.Parts {
 		if showThoughts && part.Thought && part.Text != "" {
-			r.sm.TerminalLock()
 			sanitized := sanitizeForTerminal(part.Text)
-			fmt.Fprintf(r.stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, r.now().Format("15:04:05"), sanitized, colors.ColorReset)
-			r.sm.TerminalUnlock()
+			fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, ts, sanitized, colors.ColorReset)
 		}
 	}
 	for _, part := range respContent.Parts {
 		if part.Text != "" && !part.Thought {
 			if rawOutput {
-				fmt.Fprint(r.stdout, part.Text)
+				fmt.Fprint(stdout, part.Text)
 				if !strings.HasSuffix(part.Text, "\n") {
-					fmt.Fprintln(r.stdout)
+					fmt.Fprintln(stdout)
 				}
 			} else {
 				sanitized := sanitizeForTerminal(part.Text)
@@ -222,10 +270,8 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 		}
 
 		if part.InlineData != nil {
-			r.sm.TerminalLock()
-			fmt.Fprintf(r.stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
-				colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
-			r.sm.TerminalUnlock()
+			fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
+				colors.ColorGray, ts, part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
 		}
 	}
 }
@@ -239,9 +285,12 @@ func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOut
 	}
 
 	if !rawOutput {
-		r.sm.TerminalLock()
-		fmt.Fprint(r.stdout, colors.TermSaveCursor)
-		r.sm.TerminalUnlock()
+		stdout := r.getStdout()
+		func() {
+			r.sm.TerminalLock()
+			defer r.sm.TerminalUnlock()
+			fmt.Fprint(stdout, colors.TermSaveCursor)
+		}()
 	}
 
 	var wg sync.WaitGroup
@@ -297,7 +346,7 @@ func (r *StdUIRenderer) renderStreamPart(state *streamState, part *llm.Part) {
 
 func (r *StdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part) {
 	if !state.thoughtActive && state.showThoughts {
-		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", colors.ColorGray, r.now().Format("15:04:05")))
+		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", colors.ColorGray, r.getTimestamp()))
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
@@ -312,14 +361,19 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	if !state.rawOutput {
 		output = sanitizeForTerminal(part.Text)
 	}
-	fmt.Fprint(r.stdout, output)
+	stdout := r.getStdout()
+	func() {
+		r.sm.TerminalLock()
+		defer r.sm.TerminalUnlock()
+		fmt.Fprint(stdout, output)
+	}()
 	state.totalText.WriteString(part.Text)
 }
 
 func (r *StdUIRenderer) handleInlineDataPart(state *streamState, part *llm.Part) {
 	r.closeThinking(state)
 	r.safePrintStderr(fmt.Sprintf("\n%s[%s] [Media] %s (%d bytes)%s\n",
-		colors.ColorGray, r.now().Format("15:04:05"), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset))
+		colors.ColorGray, r.getTimestamp(), part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset))
 }
 
 func (r *StdUIRenderer) closeThinking(state *streamState) {
@@ -330,9 +384,10 @@ func (r *StdUIRenderer) closeThinking(state *streamState) {
 }
 
 func (r *StdUIRenderer) safePrintStderr(msg string) {
+	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
-	fmt.Fprint(r.stderr, msg)
+	fmt.Fprint(stderr, msg)
 }
 
 func (r *StdUIRenderer) finalizeOutput(state *streamState) {
@@ -342,28 +397,36 @@ func (r *StdUIRenderer) finalizeOutput(state *streamState) {
 			sanitized := sanitizeForTerminal(fullText)
 			r.clearAndRenderMarkdown(sanitized)
 		}
-		fmt.Fprintln(r.stdout)
+		stdout := r.getStdout()
+		func() {
+			r.sm.TerminalLock()
+			defer r.sm.TerminalUnlock()
+			fmt.Fprintln(stdout)
+		}()
 	}
 }
 
 func (r *StdUIRenderer) clearAndRenderMarkdown(fullText string) {
+	stdout := r.getStdout()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
-	fmt.Fprint(r.stdout, colors.TermRestoreCursor+colors.TermClearForward)
+	fmt.Fprint(stdout, colors.TermRestoreCursor+colors.TermClearForward)
 	r.renderMarkdown(fullText)
 }
 
 func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool) {
+	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
+	ts := r.getTimestamp()
 	var names []string
 	for _, fc := range calls {
 		names = append(names, fc.Name)
 	}
 
-	fmt.Fprintf(r.stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
-		colors.ColorCyan, r.now().Format("15:04:05"), turn+1, maxTurns, strings.Join(names, ", "), colors.ColorReset)
+	fmt.Fprintf(stderr, "%s[%s] [Tool Engine (Step %d/%d)] Calling: %s%s\n",
+		colors.ColorCyan, ts, turn+1, maxTurns, strings.Join(names, ", "), colors.ColorReset)
 
 	if showTools {
 		for _, fc := range calls {
@@ -375,8 +438,8 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 				}
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
-			fmt.Fprintf(r.stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
-				colors.ColorCyan, r.now().Format("15:04:05"), fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
+			fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
+				colors.ColorCyan, ts, fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
 		}
 	}
 }
@@ -386,10 +449,11 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 		return
 	}
 
+	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
-	timestamp := r.now().Format("15:04:05")
+	timestamp := r.getTimestamp()
 
 	if result.Text != "" {
 		snippet := result.Text
@@ -397,11 +461,11 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 			snippet = snippet[:197] + "..."
 		}
 		snippet = strings.ReplaceAll(snippet, "\n", " ")
-		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: %s%s\n", colors.ColorCyan, timestamp, name, snippet, colors.ColorReset)
+		fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: %s%s\n", colors.ColorCyan, timestamp, name, snippet, colors.ColorReset)
 	}
 
 	for _, b := range result.BinaryData {
-		fmt.Fprintf(r.stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
+		fmt.Fprintf(stderr, "%s[%s] [Tool Result] %s: Received %s (%d bytes)%s\n",
 			colors.ColorCyan, timestamp, name, b.MIMEType, len(b.Data), colors.ColorReset)
 	}
 
@@ -411,6 +475,7 @@ func (r *StdUIRenderer) LogToolResult(name string, result tools.ToolResult, show
 }
 
 func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
+	stderr := r.getStderr()
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
@@ -429,16 +494,21 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 		prefix = "Info"
 	}
 
-	fmt.Fprintf(r.stderr, "%s[%s] [%s] %s%s\n",
-		color, r.now().Format("15:04:05"), prefix, msg, colors.ColorReset)
+	fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
+		color, r.getTimestamp(), prefix, msg, colors.ColorReset)
 }
 
 func (r *StdUIRenderer) renderMarkdown(text string) {
-	fmt.Fprintf(r.stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", colors.ColorGray, colors.ColorReset)
+	stdout := r.getStdout()
+	fmt.Fprintf(stdout, "%s────────────────────────────────────────────────────────────────────────────────%s\n", colors.ColorGray, colors.ColorReset)
+	if r.renderer == nil {
+		fmt.Fprint(stdout, text)
+		return
+	}
 	out, err := r.renderer.Render(text)
 	if err != nil {
-		fmt.Fprint(r.stdout, text)
+		fmt.Fprint(stdout, text)
 	} else {
-		fmt.Fprint(r.stdout, out)
+		fmt.Fprint(stdout, out)
 	}
 }

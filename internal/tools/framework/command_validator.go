@@ -115,16 +115,46 @@ func (v *CommandValidator) ValidateStructure(parts []string) error {
 				"To use shell features, wrap the command: sh -c \"your command\"", part, desc)
 		}
 
-		// Check for attached operators or interpolation like "ls;echo" or "ls>out"
+		// Check for interpolation characters in any token to prevent shell-like behavior
+		// in binaries that might evaluate their arguments.
+		if strings.ContainsAny(part, "$`") {
+			return fmt.Errorf("shell interpolation character detected in token '%s'. "+
+				"This tool executes binaries directly and does not support shell expansion. "+
+				"To use shell features, wrap the command: sh -c \"your command\"", part)
+		}
+
+		// Check for attached operators like "ls;echo" or "ls>out"
 		// We only apply this to the first token (the command) to minimize false positives
 		// in arguments (e.g., grep "a;b") while still catching common mistakes.
-		if i == 0 && strings.ContainsAny(part, ";&|><$`\n\r") {
-			return fmt.Errorf("shell operator or interpolation detected inside command token '%s'. "+
+		if i == 0 && strings.ContainsAny(part, ";&|><\n\r") {
+			return fmt.Errorf("shell operator detected inside command token '%s'. "+
 				"This tool executes binaries directly and does not support shell features. "+
 				"To use shell features, wrap the command: sh -c \"your command\"", part)
 		}
 	}
 	return nil
+}
+
+// TruncateOutput limits a string to a maximum number of lines, appending a truncation message if needed.
+// It is designed to be memory-efficient by avoiding a full split of the string.
+func TruncateOutput(output string, maxLines int) string {
+	if output == "" {
+		return ""
+	}
+	if maxLines <= 0 {
+		return "\n... (Output truncated) ..."
+	}
+
+	count := 0
+	for i := 0; i < len(output); i++ {
+		if output[i] == '\n' {
+			count++
+			if count >= maxLines {
+				return output[:i] + "\n... (Output truncated) ..."
+			}
+		}
+	}
+	return output
 }
 
 func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {

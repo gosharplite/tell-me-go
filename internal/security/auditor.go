@@ -12,6 +12,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
+// AuditLogger defines the interface for security logging.
+type AuditLogger interface {
+	LogAudit(label1, val1, label2, val2 string)
+	SetLogFile(path string)
+}
+
 // Auditor handles security logging.
 type Auditor struct {
 	logFile string

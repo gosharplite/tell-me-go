@@ -35,6 +35,12 @@ type ExecutionResult struct {
 	Truncated bool
 }
 
+// CommandExecutor defines the interface for running commands.
+type CommandExecutor interface {
+	RunCommand(ctx context.Context, parts []string, config ExecutionConfig) (ExecutionResult, error)
+	RunPipeline(ctx context.Context, pipedParts [][]string, config ExecutionConfig) (ExecutionResult, error)
+}
+
 // ProcessExecutor handles running external commands and pipelines.
 type ProcessExecutor struct{}
 

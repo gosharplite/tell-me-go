@@ -6,6 +6,7 @@ package dev
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,9 +19,11 @@ import (
 )
 
 type devManager struct {
-	sm        *security.SecurityManager
-	validator *framework.CommandValidator
-	executor  Executor
+	sm             *security.SecurityManager
+	validator      *framework.CommandValidator
+	executor       Executor
+	stderr         io.Writer
+	createTempFile func(dir, pattern string) (*os.File, error)
 }
 
 // Executor defines the interface for command execution to allow mocking in tests.
@@ -42,9 +45,11 @@ func (e *realExecutor) LookPath(file string) (string, error) {
 // Register adds developer-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  &realExecutor{},
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       &realExecutor{},
+		stderr:         os.Stderr,
+		createTempFile: os.CreateTemp,
 	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -165,42 +170,43 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running Tests: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
-	}()
+	m.sm.LogAudit("ACTION", "run_tests", "COMMAND", command)
+
+	m.logToolAction("Running Tests: %s", command)
 
 	// Execute the command directly without shell wrapper
 	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
 
 	outStr := string(output)
 	if err != nil {
-		// If failed, return truncated output to help diagnose
-		lines := strings.Split(outStr, "\n")
-		if len(lines) > 100 {
-			outStr = strings.Join(lines[:100], "\n") + "\n... (Output truncated) ..."
-		}
+		outStr = framework.TruncateOutput(outStr, 100)
 		// Return the failure output in the result, but still return an error for the status
 		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
 	}
 
-	return tools.ToolResult{Text: "PASS"}, nil
+	return tools.ToolResult{Text: framework.TruncateOutput(outStr, 100)}, nil
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go mod tidy and go fmt%s\n", colors.ColorCyan, colors.ColorReset)
-	}()
+	command := "go mod tidy && go fmt ./..."
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Go Tidy", command, "Tidying project dependencies and formatting", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
+	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", command)
+	m.logToolAction("Running go mod tidy and go fmt")
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", framework.TruncateOutput(string(out), 50))
 	}
 
 	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", string(out))
+		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", framework.TruncateOutput(string(out), 50))
 	}
 
 	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil
@@ -219,33 +225,42 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		path = "./..."
 	}
 
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Getting test coverage for %s%s\n", colors.ColorCyan, path, colors.ColorReset)
-	}()
+	command := fmt.Sprintf("go test -coverprofile=coverage.out %s", path)
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Test Coverage", command, "Getting test coverage summary", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
 
-	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile=coverage.out", path)
+	m.sm.LogAudit("ACTION", "get_coverage", "PATH", path)
+
+	m.logToolAction("Getting test coverage for %s", path)
+
+	// Use a temporary file for coverage profile
+	f, err := m.createTempFile("", "coverage-*.out")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tempName := f.Name()
+	f.Close()
+	defer os.Remove(tempName)
+
+	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
 
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, string(out))
+		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, framework.TruncateOutput(string(out), 50))
 	}
 
 	// Get summary
-	summaryOut, err := m.executor.Execute(ctx, "go", "tool", "cover", "-func=coverage.out")
+	summaryOut, err := m.executor.Execute(ctx, "go", "tool", "cover", "-func="+tempName)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to generate coverage summary: %w", err)
 	}
 
-	// Clean up
-	os.Remove("coverage.out")
-
-	lines := strings.Split(string(summaryOut), "\n")
-	if len(lines) > 50 {
-		return tools.ToolResult{Text: strings.Join(lines[:50], "\n") + "\n... (truncated)"}, nil
-	}
-
-	return tools.ToolResult{Text: string(summaryOut)}, nil
+	return tools.ToolResult{Text: framework.TruncateOutput(string(summaryOut), 100)}, nil
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -272,27 +287,25 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running linter: %s%s\n", colors.ColorCyan, fullCmd, colors.ColorReset)
-	}()
+	m.sm.LogAudit("ACTION", "run_linter", "COMMAND", fullCmd)
+
+	m.logToolAction("Running linter: %s", fullCmd)
 
 	out, err := m.executor.Execute(ctx, command, argsList...)
 	if err != nil && len(out) == 0 {
 		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
 	}
 
+	outStr := framework.TruncateOutput(string(out), 100)
+	if err != nil {
+		return tools.ToolResult{Text: outStr}, fmt.Errorf("linter found issues: %w", err)
+	}
+
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "Linter passed successfully."}, nil
 	}
 
-	lines := strings.Split(string(out), "\n")
-	if len(lines) > 100 {
-		return tools.ToolResult{Text: strings.Join(lines[:100], "\n") + "\n... (truncated)"}, nil
-	}
-
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: outStr}, nil
 }
 
 func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -313,15 +326,23 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		bench = "."
 	}
 
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running benchmarks (%s) in %s%s\n", colors.ColorCyan, bench, path, colors.ColorReset)
-	}()
+	command := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
+	isSafe, _ := m.validator.IsSafe(command)
+	approved, err := m.sm.Authorize(ctx, "Benchmark Execution", command, "Running project benchmarks", isSafe)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
+	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
+
+	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", command)
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, string(out))
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, framework.TruncateOutput(string(out), 100))
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
@@ -342,11 +363,9 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
-	func() {
-		m.sm.TerminalLock()
-		defer m.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Checking for vulnerabilities: %s%s\n", colors.ColorCyan, command, colors.ColorReset)
-	}()
+	m.sm.LogAudit("ACTION", "check_vulnerabilities", "COMMAND", command)
+
+	m.logToolAction("Checking for vulnerabilities: %s", command)
 
 	out, err := m.executor.Execute(ctx, "govulncheck", "./...")
 
@@ -354,9 +373,20 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("govulncheck failed: %w", err)
 	}
 
+	outStr := framework.TruncateOutput(string(out), 100)
+	if err != nil {
+		return tools.ToolResult{Text: outStr}, fmt.Errorf("vulnerabilities found: %w", err)
+	}
+
 	if len(out) == 0 {
 		return tools.ToolResult{Text: "No vulnerabilities found."}, nil
 	}
 
-	return tools.ToolResult{Text: string(out)}, nil
+	return tools.ToolResult{Text: outStr}, nil
+}
+
+func (m *devManager) logToolAction(format string, a ...any) {
+	m.sm.TerminalLock()
+	defer m.sm.TerminalUnlock()
+	fmt.Fprintf(m.stderr, colors.ColorCyan+"[Tool Action] "+format+colors.ColorReset+"\n", a...)
 }

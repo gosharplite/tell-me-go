@@ -4,6 +4,8 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
@@ -32,13 +34,36 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 	case events.TurnStatusEvent:
 		s.renderer.LogTurnStatus(ev.Status)
 	case events.ResponseStreamEvent:
-		uiCh, uiFinalize := s.renderer.StreamResponse(ev.Context, s.showThoughts, s.rawOutput)
-		for c := range ev.Stream {
-			uiCh <- c
+		ctx := ev.Context
+		if ctx == nil {
+			s.renderer.LogSystemMessage("ResponseStreamEvent missing context", "warn")
+			ctx = context.Background()
+		}
+		uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
+	streamLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				break streamLoop
+			case c, ok := <-ev.Stream:
+				if !ok {
+					break streamLoop
+				}
+				select {
+				case uiCh <- c:
+				case <-ctx.Done():
+					break streamLoop
+				}
+			}
 		}
 		_ = uiFinalize()
 	case events.UsageMetricsEvent:
-		s.renderer.LogUsage(ev.Metrics, s.logFile, ev.StartTime)
+		ctx := ev.Context
+		if ctx == nil {
+			s.renderer.LogSystemMessage("UsageMetricsEvent missing context", "warn")
+			ctx = context.Background()
+		}
+		s.renderer.LogUsage(ctx, ev.Metrics, s.logFile, ev.StartTime)
 	case events.ToolCallEvent:
 		s.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, s.showTools)
 	case events.ToolResultEvent:

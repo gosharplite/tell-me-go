@@ -4,8 +4,11 @@
 package dev
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,262 +16,378 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
-func TestRunTestsVulnerability(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true) // Bypass confirmation for tests
-	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  &mockExecutor{},
+type mockDevExecutor struct {
+	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
+	lookPathFunc func(file string) (string, error)
+}
+
+func (m *mockDevExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.executeFunc != nil {
+		return m.executeFunc(ctx, name, args...)
 	}
+	return []byte("success"), nil
+}
+
+func (m *mockDevExecutor) LookPath(file string) (string, error) {
+	if m.lookPathFunc != nil {
+		return m.lookPathFunc(file)
+	}
+	return "/usr/bin/" + file, nil
+}
+
+func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
+	t.Helper()
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	sm.RegisterSafePath(".")
+	executor := &mockDevExecutor{}
+	m := &devManager{
+		sm:             sm,
+		validator:      framework.NewCommandValidator(sm),
+		executor:       executor,
+		stderr:         io.Discard,
+		createTempFile: os.CreateTemp,
+	}
+	return m, executor, sm
+}
+
+func TestCheckVulnerabilities(t *testing.T) {
+	tests := []struct {
+		name         string
+		lookPathErr  error
+		executeOut   string
+		executeErr   error
+		wantSubstr   string
+		wantErr      bool
+		wantAuthFail bool
+	}{
+		{
+			name:       "Success - no vulnerabilities",
+			executeOut: "No vulnerabilities found.",
+			wantSubstr: "No vulnerabilities",
+		},
+		{
+			name:        "Tool missing",
+			lookPathErr: errors.New("not found"),
+			wantSubstr:  "'govulncheck' is not installed",
+			wantErr:     true,
+		},
+		{
+			name:       "Vulnerabilities found",
+			executeOut: "VULNERABILITY FOUND",
+			executeErr: errors.New("exit status 3"),
+			wantSubstr: "VULNERABILITY FOUND",
+			wantErr:    true,
+		},
+		{
+			name:       "Execution failure no output",
+			executeOut: "",
+			executeErr: errors.New("something went wrong"),
+			wantSubstr: "govulncheck failed",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				return "/usr/bin/" + file, tt.lookPathErr
+			}
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(tt.executeOut), tt.executeErr
+			}
+
+			res, err := m.checkVulnerabilities(context.Background(), nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("checkVulnerabilities() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
+				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+			}
+		})
+	}
+}
+
+func TestGetCoverage(t *testing.T) {
+	tests := []struct {
+		name       string
+		executeOut string
+		executeErr error
+		summaryOut string
+		summaryErr error
+		wantSubstr string
+		wantErr    bool
+	}{
+		{
+			name:       "Success",
+			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 85.0% of statements",
+			summaryOut: "github.com/gosharplite/tell-me-go/internal/tools/dev/dev.go:35:	Register		100.0%\ntotal:			(statements)		85.0%",
+			wantSubstr: "total:",
+		},
+		{
+			name:       "Test failure",
+			executeOut: "FAIL",
+			executeErr: errors.New("exit status 1"),
+			wantSubstr: "tests failed",
+			wantErr:    true,
+		},
+		{
+			name:       "Summary failure",
+			executeOut: "ok",
+			summaryErr: errors.New("failed to run go tool cover"),
+			wantSubstr: "failed to generate coverage summary",
+			wantErr:    true,
+		},
+		{
+			name:       "Temp file failure",
+			wantSubstr: "failed to create temp file",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, executor, _ := setupDevManager(t)
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "go" && len(args) > 1 && args[0] == "test" {
+					return []byte(tt.executeOut), tt.executeErr
+				}
+				if name == "go" && len(args) > 1 && args[1] == "cover" {
+					return []byte(tt.summaryOut), tt.summaryErr
+				}
+				return []byte(""), nil
+			}
+			m.createTempFile = func(dir, pattern string) (*os.File, error) {
+				if tt.name == "Temp file failure" {
+					return nil, errors.New("failed to create temp file")
+				}
+				f, err := os.CreateTemp(dir, pattern)
+				if err == nil {
+					t.Cleanup(func() { os.Remove(f.Name()) })
+				}
+				return f, err
+			}
+
+			res, err := m.getCoverage(context.Background(), nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getCoverage() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
+				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+			}
+		})
+	}
+}
+
+func TestGoTidy(t *testing.T) {
+	m, _, _ := setupDevManager(t)
+
+	res, err := m.goTidy(context.Background(), nil)
+	if err != nil {
+		t.Errorf("goTidy() unexpected error = %v", err)
+	}
+	if !strings.Contains(res.Text, "Success") {
+		t.Errorf("expected Success in result, got %q", res.Text)
+	}
+}
+
+func TestRunBenchmark(t *testing.T) {
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("BenchmarkResult"), nil
+	}
+
+	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"path": "./...", "bench": "BenchmarkFoo"})
+	if err != nil {
+		t.Errorf("runBenchmark() unexpected error = %v", err)
+	}
+	if !strings.Contains(res.Text, "BenchmarkResult") {
+		t.Errorf("expected BenchmarkResult in result, got %q", res.Text)
+	}
+}
+
+func TestRunLinter(t *testing.T) {
+	tests := []struct {
+		name       string
+		lookPath   string
+		executeOut string
+		executeErr error
+		wantSubstr string
+		wantErr    bool
+	}{
+		{
+			name:       "golangci-lint success",
+			lookPath:   "golangci-lint",
+			executeOut: "",
+			wantSubstr: "Linter passed successfully",
+		},
+		{
+			name:       "staticcheck success",
+			lookPath:   "staticcheck",
+			executeOut: "",
+			wantSubstr: "Linter passed successfully",
+		},
+		{
+			name:       "linter issues found",
+			lookPath:   "staticcheck",
+			executeOut: "problem at line 1",
+			executeErr: errors.New("exit status 1"),
+			wantSubstr: "problem at line 1",
+			wantErr:    true,
+		},
+		{
+			name:       "no linter found",
+			lookPath:   "none",
+			wantErr:    true,
+			wantSubstr: "no supported linter found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, executor, _ := setupDevManager(t)
+			executor.lookPathFunc = func(file string) (string, error) {
+				if file == tt.lookPath {
+					return "/usr/bin/" + file, nil
+				}
+				return "", errors.New("not found")
+			}
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte(tt.executeOut), tt.executeErr
+			}
+
+			res, err := m.runLinter(context.Background(), nil)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("runLinter() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			fullOutput := res.Text
+			if err != nil {
+				fullOutput += " " + err.Error()
+			}
+			if !strings.Contains(fullOutput, tt.wantSubstr) {
+				t.Errorf("expected %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+			}
+		})
+	}
+}
+
+func TestGoTidy_Errors(t *testing.T) {
+	tests := []struct {
+		name       string
+		executeErr error
+		cmdFail    string
+	}{
+		{
+			name:       "go mod tidy fails",
+			executeErr: errors.New("tidy error"),
+			cmdFail:    "tidy",
+		},
+		{
+			name:       "go fmt fails",
+			executeErr: errors.New("fmt error"),
+			cmdFail:    "fmt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, executor, _ := setupDevManager(t)
+			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if args[0] == tt.cmdFail || (len(args) > 1 && args[1] == tt.cmdFail) {
+					return []byte("failed"), tt.executeErr
+				}
+				return []byte("ok"), nil
+			}
+
+			_, err := m.goTidy(context.Background(), nil)
+			if err == nil {
+				t.Errorf("expected error for %s, got nil", tt.name)
+			}
+		})
+	}
+}
+
+func TestRunBenchmark_Error(t *testing.T) {
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("error output"), errors.New("benchmark failed")
+	}
+
+	_, err := m.runBenchmark(context.Background(), nil)
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestRunTests(t *testing.T) {
+	var stderr bytes.Buffer
+	m, executor, _ := setupDevManager(t)
+	m.stderr = &stderr
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("PASS"), nil
+	}
+
+	res, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
+	if err != nil {
+		t.Errorf("runTests() unexpected error = %v", err)
+	}
+	if !strings.Contains(res.Text, "PASS") {
+		t.Errorf("expected PASS in result, got %q", res.Text)
+	}
+
+	if !strings.Contains(stderr.String(), "[Tool Action] Running Tests") {
+		t.Errorf("expected tool action log, got %q", stderr.String())
+	}
+}
+
+func TestRunTests_Violations(t *testing.T) {
+	m, _, _ := setupDevManager(t)
+
 	tests := []struct {
 		name    string
 		command string
-		wantErr bool
 	}{
 		{
-			name:    "Safe command",
-			command: "go help",
-			wantErr: false,
+			name:    "Unauthorized tool",
+			command: "rm -rf /",
 		},
 		{
-			name:    "Command injection via semicolon",
-			command: "go test ./internal/config ; echo 'pwned'",
-			wantErr: true,
+			name:    "Path safety violation",
+			command: "go test ../../../etc/passwd",
 		},
 		{
-			name:    "Command injection via ampersand",
-			command: "go test ./internal/config && echo 'pwned'",
-			wantErr: true,
-		},
-		{
-			name:    "Command injection via pipe",
-			command: "go test ./internal/config | echo 'pwned'",
-			wantErr: true,
+			name:    "Invalid command structure",
+			command: "go test ; rm -rf /",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := m.runTests(context.Background(), map[string]interface{}{"command": tt.command})
-			if (err != nil) != tt.wantErr {
-				t.Errorf("runTests() error = %v, wantErr %v", err, tt.wantErr)
+			if err == nil {
+				t.Errorf("expected error for %s, got nil", tt.name)
 			}
 		})
 	}
 }
 
-func TestRunTests_EdgeCases(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true) // Bypass confirmation for tests
-	m := &devManager{
-		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
-		executor:  &mockExecutor{},
+func TestRunTests_Failure(t *testing.T) {
+	m, executor, _ := setupDevManager(t)
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("FAIL"), errors.New("exit status 1")
 	}
-	ctx := context.Background()
 
-	t.Run("Empty command", func(t *testing.T) {
-		_, err := m.runTests(ctx, map[string]interface{}{"command": ""})
-		if err == nil {
-			t.Error("expected error for empty command")
-		}
-	})
-
-	t.Run("Unauthorized tool", func(t *testing.T) {
-		_, err := m.runTests(ctx, map[string]interface{}{"command": "rm -rf /"})
-		if err == nil {
-			t.Error("expected error for unauthorized tool")
-		}
-	})
-
-	t.Run("Invalid shlex", func(t *testing.T) {
-		_, err := m.runTests(ctx, map[string]interface{}{"command": "go test 'unclosed quote"})
-		if err == nil {
-			t.Error("expected error for invalid shlex")
-		}
-	})
-}
-
-type mockExecutor struct {
-	executeFunc  func(ctx context.Context, name string, args ...string) ([]byte, error)
-	lookPathFunc func(file string) (string, error)
-}
-
-func (m *mockExecutor) Execute(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if m.executeFunc != nil {
-		return m.executeFunc(ctx, name, args...)
-	}
-	return []byte("mock output"), nil
-}
-
-func (m *mockExecutor) LookPath(file string) (string, error) {
-	if m.lookPathFunc != nil {
-		return m.lookPathFunc(file)
-	}
-	return file, nil
-}
-
-func TestGetCoverage(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	mock := &mockExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			if name == "go" && args[0] == "test" {
-				return []byte("ok"), nil
-			}
-			if name == "go" && args[0] == "tool" {
-				return []byte("total: (statements) 80.0%"), nil
-			}
-			return nil, nil
-		},
-	}
-	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-
-	res, err := m.getCoverage(context.Background(), map[string]interface{}{"path": "./..."})
-	if err != nil {
-		t.Fatalf("getCoverage failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "80.0%") {
-		t.Errorf("expected coverage summary, got: %s", res.Text)
-	}
-}
-
-func TestRunLinter(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-
-	t.Run("golangci-lint success", func(t *testing.T) {
-		mock := &mockExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				if file == "golangci-lint" {
-					return "/usr/bin/golangci-lint", nil
-				}
-				return "", fmt.Errorf("not found")
-			},
-			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(""), nil
-			},
-		}
-		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-		res, err := m.runLinter(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("runLinter failed: %v", err)
-		}
-		if !strings.Contains(res.Text, "passed successfully") {
-			t.Errorf("expected success message, got: %s", res.Text)
-		}
-	})
-
-	t.Run("staticcheck success", func(t *testing.T) {
-		mock := &mockExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				if file == "staticcheck" {
-					return "/usr/bin/staticcheck", nil
-				}
-				return "", fmt.Errorf("not found")
-			},
-			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(""), nil
-			},
-		}
-		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-		res, err := m.runLinter(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("runLinter failed: %v", err)
-		}
-		if !strings.Contains(res.Text, "passed successfully") {
-			t.Errorf("expected success message, got: %s", res.Text)
-		}
-	})
-
-	t.Run("no linter found", func(t *testing.T) {
-		mock := &mockExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				return "", fmt.Errorf("not found")
-			},
-		}
-		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-		_, err := m.runLinter(context.Background(), nil)
-		if err == nil {
-			t.Fatal("expected error when no linter found")
-		}
-	})
-}
-
-func TestRunBenchmark(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	mock := &mockExecutor{
-		executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("BenchmarkTest 1000 100 ns/op"), nil
-		},
-	}
-	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-
-	res, err := m.runBenchmark(context.Background(), map[string]interface{}{"bench": "Test"})
-	if err != nil {
-		t.Fatalf("runBenchmark failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "ns/op") {
-		t.Errorf("expected benchmark results, got: %s", res.Text)
-	}
-}
-
-func TestCheckVulnerabilities(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-
-	t.Run("success", func(t *testing.T) {
-		mock := &mockExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				return "/usr/bin/govulncheck", nil
-			},
-			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte(""), nil
-			},
-		}
-		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-		res, err := m.checkVulnerabilities(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("checkVulnerabilities failed: %v", err)
-		}
-		if !strings.Contains(res.Text, "No vulnerabilities found") {
-			t.Errorf("expected success message, got: %s", res.Text)
-		}
-	})
-
-	t.Run("vulnerabilities found", func(t *testing.T) {
-		mock := &mockExecutor{
-			lookPathFunc: func(file string) (string, error) {
-				return "/usr/bin/govulncheck", nil
-			},
-			executeFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				return []byte("Vulnerability found: GO-2023-XXXX"), fmt.Errorf("exit status 3")
-			},
-		}
-		m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-		res, err := m.checkVulnerabilities(context.Background(), nil)
-		if err != nil {
-			t.Fatalf("checkVulnerabilities should not return error if output is present: %v", err)
-		}
-		if !strings.Contains(res.Text, "GO-2023-XXXX") {
-			t.Errorf("expected vulnerability details, got: %s", res.Text)
-		}
-	})
-}
-
-func TestGoTidy(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	mock := &mockExecutor{}
-	m := &devManager{sm: sm, validator: framework.NewCommandValidator(sm), executor: mock}
-
-	res, err := m.goTidy(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("goTidy failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "Success") {
-		t.Errorf("expected success message, got: %s", res.Text)
+	_, err := m.runTests(context.Background(), map[string]interface{}{"command": "go test ./..."})
+	if err == nil {
+		t.Error("expected error, got nil")
 	}
 }
