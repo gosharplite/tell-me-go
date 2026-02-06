@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -115,10 +116,51 @@ func (b *UncoveredBlock) ExtractCode() error {
 	return nil
 }
 
+type commandRunner func(name string, arg ...string) ([]byte, error)
+
+// ShellRunner is the default implementation of commandRunner using exec.Command.
+func ShellRunner(name string, arg ...string) ([]byte, error) {
+	return exec.Command(name, arg...).CombinedOutput()
+}
+
+func getModuleName() string {
+	// Search for go.mod in current and parent directories
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		data, err := os.ReadFile(goModPath)
+		if err == nil {
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "module ") {
+					mod := strings.TrimPrefix(line, "module ")
+					if mod != "" && !strings.HasSuffix(mod, "/") {
+						mod += "/"
+					}
+					return mod
+				}
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
 // ParseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
 func ParseCoverageProfile(r io.Reader) ([]UncoveredBlock, error) {
 	var blocks []UncoveredBlock
 	scanner := bufio.NewScanner(r)
+	modulePrefix := getModuleName()
 
 	// Skip the first line (mode: ...)
 	if !scanner.Scan() {
@@ -159,8 +201,7 @@ func ParseCoverageProfile(r io.Reader) ([]UncoveredBlock, error) {
 
 		file := pathAndRange[:colonIdx]
 		// Strip module prefix if it exists to make path relative to project root
-		modulePrefix := "github.com/gosharplite/tell-me-go/"
-		if strings.HasPrefix(file, modulePrefix) {
+		if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
 			file = file[len(modulePrefix):]
 		}
 		rangePart := pathAndRange[colonIdx+1:]
@@ -195,7 +236,7 @@ func ParseCoverageProfile(r io.Reader) ([]UncoveredBlock, error) {
 }
 
 // GetDetailedCoverage executes the coverage test and parses the profile.
-func GetDetailedCoverage(packagePath string) ([]UncoveredBlock, error) {
+func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBlock, error) {
 	f, err := os.CreateTemp("", "coverage-*.out")
 	if err != nil {
 		return nil, err
@@ -204,10 +245,17 @@ func GetDetailedCoverage(packagePath string) ([]UncoveredBlock, error) {
 	defer os.Remove(tempPath)
 	f.Close()
 
-	cmd := exec.Command("go", "test", "-coverprofile="+tempPath, packagePath)
-	// We ignore the error from cmd.Run() because even if tests fail,
+	_, err = run("go", "test", "-coverprofile="+tempPath, packagePath)
+	// We ignore the error from run() because even if tests fail,
 	// the coverage profile might still be generated for the parts that did run.
-	_ = cmd.Run()
+
+	info, err := os.Stat(tempPath)
+	if err != nil {
+		return nil, fmt.Errorf("coverage profile was not generated: %w", err)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("coverage profile is empty; check if package path is valid and contains testable Go files")
+	}
 
 	cf, err := os.Open(tempPath)
 	if err != nil {
@@ -221,7 +269,9 @@ func GetDetailedCoverage(packagePath string) ([]UncoveredBlock, error) {
 	}
 
 	for i := range blocks {
-		_ = blocks[i].ExtractCode()
+		if err := blocks[i].ExtractCode(); err != nil {
+			blocks[i].Code = "[Error extracting code: " + err.Error() + "]"
+		}
 		blocks[i].Classify()
 	}
 
@@ -229,8 +279,8 @@ func GetDetailedCoverage(packagePath string) ([]UncoveredBlock, error) {
 }
 
 // GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, optionally filtered by priority.
-func GetDetailedCoverageJSON(packagePath string, minPriority string) (string, error) {
-	blocks, err := GetDetailedCoverage(packagePath)
+func GetDetailedCoverageJSON(packagePath string, minPriority string, run commandRunner) (string, error) {
+	blocks, err := GetDetailedCoverage(packagePath, run)
 	if err != nil {
 		return "", err
 	}
@@ -254,8 +304,8 @@ func GetDetailedCoverageJSON(packagePath string, minPriority string) (string, er
 }
 
 // GetDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func GetDetailedCoverageReport(packagePath string) (string, error) {
-	blocks, err := GetDetailedCoverage(packagePath)
+func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, error) {
+	blocks, err := GetDetailedCoverage(packagePath, run)
 	if err != nil {
 		return "", err
 	}

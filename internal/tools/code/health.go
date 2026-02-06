@@ -253,7 +253,7 @@ func (m *HealthManager) GetDetailedCoverage(ctx context.Context, args map[string
 		path = "./..."
 	}
 
-	report, err := GetDetailedCoverageReport(path)
+	report, err := GetDetailedCoverageReport(path, ShellRunner)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

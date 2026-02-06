@@ -21,14 +21,14 @@ func main() {
 	}
 
 	if *priority == "" {
-		report, err := code.GetDetailedCoverageReport(packagePath)
+		report, err := code.GetDetailedCoverageReport(packagePath, code.ShellRunner)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Print(report)
 	} else {
-		jsonOutput, err := code.GetDetailedCoverageJSON(packagePath, *priority)
+		jsonOutput, err := code.GetDetailedCoverageJSON(packagePath, *priority, code.ShellRunner)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
