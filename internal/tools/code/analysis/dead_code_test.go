@@ -48,9 +48,9 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Dead Function",
 			files: map[string]string{
-				"go.mod":      "module example.com/test\n\ngo 1.24",
+				"go.mod":       "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Dead() {}\nfunc Alive() {}\n",
-				"main.go":     "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Alive() }",
+				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Alive() }",
 			},
 			expected: []OrphanReport{
 				{Symbol: "Dead", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
@@ -59,10 +59,10 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Effectively Private Symbol",
 			files: map[string]string{
-				"go.mod":      "module example.com/test\n\ngo 1.24",
+				"go.mod":       "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Private() {}\n",
 				"pkg1/util.go": "package pkg1\n\nfunc Use() { Private() }\n",
-				"main.go":     "package main\n\nfunc main() {}",
+				"main.go":      "package main\n\nfunc main() {}",
 			},
 			expected: []OrphanReport{
 				{Symbol: "Private", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
@@ -72,18 +72,18 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Validly Used Symbol",
 			files: map[string]string{
-				"go.mod":      "module example.com/test\n\ngo 1.24",
+				"go.mod":       "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Valid() {}\n",
-				"main.go":     "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Valid() }\n",
+				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Valid() }\n",
 			},
 			expected: nil,
 		},
 		{
 			name: "Dead Method",
 			files: map[string]string{
-				"go.mod":      "module example.com/test\n\ngo 1.24",
+				"go.mod":       "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go": "package pkg1\n\ntype S struct{}\nfunc (s S) DeadMethod() {}\n",
-				"main.go":     "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
+				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
 			},
 			expected: []OrphanReport{
 				{Symbol: "DeadMethod", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "DEAD"},
@@ -92,7 +92,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Internal Test Reference",
 			files: map[string]string{
-				"go.mod":           "module example.com/test\n\ngo 1.24",
+				"go.mod":            "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc InternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1\n\nimport \"testing\"\n\nfunc TestInternal(t *testing.T) { InternalTestOnly() }\n",
 			},
@@ -103,7 +103,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "External Test Reference",
 			files: map[string]string{
-				"go.mod":           "module example.com/test\n\ngo 1.24",
+				"go.mod":            "module example.com/test\n\ngo 1.24",
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc ExternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1_test\n\nimport (\n\t\"testing\"\n\t\"example.com/test/pkg1\"\n)\n\nfunc TestExternal(t *testing.T) { pkg1.ExternalTestOnly() }\n",
 			},
@@ -151,7 +151,7 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 	require.NoError(t, err)
 
 	files := map[string]string{
-		"go.mod":      "module example.com/test\n\ngo 1.24",
+		"go.mod":       "module example.com/test\n\ngo 1.24",
 		"pkg1/pkg1.go": "package pkg1\n\nfunc Dead() {}\n",
 		"pkg2/pkg2.go": "package pkg2\n\nfunc Dead() {}\n",
 	}
@@ -185,7 +185,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 	require.NoError(t, err)
 
 	files := map[string]string{
-		"go.mod": "module example.com/test\n\ngo 1.24",
+		"go.mod":  "module example.com/test\n\ngo 1.24",
 		"main.go": "package main\n\nfunc main() { syntax error }",
 	}
 
