@@ -55,16 +55,16 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 	_, err := os.Stat(historyPath)
 	require.True(t, os.IsNotExist(err), "global_costs.json should not exist initially")
 
-	// 6. Call getCostSummary(ctx, false).
+	// 6. Call getCostSummary(ctx, costSummaryArgs{Billing: false}).
 	// This should trigger async recovery.
 	ctx := context.Background()
-	initialSummary, err := m.getCostSummary(ctx, false)
+	initialSummary, err := m.getCostSummary(ctx, costSummaryArgs{Billing: false})
 	require.NoError(t, err)
 	require.Contains(t, initialSummary, "Cost history ledger is missing")
 
 	// 7. Assertion: Implement a require.Eventually or simple polling loop.
 	require.Eventually(t, func() bool {
-		summary, err := m.getCostSummary(ctx, false)
+		summary, err := m.getCostSummary(ctx, costSummaryArgs{Billing: false})
 		if err != nil {
 			return false
 		}

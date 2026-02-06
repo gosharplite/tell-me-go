@@ -443,11 +443,18 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	}
 
 	var startFilter, endFilter time.Time
+	// Determine the target location early
+	location := time.Local
+	billingZone := time.FixedZone("UTC-8", -8*3600)
+	if args.Billing {
+		location = billingZone
+	}
+
 	if args.StartDate != "" {
-		startFilter, _ = time.Parse("2006-01-02", args.StartDate)
+		startFilter, _ = time.ParseInLocation("2006-01-02", args.StartDate, location)
 	}
 	if args.EndDate != "" {
-		if end, err := time.Parse("2006-01-02", args.EndDate); err == nil {
+		if end, err := time.ParseInLocation("2006-01-02", args.EndDate, location); err == nil {
 			endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
 		}
 	}
@@ -461,18 +468,13 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	intervalTotals := make(map[string]float64)
 	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
 
-	// Define the Google Billing timezone (typically PST/PDT)
-	// Using a fixed -8 offset is safer than a hardcoded subtraction
-	// if we can't load "America/Los_Angeles" from the system database.
-	billingZone := time.FixedZone("UTC-8", -8*3600)
-
 	for _, r := range history {
 		ts := r.Timestamp
 		if ts.IsZero() {
 			ts, _ = time.Parse("2006-01-02", r.Date)
 		}
 
-		// Apply range filter (in UTC for consistency)
+		// Apply range filter
 		if !startFilter.IsZero() && ts.Before(startFilter) {
 			continue
 		}
@@ -481,12 +483,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 		}
 
 		// Determine the key for aggregation
-		var effectiveKey string
-		if args.Billing {
-			effectiveKey = ts.In(billingZone).Format(format)
-		} else {
-			effectiveKey = ts.UTC().Format(format)
-		}
+		effectiveKey := ts.In(location).Format(format)
 
 		intervalTotals[effectiveKey] += r.TotalCost
 		u := intervalUsage[effectiveKey]

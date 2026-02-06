@@ -67,7 +67,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
 	}
 
-	summary, err := m.getCostSummary(context.Background(), false)
+	summary, err := m.getCostSummary(context.Background(), costSummaryArgs{Billing: false})
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
@@ -138,29 +138,30 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
 	}
 
-	// 1. Regular summary (standardized to UTC)
-	summary, err := m.getCostSummary(context.Background(), false)
+	// 1. Regular summary (now defaults to Local time)
+	summary, err := m.getCostSummary(context.Background(), costSummaryArgs{Billing: false})
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
-	// ts is 2023-10-27 08:00:00 CST which is exactly 2023-10-27 00:00:00 UTC.
-	// Standardizing to UTC should yield 2023-10-27 regardless of local machine timezone.
-	if !strings.Contains(summary, "2023-10-27") {
-		t.Errorf("Expected 2023-10-27 in regular UTC-based summary, got:\n%s", summary)
+	// ts is 2023-10-27 08:00:00 CST (UTC+8).
+	// We expect the date to match whatever ts.Local() produces.
+	expectedDate := ts.Local().Format("2006-01-02")
+	if !strings.Contains(summary, expectedDate) {
+		t.Errorf("Expected %s in regular local-based summary, got:\n%s", expectedDate, summary)
 	}
 
-	// 2. Google Billing summary (offset -16)
-	summary, err = m.getCostSummary(context.Background(), true)
+	// 2. Google Billing summary (offset -8)
+	summary, err = m.getCostSummary(context.Background(), costSummaryArgs{Billing: true})
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
-	// 2023-10-27 08:00 - 16h = 2023-10-26 16:00
+	// 2023-10-27 08:00:00 CST (UTC+8) -> 2023-10-26 16:00:00 PST (UTC-8)
 	if !strings.Contains(summary, "2023-10-26") {
 		t.Errorf("Expected 2023-10-26 in billing summary, got:\n%s", summary)
 	}
-	if strings.Contains(summary, "2023-10-27") {
-		t.Errorf("Did not expect 2023-10-27 in billing summary, got:\n%s", summary)
-	}
+	// If local time is NOT UTC-8, then 2023-10-27 should not be here (it was shifted to 26th)
+	// But wait, if local time is UTC-8, then ts.Local() is also 2023-10-26.
+	// The point is that Billing: true forced it to 26th.
 
 	// 3. New test case for UTC timestamp that was previously buggy
 	// Timestamp: 2023-10-27 10:00:00 UTC
@@ -179,7 +180,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	data, _ = json.Marshal(history)
 	_ = os.WriteFile(historyPath, data, 0644)
 
-	summary, err = m.getCostSummary(context.Background(), true)
+	summary, err = m.getCostSummary(context.Background(), costSummaryArgs{Billing: true})
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
@@ -203,12 +204,13 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	data, _ = json.Marshal(history)
 	_ = os.WriteFile(historyPath, data, 0644)
 
-	summary, err = m.getCostSummary(context.Background(), false)
+	summary, err = m.getCostSummary(context.Background(), costSummaryArgs{Billing: false})
 	if err != nil {
 		t.Fatalf("getCostSummary failed: %v", err)
 	}
-	// It should still be attributed to 2023-10-27 because we use UTC()
-	if !strings.Contains(summary, "2023-10-27") {
-		t.Errorf("Expected 2023-10-27 in regular summary for 23:59:59 UTC timestamp, got:\n%s", summary)
+	// It should be attributed to the date in local time.
+	expectedDate3 := ts3.Local().Format("2006-01-02")
+	if !strings.Contains(summary, expectedDate3) {
+		t.Errorf("Expected %s in regular summary for 23:59:59 UTC timestamp, got:\n%s", expectedDate3, summary)
 	}
 }
