@@ -71,7 +71,10 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	}
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return "", nil, fmt.Errorf("summarization request failed: %w", err)
+		if llm.IsTransient(err) {
+			return "", nil, fmt.Errorf("%w: summarization failed due to transient issue", err)
+		}
+		return "", nil, fmt.Errorf("%w: summarization failed permanently", err)
 	}
 
 	// Emit metrics to the event bus

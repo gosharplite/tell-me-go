@@ -6,11 +6,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/api"
@@ -171,9 +173,12 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 		t.Fatal("expected error due to safety check, got nil")
 	}
 
-	expectedErr := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
-	if err.Error() != expectedErr {
-		t.Errorf("expected error %q, got %q", expectedErr, err.Error())
+	expectedPrefix := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
+	if !strings.HasPrefix(err.Error(), expectedPrefix) {
+		t.Errorf("expected error prefix %q, got %q", expectedPrefix, err.Error())
+	}
+	if !errors.Is(err, llm.ErrContextLimitExceeded) {
+		t.Errorf("expected error to wrap llm.ErrContextLimitExceeded")
 	}
 }
 

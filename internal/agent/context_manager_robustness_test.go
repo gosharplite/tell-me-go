@@ -311,3 +311,91 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	ctx := context.Background()
+
+	// Initial history: 4 turns (8 messages)
+	for i := 0; i < 4; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+	}
+
+	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
+
+	// Case 1: Safe Concurrent Append
+	// We summarize first 2 turns. While summarization is happening, we append turn 5.
+	// Since the first 2 turns are unchanged, summarization should succeed.
+	
+	summarizeStarted := make(chan struct{})
+	summarizeProceed := make(chan struct{})
+
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			close(summarizeStarted)
+			<-summarizeProceed
+			return "Safe Summary", &llm.Metrics{}, nil
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var summaryErr error
+	go func() {
+		defer wg.Done()
+		_, _, summaryErr = cm.SummarizeRange(ctx, 2, "")
+	}()
+
+	<-summarizeStarted
+	// Concurrent append
+	_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
+	close(summarizeProceed)
+	wg.Wait()
+
+	if summaryErr != nil {
+		t.Errorf("Expected safe summarization to succeed even with concurrent append, got: %v", summaryErr)
+	}
+
+	// Case 2: Unsafe Concurrent Modification
+	// We summarize first 2 turns. While happening, we modify turn 1.
+	// This should trigger the abort logic.
+
+	summarizeStarted = make(chan struct{})
+	summarizeProceed = make(chan struct{})
+
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			close(summarizeStarted)
+			<-summarizeProceed
+			return "Unsafe Summary", &llm.Metrics{}, nil
+		},
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _, summaryErr = cm.SummarizeRange(ctx, 2, "")
+	}()
+
+	<-summarizeStarted
+	// Concurrent modification of history prefix being summarized
+	current := hManager.GetContents()
+	current[0].Parts[0].Text = "modified"
+	_ = hManager.SetContents(ctx, current)
+	// We need to trigger a version bump in CM too if it's not watching hManager directly
+	// Actually cm.version is internal and only bumped by cm methods.
+	// Since we used hManager.SetContents directly, cm.version didn't bump,
+	// BUT isContentEqual check in cm.SummarizeRange should still catch it.
+	
+	close(summarizeProceed)
+	wg.Wait()
+
+	if summaryErr == nil {
+		t.Error("Expected summarization to abort when history content changed, but it succeeded")
+	} else if !strings.Contains(summaryErr.Error(), "history content changed") {
+		t.Errorf("Expected 'history content changed' error, got: %v", summaryErr)
+	}
+}

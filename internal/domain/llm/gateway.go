@@ -19,6 +19,21 @@ var (
 	ErrAuth = errors.New("authentication error")
 )
 
+// IsTransient returns true if the error is ErrTransient.
+func IsTransient(err error) bool {
+	return errors.Is(err, ErrTransient)
+}
+
+// IsTerminal returns true if the error is ErrTerminal.
+func IsTerminal(err error) bool {
+	return errors.Is(err, ErrTerminal)
+}
+
+// IsAuth returns true if the error is ErrAuth.
+func IsAuth(err error) bool {
+	return errors.Is(err, ErrAuth)
+}
+
 // LLMGateway defines the interface for resilient AI model interactions.
 type LLMGateway interface {
 	// Generate handles auth retries and returns a content stream and a finalizer.
