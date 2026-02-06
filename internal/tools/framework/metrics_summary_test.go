@@ -214,3 +214,124 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 		t.Errorf("Expected %s in regular summary for 23:59:59 UTC timestamp, got:\n%s", expectedDate3, summary)
 	}
 }
+
+func TestGetCostSummary_Filters(t *testing.T) {
+	tempDir := t.TempDir()
+	globalDir := tempDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	// Use Billing: true (UTC-8) for predictable results regardless of host TZ
+	tz := time.FixedZone("UTC-8", -8*3600)
+
+	// 2023-10-25 10:30 UTC-8
+	ts1 := time.Date(2023, 10, 25, 10, 30, 0, 0, tz)
+	// 2023-10-25 11:15 UTC-8
+	ts2 := time.Date(2023, 10, 25, 11, 15, 0, 0, tz)
+	// 2023-10-26 23:59 UTC-8
+	ts3 := time.Date(2023, 10, 26, 23, 59, 0, 0, tz)
+	// 2023-10-27 00:01 UTC-8
+	ts4 := time.Date(2023, 10, 27, 0, 1, 0, 0, tz)
+
+	history := []SessionCostRecord{
+		{Date: "2023-10-25", Timestamp: ts1, Session: "s1", TotalCost: 0.1, Usage: pricing.UsageStats{PromptTokens: 100}},
+		{Date: "2023-10-25", Timestamp: ts2, Session: "s2", TotalCost: 0.2, Usage: pricing.UsageStats{PromptTokens: 200}},
+		{Date: "2023-10-26", Timestamp: ts3, Session: "s3", TotalCost: 0.3, Usage: pricing.UsageStats{PromptTokens: 300}},
+		{Date: "2023-10-27", Timestamp: ts4, Session: "s4", TotalCost: 0.4, Usage: pricing.UsageStats{PromptTokens: 400}},
+	}
+	data, _ := json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	m := &metricsManager{
+		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
+	}
+
+	tests := []struct {
+		name      string
+		args      costSummaryArgs
+		wantRows  []string
+		wantTotal string
+		wantErr   bool
+	}{
+		{
+			name: "StartDate only",
+			args: costSummaryArgs{StartDate: "2023-10-26", Billing: true},
+			wantRows: []string{
+				"2023-10-27",
+				"2023-10-26",
+			},
+			wantTotal: "$0.7000",
+		},
+		{
+			name: "EndDate only",
+			args: costSummaryArgs{EndDate: "2023-10-25", Billing: true},
+			wantRows: []string{
+				"2023-10-25",
+			},
+			wantTotal: "$0.3000",
+		},
+		{
+			name: "Range filter",
+			args: costSummaryArgs{StartDate: "2023-10-25", EndDate: "2023-10-26", Billing: true},
+			wantRows: []string{
+				"2023-10-26",
+				"2023-10-25",
+			},
+			wantTotal: "$0.6000",
+		},
+		{
+			name: "Interval hour",
+			args: costSummaryArgs{StartDate: "2023-10-25", EndDate: "2023-10-25", Interval: "hour", Billing: true},
+			wantRows: []string{
+				"2023-10-25 11:00",
+				"2023-10-25 10:00",
+			},
+			wantTotal: "$0.3000",
+		},
+		{
+			name: "Inclusive EndDate boundary",
+			args: costSummaryArgs{StartDate: "2023-10-27", EndDate: "2023-10-27", Billing: true},
+			wantRows: []string{
+				"2023-10-27",
+			},
+			wantTotal: "$0.4000",
+		},
+		{
+			name:    "Invalid StartDate",
+			args:    costSummaryArgs{StartDate: "invalid"},
+			wantErr: true,
+		},
+		{
+			name:    "Invalid EndDate",
+			args:    costSummaryArgs{EndDate: "invalid"},
+			wantErr: true,
+		},
+		{
+			name:    "Invalid Interval",
+			args:    costSummaryArgs{Interval: "month"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := m.getCostSummary(context.Background(), tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getCostSummary() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+
+			for _, row := range tt.wantRows {
+				if !strings.Contains(res, row) {
+					t.Errorf("expected row %q not found in summary:\n%s", row, res)
+				}
+			}
+			if !strings.Contains(res, tt.wantTotal) {
+				t.Errorf("expected grand total %q not found in summary:\n%s", tt.wantTotal, res)
+			}
+		})
+	}
+}
+

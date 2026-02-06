@@ -451,12 +451,22 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	}
 
 	if args.StartDate != "" {
-		startFilter, _ = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		var err error
+		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		if err != nil {
+			return "", fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
+		}
 	}
 	if args.EndDate != "" {
-		if end, err := time.ParseInLocation("2006-01-02", args.EndDate, location); err == nil {
-			endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
+		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
+		if err != nil {
+			return "", fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
 		}
+		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
+	}
+
+	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
+		return "", fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
 	}
 
 	format := "2006-01-02"
