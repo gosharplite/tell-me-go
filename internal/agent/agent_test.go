@@ -740,3 +740,70 @@ func (m *mockCostTracker) AccumulateAndReturn(metrics llm.Metrics) float64 {
 	return 0
 }
 func (m *mockCostTracker) Warmup() {}
+
+func TestAgent_CoverageEnhancement(t *testing.T) {
+	sm := &MockSecurityManager{AllowAll: true}
+	reg := registry.New()
+	mockClient := &MockLLMClient{}
+
+	t.Run("WithPricing", func(t *testing.T) {
+		overrides := map[string]pricing.ModelPricing{
+			"model-x": {Miss: 0.01, Comp: 0.02},
+		}
+		a := New(mockClient, nil, reg, sm, false, WithPricing("model-x", "mode-y", overrides))
+
+		if a.config.Model != "model-x" {
+			t.Errorf("expected model-x, got %s", a.config.Model)
+		}
+		if a.config.Mode != "mode-y" {
+			t.Errorf("expected mode-y, got %s", a.config.Mode)
+		}
+	})
+
+	t.Run("WithSessionCostTracker", func(t *testing.T) {
+		tracker := &mockCostTracker{}
+		a := New(mockClient, nil, reg, sm, false, WithSessionCostTracker(tracker))
+
+		if a.tracker != tracker {
+			t.Error("tracker not correctly assigned")
+		}
+	})
+
+	t.Run("WithSessionCostTracker_AfterInit", func(t *testing.T) {
+		tracker := &mockCostTracker{}
+		a := New(mockClient, nil, reg, sm, false)
+		// Call it manually on an initialized agent to cover the Reconfigure path
+		opt := WithSessionCostTracker(tracker)
+		opt(a)
+
+		if a.tracker != tracker {
+			t.Error("tracker not correctly assigned")
+		}
+		if a.engine.costTracker != tracker {
+			t.Error("engine tracker not correctly updated")
+		}
+	})
+
+	t.Run("SetPrunedTurns", func(t *testing.T) {
+		a := New(mockClient, nil, reg, sm, false)
+		a.SetPrunedTurns(7)
+
+		if a.strategy.prunedTurns != 7 {
+			t.Errorf("expected prunedTurns 7, got %d", a.strategy.prunedTurns)
+		}
+	})
+
+	t.Run("LegacyConfigPaths", func(t *testing.T) {
+		a := New(mockClient, nil, reg, sm, false,
+			WithMainConfigPath("/tmp/main.yaml"),
+			WithPersistentConfigPath("/tmp/pers.json"),
+		)
+
+		if a.config.MainConfigPath != "/tmp/main.yaml" {
+			t.Errorf("expected /tmp/main.yaml, got %s", a.config.MainConfigPath)
+		}
+		if a.config.PersistentConfigPath != "/tmp/pers.json" {
+			t.Errorf("expected /tmp/pers.json, got %s", a.config.PersistentConfigPath)
+		}
+	})
+}
