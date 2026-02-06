@@ -280,6 +280,27 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, ana.AnalyzeSequenceFlow)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "dead_code_graph",
+		Description: "Identify exported symbols with zero inbound references within the module to find technical debt.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to search (defaults to '.')",
+				},
+				"excluded_packages": {
+					Type: "ARRAY",
+					Items: &tools.Schema{
+						Type: "STRING",
+					},
+					Description: "Patterns of packages to ignore.",
+				},
+			},
+		},
+	}, ana.FindOrphanedSymbols, registry.ToolOptions{LongRunning: true})
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "move_definition",
 		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
 		Parameters: &tools.Schema{
