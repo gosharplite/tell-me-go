@@ -33,16 +33,16 @@ func (m *integrationMockChatter) Chat(ctx context.Context, s *agent.Session, pro
 	}
 	return nil
 }
-func (m *integrationMockChatter) SetLogFile(path string)                                   {}
-func (m *integrationMockChatter) SetLimits(toolTurns, historyTokens, historyTurns int)     {}
-func (m *integrationMockChatter) SetHardBudgetLimit(limit float64)                         {}
-func (m *integrationMockChatter) SetTieredThreshold(threshold int)                         {}
-func (m *integrationMockChatter) SetPrunedTurns(n int)                                     {}
-func (m *integrationMockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int)     {}
-func (m *integrationMockChatter) SetPersistentConfigPath(path string)                      {}
-func (m *integrationMockChatter) SetMainConfigPath(path string)                            {}
-func (m *integrationMockChatter) SetSystemInstructions(instr string)                       {}
-func (m *integrationMockChatter) Subscribe(sub func(events.Event))                         {}
+func (m *integrationMockChatter) SetLogFile(path string)                               {}
+func (m *integrationMockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
+func (m *integrationMockChatter) SetHardBudgetLimit(limit float64)                     {}
+func (m *integrationMockChatter) SetTieredThreshold(threshold int)                     {}
+func (m *integrationMockChatter) SetPrunedTurns(n int)                                 {}
+func (m *integrationMockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
+func (m *integrationMockChatter) SetPersistentConfigPath(path string)                  {}
+func (m *integrationMockChatter) SetMainConfigPath(path string)                        {}
+func (m *integrationMockChatter) SetSystemInstructions(instr string)                   {}
+func (m *integrationMockChatter) Subscribe(sub func(events.Event))                     {}
 func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 	return &integrationMockCostTracker{}
 }
@@ -53,10 +53,10 @@ func (m *integrationMockCostTracker) GetTotalCost(ctx context.Context) float64 {
 func (m *integrationMockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0
 }
-func (m *integrationMockCostTracker) Accumulate(mt llm.Metrics)                   {}
-func (m *integrationMockCostTracker) CalculateCost(mt llm.Metrics) float64        { return 0 }
+func (m *integrationMockCostTracker) Accumulate(mt llm.Metrics)                  {}
+func (m *integrationMockCostTracker) CalculateCost(mt llm.Metrics) float64       { return 0 }
 func (m *integrationMockCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 { return 0 }
-func (m *integrationMockCostTracker) Warmup()                                     {}
+func (m *integrationMockCostTracker) Warmup()                                    {}
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
