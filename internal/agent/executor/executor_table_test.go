@@ -562,6 +562,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 		calls     []*llm.FunctionCall
 		results   []tools.ToolResult
 		wantParts int
+		verify    func(t *testing.T, parts []*llm.Part)
 	}{
 		{
 			name:  "Single Tool with Binary",
@@ -585,6 +586,54 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 			}},
 			wantParts: 3,
 		},
+		{
+			name:  "Multi-blob Interleaving and Ordering",
+			calls: []*llm.FunctionCall{{Name: "camera_snapshot"}},
+			results: []tools.ToolResult{{
+				Text: "Captured 2 photos",
+				BinaryData: []tools.BinaryData{
+					{MIMEType: "image/jpeg", Data: []byte("photo1")},
+					{MIMEType: "image/jpeg", Data: []byte("photo2")},
+				},
+			}},
+			wantParts: 3,
+			verify: func(t *testing.T, parts []*llm.Part) {
+				if parts[0].FunctionResponse == nil {
+					t.Fatal("Expected FunctionResponse as first part")
+				}
+				if parts[0].FunctionResponse.Response["result"] != "Captured 2 photos" {
+					t.Errorf("Expected 'Captured 2 photos', got %v", parts[0].FunctionResponse.Response["result"])
+				}
+				if string(parts[1].InlineData.Data) != "photo1" {
+					t.Errorf("Expected 'photo1', got %q", parts[1].InlineData.Data)
+				}
+				if string(parts[2].InlineData.Data) != "photo2" {
+					t.Errorf("Expected 'photo2', got %q", parts[2].InlineData.Data)
+				}
+			},
+		},
+		{
+			name:  "Binary Data with No Text",
+			calls: []*llm.FunctionCall{{Name: "only_binary"}},
+			results: []tools.ToolResult{{
+				Text: "",
+				BinaryData: []tools.BinaryData{
+					{MIMEType: "image/png", Data: []byte("data")},
+				},
+			}},
+			wantParts: 2,
+			verify: func(t *testing.T, parts []*llm.Part) {
+				if parts[0].FunctionResponse == nil {
+					t.Fatal("Expected FunctionResponse as first part even with empty text")
+				}
+				if parts[0].FunctionResponse.Response["result"] != "" {
+					t.Errorf("Expected empty result string, got %v", parts[0].FunctionResponse.Response["result"])
+				}
+				if string(parts[1].InlineData.Data) != "data" {
+					t.Errorf("Expected 'data', got %q", parts[1].InlineData.Data)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -593,6 +642,9 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 
 			if len(content.Parts) != tt.wantParts {
 				t.Errorf("Got %d parts, want %d", len(content.Parts), tt.wantParts)
+			}
+			if tt.verify != nil {
+				tt.verify(t, content.Parts)
 			}
 		})
 	}
