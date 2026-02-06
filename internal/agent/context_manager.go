@@ -290,5 +290,3 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 
 	return nil
 }
-
-

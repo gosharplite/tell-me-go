@@ -1120,7 +1120,7 @@ func TestApplySummaryToHistory_Comprehensive(t *testing.T) {
 			},
 		},
 		{
-			name: "Empty History (Edge Case)",
+			name:      "Empty History (Edge Case)",
 			history:   []*llm.Content{},
 			start:     0,
 			end:       0,

@@ -30,7 +30,7 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
-func (m *mockHistoryManager) Snapshot()                     {}
+func (m *mockHistoryManager) Snapshot()                    {}
 func (m *mockHistoryManager) Rollback(ctx context.Context) {}
 func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
 	m.contents = append(m.contents, content)
