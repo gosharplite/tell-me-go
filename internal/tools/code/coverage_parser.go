@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -82,37 +81,42 @@ func (b *UncoveredBlock) Classify() {
 	}
 }
 
-// ExtractCode reads the source file and extracts the lines for the block.
-func (b *UncoveredBlock) ExtractCode() error {
-	f, err := os.Open(b.File)
-	if err != nil {
-		return err
+// extractFromLines extracts a range of lines from a slice, including one line of context before.
+func extractFromLines(lines []string, start, end int) string {
+	if len(lines) == 0 {
+		return ""
 	}
-	defer f.Close()
 
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	currentLine := 0
-	startWithContext := b.Start
+	startWithContext := start
 	if startWithContext > 1 {
 		startWithContext--
 	}
 
-	for scanner.Scan() {
-		currentLine++
-		if currentLine >= startWithContext && currentLine <= b.End {
-			lines = append(lines, scanner.Text())
-		}
-		if currentLine > b.End {
-			break
-		}
+	// 1-based to 0-based conversion
+	startIdx := startWithContext - 1
+	endIdx := end
+
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if endIdx > len(lines) {
+		endIdx = len(lines)
+	}
+	if startIdx >= endIdx {
+		return ""
 	}
 
-	if err := scanner.Err(); err != nil {
+	return strings.Join(lines[startIdx:endIdx], "\n")
+}
+
+// ExtractCode reads the source file and extracts the lines for the block.
+func (b *UncoveredBlock) ExtractCode() error {
+	content, err := os.ReadFile(b.File)
+	if err != nil {
 		return err
 	}
-
-	b.Code = strings.Join(lines, "\n")
+	lines := strings.Split(string(content), "\n")
+	b.Code = extractFromLines(lines, b.Start, b.End)
 	return nil
 }
 
@@ -123,44 +127,23 @@ func ShellRunner(name string, arg ...string) ([]byte, error) {
 	return exec.Command(name, arg...).CombinedOutput()
 }
 
-func getModuleName() string {
-	// Search for go.mod in current and parent directories
-	dir, err := os.Getwd()
+func getModuleName(run commandRunner) string {
+	out, err := run("go", "list", "-m")
 	if err != nil {
 		return ""
 	}
-
-	for {
-		goModPath := filepath.Join(dir, "go.mod")
-		data, err := os.ReadFile(goModPath)
-		if err == nil {
-			lines := strings.Split(string(data), "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "module ") {
-					mod := strings.TrimPrefix(line, "module ")
-					if mod != "" && !strings.HasSuffix(mod, "/") {
-						mod += "/"
-					}
-					return mod
-				}
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	mod := strings.TrimSpace(string(out))
+	if mod != "" && !strings.HasSuffix(mod, "/") {
+		mod += "/"
 	}
-	return ""
+	return mod
 }
 
 // ParseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
-func ParseCoverageProfile(r io.Reader) ([]UncoveredBlock, error) {
+func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, error) {
 	var blocks []UncoveredBlock
 	scanner := bufio.NewScanner(r)
-	modulePrefix := getModuleName()
+	modulePrefix := getModuleName(run)
 
 	// Skip the first line (mode: ...)
 	if !scanner.Scan() {
@@ -245,7 +228,7 @@ func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBloc
 	defer os.Remove(tempPath)
 	f.Close()
 
-	_, err = run("go", "test", "-coverprofile="+tempPath, packagePath)
+	_, _ = run("go", "test", "-coverprofile="+tempPath, packagePath)
 	// We ignore the error from run() because even if tests fail,
 	// the coverage profile might still be generated for the parts that did run.
 
@@ -263,15 +246,26 @@ func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBloc
 	}
 	defer cf.Close()
 
-	blocks, err := ParseCoverageProfile(cf)
+	blocks, err := ParseCoverageProfile(cf, run)
 	if err != nil {
 		return nil, err
 	}
 
+	fileCache := make(map[string][]string)
 	for i := range blocks {
-		if err := blocks[i].ExtractCode(); err != nil {
-			blocks[i].Code = "[Error extracting code: " + err.Error() + "]"
+		lines, ok := fileCache[blocks[i].File]
+		if !ok {
+			content, err := os.ReadFile(blocks[i].File)
+			if err != nil {
+				blocks[i].Code = "[Error reading file: " + err.Error() + "]"
+				blocks[i].Classify()
+				continue
+			}
+			lines = strings.Split(string(content), "\n")
+			fileCache[blocks[i].File] = lines
 		}
+
+		blocks[i].Code = extractFromLines(lines, blocks[i].Start, blocks[i].End)
 		blocks[i].Classify()
 	}
 

@@ -17,7 +17,13 @@ github.com/gosharplite/tell-me-go/internal/service/user.go:88.2,90.12 2 1
 github.com/gosharplite/tell-me-go/internal/service/auth.go:10.5,12.10 4 0
 `
 	r := strings.NewReader(input)
-	blocks, err := ParseCoverageProfile(r)
+	mockRunner := func(name string, arg ...string) ([]byte, error) {
+		if name == "go" && len(arg) > 1 && arg[0] == "list" && arg[1] == "-m" {
+			return []byte("github.com/gosharplite/tell-me-go"), nil
+		}
+		return nil, nil
+	}
+	blocks, err := ParseCoverageProfile(r, mockRunner)
 	if err != nil {
 		t.Fatalf("ParseCoverageProfile failed: %v", err)
 	}
@@ -154,8 +160,8 @@ func TestGetDetailedCoverage_Mocked(t *testing.T) {
 		t.Fatalf("GetDetailedCoverage failed: %v", err)
 	}
 
-	// We expect 1 block from the mock profile. 
-	// Note: ExtractCode will fail because main.go likely doesn't exist in the current test context 
+	// We expect 1 block from the mock profile.
+	// Note: ExtractCode will fail because main.go likely doesn't exist in the current test context
 	// but ExtractCode error is ignored in GetDetailedCoverage loop.
 	if len(blocks) != 1 {
 		t.Errorf("expected 1 block, got %d", len(blocks))
@@ -194,16 +200,16 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 
 	// We need to make sure the "code" contains "err" for classification to pick up ERROR_HANDLING
 	// But GetDetailedCoverage calls ExtractCode, which will fail to find these files.
-	// So we'll have to rely on the fact that without file content, they might not be classified as we want 
+	// So we'll have to rely on the fact that without file content, they might not be classified as we want
 	// OR we create the files in a temp dir and point to them.
-	
-	// Better: Use GetDetailedCoverageReport but mock the runner to provide a profile, 
-	// then we might need to manually adjust blocks if we want to test the report formatting precisely 
+
+	// Better: Use GetDetailedCoverageReport but mock the runner to provide a profile,
+	// then we might need to manually adjust blocks if we want to test the report formatting precisely
 	// without creating many files.
-	
-	// Actually, let's test the formatting logic by calling a version that doesn't run the command 
+
+	// Actually, let's test the formatting logic by calling a version that doesn't run the command
 	// if we had one. Since we don't, we'll do our best with the runner.
-	
+
 	report, err := GetDetailedCoverageReport("./...", mockRunner)
 	if err != nil {
 		t.Fatalf("GetDetailedCoverageReport failed: %v", err)
@@ -230,12 +236,12 @@ func TestGetDetailedCoverageReport_Specifics(t *testing.T) {
 	// Test the formatting logic directly by constructing blocks
 	// Since we can't inject blocks directly into the report function without another refactor,
 	// let's ensure our mock actually produces these categories by having a better mock runner.
-	
+
 	tmpDir := t.TempDir()
 	f1Path := filepath.Join(tmpDir, "internal/service/user.go")
 	_ = os.MkdirAll(filepath.Dir(f1Path), 0755)
 	_ = os.WriteFile(f1Path, []byte("if err != nil"), 0644)
-	
+
 	f2Path := filepath.Join(tmpDir, "internal/service/meta.go")
 	_ = os.MkdirAll(filepath.Dir(f2Path), 0755)
 	_ = os.WriteFile(f2Path, []byte("package meta"), 0644)
@@ -282,12 +288,12 @@ func TestShellRunner(t *testing.T) {
 }
 
 func TestGetDetailedCoverage_Error(t *testing.T) {
-	// Test temp file creation failure (mocking os.CreateTemp is hard, 
+	// Test temp file creation failure (mocking os.CreateTemp is hard,
 	// but we can test the runner error)
 	errRunner := func(name string, arg ...string) ([]byte, error) {
 		return nil, os.ErrPermission
 	}
-	
+
 	_, err := GetDetailedCoverage("./...", errRunner)
 	if err == nil {
 		t.Error("expected error when runner fails to produce profile, got nil")
