@@ -172,54 +172,20 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, NewAgentError(ErrLogic, "summarizer not initialized", nil)
 	}
 
-	cm.mu.Lock()
-	contents := cm.History.GetContents()
-
-	turns := groupTurns(contents)
-	totalTurns := len(turns)
-
-	if totalTurns < 1 {
-		cm.mu.Unlock()
+	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(numTurns)
+	if err != nil {
+		return "", nil, err
+	}
+	if subset == nil {
 		return "History is too short to summarize yet.", nil, nil
 	}
 
-	// Clamp to available turns, but leave at least 1 turn if possible
-	if numTurns >= totalTurns {
-		numTurns = totalTurns - 1
-	}
-
-	if numTurns < 1 {
-		cm.mu.Unlock()
-		return "History is too short to summarize yet.", nil, nil
-	}
-
-	// Calculate endIdx from logical turns
-	endIdx := 0
-	for i := 0; i < numTurns; i++ {
-		endIdx += len(turns[i])
-	}
-
-	// Deep clone the subset to ensure mutation safety during the slow LLM call
-	subset := make([]*llm.Content, endIdx)
-	for i := 0; i < endIdx; i++ {
-		subset[i] = contents[i].Clone()
-	}
-
-	tokens := cm.Strategy.EstimateTokens(subset)
-
-	window := cm.Strategy.GetContextWindow()
-	safetyLimit := int(float64(window) * 0.9)
-	if tokens > safetyLimit {
-		cm.mu.Unlock()
-		return "", nil, NewAgentError(ErrLogic, fmt.Sprintf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit), llm.ErrContextLimitExceeded)
-	}
-
+	actualTurns := len(groupTurns(subset))
 	if cm.Events != nil {
 		cm.Events.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", numTurns, tokens),
+			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", actualTurns, tokens),
 		})
 	}
-	cm.mu.Unlock()
 
 	// Slow LLM call outside the lock
 	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
@@ -231,33 +197,83 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, NewAgentError(category, "summarization failed", err)
 	}
 
+	if err := cm.finalizeSummarization(ctx, subset, endIdx, summary); err != nil {
+		return "", nil, err
+	}
+
+	return fmt.Sprintf("Summarized the first %d turns of history.", actualTurns), metrics, nil
+}
+
+func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	contents := cm.History.GetContents()
+	turns := groupTurns(contents)
+	totalTurns := len(turns)
+
+	if totalTurns < 1 {
+		return nil, 0, 0, nil
+	}
+
+	// Clamp to available turns, but leave at least 1 turn if possible
+	if numTurns >= totalTurns {
+		numTurns = totalTurns - 1
+	}
+
+	if numTurns < 1 {
+		return nil, 0, 0, nil
+	}
+
+	// Calculate endIdx from logical turns
+	endIdx = 0
+	for i := 0; i < numTurns; i++ {
+		endIdx += len(turns[i])
+	}
+
+	// Deep clone the subset to ensure mutation safety during the slow LLM call
+	subset = make([]*llm.Content, endIdx)
+	for i := 0; i < endIdx; i++ {
+		subset[i] = contents[i].Clone()
+	}
+
+	tokens = cm.Strategy.EstimateTokens(subset)
+
+	window := cm.Strategy.GetContextWindow()
+	safetyLimit := int(float64(window) * 0.9)
+	if tokens > safetyLimit {
+		return nil, 0, 0, NewAgentError(ErrLogic, fmt.Sprintf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit), llm.ErrContextLimitExceeded)
+	}
+
+	return subset, endIdx, tokens, nil
+}
+
+func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
 	currentContents := cm.History.GetContents()
 	if len(currentContents) < endIdx {
-		return "", nil, NewAgentError(ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
+		return NewAgentError(ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
 		if !currentContents[i].Equal(subset[i]) {
-			return "", nil, NewAgentError(ErrLogic, "summarization aborted: history content changed while summarizing", nil)
+			return NewAgentError(ErrLogic, "summarization aborted: history content changed while summarizing", nil)
 		}
 	}
-	// If they are the same, we can proceed to replace them.
-	contents = currentContents
 
 	// Reconstruct history using the robust helper
-	newHistory := applySummaryToHistory(contents, 0, endIdx, summary)
+	newHistory := applySummaryToHistory(currentContents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
 		category := ErrFatal
 		if IsTransient(err) {
 			category = ErrTransient
 		}
-		return "", nil, NewAgentError(category, "failed to update history after summarization", err)
+		return NewAgentError(category, "failed to update history after summarization", err)
 	}
 
-	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), metrics, nil
+	return nil
 }
 
