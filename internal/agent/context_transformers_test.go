@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1009,4 +1010,159 @@ func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
 			t.Fatalf("expected no error for typed nil registry, got %v", err)
 		}
 	})
+}
+
+func TestApplySummaryToHistory_Comprehensive(t *testing.T) {
+	tests := []struct {
+		name      string
+		history   []*llm.Content
+		start     int
+		end       int
+		summary   string
+		wantRoles []string
+		verify    func(t *testing.T, res []*llm.Content)
+	}{
+		{
+			name: "Merge with previous User",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+			},
+			start:     1,
+			end:       2,
+			summary:   "sum",
+			wantRoles: []string{"user", "model"},
+			verify: func(t *testing.T, res []*llm.Content) {
+				foundU1 := false
+				foundSum := false
+				for _, p := range res[0].Parts {
+					if strings.Contains(p.Text, "u1") {
+						foundU1 = true
+					}
+					if strings.Contains(p.Text, "sum") {
+						foundSum = true
+					}
+				}
+				if !foundU1 || !foundSum {
+					t.Errorf("expected u1 and sum in first message, got parts: %v", res[0].Parts)
+				}
+			},
+		},
+		{
+			name: "Suffix Merging with Model",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+			},
+			start:     0,
+			end:       1,
+			summary:   "sum",
+			wantRoles: []string{"user", "model"},
+			verify: func(t *testing.T, res []*llm.Content) {
+				if !strings.Contains(res[0].Parts[0].Text, "sum") {
+					t.Errorf("expected summary in first message, got %s", res[0].Parts[0].Text)
+				}
+				foundUnderstood := false
+				foundM1 := false
+				for _, p := range res[1].Parts {
+					if strings.Contains(p.Text, "Understood") {
+						foundUnderstood = true
+					}
+					if strings.Contains(p.Text, "m1") {
+						foundM1 = true
+					}
+				}
+				if !foundUnderstood || !foundM1 {
+					t.Errorf("expected Understood and m1 in second message, got parts: %v", res[1].Parts)
+				}
+			},
+		},
+		{
+			name: "Prefix and Suffix Merging combined",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+				{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+			},
+			start:     1,
+			end:       3,
+			summary:   "sum",
+			wantRoles: []string{"user", "model"},
+			verify: func(t *testing.T, res []*llm.Content) {
+				foundU1 := false
+				foundSum := false
+				for _, p := range res[0].Parts {
+					if strings.Contains(p.Text, "u1") {
+						foundU1 = true
+					}
+					if strings.Contains(p.Text, "sum") {
+						foundSum = true
+					}
+				}
+				if !foundU1 || !foundSum {
+					t.Errorf("u1 and sum should be in first message, got parts: %v", res[0].Parts)
+				}
+
+				foundM2 := false
+				foundUnderstood := false
+				for _, p := range res[1].Parts {
+					if strings.Contains(p.Text, "m2") {
+						foundM2 = true
+					}
+					if strings.Contains(p.Text, "Understood") {
+						foundUnderstood = true
+					}
+				}
+				if !foundM2 || !foundUnderstood {
+					t.Errorf("m2 and Understood should be in second message, got parts: %v", res[1].Parts)
+				}
+			},
+		},
+		{
+			name: "Empty History (Edge Case)",
+			history:   []*llm.Content{},
+			start:     0,
+			end:       0,
+			summary:   "sum",
+			wantRoles: []string{"user", "model"},
+		},
+		{
+			name: "Start=0, following is user",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+			},
+			start:     0,
+			end:       0,
+			summary:   "sum",
+			wantRoles: []string{"user", "model", "user"},
+		},
+		{
+			name: "End=Len, previous is model",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+			},
+			start:     2,
+			end:       2,
+			summary:   "sum",
+			wantRoles: []string{"user", "model", "user", "model"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := applySummaryToHistory(tt.history, tt.start, tt.end, tt.summary)
+			var roles []string
+			for _, c := range got {
+				roles = append(roles, c.Role)
+			}
+			if !reflect.DeepEqual(roles, tt.wantRoles) {
+				t.Errorf("roles: expected %v, got %v", tt.wantRoles, roles)
+			}
+			if tt.verify != nil {
+				tt.verify(t, got)
+			}
+		})
+	}
 }
