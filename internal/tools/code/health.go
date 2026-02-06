@@ -246,3 +246,17 @@ func (m *HealthManager) generateRecommendation(test, cov, lint, comp, sec string
 
 	return strings.Join(recs, " ")
 }
+
+func (m *HealthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	path, ok := args["path"].(string)
+	if !ok {
+		path = "./..."
+	}
+
+	report, err := GetDetailedCoverageReport(path, ShellRunner)
+	if err != nil {
+		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
+	}
+
+	return tools.ToolResult{Text: report}, nil
+}
