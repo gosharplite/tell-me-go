@@ -5,7 +5,9 @@ package framework
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
@@ -107,4 +109,66 @@ func TestScratchpadStore(t *testing.T) {
 			t.Error("scratchpad was not persisted")
 		}
 	})
+}
+
+func TestScratchpadStore_Concurrency(t *testing.T) {
+	tempDir := t.TempDir()
+	scratchFile := filepath.Join(tempDir, "stress_scratch.md")
+	store := NewScratchpadStore(fsutil.DefaultFileSystem, scratchFile)
+	ctx := context.Background()
+
+	const workers = 100
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func(val int) {
+			defer wg.Done()
+
+			// 1. Write
+			_, err := store.ManageScratchpad(ctx, map[string]interface{}{
+				"action":  "write",
+				"content": fmt.Sprintf("Writer %d", val),
+			})
+			if err != nil {
+				t.Errorf("Write error (worker %d): %v", val, err)
+			}
+
+			// 2. Append
+			_, err = store.ManageScratchpad(ctx, map[string]interface{}{
+				"action":  "append",
+				"content": fmt.Sprintf("Append %d", val),
+			})
+			if err != nil {
+				t.Errorf("Append error (worker %d): %v", val, err)
+			}
+
+			// 3. Read
+			_, err = store.ManageScratchpad(ctx, map[string]interface{}{
+				"action": "read",
+			})
+			if err != nil {
+				t.Errorf("Read error (worker %d): %v", val, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Final verification - just ensure it doesn't crash and we can read it
+	res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+	if err != nil {
+		t.Fatalf("Final read error: %v", err)
+	}
+	if res.Text == "" || res.Text == "(Scratchpad is empty)" {
+		t.Error("Scratchpad should not be empty after concurrent writes/appends")
+	}
+
+	// Verify disk file
+	data, err := fsutil.DefaultFileSystem.ReadFile(ctx, scratchFile)
+	if err != nil {
+		t.Fatalf("Failed to read scratchpad file: %v", err)
+	}
+	if string(data) != res.Text {
+		t.Error("Memory and disk state mismatch")
+	}
 }

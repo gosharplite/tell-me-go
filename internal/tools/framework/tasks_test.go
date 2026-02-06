@@ -5,8 +5,11 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
@@ -148,4 +151,89 @@ func TestTaskStore(t *testing.T) {
 			t.Fatal("expected error for corrupted JSON")
 		}
 	})
+}
+
+func TestTaskStore_Concurrency(t *testing.T) {
+	tempDir := t.TempDir()
+	tasksFile := filepath.Join(tempDir, "stress.json")
+	store := NewTaskStore(fsutil.DefaultFileSystem, tasksFile)
+	ctx := context.Background()
+
+	const workers = 100
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func(val int) {
+			defer wg.Done()
+
+			// 1. Add
+			res, err := store.ManageTasks(ctx, map[string]interface{}{
+				"action":  "add",
+				"content": fmt.Sprintf("Task %d", val),
+			})
+			if err != nil {
+				t.Errorf("Add error (worker %d): %v", val, err)
+				return
+			}
+
+			// Extract ID from "Task added with ID X"
+			var taskID float64
+			_, err = fmt.Sscanf(res.Text, "Task added with ID %f", &taskID)
+			if err != nil {
+				t.Errorf("Failed to parse task ID from %q (worker %d): %v", res.Text, val, err)
+				return
+			}
+
+			// 2. Update
+			_, err = store.ManageTasks(ctx, map[string]interface{}{
+				"action":  "update",
+				"task_id": taskID,
+				"status":  "completed",
+			})
+			if err != nil {
+				t.Errorf("Update error (worker %d, task %.0f): %v", val, taskID, err)
+			}
+
+			// 3. List
+			_, err = store.ManageTasks(ctx, map[string]interface{}{
+				"action": "list",
+			})
+			if err != nil {
+				t.Errorf("List error (worker %d): %v", val, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// Final verification
+	res, err := store.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+	if err != nil {
+		t.Fatalf("Final list error: %v", err)
+	}
+
+	// Count tasks in the list result
+	lines := strings.Split(strings.TrimSpace(res.Text), "\n")
+	// Header is "Tasks:", so tasks start from index 1
+	taskCount := 0
+	if len(lines) > 1 {
+		taskCount = len(lines) - 1
+	}
+
+	if taskCount != workers {
+		t.Errorf("Expected %d tasks, got %d. Result:\n%s", workers, taskCount, res.Text)
+	}
+
+	// Verify disk file
+	data, err := fsutil.DefaultFileSystem.ReadFile(ctx, tasksFile)
+	if err != nil {
+		t.Fatalf("Failed to read tasks file: %v", err)
+	}
+	var tasks []Task
+	if err := json.Unmarshal(data, &tasks); err != nil {
+		t.Fatalf("File contains invalid JSON: %v", err)
+	}
+	if len(tasks) != workers {
+		t.Errorf("File contains %d tasks, expected %d", len(tasks), workers)
+	}
 }

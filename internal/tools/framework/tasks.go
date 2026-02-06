@@ -73,13 +73,17 @@ func (s *TaskStore) Load(ctx context.Context) error {
 
 // Save saves tasks to disk.
 func (s *TaskStore) Save(ctx context.Context) error {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var tasks []Task
 	for _, t := range s.tasks {
 		tasks = append(tasks, t)
 	}
-	s.mu.RUnlock()
+	return s.saveLocked(ctx, tasks)
+}
 
+func (s *TaskStore) saveLocked(ctx context.Context, tasks []Task) error {
 	// Sort by ID stable
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].ID < tasks[j].ID
@@ -125,19 +129,29 @@ func (s *TaskStore) add(ctx context.Context, content string) (tools.ToolResult, 
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	t := Task{
 		ID:        s.nextID,
 		Content:   content,
 		Status:    "pending",
 		CreatedAt: time.Now(),
 	}
-	s.tasks[s.nextID] = t
-	s.nextID++
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	// Prepare next state
+	nextTasks := make([]Task, 0, len(s.tasks)+1)
+	for _, task := range s.tasks {
+		nextTasks = append(nextTasks, task)
+	}
+	nextTasks = append(nextTasks, t)
+
+	if err := s.saveLocked(ctx, nextTasks); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
+
+	// Commit
+	s.tasks[t.ID] = t
+	s.nextID++
 	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", t.ID)}, nil
 }
 
@@ -147,23 +161,38 @@ func (s *TaskStore) update(ctx context.Context, taskID float64, content, status 
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	t, ok := s.tasks[taskID]
 	if !ok {
-		s.mu.Unlock()
 		return tools.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 	}
+
+	// Prepare updated task
+	updatedTask := t
 	if content != "" {
-		t.Content = content
+		updatedTask.Content = content
 	}
 	if status != "" {
-		t.Status = status
+		updatedTask.Status = status
 	}
-	s.tasks[taskID] = t
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	// Prepare next state
+	nextTasks := make([]Task, 0, len(s.tasks))
+	for id, task := range s.tasks {
+		if id == taskID {
+			nextTasks = append(nextTasks, updatedTask)
+		} else {
+			nextTasks = append(nextTasks, task)
+		}
+	}
+
+	if err := s.saveLocked(ctx, nextTasks); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
+
+	// Commit
+	s.tasks[taskID] = updatedTask
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", taskID)}, nil
 }
 
@@ -173,21 +202,33 @@ func (s *TaskStore) delete(ctx context.Context, taskID float64) (tools.ToolResul
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if _, ok := s.tasks[taskID]; !ok {
-		s.mu.Unlock()
 		return tools.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 	}
-	delete(s.tasks, taskID)
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	// Prepare next state
+	nextTasks := make([]Task, 0, len(s.tasks)-1)
+	for id, task := range s.tasks {
+		if id != taskID {
+			nextTasks = append(nextTasks, task)
+		}
+	}
+
+	if err := s.saveLocked(ctx, nextTasks); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
+
+	// Commit
+	delete(s.tasks, taskID)
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", taskID)}, nil
 }
 
 func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var list []Task
 	for _, t := range s.tasks {
 		if status != "" && t.Status != status {
@@ -195,7 +236,6 @@ func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 		}
 		list = append(list, t)
 	}
-	s.mu.RUnlock()
 
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].ID < list[j].ID
@@ -219,11 +259,13 @@ func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 
 func (s *TaskStore) clear(ctx context.Context) (tools.ToolResult, error) {
 	s.mu.Lock()
-	s.tasks = make(map[float64]Task)
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx, []Task{}); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
+
+	// Commit
+	s.tasks = make(map[float64]Task)
 	return tools.ToolResult{Text: "All tasks cleared."}, nil
 }

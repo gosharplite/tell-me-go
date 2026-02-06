@@ -20,36 +20,43 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to open temp file: %w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-
-	// Ensure cleanup of the temp file on failure
+	tmp := f.Name()
 	cleanup := true
 	defer func() {
+		_ = f.Close()
 		if cleanup {
 			_ = os.Remove(tmp)
 		}
 	}()
 
+	if err := f.Chmod(perm); err != nil {
+		return fmt.Errorf("failed to chmod temp file: %w", err)
+	}
+
 	// Periodic check for cancellation
 	select {
 	case <-ctx.Done():
-		_ = f.Close()
 		return ctx.Err()
 	default:
 	}
 
 	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
 		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Check for cancellation before the expensive sync operation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
-		_ = f.Close()
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 

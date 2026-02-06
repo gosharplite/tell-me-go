@@ -110,9 +110,9 @@ func TestAtomicWrite_CancellationCleanup(t *testing.T) {
 	}
 
 	// Verify no temp file left behind
-	tmpPath := path + ".tmp"
-	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
-		t.Errorf("temp file %s still exists after cancellation", tmpPath)
+	matches, _ := filepath.Glob(path + ".*.tmp")
+	if len(matches) > 0 {
+		t.Errorf("temp files %v still exist after cancellation", matches)
 	}
 }
 
@@ -130,24 +130,33 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 		t.Fatal("expected error when renaming to a directory")
 	}
 
-	// Verify temp file was cleaned up
-	tmpPath := path + ".tmp"
-	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
-		t.Errorf("temp file %s still exists after rename failure", tmpPath)
+	// Verify no temp file left behind
+	matches, _ := filepath.Glob(path + ".*.tmp")
+	if len(matches) > 0 {
+		t.Errorf("temp files %v still exist after rename failure", matches)
 	}
 }
 
 func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "fail")
-	err := os.MkdirAll(path+".tmp", 0755)
-	if err != nil {
+	// Create a directory where we want to write, and make it read-only
+	// to force os.CreateTemp to fail.
+	subDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
+	path := filepath.Join(subDir, "fail.txt")
+
+	// Make subDir non-writable
+	if err := os.Chmod(subDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(subDir, 0755)
+
 	ctx := context.Background()
-	err = AtomicWrite(ctx, path, []byte("data"), 0644)
+	err := AtomicWrite(ctx, path, []byte("data"), 0644)
 	if err == nil {
-		t.Fatal("expected error when temp path is a directory")
+		t.Fatal("expected error when directory is not writable")
 	}
 }

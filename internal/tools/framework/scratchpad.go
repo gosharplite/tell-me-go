@@ -48,10 +48,13 @@ func (s *ScratchpadStore) Load(ctx context.Context) error {
 
 // Save saves the scratchpad to disk.
 func (s *ScratchpadStore) Save(ctx context.Context) error {
-	s.mu.RLock()
-	data := []byte(s.scratchpad)
-	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveLocked(ctx, s.scratchpad)
+}
 
+func (s *ScratchpadStore) saveLocked(ctx context.Context, content string) error {
+	data := []byte(content)
 	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
@@ -86,36 +89,42 @@ func (s *ScratchpadStore) read() (tools.ToolResult, error) {
 
 func (s *ScratchpadStore) write(ctx context.Context, content string) (tools.ToolResult, error) {
 	s.mu.Lock()
-	s.scratchpad = content
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx, content); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 	}
+
+	s.scratchpad = content
 	return tools.ToolResult{Text: "Scratchpad updated."}, nil
 }
 
 func (s *ScratchpadStore) append(ctx context.Context, content string) (tools.ToolResult, error) {
 	s.mu.Lock()
-	if s.scratchpad != "" {
-		s.scratchpad += "\n"
-	}
-	s.scratchpad += content
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	nextState := s.scratchpad
+	if nextState != "" {
+		nextState += "\n"
+	}
+	nextState += content
+
+	if err := s.saveLocked(ctx, nextState); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 	}
+
+	s.scratchpad = nextState
 	return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
 }
 
 func (s *ScratchpadStore) clear(ctx context.Context) (tools.ToolResult, error) {
 	s.mu.Lock()
-	s.scratchpad = ""
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx, ""); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save scratchpad: %w", err)
 	}
+
+	s.scratchpad = ""
 	return tools.ToolResult{Text: "Scratchpad cleared."}, nil
 }
