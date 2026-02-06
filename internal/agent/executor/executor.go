@@ -6,6 +6,8 @@ package executor
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -243,7 +245,8 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			e.mu.RLock()
 			pool := e.pool
 			e.mu.RUnlock()
-			pool.Submit(func(_ context.Context) {
+
+			task := func(_ context.Context) {
 				defer wg.Done()
 
 				if ctx.Err() != nil {
@@ -270,14 +273,56 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 				}()
 				tr := e.executeTool(ctx, call)
 				resChan <- toolExecResult{index: idx, name: call.Name, tr: tr}
-			})
+			}
+
+			if !pool.Submit(task) {
+				wg.Done()
+				resChan <- toolExecResult{
+					index: idx,
+					name:  call.Name,
+					tr:    domaintools.ToolResult{Text: "Error: Task submission failed (pool closed or context cancelled)"},
+				}
+			}
 		}
 	}
 	wg.Wait()
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
-	// 1. Security Check
+	// 1. Intercept: Validate tool existence early
+	e.mu.RLock()
+	reg := e.registry
+	e.mu.RUnlock()
+
+	exists := false
+	var validTools []string
+	for _, decl := range reg.GetDeclarations() {
+		validTools = append(validTools, decl.Name)
+		if decl.Name == call.Name {
+			exists = true
+		}
+	}
+
+	if !exists {
+		sort.Strings(validTools)
+		errorMessage := fmt.Sprintf(
+			"Error: Tool %q is not defined. Available tools are: [%s].",
+			call.Name, strings.Join(validTools, ", "),
+		)
+
+		if suggestion := e.suggestTool(call.Name, validTools); suggestion != "" {
+			errorMessage += fmt.Sprintf(" Did you mean %q?", suggestion)
+		}
+
+		errorMessage += " Please check the spelling or use a different tool from the authorized list."
+
+		return domaintools.ToolResult{
+			Text:  errorMessage,
+			Error: fmt.Errorf("unexpected tool call: %s", call.Name),
+		}
+	}
+
+	// 2. Security Check
 	e.mu.RLock()
 	sm := e.sm
 	e.mu.RUnlock()
@@ -349,6 +394,61 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	}
 }
 
+func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
+	closest := ""
+	hallucinatedLower := strings.ToLower(hallucinated)
+
+	// Start with a threshold based on length, max 3.
+	// For very short names (<=3), we want distance 1.
+	// For medium names, distance 2.
+	// For long names, distance 3.
+	minDist := 1
+	if len(hallucinated) > 6 {
+		minDist = 3
+	} else if len(hallucinated) > 3 {
+		minDist = 2
+	}
+
+	for _, tool := range validTools {
+		toolLower := strings.ToLower(tool)
+		dist := levenshteinDistance(hallucinatedLower, toolLower)
+		if dist <= minDist {
+			minDist = dist
+			closest = tool
+		}
+	}
+	return closest
+}
+
+func levenshteinDistance(s, t string) int {
+	s1, s2 := []rune(s), []rune(t)
+	m, n := len(s1), len(s2)
+
+	if m < n {
+		s1, s2 = s2, s1
+		m, n = n, m
+	}
+
+	prev := make([]int, n+1)
+	for j := 0; j <= n; j++ {
+		prev[j] = j
+	}
+
+	curr := make([]int, n+1)
+	for i := 1; i <= m; i++ {
+		curr[0] = i
+		for j := 1; j <= n; j++ {
+			substitutionCost := 0
+			if s1[i-1] != s2[j-1] {
+				substitutionCost = 1
+			}
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+substitutionCost)
+		}
+		copy(prev, curr)
+	}
+	return prev[n]
+}
+
 // WorkerPool manages a fixed number of workers to execute tasks concurrently.
 type WorkerPool struct {
 	maxWorkers int
@@ -399,19 +499,22 @@ func (p *WorkerPool) start() {
 	}
 }
 
-// Submit adds a task to the pool.
-func (p *WorkerPool) Submit(task func(ctx context.Context)) {
+// Submit adds a task to the pool. Returns true if the task was successfully queued.
+func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	if p.closed {
-		return
+		return false
 	}
 
 	select {
 	case p.tasks <- task:
+		return true
 	case <-p.closing:
+		return false
 	case <-p.ctx.Done():
+		return false
 	}
 }
 

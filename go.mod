@@ -1,8 +1,6 @@
 module github.com/gosharplite/tell-me-go
 
-go 1.24.0
-
-toolchain go1.24.12
+go 1.25
 
 require (
 	github.com/charmbracelet/glamour v0.10.0
