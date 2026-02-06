@@ -48,6 +48,13 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
+	// Check for cancellation before the expensive sync operation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
