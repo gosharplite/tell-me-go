@@ -20,6 +20,7 @@ type ConfigWatcher struct {
 	sessionPath          string
 	lastMainMod          time.Time
 	lastSessionMod       time.Time
+	lastModel            string
 	maxHistoryTokens     int
 	maxToolTurns         int
 	maxHistoryTurns      int
@@ -85,21 +86,24 @@ func (cw *ConfigWatcher) updateFromMain(model string) bool {
 		return false
 	}
 
-	if !info.ModTime().After(cw.lastMainMod) {
+	if !info.ModTime().After(cw.lastMainMod) && model == cw.lastModel {
 		return false
 	}
 
-	cw.lastMainMod = info.ModTime()
 	cfg, err := config.Load(cw.mainPath)
 	if err != nil {
 		return false
 	}
 
+	cw.lastMainMod = info.ModTime()
+	cw.lastModel = model
+
 	cw.maxHistoryTokens = cfg.MaxHistoryTokens
 	cw.maxToolTurns = cfg.MaxToolTurns
 	cw.maxHistoryTurns = cfg.MaxHistoryTurns
 
-	// Update context window from model config if available
+	// Update context window from model config if available, otherwise reset to default
+	cw.contextWindow = cw.defaultWindow
 	if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
 		cw.contextWindow = mCfg.ContextWindow
 	}
