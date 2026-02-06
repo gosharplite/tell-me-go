@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"go/types"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -54,6 +56,27 @@ func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
+	// Scope Validation: Ensure we are within a Go module.
+	if _, err := os.Stat(filepath.Join(resolvedPath, "go.mod")); os.IsNotExist(err) {
+		// Try to find go.mod in parent directories if not in the root
+		found := false
+		curr := resolvedPath
+		for {
+			if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
+				found = true
+				break
+			}
+			parent := filepath.Dir(curr)
+			if parent == curr {
+				break
+			}
+			curr = parent
+		}
+		if !found {
+			return tools.ToolResult{}, fmt.Errorf("dead_code_graph requires a Go module (go.mod not found at or above %s)", resolvedPath)
+		}
+	}
+
 	// Configuration for go/packages to ensure we have full type information and syntax trees.
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
@@ -67,6 +90,7 @@ func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		Dir:     resolvedPath,
 		Context: ctx,
 		Tests:   true, // Include tests to find references within test files.
+		Env:     os.Environ(),
 	}
 
 	// Load all packages in the module.
@@ -75,8 +99,22 @@ func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, fmt.Errorf("failed to load packages: %w", err)
 	}
 
-	if packages.PrintErrors(pkgs) > 0 {
-		return tools.ToolResult{}, fmt.Errorf("packages loaded with errors")
+	var errMsgs []string
+	seen := make(map[string]bool)
+	for _, pkg := range pkgs {
+		for _, err := range pkg.Errors {
+			if !seen[err.Msg] {
+				seen[err.Msg] = true
+				errMsgs = append(errMsgs, err.Msg)
+			}
+		}
+	}
+	if len(errMsgs) > 0 {
+		limit := 3
+		if len(errMsgs) < limit {
+			limit = len(errMsgs)
+		}
+		return tools.ToolResult{}, fmt.Errorf("packages loaded with errors: %s", strings.Join(errMsgs[:limit], "; "))
 	}
 
 	var targetModule string

@@ -66,7 +66,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 			},
 			expected: []OrphanReport{
 				{Symbol: "Private", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
-				{Symbol: "Use", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
+				{Symbol: "Use", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 			},
 		},
 		{
@@ -134,9 +134,9 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
-				assert.Contains(t, result.Text, exp.Symbol)
-				assert.Contains(t, result.Text, exp.Pkg)
-				assert.Contains(t, result.Text, exp.Severity)
+				expectedLine := fmt.Sprintf("- [%s] %s", exp.Severity, exp.Symbol)
+				assert.Contains(t, result.Text, expectedLine, "Symbol %s should have severity %s", exp.Symbol, exp.Severity)
+				assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", exp.Pkg))
 			}
 
 			if len(tt.expected) == 0 {
@@ -178,4 +178,50 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 
 	assert.Contains(t, result.Text, "example.com/test/pkg1")
 	assert.NotContains(t, result.Text, "example.com/test/pkg2")
+}
+
+func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	files := map[string]string{
+		"go.mod": "module example.com/test\n\ngo 1.24",
+		"main.go": "package main\n\nfunc main() { syntax error }",
+	}
+
+	for path, content := range files {
+		fullPath := filepath.Join(tmpDir, path)
+		err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+		require.NoError(t, err)
+		err = os.WriteFile(fullPath, []byte(content), 0644)
+		require.NoError(t, err)
+	}
+
+	analyzer := NewDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"path": tmpDir,
+	}
+
+	_, err = analyzer.FindOrphanedSymbols(ctx, args)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "packages loaded with errors")
+	assert.Contains(t, err.Error(), "expected ';'")
+}
+
+func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	// No go.mod created here
+
+	analyzer := NewDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"path": tmpDir,
+	}
+
+	_, err = analyzer.FindOrphanedSymbols(ctx, args)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "requires a Go module")
 }

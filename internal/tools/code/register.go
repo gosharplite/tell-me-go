@@ -281,7 +281,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "dead_code_graph",
-		Description: "Identify exported symbols with zero inbound references within the module to find technical debt.",
+		Description: "Identify exported symbols with zero inbound references within the module. This is a heavy operation that requires a go.mod file and scans the entire module to find technical debt.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
