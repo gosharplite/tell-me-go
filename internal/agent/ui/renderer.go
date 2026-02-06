@@ -465,7 +465,7 @@ func (r *StdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 				argParts = append(argParts, fmt.Sprintf("%s: %v", k, valStr))
 			}
 			fmt.Fprintf(stderr, "%s[%s] [Tool Action] %s(%s)%s\n",
-				colors.ColorCyan, ts, fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
+				colors.ColorMagenta, ts, fc.Name, strings.Join(argParts, ", "), colors.ColorReset)
 		}
 	}
 }
