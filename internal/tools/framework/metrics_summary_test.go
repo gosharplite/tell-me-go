@@ -335,3 +335,54 @@ func TestGetCostSummary_Filters(t *testing.T) {
 	}
 }
 
+
+func TestGetCostSummary_MalformedRecords(t *testing.T) {
+	tempDir := t.TempDir()
+	globalDir := tempDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	history := []SessionCostRecord{
+		{
+			Date:      "2023-10-27",
+			Timestamp: time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC),
+			Session:   "valid",
+			TotalCost: 1.0,
+			Usage:     pricing.UsageStats{PromptTokens: 1000},
+		},
+		{
+			Date:      "invalid-date",
+			Session:   "malformed",
+			TotalCost: 2.0,
+			Usage:     pricing.UsageStats{PromptTokens: 2000},
+		},
+		{
+			// Missing both Date and Timestamp
+			Session:   "missing",
+			TotalCost: 3.0,
+			Usage:     pricing.UsageStats{PromptTokens: 3000},
+		},
+	}
+
+	data, _ := json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	m := &metricsManager{
+		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
+	}
+
+	summary, err := m.getCostSummary(context.Background(), costSummaryArgs{Billing: false})
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+
+	// Should only contain the valid record
+	if !strings.Contains(summary, "2023-10-27") {
+		t.Errorf("Expected valid record to be present")
+	}
+	if strings.Contains(summary, "$6.0000") {
+		t.Errorf("Malformed records should have been skipped, but grand total is $6.0000")
+	}
+	if !strings.Contains(summary, "$1.0000") {
+		t.Errorf("Grand total should be $1.0000, got summary:\n%s", summary)
+	}
+}

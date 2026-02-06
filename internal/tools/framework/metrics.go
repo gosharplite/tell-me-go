@@ -481,7 +481,14 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	for _, r := range history {
 		ts := r.Timestamp
 		if ts.IsZero() {
-			ts, _ = time.Parse("2006-01-02", r.Date)
+			var err error
+			ts, err = time.Parse("2006-01-02", r.Date)
+			if err != nil {
+				continue
+			}
+		}
+		if ts.IsZero() {
+			continue
 		}
 
 		// Apply range filter
