@@ -329,7 +329,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	// Case 1: Safe Concurrent Append
 	// We summarize first 2 turns. While summarization is happening, we append turn 5.
 	// Since the first 2 turns are unchanged, summarization should succeed.
-	
+
 	summarizeStarted := make(chan struct{})
 	summarizeProceed := make(chan struct{})
 
@@ -389,7 +389,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	// Actually cm.version is internal and only bumped by cm methods.
 	// Since we used hManager.SetContents directly, cm.version didn't bump,
 	// BUT isContentEqual check in cm.SummarizeRange should still catch it.
-	
+
 	close(summarizeProceed)
 	wg.Wait()
 

@@ -374,7 +374,7 @@ func TestToolExecutor_TableDriven(t *testing.T) {
 			if tt.maxConcurrentTools > 0 || tt.toolTimeout > 0 {
 				exec.SetConcurrency(tt.maxConcurrentTools, tt.toolTimeout)
 			}
-			defer exec.pool.Shutdown()
+			t.Cleanup(exec.Shutdown)
 
 			if tt.maxTurns == 0 {
 				tt.maxTurns = 10
@@ -434,7 +434,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 
 	exec := NewToolExecutor(reg, &mockSecurityManager{allowAll: true}, nil)
 	exec.SetConcurrency(2, 0)
-	defer exec.pool.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{}
 	for i := 0; i < 5; i++ {
@@ -552,7 +552,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	e := &ToolExecutor{strategy: &MockStrategy{}}
 
-	largeBlob := make([]byte, 1024) 
+	largeBlob := make([]byte, 1024)
 	for i := range largeBlob {
 		largeBlob[i] = byte(i % 256)
 	}
@@ -602,6 +602,16 @@ func TestToolExecutor_ConfigUpdatedEvent(t *testing.T) {
 	reg := registry.New()
 	bus := &events.SimpleEventBus{}
 	exec := NewToolExecutor(reg, nil, bus)
+	t.Cleanup(exec.Shutdown)
+
+	// Deterministic synchronization:
+	// We subscribe AFTER the executor, so our callback runs after the executor's SetConcurrency.
+	done := make(chan struct{})
+	bus.Subscribe(func(event events.Event) {
+		if _, ok := event.(events.ConfigUpdated); ok {
+			close(done)
+		}
+	})
 
 	bus.Publish(events.ConfigUpdated{
 		Execution: events.ExecutionConfig{
@@ -610,7 +620,12 @@ func TestToolExecutor_ConfigUpdatedEvent(t *testing.T) {
 		},
 	})
 
-	time.Sleep(20 * time.Millisecond)
+	// Wait for processing to complete
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for ConfigUpdated event processing")
+	}
 
 	exec.mu.RLock()
 	defer exec.mu.RUnlock()
@@ -630,6 +645,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 
 	bus := &events.TestEventBus{}
 	exec := NewToolExecutor(reg, nil, bus)
+	t.Cleanup(exec.Shutdown)
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -652,7 +668,9 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 }
 
 func TestToolExecutor_Strategies(t *testing.T) {
-	e := &ToolExecutor{}
+	reg := registry.New()
+	e := NewToolExecutor(reg, nil, nil)
+	t.Cleanup(e.Shutdown)
 	e.SetStrategy(&MarkdownStrategy{})
 	e.SetStrategy(&JSONStrategy{})
 

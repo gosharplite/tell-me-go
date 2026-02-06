@@ -67,19 +67,32 @@ func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
+	var oldPool *WorkerPool
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
 		e.maxConcurrentTools = maxConcurrent
 		if e.pool != nil {
-			// Shutdown old pool in background to avoid blocking config update
-			go e.pool.Shutdown()
+			oldPool = e.pool
 		}
 		e.pool = NewWorkerPool(maxConcurrent)
 	}
 	if timeout > 0 {
 		e.toolTimeout = timeout
+	}
+	e.mu.Unlock()
+
+	if oldPool != nil {
+		oldPool.Shutdown()
+	}
+}
+
+// Shutdown shuts down the internal worker pool.
+func (e *ToolExecutor) Shutdown() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pool != nil {
+		e.pool.Shutdown()
 	}
 }
 
@@ -384,7 +397,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 			msg := fmt.Sprintf("Error: %v", r.err)
 			// For generic errors from the tool, we categorize as ErrInvalidArgs if it's related to inputs,
 			// or keep it generic. However, the instruction asks for ErrInvalidArgs for malformed args.
-			// Since we don't have a specific way to detect "malformed args" here yet, 
+			// Since we don't have a specific way to detect "malformed args" here yet,
 			// we'll use ErrInvalidArgs for tool errors that are not timeout/security/notfound.
 			return domaintools.ToolResult{
 				Text:  msg,

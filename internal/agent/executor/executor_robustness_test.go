@@ -23,6 +23,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 	})
 
 	exec := NewToolExecutor(reg, nil, nil)
+	t.Cleanup(exec.Shutdown)
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
@@ -55,7 +56,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 
 func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	reg := registry.New()
-	
+
 	// This tool ignores the context and sleeps
 	toolFinished := make(chan struct{})
 	reg.Register(&tools.ToolDeclaration{Name: "leaky_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -66,6 +67,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	})
 
 	exec := NewToolExecutor(reg, nil, nil)
+	t.Cleanup(exec.Shutdown)
 	exec.SetConcurrency(1, 50*time.Millisecond) // Short timeout
 
 	initialGoroutines := runtime.NumGoroutine()
