@@ -183,3 +183,195 @@ func TestNilClones(t *testing.T) {
 		t.Error("cloning nil FunctionResponse should return nil")
 	}
 }
+
+func TestContentEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		c1       *Content
+		c2       *Content
+		expected bool
+	}{
+		{
+			name:     "Both nil",
+			c1:       nil,
+			c2:       nil,
+			expected: true,
+		},
+		{
+			name:     "One nil",
+			c1:       &Content{Role: "user"},
+			c2:       nil,
+			expected: false,
+		},
+		{
+			name:     "Different roles",
+			c1:       &Content{Role: "user"},
+			c2:       &Content{Role: "model"},
+			expected: false,
+		},
+		{
+			name:     "Different part counts",
+			c1:       &Content{Role: "user", Parts: []*Part{{Text: "a"}}},
+			c2:       &Content{Role: "user", Parts: []*Part{{Text: "a"}, {Text: "b"}}},
+			expected: false,
+		},
+		{
+			name:     "Same text content",
+			c1:       &Content{Role: "user", Parts: []*Part{{Text: "hello"}}},
+			c2:       &Content{Role: "user", Parts: []*Part{{Text: "hello"}}},
+			expected: true,
+		},
+		{
+			name:     "Different text content",
+			c1:       &Content{Role: "user", Parts: []*Part{{Text: "hello"}}},
+			c2:       &Content{Role: "user", Parts: []*Part{{Text: "world"}}},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.c1.Equal(tt.c2); got != tt.expected {
+				t.Errorf("Content.Equal() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPartEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		p1       *Part
+		p2       *Part
+		expected bool
+	}{
+		{
+			name:     "Both nil",
+			p1:       nil,
+			p2:       nil,
+			expected: true,
+		},
+		{
+			name:     "One nil",
+			p1:       &Part{Text: "a"},
+			p2:       nil,
+			expected: false,
+		},
+		{
+			name:     "Same text",
+			p1:       &Part{Text: "a"},
+			p2:       &Part{Text: "a"},
+			expected: true,
+		},
+		{
+			name:     "Different text",
+			p1:       &Part{Text: "a"},
+			p2:       &Part{Text: "b"},
+			expected: false,
+		},
+		{
+			name:     "Same thought",
+			p1:       &Part{Text: "thinking", Thought: true},
+			p2:       &Part{Text: "thinking", Thought: true},
+			expected: true,
+		},
+		{
+			name:     "Different thought",
+			p1:       &Part{Text: "thinking", Thought: true},
+			p2:       &Part{Text: "thinking", Thought: false},
+			expected: false,
+		},
+		{
+			name: "Same inline data",
+			p1: &Part{
+				InlineData: &Blob{MIMEType: "image/png", Data: []byte("abc")},
+			},
+			p2: &Part{
+				InlineData: &Blob{MIMEType: "image/png", Data: []byte("abc")},
+			},
+			expected: true,
+		},
+		{
+			name: "Different inline data MIME",
+			p1: &Part{
+				InlineData: &Blob{MIMEType: "image/png", Data: []byte("abc")},
+			},
+			p2: &Part{
+				InlineData: &Blob{MIMEType: "image/jpeg", Data: []byte("abc")},
+			},
+			expected: false,
+		},
+		{
+			name: "Different inline data content",
+			p1: &Part{
+				InlineData: &Blob{MIMEType: "image/png", Data: []byte("abc")},
+			},
+			p2: &Part{
+				InlineData: &Blob{MIMEType: "image/png", Data: []byte("def")},
+			},
+			expected: false,
+		},
+		{
+			name: "Same function call",
+			p1: &Part{
+				FunctionCall: &FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
+			},
+			expected: true,
+		},
+		{
+			name: "Different function call args",
+			p1: &Part{
+				FunctionCall: &FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
+			},
+			p2: &Part{
+				FunctionCall: &FunctionCall{Name: "test", Args: map[string]interface{}{"a": 2}},
+			},
+			expected: false,
+		},
+		{
+			name: "Same function response",
+			p1: &Part{
+				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
+			},
+			p2: &Part{
+				FunctionResponse: &FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
+			},
+			expected: true,
+		},
+		{
+			name:     "Same AssetID",
+			p1:       &Part{AssetID: "asset-1"},
+			p2:       &Part{AssetID: "asset-1"},
+			expected: true,
+		},
+		{
+			name:     "Different AssetID",
+			p1:       &Part{AssetID: "asset-1"},
+			p2:       &Part{AssetID: "asset-2"},
+			expected: false,
+		},
+		{
+			name:     "Same ThoughtSignature",
+			p1:       &Part{ThoughtSignature: []byte("sig1")},
+			p2:       &Part{ThoughtSignature: []byte("sig1")},
+			expected: true,
+		},
+		{
+			name:     "Different ThoughtSignature",
+			p1:       &Part{ThoughtSignature: []byte("sig1")},
+			p2:       &Part{ThoughtSignature: []byte("sig2")},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.p1.Equal(tt.p2); got != tt.expected {
+				t.Errorf("Part.Equal() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}

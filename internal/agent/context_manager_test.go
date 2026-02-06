@@ -4,159 +4,289 @@
 package agent
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestIsContentEqual(t *testing.T) {
-	cm := &ContextManager{}
+type mockHistoryManager struct {
+	contents       []*llm.Content
+	setContentsErr error
+}
 
-	tests := []struct {
-		name     string
-		c1       *llm.Content
-		c2       *llm.Content
-		expected bool
-	}{
-		{
-			name:     "Both nil",
-			c1:       nil,
-			c2:       nil,
-			expected: true,
-		},
-		{
-			name:     "One nil",
-			c1:       &llm.Content{Role: "user"},
-			c2:       nil,
-			expected: false,
-		},
-		{
-			name:     "Different roles",
-			c1:       &llm.Content{Role: "user"},
-			c2:       &llm.Content{Role: "model"},
-			expected: false,
-		},
-		{
-			name:     "Different part counts",
-			c1:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "a"}}},
-			c2:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "a"}, {Text: "b"}}},
-			expected: false,
-		},
-		{
-			name:     "Same text content",
-			c1:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-			c2:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-			expected: true,
-		},
-		{
-			name:     "Different text content",
-			c1:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
-			c2:       &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "world"}}},
-			expected: false,
-		},
-		{
-			name:     "Same thought",
-			c1:       &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "thinking", Thought: true}}},
-			c2:       &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "thinking", Thought: true}}},
-			expected: true,
-		},
-		{
-			name:     "Different thought",
-			c1:       &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "thinking", Thought: true}}},
-			c2:       &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "thinking", Thought: false}}},
-			expected: false,
-		},
-		{
-			name: "Same inline data",
-			c1: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("abc")},
-			}}},
-			c2: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("abc")},
-			}}},
-			expected: true,
-		},
-		{
-			name: "Different inline data MIME",
-			c1: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("abc")},
-			}}},
-			c2: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/jpeg", Data: []byte("abc")},
-			}}},
-			expected: false,
-		},
-		{
-			name: "Different inline data content",
-			c1: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("abc")},
-			}}},
-			c2: &llm.Content{Role: "user", Parts: []*llm.Part{{
-				InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("def")},
-			}}},
-			expected: false,
-		},
-		{
-			name: "Same function call",
-			c1: &llm.Content{Role: "model", Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
-			}}},
-			c2: &llm.Content{Role: "model", Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
-			}}},
-			expected: true,
-		},
-		{
-			name: "Different function call args",
-			c1: &llm.Content{Role: "model", Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"a": 1}},
-			}}},
-			c2: &llm.Content{Role: "model", Parts: []*llm.Part{{
-				FunctionCall: &llm.FunctionCall{Name: "test", Args: map[string]interface{}{"a": 2}},
-			}}},
-			expected: false,
-		},
-		{
-			name: "Same function response",
-			c1: &llm.Content{Role: "tool", Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
-			}}},
-			c2: &llm.Content{Role: "tool", Parts: []*llm.Part{{
-				FunctionResponse: &llm.FunctionResponse{Name: "test", Response: map[string]interface{}{"res": "ok"}},
-			}}},
-			expected: true,
-		},
-		{
-			name:     "Same AssetID",
-			c1:       &llm.Content{Role: "user", Parts: []*llm.Part{{AssetID: "asset-1"}}},
-			c2:       &llm.Content{Role: "user", Parts: []*llm.Part{{AssetID: "asset-1"}}},
-			expected: true,
-		},
-		{
-			name:     "Different AssetID",
-			c1:       &llm.Content{Role: "user", Parts: []*llm.Part{{AssetID: "asset-1"}}},
-			c2:       &llm.Content{Role: "user", Parts: []*llm.Part{{AssetID: "asset-2"}}},
-			expected: false,
-		},
-		{
-			name:     "Same ThoughtSignature",
-			c1:       &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig1")}}},
-			c2:       &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig1")}}},
-			expected: true,
-		},
-		{
-			name:     "Different ThoughtSignature",
-			c1:       &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig1")}}},
-			c2:       &llm.Content{Role: "model", Parts: []*llm.Part{{ThoughtSignature: []byte("sig2")}}},
-			expected: false,
+func (m *mockHistoryManager) GetContents() []*llm.Content {
+	return m.contents
+}
+
+func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	if m.setContentsErr != nil {
+		return m.setContentsErr
+	}
+	m.contents = contents
+	return nil
+}
+
+func (m *mockHistoryManager) Snapshot()                    {}
+func (m *mockHistoryManager) Rollback(ctx context.Context) {}
+func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+	m.contents = append(m.contents, content)
+	return nil
+}
+func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return nil }
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	return nil
+}
+
+func TestContextManager_PipelineMethods(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	factory := &PipelineFactory{Estimator: strategy}
+	cm := NewContextManager(strategy, history, nil, factory)
+
+	// Test SetPipeline
+	p := NewContextPipeline()
+	cm.SetPipeline(p)
+	assert.Equal(t, p, cm.Pipeline)
+
+	// Test EnsureStandardPipeline - should create if nil
+	cm.Pipeline = nil
+	limits := events.Limits{MaxHistoryTurns: 10}
+	cm.EnsureStandardPipeline(limits)
+	assert.NotNil(t, cm.Pipeline)
+	assert.Greater(t, len(cm.Pipeline.transformers), 0)
+
+	// Test EnsureStandardPipeline - should NOT overwrite if non-nil
+	existingPipeline := NewContextPipeline()
+	cm.Pipeline = existingPipeline
+	cm.EnsureStandardPipeline(limits)
+	assert.Equal(t, existingPipeline, cm.Pipeline)
+}
+
+func TestContextManager_RegisterToolRegistry(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	// Case 1: cm.Pipeline is nil. (Assert no panic)
+	assert.NotPanics(t, func() {
+		cm.RegisterToolRegistry(&mockToolRegistry{})
+	})
+
+	// Case 2: cm.Pipeline contains a ToolDeclarationGenerator.
+	tg := &ToolDeclarationGenerator{}
+	p := NewContextPipeline(tg)
+	cm.SetPipeline(p)
+	reg := &mockToolRegistry{}
+	cm.RegisterToolRegistry(reg)
+	assert.Equal(t, reg, tg.Registry)
+
+	// Case 3: cm.Pipeline contains other transformers but no ToolDeclarationGenerator.
+	p2 := NewContextPipeline(&EmptyTurnFilter{})
+	cm.SetPipeline(p2)
+	assert.NotPanics(t, func() {
+		cm.RegisterToolRegistry(reg)
+	})
+}
+
+func TestContextManager_GetLimits(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	strategy.SetLimits(1000, 20, 30)
+	strategy.SetTieredThreshold(500)
+	cm := NewContextManager(strategy, &mockHistoryManager{}, nil, nil)
+
+	limits := cm.GetLimits()
+	assert.Equal(t, 1000, limits.MaxHistoryTokens)
+	assert.Equal(t, 20, limits.MaxToolTurns)
+	assert.Equal(t, 30, limits.MaxHistoryTurns)
+	assert.Equal(t, 500, limits.TieredThreshold)
+}
+
+func TestContextManager_Summarize(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	history := &mockHistoryManager{}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx := context.Background()
+	contents := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}}
+
+	// Case 1: cm.Summarizer is nil.
+	summary, metrics, err := cm.Summarize(ctx, contents, "focus")
+	assert.NoError(t, err)
+	assert.Empty(t, summary)
+	assert.Nil(t, metrics)
+
+	// Case 2: cm.Summarizer is present.
+	mockSum := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "summary result", &llm.Metrics{PromptTokens: 10}, nil
 		},
 	}
+	cm.Summarizer = mockSum
+	summary, metrics, err = cm.Summarize(ctx, contents, "focus")
+	assert.NoError(t, err)
+	assert.Equal(t, "summary result", summary)
+	assert.NotNil(t, metrics)
+	assert.Equal(t, int32(10), metrics.PromptTokens)
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := cm.isContentEqual(tt.c1, tt.c2); got != tt.expected {
-				t.Errorf("isContentEqual() = %v, want %v", got, tt.expected)
-			}
-		})
+func TestContextManager_SummarizeRange(t *testing.T) {
+	counter := &mockTokenCounter{}
+	strategy := NewContextStrategy(counter, nil)
+	history := &mockHistoryManager{
+		contents: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+		},
 	}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx := context.Background()
+
+	// Case 1: Summarizer is nil
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+
+	// Setup Summarizer
+	mockSum := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "range summary", &llm.Metrics{PromptTokens: 5}, nil
+		},
+	}
+	cm.Summarizer = mockSum
+
+	// Case 2: Success
+	msg, metrics, err := cm.SummarizeRange(ctx, 1, "focus")
+	assert.NoError(t, err)
+	assert.Contains(t, msg, "Summarized the first 1 turns")
+	assert.NotNil(t, metrics)
+	assert.Equal(t, int32(5), metrics.PromptTokens)
+
+	// Case 3: History too short
+	history.contents = nil
+	msg, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.NoError(t, err)
+	assert.Equal(t, "History is too short to summarize yet.", msg)
+
+	// Case 4: History changed during summarization (shortened)
+	history.contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	}
+	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		history.contents = history.contents[:1]
+		return "late summary", nil, nil
+	}
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "history was pruned")
+
+	// Case 5: History content changed during summarization
+	history.contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	}
+	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		history.contents[0] = history.contents[0].Clone()
+		history.contents[0].Parts[0].Text = "changed"
+		return "late summary", nil, nil
+	}
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "history content changed")
+
+	// Case 6: Safety limit exceeded
+	history.contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	}
+	counter.tokens = 1000
+	strategy.SetContextWindow(500)
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds the safety limit")
+
+	// Reset state
+	counter.tokens = 0
+	strategy.SetContextWindow(1000000)
+
+	// Case 7: Summarizer returns error (Transient)
+	history.contents = []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	}
+	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "", nil, NewAgentError(ErrTransient, "transient fail", nil)
+	}
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+
+	// Case 8: Summarizer returns error (Fatal)
+	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "", nil, fmt.Errorf("fatal fail")
+	}
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+
+	// Case 9: Event publishing
+	bus := &events.SimpleEventBus{}
+	cm.Events = bus
+	received := false
+	bus.Subscribe(func(e events.Event) {
+		if _, ok := e.(events.SystemMessageEvent); ok {
+			received = true
+		}
+	})
+	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		return "summary", nil, nil
+	}
+	cm.SummarizeRange(ctx, 1, "")
+	assert.True(t, received)
+
+	// Case 10: finalizeSummarization fails
+	history.setContentsErr = fmt.Errorf("persist fail")
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+	history.setContentsErr = nil
+
+	// Case 11: finalizeSummarization fails (Transient)
+	history.setContentsErr = NewAgentError(ErrTransient, "persist fail transient", nil)
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.Error(t, err)
+	history.setContentsErr = nil
+}
+
+func TestContextManager_Prepare_ClonesContent(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	originalContent := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "original"}},
+	}
+	history := &mockHistoryManager{
+		contents: []*llm.Content{originalContent},
+	}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx := context.Background()
+	preparedHistory, _, err := cm.Prepare(ctx, 1)
+	assert.NoError(t, err)
+	assert.Len(t, preparedHistory, 1)
+
+	// Verify it's a deep copy: modifying original should not affect preparedHistory
+	originalContent.Parts[0].Text = "modified"
+	assert.NotEqual(t, originalContent.Parts[0].Text, preparedHistory[0].Parts[0].Text)
+	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
 }

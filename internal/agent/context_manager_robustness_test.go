@@ -200,11 +200,15 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 	var errs []error
 	for err := range errors {
-		errs = append(errs, err)
+		// Concurrent Prepare calls might collide on the persistence step.
+		// This is expected behavior with the version-based conflict detection.
+		if !IsTransient(err) {
+			errs = append(errs, err)
+		}
 	}
 
 	if len(errs) > 0 {
-		t.Errorf("Caught %d errors during concurrent Prepare: %v", len(errs), errs)
+		t.Errorf("Caught %d non-transient errors during concurrent Prepare: %v", len(errs), errs)
 	}
 
 	if bus.GetCount() < 1 {
@@ -388,7 +392,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	// We need to trigger a version bump in CM too if it's not watching hManager directly
 	// Actually cm.version is internal and only bumped by cm methods.
 	// Since we used hManager.SetContents directly, cm.version didn't bump,
-	// BUT isContentEqual check in cm.SummarizeRange should still catch it.
+	// BUT Content.Equal check in cm.SummarizeRange should still catch it.
 
 	close(summarizeProceed)
 	wg.Wait()
