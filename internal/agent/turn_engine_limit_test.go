@@ -81,7 +81,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 		Estimator: strategy,
 	}
 
-	cm := NewContextManager(strategy, h, gw, bus, factory)
+	cm := NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}

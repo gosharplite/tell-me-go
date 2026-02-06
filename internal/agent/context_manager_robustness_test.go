@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
@@ -31,7 +32,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	strategy.SetLimits(1000, 5, 20) // Turn 3/5 (remaining 2) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
@@ -110,8 +111,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	}
 
 	bus := &events.SimpleEventBus{}
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, g, bus, nil)
-	cm.Summarizer = NewSummarizer(gateway.NewResilientClient(g, true), bus)
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
+	cm.Summarizer = summarizer.NewSummarizer(gateway.NewResilientClient(g, true), bus)
 	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
@@ -167,7 +168,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	bus := events.NewCountingEventBus()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Configure pipeline with a pruner that will prune history
 	cm.Pipeline = NewContextPipeline(
@@ -218,7 +219,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	counter := &mockTokenCounter{}
 	strategy := NewContextStrategy(counter, nil)
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Add 4 messages (2 turns)
 	for i := 0; i < 2; i++ {
@@ -247,7 +248,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 		_ = hManager2.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
 	}
-	cm2 := NewContextManager(strategy, hManager2, &mockGateway{}, nil, nil)
+	cm2 := NewContextManager(strategy, hManager2, nil, nil)
 	cm2.Summarizer = &mockSummarizer{}
 
 	counter.tokens = int(float64(window) * 0.91)
@@ -273,7 +274,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	strategy := NewContextStrategy(counter, nil)
 	strategy.SetLimits(1000, 10, 20)
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Pipeline with WarningInjector (Transient)
 	cm.Pipeline = NewContextPipeline(
@@ -308,5 +309,93 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 				t.Error("Warning was persisted to history manager, but it should be transient!")
 			}
 		}
+	}
+}
+
+func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	ctx := context.Background()
+
+	// Initial history: 4 turns (8 messages)
+	for i := 0; i < 4; i++ {
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+	}
+
+	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
+
+	// Case 1: Safe Concurrent Append
+	// We summarize first 2 turns. While summarization is happening, we append turn 5.
+	// Since the first 2 turns are unchanged, summarization should succeed.
+
+	summarizeStarted := make(chan struct{})
+	summarizeProceed := make(chan struct{})
+
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			close(summarizeStarted)
+			<-summarizeProceed
+			return "Safe Summary", &llm.Metrics{}, nil
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var summaryErr error
+	go func() {
+		defer wg.Done()
+		_, _, summaryErr = cm.SummarizeRange(ctx, 2, "")
+	}()
+
+	<-summarizeStarted
+	// Concurrent append
+	_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
+	close(summarizeProceed)
+	wg.Wait()
+
+	if summaryErr != nil {
+		t.Errorf("Expected safe summarization to succeed even with concurrent append, got: %v", summaryErr)
+	}
+
+	// Case 2: Unsafe Concurrent Modification
+	// We summarize first 2 turns. While happening, we modify turn 1.
+	// This should trigger the abort logic.
+
+	summarizeStarted = make(chan struct{})
+	summarizeProceed = make(chan struct{})
+
+	cm.Summarizer = &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			close(summarizeStarted)
+			<-summarizeProceed
+			return "Unsafe Summary", &llm.Metrics{}, nil
+		},
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _, summaryErr = cm.SummarizeRange(ctx, 2, "")
+	}()
+
+	<-summarizeStarted
+	// Concurrent modification of history prefix being summarized
+	current := hManager.GetContents()
+	current[0].Parts[0].Text = "modified"
+	_ = hManager.SetContents(ctx, current)
+	// We need to trigger a version bump in CM too if it's not watching hManager directly
+	// Actually cm.version is internal and only bumped by cm methods.
+	// Since we used hManager.SetContents directly, cm.version didn't bump,
+	// BUT isContentEqual check in cm.SummarizeRange should still catch it.
+
+	close(summarizeProceed)
+	wg.Wait()
+
+	if summaryErr == nil {
+		t.Error("Expected summarization to abort when history content changed, but it succeeded")
+	} else if !strings.Contains(summaryErr.Error(), "history content changed") {
+		t.Errorf("Expected 'history content changed' error, got: %v", summaryErr)
 	}
 }

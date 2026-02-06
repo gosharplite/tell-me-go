@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -66,19 +67,32 @@ func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
+	var oldPool *WorkerPool
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
 		e.maxConcurrentTools = maxConcurrent
 		if e.pool != nil {
-			// Shutdown old pool in background to avoid blocking config update
-			go e.pool.Shutdown()
+			oldPool = e.pool
 		}
 		e.pool = NewWorkerPool(maxConcurrent)
 	}
 	if timeout > 0 {
 		e.toolTimeout = timeout
+	}
+	e.mu.Unlock()
+
+	if oldPool != nil {
+		oldPool.Shutdown()
+	}
+}
+
+// Shutdown shuts down the internal worker pool.
+func (e *ToolExecutor) Shutdown() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pool != nil {
+		e.pool.Shutdown()
 	}
 }
 
@@ -208,7 +222,12 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	var wg sync.WaitGroup
 
 	for i, fc := range calls {
-		if e.registry.IsSerial(fc.Name) {
+		e.mu.RLock()
+		reg := e.registry
+		pool := e.pool
+		e.mu.RUnlock()
+
+		if reg.IsSerial(fc.Name) {
 			// Wait for all previous tools to finish before starting serial tool
 			wg.Wait()
 			var tr domaintools.ToolResult
@@ -218,7 +237,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 						err := fmt.Errorf("panic: %v", r)
 						tr = domaintools.ToolResult{
 							Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-							Error: err,
+							Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
 						}
 					}
 				}()
@@ -242,9 +261,6 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		} else {
 			wg.Add(1)
 			idx, call := i, fc // captured for closure
-			e.mu.RLock()
-			pool := e.pool
-			e.mu.RUnlock()
 
 			task := func(_ context.Context) {
 				defer wg.Done()
@@ -266,7 +282,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 							name:  call.Name,
 							tr: domaintools.ToolResult{
 								Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-								Error: err,
+								Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
 							},
 						}
 					}
@@ -292,6 +308,8 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	// 1. Intercept: Validate tool existence early
 	e.mu.RLock()
 	reg := e.registry
+	sm := e.sm
+	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()
 
 	exists := false
@@ -318,31 +336,24 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 		return domaintools.ToolResult{
 			Text:  errorMessage,
-			Error: fmt.Errorf("unexpected tool call: %s", call.Name),
+			Error: agenerrors.NewAgentError(agenerrors.ErrToolNotFound, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name)),
 		}
 	}
 
 	// 2. Security Check
-	e.mu.RLock()
-	sm := e.sm
-	e.mu.RUnlock()
-
 	if sm != nil && !sm.IsCommandAllowed(call.Name) {
+		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
 		return domaintools.ToolResult{
-			Text:  fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name),
-			Error: fmt.Errorf("security policy: command %q is not allowed", call.Name),
+			Text:  msg,
+			Error: agenerrors.NewAgentError(agenerrors.ErrSecurityViolation, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name)),
 		}
 	}
-
-	e.mu.RLock()
-	toolTimeout := e.toolTimeout
-	e.mu.RUnlock()
 
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
-	if e.registry.IsLongRunning(call.Name) {
+	if reg.IsLongRunning(call.Name) {
 		ctx, cancel = context.WithCancel(parentCtx)
 	} else {
 		ctx, cancel = context.WithTimeout(parentCtx, toolTimeout)
@@ -360,34 +371,37 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 				resChan <- res{
 					tr: domaintools.ToolResult{
 						Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-						Error: fmt.Errorf("panic: %v", r),
+						Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), fmt.Errorf("panic: %v", r)),
 					},
 				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
-		result, err := e.registry.Execute(ctx, call.Name, call.Args)
+		result, err := reg.Execute(ctx, call.Name, call.Args)
 		resChan <- res{tr: result, err: err}
 	}()
 
 	select {
 	case <-ctx.Done():
 		err := ctx.Err()
+		msg := fmt.Sprintf("Error: Tool execution failed: %v", err)
 		if err == context.DeadlineExceeded {
-			return domaintools.ToolResult{
-				Text:  fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout),
-				Error: err,
-			}
+			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
 		}
 		return domaintools.ToolResult{
-			Text:  fmt.Sprintf("Error: %v", err),
-			Error: err,
+			Text:  msg,
+			Error: agenerrors.NewAgentError(agenerrors.ErrToolTimeout, msg, err),
 		}
 	case r := <-resChan:
 		if r.err != nil {
+			msg := fmt.Sprintf("Error: %v", r.err)
+			// For generic errors from the tool, we categorize as ErrInvalidArgs if it's related to inputs,
+			// or keep it generic. However, the instruction asks for ErrInvalidArgs for malformed args.
+			// Since we don't have a specific way to detect "malformed args" here yet,
+			// we'll use ErrInvalidArgs for tool errors that are not timeout/security/notfound.
 			return domaintools.ToolResult{
-				Text:  fmt.Sprintf("Error: %v", r.err),
-				Error: r.err,
+				Text:  msg,
+				Error: agenerrors.NewAgentError(agenerrors.ErrInvalidArgs, msg, r.err),
 			}
 		}
 		return r.tr

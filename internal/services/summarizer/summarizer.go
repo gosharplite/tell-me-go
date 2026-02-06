@@ -1,26 +1,26 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package summarizer
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
-// Summarizer implements the HistorySummarizer interface using an LLM gateway.
+// Summarizer implements the services.Summarizer interface using an LLM gateway.
 type Summarizer struct {
-	gateway gateway.LLMGateway
+	gateway llm.LLMGateway
 	events  events.EventBus
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g gateway.LLMGateway, bus events.EventBus) *Summarizer {
+func NewSummarizer(g llm.LLMGateway, bus events.EventBus) services.Summarizer {
 	return &Summarizer{gateway: g, events: bus}
 }
 
@@ -71,7 +71,10 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 	}
 	respContent, metrics, err := finalize()
 	if err != nil {
-		return "", nil, fmt.Errorf("summarization request failed: %w", err)
+		if llm.IsTransient(err) {
+			return "", nil, fmt.Errorf("%w: summarization failed due to transient issue", err)
+		}
+		return "", nil, fmt.Errorf("%w: summarization failed permanently", err)
 	}
 
 	// Emit metrics to the event bus

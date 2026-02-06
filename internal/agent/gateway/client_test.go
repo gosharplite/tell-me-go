@@ -31,23 +31,23 @@ func TestResilientClient_WrapError(t *testing.T) {
 		expected error
 	}{
 		{"Nil error", nil, nil},
-		{"Already Auth", ErrAuth, ErrAuth},
-		{"Already Transient", ErrTransient, ErrTransient},
-		{"Already Terminal", ErrTerminal, ErrTerminal},
+		{"Already Auth", llm.ErrAuth, llm.ErrAuth},
+		{"Already Transient", llm.ErrTransient, llm.ErrTransient},
+		{"Already Terminal", llm.ErrTerminal, llm.ErrTerminal},
 
-		{"gRPC Unauthenticated", status.Error(codes.Unauthenticated, "fail"), ErrAuth},
-		{"gRPC Unavailable", status.Error(codes.Unavailable, "fail"), ErrTransient},
-		{"gRPC PermissionDenied", status.Error(codes.PermissionDenied, "fail"), ErrTerminal},
+		{"gRPC Unauthenticated", status.Error(codes.Unauthenticated, "fail"), llm.ErrAuth},
+		{"gRPC Unavailable", status.Error(codes.Unavailable, "fail"), llm.ErrTransient},
+		{"gRPC PermissionDenied", status.Error(codes.PermissionDenied, "fail"), llm.ErrTerminal},
 
-		{"HTTP 401", mockHttpStatusErr{401}, ErrAuth},
-		{"HTTP 429", mockHttpStatusErr{429}, ErrTransient},
-		{"HTTP 500", mockHttpStatusErr{500}, ErrTransient},
-		{"HTTP 404", mockHttpStatusErr{404}, ErrTerminal},
+		{"HTTP 401", mockHttpStatusErr{401}, llm.ErrAuth},
+		{"HTTP 429", mockHttpStatusErr{429}, llm.ErrTransient},
+		{"HTTP 500", mockHttpStatusErr{500}, llm.ErrTransient},
+		{"HTTP 404", mockHttpStatusErr{404}, llm.ErrTerminal},
 
-		{"String match Auth", errors.New("API_KEY_INVALID"), ErrAuth},
-		{"String match Auth Upper", errors.New("unauthenticated request"), ErrAuth},
+		{"String match Auth", errors.New("API_KEY_INVALID"), llm.ErrAuth},
+		{"String match Auth Upper", errors.New("unauthenticated request"), llm.ErrAuth},
 
-		{"Generic fallback", errors.New("unknown error"), ErrTerminal},
+		{"Generic fallback", errors.New("unknown error"), llm.ErrTerminal},
 	}
 
 	for _, tt := range tests {
@@ -171,7 +171,7 @@ func TestResilientClient_Generate_AuthRefreshFail(t *testing.T) {
 	_, finalize := client.Generate(context.Background(), nil, nil, nil)
 	_, _, err := finalize()
 
-	if !errors.Is(err, ErrAuth) {
+	if !errors.Is(err, llm.ErrAuth) {
 		t.Errorf("Expected ErrAuth, got %v", err)
 	}
 	if mock.authRefreshed != 1 {

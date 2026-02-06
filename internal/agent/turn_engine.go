@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -126,7 +125,7 @@ type Turn struct {
 	StartTime    time.Time
 	State        *TurnState
 	CtxManager   *ContextManager
-	Gateway      gateway.LLMGateway
+	Gateway      llm.LLMGateway
 	Executor     IToolExecutor
 	Registry     tools.IToolRegistry
 	Events       events.EventBus
@@ -146,7 +145,7 @@ type Turn struct {
 type TurnEngine struct {
 	mu               sync.RWMutex
 	ctxManager       *ContextManager
-	gateway          gateway.LLMGateway
+	gateway          llm.LLMGateway
 	executor         IToolExecutor
 	registry         tools.IToolRegistry
 	events           events.EventBus
@@ -242,7 +241,7 @@ func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
-func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
+func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:     gw,
 		executor:    ex,
@@ -356,14 +355,13 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 
 	if limit > 0 && tracker != nil {
 		if cost := tracker.GetTotalCost(ctx); cost >= limit {
-			return fmt.Errorf("%w: current session cost $%.4f exceeds internal limit $%.4f",
-				llm.ErrBudgetExceeded, cost, limit)
+			return NewAgentError(ErrFatal, fmt.Sprintf("current session cost $%.4f exceeds internal limit $%.4f", cost, limit), llm.ErrBudgetExceeded)
 		}
 	}
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
 	if turnIndex > maxTurns {
-		return fmt.Errorf("%w: turn %d exceeds limit %d", llm.ErrMaxTurnsReached, turnIndex, maxTurns)
+		return NewAgentError(ErrFatal, fmt.Sprintf("turn %d exceeds limit %d", turnIndex, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
 	if e.events != nil {
@@ -441,7 +439,7 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *Turn) error {
 func (e *TurnEngine) executePhase(ctx context.Context, turn *Turn) (ProcessResult, error) {
 	processor, ok := e.processors[turn.State.Phase]
 	if !ok {
-		return ProcessResult{}, fmt.Errorf("no processor for phase: %s", turn.State.Phase)
+		return ProcessResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
 	}
 
 	res := processor.Process(ctx, turn)
@@ -488,7 +486,11 @@ type ContextRefiner struct{}
 func (p *ContextRefiner) Process(ctx context.Context, turn *Turn) ProcessResult {
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
-		return ProcessResult{Error: err}
+		category := ErrFatal
+		if IsTransient(err) {
+			category = ErrTransient
+		}
+		return ProcessResult{Error: NewAgentError(category, "context preparation failed", err)}
 	}
 	turn.State.Metadata = metadata
 	turn.State.Tokens = metadata.FinalTokenCount
@@ -507,7 +509,11 @@ func (p *InferenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	}
 
 	if err != nil {
-		return ProcessResult{Error: err}
+		category := ErrFatal
+		if IsTransient(err) {
+			category = ErrTransient
+		}
+		return ProcessResult{Error: NewAgentError(category, "inference failed", err)}
 	}
 
 	return p.routeBasedOnContent(respContent)
@@ -531,7 +537,7 @@ func (p *InferenceStep) invokeModel(ctx context.Context, turn *Turn) (*llm.Conte
 		return respContent, metrics, err
 	}
 	if respContent == nil {
-		return nil, nil, fmt.Errorf("api returned nil content")
+		return nil, nil, NewAgentError(ErrLogic, "api returned nil content", nil)
 	}
 	return respContent, metrics, nil
 }
@@ -577,7 +583,11 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 
 	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
-		return ProcessResult{Error: err}
+		category := ErrFatal
+		if IsTransient(err) {
+			category = ErrTransient
+		}
+		return ProcessResult{Error: NewAgentError(category, "tool execution failed", err)}
 	}
 
 	if toolResponse != nil {
@@ -596,13 +606,21 @@ type PersistenceStep struct{}
 func (p *PersistenceStep) Process(ctx context.Context, turn *Turn) ProcessResult {
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
-			return ProcessResult{Error: fmt.Errorf("history error: %w", err)}
+			category := ErrFatal
+			if IsTransient(err) {
+				category = ErrTransient
+			}
+			return ProcessResult{Error: NewAgentError(category, "history error", err)}
 		}
 	}
 
 	if turn.State.ToolResponse != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
-			return ProcessResult{Error: fmt.Errorf("failed to persist tool results: %w", err)}
+			category := ErrFatal
+			if IsTransient(err) {
+				category = ErrTransient
+			}
+			return ProcessResult{Error: NewAgentError(category, "failed to persist tool results", err)}
 		}
 	}
 
@@ -761,7 +779,7 @@ func WithLoopDetector() TurnMiddleware {
 					if currentHash == prevHash {
 						return ProcessResult{
 							Stop:  true,
-							Error: fmt.Errorf("infinite loop detected: model is repeating a previous response (content or tool calls)"),
+							Error: NewAgentError(ErrLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
 						}
 					}
 				}
@@ -780,7 +798,7 @@ func WithLoopDetector() TurnMiddleware {
 						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
 							return ProcessResult{
 								Stop:  true,
-								Error: fmt.Errorf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]),
+								Error: NewAgentError(ErrLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
 							}
 						}
 					}

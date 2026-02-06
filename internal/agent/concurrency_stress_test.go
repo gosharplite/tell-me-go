@@ -141,3 +141,67 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 		t.Error("Expected ToolCallEvent to be published")
 	}
 }
+
+func TestContextManager_Race(t *testing.T) {
+	tmpDir := t.TempDir()
+	h := history.NewManager(tmpDir + "/history.json")
+	bus := &events.SimpleEventBus{}
+	strategy := NewContextStrategy(&HeuristicTokenCounter{}, bus)
+	factory := &PipelineFactory{
+		Estimator: strategy,
+		Events:    bus,
+		History:   h,
+	}
+	cm := NewContextManager(strategy, h, bus, factory)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	// Goroutine 1: Prepare (Simulate turn start)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			_, _, _ = cm.Prepare(ctx, i)
+			time.Sleep(2 * time.Millisecond)
+		}
+	}()
+
+	// Goroutine 2: AddContent (Simulate adding model response)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "ping"}}})
+			_ = cm.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "pong"}}})
+			time.Sleep(3 * time.Millisecond)
+		}
+	}()
+
+	// Goroutine 3: Config updates (Simulate dynamic limits)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			bus.Publish(events.ConfigUpdated{
+				Limits: events.Limits{
+					MaxHistoryTokens: 1000 + i,
+					MaxToolTurns:     10,
+					MaxHistoryTurns:  20,
+				},
+			})
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	// Goroutine 4: Summarize (Simulate background/ad-hoc summarization)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			_, _, _ = cm.SummarizeRange(ctx, 2, "focus")
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
+}

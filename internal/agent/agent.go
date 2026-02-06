@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -167,12 +168,12 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 	factory := &PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
-		Summarizer: NewSummarizer(gw, bus),
+		Summarizer: summarizer.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
 
-	ctxManager := NewContextManager(strategy, hManager, gw, bus, factory)
+	ctxManager := NewContextManager(strategy, hManager, bus, factory)
 	a.ctxManager = ctxManager
 
 	// Initialize engine
