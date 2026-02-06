@@ -47,10 +47,10 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 	// req.History[1]: user (System Notice)
 	// req.History[2]: model (Understood)
 	// req.History[3]: user (FunctionResponse)
-	
+
 	// We want to verify it DOES NOT insert messages in between.
 	// It should just append to TransientParts of the last message.
-	
+
 	if len(req.History) != 2 {
 		t.Errorf("expected 2 messages, got %d. Sequence was likely broken by inserted messages.", len(req.History))
 		for i, msg := range req.History {
