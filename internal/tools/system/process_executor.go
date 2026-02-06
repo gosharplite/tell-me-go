@@ -53,26 +53,9 @@ func NewProcessExecutor() *ProcessExecutor {
 
 // RunCommand executes a single command.
 func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config ExecutionConfig) (ExecutionResult, error) {
-	if len(parts) == 0 {
-		return ExecutionResult{}, fmt.Errorf("empty command")
-	}
-
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-
-	stdout, err := cmd.StdoutPipe()
+	cmd, stdout, stderr, file, err := e.setupCommand(ctx, parts, config)
 	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
-
-	file, err := e.openOutputFile(config)
-	if err != nil {
-		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
-		}
+		return ExecutionResult{}, err
 	}
 	if file != nil {
 		defer file.Close()
@@ -83,91 +66,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	var sb strings.Builder
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
-	maxCapture := config.MaxCapture
-	if maxCapture <= 0 {
-		maxCapture = 1024 * 1024 // Default 1MB
-	}
-
-	capture := func(r io.Reader, isStderr bool) {
-		defer wg.Done()
-
-		scanner := bufio.NewScanner(r)
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, maxScannerCapacity)
-		var lineBuf []byte
-		for scanner.Scan() {
-			data := scanner.Bytes()
-			// Reuse buffer and append newline for atomic write
-			lineBuf = append(lineBuf[:0], data...)
-			lineBuf = append(lineBuf, '\n')
-
-			mu.Lock()
-			if file != nil {
-				wt.Write(file, lineBuf)
-			}
-
-			// Slice to remove the newline for other uses
-			rawLine := lineBuf[:len(data)]
-
-			var content string
-			var feedbackMsg string
-			if isStderr {
-				feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", colors.ColorRed, rawLine, colors.ColorReset)
-				content = fmt.Sprintf("[stderr] %s\n", rawLine)
-			} else {
-				feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
-				content = string(lineBuf)
-			}
-
-			if sb.Len() < maxCapture {
-				remaining := maxCapture - sb.Len()
-				if len(content) > remaining {
-					truncated.Store(true)
-				}
-				content = truncateToValidUTF8(content, remaining)
-				sb.WriteString(content)
-			} else {
-				truncated.Store(true)
-			}
-
-			if config.Feedback != nil {
-				fmt.Fprint(config.Feedback, feedbackMsg)
-			}
-			mu.Unlock()
-		}
-
-		if err := scanner.Err(); err != nil {
-			msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
-			if err == bufio.ErrTooLong {
-				msg = "\n[Warning] Output line too long for scanner; truncated."
-			}
-
-			mu.Lock()
-			if config.Feedback != nil {
-				fmt.Fprintln(config.Feedback, msg)
-			}
-			remaining := maxCapture - sb.Len()
-			if remaining > 0 {
-				if len(msg+"\n") > remaining {
-					truncated.Store(true)
-				}
-				content := truncateToValidUTF8(msg+"\n", remaining)
-				sb.WriteString(content)
-			} else {
-				truncated.Store(true)
-			}
-			mu.Unlock()
-		}
-	}
-
-	wg.Add(2)
-	go capture(stdout, false)
-	go capture(stderr, true)
-	wg.Wait()
+	truncated := e.captureOutput(&sb, stdout, stderr, config, file)
 
 	waitErr := cmd.Wait()
 	exitCode := 0
@@ -183,6 +82,121 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 		ExitCode:  exitCode,
 		Truncated: truncated.Load(),
 	}, nil
+}
+
+func (e *ProcessExecutor) setupCommand(ctx context.Context, parts []string, config ExecutionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
+	if len(parts) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("empty command")
+	}
+
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
+
+	file, err := e.openOutputFile(config)
+	if err != nil {
+		if config.Feedback != nil {
+			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
+		}
+	}
+	return cmd, stdout, stderr, file, nil
+}
+
+func (e *ProcessExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config ExecutionConfig, file *os.File) *atomic.Bool {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	truncated := &atomic.Bool{}
+	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
+	maxCapture := config.MaxCapture
+	if maxCapture <= 0 {
+		maxCapture = 1024 * 1024 // Default 1MB
+	}
+
+	wg.Add(2)
+	go e.captureStream(stdout, false, sb, &mu, &wg, truncated, wt, config, file, maxCapture)
+	go e.captureStream(stderr, true, sb, &mu, &wg, truncated, wt, config, file, maxCapture)
+	wg.Wait()
+
+	return truncated
+}
+
+func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.Builder, mu *sync.Mutex, wg *sync.WaitGroup, truncated *atomic.Bool, wt *writeTracker, config ExecutionConfig, file *os.File, maxCapture int) {
+	defer wg.Done()
+
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
+	var lineBuf []byte
+	for scanner.Scan() {
+		data := scanner.Bytes()
+		// Reuse buffer and append newline for atomic write
+		lineBuf = append(lineBuf[:0], data...)
+		lineBuf = append(lineBuf, '\n')
+
+		mu.Lock()
+		if file != nil {
+			wt.Write(file, lineBuf)
+		}
+
+		// Slice to remove the newline for other uses
+		rawLine := lineBuf[:len(data)]
+
+		var content string
+		var feedbackMsg string
+		if isStderr {
+			feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", colors.ColorRed, rawLine, colors.ColorReset)
+			content = fmt.Sprintf("[stderr] %s\n", rawLine)
+		} else {
+			feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
+			content = string(lineBuf)
+		}
+
+		if sb.Len() < maxCapture {
+			remaining := maxCapture - sb.Len()
+			if len(content) > remaining {
+				truncated.Store(true)
+			}
+			content = truncateToValidUTF8(content, remaining)
+			sb.WriteString(content)
+		} else {
+			truncated.Store(true)
+		}
+
+		if config.Feedback != nil {
+			fmt.Fprint(config.Feedback, feedbackMsg)
+		}
+		mu.Unlock()
+	}
+
+	if err := scanner.Err(); err != nil {
+		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+		if err == bufio.ErrTooLong {
+			msg = "\n[Warning] Output line too long for scanner; truncated."
+		}
+
+		mu.Lock()
+		if config.Feedback != nil {
+			fmt.Fprintln(config.Feedback, msg)
+		}
+		remaining := maxCapture - sb.Len()
+		if remaining > 0 {
+			if len(msg+"\n") > remaining {
+				truncated.Store(true)
+			}
+			content := truncateToValidUTF8(msg+"\n", remaining)
+			sb.WriteString(content)
+		} else {
+			truncated.Store(true)
+		}
+		mu.Unlock()
+	}
 }
 
 // RunPipeline executes a sequence of piped commands.
