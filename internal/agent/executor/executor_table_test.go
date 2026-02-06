@@ -31,382 +31,414 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func TestToolExecutor_TableDriven(t *testing.T) {
-	tests := []struct {
-		name               string
-		tools              map[string]toolBehavior
-		calls              []*llm.FunctionCall
-		maxConcurrentTools int
-		toolTimeout        time.Duration
-		turn               int
-		maxTurns           int
-		allowedTools       []string
-		wantError          error
-		verify             func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior)
-	}{
-		{
-			name: "Success Path - Parallel Execution",
-			tools: map[string]toolBehavior{
-				"tool1": {result: tools.ToolResult{Text: "res1"}},
-				"tool2": {result: tools.ToolResult{Text: "res2"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "tool1"},
-				{Name: "tool2"},
-			},
-			maxConcurrentTools: 2,
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if resp == nil || len(resp.Parts) != 2 {
-					t.Fatalf("expected 2 response parts, got %v", resp)
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *events.TestEventBus, map[string]*toolBehavior) {
+	reg := registry.New()
+	behaviors := make(map[string]*toolBehavior)
+	for name, behavior := range toolsMap {
+		b := behavior
+		behaviors[name] = &b
+		opts := registry.ToolOptions{
+			Serial:      b.serial,
+			LongRunning: b.long,
+		}
+		reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+			if b.observe != nil {
+				b.observe()
+			}
+			if b.panic != nil {
+				panic(b.panic)
+			}
+			if b.delay > 0 {
+				select {
+				case <-ctx.Done():
+					return tools.ToolResult{}, ctx.Err()
+				case <-time.After(b.delay):
 				}
-				// Strategies might wrap the result, but MarkdownStrategy (default) adds "Tool tool1 result: res1"
-				// Actually, MarkdownStrategy adds "### Tool: tool1\n\nres1"
-				res1 := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				res2 := resp.Parts[1].FunctionResponse.Response["result"].(string)
-				if res1 != "res1" || res2 != "res2" {
-					t.Errorf("unexpected results: %s, %s", res1, res2)
-				}
-			},
-		},
-		{
-			name: "Success Path - Sequential Execution",
-			tools: map[string]toolBehavior{
-				"serial_tool": {result: tools.ToolResult{Text: "serial_res"}, serial: true},
-				"tool2":       {result: tools.ToolResult{Text: "res2"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "serial_tool"},
-				{Name: "tool2"},
-			},
-			maxConcurrentTools: 2,
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if len(resp.Parts) != 2 {
-					t.Fatalf("expected 2 response parts, got %d", len(resp.Parts))
-				}
-			},
-		},
-		{
-			name: "Error - Tool Not Found",
-			tools: map[string]toolBehavior{
-				"existing": {result: tools.ToolResult{Text: "ok"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "missing"},
-			},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if len(resp.Parts) != 1 {
-					t.Fatalf("expected 1 response part, got %d", len(resp.Parts))
-				}
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Tool \"missing\" is not defined") {
-					t.Errorf("expected tool not found error message, got %s", res)
-				}
-				// Verify error categorization
-				evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
-				if len(evs) == 0 {
-					t.Fatalf("expected ToolResultEvent to be published")
-				}
-				if !errors.Is(evs[0].(events.ToolResultEvent).Result.Error, agenerrors.ErrToolNotFound) {
-					t.Errorf("expected ErrToolNotFound, got %v", evs[0].(events.ToolResultEvent).Result.Error)
-				}
-			},
-		},
-		{
-			name: "Error - Tool Suggestion",
-			tools: map[string]toolBehavior{
-				"list_files": {result: tools.ToolResult{Text: "ok"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "list_file"}, // one char off
-			},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Did you mean \"list_files\"?") {
-					t.Errorf("expected suggestion, got %s", res)
-				}
-			},
-		},
-		{
-			name: "Error - Security Violation",
-			tools: map[string]toolBehavior{
-				"forbidden": {result: tools.ToolResult{Text: "ok"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "forbidden"},
-			},
-			allowedTools: []string{"allowed"},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Security policy: command \"forbidden\" is not allowed") {
-					t.Errorf("expected security error, got %s", res)
-				}
-				evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
-				if len(evs) == 0 {
-					t.Fatalf("expected ToolResultEvent to be published")
-				}
-				if !errors.Is(evs[0].(events.ToolResultEvent).Result.Error, agenerrors.ErrSecurityViolation) {
-					t.Errorf("expected ErrSecurityViolation, got %v", evs[0].(events.ToolResultEvent).Result.Error)
-				}
-			},
-		},
-		{
-			name: "Error - Tool Timeout",
-			tools: map[string]toolBehavior{
-				"slow": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "slow"},
-			},
-			toolTimeout: 10 * time.Millisecond,
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Tool execution timed out") {
-					t.Errorf("expected timeout error, got %s", res)
-				}
-				evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
-				if len(evs) == 0 {
-					t.Fatalf("expected ToolResultEvent to be published")
-				}
-				if !errors.Is(evs[0].(events.ToolResultEvent).Result.Error, agenerrors.ErrToolTimeout) {
-					t.Errorf("expected ErrToolTimeout, got %v", evs[0].(events.ToolResultEvent).Result.Error)
-				}
-			},
-		},
-		{
-			name: "Error - Max Turns Reached",
-			tools: map[string]toolBehavior{
-				"tool": {result: tools.ToolResult{Text: "ok"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "tool"},
-			},
-			turn:      5,
-			maxTurns:  5,
-			wantError: llm.ErrMaxTurnsReached,
-		},
-		{
-			name: "Panic Recovery - Parallel",
-			tools: map[string]toolBehavior{
-				"panic_tool": {panic: "kaboom"},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "panic_tool"},
-			},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Panic detected: kaboom") {
-					t.Errorf("expected panic error, got %s", res)
-				}
-				evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
-				if len(evs) == 0 {
-					t.Fatalf("expected ToolResultEvent to be published")
-				}
-				if !errors.Is(evs[0].(events.ToolResultEvent).Result.Error, agenerrors.ErrFatal) {
-					t.Errorf("expected ErrFatal, got %v", evs[0].(events.ToolResultEvent).Result.Error)
-				}
-			},
-		},
-		{
-			name: "Panic Recovery - Serial",
-			tools: map[string]toolBehavior{
-				"serial_panic": {panic: "serial kaboom", serial: true},
-				"next_tool":    {result: tools.ToolResult{Text: "should skip"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "serial_panic"},
-				{Name: "next_tool"},
-			},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res0 := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res0, "Panic detected: serial kaboom") {
-					t.Errorf("expected serial panic error, got %s", res0)
-				}
-				res1 := resp.Parts[1].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res1, "Skipped: Execution halted") {
-					t.Errorf("expected skipped message, got %s", res1)
-				}
-			},
-		},
-		{
-			name: "Concurrency Limit",
-			tools: map[string]toolBehavior{
-				"t1": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r1"}},
-				"t2": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r2"}},
-				"t3": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "t1"},
-				{Name: "t2"},
-				{Name: "t3"},
-			},
-			maxConcurrentTools: 1, // Only one at a time
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if len(resp.Parts) != 3 {
-					t.Fatalf("expected 3 results, got %d", len(resp.Parts))
-				}
-			},
-		},
-		{
-			name: "Mixed Path - Parallel then Serial",
-			tools: map[string]toolBehavior{
-				"p1": {result: tools.ToolResult{Text: "pr1"}},
-				"p2": {result: tools.ToolResult{Text: "pr2"}},
-				"s1": {result: tools.ToolResult{Text: "sr1"}, serial: true},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "p1"},
-				{Name: "p2"},
-				{Name: "s1"},
-			},
-			maxConcurrentTools: 2,
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if len(resp.Parts) != 3 {
-					t.Fatalf("expected 3 results, got %d", len(resp.Parts))
-				}
-			},
-		},
-		{
-			name:  "No Function Calls",
-			tools: map[string]toolBehavior{},
-			calls: []*llm.FunctionCall{},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				if resp != nil {
-					t.Errorf("expected nil response, got %v", resp)
-				}
-			},
-		},
-		{
-			name: "Tool Returns Error",
-			tools: map[string]toolBehavior{
-				"fail_tool": {err: errors.New("tool failed")},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "fail_tool"},
-			},
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if !strings.Contains(res, "Error: tool failed") {
-					t.Errorf("expected error message, got %s", res)
-				}
-				if !errors.Is(bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))[0].(events.ToolResultEvent).Result.Error, agenerrors.ErrInvalidArgs) {
-					t.Errorf("expected ErrInvalidArgs for tool error, got %v", bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))[0].(events.ToolResultEvent).Result.Error)
-				}
-			},
-		},
-		{
-			name: "Long Running Tool - No Timeout",
-			tools: map[string]toolBehavior{
-				"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "long_tool"},
-			},
-			toolTimeout: 10 * time.Millisecond, // Should NOT timeout because it's long running
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				res := resp.Parts[0].FunctionResponse.Response["result"].(string)
-				if res != "finally finished" {
-					t.Errorf("expected 'finally finished', got %s", res)
-				}
-			},
-		},
-		{
-			name: "Context Cancellation During Execution",
-			tools: map[string]toolBehavior{
-				"tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "ok"}},
-			},
-			calls: []*llm.FunctionCall{
-				{Name: "tool"},
-			},
-			wantError: context.Canceled,
-			verify: func(t *testing.T, resp *llm.Content, bus *events.TestEventBus, behaviors map[string]*toolBehavior) {
-				// No response expected
-			},
-		},
+			}
+			return b.result, b.err
+		}, opts)
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			reg := registry.New()
-			behaviors := make(map[string]*toolBehavior)
-			for name, behavior := range tt.tools {
-				b := behavior
-				behaviors[name] = &b
-				opts := registry.ToolOptions{
-					Serial:      b.serial,
-					LongRunning: b.long,
-				}
-				reg.RegisterWithOptions(&tools.ToolDeclaration{Name: name}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-					if b.observe != nil {
-						b.observe()
-					}
-					if b.panic != nil {
-						panic(b.panic)
-					}
-					if b.delay > 0 {
-						select {
-						case <-ctx.Done():
-							return tools.ToolResult{}, ctx.Err()
-						case <-time.After(b.delay):
-						}
-					}
-					return b.result, b.err
-				}, opts)
-			}
-
-			var sm *mockSecurityManager
-			if tt.allowedTools != nil {
-				sm = &mockSecurityManager{
-					allowedCommands: make(map[string]bool),
-				}
-				for _, tool := range tt.allowedTools {
-					sm.allowedCommands[tool] = true
-				}
-			} else {
-				sm = &mockSecurityManager{allowAll: true}
-			}
-
-			bus := &events.TestEventBus{}
-			exec := NewToolExecutor(reg, sm, bus)
-			exec.SetStrategy(&MockStrategy{}) // Use simple strategy for easier verification
-			if tt.maxConcurrentTools > 0 || tt.toolTimeout > 0 {
-				exec.SetConcurrency(tt.maxConcurrentTools, tt.toolTimeout)
-			}
-			t.Cleanup(exec.Shutdown)
-
-			if tt.maxTurns == 0 {
-				tt.maxTurns = 10
-			}
-
-			content := &llm.Content{Parts: make([]*llm.Part, len(tt.calls))}
-			for i, call := range tt.calls {
-				content.Parts[i] = &llm.Part{FunctionCall: call}
-			}
-
-			ctx := context.Background()
-			if tt.name == "Context Cancellation During Execution" {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithCancel(ctx)
-				cancel()
-			}
-
-			resp, err := exec.Execute(ctx, content, tt.turn, tt.maxTurns)
-
-			if tt.wantError != nil {
-				if !errors.Is(err, tt.wantError) {
-					t.Fatalf("expected error %v, got %v", tt.wantError, err)
-				}
-			} else if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if tt.verify != nil {
-				tt.verify(t, resp, bus, behaviors)
-			}
-		})
+	var sm *mockSecurityManager
+	if allowedTools != nil {
+		sm = &mockSecurityManager{
+			allowedCommands: make(map[string]bool),
+		}
+		for _, tool := range allowedTools {
+			sm.allowedCommands[tool] = true
+		}
+	} else {
+		sm = &mockSecurityManager{allowAll: true}
 	}
+
+	bus := &events.TestEventBus{}
+	exec := NewToolExecutor(reg, sm, bus)
+	exec.SetStrategy(&MockStrategy{}) // Use simple strategy for easier verification
+	t.Cleanup(exec.Shutdown)
+
+	return exec, bus, behaviors
+}
+
+func verifyErrorResponse(t *testing.T, resp *llm.Content, expectedMsg string) {
+	t.Helper()
+	if resp == nil || len(resp.Parts) == 0 {
+		t.Fatalf("expected response parts, got %v", resp)
+	}
+	res := resp.Parts[0].FunctionResponse.Response["result"].(string)
+	if !strings.Contains(res, expectedMsg) {
+		t.Errorf("expected error message containing %q, got %q", expectedMsg, res)
+	}
+}
+
+func verifyToolEventError(t *testing.T, bus *events.TestEventBus, expectedErr error) {
+	t.Helper()
+	evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
+	if len(evs) == 0 {
+		t.Fatalf("expected ToolResultEvent to be published")
+	}
+	if !errors.Is(evs[0].(events.ToolResultEvent).Result.Error, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, evs[0].(events.ToolResultEvent).Result.Error)
+	}
+}
+
+func TestToolExecutor_Success(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Parallel Execution", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"tool1": {result: tools.ToolResult{Text: "res1"}},
+			"tool2": {result: tools.ToolResult{Text: "res2"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(2, 0)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
+			{FunctionCall: &llm.FunctionCall{Name: "tool2"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if resp == nil || len(resp.Parts) != 2 {
+			t.Fatalf("expected 2 response parts, got %v", resp)
+		}
+		res1 := resp.Parts[0].FunctionResponse.Response["result"].(string)
+		res2 := resp.Parts[1].FunctionResponse.Response["result"].(string)
+		if res1 != "res1" || res2 != "res2" {
+			t.Errorf("unexpected results: %s, %s", res1, res2)
+		}
+	})
+
+	t.Run("Sequential Execution", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"serial_tool": {result: tools.ToolResult{Text: "serial_res"}, serial: true},
+			"tool2":       {result: tools.ToolResult{Text: "res2"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(2, 0)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "serial_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "tool2"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(resp.Parts) != 2 {
+			t.Fatalf("expected 2 response parts, got %d", len(resp.Parts))
+		}
+	})
+}
+
+func TestToolExecutor_Errors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Tool Not Found", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"existing": {result: tools.ToolResult{Text: "ok"}},
+		}
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "missing"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
+		verifyToolEventError(t, bus, agenerrors.ErrToolNotFound)
+	})
+
+	t.Run("Tool Suggestion", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"list_files": {result: tools.ToolResult{Text: "ok"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "list_file"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Did you mean \"list_files\"?")
+	})
+
+	t.Run("Security Violation", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"forbidden": {result: tools.ToolResult{Text: "ok"}},
+		}
+		exec, bus, _ := setupTestExecutor(t, toolsMap, []string{"allowed"})
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "forbidden"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Security policy: command \"forbidden\" is not allowed")
+		verifyToolEventError(t, bus, agenerrors.ErrSecurityViolation)
+	})
+
+	t.Run("Tool Returns Error", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"fail_tool": {err: errors.New("tool failed")},
+		}
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "fail_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Error: tool failed")
+		verifyToolEventError(t, bus, agenerrors.ErrInvalidArgs)
+	})
+}
+
+func TestToolExecutor_SafetyLimits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Tool Timeout", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"slow": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "too late"}},
+		}
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(0, 10*time.Millisecond)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "slow"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Tool execution timed out")
+		verifyToolEventError(t, bus, agenerrors.ErrToolTimeout)
+	})
+
+	t.Run("Max Turns Reached", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"tool": {result: tools.ToolResult{Text: "ok"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "tool"}},
+		}}
+
+		_, err := exec.Execute(context.Background(), content, 5, 5)
+		if !errors.Is(err, llm.ErrMaxTurnsReached) {
+			t.Fatalf("expected ErrMaxTurnsReached, got %v", err)
+		}
+	})
+
+	t.Run("Long Running Tool - No Timeout", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"long_tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "finally finished"}, long: true},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(0, 10*time.Millisecond)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "long_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || len(resp.Parts) == 0 {
+			t.Fatalf("expected response parts")
+		}
+		res := resp.Parts[0].FunctionResponse.Response["result"].(string)
+		if res != "finally finished" {
+			t.Errorf("expected 'finally finished', got %s", res)
+		}
+	})
+}
+
+func TestToolExecutor_PanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Parallel Panic", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"panic_tool": {panic: "kaboom"},
+		}
+		exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "panic_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Panic detected: kaboom")
+		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+	})
+
+	t.Run("Serial Panic", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"serial_panic": {panic: "serial kaboom", serial: true},
+			"next_tool":    {result: tools.ToolResult{Text: "should skip"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "serial_panic"}},
+			{FunctionCall: &llm.FunctionCall{Name: "next_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || len(resp.Parts) < 2 {
+			t.Fatalf("expected at least 2 parts, got %v", resp)
+		}
+		res0 := resp.Parts[0].FunctionResponse.Response["result"].(string)
+		if !strings.Contains(res0, "Panic detected: serial kaboom") {
+			t.Errorf("expected serial panic error, got %s", res0)
+		}
+		res1 := resp.Parts[1].FunctionResponse.Response["result"].(string)
+		if !strings.Contains(res1, "Skipped: Execution halted") {
+			t.Errorf("expected skipped message, got %s", res1)
+		}
+	})
+}
+
+func TestToolExecutor_Concurrency(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Concurrency Limit", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"t1": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r1"}},
+			"t2": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r2"}},
+			"t3": {delay: 50 * time.Millisecond, result: tools.ToolResult{Text: "r3"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(1, 0)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "t1"}},
+			{FunctionCall: &llm.FunctionCall{Name: "t2"}},
+			{FunctionCall: &llm.FunctionCall{Name: "t3"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(resp.Parts) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(resp.Parts))
+		}
+	})
+
+	t.Run("Mixed Path - Parallel then Serial", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"p1": {result: tools.ToolResult{Text: "pr1"}},
+			"p2": {result: tools.ToolResult{Text: "pr2"}},
+			"s1": {result: tools.ToolResult{Text: "sr1"}, serial: true},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		exec.SetConcurrency(2, 0)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "p1"}},
+			{FunctionCall: &llm.FunctionCall{Name: "p2"}},
+			{FunctionCall: &llm.FunctionCall{Name: "s1"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(resp.Parts) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(resp.Parts))
+		}
+	})
+}
+
+func TestToolExecutor_ExecutionControl(t *testing.T) {
+	t.Parallel()
+
+	t.Run("No Function Calls", func(t *testing.T) {
+		t.Parallel()
+		exec, _, _ := setupTestExecutor(t, nil, nil)
+		content := &llm.Content{Parts: []*llm.Part{}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp != nil {
+			t.Errorf("expected nil response, got %v", resp)
+		}
+	})
+
+	t.Run("Context Cancellation During Execution", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"tool": {delay: 100 * time.Millisecond, result: tools.ToolResult{Text: "ok"}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "tool"}},
+		}}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := exec.Execute(ctx, content, 0, 10)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	})
 }
 
 func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {

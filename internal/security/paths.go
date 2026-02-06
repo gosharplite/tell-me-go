@@ -30,6 +30,65 @@ func NewPathPolicy() *PathPolicy {
 	return &PathPolicy{}
 }
 
+type pathRule func(absPath string, writable bool) (bool, error)
+
+// checkDefaultBoundaries checks if the path is within the Current Working Directory (CWD) or the system Temp directory.
+func (p *PathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error) {
+	cwd, err := os.Getwd()
+	if err == nil {
+		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+			return true, nil
+		}
+	}
+
+	if ok, _ := p.checkBoundary(absPath, os.TempDir()); ok {
+		return true, nil
+	}
+	return false, nil
+}
+
+// checkSafePaths checks against the safePaths slice, including the prevention of direct access to the safePathsFile.
+func (p *PathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
+	p.safePathsMu.RLock()
+	defer p.safePathsMu.RUnlock()
+
+	if p.safePathsFile != "" {
+		if absSafeFile, err := filepath.Abs(p.safePathsFile); err == nil && absPath == absSafeFile {
+			return false, fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
+		}
+	}
+
+	for _, sp := range p.safePaths {
+		if ok, _ := p.checkBoundary(absPath, sp); ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// checkReadOnlyPaths if writable is false, checks against the readOnlyPaths slice, including the prevention of direct access to the readOnlyPathsFile.
+func (p *PathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, error) {
+	if writable {
+		return false, nil
+	}
+
+	p.readOnlyPathsMu.RLock()
+	defer p.readOnlyPathsMu.RUnlock()
+
+	if p.readOnlyPathsFile != "" {
+		if absReadSafeFile, err := filepath.Abs(p.readOnlyPathsFile); err == nil && absPath == absReadSafeFile {
+			return false, fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
+		}
+	}
+
+	for _, rop := range p.readOnlyPaths {
+		if ok, _ := p.checkBoundary(absPath, rop); ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ValidatePath checks if a path is allowed.
 // If writable=true, it checks CWD, Temp, and SafePaths.
 // If writable=false, it ALSO checks ReadOnlyPaths.
@@ -47,53 +106,20 @@ func (p *PathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	// 2. Default Boundaries (CWD, Temp)
-	cwd, err := os.Getwd()
-	if err == nil {
-		if ok, _ := p.checkBoundary(absPath, cwd); ok {
+	rules := []pathRule{
+		p.checkDefaultBoundaries,
+		p.checkSafePaths,
+		p.checkReadOnlyPaths,
+	}
+
+	for _, rule := range rules {
+		ok, err := rule(absPath, writable)
+		if err != nil {
+			return "", err
+		}
+		if ok {
 			return absPath, nil
 		}
-	}
-
-	if ok, _ := p.checkBoundary(absPath, os.TempDir()); ok {
-		return absPath, nil
-	}
-
-	// 3. Safe Paths (Read + Write)
-	p.safePathsMu.RLock()
-	// Block access to config files
-	if p.safePathsFile != "" {
-		if absSafeFile, err := filepath.Abs(p.safePathsFile); err == nil && absPath == absSafeFile {
-			p.safePathsMu.RUnlock()
-			return "", fmt.Errorf("security violation: direct access to safe paths configuration is forbidden")
-		}
-	}
-
-	for _, sp := range p.safePaths {
-		if ok, _ := p.checkBoundary(absPath, sp); ok {
-			p.safePathsMu.RUnlock()
-			return absPath, nil
-		}
-	}
-	p.safePathsMu.RUnlock()
-
-	// 4. Read-Only Paths (Read only)
-	if !writable {
-		p.readOnlyPathsMu.RLock()
-		if p.readOnlyPathsFile != "" {
-			if absReadSafeFile, err := filepath.Abs(p.readOnlyPathsFile); err == nil && absPath == absReadSafeFile {
-				p.readOnlyPathsMu.RUnlock()
-				return "", fmt.Errorf("security violation: direct access to read-only paths configuration is forbidden")
-			}
-		}
-
-		for _, rop := range p.readOnlyPaths {
-			if ok, _ := p.checkBoundary(absPath, rop); ok {
-				p.readOnlyPathsMu.RUnlock()
-				return absPath, nil
-			}
-		}
-		p.readOnlyPathsMu.RUnlock()
 	}
 
 	mode := "read-only"

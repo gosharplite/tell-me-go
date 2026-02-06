@@ -105,80 +105,13 @@ func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 	modName := a.modName
 	a.pkgMu.RUnlock()
 
-	// 2. Find start function
-	var startPkg *packages.Package
-	var startFunc *ast.FuncDecl
-
-	// Robustly find package and function name
-	var remaining string
-	for _, p := range pkgs {
-		if strings.HasPrefix(startSymbol, p.PkgPath+".") {
-			if startPkg == nil || len(p.PkgPath) > len(startPkg.PkgPath) {
-				startPkg = p
-				remaining = startSymbol[len(p.PkgPath)+1:]
-			}
-		}
-	}
-
-	if startPkg == nil {
-		// Fallback for symbols without full package path (maybe just pkg.Func)
-		lastDot := strings.LastIndex(startSymbol, ".")
-		if lastDot != -1 {
-			pkgPath := startSymbol[:lastDot]
-			remaining = startSymbol[lastDot+1:]
-			for _, p := range pkgs {
-				if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
-					startPkg = p
-					break
-				}
-			}
-		}
-	}
-
+	startPkg, remaining := a.findStartPackage(startSymbol, pkgs)
 	if startPkg == nil {
 		return nil, fmt.Errorf("start symbol package not found: %s", startSymbol)
 	}
 
-	funcName := remaining
-	if dot := strings.LastIndex(funcName, "."); dot != -1 {
-		funcName = funcName[dot+1:]
-	}
-	funcName = strings.TrimPrefix(funcName, "(")
-	funcName = strings.TrimSuffix(funcName, ")")
-	if dot := strings.LastIndex(funcName, "."); dot != -1 {
-		funcName = funcName[dot+1:]
-	}
-
-	for _, file := range startPkg.Syntax {
-		for _, decl := range file.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == funcName {
-				// If we have a receiver type in the symbol, try to match it
-				if strings.Contains(remaining, ".") {
-					recvName := a.getReceiverTypeName(fd.Recv)
-					if recvName != "" {
-						// Normalize both for flexible matching (e.g., Handler vs *Handler)
-						cleanRecv := strings.TrimPrefix(recvName, "*")
-						cleanRemaining := strings.ReplaceAll(remaining, "*", "")
-						if strings.Contains(cleanRemaining, cleanRecv) {
-							startFunc = fd
-							break
-						}
-					}
-				} else if fd.Recv == nil {
-					startFunc = fd
-					break
-				} else {
-					// leniant match if no better candidate found
-					startFunc = fd
-				}
-			}
-		}
-		if startFunc != nil {
-			break
-		}
-	}
-
-	if startFunc == nil {
+	startFunc, err := a.resolveStartFunc(startPkg, remaining)
+	if err != nil {
 		return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
 	}
 
@@ -264,41 +197,7 @@ func (v *sequenceVisitor) Visit(n ast.Node) ast.Visitor {
 }
 
 func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
-	var targetFunc string
-	var targetPkgPath string
-
-	switch expr := call.Fun.(type) {
-	case *ast.Ident:
-		// Local call in same package
-		targetFunc = expr.Name
-		if obj := v.pkg.TypesInfo.Uses[expr]; obj != nil {
-			if obj.Pkg() != nil {
-				targetPkgPath = obj.Pkg().Path()
-			} else {
-				// Built-in function
-				return
-			}
-		} else {
-			targetPkgPath = v.pkg.PkgPath
-		}
-	case *ast.SelectorExpr:
-		// Cross-package or method call
-		targetFunc = expr.Sel.Name
-		if ident, ok := expr.X.(*ast.Ident); ok {
-			if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
-				if p, ok := obj.(*types.PkgName); ok {
-					targetPkgPath = p.Imported().Path()
-				} else {
-					targetPkgPath = v.analyzer.getTypePkgPath(obj.Type())
-				}
-			}
-		} else {
-			if tv, ok := v.pkg.TypesInfo.Types[expr.X]; ok {
-				targetPkgPath = v.analyzer.getTypePkgPath(tv.Type)
-			}
-		}
-	}
-
+	targetFunc, targetPkgPath := v.resolveTarget(call)
 	if targetPkgPath == "" {
 		return
 	}
@@ -308,34 +207,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 		return
 	}
 
-	// Check for interface call
-	isInterface := false
-	var interfaceTypeName string
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
-			if _, ok := tv.Type.Underlying().(*types.Interface); ok {
-				isInterface = true
-				interfaceTypeName = v.analyzer.getTypeName(tv.Type)
-			}
-		}
-	}
-
-	displayFunc := targetFunc
-	if isInterface {
-		if interfaceTypeName == "" {
-			interfaceTypeName = "Interface"
-		}
-		displayFunc = fmt.Sprintf("%s.%s", interfaceTypeName, targetFunc)
-	}
-
-	// Get return type
-	retType := ""
-	if tv, ok := v.pkg.TypesInfo.Types[call]; ok {
-		retType = v.analyzer.getTypeName(tv.Type)
-		if retType == "()" || retType == "invalid type" {
-			retType = ""
-		}
-	}
+	displayFunc, retType := v.resolveCallDetails(call, targetFunc)
 
 	frame := CallFrame{
 		From:     v.analyzer.shortenPkg(v.pkg.PkgPath),
@@ -356,21 +228,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 
 	*v.frames = append(*v.frames, frame)
 
-	// Recurse if internal
-	if v.depth+1 < v.maxDepth {
-		for _, p := range v.allPkgs {
-			if p.PkgPath == targetPkgPath {
-				for _, file := range p.Syntax {
-					for _, decl := range file.Decls {
-						if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == targetFunc {
-							v.analyzer.walk(p, fd, v.depth+1, v.maxDepth, v.frames, v.visited, v.allPkgs, v.modName)
-							return
-						}
-					}
-				}
-			}
-		}
-	}
+	v.tryRecurse(targetPkgPath, targetFunc, v.depth, v.maxDepth)
 }
 
 func (a *SequenceAnalyzer) getTypePkgPath(t types.Type) string {
@@ -430,4 +288,155 @@ func (a *SequenceAnalyzer) exprToString(expr ast.Expr) string {
 		return a.exprToString(t.X)
 	}
 	return ""
+}
+
+func (a *SequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+	var startPkg *packages.Package
+	var remaining string
+	for _, p := range allPkgs {
+		if strings.HasPrefix(symbol, p.PkgPath+".") {
+			if startPkg == nil || len(p.PkgPath) > len(startPkg.PkgPath) {
+				startPkg = p
+				remaining = symbol[len(p.PkgPath)+1:]
+			}
+		}
+	}
+
+	if startPkg == nil {
+		lastDot := strings.LastIndex(symbol, ".")
+		if lastDot != -1 {
+			pkgPath := symbol[:lastDot]
+			remaining = symbol[lastDot+1:]
+			for _, p := range allPkgs {
+				if strings.HasSuffix(p.PkgPath, pkgPath) || p.PkgPath == pkgPath {
+					startPkg = p
+					break
+				}
+			}
+		}
+	}
+	return startPkg, remaining
+}
+
+func (a *SequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining string) (*ast.FuncDecl, error) {
+	funcName := remaining
+	if dot := strings.LastIndex(funcName, "."); dot != -1 {
+		funcName = funcName[dot+1:]
+	}
+	funcName = strings.TrimPrefix(funcName, "(")
+	funcName = strings.TrimSuffix(funcName, ")")
+	if dot := strings.LastIndex(funcName, "."); dot != -1 {
+		funcName = funcName[dot+1:]
+	}
+
+	var bestMatch *ast.FuncDecl
+	for _, file := range pkg.Syntax {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Name.Name != funcName {
+				continue
+			}
+
+			if strings.Contains(remaining, ".") {
+				recvName := a.getReceiverTypeName(fd.Recv)
+				if recvName != "" {
+					cleanRecv := strings.TrimPrefix(recvName, "*")
+					cleanRemaining := strings.ReplaceAll(remaining, "*", "")
+					if strings.Contains(cleanRemaining, cleanRecv) {
+						return fd, nil
+					}
+				}
+			} else if fd.Recv == nil {
+				return fd, nil
+			} else {
+				bestMatch = fd
+			}
+		}
+		if bestMatch != nil {
+			return bestMatch, nil
+		}
+	}
+	return nil, fmt.Errorf("symbol not found: %s", remaining)
+}
+
+func (v *sequenceVisitor) resolveTarget(call *ast.CallExpr) (string, string) {
+	var targetFunc string
+	var targetPkgPath string
+
+	switch expr := call.Fun.(type) {
+	case *ast.Ident:
+		targetFunc = expr.Name
+		if obj := v.pkg.TypesInfo.Uses[expr]; obj != nil {
+			if obj.Pkg() != nil {
+				targetPkgPath = obj.Pkg().Path()
+			} else {
+				return "", ""
+			}
+		} else {
+			targetPkgPath = v.pkg.PkgPath
+		}
+	case *ast.SelectorExpr:
+		targetFunc = expr.Sel.Name
+		if ident, ok := expr.X.(*ast.Ident); ok {
+			if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
+				if p, ok := obj.(*types.PkgName); ok {
+					targetPkgPath = p.Imported().Path()
+				} else {
+					targetPkgPath = v.analyzer.getTypePkgPath(obj.Type())
+				}
+			}
+		} else {
+			if tv, ok := v.pkg.TypesInfo.Types[expr.X]; ok {
+				targetPkgPath = v.analyzer.getTypePkgPath(tv.Type)
+			}
+		}
+	}
+	return targetFunc, targetPkgPath
+}
+
+func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc string) (string, string) {
+	isInterface := false
+	var interfaceTypeName string
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
+			if _, ok := tv.Type.Underlying().(*types.Interface); ok {
+				isInterface = true
+				interfaceTypeName = v.analyzer.getTypeName(tv.Type)
+			}
+		}
+	}
+
+	displayFunc := targetFunc
+	if isInterface {
+		if interfaceTypeName == "" {
+			interfaceTypeName = "Interface"
+		}
+		displayFunc = fmt.Sprintf("%s.%s", interfaceTypeName, targetFunc)
+	}
+
+	retType := ""
+	if tv, ok := v.pkg.TypesInfo.Types[call]; ok {
+		retType = v.analyzer.getTypeName(tv.Type)
+		if retType == "()" || retType == "invalid type" {
+			retType = ""
+		}
+	}
+	return displayFunc, retType
+}
+
+func (v *sequenceVisitor) tryRecurse(targetPkgPath, targetFunc string, depth, maxDepth int) {
+	if depth+1 < maxDepth {
+		for _, p := range v.allPkgs {
+			if p.PkgPath == targetPkgPath {
+				for _, file := range p.Syntax {
+					for _, decl := range file.Decls {
+						if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == targetFunc {
+							v.analyzer.walk(p, fd, depth+1, maxDepth, v.frames, v.visited, v.allPkgs, v.modName)
+							return
+						}
+					}
+				}
+			}
+		}
+	}
 }
