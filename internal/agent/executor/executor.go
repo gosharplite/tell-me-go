@@ -245,7 +245,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			e.mu.RLock()
 			pool := e.pool
 			e.mu.RUnlock()
-			
+
 			task := func(_ context.Context) {
 				defer wg.Done()
 
@@ -397,7 +397,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
 	closest := ""
 	hallucinatedLower := strings.ToLower(hallucinated)
-	
+
 	// Start with a threshold based on length, max 3.
 	// For very short names (<=3), we want distance 1.
 	// For medium names, distance 2.
