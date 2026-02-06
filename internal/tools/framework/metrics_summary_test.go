@@ -335,7 +335,6 @@ func TestGetCostSummary_Filters(t *testing.T) {
 	}
 }
 
-
 func TestGetCostSummary_MalformedRecords(t *testing.T) {
 	tempDir := t.TempDir()
 	globalDir := tempDir
