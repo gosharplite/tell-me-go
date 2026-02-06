@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -102,20 +103,13 @@ func (a *App) run(ctx context.Context, args []string) error {
 	// Sync security manager with current app stdin
 	a.sm.SetInputReader(a.Stdin)
 
-	// 1. Parse Flags & Load Config
-	args = a.sanitizeArgs(args)
-	opts, fs, err := a.parseFlags(args[1:])
+	// 1. Initialize Configuration
+	opts, fs, cfg, err := a.initializeConfiguration(args)
 	if err != nil {
 		return err
 	}
 	if opts.showVersion {
-		fmt.Fprintf(a.Stdout, "tell-me-go version %s\n", a.Version)
 		return nil
-	}
-
-	cfg, err := config.Load(opts.configPath)
-	if err != nil {
-		return fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
 	}
 
 	// 2. Handle Prompt Early
@@ -127,66 +121,31 @@ func (a *App) run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// 3. Initialize Paths & Persistent Config
-	paths, err := a.initPaths(cfg)
+	// 3. Prepare Session Paths
+	paths, err := a.prepareSessionPaths(cfg)
 	if err != nil {
 		return err
 	}
 
-	_, err = a.loadPersistentConfig(paths, cfg)
-	if err != nil {
-		log.Printf("Warning: Failed to load/update persistent config: %v", err)
-	}
-
 	// 4. Initialize Security & Session
-	a.setupSecurity(paths, opts, cfg)
+	pricingOverrides := a.getPricingOverrides(cfg)
+	a.setupSessionState(&paths, opts, cfg, pricingOverrides)
 
-	pricingOverrides := make(map[string]pricing.ModelPricing)
-	for k, v := range cfg.Models {
-		if v.Pricing.Comp > 0 {
-			pricingOverrides[k] = v.Pricing
-		}
+	// 5. Initialize Dependencies
+	hManager, client, registry, tracker, pruned, pricing, err := a.initializeDependencies(ctx, paths, cfg, pricingOverrides)
+	if err != nil {
+		return err
 	}
 
-	if opts.newSession {
-		a.handleNewSession(paths, cfg, pricingOverrides)
-	}
-
-	// 5. Initialize History
-	hManager := history.NewManager(paths.historyPath)
-	if err := hManager.Load(ctx); err != nil {
-		return fmt.Errorf("error loading history: %w", err)
-	}
-	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
-
-	if opts.lastN > 0 {
-		a.showHistory(hManager, opts.lastN, opts.rawOutput, cfg.ShowThoughts)
-	}
-
-	if prompt == "" && opts.lastN > 0 {
+	// 6. Handle History & Early Exit
+	if a.handleHistoryAndExit(prompt, opts, hManager, cfg) {
 		return nil
 	}
 
-	// 6. Setup Agent & Client
-	pricing := framework.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
-
-	hManager.Snapshot()
-
-	client, err := a.ClientFactory(cfg, pricing)
-	if err != nil {
-		return fmt.Errorf("error creating client: %w", err)
-	}
-
-	registry := a.setupRegistry(client, cfg, paths, pricingOverrides)
-
-	modelPricing := framework.GetModelPricing(cfg.Model, pricing)
-	tracker := framework.NewSessionCostTracker(a.sm, paths.logPath, cfg.Model, modelPricing, pricing)
-	tracker.Warmup()
-
+	// 7. Setup Agent & Execute
 	chatAgent := a.AgentFactory(client, hManager, registry, a.sm, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides, tracker)
-	a.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pricing)
+	a.applyConfiguration(chatAgent, cfg, opts, &paths, pruned, pricing)
 
-	// 7. Execute & Finalize
 	sess := agent.NewSession(hManager)
 	sess.PrunedTurns = pruned
 
@@ -194,6 +153,68 @@ func (a *App) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("error: %w", err)
 	}
 
+	return a.finalizeSession(ctx, chatAgent, hManager, paths, cfg, pricingOverrides)
+}
+
+func (a *App) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
+	args = a.sanitizeArgs(args)
+	opts, fs, err := a.parseFlags(args[1:])
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if opts.showVersion {
+		fmt.Fprintf(a.Stdout, "tell-me-go version %s\n", a.Version)
+		return opts, fs, nil, nil
+	}
+
+	cfg, err := config.Load(opts.configPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error loading config [%s]: %w", opts.configPath, err)
+	}
+
+	return opts, fs, cfg, nil
+}
+
+func (a *App) prepareSessionPaths(cfg *config.Config) (sessionPaths, error) {
+	paths, err := a.initPaths(cfg)
+	if err != nil {
+		return sessionPaths{}, err
+	}
+
+	_, err = a.loadPersistentConfig(paths, cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load/update persistent config: %v", err)
+	}
+
+	return *paths, nil
+}
+
+func (a *App) initializeDependencies(ctx context.Context, paths sessionPaths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *api.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
+	hManager := history.NewManager(paths.historyPath)
+	if err := hManager.Load(ctx); err != nil {
+		return nil, nil, nil, nil, 0, pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)
+	}
+	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
+
+	pricingData := framework.GetPricing(ctx, a.sm, filepath.Join(a.homeDir, "output"))
+
+	hManager.Snapshot()
+
+	client, err := a.ClientFactory(cfg, pricingData)
+	if err != nil {
+		return nil, nil, nil, nil, 0, pricingData, fmt.Errorf("error creating client: %w", err)
+	}
+
+	registry := a.setupRegistry(client, cfg, &paths, pricingOverrides)
+
+	modelPricing := framework.GetModelPricing(cfg.Model, pricingData)
+	tracker := framework.NewSessionCostTracker(a.sm, paths.logPath, cfg.Model, modelPricing, pricingData)
+	tracker.Warmup()
+
+	return hManager, client, registry, tracker, pruned, pricingData, nil
+}
+
+func (a *App) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths sessionPaths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
@@ -203,4 +224,29 @@ func (a *App) run(ctx context.Context, args []string) error {
 	}
 
 	return nil
+}
+
+func (a *App) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
+	pricingOverrides := make(map[string]pricing.ModelPricing)
+	for k, v := range cfg.Models {
+		if v.Pricing.Comp > 0 {
+			pricingOverrides[k] = v.Pricing
+		}
+	}
+	return pricingOverrides
+}
+
+func (a *App) setupSessionState(paths *sessionPaths, opts *cliOptions, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+	a.setupSecurity(paths, opts, cfg)
+	if opts.newSession {
+		a.handleNewSession(paths, cfg, pricingOverrides)
+	}
+}
+
+func (a *App) handleHistoryAndExit(prompt string, opts *cliOptions, hManager *history.Manager, cfg *config.Config) bool {
+	if opts.lastN > 0 {
+		a.showHistory(hManager, opts.lastN, opts.rawOutput, cfg.ShowThoughts)
+	}
+
+	return prompt == "" && opts.lastN > 0
 }
