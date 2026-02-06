@@ -388,7 +388,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	// We need to trigger a version bump in CM too if it's not watching hManager directly
 	// Actually cm.version is internal and only bumped by cm methods.
 	// Since we used hManager.SetContents directly, cm.version didn't bump,
-	// BUT isContentEqual check in cm.SummarizeRange should still catch it.
+	// BUT Content.Equal check in cm.SummarizeRange should still catch it.
 
 	close(summarizeProceed)
 	wg.Wait()

@@ -5,10 +5,8 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -241,8 +239,8 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, NewAgentError(ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
 	}
 	// Robust check: did the messages we summarized change?
-	for i := 0; i < endIdx; i++ {
-		if !cm.isContentEqual(currentContents[i], subset[i]) {
+	for i := range subset {
+		if !currentContents[i].Equal(subset[i]) {
 			return "", nil, NewAgentError(ErrLogic, "summarization aborted: history content changed while summarizing", nil)
 		}
 	}
@@ -263,33 +261,3 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	return fmt.Sprintf("Summarized the first %d turns of history.", numTurns), metrics, nil
 }
 
-func (cm *ContextManager) isContentEqual(c1, c2 *llm.Content) bool {
-	if c1 == nil || c2 == nil {
-		return c1 == c2
-	}
-	if c1.Role != c2.Role || len(c1.Parts) != len(c2.Parts) {
-		return false
-	}
-	for i := range c1.Parts {
-		p1, p2 := c1.Parts[i], c2.Parts[i]
-		if p1.Text != p2.Text || p1.Thought != p2.Thought || p1.AssetID != p2.AssetID {
-			return false
-		}
-		if !bytes.Equal(p1.ThoughtSignature, p2.ThoughtSignature) {
-			return false
-		}
-		if (p1.InlineData == nil) != (p2.InlineData == nil) {
-			return false
-		}
-		if p1.InlineData != nil && (p1.InlineData.MIMEType != p2.InlineData.MIMEType || !bytes.Equal(p1.InlineData.Data, p2.InlineData.Data)) {
-			return false
-		}
-		if !reflect.DeepEqual(p1.FunctionCall, p2.FunctionCall) {
-			return false
-		}
-		if !reflect.DeepEqual(p1.FunctionResponse, p2.FunctionResponse) {
-			return false
-		}
-	}
-	return true
-}

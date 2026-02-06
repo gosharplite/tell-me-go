@@ -4,8 +4,10 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"reflect"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -227,4 +229,48 @@ func cloneValue(v interface{}) interface{} {
 		// shallow copy is sufficient as they are immutable in Go.
 		return v
 	}
+}
+
+// Equal returns true if two Content objects are logically equivalent.
+func (c *Content) Equal(other *Content) bool {
+	if c == nil || other == nil {
+		return c == other
+	}
+	if c.Role != other.Role || len(c.Parts) != len(other.Parts) {
+		return false
+	}
+	for i := range c.Parts {
+		if !c.Parts[i].Equal(other.Parts[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Equal returns true if two Part objects are logically equivalent.
+func (p *Part) Equal(other *Part) bool {
+	if p == nil || other == nil {
+		return p == other
+	}
+	if p.Text != other.Text || p.Thought != other.Thought || p.AssetID != other.AssetID {
+		return false
+	}
+	if !bytes.Equal(p.ThoughtSignature, other.ThoughtSignature) {
+		return false
+	}
+	if (p.InlineData == nil) != (other.InlineData == nil) {
+		return false
+	}
+	if p.InlineData != nil {
+		if p.InlineData.MIMEType != other.InlineData.MIMEType || !bytes.Equal(p.InlineData.Data, other.InlineData.Data) {
+			return false
+		}
+	}
+	if !reflect.DeepEqual(p.FunctionCall, other.FunctionCall) {
+		return false
+	}
+	if !reflect.DeepEqual(p.FunctionResponse, other.FunctionResponse) {
+		return false
+	}
+	return true
 }
