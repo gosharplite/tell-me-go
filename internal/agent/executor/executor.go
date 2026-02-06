@@ -386,11 +386,23 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
 	closest := ""
-	minDist := 3 // Maximum distance to consider a suggestion
+	hallucinatedLower := strings.ToLower(hallucinated)
+	
+	// Start with a threshold based on length, max 3.
+	// For very short names (<=3), we want distance 1.
+	// For medium names, distance 2.
+	// For long names, distance 3.
+	minDist := 1
+	if len(hallucinated) > 6 {
+		minDist = 3
+	} else if len(hallucinated) > 3 {
+		minDist = 2
+	}
 
 	for _, tool := range validTools {
-		dist := levenshteinDistance(hallucinated, tool)
-		if dist < minDist {
+		toolLower := strings.ToLower(tool)
+		dist := levenshteinDistance(hallucinatedLower, toolLower)
+		if dist <= minDist {
 			minDist = dist
 			closest = tool
 		}
