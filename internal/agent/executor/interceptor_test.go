@@ -132,3 +132,33 @@ func TestToolExecutor_MixedExecution(t *testing.T) {
 		t.Errorf("Part 2 expected Interceptor error, got: %s", res2)
 	}
 }
+
+func TestWorkerPool_SubmitFailure(t *testing.T) {
+	p := NewWorkerPool(1)
+	p.Shutdown() // Close it immediately
+
+	success := p.Submit(func(ctx context.Context) {})
+	if success {
+		t.Error("Expected Submit to fail on closed pool")
+	}
+}
+
+func TestLevenshteinDistance_UTF8(t *testing.T) {
+	tests := []struct {
+		s1, s2 string
+		want   int
+	}{
+		{"gopher", "go", 4},
+		{"😊", "😊", 0},
+		{"😊", "😂", 1},
+		{"café", "cafe", 1},
+		{"日本語", "日本", 1},
+	}
+
+	for _, tt := range tests {
+		got := levenshteinDistance(tt.s1, tt.s2)
+		if got != tt.want {
+			t.Errorf("levenshteinDistance(%q, %q) = %d, want %d", tt.s1, tt.s2, got, tt.want)
+		}
+	}
+}
