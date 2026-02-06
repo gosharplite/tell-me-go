@@ -182,7 +182,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
 				return &llm.Content{
-					Role: "model",
+					Role:  "model",
 					Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "unknown_tool"}}},
 				}, &llm.Metrics{}, nil
 			}
