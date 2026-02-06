@@ -136,16 +136,16 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 	tg := &TokenGatekeeper{}
-	
+
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
 
 	tests := []struct {
-		name           string
-		turns          [][]*llm.Content
-		target         int
-		expectedStart  int
-		expectedCount  int
+		name          string
+		turns         [][]*llm.Content
+		target        int
+		expectedStart int
+		expectedCount int
 	}{
 		{
 			name: "Pinned turn encountered mid-collection resets count",
