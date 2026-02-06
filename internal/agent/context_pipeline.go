@@ -70,29 +70,42 @@ func (p *ContextPipeline) Execute(ctx context.Context, req *ContextRequest) erro
 // ExecuteWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
 func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *ContextRequest, persistFn func(context.Context, []*llm.Content) error) error {
-	persisted := false
+	canonical, transient := p.partitionTransformers()
 
-	for _, t := range p.transformers {
-		// If we are about to enter the transient phase, persist canonical history if it changed.
-		if !persisted && t.Priority() >= PriorityTransientThreshold {
-			if req.PersistHistory && persistFn != nil {
-				if err := persistFn(ctx, req.History); err != nil {
-					return err
-				}
-			}
-			persisted = true
-		}
-
+	for _, t := range canonical {
 		if err := t.Transform(ctx, req); err != nil {
 			return err
 		}
 	}
 
-	// Final check if no transient transformers existed
-	if !persisted && req.PersistHistory && persistFn != nil {
-		return persistFn(ctx, req.History)
+	if err := p.persistIfRequired(ctx, req, persistFn); err != nil {
+		return err
 	}
 
+	for _, t := range transient {
+		if err := t.Transform(ctx, req); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *ContextPipeline) partitionTransformers() (canonical, transient []ContextTransformer) {
+	for _, t := range p.transformers {
+		if t.Priority() < PriorityTransientThreshold {
+			canonical = append(canonical, t)
+		} else {
+			transient = append(transient, t)
+		}
+	}
+	return
+}
+
+func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *ContextRequest, persistFn func(context.Context, []*llm.Content) error) error {
+	if req.PersistHistory && persistFn != nil {
+		return persistFn(ctx, req.History)
+	}
 	return nil
 }
 
