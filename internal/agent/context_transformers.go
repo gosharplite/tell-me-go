@@ -491,41 +491,11 @@ func (t *WarningInjector) injectWarning(req *ContextRequest, combined string) {
 	lastIdx := len(req.History) - 1
 	orig := req.History[lastIdx]
 
-	if t.hasFunctionResponse(orig) && len(req.History) > 1 {
-		// If the last message is a function response, we inject warnings as a separate turn
-		// to avoid breaking the tool response structure.
-		warningMsgs := []*llm.Content{
-			{
-				Role:  "user",
-				Parts: []*llm.Part{{Text: "System Notice:\n\n" + combined}},
-			},
-			{
-				Role:  "model",
-				Parts: []*llm.Part{{Text: "Understood. I have acknowledged the system notice and will proceed with the results."}},
-			},
-		}
-		newContents := make([]*llm.Content, 0, len(req.History)+2)
-		newContents = append(newContents, req.History[:lastIdx]...)
-		newContents = append(newContents, warningMsgs...)
-		newContents = append(newContents, req.History[lastIdx])
-		req.History = newContents
-	} else {
-		// Append to TransientParts instead of regular Parts
-		cloned := orig.Clone()
-		cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
-			Text: "\n\n" + combined,
-		})
-		req.History[lastIdx] = cloned
-	}
-}
-
-func (t *WarningInjector) hasFunctionResponse(msg *llm.Content) bool {
-	for _, p := range msg.Parts {
-		if p.FunctionResponse != nil {
-			return true
-		}
-	}
-	return false
+	cloned := orig.Clone()
+	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
+		Text: "\n\n" + combined,
+	})
+	req.History[lastIdx] = cloned
 }
 
 func (t *WarningInjector) Priority() int { return PriorityTransientThreshold }

@@ -61,24 +61,28 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	}
 
 	// Verify the injected sequence:
-	// 0: User "call tool" (Original index 0)
-	// 1: Model Call (Original index 1)
-	// 2: User Notice (Injected by WarningInjector)
-	// 3: Model Ack (Injected by WarningInjector)
-	// 4: User Response (Original index 2)
+	// 0: User "call tool"
+	// 1: Model Call
+	// 2: User Response + Warning (Appended to TransientParts, merged by TransientMerger)
 
-	if len(apiContents) != 5 {
-		t.Fatalf("Expected 5 contents after injection, got %d", len(apiContents))
+	if len(apiContents) != 3 {
+		t.Fatalf("Expected 3 contents after injection, got %d", len(apiContents))
 	}
 
-	if apiContents[2].Role != "user" || !strings.Contains(apiContents[2].Parts[0].Text, "URGENT SYSTEM NOTICE") || !strings.Contains(apiContents[2].Parts[0].Text, "Only 2 turns remain") {
-		t.Errorf("Expected User Notice turn at index 2, got %v", apiContents[2].Parts[0].Text)
+	lastMsg := apiContents[2]
+	if lastMsg.Role != "user" || lastMsg.Parts[0].FunctionResponse == nil {
+		t.Errorf("Expected User Response at last index, got %v", lastMsg)
 	}
-	if apiContents[3].Role != "model" || !strings.Contains(apiContents[3].Parts[0].Text, "Understood") {
-		t.Errorf("Expected Model Ack turn at index 3, got %v", apiContents[3])
+
+	foundWarning := false
+	for _, p := range lastMsg.Parts {
+		if strings.Contains(p.Text, "URGENT SYSTEM NOTICE") && strings.Contains(p.Text, "Only 2 turns remain") {
+			foundWarning = true
+			break
+		}
 	}
-	if apiContents[4].Role != "user" || apiContents[4].Parts[0].FunctionResponse == nil {
-		t.Errorf("Expected User Response at index 4, got %v", apiContents[4])
+	if !foundWarning {
+		t.Error("Warning not found in last message parts")
 	}
 }
 
