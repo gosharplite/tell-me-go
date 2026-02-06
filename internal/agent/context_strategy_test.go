@@ -127,89 +127,112 @@ func TestContextStrategy_EstimateTokens(t *testing.T) {
 	})
 }
 
-func TestContextStrategy_GetWarnings_EdgeCases(t *testing.T) {
+func setupWarningTest() *ContextStrategy {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 	cs.SetLimits(1000, 10, 100)
+	return cs
+}
 
-	t.Run("Exact Boundaries - 90%", func(t *testing.T) {
-		// 899/1000 = 89.9%
-		w899 := cs.getTokenWarning(899)
-		if w899 != "" {
-			t.Errorf("expected no warning at 89.9%%, got %q", w899)
-		}
+func TestContextStrategy_Warnings_EmptyHistory(t *testing.T) {
+	cs := setupWarningTest()
+	warnings := cs.GetWarnings(0, 0, 0)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for empty history, got %d", len(warnings))
+	}
+}
 
-		// 901/1000 = 90.1%
-		w901 := cs.getTokenWarning(901)
-		if w901 == "" {
-			t.Error("expected warning at 90.1%")
-		}
-		if !contains(w901, "manage_history") {
-			t.Error("expected 90% token warning to mention manage_history")
-		}
-	})
+func TestContextStrategy_Warnings_TokenPressure(t *testing.T) {
+	cs := setupWarningTest()
 
-	t.Run("Exact Boundaries - 95%", func(t *testing.T) {
-		// 949/1000 = 94.9%
-		w949 := cs.getTokenWarning(949)
-		if !contains(w949, "90%") {
-			t.Errorf("expected 90%% warning at 94.9%%, got %q", w949)
+	t.Run("Token Boundaries", func(t *testing.T) {
+		tests := []struct {
+			tokens   int
+			expected string
+		}{
+			{899, ""},
+			{901, "90%"},
+			{901, "manage_history"},
+			{949, "90%"},
+			{951, "CRITICAL"},
+			{951, "95%"},
 		}
-
-		// 951/1000 = 95.1%
-		w951 := cs.getTokenWarning(951)
-		if !contains(w951, "CRITICAL") || !contains(w951, "95%") {
-			t.Errorf("expected critical 95%% warning at 95.1%%, got %q", w951)
-		}
-	})
-
-	t.Run("History Turn Warnings", func(t *testing.T) {
-		// maxHistoryTurns = 100
-		// 90.1 turns -> ratio 0.901
-		w90 := cs.getHistoryTurnWarning(91)
-		if !contains(w90, "90%") {
-			t.Errorf("expected 90%% turn warning at 91 turns, got %q", w90)
-		}
-		if !contains(w90, "manage_history") {
-			t.Error("expected 90% turn warning to mention manage_history")
-		}
-
-		// 95.1 turns -> ratio 0.951
-		w95 := cs.getHistoryTurnWarning(96)
-		if !contains(w95, "95%") {
-			t.Errorf("expected 95%% turn warning at 96 turns, got %q", w95)
-		}
-
-		// 100 turns -> ratio 1.0
-		w100 := cs.getHistoryTurnWarning(100)
-		if !contains(w100, "limit has been reached") {
-			t.Errorf("expected reach limit warning at 100 turns, got %q", w100)
+		for _, tt := range tests {
+			got := cs.getTokenWarning(tt.tokens)
+			if tt.expected == "" {
+				if got != "" {
+					t.Errorf("expected no warning at %d, got %q", tt.tokens, got)
+				}
+			} else if !contains(got, tt.expected) {
+				t.Errorf("expected warning at %d to contain %q, got %q", tt.tokens, tt.expected, got)
+			}
 		}
 	})
 
 	t.Run("Turn Count Limits", func(t *testing.T) {
-		// maxToolTurns = 10
-		// turn 7 -> 3 remaining
-		w3 := cs.getTurnWarning(7)
-		if !contains(w3, "SYSTEM NOTICE") || !contains(w3, "3 turns remaining") {
-			t.Errorf("expected soft warning at 3 turns remaining, got %q", w3)
+		tests := []struct {
+			turn     int
+			contains []string
+		}{
+			{7, []string{"SYSTEM NOTICE", "3 turns remaining"}},
+			{8, []string{"URGENT", "2 turns remain", "distilled state", "manage_history"}},
+			{9, []string{"FINAL", "final turn", "forbidden"}},
 		}
-		// turn 8 -> 2 remaining
-		w2 := cs.getTurnWarning(8)
-		if !contains(w2, "URGENT") || !contains(w2, "2 turns remain") || !contains(w2, "distilled state") || !contains(w2, "manage_history") {
-			t.Errorf("expected urgent warning at 2 turns remaining with distilled state and manage_history, got %q", w2)
+		for _, tt := range tests {
+			got := cs.getTurnWarning(tt.turn)
+			for _, want := range tt.contains {
+				if !contains(got, want) {
+					t.Errorf("expected turn %d warning to contain %q, got %q", tt.turn, want, got)
+				}
+			}
 		}
-		// turn 9 -> 1 remaining
-		w1 := cs.getTurnWarning(9)
-		if !contains(w1, "FINAL") || !contains(w1, "final turn") || !contains(w1, "forbidden") {
-			t.Errorf("expected final warning at 1 turn remaining with forbidden, got %q", w1)
+	})
+}
+
+func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+
+	t.Run("Zero Limits", func(t *testing.T) {
+		cs.SetLimits(0, 0, 0)
+		h, tool, hTurns := cs.GetLimits()
+		if h <= 0 || tool <= 0 || hTurns <= 0 {
+			t.Errorf("expected limits to remain positive defaults, got %d, %d, %d", h, tool, hTurns)
+		}
+	})
+}
+
+func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
+	cs := setupWarningTest()
+
+	t.Run("History Turn Warnings", func(t *testing.T) {
+		tests := []struct {
+			turns    int
+			expected string
+		}{
+			{91, "90%"},
+			{91, "manage_history"},
+			{96, "95%"},
+			{100, "limit has been reached"},
+		}
+		for _, tt := range tests {
+			got := cs.getHistoryTurnWarning(tt.turns)
+			if !contains(got, tt.expected) {
+				t.Errorf("expected %d turns warning to contain %q, got %q", tt.turns, tt.expected, got)
+			}
 		}
 	})
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
 		cs.SetPrunedTurns(10)
-		_ = cs.GetWarnings(1, 10, 1) // First call triggers and resets
+		_ = cs.GetWarnings(1, 10, 1)
 		if cs.prunedTurns != 0 {
 			t.Errorf("expected prunedTurns to be reset, got %d", cs.prunedTurns)
+		}
+	})
+
+	t.Run("Clogged Warning", func(t *testing.T) {
+		w := cs.GetCloggedWarning()
+		if !contains(w, "CRITICAL") || !contains(w, "summarization failed") {
+			t.Errorf("expected clogged warning, got %q", w)
 		}
 	})
 }
