@@ -75,7 +75,10 @@ func (s *TaskStore) Load(ctx context.Context) error {
 func (s *TaskStore) Save(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveLocked(ctx)
+}
 
+func (s *TaskStore) saveLocked(ctx context.Context) error {
 	var tasks []Task
 	for _, t := range s.tasks {
 		tasks = append(tasks, t)
@@ -126,6 +129,8 @@ func (s *TaskStore) add(ctx context.Context, content string) (tools.ToolResult, 
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	t := Task{
 		ID:        s.nextID,
 		Content:   content,
@@ -134,9 +139,8 @@ func (s *TaskStore) add(ctx context.Context, content string) (tools.ToolResult, 
 	}
 	s.tasks[s.nextID] = t
 	s.nextID++
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", t.ID)}, nil
@@ -148,9 +152,10 @@ func (s *TaskStore) update(ctx context.Context, taskID float64, content, status 
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	t, ok := s.tasks[taskID]
 	if !ok {
-		s.mu.Unlock()
 		return tools.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 	}
 	if content != "" {
@@ -160,9 +165,8 @@ func (s *TaskStore) update(ctx context.Context, taskID float64, content, status 
 		t.Status = status
 	}
 	s.tasks[taskID] = t
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", taskID)}, nil
@@ -174,14 +178,14 @@ func (s *TaskStore) delete(ctx context.Context, taskID float64) (tools.ToolResul
 	}
 
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if _, ok := s.tasks[taskID]; !ok {
-		s.mu.Unlock()
 		return tools.ToolResult{}, fmt.Errorf("task not found: %.0f", taskID)
 	}
 	delete(s.tasks, taskID)
-	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.saveLocked(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", taskID)}, nil
@@ -189,6 +193,8 @@ func (s *TaskStore) delete(ctx context.Context, taskID float64) (tools.ToolResul
 
 func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var list []Task
 	for _, t := range s.tasks {
 		if status != "" && t.Status != status {
@@ -196,7 +202,6 @@ func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 		}
 		list = append(list, t)
 	}
-	s.mu.RUnlock()
 
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].ID < list[j].ID
@@ -220,10 +225,11 @@ func (s *TaskStore) list(status string) (tools.ToolResult, error) {
 
 func (s *TaskStore) clear(ctx context.Context) (tools.ToolResult, error) {
 	s.mu.Lock()
-	s.tasks = make(map[float64]Task)
-	s.mu.Unlock()
+	defer s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	s.tasks = make(map[float64]Task)
+
+	if err := s.saveLocked(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save tasks: %w", err)
 	}
 	return tools.ToolResult{Text: "All tasks cleared."}, nil
