@@ -68,22 +68,32 @@ func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus ev
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
+	snapshotVersion := cm.version
+	history := cm.History.GetContents()
+	pipeline := cm.Pipeline
+	cm.mu.Unlock()
 
-	// Initialize request with current history
+	// Initialize request with snapshot of history
 	req := &ContextRequest{
 		Turn:    turn,
-		History: cm.History.GetContents(),
+		History: history,
 	}
 
-	if cm.Pipeline == nil {
+	if pipeline == nil {
 		return req.History, &req.Metadata, nil
 	}
 
 	// We execute the pipeline. Since some transformers might modify history
 	// and want it persisted (Pruner, Gatekeeper), but others only want it
 	// for the API (WarningInjector), we handle persistence carefully through the pipeline.
-	err := cm.Pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+	err := pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+		cm.mu.Lock()
+		defer cm.mu.Unlock()
+
+		if cm.version != snapshotVersion {
+			return NewAgentError(ErrTransient, "concurrent history modification detected", nil)
+		}
+
 		cm.version++
 		return cm.History.SetContents(ctx, h)
 	})
