@@ -446,41 +446,45 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	tokens := req.Metadata.FinalTokenCount
 	currentTurns := len(req.History) / 2
 
-	combined := t.gatherWarnings(req, tokens, currentTurns)
+	combined, list := t.gatherWarnings(req, tokens, currentTurns)
 	if combined == "" {
 		return nil
 	}
+
+	// Move side-effect here
+	req.Metadata.Warnings = append(req.Metadata.Warnings, list...)
 
 	t.injectWarning(req, combined)
 	return nil
 }
 
-func (t *WarningInjector) gatherWarnings(req *ContextRequest, tokens, turns int) string {
+func (t *WarningInjector) gatherWarnings(req *ContextRequest, tokens, turns int) (string, []string) {
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
 
 	var combined string
+	var list []string
 	maxTokens, _, _ := t.Strategy.GetLimits()
 
 	// Prioritize the Clogged warning if maintenance failed to reduce size OR was blocked by pins,
 	// and we are still near capacity.
 	if (req.Metadata.SummarizationAttempted || req.Metadata.MaintenanceBlocked) && float64(tokens) > float64(maxTokens)*0.85 {
 		combined = t.Strategy.GetCloggedWarning()
-		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
+		list = append(list, combined)
 	} else {
 		warnings := t.Strategy.GetWarnings(req.Turn, tokens, turns)
 		if len(warnings) == 0 {
-			return ""
+			return "", nil
 		}
 		for _, w := range warnings {
 			if combined != "" {
 				combined += "\n"
 			}
 			combined += w.Message
-			req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
+			list = append(list, w.Message)
 		}
 	}
-	return combined
+	return combined, list
 }
 
 func (t *WarningInjector) injectWarning(req *ContextRequest, combined string) {
