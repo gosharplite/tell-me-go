@@ -237,3 +237,41 @@ func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
 		}
 	}
 }
+
+func TestContextStrategy_GetPriceWarning(t *testing.T) {
+	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+
+	t.Run("Zero Threshold", func(t *testing.T) {
+		cs.SetTieredThreshold(0)
+		got := cs.getPriceWarningLocked(1000)
+		if got != "" {
+			t.Errorf("expected empty warning for zero threshold, got %q", got)
+		}
+	})
+
+	t.Run("Below Warning", func(t *testing.T) {
+		cs.SetTieredThreshold(1000)
+		// WarningRatio is 0.78. 0.78 * 1000 = 780.
+		got := cs.getPriceWarningLocked(500)
+		if got != "" {
+			t.Errorf("expected empty warning for 500 tokens (threshold 1000), got %q", got)
+		}
+	})
+
+	t.Run("Warning Ratio", func(t *testing.T) {
+		cs.SetTieredThreshold(1000)
+		// 901 >= 780 (threshold * 0.78)
+		got := cs.getPriceWarningLocked(901)
+		if !contains(got, "[ECONOMIC NOTICE") {
+			t.Errorf("expected [ECONOMIC NOTICE] prefix for 901 tokens (threshold 1000), got %q", got)
+		}
+	})
+
+	t.Run("Threshold Hit", func(t *testing.T) {
+		cs.SetTieredThreshold(1000)
+		got := cs.getPriceWarningLocked(1001)
+		if !contains(got, "[URGENT ECONOMIC NOTICE") {
+			t.Errorf("expected [URGENT ECONOMIC NOTICE] prefix for 1001 tokens (threshold 1000), got %q", got)
+		}
+	})
+}

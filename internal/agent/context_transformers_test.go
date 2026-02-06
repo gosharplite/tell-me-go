@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
@@ -949,6 +950,63 @@ func TestInternalHelpers(t *testing.T) {
 		}
 		if newHist[2].Parts[0].Text != "4" {
 			t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
+		}
+	})
+}
+
+func TestToolDeclarationGenerator_MultipleTools(t *testing.T) {
+	t.Parallel()
+	registry := &mockToolRegistry{
+		declarations: []*tools.ToolDeclaration{
+			{Name: "tool1", Description: "desc1"},
+			{Name: "tool2", Description: "desc2"},
+		},
+	}
+	tg := &ToolDeclarationGenerator{Registry: registry}
+	req := &ContextRequest{
+		History: []*llm.Content{
+			{Role: "system", Parts: []*llm.Part{{Text: "System prompt"}}},
+		},
+	}
+
+	err := tg.Transform(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	if len(req.History[0].TransientParts) != 1 {
+		t.Errorf("expected 1 transient part, got %d", len(req.History[0].TransientParts))
+	}
+	text := req.History[0].TransientParts[0].Text
+	if !strings.Contains(text, "AVAILABLE_TOOLS") {
+		t.Error("expected AVAILABLE_TOOLS header")
+	}
+	if !strings.Contains(text, "tool1") || !strings.Contains(text, "tool2") {
+		t.Error("expected tool names in declaration")
+	}
+}
+
+func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Empty History", func(t *testing.T) {
+		tg := &ToolDeclarationGenerator{Registry: &mockToolRegistry{}}
+		req := &ContextRequest{History: []*llm.Content{}}
+		err := tg.Transform(context.Background(), req)
+		if err != nil {
+			t.Fatalf("expected no error for empty history, got %v", err)
+		}
+		// Should return nil (no-op)
+	})
+
+	t.Run("Typed Nil Registry", func(t *testing.T) {
+		var r *mockToolRegistry = nil
+		tg := &ToolDeclarationGenerator{Registry: r}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		// This should not panic because of reflect.IsNil check in Transform
+		err := tg.Transform(context.Background(), req)
+		if err != nil {
+			t.Fatalf("expected no error for typed nil registry, got %v", err)
 		}
 	})
 }
