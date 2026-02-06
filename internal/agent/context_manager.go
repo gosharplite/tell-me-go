@@ -69,7 +69,11 @@ func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus ev
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
 	cm.mu.Lock()
 	snapshotVersion := cm.version
-	history := cm.History.GetContents()
+	contents := cm.History.GetContents()
+	history := make([]*llm.Content, len(contents))
+	for i, c := range contents {
+		history[i] = c.Clone() // Deep clone each element for thread safety
+	}
 	pipeline := cm.Pipeline
 	cm.mu.Unlock()
 

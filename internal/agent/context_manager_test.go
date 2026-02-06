@@ -268,3 +268,25 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 	history.setContentsErr = nil
 }
+
+func TestContextManager_Prepare_ClonesContent(t *testing.T) {
+	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
+	originalContent := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "original"}},
+	}
+	history := &mockHistoryManager{
+		contents: []*llm.Content{originalContent},
+	}
+	cm := NewContextManager(strategy, history, nil, nil)
+
+	ctx := context.Background()
+	preparedHistory, _, err := cm.Prepare(ctx, 1)
+	assert.NoError(t, err)
+	assert.Len(t, preparedHistory, 1)
+
+	// Verify it's a deep copy: modifying original should not affect preparedHistory
+	originalContent.Parts[0].Text = "modified"
+	assert.NotEqual(t, originalContent.Parts[0].Text, preparedHistory[0].Parts[0].Text)
+	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
+}
