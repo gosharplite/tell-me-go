@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package cli
+package chat
 
 import (
 	"context"
@@ -19,6 +19,7 @@ type UISubscriber struct {
 	logFile      string
 }
 
+// NewUISubscriber creates a new UISubscriber.
 func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput bool, logFile string) *UISubscriber {
 	return &UISubscriber{
 		renderer:     renderer,
@@ -29,6 +30,7 @@ func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput 
 	}
 }
 
+// HandleEvent processes a domain event and updates the UI.
 func (s *UISubscriber) HandleEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:

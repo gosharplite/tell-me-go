@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package cli
+package chat
 
 import (
 	"context"
@@ -334,9 +334,6 @@ func TestUISubscriber_HandleEvent_CancellationDuringBlock(t *testing.T) {
 	// Send one item. It should block in HandleEvent because skipConsumer is true.
 	content := &llm.Content{Parts: []*llm.Part{{Text: "blocking"}}}
 
-	// We need to send it in a goroutine because it might block here if the subscriber isn't ready.
-	// But in HandleEvent, it first checks ctx.Done(), then reads from ev.Stream.
-	// So it will be waiting on ev.Stream.
 	select {
 	case streamCh <- content:
 	case <-time.After(100 * time.Millisecond):
