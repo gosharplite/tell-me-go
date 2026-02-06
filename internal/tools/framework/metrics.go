@@ -371,29 +371,8 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	}
 
 	// 4. Apply Retention Policy
-	retentionDays := 30
-	configPath := filepath.Join(outputDir, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg map[string]string
-		if err := json.Unmarshal(data, &cfg); err == nil {
-			if val, ok := cfg["cost_retention_days"]; ok {
-				if days, err := strconv.Atoi(val); err == nil {
-					retentionDays = days
-				}
-			}
-		}
-	}
-
-	if retentionDays > 0 {
-		cutoff := time.Now().AddDate(0, 0, -retentionDays).Format("2006-01-02")
-		filtered := make([]SessionCostRecord, 0, len(history))
-		for _, r := range history {
-			if r.Date >= cutoff {
-				filtered = append(filtered, r)
-			}
-		}
-		history = filtered
-	}
+	retentionDays := m.loadRetentionDays(outputDir)
+	history = m.applyRetentionPolicy(history, retentionDays)
 
 	// 5. Write back atomically
 	bytes, err := json.Marshal(history)
@@ -415,154 +394,20 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	globalDir := filepath.Dir(outputDir)
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
-	// SOP: Auto-recovery of missing ledger
-	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
-			// Use a background context for recovery so it's not aborted if the request context is cancelled.
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
-			go func() {
-				defer cancel()
-				m.ledger.RecoverLedger(bgCtx, globalDir)
-			}()
-		}
-		return "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
-	}
-
-	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
-		return "Cost history recovery is currently in progress. Please try again in a few moments.", nil
-	}
-
-	content, err := os.ReadFile(historyPath)
+	history, status, err := m.ensureLedgerReady(ctx, historyPath, globalDir)
 	if err != nil {
-		return "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
+		return status, err
+	}
+	if status != "" {
+		return status, nil
 	}
 
-	var history []SessionCostRecord
-	if err := json.Unmarshal(content, &history); err != nil {
-		return "Error parsing cost history. The file may be corrupted.", err
+	intervalTotals, intervalUsage, keys, location, err := m.aggregateCosts(history, args)
+	if err != nil {
+		return "", err
 	}
 
-	var startFilter, endFilter time.Time
-	// Determine the target location early
-	location := time.Local
-	billingZone := time.FixedZone("UTC-8", -8*3600)
-	if args.Billing {
-		location = billingZone
-	}
-
-	if args.StartDate != "" {
-		var err error
-		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
-		if err != nil {
-			return "", fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
-		}
-	}
-	if args.EndDate != "" {
-		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
-		if err != nil {
-			return "", fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
-		}
-		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
-	}
-
-	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
-		return "", fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
-	}
-
-	format := "2006-01-02"
-	if args.Interval == "hour" {
-		format = "2006-01-02 15:00"
-	}
-
-	// Aggregate by Interval
-	intervalTotals := make(map[string]float64)
-	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
-
-	for _, r := range history {
-		ts := r.Timestamp
-		if ts.IsZero() {
-			var err error
-			ts, err = time.Parse("2006-01-02", r.Date)
-			if err != nil {
-				continue
-			}
-		}
-		if ts.IsZero() {
-			continue
-		}
-
-		// Apply range filter
-		if !startFilter.IsZero() && ts.Before(startFilter) {
-			continue
-		}
-		if !endFilter.IsZero() && !ts.Before(endFilter) {
-			continue
-		}
-
-		// Determine the key for aggregation
-		effectiveKey := ts.In(location).Format(format)
-
-		intervalTotals[effectiveKey] += r.TotalCost
-		u := intervalUsage[effectiveKey]
-		u.PromptTokens += r.Usage.PromptTokens
-		u.ResponseTokens += r.Usage.ResponseTokens
-		u.CachedTokens += r.Usage.CachedTokens
-		u.ThinkingTokens += r.Usage.ThinkingTokens
-		intervalUsage[effectiveKey] = u
-	}
-
-	title := "AI Usage Cost Summary (by Date)"
-	if args.Interval == "hour" {
-		title = "AI Usage Cost Summary (by Hour)"
-	}
-	if args.Billing {
-		title += " - Google Billing Cycle (UTC-8)"
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
-	headerName := "Date"
-	if args.Interval == "hour" {
-		headerName = "Date/Hour"
-	}
-	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
-	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
-
-	// Sort keys descending
-	var keys []string
-	for k := range intervalTotals {
-		keys = append(keys, k)
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
-
-	var grandTotal float64
-	var totalM, totalH, totalO int64
-	for _, k := range keys {
-		cost := intervalTotals[k]
-		u := intervalUsage[k]
-
-		mTokens := u.PromptTokens - u.CachedTokens
-		hTokens := u.CachedTokens
-		oTokens := u.ResponseTokens + u.ThinkingTokens
-		eff := 0.0
-		if total := mTokens + hTokens; total > 0 {
-			eff = float64(hTokens) / float64(total) * 100
-		}
-
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost))
-		grandTotal += cost
-		totalM += mTokens
-		totalH += hTokens
-		totalO += oTokens
-	}
-
-	totalEff := 0.0
-	if total := totalM + totalH; total > 0 {
-		totalEff = float64(totalH) / float64(total) * 100
-	}
-	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
-
-	return sb.String(), nil
+	return m.formatSummaryTable(args, intervalTotals, intervalUsage, keys, location), nil
 }
 
 func (m *metricsManager) getModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPricing {
@@ -641,6 +486,195 @@ func (m *metricsManager) renderReport(pricing pricing.PricingData, breakdown pri
 	sb.WriteString(fmt.Sprintf("| Text Output | %d | $%.2f | $%.6f |\n", stats.ResponseTokens+stats.ThinkingTokens, p.Comp, breakdown.OutputCost))
 	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, pricing.SearchQuery, breakdown.SearchCost))
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
+
+	return sb.String()
+}
+
+func (m *metricsManager) loadRetentionDays(outputDir string) int {
+	retentionDays := 30
+	configPath := filepath.Join(outputDir, "config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var cfg map[string]string
+		if err := json.Unmarshal(data, &cfg); err == nil {
+			if val, ok := cfg["cost_retention_days"]; ok {
+				if days, err := strconv.Atoi(val); err == nil {
+					retentionDays = days
+				}
+			}
+		}
+	}
+	return retentionDays
+}
+
+func (m *metricsManager) applyRetentionPolicy(history []SessionCostRecord, retentionDays int) []SessionCostRecord {
+	if retentionDays <= 0 {
+		return history
+	}
+	cutoff := time.Now().AddDate(0, 0, -retentionDays).Format("2006-01-02")
+	filtered := make([]SessionCostRecord, 0, len(history))
+	for _, r := range history {
+		if r.Date >= cutoff {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, globalDir string) ([]SessionCostRecord, string, error) {
+	// SOP: Auto-recovery of missing ledger
+	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
+		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
+			// Use a background context for recovery so it's not aborted if the request context is cancelled.
+			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
+			go func() {
+				defer cancel()
+				m.ledger.RecoverLedger(bgCtx, globalDir)
+			}()
+		}
+		return nil, "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
+	}
+
+	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
+		return nil, "Cost history recovery is currently in progress. Please try again in a few moments.", nil
+	}
+
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		return nil, "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
+	}
+
+	var history []SessionCostRecord
+	if err := json.Unmarshal(content, &history); err != nil {
+		return nil, "Error parsing cost history. The file may be corrupted.", err
+	}
+
+	return history, "", nil
+}
+
+func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
+	var startFilter, endFilter time.Time
+	// Determine the target location early
+	location := time.Local
+	billingZone := time.FixedZone("UTC-8", -8*3600)
+	if args.Billing {
+		location = billingZone
+	}
+
+	if args.StartDate != "" {
+		var err error
+		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
+		}
+	}
+	if args.EndDate != "" {
+		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
+		}
+		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
+	}
+
+	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
+		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
+	}
+
+	format := "2006-01-02"
+	if args.Interval == "hour" {
+		format = "2006-01-02 15:00"
+	}
+
+	// Aggregate by Interval
+	intervalTotals := make(map[string]float64)
+	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
+
+	for _, r := range history {
+		ts := r.Timestamp
+		if ts.IsZero() {
+			var err error
+			ts, err = time.Parse("2006-01-02", r.Date)
+			if err != nil {
+				continue
+			}
+		}
+		if ts.IsZero() {
+			continue
+		}
+
+		// Apply range filter
+		if !startFilter.IsZero() && ts.Before(startFilter) {
+			continue
+		}
+		if !endFilter.IsZero() && !ts.Before(endFilter) {
+			continue
+		}
+
+		// Determine the key for aggregation
+		effectiveKey := ts.In(location).Format(format)
+
+		intervalTotals[effectiveKey] += r.TotalCost
+		u := intervalUsage[effectiveKey]
+		u.PromptTokens += r.Usage.PromptTokens
+		u.ResponseTokens += r.Usage.ResponseTokens
+		u.CachedTokens += r.Usage.CachedTokens
+		u.ThinkingTokens += r.Usage.ThinkingTokens
+		intervalUsage[effectiveKey] = u
+	}
+
+	// Sort keys descending
+	var keys []string
+	for k := range intervalTotals {
+		keys = append(keys, k)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
+
+	return intervalTotals, intervalUsage, keys, location, nil
+}
+
+func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals map[string]float64, intervalUsage map[string]pricing.UsageStats, keys []string, location *time.Location) string {
+	title := "AI Usage Cost Summary (by Date)"
+	if args.Interval == "hour" {
+		title = "AI Usage Cost Summary (by Hour)"
+	}
+	if args.Billing {
+		title += " - Google Billing Cycle (UTC-8)"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
+	headerName := "Date"
+	if args.Interval == "hour" {
+		headerName = "Date/Hour"
+	}
+	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
+	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
+
+	var grandTotal float64
+	var totalM, totalH, totalO int64
+	for _, k := range keys {
+		cost := intervalTotals[k]
+		u := intervalUsage[k]
+
+		mTokens := u.PromptTokens - u.CachedTokens
+		hTokens := u.CachedTokens
+		oTokens := u.ResponseTokens + u.ThinkingTokens
+		eff := 0.0
+		if total := mTokens + hTokens; total > 0 {
+			eff = float64(hTokens) / float64(total) * 100
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost))
+		grandTotal += cost
+		totalM += mTokens
+		totalH += hTokens
+		totalO += oTokens
+	}
+
+	totalEff := 0.0
+	if total := totalM + totalH; total > 0 {
+		totalEff = float64(totalH) / float64(total) * 100
+	}
+	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
 
 	return sb.String()
 }
