@@ -68,7 +68,7 @@ wait
 	if err != nil {
 		t.Fatalf("failed to stat output file: %v", err)
 	}
-	
+
 	if fileInfo.Size() <= int64(maxCapture) {
 		t.Errorf("output file size %d should be greater than MaxCapture %d", fileInfo.Size(), maxCapture)
 	}
@@ -78,7 +78,7 @@ wait
 	if err != nil {
 		t.Fatalf("failed to read output file: %v", err)
 	}
-	
+
 	fileContent := string(content)
 	if !strings.Contains(fileContent, "STDOUT") {
 		t.Error("output file missing STDOUT content")
@@ -100,23 +100,23 @@ wait
 
 func TestProcessExecutor_UTF8Boundary(t *testing.T) {
 	executor := NewProcessExecutor()
-	
+
 	// "世界" is 6 bytes (3+3)
 	// If we set MaxCapture to 4, it should only contain "世" (3 bytes)
 	config := ExecutionConfig{
 		MaxCapture: 4,
 	}
-	
+
 	res, err := executor.RunCommand(context.Background(), []string{"echo", "世界"}, config)
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
 	}
-	
+
 	// echo adds a newline, so the output is "世界\n" (7 bytes)
 	// "世" is 3 bytes. The next char is "界" (3 bytes).
 	// If MaxCapture is 4, it takes "世" (3 bytes), then it can't take the first byte of "界".
 	// So it should be "世".
-	
+
 	if res.Output != "世" {
 		t.Errorf("expected output '世', got %q (len %d)", res.Output, len(res.Output))
 	}
