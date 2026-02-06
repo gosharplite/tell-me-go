@@ -35,6 +35,21 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, hea.GetCodeHealth)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "get_detailed_coverage",
+		Description: "Analyzes Go test coverage to identify specific untested code blocks, prioritizing error handling and business logic gaps.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"path": {
+					Type:        "STRING",
+					Description: "The package path to analyze (e.g., './internal/service/...')",
+				},
+			},
+			Required: []string{"path"},
+		},
+	}, hea.GetDetailedCoverage)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
 		Parameters: &tools.Schema{
