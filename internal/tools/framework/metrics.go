@@ -168,7 +168,10 @@ type metricsManager struct {
 }
 
 type costSummaryArgs struct {
-	Billing bool `json:"billing"`
+	Billing   bool   `json:"billing"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Interval  string `json:"interval"` // "hour" or "day"
 }
 
 type estimateCostArgs struct{}
@@ -206,6 +209,18 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 					Type:        "boolean",
 					Description: "If true, aggregates costs using Google Billing timezone (UTC-8).",
 				},
+				"start_date": {
+					Type:        "string",
+					Description: "The start date for the summary (YYYY-MM-DD).",
+				},
+				"end_date": {
+					Type:        "string",
+					Description: "The end date for the summary (YYYY-MM-DD).",
+				},
+				"interval": {
+					Type:        "string",
+					Description: "Aggregation interval: 'hour' or 'day' (default: 'day').",
+				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -216,7 +231,7 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 
 		// Silent update: Calculate and record the current session's latest cost before summary.
 		_, _ = m.EstimateCost(ctx, true, "")
-		res, err := m.getCostSummary(ctx, sArgs.Billing)
+		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
 	})
 }
@@ -389,7 +404,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
 }
 
-func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bool) (string, error) {
+func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArgs) (string, error) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
@@ -427,57 +442,104 @@ func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bo
 		return "Error parsing cost history. The file may be corrupted.", err
 	}
 
-	// Aggregate by Date
-	dailyTotals := make(map[string]float64)
-	dailyUsage := make(map[string]pricing.UsageStats) // Track usage per day
-
-	// Define the Google Billing timezone (typically PST/PDT)
-	// Using a fixed -8 offset is safer than a hardcoded subtraction
-	// if we can't load "America/Los_Angeles" from the system database.
+	var startFilter, endFilter time.Time
+	// Determine the target location early
+	location := time.Local
 	billingZone := time.FixedZone("UTC-8", -8*3600)
+	if args.Billing {
+		location = billingZone
+	}
+
+	if args.StartDate != "" {
+		var err error
+		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		if err != nil {
+			return "", fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
+		}
+	}
+	if args.EndDate != "" {
+		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
+		if err != nil {
+			return "", fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
+		}
+		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
+	}
+
+	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
+		return "", fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
+	}
+
+	format := "2006-01-02"
+	if args.Interval == "hour" {
+		format = "2006-01-02 15:00"
+	}
+
+	// Aggregate by Interval
+	intervalTotals := make(map[string]float64)
+	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
 
 	for _, r := range history {
-		// Determine the effective date for this record
-		effectiveDate := r.Date // Fallback for old records
-		if !r.Timestamp.IsZero() {
-			if useGoogleBilling {
-				effectiveDate = r.Timestamp.In(billingZone).Format("2006-01-02")
-			} else {
-				effectiveDate = r.Timestamp.UTC().Format("2006-01-02")
+		ts := r.Timestamp
+		if ts.IsZero() {
+			var err error
+			ts, err = time.Parse("2006-01-02", r.Date)
+			if err != nil {
+				continue
 			}
 		}
+		if ts.IsZero() {
+			continue
+		}
 
-		dailyTotals[effectiveDate] += r.TotalCost
-		u := dailyUsage[effectiveDate]
+		// Apply range filter
+		if !startFilter.IsZero() && ts.Before(startFilter) {
+			continue
+		}
+		if !endFilter.IsZero() && !ts.Before(endFilter) {
+			continue
+		}
+
+		// Determine the key for aggregation
+		effectiveKey := ts.In(location).Format(format)
+
+		intervalTotals[effectiveKey] += r.TotalCost
+		u := intervalUsage[effectiveKey]
 		u.PromptTokens += r.Usage.PromptTokens
 		u.ResponseTokens += r.Usage.ResponseTokens
 		u.CachedTokens += r.Usage.CachedTokens
 		u.ThinkingTokens += r.Usage.ThinkingTokens
-		dailyUsage[effectiveDate] = u
+		intervalUsage[effectiveKey] = u
 	}
 
 	title := "AI Usage Cost Summary (by Date)"
-	if useGoogleBilling {
-		title = "AI Usage Cost Summary (Google Billing Cycle - UTC-8)"
+	if args.Interval == "hour" {
+		title = "AI Usage Cost Summary (by Hour)"
+	}
+	if args.Billing {
+		title += " - Google Billing Cycle (UTC-8)"
 	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
-	sb.WriteString("| Date | Miss | Hit | Other | Eff % | Total Cost (USD) |\n")
+	headerName := "Date"
+	if args.Interval == "hour" {
+		headerName = "Date/Hour"
+	}
+	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
-	// Sort dates descending
-	var dates []string
-	for d := range dailyTotals {
-		dates = append(dates, d)
+	// Sort keys descending
+	var keys []string
+	for k := range intervalTotals {
+		keys = append(keys, k)
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
+	sort.Sort(sort.Reverse(sort.StringSlice(keys)))
 
 	var grandTotal float64
 	var totalM, totalH, totalO int64
-	for _, d := range dates {
-		cost := dailyTotals[d]
-		u := dailyUsage[d]
+	for _, k := range keys {
+		cost := intervalTotals[k]
+		u := intervalUsage[k]
 
 		mTokens := u.PromptTokens - u.CachedTokens
 		hTokens := u.CachedTokens
@@ -487,7 +549,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context, useGoogleBilling bo
 			eff = float64(hTokens) / float64(total) * 100
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", d, mTokens, hTokens, oTokens, eff, cost))
+		sb.WriteString(fmt.Sprintf("| %s | %d | %d | %d | %.1f%% | $%.4f |\n", k, mTokens, hTokens, oTokens, eff, cost))
 		grandTotal += cost
 		totalM += mTokens
 		totalH += hTokens
