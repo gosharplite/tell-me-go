@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 // HistoryPruner enforces history turn limits using a policy.
@@ -171,7 +172,7 @@ func (p *PinningPolicy) Name() string { return "Pinning" }
 type TokenGatekeeper struct {
 	MaxTokens  int
 	Estimator  TokenEstimator
-	Summarizer HistorySummarizer
+	Summarizer services.Summarizer
 	Events     events.EventBus
 }
 

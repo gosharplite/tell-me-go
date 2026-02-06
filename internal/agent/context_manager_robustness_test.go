@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
@@ -31,7 +32,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	strategy.SetLimits(1000, 5, 20) // Turn 3/5 (remaining 2) -> Triggers warning
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
@@ -110,8 +111,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 	}
 
 	bus := &events.SimpleEventBus{}
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, g, bus, nil)
-	cm.Summarizer = NewSummarizer(gateway.NewResilientClient(g, true), bus)
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
+	cm.Summarizer = summarizer.NewSummarizer(gateway.NewResilientClient(g, true), bus)
 	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 
 	if len(capturedInput) == 0 {
@@ -167,7 +168,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	bus := events.NewCountingEventBus()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, bus, nil)
+	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Configure pipeline with a pruner that will prune history
 	cm.Pipeline = NewContextPipeline(
@@ -218,7 +219,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	counter := &mockTokenCounter{}
 	strategy := NewContextStrategy(counter, nil)
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Add 4 messages (2 turns)
 	for i := 0; i < 2; i++ {
@@ -247,7 +248,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 		_ = hManager2.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
 	}
-	cm2 := NewContextManager(strategy, hManager2, &mockGateway{}, nil, nil)
+	cm2 := NewContextManager(strategy, hManager2, nil, nil)
 	cm2.Summarizer = &mockSummarizer{}
 
 	counter.tokens = int(float64(window) * 0.91)
@@ -273,7 +274,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	strategy := NewContextStrategy(counter, nil)
 	strategy.SetLimits(1000, 10, 20)
 
-	cm := NewContextManager(strategy, hManager, &mockGateway{}, nil, nil)
+	cm := NewContextManager(strategy, hManager, nil, nil)
 
 	// Pipeline with WarningInjector (Transient)
 	cm.Pipeline = NewContextPipeline(

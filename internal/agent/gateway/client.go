@@ -57,11 +57,11 @@ func (r *ResilientClient) WrapError(err error) error {
 		}
 	}
 
-	return fmt.Errorf("%w: %v", ErrTerminal, err)
+	return fmt.Errorf("%w: %v", llm.ErrTerminal, err)
 }
 
 func classifyDomain(err error) (error, bool) {
-	if errors.Is(err, ErrAuth) || errors.Is(err, ErrTransient) || errors.Is(err, ErrTerminal) {
+	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) {
 		return err, true
 	}
 	return nil, false
@@ -71,11 +71,11 @@ func classifyGRPC(err error) (error, bool) {
 	if s, ok := status.FromError(err); ok {
 		switch s.Code() {
 		case codes.Unauthenticated:
-			return fmt.Errorf("%w: %v", ErrAuth, err), true
+			return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
 		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
-			return fmt.Errorf("%w: %v", ErrTransient, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
 		case codes.PermissionDenied, codes.InvalidArgument:
-			return fmt.Errorf("%w: %v", ErrTerminal, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTerminal, err), true
 		}
 	}
 	return nil, false
@@ -87,11 +87,11 @@ func classifyHTTP(err error) (error, bool) {
 		code := httpErr.StatusCode()
 		switch {
 		case code == 401:
-			return fmt.Errorf("%w: %v", ErrAuth, err), true
+			return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
 		case code == 429 || code >= 500:
-			return fmt.Errorf("%w: %v", ErrTransient, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
 		case code >= 400 && code < 500:
-			return fmt.Errorf("%w: %v", ErrTerminal, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTerminal, err), true
 		}
 	}
 	return nil, false
@@ -100,7 +100,7 @@ func classifyHTTP(err error) (error, bool) {
 func classifyString(err error) (error, bool) {
 	msg := strings.ToUpper(err.Error())
 	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
-		return fmt.Errorf("%w: %v", ErrAuth, err), true
+		return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
 	}
 	return nil, false
 }
@@ -151,7 +151,7 @@ func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input
 		}
 
 		wrapped := r.WrapError(err)
-		if errors.Is(wrapped, ErrAuth) {
+		if errors.Is(wrapped, llm.ErrAuth) {
 			if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
 				continue // Fixed! Retry once.
 			}

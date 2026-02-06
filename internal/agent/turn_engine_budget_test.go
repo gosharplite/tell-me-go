@@ -36,7 +36,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 		Estimator: strategy,
 	}
 
-	cm := NewContextManager(strategy, h, gw, bus, factory)
+	cm := NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	// Setup cost tracker with a high rate

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -22,7 +21,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
-// MockGateway implements gateway.LLMGateway for testing.
+// MockGateway implements llm.LLMGateway for testing.
 type MockGateway struct {
 	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
 }
@@ -180,7 +179,7 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	cm := newTestContextManager(strategy, hManager, &MockGateway{}, bus)
+	cm := newTestContextManager(strategy, hManager, bus)
 	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus)
 	e.ctxManager.Strategy.SetLimits(1000, 5, 2) // Max 2 turns (0, 1, 2)
 
@@ -245,7 +244,7 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -319,7 +318,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 
 			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-			e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
+			e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
 			strategy.SetLimits(1000, 5, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -376,7 +375,7 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
+	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, &events.SimpleEventBus{}), reg, &events.SimpleEventBus{})
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -411,7 +410,7 @@ func TestTurnEngine_RecoveryLogic(t *testing.T) {
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -457,7 +456,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithMiddleware(m1, m2))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
 	turn := &Turn{
@@ -507,7 +506,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, bus), reg, bus, WithClock(mockClock))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, bus), reg, bus, WithClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
 	if err != nil {
@@ -589,13 +588,13 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 			attempts++
 			if attempts < 2 {
 				// Return gateway transient error
-				return nil, nil, gateway.ErrTransient
+				return nil, nil, llm.ErrTransient
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -612,8 +611,8 @@ func minimalPipeline() *ContextPipeline {
 	return NewContextPipeline()
 }
 
-func newTestContextManager(s *ContextStrategy, h *history.Manager, g llm.LLMClient, bus events.EventBus) *ContextManager {
-	cm := NewContextManager(s, h, g, bus, nil)
+func newTestContextManager(s *ContextStrategy, h *history.Manager, bus events.EventBus) *ContextManager {
+	cm := NewContextManager(s, h, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
 }
@@ -633,11 +632,11 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		return ch, func() (*llm.Content, *llm.Metrics, error) {
 			attempts++
 			// Always return transient error
-			return nil, nil, gateway.ErrTransient
+			return nil, nil, llm.ErrTransient
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -677,7 +676,7 @@ func TestTurnEngine_WithProcessor(t *testing.T) {
 		return ProcessResult{NextPhase: PhaseInference}
 	})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -715,7 +714,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &mockHook{}
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithHook(hook))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -760,7 +759,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	policy := &mockRetryPolicy{retry: false} // Don't actually retry to keep test fast
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithRetryPolicy(policy))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithRetryPolicy(policy))
 
 	_ = e.Run(context.Background(), time.Now())
 
@@ -788,7 +787,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	})
 
 	// Override Inference with a processor that returns Stop: true
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil, WithProcessor(PhaseInference, stopProcessor))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(PhaseInference, stopProcessor))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -798,7 +797,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	// If it reached complete through Stop: true, turn.Stop should be true
 	// However, Run loop checks turn.Stop. Let's use a hook to verify we didn't go further than Inference.
 	hook := &mockHook{}
-	e = NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, mockGw, nil), reg, nil,
+	e = NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil,
 		WithProcessor(PhaseInference, stopProcessor),
 		WithHook(hook),
 	)
@@ -830,7 +829,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// We need internal/tools/framework imported as framework
 	tracker := framework.NewSessionCostTracker(nil, "", modelName, modelPricing, pricing)
 
-	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus, WithCostTracker(tracker))
+	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, bus), reg, bus, WithCostTracker(tracker))
 
 	var turnCosts []float64
 	bus.Subscribe(func(ev events.Event) {
@@ -922,7 +921,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 			// Turn 0: Fail twice, then tool call
 			if turnIndex == 0 {
 				if attemptsInTurn <= 2 {
-					return nil, nil, gateway.ErrTransient
+					return nil, nil, llm.ErrTransient
 				}
 				return &llm.Content{
 					Role:  "model",
@@ -933,7 +932,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 			// Turn 1: Fail twice, then success
 			if turnIndex == 1 {
 				if attemptsInTurn <= 2 {
-					return nil, nil, gateway.ErrTransient
+					return nil, nil, llm.ErrTransient
 				}
 				return &llm.Content{
 					Role:  "model",
@@ -956,7 +955,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		},
 	}
 
-	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, nil), reg, nil)
+	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil)
 	// Default MaxRetries is 3.
 	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0,
 	// and Turn 1's first failure would set it to 3, then second would hit limit.
@@ -1099,7 +1098,7 @@ func TestTurnEngine_ToolCallLoopDetection_Table(t *testing.T) {
 				tt.setupExecutor(mockEx, &turnIndex)
 			}
 
-			e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+			e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, bus), reg, bus)
 			strategy.SetLimits(1000, tt.toolLimit, 10)
 
 			err := e.Run(context.Background(), time.Now())
@@ -1148,7 +1147,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, mockGw, bus), reg, bus)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus)
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(ctx, time.Now())
@@ -1205,7 +1204,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	reg := &MockRegistry{}
 	hManager := history.NewManager(t.TempDir() + "/history.json")
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
-	cm := newTestContextManager(strategy, hManager, &MockGateway{}, bus)
+	cm := newTestContextManager(strategy, hManager, bus)
 
 	_ = NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus, WithCostTracker(tracker))
 

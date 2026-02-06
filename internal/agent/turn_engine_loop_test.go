@@ -29,7 +29,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := NewContextManager(strategy, h, gw, bus, factory)
+	cm := NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus)
@@ -86,7 +86,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := NewContextManager(strategy, h, gw, bus, factory)
+	cm := NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus)

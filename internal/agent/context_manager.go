@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 // ContextManager handles the preparation of context for the LLM.
@@ -21,11 +22,10 @@ type ContextManager struct {
 	version    int
 	Strategy   *ContextStrategy
 	History    HistoryManager
-	Gateway    llm.LLMClient
 	Events     events.EventBus
 	Pipeline   *ContextPipeline
 	Factory    *PipelineFactory
-	Summarizer HistorySummarizer
+	Summarizer services.Summarizer
 }
 
 // HistoryManager defines the interface for interacting with history.
@@ -40,11 +40,10 @@ type HistoryManager interface {
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history HistoryManager, gateway llm.LLMClient, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,
-		Gateway:  gateway,
 		Events:   bus,
 		Factory:  factory,
 	}
@@ -115,11 +114,6 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 // TokenEstimator defines the interface for token counting.
 type TokenEstimator interface {
 	EstimateTokens(contents []*llm.Content) int
-}
-
-// HistorySummarizer defines the interface for summarizing history.
-type HistorySummarizer interface {
-	Summarize(ctx context.Context, contents []*llm.Content, focus string) (string, *llm.Metrics, error)
 }
 
 // PruningPolicy defines how to mark turns for pruning.

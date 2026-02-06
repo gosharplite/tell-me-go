@@ -19,6 +19,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"google.golang.org/genai"
 )
@@ -194,12 +195,12 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}
-	summarizer := NewSummarizer(mockG, bus)
+	summarizerImpl := summarizer.NewSummarizer(mockG, bus)
 
 	cm := &ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
-		Summarizer: summarizer,
+		Summarizer: summarizerImpl,
 		Events:     bus,
 	}
 

@@ -5,6 +5,7 @@ package agent
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 )
@@ -23,7 +24,7 @@ const (
 type PipelineFactory struct {
 	Registry   tools.IToolRegistry
 	History    *history.Manager
-	Summarizer HistorySummarizer
+	Summarizer services.Summarizer
 	Estimator  TokenEstimator
 	Events     events.EventBus
 	Profile    OptimizationProfile

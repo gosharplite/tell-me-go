@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -126,7 +125,7 @@ type Turn struct {
 	StartTime    time.Time
 	State        *TurnState
 	CtxManager   *ContextManager
-	Gateway      gateway.LLMGateway
+	Gateway      llm.LLMGateway
 	Executor     IToolExecutor
 	Registry     tools.IToolRegistry
 	Events       events.EventBus
@@ -146,7 +145,7 @@ type Turn struct {
 type TurnEngine struct {
 	mu               sync.RWMutex
 	ctxManager       *ContextManager
-	gateway          gateway.LLMGateway
+	gateway          llm.LLMGateway
 	executor         IToolExecutor
 	registry         tools.IToolRegistry
 	events           events.EventBus
@@ -242,7 +241,7 @@ func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
-func NewTurnEngine(gw gateway.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
+func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:     gw,
 		executor:    ex,
