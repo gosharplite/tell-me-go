@@ -20,10 +20,16 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to open temp file: %w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmp := f.Name()
+
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("failed to chmod temp file: %w", err)
 	}
 
 	// Ensure cleanup of the temp file on failure

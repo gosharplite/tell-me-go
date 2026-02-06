@@ -48,10 +48,10 @@ func (s *ScratchpadStore) Load(ctx context.Context) error {
 
 // Save saves the scratchpad to disk.
 func (s *ScratchpadStore) Save(ctx context.Context) error {
-	s.mu.RLock()
-	data := []byte(s.scratchpad)
-	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
+	data := []byte(s.scratchpad)
 	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 

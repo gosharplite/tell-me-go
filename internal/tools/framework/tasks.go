@@ -73,12 +73,13 @@ func (s *TaskStore) Load(ctx context.Context) error {
 
 // Save saves tasks to disk.
 func (s *TaskStore) Save(ctx context.Context) error {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var tasks []Task
 	for _, t := range s.tasks {
 		tasks = append(tasks, t)
 	}
-	s.mu.RUnlock()
 
 	// Sort by ID stable
 	sort.Slice(tasks, func(i, j int) bool {
