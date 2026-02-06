@@ -107,7 +107,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 		{"Inference to Persisting", PhaseInference, false, PhasePersisting},
 		{"Executing to Persisting", PhaseExecuting, true, PhasePersisting},
 		{"Persisting to Complete", PhasePersisting, false, PhaseComplete},
-		{"Recovery to Inference", PhaseRecovering, false, PhaseInference},
+		{"Recovery to Refining", PhaseRecovering, false, PhaseRefining},
 	}
 
 	for _, tt := range tests {

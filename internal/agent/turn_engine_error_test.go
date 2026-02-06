@@ -101,8 +101,8 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 		t.Errorf("Expected RetryCount 1, got %d", tracker.lastState.RetryCount)
 	}
 
-	// Verification: Phase sequence should include: Inference -> Recovering -> Inference
-	expectedPhases := []TurnPhase{PhaseInference, PhaseRecovering, PhaseInference, PhasePersisting, PhaseComplete}
+	// Verification: Phase sequence should include: Inference -> Recovering -> Refining -> Inference
+	expectedPhases := []TurnPhase{PhaseInference, PhaseRecovering, PhaseRefining, PhaseInference, PhasePersisting, PhaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)

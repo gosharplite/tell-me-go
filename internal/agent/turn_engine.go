@@ -666,7 +666,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *Turn, delay time.
 	case <-time.After(delay):
 	}
 
-	return ProcessResult{NextPhase: PhaseInference}
+	return ProcessResult{NextPhase: PhaseRefining} // Re-prepares context before next LLM call
 }
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
