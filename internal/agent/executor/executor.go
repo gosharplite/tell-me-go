@@ -6,6 +6,8 @@ package executor
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -277,7 +279,40 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
-	// 1. Security Check
+	// 1. Intercept: Validate tool existence early
+	e.mu.RLock()
+	reg := e.registry
+	e.mu.RUnlock()
+
+	exists := false
+	var validTools []string
+	for _, decl := range reg.GetDeclarations() {
+		validTools = append(validTools, decl.Name)
+		if decl.Name == call.Name {
+			exists = true
+		}
+	}
+
+	if !exists {
+		sort.Strings(validTools)
+		errorMessage := fmt.Sprintf(
+			"Error: Tool %q is not defined. Available tools are: [%s].",
+			call.Name, strings.Join(validTools, ", "),
+		)
+
+		if suggestion := e.suggestTool(call.Name, validTools); suggestion != "" {
+			errorMessage += fmt.Sprintf(" Did you mean %q?", suggestion)
+		}
+
+		errorMessage += " Please check the spelling or use a different tool from the authorized list."
+
+		return domaintools.ToolResult{
+			Text:  errorMessage,
+			Error: fmt.Errorf("unexpected tool call: %s", call.Name),
+		}
+	}
+
+	// 2. Security Check
 	e.mu.RLock()
 	sm := e.sm
 	e.mu.RUnlock()
@@ -347,6 +382,46 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		}
 		return r.tr
 	}
+}
+
+func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
+	closest := ""
+	minDist := 3 // Maximum distance to consider a suggestion
+
+	for _, tool := range validTools {
+		dist := levenshteinDistance(hallucinated, tool)
+		if dist < minDist {
+			minDist = dist
+			closest = tool
+		}
+	}
+	return closest
+}
+
+func levenshteinDistance(s, t string) int {
+	m, n := len(s), len(t)
+	d := make([][]int, m+1)
+	for i := range d {
+		d[i] = make([]int, n+1)
+		d[i][0] = i
+	}
+	for j := 0; j <= n; j++ {
+		d[0][j] = j
+	}
+
+	for j := 1; j <= n; j++ {
+		for i := 1; i <= m; i++ {
+			substitutionCost := 0
+			if s[i-1] != t[j-1] {
+				substitutionCost = 1
+			}
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1)
+			if d[i-1][j-1]+substitutionCost < d[i][j] {
+				d[i][j] = d[i-1][j-1] + substitutionCost
+			}
+		}
+	}
+	return d[m][n]
 }
 
 // WorkerPool manages a fixed number of workers to execute tasks concurrently.
