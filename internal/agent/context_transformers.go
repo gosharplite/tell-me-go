@@ -329,16 +329,28 @@ func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest
 }
 
 func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, int, int, error) {
-	// 1. Group into turns (pairs of messages)
 	turns := groupTurns(history)
 
-	// Find the first contiguous block of at least 2 turns that contains no pinned messages.
 	// We want to summarize about 50% of the history, but at least 2 turns.
 	targetTurns := len(turns) / 2
 	if targetTurns < 2 {
 		targetTurns = 2
 	}
 
+	startTurn, numTurns := t.locateCandidateBlock(turns, targetTurns)
+
+	if startTurn == -1 || numTurns < 2 {
+		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
+	}
+
+	// Calculate message offsets
+	startIdx := t.countMessages(turns[:startTurn])
+	endIdx := startIdx + t.countMessages(turns[startTurn:startTurn+numTurns])
+
+	return startIdx, endIdx, numTurns, nil
+}
+
+func (t *TokenGatekeeper) locateCandidateBlock(turns [][]*llm.Content, target int) (int, int) {
 	startTurn := -1
 	numTurns := 0
 
@@ -348,35 +360,28 @@ func (t *TokenGatekeeper) findSummarizableRange(history []*llm.Content) (int, in
 				startTurn = i
 			}
 			numTurns++
-			if numTurns >= targetTurns {
-				break
+			if numTurns >= target {
+				return startTurn, numTurns
 			}
 		} else {
-			// If we found a pinned turn and we haven't reached targetTurns, reset and look further.
-			// However, if we already have at least 2 turns, we could potentially stop here.
+			// If we found a pinned turn and we haven't reached target, but have a viable block, use it.
 			if numTurns >= 2 {
-				break
+				return startTurn, numTurns
 			}
 			startTurn = -1
 			numTurns = 0
 		}
 	}
 
-	if startTurn == -1 || numTurns < 2 {
-		return 0, 0, 0, fmt.Errorf("could not find a contiguous block of at least 2 unpinned turns to summarize")
-	}
+	return startTurn, numTurns
+}
 
-	startIdx := 0
-	for i := 0; i < startTurn; i++ {
-		startIdx += len(turns[i])
+func (t *TokenGatekeeper) countMessages(turns [][]*llm.Content) int {
+	count := 0
+	for _, turn := range turns {
+		count += len(turn)
 	}
-
-	endIdx := startIdx
-	for i := startTurn; i < startTurn+numTurns; i++ {
-		endIdx += len(turns[i])
-	}
-
-	return startIdx, endIdx, numTurns, nil
+	return count
 }
 
 func (t *TokenGatekeeper) isTurnPinned(turn []*llm.Content) bool {
@@ -441,6 +446,16 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 	tokens := req.Metadata.FinalTokenCount
 	currentTurns := len(req.History) / 2
 
+	combined := t.gatherWarnings(req, tokens, currentTurns)
+	if combined == "" {
+		return nil
+	}
+
+	t.injectWarning(req, combined)
+	return nil
+}
+
+func (t *WarningInjector) gatherWarnings(req *ContextRequest, tokens, turns int) string {
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
 
@@ -453,9 +468,9 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		combined = t.Strategy.GetCloggedWarning()
 		req.Metadata.Warnings = append(req.Metadata.Warnings, combined)
 	} else {
-		warnings := t.Strategy.GetWarnings(req.Turn, tokens, currentTurns)
+		warnings := t.Strategy.GetWarnings(req.Turn, tokens, turns)
 		if len(warnings) == 0 {
-			return nil
+			return ""
 		}
 		for _, w := range warnings {
 			if combined != "" {
@@ -465,23 +480,18 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 			req.Metadata.Warnings = append(req.Metadata.Warnings, w.Message)
 		}
 	}
+	return combined
+}
 
-	// 1. Clone the target message to avoid "History Pollution" in long-term memory.
-	// We only modify the content for the current API call.
+func (t *WarningInjector) injectWarning(req *ContextRequest, combined string) {
+	if len(req.History) == 0 {
+		return
+	}
+
 	lastIdx := len(req.History) - 1
 	orig := req.History[lastIdx]
 
-	cloned := orig.Clone()
-
-	hasFunctionResponse := false
-	for _, p := range cloned.Parts {
-		if p.FunctionResponse != nil {
-			hasFunctionResponse = true
-			break
-		}
-	}
-
-	if hasFunctionResponse && len(req.History) > 1 {
+	if t.hasFunctionResponse(orig) && len(req.History) > 1 {
 		// If the last message is a function response, we inject warnings as a separate turn
 		// to avoid breaking the tool response structure.
 		warningMsgs := []*llm.Content{
@@ -501,13 +511,21 @@ func (t *WarningInjector) Transform(ctx context.Context, req *ContextRequest) er
 		req.History = newContents
 	} else {
 		// Append to TransientParts instead of regular Parts
+		cloned := orig.Clone()
 		cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
 			Text: "\n\n" + combined,
 		})
 		req.History[lastIdx] = cloned
 	}
+}
 
-	return nil
+func (t *WarningInjector) hasFunctionResponse(msg *llm.Content) bool {
+	for _, p := range msg.Parts {
+		if p.FunctionResponse != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *WarningInjector) Priority() int { return PriorityTransientThreshold }
@@ -627,32 +645,49 @@ func groupTurns(history []*llm.Content) [][]*llm.Content {
 	var current []*llm.Content
 
 	for _, msg := range history {
-		if (msg.Role == "user" || msg.Role == "system") && len(current) > 0 {
-			// Check if previous message was a Model message with FunctionCall.
-			// If it was, and the current message is a User message, it's likely a tool response
-			// and should stay in the same turn.
-			lastWasToolCall := false
-			last := current[len(current)-1]
-			if last.Role == "model" {
-				for _, p := range last.Parts {
-					if p.FunctionCall != nil {
-						lastWasToolCall = true
-						break
-					}
-				}
-			}
-
-			if !lastWasToolCall || msg.Role == "system" {
-				turns = append(turns, current)
-				current = nil
-			}
+		if isTurnBoundary(msg, current) {
+			turns = append(turns, current)
+			current = nil
 		}
 		current = append(current, msg)
 	}
+
 	if len(current) > 0 {
 		turns = append(turns, current)
 	}
 	return turns
+}
+
+func isTurnBoundary(msg *llm.Content, current []*llm.Content) bool {
+	if len(current) == 0 {
+		return false
+	}
+
+	// Boundary usually starts with user or system
+	if msg.Role != "user" && msg.Role != "system" {
+		return false
+	}
+
+	// If the last message was a tool call, and this is a user message,
+	// it's likely a tool response and should stay in the same turn.
+	// System messages always break turns.
+	if msg.Role == "user" {
+		last := current[len(current)-1]
+		if last.Role == "model" && isToolCall(last) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isToolCall(msg *llm.Content) bool {
+	for _, p := range msg.Parts {
+		if p.FunctionCall != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func isTurnEmpty(turn []*llm.Content) bool {
