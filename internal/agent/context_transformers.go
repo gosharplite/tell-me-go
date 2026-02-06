@@ -177,8 +177,30 @@ type TokenGatekeeper struct {
 }
 
 func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) error {
-	req.Metadata.OriginalTokenCount = t.Estimator.EstimateTokens(req.History)
-	tokens := req.Metadata.OriginalTokenCount
+	// Stage 1: Initial Analysis (includes Tiered Threshold)
+	tokens, err := t.handleTieredThreshold(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	// Stage 2: Pressure Management (90% threshold)
+	tokens, err = t.handleSafetyPressure(ctx, req, tokens)
+	if err != nil {
+		return err
+	}
+
+	// Stage 3: Boundary Validation (Hard limits + Buffer)
+	if err := t.validateHardLimits(ctx, req, tokens); err != nil {
+		return err
+	}
+
+	req.Metadata.FinalTokenCount = tokens
+	return nil
+}
+
+func (t *TokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ContextRequest) (int, error) {
+	tokens := t.Estimator.EstimateTokens(req.History)
+	req.Metadata.OriginalTokenCount = tokens
 
 	// Nuanced check for TieredThreshold
 	if cs, ok := t.Estimator.(*ContextStrategy); ok {
@@ -192,59 +214,80 @@ func (t *TokenGatekeeper) Transform(ctx context.Context, req *ContextRequest) er
 				})
 			}
 			// Attempt auto-summarization to try and get back into the cheap tier
-			if n, err := t.autoSummarize(ctx, req); err == nil {
-				tokens = t.Estimator.EstimateTokens(req.History)
-				req.Metadata.SummarizedTurns = n
-			}
-		}
-	}
-
-	if t.MaxTokens > 0 {
-		if tokens > int(float64(t.MaxTokens)*0.9) {
-			if t.Events != nil {
-				t.Events.Publish(events.SummarizationRequired{
-					Tokens:   tokens,
-					MaxLimit: t.MaxTokens,
-					Reason:   "Safety limit pressure (> 90%)",
-				})
-			}
-
-			if !req.Metadata.SummarizationAttempted {
-				if n, err := t.autoSummarize(ctx, req); err == nil {
-					tokens = t.Estimator.EstimateTokens(req.History)
-					req.Metadata.SummarizedTurns = n
+			n, err := t.autoSummarize(ctx, req)
+			if err != nil {
+				// Propagate critical errors, but continue if blocked
+				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
+					return tokens, nil
 				}
+				return tokens, err
 			}
-		}
-
-		limit := t.MaxTokens
-		if limit > 0 {
-			reserved := config.SystemContextBuffer
-			// Ensure we don't reserve so much space that the agent becomes unusable in small contexts.
-			// We reserve up to 10% of the context for system overhead, capped at the SystemContextBuffer.
-			maxReserved := int(float64(t.MaxTokens) * 0.1)
-			if reserved > maxReserved {
-				reserved = maxReserved
-			}
-			limit -= reserved
-		}
-
-		if tokens > limit {
-			if t.Events != nil {
-				t.Events.Publish(events.TokenLimitReachedEvent{
-					Tokens:   tokens,
-					MaxLimit: t.MaxTokens,
-				})
-				t.Events.Publish(events.SystemMessageEvent{
-					Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
-					Level:   "error",
-				})
-			}
-			return llm.ErrContextLimitExceeded
+			tokens = t.Estimator.EstimateTokens(req.History)
+			req.Metadata.SummarizedTurns = n
 		}
 	}
+	return tokens, nil
+}
 
-	req.Metadata.FinalTokenCount = tokens
+func (t *TokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ContextRequest, tokens int) (int, error) {
+	if t.MaxTokens <= 0 {
+		return tokens, nil
+	}
+
+	if tokens > int(float64(t.MaxTokens)*0.9) {
+		if t.Events != nil {
+			t.Events.Publish(events.SummarizationRequired{
+				Tokens:   tokens,
+				MaxLimit: t.MaxTokens,
+				Reason:   "Safety limit pressure (> 90%)",
+			})
+		}
+
+		if !req.Metadata.SummarizationAttempted {
+			n, err := t.autoSummarize(ctx, req)
+			if err != nil {
+				// Propagate critical errors, but continue if blocked
+				if req.Metadata.MaintenanceBlocked || len(req.History) < 10 {
+					return tokens, nil
+				}
+				return tokens, err
+			}
+			tokens = t.Estimator.EstimateTokens(req.History)
+			req.Metadata.SummarizedTurns = n
+		}
+	}
+	return tokens, nil
+}
+
+func (t *TokenGatekeeper) validateHardLimits(ctx context.Context, req *ContextRequest, tokens int) error {
+	if t.MaxTokens <= 0 {
+		return nil
+	}
+
+	limit := t.MaxTokens
+	reserved := config.SystemContextBuffer
+	// Ensure we don't reserve so much space that the agent becomes unusable in small contexts.
+	// We reserve up to 10% of the context for system overhead, capped at the SystemContextBuffer.
+	maxReserved := int(float64(t.MaxTokens) * 0.1)
+	if reserved > maxReserved {
+		reserved = maxReserved
+	}
+	limit -= reserved
+
+	if tokens > limit {
+		if t.Events != nil {
+			t.Events.Publish(events.TokenLimitReachedEvent{
+				Tokens:   tokens,
+				MaxLimit: t.MaxTokens,
+			})
+			t.Events.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
+				Level:   "error",
+			})
+		}
+		return llm.ErrContextLimitExceeded
+	}
+
 	return nil
 }
 
@@ -252,6 +295,7 @@ func (t *TokenGatekeeper) Priority() int { return 80 }
 
 func (t *TokenGatekeeper) autoSummarize(ctx context.Context, req *ContextRequest) (int, error) {
 	if len(req.History) < 10 {
+		req.Metadata.MaintenanceBlocked = true
 		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
 	}
 
