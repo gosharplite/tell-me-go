@@ -15,11 +15,12 @@ This SOP defines the automated workflow for publishing a new public release of t
 ### Step-by-Step Instructions
 
 #### 1. Task Initialization
-1.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
-2.  **Enable Automation**: Execute `bypass_confirmation`.
-3.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
-4.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
-5.  **Confirm Versioning**: Read `cmd/tell-me-go/main.go` to identify the current version. Use `ask_user` to present the current version and propose the target release (e.g., `1.81.0`) and subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad`.
+1.  **Clear Workspace State**: Use `manage_tasks` (action: clear) and `manage_scratchpad` (action: clear) to ensure a fresh environment.
+2.  **Check Cleanliness**: Run `git status`. Ensure the working directory is clean.
+3.  **Enable Automation**: Execute `bypass_confirmation`.
+4.  **Initialize Milestone**: Use `manage_tasks` to add: `"Public Release v1.x.x Readiness"`.
+5.  **Sync Workspace**: Ensure you are on the `dev` branch and synchronized with remote: `git fetch origin && git checkout dev && git pull origin dev`.
+6.  **Confirm Versioning**: Read `cmd/tell-me-go/main.go` to identify the current version. Use `ask_user` to present the current version and propose the target release (e.g., `1.81.0`) and subsequent development version (e.g., `1.82.0-dev`). Store these in the `manage_scratchpad`.
 
 #### 2. Automated Readiness Verification
 Run the following tool to perform a comprehensive security, dependency, and functional audit:
@@ -63,3 +64,4 @@ verify_release_readiness
 1.  **Verify Sync**: Run `git status` to ensure all branches are clean and synced.
 2.  **Restore Security**: Execute `revoke_bypass` to re-enable interactive prompts.
 3.  **Finalize Task**: Use `manage_tasks` (action: update) to mark the release task as `completed`.
+4.  **Final Cleanup**: Execute `manage_scratchpad` (action: clear) and `manage_tasks` (action: clear) to leave a clean environment for the next session.
