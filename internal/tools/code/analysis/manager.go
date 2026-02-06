@@ -35,12 +35,17 @@ type ITypeManager interface {
 	FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
+type IDeadCodeAnalyzer interface {
+	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+}
+
 type AnalysisManager struct {
 	Complexity IComplexityAnalyzer
 	Dependency IDependencyAnalyzer
 	Sequence   ISequenceAnalyzer
 	Change     IChangeAnalyzer
 	Types      ITypeManager
+	DeadCode   IDeadCodeAnalyzer
 }
 
 func NewAnalysisManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp security.SecurityProvider) *AnalysisManager {
@@ -51,7 +56,12 @@ func NewAnalysisManager(idx index.SymbolIndex, cache *astutil.ASTCache, sp secur
 		Sequence:   NewSequenceAnalyzer(exec, sp),
 		Change:     NewChangeAnalyzer(cache, exec),
 		Types:      NewTypeManager(idx, cache, sp),
+		DeadCode:   NewDeadCodeAnalyzer(sp),
 	}
+}
+
+func (m *AnalysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	return m.DeadCode.FindOrphanedSymbols(ctx, args)
 }
 
 func (m *AnalysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

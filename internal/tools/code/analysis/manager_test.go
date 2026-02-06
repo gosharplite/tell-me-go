@@ -51,6 +51,11 @@ func TestAnalysisManager_Delegation(t *testing.T) {
 		t.Errorf("FindDefinitions delegation failed: %v, %v", err, res.Text)
 	}
 
+	res, err = m.FindOrphanedSymbols(ctx, map[string]interface{}{"path": tmpDir})
+	if err != nil || !strings.Contains(res.Text, "F (Function)") {
+		t.Errorf("FindOrphanedSymbols delegation failed: %v, %v", err, res.Text)
+	}
+
 	// SemanticDiff and ListImplementations might require more setup or mocks if we were testing their logic here,
 	// but we just test delegation.
 	_, _ = m.SemanticDiff(ctx, map[string]interface{}{"target": "HEAD"})
