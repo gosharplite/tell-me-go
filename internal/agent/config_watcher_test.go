@@ -80,3 +80,83 @@ func TestConfigWatcher_MissingFile(t *testing.T) {
 		t.Errorf("expected 100 tokens, got %d", tokens)
 	}
 }
+
+func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	mainPath := filepath.Join(tmpDir, "main.yaml")
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	cw := NewConfigWatcher(100, 10, 20)
+	cw.SetPaths(mainPath, sessionPath)
+
+	// Step A: YAML Logic
+	yamlContent := `
+MAX_HISTORY_TOKENS: 500
+MAX_TURNS: 5
+MODELS:
+  model-a:
+    CONTEXT_WINDOW: 1000
+`
+	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step B: Model Specificity
+	// Call Refresh with model-b (NOT in YAML) first to ensure it doesn't pick up model-a's values
+	cw.Refresh("model-b")
+	tokens, toolTurns, _ := cw.GetLimits()
+	window := cw.GetContextWindow()
+
+	if tokens != 500 {
+		t.Errorf("expected 500 tokens from YAML, got %d", tokens)
+	}
+	if toolTurns != 5 {
+		t.Errorf("expected 5 tool turns from YAML, got %d", toolTurns)
+	}
+	if window == 1000 {
+		t.Errorf("model-b should NOT have model-a's context window (1000)")
+	}
+
+	// Now refresh with model-a
+	cw.Refresh("model-a")
+	window = cw.GetContextWindow()
+	if window != 1000 {
+		t.Errorf("expected 1000 context window for model-a, got %d", window)
+	}
+
+	// Step B.2: Switch back to model-b and ensure it goes back to default
+	cw.Refresh("model-b")
+	window = cw.GetContextWindow()
+	if window == 1000 {
+		t.Errorf("model-b should NOT retain model-a's context window after switching back")
+	}
+	if window != cw.defaultWindow {
+		t.Errorf("expected default context window for model-b, got %d", window)
+	}
+
+	// Step C: Precedence
+	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 999}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("model-a")
+	tokens, toolTurns, _ = cw.GetLimits()
+	if tokens != 999 {
+		t.Errorf("expected 999 tokens (session override), got %d", tokens)
+	}
+	if toolTurns != 5 {
+		t.Errorf("expected 5 tool turns (from YAML), got %d", toolTurns)
+	}
+
+	// Step D: Missing YAML Robustness
+	os.Remove(mainPath)
+	cw.Refresh("model-a")
+	tokens, toolTurns, _ = cw.GetLimits()
+	if tokens != 999 {
+		t.Errorf("expected 999 tokens to persist after YAML deletion, got %d", tokens)
+	}
+	if toolTurns != 5 {
+		t.Errorf("expected 5 tool turns to persist after YAML deletion, got %d", toolTurns)
+	}
+}

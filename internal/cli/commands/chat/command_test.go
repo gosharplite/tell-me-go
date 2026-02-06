@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package cli
+package chat
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/api"
+	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -22,10 +23,11 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 func TestSanitizeArgs(t *testing.T) {
-	app := New("test")
+	cmd := &Command{}
 	tests := []struct {
 		name     string
 		args     []string
@@ -55,7 +57,7 @@ func TestSanitizeArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := app.sanitizeArgs(tt.args)
+			got := cmd.sanitizeArgs(tt.args)
 			if len(got) != len(tt.expected) {
 				t.Errorf("expected %v, got %v", tt.expected, got)
 				return
@@ -66,22 +68,6 @@ func TestSanitizeArgs(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRunVersion(t *testing.T) {
-	var out bytes.Buffer
-	app := New("1.2.3")
-	app.Stdout = &out
-
-	err := app.Run([]string{"bin", "-v"})
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-
-	expected := "tell-me-go version 1.2.3\n"
-	if out.String() != expected {
-		t.Errorf("expected %q, got %q", expected, out.String())
 	}
 }
 
@@ -106,29 +92,31 @@ func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
 func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
-	// Setup temporary directory for config and output
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
 	os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644)
 
 	var out, errOut bytes.Buffer
-	app := New("test")
-	app.homeDir = tmpDir
+	sm := security.NewSecurityManager(os.Stdin)
+	cmd := NewCommand(&command.Context{
+		Version: "test",
+		Stdin:   os.Stdin,
+		Stdout:  &out,
+		Stderr:  &errOut,
+		HomeDir: tmpDir,
+		SM:      sm,
+	})
 	os.MkdirAll(filepath.Join(tmpDir, "output"), 0755)
 
-	app.Stdout = &out
-	app.Stderr = &errOut
-
 	mock := &mockChatter{}
-	app.AgentFactory = func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 		return mock
 	}
-	app.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*api.Client, error) {
-		return nil, nil // Return nil client for testing
+	cmd.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*api.Client, error) {
+		return nil, nil
 	}
 
-	// Test prompt from args
-	err := app.Run([]string{"bin", "-c", configPath, "hello world"})
+	err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello world"})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -139,12 +127,13 @@ func TestRunCapturePrompt(t *testing.T) {
 }
 
 func TestCapturePromptContextCancellation(t *testing.T) {
-	app := New("test")
+	sm := security.NewSecurityManager(os.Stdin)
+	cmd := &Command{SM: sm, Stdin: os.Stdin}
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
+	cancel()
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := app.capturePrompt(ctx, fs, 0)
+	_, err := cmd.capturePrompt(ctx, fs, 0)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -155,13 +144,16 @@ func TestRunEmptyPromptError(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
 	os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644)
 
-	app := New("test")
-	app.homeDir = tmpDir
-	app.Stdin = bytes.NewReader(nil) // Empty stdin
-	app.Stderr = io.Discard
-	app.Stdout = io.Discard
+	sm := security.NewSecurityManager(os.Stdin)
+	cmd := &Command{
+		HomeDir: tmpDir,
+		Stdin:   bytes.NewReader(nil),
+		Stderr:  io.Discard,
+		Stdout:  io.Discard,
+		SM:      sm,
+	}
 
-	err := app.Run([]string{"bin", "-c", configPath})
+	err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath})
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
@@ -169,30 +161,66 @@ func TestRunEmptyPromptError(t *testing.T) {
 
 func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	tmpDir := t.TempDir()
-	// We don't set TELL_ME_HOME, so it might use "." but we want to be sure it doesn't create "output"
-	// in the current working directory.
-	// To avoid polluting the project root during tests, we can change the working directory.
-
 	oldWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(oldWd)
 
-	oldHome := os.Getenv("TELL_ME_HOME")
-	os.Unsetenv("TELL_ME_HOME")
-	defer os.Setenv("TELL_ME_HOME", oldHome)
+	sm := security.NewSecurityManager(os.Stdin)
+	cmd := &Command{
+		HomeDir: tmpDir,
+		Stdin:   strings.NewReader("\n"),
+		Stderr:  io.Discard,
+		Stdout:  io.Discard,
+		SM:      sm,
+	}
 
-	app := New("test")
-	app.Stdin = strings.NewReader("\n") // Empty prompt
-
-	// Create a dummy config in tmpDir
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
 	os.WriteFile(configPath, []byte("mode: test-mode\n"), 0644)
 
-	// Run with empty prompt
-	_ = app.Run([]string{"bin", "-c", configPath})
+	_ = cmd.Execute(context.Background(), []string{"bin", "-c", configPath})
 
-	// Check if output directory was created
 	if _, err := os.Stat("output"); !os.IsNotExist(err) {
 		t.Errorf("output directory should not have been created on empty prompt")
+	}
+}
+
+func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	sm := security.NewSecurityManager(os.Stdin)
+	cmd := &Command{
+		HomeDir: tmpDir,
+		SM:      sm,
+	}
+	cfg := &config.Config{
+		Model: "test-model",
+		Mode:  "test-mode",
+	}
+	paths := &sessionPaths{
+		modeDir: tmpDir,
+		logPath: filepath.Join(tmpDir, "tokens.log"),
+	}
+	pricingOverrides := make(map[string]pricing.ModelPricing)
+
+	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides)
+
+	declarations := reg.GetDeclarations()
+
+	expectedTools := []string{
+		"estimate_cost",
+		"get_cost_summary",
+		"verify_release_readiness",
+	}
+
+	for _, expected := range expectedTools {
+		found := false
+		for _, decl := range declarations {
+			if decl.Name == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected tool %q not found in registry", expected)
+		}
 	}
 }

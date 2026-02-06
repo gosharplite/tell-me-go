@@ -20,6 +20,7 @@ type ConfigWatcher struct {
 	sessionPath          string
 	lastMainMod          time.Time
 	lastSessionMod       time.Time
+	lastModel            string
 	maxHistoryTokens     int
 	maxToolTurns         int
 	maxHistoryTurns      int
@@ -71,37 +72,58 @@ func (cw *ConfigWatcher) Refresh(model string) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 
-	changed := false
+	changed := cw.updateFromMain(model)
+	cw.updateFromSession(changed)
+}
 
-	// 1. Check main YAML
-	if cw.mainPath != "" {
-		if info, err := os.Stat(cw.mainPath); err == nil {
-			if info.ModTime().After(cw.lastMainMod) {
-				cw.lastMainMod = info.ModTime()
-				if cfg, err := config.Load(cw.mainPath); err == nil {
-					cw.maxHistoryTokens = cfg.MaxHistoryTokens
-					cw.maxToolTurns = cfg.MaxToolTurns
-					cw.maxHistoryTurns = cfg.MaxHistoryTurns
-
-					// Update context window from model config if available
-					if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
-						cw.contextWindow = mCfg.ContextWindow
-					}
-
-					changed = true
-				}
-			}
-		}
+func (cw *ConfigWatcher) updateFromMain(model string) bool {
+	if cw.mainPath == "" {
+		return false
 	}
 
-	// 2. Check session JSON (overrides main)
-	if cw.sessionPath != "" {
-		if info, err := os.Stat(cw.sessionPath); err == nil {
-			if info.ModTime().After(cw.lastSessionMod) || changed {
-				cw.lastSessionMod = info.ModTime()
-				cw.loadSessionConfig()
-			}
-		}
+	info, err := os.Stat(cw.mainPath)
+	if err != nil {
+		return false
+	}
+
+	if !info.ModTime().After(cw.lastMainMod) && model == cw.lastModel {
+		return false
+	}
+
+	cfg, err := config.Load(cw.mainPath)
+	if err != nil {
+		return false
+	}
+
+	cw.lastMainMod = info.ModTime()
+	cw.lastModel = model
+
+	cw.maxHistoryTokens = cfg.MaxHistoryTokens
+	cw.maxToolTurns = cfg.MaxToolTurns
+	cw.maxHistoryTurns = cfg.MaxHistoryTurns
+
+	// Update context window from model config if available, otherwise reset to default
+	cw.contextWindow = cw.defaultWindow
+	if mCfg, ok := cfg.Models[model]; ok && mCfg.ContextWindow > 0 {
+		cw.contextWindow = mCfg.ContextWindow
+	}
+
+	return true
+}
+
+func (cw *ConfigWatcher) updateFromSession(forceUpdate bool) {
+	if cw.sessionPath == "" {
+		return
+	}
+
+	info, err := os.Stat(cw.sessionPath)
+	if err != nil {
+		return
+	}
+
+	if info.ModTime().After(cw.lastSessionMod) || forceUpdate {
+		cw.lastSessionMod = info.ModTime()
+		cw.loadSessionConfig()
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -1164,5 +1165,242 @@ func TestApplySummaryToHistory_Comprehensive(t *testing.T) {
 				tt.verify(t, got)
 			}
 		})
+	}
+}
+
+func TestTokenGatekeeper_HandleTieredThreshold(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{}
+	strategy := NewContextStrategy(counter, nil)
+
+	t.Run("Threshold disabled (0)", func(t *testing.T) {
+		strategy.SetTieredThreshold(0)
+		counter.tokens = 1000
+		tg := &TokenGatekeeper{
+			Estimator: strategy,
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		tokens, err := tg.handleTieredThreshold(ctx, req)
+		if err != nil {
+			t.Fatalf("handleTieredThreshold failed: %v", err)
+		}
+		if tokens != 1000 {
+			t.Errorf("expected 1000 tokens, got %d", tokens)
+		}
+		if req.Metadata.SummarizationAttempted {
+			t.Error("summarization should not have been attempted")
+		}
+	})
+
+	t.Run("Below threshold", func(t *testing.T) {
+		strategy.SetTieredThreshold(2000)
+		counter.tokens = 1000
+		tg := &TokenGatekeeper{
+			Estimator: strategy,
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		tokens, err := tg.handleTieredThreshold(ctx, req)
+		if err != nil {
+			t.Fatalf("handleTieredThreshold failed: %v", err)
+		}
+		if tokens != 1000 {
+			t.Errorf("expected 1000 tokens, got %d", tokens)
+		}
+		if req.Metadata.SummarizationAttempted {
+			t.Error("summarization should not have been attempted")
+		}
+	})
+
+	t.Run("Triggers summarization", func(t *testing.T) {
+		strategy.SetTieredThreshold(500)
+		counter.tokens = 1000 // Above threshold
+
+		summarizerCalled := false
+		tg := &TokenGatekeeper{
+			Estimator: strategy,
+			Summarizer: &mockSummarizer{
+				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+					summarizerCalled = true
+					return "summary", &llm.Metrics{}, nil
+				},
+			},
+		}
+
+		// Need enough history to auto-summarize
+		h := make([]*llm.Content, 10)
+		for i := range h {
+			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+		}
+		req := &ContextRequest{History: h}
+
+		tokens, err := tg.handleTieredThreshold(ctx, req)
+		if err != nil {
+			t.Fatalf("handleTieredThreshold failed: %v", err)
+		}
+		if !summarizerCalled {
+			t.Error("summarizer should have been called")
+		}
+		if !req.Metadata.SummarizationAttempted {
+			t.Error("summarization should have been marked as attempted")
+		}
+		if tokens != 1000 {
+			t.Errorf("expected 1000 tokens, got %d", tokens)
+		}
+	})
+
+	t.Run("Summarization failure (not enough history)", func(t *testing.T) {
+		strategy.SetTieredThreshold(500)
+		counter.tokens = 1000
+		tg := &TokenGatekeeper{
+			Estimator: strategy,
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}} // Only 1 msg
+		tokens, err := tg.handleTieredThreshold(ctx, req)
+		if err != nil {
+			t.Fatalf("handleTieredThreshold failed: %v", err)
+		}
+		if !req.Metadata.MaintenanceBlocked {
+			t.Error("expected MaintenanceBlocked to be true")
+		}
+		if tokens != 1000 {
+			t.Errorf("expected 1000 tokens, got %d", tokens)
+		}
+	})
+
+	t.Run("Summarization failure (critical error)", func(t *testing.T) {
+		strategy.SetTieredThreshold(500)
+		counter.tokens = 1000
+		tg := &TokenGatekeeper{
+			Estimator: strategy,
+			Summarizer: &mockSummarizer{
+				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+					return "", nil, errors.New("boom")
+				},
+			},
+		}
+		// Enough history to NOT be immediately blocked by length
+		h := make([]*llm.Content, 20)
+		for i := range h {
+			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+		}
+		req := &ContextRequest{History: h}
+		_, err := tg.handleTieredThreshold(ctx, req)
+		if err == nil || err.Error() != "boom" {
+			t.Errorf("expected 'boom' error, got %v", err)
+		}
+	})
+
+	t.Run("Non-ContextStrategy estimator", func(t *testing.T) {
+		tg := &TokenGatekeeper{
+			Estimator: &mockEstimator{tokens: 1000},
+		}
+		req := &ContextRequest{History: []*llm.Content{{Role: "user"}}}
+		tokens, err := tg.handleTieredThreshold(ctx, req)
+		if err != nil {
+			t.Fatalf("handleTieredThreshold failed: %v", err)
+		}
+		if tokens != 1000 {
+			t.Errorf("expected 1000 tokens, got %d", tokens)
+		}
+	})
+}
+
+type mockTransformerEventBus struct {
+	publishFn func(event events.Event)
+}
+
+func (m *mockTransformerEventBus) Publish(event events.Event) {
+	if m.publishFn != nil {
+		m.publishFn(event)
+	}
+}
+
+func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}
+
+func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{tokens: 1000}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(500)
+
+	var publishedEvents []events.Event
+	mockEvents := &mockTransformerEventBus{
+		publishFn: func(event events.Event) {
+			publishedEvents = append(publishedEvents, event)
+		},
+	}
+
+	tg := &TokenGatekeeper{
+		Estimator: strategy,
+		Events:    mockEvents,
+		Summarizer: &mockSummarizer{
+			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+				return "summary", &llm.Metrics{}, nil
+			},
+		},
+	}
+
+	h := make([]*llm.Content, 10)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+	}
+	req := &ContextRequest{History: h}
+
+	_, err := tg.handleTieredThreshold(ctx, req)
+	if err != nil {
+		t.Fatalf("handleTieredThreshold failed: %v", err)
+	}
+
+	if len(publishedEvents) == 0 {
+		t.Error("expected events to be published")
+	} else {
+		found := false
+		for _, ev := range publishedEvents {
+			if sre, ok := ev.(events.SummarizationRequired); ok {
+				found = true
+				if sre.Reason != "High-tier pricing threshold reached" {
+					t.Errorf("expected reason 'High-tier pricing threshold reached', got %s", sre.Reason)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("events.SummarizationRequired not found in %v", publishedEvents)
+		}
+	}
+
+	if req.Metadata.OriginalTokenCount != 1000 {
+		t.Errorf("expected OriginalTokenCount 1000, got %d", req.Metadata.OriginalTokenCount)
+	}
+}
+
+func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{tokens: 1000}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(500)
+
+	tg := &TokenGatekeeper{
+		Estimator: strategy,
+	}
+
+	req := &ContextRequest{
+		History: []*llm.Content{{Role: "user"}},
+		Metadata: ContextMetadata{
+			SummarizationAttempted: true,
+		},
+	}
+
+	tokens, err := tg.handleTieredThreshold(ctx, req)
+	if err != nil {
+		t.Fatalf("handleTieredThreshold failed: %v", err)
+	}
+
+	if tokens != 1000 {
+		t.Errorf("expected 1000 tokens, got %d", tokens)
+	}
+
+	// Should NOT have set MaintenanceBlocked because it shouldn't have even tried autoSummarize
+	if req.Metadata.MaintenanceBlocked {
+		t.Error("MaintenanceBlocked should not be true when summarization was already attempted")
 	}
 }
