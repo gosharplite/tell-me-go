@@ -21,7 +21,7 @@ func TestListTodos(t *testing.T) {
 	ctx := context.Background()
 
 	tempDir := "/tmp/test"
-	
+
 	// Create some files with TODOs in mock FS
 	fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644)
 	fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644)
@@ -73,7 +73,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	ctx := context.Background()
 
 	tempDir := "/tmp/usages"
-	
+
 	// Create some files in mock FS
 	fs.WriteFile(ctx, filepath.Join(tempDir, "a.go"), []byte("package a\nfunc MyFunc() {}"), 0644)
 	fs.WriteFile(ctx, filepath.Join(tempDir, "b.go"), []byte("package b\nimport \"a\"\nfunc main() { a.MyFunc() }"), 0644)

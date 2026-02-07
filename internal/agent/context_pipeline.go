@@ -108,4 +108,3 @@ func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *ContextReq
 	}
 	return nil
 }
-
