@@ -10,7 +10,7 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/term v0.39.0
 	golang.org/x/tools v0.41.0
-	google.golang.org/genai v1.43.0
+	google.golang.org/genai v1.45.0
 	google.golang.org/grpc v1.66.2
 	gopkg.in/yaml.v3 v3.0.1
 )
