@@ -87,75 +87,28 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 }
 
 func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
-	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	cm, capturedInput := setupSummarizationTest(t)
+	subset := createTestSubset()
 
-	subset := []*llm.Content{
-		{
-			Role: "model",
-			Parts: []*llm.Part{
-				{FunctionCall: &llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
-				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
-			},
-		},
-		{
-			Role: "user",
-			Parts: []*llm.Part{
-				{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
-			},
-		},
-	}
+	t.Run("ExecuteSummarize", func(t *testing.T) {
+		verifyExecuteSummarize(t, cm, subset, capturedInput)
+	})
 
-	var capturedInput []*llm.Content
-	g := &mockGateway{
-		sendChatFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-			capturedInput = input
-			return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
-		},
-	}
+	t.Run("PayloadIntegrity", func(t *testing.T) {
+		verifyPayloadIntegrity(t, capturedInput)
+	})
 
-	bus := &events.SimpleEventBus{}
-	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
-	cm.Summarizer = summarizer.NewSummarizer(gateway.NewResilientClient(g, true), bus)
-	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
+	t.Run("InputTransformation", func(t *testing.T) {
+		verifyInputTransformation(t, capturedInput)
+	})
 
-	if len(capturedInput) == 0 {
-		t.Fatal("Generate was not called")
-	}
+	t.Run("ToolCallMapping", func(t *testing.T) {
+		verifyToolCallMapping(t, capturedInput)
+	})
 
-	for i, content := range capturedInput {
-		// Last one is the prompt
-		if i == len(capturedInput)-1 {
-			continue
-		}
-		for _, part := range content.Parts {
-			if part.Text == "" {
-				t.Errorf("Content %d has non-text part: %+v", i, part)
-			}
-			if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
-				t.Errorf("Content %d still has structured parts: %+v", i, part)
-			}
-		}
-	}
-
-	// Verify specific transformations
-	modelTurn := capturedInput[0]
-	foundTool := false
-	foundBinary := false
-	for _, p := range modelTurn.Parts {
-		if strings.Contains(p.Text, "[Model called tool: tool") {
-			foundTool = true
-		}
-		if strings.Contains(p.Text, "[Binary Data: image/png]") {
-			foundBinary = true
-		}
-	}
-	if !foundTool {
-		t.Error("Tool call not found in transformed text")
-	}
-	if !foundBinary {
-		t.Error("Binary data not found in transformed text")
-	}
+	t.Run("BinaryDataMapping", func(t *testing.T) {
+		verifyBinaryDataMapping(t, capturedInput)
+	})
 }
 
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
@@ -405,5 +358,106 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 		t.Error("Expected summarization to abort when history content changed, but it succeeded")
 	} else if !strings.Contains(summaryErr.Error(), "history content changed") {
 		t.Errorf("Expected 'history content changed' error, got: %v", summaryErr)
+	}
+}
+
+func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*llm.Content) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(tmpDir + "/history.json")
+	capturedInput := new([]*llm.Content)
+	g := &mockGateway{
+		sendChatFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			*capturedInput = input
+			return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
+		},
+	}
+	bus := &events.SimpleEventBus{}
+	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
+	cm.Summarizer = summarizer.NewSummarizer(gateway.NewResilientClient(g, true), bus)
+	return cm, capturedInput
+}
+
+func createTestSubset() []*llm.Content {
+	return []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{FunctionCall: &llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			},
+		},
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
+			},
+		},
+	}
+}
+
+func verifyExecuteSummarize(t *testing.T, cm *ContextManager, subset []*llm.Content, capturedInput *[]*llm.Content) {
+	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
+	if len(*capturedInput) == 0 {
+		t.Fatal("Generate was not called")
+	}
+}
+
+func verifyPayloadIntegrity(t *testing.T, capturedInput *[]*llm.Content) {
+	for i, content := range *capturedInput {
+		// Last one is the prompt
+		if i == len(*capturedInput)-1 {
+			continue
+		}
+		for _, part := range content.Parts {
+			if part.Text == "" {
+				t.Errorf("Content %d has empty text part: %+v", i, part)
+			}
+			if part.FunctionCall != nil || part.FunctionResponse != nil || part.InlineData != nil {
+				t.Errorf("Content %d still has structured parts: %+v", i, part)
+			}
+		}
+	}
+}
+
+func verifyInputTransformation(t *testing.T, capturedInput *[]*llm.Content) {
+	modelTurn := (*capturedInput)[0]
+	userTurn := (*capturedInput)[1]
+
+	if !strings.Contains(modelTurn.Parts[0].Text, "[Model called tool") {
+		t.Error("Model FunctionCall not converted to text")
+	}
+	if !strings.Contains(modelTurn.Parts[1].Text, "[Binary Data") {
+		t.Error("Model InlineData not converted to text")
+	}
+	if !strings.Contains(userTurn.Parts[0].Text, "[Tool tool returned") {
+		t.Errorf("User FunctionResponse not converted to text, got: %q", userTurn.Parts[0].Text)
+	}
+}
+
+func verifyToolCallMapping(t *testing.T, capturedInput *[]*llm.Content) {
+	modelTurn := (*capturedInput)[0]
+	found := false
+	for _, p := range modelTurn.Parts {
+		if strings.Contains(p.Text, "[Model called tool: tool") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Tool call transformation not found in model turn")
+	}
+}
+
+func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*llm.Content) {
+	modelTurn := (*capturedInput)[0]
+	found := false
+	for _, p := range modelTurn.Parts {
+		if strings.Contains(p.Text, "[Binary Data: image/png]") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Binary data transformation not found in model turn")
 	}
 }
