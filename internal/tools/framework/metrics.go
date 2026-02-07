@@ -34,15 +34,17 @@ type SessionCostTracker struct {
 	model     pricing.ModelPricing
 	modelName string
 	logFile   string
+	mode      string
 	sm        security.ISecurityManager
 	initiated bool
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
+func NewSessionCostTracker(sm security.ISecurityManager, logFile string, mode string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
 	return &SessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
+		mode:      mode,
 		modelName: modelName,
 		model:     model,
 		pricing:   pricing,
@@ -53,6 +55,70 @@ func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelNa
 func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	_, totalCost := t.GetStats(ctx)
 	return totalCost
+}
+
+// GetDailyCost aggregates costs from the global ledger for the current date in UTC-8.
+func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.logFile == "" {
+		return t.totalCost
+	}
+
+	globalDir := filepath.Dir(filepath.Dir(t.logFile))
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		return t.totalCost
+	}
+
+	var history []SessionCostRecord
+	if err := json.Unmarshal(content, &history); err != nil {
+		return t.totalCost
+	}
+
+	loc := time.FixedZone("UTC-8", -8*3600)
+	today := time.Now().In(loc).Format("2006-01-02")
+
+	// CRITICAL: Must match the ID generated in EstimateCost
+	currentSessionID := filepath.ToSlash(filepath.Join(t.mode, filepath.Base(t.logFile)))
+
+	var dailyTotal float64
+	sessionIncluded := false
+
+	for _, r := range history {
+		// Normalise the record date to UTC-8
+		ts := r.Timestamp
+		if ts.IsZero() {
+			var err error
+			ts, err = time.Parse("2006-01-02", r.Date)
+			if err != nil {
+				continue
+			}
+		}
+
+		if ts.In(loc).Format("2006-01-02") == today {
+			if r.Session == currentSessionID {
+				// We found the current session in the ledger. 
+				// Use the in-memory t.totalCost as it's the "Source of Truth" for the active session.
+				dailyTotal += t.totalCost
+				sessionIncluded = true
+			} else {
+				// This is a different session from earlier today.
+				dailyTotal += r.TotalCost
+			}
+		}
+	}
+
+	// If the current session hasn't been written to the ledger yet (sessionIncluded is false),
+	// add it now so the daily total is complete.
+	if !sessionIncluded {
+		dailyTotal += t.totalCost
+	}
+
+	return dailyTotal
 }
 
 // GetStats returns the accumulated usage statistics and total cost.
@@ -464,8 +530,9 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 		if timestamp.IsZero() {
 			timestamp = time.Now()
 		}
+		loc := time.FixedZone("UTC-8", -8*3600)
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
-			Date:      timestamp.Format("2006-01-02"),
+			Date:      timestamp.In(loc).Format("2006-01-02"),
 			Timestamp: timestamp,
 			Session:   sessionID,
 			Model:     detectedModel,

@@ -29,7 +29,7 @@ func TestSessionCostTracker(t *testing.T) {
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricingData)
+	tracker := NewSessionCostTracker(nil, logFile, "test", "test-model", model, pricingData)
 
 	// 1. Initial cost should be 0
 	cost := tracker.GetTotalCost(context.Background())
@@ -87,7 +87,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 	data, _ := json.Marshal(initialMetrics)
 	os.WriteFile(logFile, append(data, '\n'), 0644)
 
-	tracker := NewSessionCostTracker(nil, logFile, "test-model", model, pricingData)
+	tracker := NewSessionCostTracker(nil, logFile, "test", "test-model", model, pricingData)
 
 	// Lazy init should pick up existing log
 	cost := tracker.GetTotalCost(context.Background())
@@ -122,7 +122,7 @@ func TestSessionCostTracker_MixedModels(t *testing.T) {
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, logFile, "model-a", pricingData.Models["model-a"], pricingData)
+	tracker := NewSessionCostTracker(nil, logFile, "test", "model-a", pricingData.Models["model-a"], pricingData)
 
 	// turn 1: model-a
 	tracker.Accumulate(llm.Metrics{
@@ -205,7 +205,7 @@ func TestSessionCostTracker_ThinkingTokens(t *testing.T) {
 		},
 	}
 
-	tracker := NewSessionCostTracker(nil, "", "test-model", model, pricingData)
+	tracker := NewSessionCostTracker(nil, "", "test", "test-model", model, pricingData)
 
 	tracker.Accumulate(llm.Metrics{
 		PromptTokens:   100,

@@ -695,9 +695,11 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
+				var dailyCost float64
 				var totalM, totalH, totalO int64
 				if turn.CostTracker != nil {
 					cost = turn.CostTracker.GetTotalCost(ctx)
+					dailyCost = turn.CostTracker.GetDailyCost(ctx)
 					stats, _ := turn.CostTracker.GetStats(ctx)
 					totalM = stats.PromptTokens - stats.CachedTokens
 					totalH = stats.CachedTokens
@@ -721,6 +723,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 						IsPostCall:       turn.State.Phase == phasePersisting,
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
+						DailyCost:        dailyCost,
 						TaskCost:         currentTaskCost,
 						TotalM:           totalM,
 						TotalH:           totalH,

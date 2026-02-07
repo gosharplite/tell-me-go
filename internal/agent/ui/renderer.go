@@ -305,12 +305,14 @@ func (r *StdUIRenderer) LogTurnStatus(status events.TurnStatus) {
 			if total := status.TotalM + status.TotalH; total > 0 {
 				hitRate = float64(status.TotalH) / float64(total) * 100
 			}
-			// Format: (TurnCost TaskCost SessionCost M: ... H: ... O: ...)
+			// Format: (TurnCost TaskCost SessionCost DailyCost M: ... H: ... O: ...)
 			// Highlight ONLY the SessionCost ($1.4745 in user example).
-			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
+			costStr = fmt.Sprintf(" %s($%.4f $%.4f %s$%.4f %s$%.4f%s M: %d H: %d %.1f%% O: %d)%s",
 				ui.c(colors.ColorGray),
 				status.Metrics.Cost, status.TaskCost,
-				ui.c(colors.ColorGreen), status.SessionCost, ui.c(colors.ColorGray),
+				ui.c(colors.ColorGreen), status.SessionCost,
+				ui.c(colors.ColorGray), status.DailyCost,
+				ui.c(colors.ColorGray),
 				status.TotalM,
 				status.TotalH,
 				hitRate,

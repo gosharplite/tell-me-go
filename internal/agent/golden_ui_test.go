@@ -51,6 +51,7 @@ func TestUIRendererGolden(t *testing.T) {
 			IsPostCall:       true,
 			StartTime:        fixedTime.Add(-5 * time.Second),
 			SessionCost:      0.0123,
+			DailyCost:        0.0543,
 			TaskCost:         0.0045,
 			TotalM:           500,
 			TotalH:           1000,

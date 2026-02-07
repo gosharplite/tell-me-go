@@ -827,7 +827,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	modelName := "gemini-1.5-flash"
 	modelPricing := framework.GetModelPricing(modelName, pricing)
 	// We need internal/tools/framework imported as framework
-	tracker := framework.NewSessionCostTracker(nil, "", modelName, modelPricing, pricing)
+	tracker := framework.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
 	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, bus), reg, bus, WithCostTracker(tracker))
 
@@ -1189,6 +1189,10 @@ func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
 }
 
 func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
+	return 0
+}
+
+func (m *mockEngineCostTracker) GetDailyCost(ctx context.Context) float64 {
 	return 0
 }
 
