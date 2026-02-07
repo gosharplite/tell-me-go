@@ -256,3 +256,56 @@ var V = 2
 		t.Errorf("expected var block, got %s", k2)
 	}
 }
+
+func TestGetFileSkeletonGo(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.go")
+	code := `// Package p provides test functionality.
+package p
+
+import "fmt"
+
+// S is a test struct.
+type S struct {
+	A int
+}
+
+// Foo is a test function.
+func Foo(s *S) string {
+	return fmt.Sprintf("%d", s.A)
+}
+
+func unexported() {}
+
+type unexportedType struct{}
+`
+	os.WriteFile(path, []byte(code), 0644)
+
+	cache := NewASTCache()
+	got, err := cache.GetFileSkeletonGo(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []string{
+		"package p",
+		"// S is a test struct.",
+		"type S struct {",
+		"// Foo is a test function.",
+		"func Foo(s *S) string",
+	}
+
+	for _, exp := range expected {
+		if !strings.Contains(got, exp) {
+			t.Errorf("expected %q to be in output, but was not.\nGot:\n%s", exp, got)
+		}
+	}
+
+	if strings.Contains(got, "fmt.Sprintf") {
+		t.Error("expected function body to be omitted")
+	}
+
+	if strings.Contains(got, "unexported") {
+		t.Error("expected unexported symbols to be omitted")
+	}
+}

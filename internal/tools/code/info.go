@@ -13,12 +13,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 type InfoManager struct {
-	SP security.SecurityProvider
+	SP    security.SecurityProvider
+	Cache *astutil.ASTCache
 }
 
 func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -112,4 +114,25 @@ func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
+}
+
+func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Filepath string `json:"filepath"`
+	}
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	path, err := m.SP.IsPathSafe(params.Filepath)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	skeleton, err := m.Cache.GetFileSkeletonGo(path)
+	if err != nil {
+		return tools.ToolResult{Text: fmt.Sprintf("Error getting file skeleton: %v", err)}, nil
+	}
+
+	return tools.ToolResult{Text: skeleton}, nil
 }

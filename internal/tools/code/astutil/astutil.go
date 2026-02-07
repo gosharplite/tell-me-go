@@ -286,3 +286,55 @@ func FindTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 	}
 	return nil, nil
 }
+
+// GetFileSkeletonGo extracts exported types and function signatures from a Go file.
+func (c *ASTCache) GetFileSkeletonGo(filePath string) (string, error) {
+	f, fset, err := c.Get(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
+
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Tok == token.TYPE {
+				for _, spec := range d.Specs {
+					ts := spec.(*ast.TypeSpec)
+					if ts.Name.IsExported() {
+						// Create a copy of GenDecl for formatting
+						newGD := &ast.GenDecl{
+							Doc:    d.Doc,
+							TokPos: d.TokPos,
+							Tok:    d.Tok,
+							Lparen: d.Lparen,
+							Specs:  []ast.Spec{ts},
+							Rparen: d.Rparen,
+						}
+						if err := format.Node(&sb, fset, newGD); err == nil {
+							sb.WriteString("\n\n")
+						}
+					}
+				}
+			}
+		case *ast.FuncDecl:
+			if d.Name.IsExported() {
+				// Create a copy of FuncDecl for formatting
+				newFD := &ast.FuncDecl{
+					Doc:  d.Doc,
+					Recv: d.Recv,
+					Name: d.Name,
+					Type: d.Type,
+					Body: nil, // Remove body
+				}
+				if err := format.Node(&sb, fset, newFD); err == nil {
+					sb.WriteString("\n\n")
+				}
+			}
+		}
+	}
+
+	return strings.TrimSpace(sb.String()), nil
+}

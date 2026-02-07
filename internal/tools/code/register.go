@@ -19,7 +19,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	cache := astutil.NewASTCache()
 	ref := refactor.NewRefactorManager(sm)
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
-	inf := &InfoManager{SP: sm}
+	inf := &InfoManager{SP: sm, Cache: cache}
 	sea := &SearchManager{SP: sm}
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}
@@ -143,6 +143,21 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		Name:        "get_project_summary",
 		Description: "Returns a high-level summary of the project architecture, including packages, file counts, and Go module info.",
 	}, inf.GetProjectSummary)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_file_skeleton",
+		Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the source code file.",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, inf.GetFileSkeleton)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "search_usages_globally",
