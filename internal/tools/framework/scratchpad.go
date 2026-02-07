@@ -46,13 +46,6 @@ func (s *ScratchpadStore) Load(ctx context.Context) error {
 	return nil
 }
 
-// Save saves the scratchpad to disk.
-func (s *ScratchpadStore) Save(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.saveLocked(ctx, s.scratchpad)
-}
-
 func (s *ScratchpadStore) saveLocked(ctx context.Context, content string) error {
 	data := []byte(content)
 	return s.fs.WriteFile(ctx, s.filePath, data, 0644)

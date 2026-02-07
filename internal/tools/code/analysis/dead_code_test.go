@@ -109,6 +109,30 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 			},
 			expected: nil, // VALID because it's used by external test package
 		},
+		{
+			name: "Interface Implementation",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.24",
+				"itf/itf.go": `package itf
+type Runner interface { Run() }
+`,
+				"impl/impl.go": `package impl
+type MyRunner struct{}
+func (r MyRunner) Run() {}
+`,
+				"main.go": `package main
+import (
+	"example.com/test/itf"
+	"example.com/test/impl"
+)
+func main() {
+	var r itf.Runner = impl.MyRunner{}
+	r.Run()
+}
+`,
+			},
+			expected: nil, // Run() should not be dead even if not called directly on MyRunner
+		},
 	}
 
 	for _, tt := range tests {
@@ -205,8 +229,8 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 
 	_, err = analyzer.FindOrphanedSymbols(ctx, args)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "packages loaded with errors")
-	assert.Contains(t, err.Error(), "expected ';'")
+	assert.Contains(t, err.Error(), "package load error in")
+	assert.Contains(t, err.Error(), "syntax error")
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {

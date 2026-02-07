@@ -30,14 +30,3 @@ func Get(name string) (Factory, error) {
 	}
 	return factory, nil
 }
-
-// List returns the names of all registered commands.
-func List() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	return names
-}

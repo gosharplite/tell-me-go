@@ -71,18 +71,6 @@ func (s *TaskStore) Load(ctx context.Context) error {
 	return nil
 }
 
-// Save saves tasks to disk.
-func (s *TaskStore) Save(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var tasks []Task
-	for _, t := range s.tasks {
-		tasks = append(tasks, t)
-	}
-	return s.saveLocked(ctx, tasks)
-}
-
 func (s *TaskStore) saveLocked(ctx context.Context, tasks []Task) error {
 	// Sort by ID stable
 	sort.Slice(tasks, func(i, j int) bool {

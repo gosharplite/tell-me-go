@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -48,20 +47,6 @@ func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelNa
 		model:     model,
 		pricing:   pricing,
 	}
-}
-
-// Subscribe registers the tracker to listen for usage metrics events.
-func (t *SessionCostTracker) Subscribe(bus events.EventBus) {
-	if bus == nil {
-		return
-	}
-	bus.Subscribe(func(e events.Event) {
-		if ev, ok := e.(events.UsageMetricsEvent); ok {
-			if ev.Metrics != nil {
-				t.Accumulate(*ev.Metrics)
-			}
-		}
-	})
 }
 
 // GetTotalCost returns the accumulated cost.
