@@ -316,23 +316,45 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
-	// 1. Intercept: Validate tool existence early
+	// 1. Resolve
+	tool, err := e.resolveTool(call)
+	if err != nil {
+		return e.errorToToolResult(err)
+	}
+
+	// 2. Authorize
+	if err := e.authorizeTool(tool, call); err != nil {
+		return e.errorToToolResult(err)
+	}
+
+	// 3. Execute (with recovery/timeout)
+	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
+	if err != nil {
+		msg := fmt.Sprintf("Error: %v", err)
+		return domaintools.ToolResult{
+			Text:  msg,
+			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, err),
+		}
+	}
+
+	return result
+}
+
+func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDeclaration, error) {
 	e.mu.RLock()
 	reg := e.registry
-	sm := e.sm
-	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()
 
-	exists := false
+	var tool *domaintools.ToolDeclaration
 	var validTools []string
 	for _, decl := range reg.GetDeclarations() {
 		validTools = append(validTools, decl.Name)
 		if decl.Name == call.Name {
-			exists = true
+			tool = decl
 		}
 	}
 
-	if !exists {
+	if tool == nil {
 		sort.Strings(validTools)
 		errorMessage := fmt.Sprintf(
 			"Error: Tool %q is not defined. Available tools are: [%s].",
@@ -345,26 +367,36 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 		errorMessage += " Please check the spelling or use a different tool from the authorized list."
 
-		return domaintools.ToolResult{
-			Text:  errorMessage,
-			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name)),
-		}
+		return nil, agenerrors.NewAgentError(agenerrors.ErrLogic, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name))
 	}
 
-	// 2. Security Check
+	return tool, nil
+}
+
+func (e *ToolExecutor) authorizeTool(tool *domaintools.ToolDeclaration, call *llm.FunctionCall) error {
+	e.mu.RLock()
+	sm := e.sm
+	e.mu.RUnlock()
+
 	if sm != nil && !sm.IsCommandAllowed(call.Name) {
 		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
-		return domaintools.ToolResult{
-			Text:  msg,
-			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name)),
-		}
+		return agenerrors.NewAgentError(agenerrors.ErrLogic, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name))
 	}
+
+	return nil
+}
+
+func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintools.ToolDeclaration, args map[string]interface{}) (domaintools.ToolResult, error) {
+	e.mu.RLock()
+	reg := e.registry
+	toolTimeout := e.toolTimeout
+	e.mu.RUnlock()
 
 	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
-	if reg.IsLongRunning(call.Name) {
+	if reg.IsLongRunning(tool.Name) {
 		ctx, cancel = context.WithCancel(parentCtx)
 	} else {
 		ctx, cancel = context.WithTimeout(parentCtx, toolTimeout)
@@ -380,12 +412,12 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		defer func() {
 			if r := recover(); r != nil {
 				resChan <- res{
-					tr: e.handlePanic(r, call.Name),
+					tr: e.handlePanic(r, tool.Name),
 				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
-		result, err := reg.Execute(ctx, call.Name, call.Args)
+		result, err := reg.Execute(ctx, tool.Name, args)
 		resChan <- res{tr: result, err: err}
 	}()
 
@@ -399,22 +431,23 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		return domaintools.ToolResult{
 			Text:  msg,
 			Error: agenerrors.NewAgentError(agenerrors.ErrTransient, msg, err),
-		}
+		}, nil
 	case r := <-resChan:
-		if r.err != nil {
-			msg := fmt.Sprintf("Error: %v", r.err)
-			// For generic errors from the tool, we categorize as ErrLogic if it's related to inputs,
-			// or keep it generic. However, the instruction asks for ErrLogic for malformed args.
-			// Since we don't have a specific way to detect "malformed args" here yet,
-			// we'll use ErrLogic for tool errors that are not timeout/security/notfound.
-			return domaintools.ToolResult{
-				Text:  msg,
-				Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, r.err),
-			}
-		}
-		return r.tr
+		return r.tr, r.err
 	}
 }
+
+func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
+	msg := err.Error()
+	if ae, ok := err.(*agenerrors.AgentError); ok {
+		msg = ae.Message
+	}
+	return domaintools.ToolResult{
+		Text:  msg,
+		Error: err,
+	}
+}
+
 
 func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
 	closest := ""
