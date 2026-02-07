@@ -536,66 +536,57 @@ func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, glo
 	return history, "", nil
 }
 
-func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
-	var startFilter, endFilter time.Time
-	// Determine the target location early
-	location := time.Local
-	billingZone := time.FixedZone("UTC-8", -8*3600)
-	if args.Billing {
-		location = billingZone
+func (m *metricsManager) getRecordTimestamp(r SessionCostRecord) time.Time {
+	ts := r.Timestamp
+	if ts.IsZero() {
+		var err error
+		ts, err = time.Parse("2006-01-02", r.Date)
+		if err != nil {
+			return time.Time{}
+		}
 	}
+	return ts
+}
 
+func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Location) (time.Time, time.Time, error) {
+	var startFilter, endFilter time.Time
 	if args.StartDate != "" {
 		var err error
-		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, loc)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
 		}
 	}
 	if args.EndDate != "" {
-		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
+		end, err := time.ParseInLocation("2006-01-02", args.EndDate, loc)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
 		}
 		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
 	}
+	return startFilter, endFilter, nil
+}
 
-	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
-		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
-	}
-
-	format := "2006-01-02"
-	if args.Interval == "hour" {
-		format = "2006-01-02 15:00"
-	}
-
-	// Aggregate by Interval
+func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
-	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
+	intervalUsage := make(map[string]pricing.UsageStats)
 
 	for _, r := range history {
-		ts := r.Timestamp
-		if ts.IsZero() {
-			var err error
-			ts, err = time.Parse("2006-01-02", r.Date)
-			if err != nil {
-				continue
-			}
-		}
+		ts := m.getRecordTimestamp(r)
 		if ts.IsZero() {
 			continue
 		}
 
 		// Apply range filter
-		if !startFilter.IsZero() && ts.Before(startFilter) {
+		if !start.IsZero() && ts.Before(start) {
 			continue
 		}
-		if !endFilter.IsZero() && !ts.Before(endFilter) {
+		if !end.IsZero() && !ts.Before(end) {
 			continue
 		}
 
 		// Determine the key for aggregation
-		effectiveKey := ts.In(location).Format(format)
+		effectiveKey := ts.In(loc).Format(format)
 
 		intervalTotals[effectiveKey] += r.TotalCost
 		u := intervalUsage[effectiveKey]
@@ -605,6 +596,31 @@ func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSu
 		u.ThinkingTokens += r.Usage.ThinkingTokens
 		intervalUsage[effectiveKey] = u
 	}
+	return intervalTotals, intervalUsage
+}
+
+func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
+	location := time.Local
+	if args.Billing {
+		location = time.FixedZone("UTC-8", -8*3600)
+	}
+
+	start, end, err := m.parseTimeFilters(args, location)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	format := "2006-01-02"
+	switch args.Interval {
+	case "", "day":
+		// use default
+	case "hour":
+		format = "2006-01-02 15:00"
+	default:
+		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
+	}
+
+	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format)
 
 	// Sort keys descending
 	var keys []string
