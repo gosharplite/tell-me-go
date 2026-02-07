@@ -92,7 +92,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 
 	stderr := &bytes.Buffer{}
 	app := New("1.0.0", nil, nil, stderr)
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel it immediately
 
@@ -100,7 +100,7 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected nil error on context cancellation, got %v", err)
 	}
-	
+
 	// App.Run prints a newline to stderr on context cancellation
 	if stderr.String() != "\n" {
 		t.Errorf("expected newline on stderr, got %q", stderr.String())
@@ -113,7 +113,7 @@ func TestApp_Run_CommandError(t *testing.T) {
 	command.Register("error-cmd", func(ctx *command.Context) command.Command {
 		return &mockCommand{err: customErr}
 	})
-	
+
 	// Since App.Run doesn't allow choosing a command name except via hardcoded logic,
 	// we'll temporarily hijack "chat" again (it's already registered by previous test).
 	command.Register("chat", func(ctx *command.Context) command.Command {

@@ -277,7 +277,7 @@ func TestGitDestructiveActions(t *testing.T) {
 func TestGitBlameSafety(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
 	// Do NOT set bypass.
-	
+
 	executor := &mockGitExecutor{
 		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("blame output"), nil
