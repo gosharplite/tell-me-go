@@ -4,11 +4,13 @@
 package code
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -18,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
-	"regexp"
 )
 
 type InfoManager struct {
@@ -84,15 +85,9 @@ func (m *InfoManager) collectFileStats(ctx context.Context) (map[string]int, map
 		if ext == ".go" {
 			packages[filepath.Dir(path)] = true
 			if c, err := m.FS.ReadFile(ctx, path); err == nil {
-				content := string(c)
-				if content != "" {
-					lines := strings.Split(content, "\n")
-					// If file ends with newline, the last element is empty
-					if len(lines) > 0 && lines[len(lines)-1] == "" {
-						totalLOC += len(lines) - 1
-					} else {
-						totalLOC += len(lines)
-					}
+				totalLOC += bytes.Count(c, []byte("\n"))
+				if len(c) > 0 && c[len(c)-1] != '\n' {
+					totalLOC++
 				}
 			}
 		}
