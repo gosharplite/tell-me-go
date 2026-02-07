@@ -238,28 +238,38 @@ func RecordSessionCost(ctx context.Context, sm security.ISecurityManager, tracke
 		return fmt.Errorf("failed to estimate and record session cost: %w", err)
 	}
 
-	// 2. Append legacy summary to the log file itself
-	var usage pricing.UsageStats
-	var totalCost float64
-
-	if tracker != nil {
-		usage, totalCost = tracker.GetStats(ctx)
-	} else {
-		pd := GetPricing(ctx, sm, filepath.Dir(logPath))
-		for k, v := range pricingOverrides {
-			pd.Models[k] = v
-		}
-
-		var err error
-		usage, totalCost, _, _, err = ParseUsage(logPath, pd, model)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return fmt.Errorf("failed to parse usage log for summary: %w", err)
-		}
+	// 2. Resolve usage stats
+	usage, totalCost, err := resolveUsageForSummary(ctx, sm, tracker, logPath, model, pricingOverrides)
+	if err != nil {
+		return err
 	}
 
+	// 3. Append summary to log
+	return appendSummaryToLog(logPath, usage, totalCost, model)
+}
+
+func resolveUsageForSummary(ctx context.Context, sm security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model string, overrides map[string]pricing.ModelPricing) (pricing.UsageStats, float64, error) {
+	if tracker != nil {
+		usage, totalCost := tracker.GetStats(ctx)
+		return usage, totalCost, nil
+	}
+
+	pd := GetPricing(ctx, sm, filepath.Dir(logPath))
+	for k, v := range overrides {
+		pd.Models[k] = v
+	}
+
+	usage, totalCost, _, _, err := ParseUsage(logPath, pd, model)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return pricing.UsageStats{}, 0, nil
+		}
+		return pricing.UsageStats{}, 0, fmt.Errorf("failed to parse usage log for summary: %w", err)
+	}
+	return usage, totalCost, nil
+}
+
+func appendSummaryToLog(logPath string, usage pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
 	}
@@ -280,6 +290,7 @@ func RecordSessionCost(ctx context.Context, sm security.ISecurityManager, tracke
 	if err != nil {
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
+
 	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
