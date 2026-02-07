@@ -21,14 +21,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
-// Clock provides a way to get the current time, facilitating deterministic testing.
+// Clock provides a way to get the current time and handle delays, facilitating deterministic testing.
 type Clock interface {
 	Now() time.Time
+	After(d time.Duration) <-chan time.Time
 }
 
 type realClock struct{}
 
-func (realClock) Now() time.Time { return time.Now() }
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // turnPhase represents the current stage of a single agent turn.
 type turnPhase string
@@ -671,7 +673,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	select {
 	case <-ctx.Done():
 		return processResult{Error: ctx.Err()}
-	case <-time.After(delay):
+	case <-turn.Clock.After(delay):
 	}
 
 	return processResult{NextPhase: phaseRefining}

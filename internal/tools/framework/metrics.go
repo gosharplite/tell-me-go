@@ -69,6 +69,16 @@ func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 	globalDir := filepath.Dir(filepath.Dir(t.logFile))
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
+	// Synchronize access to the global ledger file.
+	// Acquire ledgerMu after t.mu to maintain consistent lock ordering.
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+
+	// If recovery is in progress, return the in-memory cost to avoid blocking or inconsistent reads.
+	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
+		return t.totalCost
+	}
+
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return t.totalCost
@@ -79,46 +89,49 @@ func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 		return t.totalCost
 	}
 
-	loc := time.FixedZone("UTC-8", -8*3600)
-	today := time.Now().In(loc).Format("2006-01-02")
-
 	// CRITICAL: Must match the ID generated in EstimateCost
-	currentSessionID := filepath.ToSlash(filepath.Join(t.mode, filepath.Base(t.logFile)))
+	currentSessionID := generateSessionID(t.mode, t.logFile)
+
+	return t.calculateDailyCost(history, time.Now(), currentSessionID)
+}
+
+func (t *SessionCostTracker) calculateDailyCost(records []SessionCostRecord, now time.Time, currentSessionID string) float64 {
+	loc := time.FixedZone("UTC-8", -8*3600)
+	today := now.In(loc).Format("2006-01-02")
 
 	var dailyTotal float64
-	sessionIncluded := false
 
-	for _, r := range history {
-		// Normalise the record date to UTC-8
-		ts := r.Timestamp
+	for _, r := range records {
+		ts := t.getRecordTimestamp(r, loc)
 		if ts.IsZero() {
-			var err error
-			ts, err = time.Parse("2006-01-02", r.Date)
-			if err != nil {
-				continue
-			}
+			continue
 		}
 
 		if ts.In(loc).Format("2006-01-02") == today {
-			if r.Session == currentSessionID {
-				// We found the current session in the ledger. 
-				// Use the in-memory t.totalCost as it's the "Source of Truth" for the active session.
-				dailyTotal += t.totalCost
-				sessionIncluded = true
-			} else {
-				// This is a different session from earlier today.
+			if r.Session != currentSessionID {
 				dailyTotal += r.TotalCost
 			}
 		}
 	}
 
-	// If the current session hasn't been written to the ledger yet (sessionIncluded is false),
-	// add it now so the daily total is complete.
-	if !sessionIncluded {
-		dailyTotal += t.totalCost
-	}
+	// Always add the current session's in-memory cost as it is the Source of Truth for its own footprint.
+	// This ensures that even if the session isn't in the ledger yet, or if the ledger has a stale value,
+	// the daily total reflects the latest known cost.
+	dailyTotal += t.totalCost
 
 	return dailyTotal
+}
+
+func (t *SessionCostTracker) getRecordTimestamp(r SessionCostRecord, loc *time.Location) time.Time {
+	ts := r.Timestamp
+	if ts.IsZero() {
+		var err error
+		ts, err = time.ParseInLocation("2006-01-02", r.Date, loc)
+		if err != nil {
+			return time.Time{}
+		}
+	}
+	return ts
 }
 
 // GetStats returns the accumulated usage statistics and total cost.
@@ -525,7 +538,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	// 3. Persistence: Record to local ledger
 	if shouldRecord {
 		if sessionID == "" {
-			sessionID = filepath.ToSlash(filepath.Join(m.mode, filepath.Base(m.logFile)))
+			sessionID = generateSessionID(m.mode, m.logFile)
 		}
 		if timestamp.IsZero() {
 			timestamp = time.Now()
@@ -762,4 +775,10 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
 
 	return sb.String()
+}
+
+// generateSessionID creates a unique identifier for a session based on its mode and log file name.
+// This ID is used as the unique key in global_costs.json to identify and update session records.
+func generateSessionID(mode, logFile string) string {
+	return filepath.ToSlash(filepath.Join(mode, filepath.Base(logFile)))
 }

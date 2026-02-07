@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -94,6 +95,11 @@ type MockClock struct {
 }
 
 func (m *MockClock) Now() time.Time { return m.CurrentTime }
+func (m *MockClock) After(d time.Duration) <-chan time.Time {
+	ch := make(chan time.Time, 1)
+	ch <- m.CurrentTime
+	return ch
+}
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
 	tests := []struct {
@@ -391,10 +397,21 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 func TestTurnEngine_RecoveryLogic(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
+	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+
+	var mu sync.Mutex
+	var retryMsgs []string
+	bus.Subscribe(func(ev events.Event) {
+		if sme, ok := ev.(events.SystemMessageEvent); ok {
+			mu.Lock()
+			retryMsgs = append(retryMsgs, sme.Message)
+			mu.Unlock()
+		}
+	})
 
 	attempts := 0
 	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
@@ -410,7 +427,7 @@ func TestTurnEngine_RecoveryLogic(t *testing.T) {
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, bus), reg, bus, WithClock(&MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -420,6 +437,18 @@ func TestTurnEngine_RecoveryLogic(t *testing.T) {
 
 	if attempts != 3 {
 		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(retryMsgs) != 2 {
+		t.Errorf("expected 2 retry notifications, got %d", len(retryMsgs))
+	}
+	for i, msg := range retryMsgs {
+		expectedAttempt := fmt.Sprintf("Attempt %d", i+1)
+		if !strings.Contains(msg, "Transient error") || !strings.Contains(msg, "Retrying") || !strings.Contains(msg, expectedAttempt) {
+			t.Errorf("retry message %d does not contain expected info: %s", i, msg)
+		}
 	}
 }
 
@@ -594,7 +623,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -636,7 +665,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		}
 	}
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil)
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&MockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -955,7 +984,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		},
 	}
 
-	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil)
+	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&MockClock{}))
 	// Default MaxRetries is 3.
 	// If retries were global, turn 1 would fail because totalRetries would be 2 from turn 0,
 	// and turn 1's first failure would set it to 3, then second would hit limit.
