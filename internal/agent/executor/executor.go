@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -230,11 +231,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						err := fmt.Errorf("panic: %v", r)
-						tr = domaintools.ToolResult{
-							Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-							Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
-						}
+						tr = e.handlePanic(r, fc.Name)
 					}
 				}()
 				tr = e.executeTool(ctx, fc)
@@ -272,14 +269,10 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 				defer func() {
 					if r := recover(); r != nil {
-						err := fmt.Errorf("panic: %v", r)
 						resChan <- toolExecResult{
 							index: idx,
 							name:  call.Name,
-							tr: domaintools.ToolResult{
-								Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-								Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
-							},
+							tr:    e.handlePanic(r, call.Name),
 						}
 					}
 				}()
@@ -298,6 +291,28 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		}
 	}
 	wg.Wait()
+}
+
+func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.ToolResult {
+	stack := debug.Stack()
+	err := fmt.Errorf("panic: %v", r)
+
+	e.mu.RLock()
+	bus := e.events
+	e.mu.RUnlock()
+
+	if bus != nil {
+		msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
+		bus.Publish(events.SystemMessageEvent{
+			Message: msg,
+			Level:   "error",
+		})
+	}
+
+	return domaintools.ToolResult{
+		Text:  fmt.Sprintf("Error: Panic detected: %v (in tool %q)", r, toolName),
+		Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
+	}
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
@@ -365,10 +380,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		defer func() {
 			if r := recover(); r != nil {
 				resChan <- res{
-					tr: domaintools.ToolResult{
-						Text:  fmt.Sprintf("Error: Panic detected: %v", r),
-						Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), fmt.Errorf("panic: %v", r)),
-					},
+					tr: e.handlePanic(r, call.Name),
 				}
 			}
 		}()
