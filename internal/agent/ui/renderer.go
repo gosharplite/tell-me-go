@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"golang.org/x/term"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"golang.org/x/term"
 )
 
 // sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
@@ -67,13 +67,13 @@ type StdUIRenderer struct {
 
 // streamState holds the transient state for a single response stream.
 type streamState struct {
-	aggregated    *llm.Content
-	totalText     strings.Builder
-	thoughtActive bool
-	showThoughts  bool
-	rawOutput     bool
-	lineCount     int
-	hasScrolled   bool
+	aggregated      *llm.Content
+	totalText       strings.Builder
+	thoughtActive   bool
+	showThoughts    bool
+	rawOutput       bool
+	lineCount       int
+	hasScrolled     bool
 	scrollThreshold int
 }
 
@@ -468,7 +468,7 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui ui
 	fmt.Fprint(ui.stdout, output)
 	r.sm.TerminalUnlock()
 
-	// Track scrolling: If we exceed the threshold (based on terminal height), 
+	// Track scrolling: If we exceed the threshold (based on terminal height),
 	// we assume the terminal has scrolled, making the saved cursor position invalid.
 	state.lineCount += strings.Count(part.Text, "\n")
 	if state.lineCount > state.scrollThreshold {
@@ -612,4 +612,3 @@ func (r *StdUIRenderer) LogSystemMessage(msg string, level string) {
 	fmt.Fprintf(stderr, "%s[%s] [%s] %s%s\n",
 		ui.c(color), ui.getTimestamp(), prefix, msg, ui.c(colors.ColorReset))
 }
-
