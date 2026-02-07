@@ -99,23 +99,8 @@ func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 
 func (a *DeadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath string) ([]*packages.Package, string, error) {
 	// Scope Validation: Ensure we are within a Go module.
-	if _, err := os.Stat(filepath.Join(resolvedPath, "go.mod")); os.IsNotExist(err) {
-		curr := resolvedPath
-		found := false
-		for {
-			if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
-				found = true
-				break
-			}
-			parent := filepath.Dir(curr)
-			if parent == curr {
-				break
-			}
-			curr = parent
-		}
-		if !found {
-			return nil, "", fmt.Errorf("dead_code_graph requires a Go module (go.mod not found at or above %s)", resolvedPath)
-		}
+	if _, err := a.resolveModuleRoot(resolvedPath); err != nil {
+		return nil, "", err
 	}
 
 	cfg := &packages.Config{
@@ -139,12 +124,8 @@ func (a *DeadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath str
 	}
 
 	// Check for critical loading errors
-	for _, pkg := range pkgs {
-		for _, err := range pkg.Errors {
-			if !strings.Contains(err.Msg, "no Go files") { // Ignore empty package warnings
-				return nil, "", fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
-			}
-		}
+	if err := a.checkLoadingErrors(pkgs); err != nil {
+		return nil, "", err
 	}
 
 	var targetModule string
@@ -155,6 +136,32 @@ func (a *DeadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath str
 		}
 	}
 	return pkgs, targetModule, nil
+}
+
+func (a *DeadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
+	curr := path
+	for {
+		if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
+			return curr, nil
+		}
+		parent := filepath.Dir(curr)
+		if parent == curr {
+			break
+		}
+		curr = parent
+	}
+	return "", fmt.Errorf("dead_code_graph requires a Go module (go.mod not found at or above %s)", path)
+}
+
+func (a *DeadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
+	for _, pkg := range pkgs {
+		for _, err := range pkg.Errors {
+			if !strings.Contains(err.Msg, "no Go files") { // Ignore empty package warnings
+				return fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (a *DeadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolResult {
@@ -294,51 +301,62 @@ func (a *DeadCodeAnalyzer) scanForUsages(state *analysisState) {
 
 func (a *DeadCodeAnalyzer) harvestExportedSymbols(state *analysisState) {
 	for _, pkg := range state.pkgs {
-		// Ensure the package belongs to our module for declaration tracking
-		if state.targetModule != "" && !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
-			continue
+		a.harvestPackageSymbols(pkg, state)
+	}
+}
+
+func (a *DeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *analysisState) {
+	// Ensure the package belongs to our module for declaration tracking
+	if state.targetModule != "" && !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
+		return
+	}
+	if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
+		return
+	}
+
+	scope := pkg.Types.Scope()
+	for _, name := range scope.Names() {
+		a.harvestObjectSymbols(scope.Lookup(name), state)
+	}
+}
+
+func (a *DeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *analysisState) {
+	if !obj.Exported() || obj.Name() == "init" {
+		return
+	}
+
+	id := a.getSymbolIdentity(obj)
+	if _, exists := state.declarations[id]; !exists {
+		state.declarations[id] = &symMeta{
+			id:      id,
+			pkgPath: getBasePkgPath(obj.Pkg().Path()),
+			name:    obj.Name(),
+			symType: getSymbolType(obj),
+			obj:     obj,
 		}
-		if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
-			continue
+	}
+
+	// Capture exported methods
+	if tn, ok := obj.(*types.TypeName); ok {
+		if named, ok := tn.Type().(*types.Named); ok {
+			a.harvestMethods(named, state)
 		}
+	}
+}
 
-		scope := pkg.Types.Scope()
-		for _, name := range scope.Names() {
-			obj := scope.Lookup(name)
-			if !obj.Exported() || obj.Name() == "init" {
-				continue
-			}
-
-			id := a.getSymbolIdentity(obj)
-			if _, exists := state.declarations[id]; !exists {
-				state.declarations[id] = &symMeta{
-					id:      id,
-					pkgPath: getBasePkgPath(obj.Pkg().Path()),
-					name:    obj.Name(),
-					symType: getSymbolType(obj),
-					obj:     obj,
-				}
-			}
-
-			// Capture exported methods
-			if tn, ok := obj.(*types.TypeName); ok {
-				if named, ok := tn.Type().(*types.Named); ok {
-					for i := 0; i < named.NumMethods(); i++ {
-						m := named.Method(i)
-						if m.Exported() {
-							mId := a.getSymbolIdentity(m)
-							if _, exists := state.declarations[mId]; !exists {
-								state.declarations[mId] = &symMeta{
-									id:       mId,
-									pkgPath:  getBasePkgPath(m.Pkg().Path()),
-									name:     m.Name(),
-									symType:  "Method",
-									isMethod: true,
-									obj:      m,
-								}
-							}
-						}
-					}
+func (a *DeadCodeAnalyzer) harvestMethods(named *types.Named, state *analysisState) {
+	for i := 0; i < named.NumMethods(); i++ {
+		m := named.Method(i)
+		if m.Exported() {
+			mId := a.getSymbolIdentity(m)
+			if _, exists := state.declarations[mId]; !exists {
+				state.declarations[mId] = &symMeta{
+					id:       mId,
+					pkgPath:  getBasePkgPath(m.Pkg().Path()),
+					name:     m.Name(),
+					symType:  "Method",
+					isMethod: true,
+					obj:      m,
 				}
 			}
 		}
@@ -346,6 +364,8 @@ func (a *DeadCodeAnalyzer) harvestExportedSymbols(state *analysisState) {
 }
 
 func (a *DeadCodeAnalyzer) mapInterfaceImplementations(state *analysisState) {
+	interfaces := a.collectInterfaces(state)
+
 	for _, pkg := range state.pkgs {
 		for _, obj := range pkg.TypesInfo.Defs {
 			tn, ok := obj.(*types.TypeName)
@@ -358,32 +378,42 @@ func (a *DeadCodeAnalyzer) mapInterfaceImplementations(state *analysisState) {
 			}
 
 			// For every concrete type, check implementation of module interfaces
-			for _, otherPkg := range state.pkgs {
-				otherScope := otherPkg.Types.Scope()
-				for _, name := range otherScope.Names() {
-					otherObj := otherScope.Lookup(name)
-					otn, ok := otherObj.(*types.TypeName)
-					if !ok {
-						continue
-					}
-					if itf, ok := otn.Type().Underlying().(*types.Interface); ok {
-						// Check if our named type implements this interface
-						if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
-							// If any method of this interface is used, mark the concrete implementation as used
-							for i := 0; i < itf.NumMethods(); i++ {
-								im := itf.Method(i)
-								imId := a.getSymbolIdentity(im)
-								if state.totalUses[imId] > 0 {
-									// Find the concrete method on our type
-									cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
-									if cm != nil {
-										cmId := a.getSymbolIdentity(cm)
-										state.totalUses[cmId] += state.totalUses[imId]
-										state.externalUses[cmId] += state.externalUses[imId]
-									}
-								}
-							}
-						}
+			a.checkImplementations(named, pkg, state, interfaces)
+		}
+	}
+}
+
+func (a *DeadCodeAnalyzer) collectInterfaces(state *analysisState) []*types.Interface {
+	var interfaces []*types.Interface
+	for _, pkg := range state.pkgs {
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			if tn, ok := obj.(*types.TypeName); ok {
+				if itf, ok := tn.Type().Underlying().(*types.Interface); ok {
+					interfaces = append(interfaces, itf)
+				}
+			}
+		}
+	}
+	return interfaces
+}
+
+func (a *DeadCodeAnalyzer) checkImplementations(named *types.Named, pkg *packages.Package, state *analysisState, interfaces []*types.Interface) {
+	for _, itf := range interfaces {
+		// Check if our named type implements this interface
+		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
+			// If any method of this interface is used, mark the concrete implementation as used
+			for i := 0; i < itf.NumMethods(); i++ {
+				im := itf.Method(i)
+				imId := a.getSymbolIdentity(im)
+				if state.totalUses[imId] > 0 {
+					// Find the concrete method on our type
+					cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
+					if cm != nil {
+						cmId := a.getSymbolIdentity(cm)
+						state.totalUses[cmId] += state.totalUses[imId]
+						state.externalUses[cmId] += state.externalUses[imId]
 					}
 				}
 			}
