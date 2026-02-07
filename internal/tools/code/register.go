@@ -170,6 +170,10 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "STRING",
 					Description: "The string or regex to search for.",
 				},
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to search (defaults to '.')",
+				},
 			},
 			Required: []string{"query"},
 		},
