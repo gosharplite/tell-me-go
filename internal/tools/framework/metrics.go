@@ -34,15 +34,17 @@ type SessionCostTracker struct {
 	model     pricing.ModelPricing
 	modelName string
 	logFile   string
+	mode      string
 	sm        security.ISecurityManager
 	initiated bool
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
+func NewSessionCostTracker(sm security.ISecurityManager, logFile string, mode string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
 	return &SessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
+		mode:      mode,
 		modelName: modelName,
 		model:     model,
 		pricing:   pricing,
@@ -53,6 +55,87 @@ func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelNa
 func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	_, totalCost := t.GetStats(ctx)
 	return totalCost
+}
+
+// GetDailyCost aggregates costs from the global ledger for the current date in UTC-8.
+func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.logFile == "" {
+		return t.totalCost
+	}
+
+	globalDir := filepath.Dir(filepath.Dir(t.logFile))
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	// Synchronize access to the global ledger file.
+	// Acquire ledgerMu after t.mu to maintain consistent lock ordering.
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+
+	// If recovery is in progress, return the in-memory cost to avoid blocking or inconsistent reads.
+	if _, recovering := recoveryInProgress.Load(historyPath); recovering {
+		return t.totalCost
+	}
+
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: Failed to read global ledger at %s: %v", historyPath, err)
+		}
+		return t.totalCost
+	}
+
+	var history []SessionCostRecord
+	if err := json.Unmarshal(content, &history); err != nil {
+		log.Printf("Warning: Failed to parse global ledger at %s: %v", historyPath, err)
+		return t.totalCost
+	}
+
+	// CRITICAL: Must match the ID generated in EstimateCost
+	currentSessionID := generateSessionID(t.mode, t.logFile)
+
+	return t.calculateDailyCost(history, time.Now(), currentSessionID)
+}
+
+func (t *SessionCostTracker) calculateDailyCost(records []SessionCostRecord, now time.Time, currentSessionID string) float64 {
+	loc := time.FixedZone("UTC-8", -8*3600)
+	today := now.In(loc).Format("2006-01-02")
+
+	var dailyTotal float64
+
+	for _, r := range records {
+		ts := t.getRecordTimestamp(r, loc)
+		if ts.IsZero() {
+			continue
+		}
+
+		if ts.In(loc).Format("2006-01-02") == today {
+			if r.Session != currentSessionID {
+				dailyTotal += r.TotalCost
+			}
+		}
+	}
+
+	// Always add the current session's in-memory cost as it is the Source of Truth for its own footprint.
+	// This ensures that even if the session isn't in the ledger yet, or if the ledger has a stale value,
+	// the daily total reflects the latest known cost.
+	dailyTotal += t.totalCost
+
+	return dailyTotal
+}
+
+func (t *SessionCostTracker) getRecordTimestamp(r SessionCostRecord, loc *time.Location) time.Time {
+	ts := r.Timestamp
+	if ts.IsZero() {
+		var err error
+		ts, err = time.ParseInLocation("2006-01-02", r.Date, loc)
+		if err != nil {
+			return time.Time{}
+		}
+	}
+	return ts
 }
 
 // GetStats returns the accumulated usage statistics and total cost.
@@ -459,13 +542,14 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	// 3. Persistence: Record to local ledger
 	if shouldRecord {
 		if sessionID == "" {
-			sessionID = filepath.ToSlash(filepath.Join(m.mode, filepath.Base(m.logFile)))
+			sessionID = generateSessionID(m.mode, m.logFile)
 		}
 		if timestamp.IsZero() {
 			timestamp = time.Now()
 		}
+		loc := time.FixedZone("UTC-8", -8*3600)
 		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
-			Date:      timestamp.Format("2006-01-02"),
+			Date:      timestamp.In(loc).Format("2006-01-02"),
 			Timestamp: timestamp,
 			Session:   sessionID,
 			Model:     detectedModel,
@@ -695,4 +779,10 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	sb.WriteString(fmt.Sprintf("| **Grand Total** | **%d** | **%d** | **%d** | **%.1f%%** | **$%.4f** |\n", totalM, totalH, totalO, totalEff, grandTotal))
 
 	return sb.String()
+}
+
+// generateSessionID creates a unique identifier for a session based on its mode and log file name.
+// This ID is used as the unique key in global_costs.json to identify and update session records.
+func generateSessionID(mode, logFile string) string {
+	return filepath.ToSlash(filepath.Join(mode, filepath.Base(logFile)))
 }

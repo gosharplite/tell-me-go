@@ -214,7 +214,7 @@ func (c *Command) initializeDependencies(ctx context.Context, paths sessionPaths
 	registry := c.setupRegistry(client, cfg, &paths, pricingOverrides)
 
 	modelPricing := framework.GetModelPricing(cfg.Model, pricingData)
-	tracker := framework.NewSessionCostTracker(c.SM, paths.logPath, cfg.Model, modelPricing, pricingData)
+	tracker := framework.NewSessionCostTracker(c.SM, paths.logPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
 	return hManager, client, registry, tracker, pruned, pricingData, nil

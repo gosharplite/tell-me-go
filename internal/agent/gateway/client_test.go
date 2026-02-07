@@ -47,6 +47,10 @@ func TestResilientClient_WrapError(t *testing.T) {
 		{"String match Auth", errors.New("API_KEY_INVALID"), llm.ErrAuth},
 		{"String match Auth Upper", errors.New("unauthenticated request"), llm.ErrAuth},
 
+		{"String match Rate Limit 429", errors.New("error 429: too many requests"), llm.ErrTransient},
+		{"String match Quota", errors.New("quota exceeded for project"), llm.ErrTransient},
+		{"String match Resource Exhausted", errors.New("RESOURCE_EXHAUSTED: quota limit reached"), llm.ErrTransient},
+
 		{"Generic fallback", errors.New("unknown error"), llm.ErrTerminal},
 	}
 

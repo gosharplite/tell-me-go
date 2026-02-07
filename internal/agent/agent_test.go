@@ -592,6 +592,7 @@ type mockCostTracker struct {
 
 func (m *mockCostTracker) Accumulate(metrics llm.Metrics)           { m.accumulateCalls++ }
 func (m *mockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
+func (m *mockCostTracker) GetDailyCost(ctx context.Context) float64 { return 0 }
 func (m *mockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0
 }

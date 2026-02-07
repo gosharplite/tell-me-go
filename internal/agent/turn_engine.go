@@ -21,14 +21,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
-// Clock provides a way to get the current time, facilitating deterministic testing.
+// Clock provides a way to get the current time and handle delays, facilitating deterministic testing.
 type Clock interface {
 	Now() time.Time
+	After(d time.Duration) <-chan time.Time
 }
 
 type realClock struct{}
 
-func (realClock) Now() time.Time { return time.Now() }
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // turnPhase represents the current stage of a single agent turn.
 type turnPhase string
@@ -654,6 +656,16 @@ func (p *RecoveryStep) handleFailure(err error) processResult {
 func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
 	turn.State.RetryCount++
 
+	// Publish retry notification to the UI/EventBus
+	if turn.Events != nil {
+		msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
+			turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
+		turn.Events.Publish(events.SystemMessageEvent{
+			Message: msg,
+			Level:   "warn",
+		})
+	}
+
 	if err := ctx.Err(); err != nil {
 		return processResult{Error: err}
 	}
@@ -661,10 +673,10 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	select {
 	case <-ctx.Done():
 		return processResult{Error: ctx.Err()}
-	case <-time.After(delay):
+	case <-turn.Clock.After(delay):
 	}
 
-	return processResult{NextPhase: phaseRefining} // Re-prepares context before next LLM call
+	return processResult{NextPhase: phaseRefining}
 }
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
@@ -695,9 +707,11 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
 
 				var cost float64
+				var dailyCost float64
 				var totalM, totalH, totalO int64
 				if turn.CostTracker != nil {
 					cost = turn.CostTracker.GetTotalCost(ctx)
+					dailyCost = turn.CostTracker.GetDailyCost(ctx)
 					stats, _ := turn.CostTracker.GetStats(ctx)
 					totalM = stats.PromptTokens - stats.CachedTokens
 					totalH = stats.CachedTokens
@@ -721,6 +735,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 						IsPostCall:       turn.State.Phase == phasePersisting,
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
+						DailyCost:        dailyCost,
 						TaskCost:         currentTaskCost,
 						TotalM:           totalM,
 						TotalH:           totalH,

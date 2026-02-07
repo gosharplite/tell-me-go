@@ -35,7 +35,7 @@ The project is organized into the following top-level directories:
     - `internal/auth`: Token management for Vertex AI.
     - `internal/tools`: Registry and implementation of executable functions.
     - `internal/fsutil`: Filesystem utilities, including content-addressable **Asset Storage**.
-    - `internal/types`: Shared domain models and interfaces used to decouple packages from the external SDK.
+    - `internal/pricing`: Model-specific pricing and cost calculation logic.
 - **`configs/`**: Storage for default configuration templates (YAML).
     - `configs/vertex.yaml`: The primary configuration template.
 - **`SOP/`**: Project governance and process documentation.

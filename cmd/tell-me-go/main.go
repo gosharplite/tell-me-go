@@ -13,7 +13,7 @@ import (
 	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/version"
 )
 
-const Version = "2.4.0"
+const Version = "2.5.0"
 
 func main() {
 	app := cli.New(Version, os.Stdin, os.Stdout, os.Stderr)

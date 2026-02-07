@@ -13,6 +13,7 @@ import (
 // ICostTracker defines the interface for tracking session costs.
 type ICostTracker interface {
 	GetTotalCost(ctx context.Context) float64
+	GetDailyCost(ctx context.Context) float64
 	GetStats(ctx context.Context) (pricing.UsageStats, float64)
 	Accumulate(mt llm.Metrics)
 	CalculateCost(mt llm.Metrics) float64

@@ -584,102 +584,66 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
 	e := &ToolExecutor{strategy: &MockStrategy{}}
 
-	largeBlob := make([]byte, 1024)
-	for i := range largeBlob {
-		largeBlob[i] = byte(i % 256)
-	}
+	t.Run("Single Tool with Binary", func(t *testing.T) {
+		calls := []*llm.FunctionCall{{Name: "get_image"}}
+		results := []tools.ToolResult{{
+			Text:       "Here is your image",
+			BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("blob")}},
+		}}
+		content := e.assembleResponse(calls, results)
+		if len(content.Parts) != 2 {
+			t.Fatalf("Got %d parts, want 2", len(content.Parts))
+		}
+		assertFunctionResponse(t, content.Parts[0], "Here is your image")
+		assertInlineData(t, content.Parts[1], "image/png", []byte("blob"))
+	})
 
-	tests := []struct {
-		name      string
-		calls     []*llm.FunctionCall
-		results   []tools.ToolResult
-		wantParts int
-		verify    func(t *testing.T, parts []*llm.Part)
-	}{
-		{
-			name:  "Single Tool with Binary",
-			calls: []*llm.FunctionCall{{Name: "get_image"}},
-			results: []tools.ToolResult{{
-				Text: "Here is your image",
-				BinaryData: []tools.BinaryData{
-					{MIMEType: "image/png", Data: largeBlob},
-				},
-			}},
-			wantParts: 2,
-		},
-		{
-			name:  "Multiple Binary Parts",
-			calls: []*llm.FunctionCall{{Name: "get_files"}},
-			results: []tools.ToolResult{{
-				BinaryData: []tools.BinaryData{
-					{MIMEType: "application/pdf", Data: []byte{1, 2, 3}},
-					{MIMEType: "text/plain", Data: []byte{4, 5, 6}},
-				},
-			}},
-			wantParts: 3,
-		},
-		{
-			name:  "Multi-blob Interleaving and Ordering",
-			calls: []*llm.FunctionCall{{Name: "camera_snapshot"}},
-			results: []tools.ToolResult{{
-				Text: "Captured 2 photos",
-				BinaryData: []tools.BinaryData{
-					{MIMEType: "image/jpeg", Data: []byte("photo1")},
-					{MIMEType: "image/jpeg", Data: []byte("photo2")},
-				},
-			}},
-			wantParts: 3,
-			verify: func(t *testing.T, parts []*llm.Part) {
-				if parts[0].FunctionResponse == nil {
-					t.Fatal("Expected FunctionResponse as first part")
-				}
-				if parts[0].FunctionResponse.Response["result"] != "Captured 2 photos" {
-					t.Errorf("Expected 'Captured 2 photos', got %v", parts[0].FunctionResponse.Response["result"])
-				}
-				if string(parts[1].InlineData.Data) != "photo1" {
-					t.Errorf("Expected 'photo1', got %q", parts[1].InlineData.Data)
-				}
-				if string(parts[2].InlineData.Data) != "photo2" {
-					t.Errorf("Expected 'photo2', got %q", parts[2].InlineData.Data)
-				}
+	t.Run("Multiple Binary Parts", func(t *testing.T) {
+		calls := []*llm.FunctionCall{{Name: "get_files"}}
+		results := []tools.ToolResult{{
+			BinaryData: []tools.BinaryData{
+				{MIMEType: "application/pdf", Data: []byte{1, 2, 3}},
+				{MIMEType: "text/plain", Data: []byte{4, 5, 6}},
 			},
-		},
-		{
-			name:  "Binary Data with No Text",
-			calls: []*llm.FunctionCall{{Name: "only_binary"}},
-			results: []tools.ToolResult{{
-				Text: "",
-				BinaryData: []tools.BinaryData{
-					{MIMEType: "image/png", Data: []byte("data")},
-				},
-			}},
-			wantParts: 2,
-			verify: func(t *testing.T, parts []*llm.Part) {
-				if parts[0].FunctionResponse == nil {
-					t.Fatal("Expected FunctionResponse as first part even with empty text")
-				}
-				if parts[0].FunctionResponse.Response["result"] != "" {
-					t.Errorf("Expected empty result string, got %v", parts[0].FunctionResponse.Response["result"])
-				}
-				if string(parts[1].InlineData.Data) != "data" {
-					t.Errorf("Expected 'data', got %q", parts[1].InlineData.Data)
-				}
+		}}
+		content := e.assembleResponse(calls, results)
+		if len(content.Parts) != 3 {
+			t.Fatalf("Got %d parts, want 3", len(content.Parts))
+		}
+		assertInlineData(t, content.Parts[1], "application/pdf", []byte{1, 2, 3})
+		assertInlineData(t, content.Parts[2], "text/plain", []byte{4, 5, 6})
+	})
+
+	t.Run("Multi-blob Interleaving and Ordering", func(t *testing.T) {
+		calls := []*llm.FunctionCall{{Name: "camera_snapshot"}}
+		results := []tools.ToolResult{{
+			Text: "Captured 2 photos",
+			BinaryData: []tools.BinaryData{
+				{MIMEType: "image/jpeg", Data: []byte("photo1")},
+				{MIMEType: "image/jpeg", Data: []byte("photo2")},
 			},
-		},
-	}
+		}}
+		content := e.assembleResponse(calls, results)
+		assertFunctionResponse(t, content.Parts[0], "Captured 2 photos")
+		assertInlineData(t, content.Parts[1], "image/jpeg", []byte("photo1"))
+		assertInlineData(t, content.Parts[2], "image/jpeg", []byte("photo2"))
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := e.assembleResponse(tt.calls, tt.results)
-
-			if len(content.Parts) != tt.wantParts {
-				t.Errorf("Got %d parts, want %d", len(content.Parts), tt.wantParts)
-			}
-			if tt.verify != nil {
-				tt.verify(t, content.Parts)
-			}
-		})
-	}
+	t.Run("Binary Data with No Text", func(t *testing.T) {
+		calls := []*llm.FunctionCall{{Name: "only_binary"}}
+		results := []tools.ToolResult{{
+			Text: "",
+			BinaryData: []tools.BinaryData{
+				{MIMEType: "image/png", Data: []byte("data")},
+			},
+		}}
+		content := e.assembleResponse(calls, results)
+		if len(content.Parts) != 2 {
+			t.Fatalf("Got %d parts, want 2", len(content.Parts))
+		}
+		assertFunctionResponse(t, content.Parts[0], "")
+		assertInlineData(t, content.Parts[1], "image/png", []byte("data"))
+	})
 }
 
 func TestToolExecutor_EventPublishing(t *testing.T) {
@@ -818,4 +782,28 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
 		verifyToolEventError(t, bus, agenerrors.ErrFatal)
 	})
+}
+
+func assertFunctionResponse(t *testing.T, part *llm.Part, expectedResult interface{}) {
+	t.Helper()
+	if part.FunctionResponse == nil {
+		t.Fatal("Expected FunctionResponse part")
+	}
+	res := part.FunctionResponse.Response["result"]
+	if res != expectedResult {
+		t.Errorf("Expected result %v, got %v", expectedResult, res)
+	}
+}
+
+func assertInlineData(t *testing.T, part *llm.Part, expectedMime string, expectedData []byte) {
+	t.Helper()
+	if part.InlineData == nil {
+		t.Fatal("Expected InlineData part")
+	}
+	if part.InlineData.MIMEType != expectedMime {
+		t.Errorf("Expected MIME %q, got %q", expectedMime, part.InlineData.MIMEType)
+	}
+	if string(part.InlineData.Data) != string(expectedData) {
+		t.Errorf("Expected data %q, got %q", expectedData, part.InlineData.Data)
+	}
 }
