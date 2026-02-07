@@ -133,7 +133,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 	cancel()
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := cmd.capturePrompt(ctx, fs, 0)
+	_, err := cmd.capturePrompt(ctx, fs, 0, false)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}

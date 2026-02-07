@@ -16,16 +16,18 @@ type UISubscriber struct {
 	showThoughts bool
 	showTools    bool
 	rawOutput    bool
+	useColor     bool
 	logFile      string
 }
 
 // NewUISubscriber creates a new UISubscriber.
-func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput bool, logFile string) *UISubscriber {
+func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *UISubscriber {
 	return &UISubscriber{
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
 		rawOutput:    rawOutput,
+		useColor:     useColor,
 		logFile:      logFile,
 	}
 }

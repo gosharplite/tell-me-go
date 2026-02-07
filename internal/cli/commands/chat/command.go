@@ -98,6 +98,14 @@ func NewCommand(ctx *command.Context) *Command {
 	}
 }
 
+// isTTY returns true if the writer is a terminal.
+func (c *Command) isTTY(w io.Writer) bool {
+	if f, ok := w.(*os.File); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	return false
+}
+
 // Execute runs the chat command logic.
 func (c *Command) Execute(ctx context.Context, args []string) error {
 	// Sync security manager with current command stdin
@@ -114,7 +122,7 @@ func (c *Command) Execute(ctx context.Context, args []string) error {
 	}
 
 	// 2. Handle Prompt Early
-	prompt, err := c.capturePrompt(ctx, fs, opts.lastN)
+	prompt, err := c.capturePrompt(ctx, fs, opts.lastN, opts.rawOutput)
 	if err != nil {
 		return err
 	}
@@ -331,9 +339,10 @@ func (c *Command) setupRegistry(client *api.Client, cfg *config.Config, paths *s
 func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing pricing.PricingData) {
 	renderer := ui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
+	renderer.SetUseColor(c.isTTY(c.Stdout) && !opts.rawOutput)
 	// Note: We need to handle UISubscriber. It was in the cli package.
 	// I'll move it to a shared place or this package.
-	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, paths.logPath)
+	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, c.isTTY(c.Stdout) && !opts.rawOutput, paths.logPath)
 	chatAgent.Subscribe(subscriber.HandleEvent)
 
 	maxTokens := cfg.MaxHistoryTokens
@@ -500,7 +509,7 @@ func (c *Command) sanitizeArgs(args []string) []string {
 	return args
 }
 
-func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int) (string, error) {
+func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
 
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
@@ -512,6 +521,9 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		fd = int(f.Fd())
 	}
 	isTerminal := fd != -1 && term.IsTerminal(fd)
+
+	useColorStdout := c.isTTY(c.Stdout) && !raw
+	useColorStderr := c.isTTY(c.Stderr) && !raw
 
 	if !isTerminal {
 		readChan := make(chan []byte, 1)
@@ -536,7 +548,11 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		func() {
 			c.SM.TerminalLock()
 			defer c.SM.TerminalUnlock()
-			fmt.Fprintf(c.Stdout, "%s[Reading multi-line input. Press Ctrl+D to send]%s\n", colors.ColorYellow, colors.ColorReset)
+			if useColorStdout {
+				fmt.Fprintf(c.Stdout, "%s[Reading multi-line input. Press Ctrl+D to send]%s\n", colors.ColorYellow, colors.ColorReset)
+			} else {
+				fmt.Fprintln(c.Stdout, "[Reading multi-line input. Press Ctrl+D to send]")
+			}
 		}()
 
 		readChan := make(chan []byte, 1)
@@ -565,7 +581,11 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 	func() {
 		c.SM.TerminalLock()
 		defer c.SM.TerminalUnlock()
-		fmt.Fprintf(c.Stderr, "%s[%s] Input captured. Processing...%s\n", colors.ColorGreen, time.Now().Format("15:04:05"), colors.ColorReset)
+		if useColorStderr {
+			fmt.Fprintf(c.Stderr, "%s[%s] Input captured. Processing...%s\n", colors.ColorGreen, time.Now().Format("15:04:05"), colors.ColorReset)
+		} else {
+			fmt.Fprintf(c.Stderr, "[%s] Input captured. Processing...\n", time.Now().Format("15:04:05"))
+		}
 	}()
 	return prompt, nil
 }
@@ -590,13 +610,21 @@ func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showTh
 		)
 	}
 
+	useColor := c.isTTY(c.Stdout) && !raw
+
 	for i := start; i < len(contents); i++ {
 		c2 := contents[i]
-		roleColor := colors.ColorBlue
-		if c2.Role != "user" {
-			roleColor = colors.ColorMagenta
+		roleStr := "[" + strings.ToUpper(c2.Role) + "]"
+		if useColor {
+			roleColor := colors.ColorBlue
+			if c2.Role != "user" {
+				roleColor = colors.ColorMagenta
+			}
+			fmt.Fprintf(c.Stdout, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
+		} else {
+			fmt.Fprintln(c.Stdout, roleStr)
 		}
-		fmt.Fprintf(c.Stdout, "%s[%s]%s\n", roleColor, strings.ToUpper(c2.Role), colors.ColorReset)
+
 		for _, p := range c2.Parts {
 			if p.Thought && !showThoughts {
 				continue
@@ -618,10 +646,18 @@ func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showTh
 				}
 			}
 			if p.FunctionCall != nil {
-				fmt.Fprintf(c.Stdout, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
+				if useColor {
+					fmt.Fprintf(c.Stdout, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
+				} else {
+					fmt.Fprintf(c.Stdout, "[Tool Call] %s\n", p.FunctionCall.Name)
+				}
 			}
 			if p.FunctionResponse != nil {
-				fmt.Fprintf(c.Stdout, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
+				if useColor {
+					fmt.Fprintf(c.Stdout, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
+				} else {
+					fmt.Fprintf(c.Stdout, "[Tool Response] %s\n", p.FunctionResponse.Name)
+				}
 			}
 		}
 		fmt.Fprintln(c.Stdout)
