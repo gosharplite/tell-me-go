@@ -17,12 +17,16 @@ import (
 )
 
 type teamsManager struct {
-	sm *security.SecurityManager
+	sm     *security.SecurityManager
+	client tools.HTTPClient
 }
 
 // RegisterTeams adds Teams-related tools to the registry.
-func RegisterTeams(r *registry.Registry, sm *security.SecurityManager) {
-	m := &teamsManager{sm: sm}
+func RegisterTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	m := &teamsManager{sm: sm, client: client}
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
@@ -91,10 +95,9 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
+	resp, err := m.client.Do(req)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to send message: %w", err)
 	}

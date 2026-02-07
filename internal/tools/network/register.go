@@ -11,8 +11,8 @@ import (
 
 // Register adds network-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
-	net := NewNetworkTool(sm)
-	RegisterTeams(r, sm)
+	net := NewNetworkTool(sm, nil)
+	RegisterTeams(r, sm, nil)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
