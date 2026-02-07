@@ -149,6 +149,74 @@ func getModuleName(run commandRunner) string {
 	return mod
 }
 
+func parseLineNum(part string) (int, bool) {
+	subParts := strings.Split(part, ".")
+	if len(subParts) < 1 {
+		return 0, false
+	}
+	val, err := strconv.Atoi(subParts[0])
+	return val, err == nil
+}
+
+func parsePathAndRange(pathAndRange string, modulePrefix string) (*UncoveredBlock, bool) {
+	colonIdx := strings.LastIndex(pathAndRange, ":")
+	if colonIdx == -1 {
+		return nil, false
+	}
+
+	file := pathAndRange[:colonIdx]
+	if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
+		file = file[len(modulePrefix):]
+	}
+
+	rangePart := pathAndRange[colonIdx+1:]
+	rangeParts := strings.Split(rangePart, ",")
+	if len(rangeParts) != 2 {
+		return nil, false
+	}
+
+	startLine, ok1 := parseLineNum(rangeParts[0])
+	endLine, ok2 := parseLineNum(rangeParts[1])
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+
+	return &UncoveredBlock{
+		File:  file,
+		Start: startLine,
+		End:   endLine,
+	}, true
+}
+
+func parseCoverageLine(line string, modulePrefix string) (*UncoveredBlock, bool) {
+	if line == "" {
+		return nil, false
+	}
+
+	// Format: file.go:startline.startcol,endline.endcol numstmt count
+	parts := strings.Fields(line)
+	if len(parts) != 3 {
+		return nil, false
+	}
+
+	count, err := strconv.Atoi(parts[2])
+	if err != nil || count > 0 {
+		return nil, false
+	}
+
+	stmts, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, false
+	}
+
+	block, ok := parsePathAndRange(parts[0], modulePrefix)
+	if !ok {
+		return nil, false
+	}
+	block.Stmts = stmts
+	return block, true
+}
+
 // ParseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
 func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, error) {
 	var blocks []UncoveredBlock
@@ -161,68 +229,9 @@ func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, err
 	}
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
+		if block, ok := parseCoverageLine(scanner.Text(), modulePrefix); ok {
+			blocks = append(blocks, *block)
 		}
-
-		// Format: file.go:startline.startcol,endline.endcol numstmt count
-		parts := strings.Fields(line)
-		if len(parts) != 3 {
-			continue
-		}
-
-		count, err := strconv.Atoi(parts[2])
-		if err != nil {
-			continue
-		}
-
-		if count > 0 {
-			continue
-		}
-
-		stmts, err := strconv.Atoi(parts[1])
-		if err != nil {
-			continue
-		}
-
-		pathAndRange := parts[0]
-		colonIdx := strings.LastIndex(pathAndRange, ":")
-		if colonIdx == -1 {
-			continue
-		}
-
-		file := pathAndRange[:colonIdx]
-		// Strip module prefix if it exists to make path relative to project root
-		if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
-			file = file[len(modulePrefix):]
-		}
-		rangePart := pathAndRange[colonIdx+1:]
-
-		// startline.startcol,endline.endcol
-		rangeParts := strings.Split(rangePart, ",")
-		if len(rangeParts) != 2 {
-			continue
-		}
-
-		startPart := strings.Split(rangeParts[0], ".")
-		if len(startPart) < 1 {
-			continue
-		}
-		endPart := strings.Split(rangeParts[1], ".")
-		if len(endPart) < 1 {
-			continue
-		}
-
-		startLine, _ := strconv.Atoi(startPart[0])
-		endLine, _ := strconv.Atoi(endPart[0])
-
-		blocks = append(blocks, UncoveredBlock{
-			File:  file,
-			Start: startLine,
-			End:   endLine,
-			Stmts: stmts,
-		})
 	}
 
 	return blocks, scanner.Err()
