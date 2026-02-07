@@ -50,6 +50,7 @@ func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 type integrationMockCostTracker struct{}
 
 func (m *integrationMockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
+func (m *integrationMockCostTracker) GetDailyCost(ctx context.Context) float64 { return 0 }
 func (m *integrationMockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0
 }

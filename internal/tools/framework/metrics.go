@@ -81,11 +81,15 @@ func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: Failed to read global ledger at %s: %v", historyPath, err)
+		}
 		return t.totalCost
 	}
 
 	var history []SessionCostRecord
 	if err := json.Unmarshal(content, &history); err != nil {
+		log.Printf("Warning: Failed to parse global ledger at %s: %v", historyPath, err)
 		return t.totalCost
 	}
 
