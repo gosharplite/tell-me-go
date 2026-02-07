@@ -433,47 +433,50 @@ func (c *Command) cleanupOldBackups(homeDir, mode string) {
 		return
 	}
 
-	retentionDays := 30
-	configPath := filepath.Join(homeDir, "output", mode, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg map[string]string
-		if err := json.Unmarshal(data, &cfg); err == nil {
-			if val, ok := cfg["backup_retention_days"]; ok {
-				if days, err := strconv.Atoi(val); err == nil {
-					retentionDays = days
-				}
-			}
-		}
-	}
-
+	retentionDays := c.loadBackupRetentionDays(homeDir, mode)
 	if retentionDays <= 0 {
 		return
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+	c.performBackupCleanup(backupBaseDir, entries, cutoff)
+}
 
-		if len(entry.Name()) < 15 {
+func (c *Command) loadBackupRetentionDays(homeDir, mode string) int {
+	retentionDays := 30
+	configPath := filepath.Join(homeDir, "output", mode, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return retentionDays
+	}
+
+	var cfg map[string]string
+	if err := json.Unmarshal(data, &cfg); err == nil {
+		if val, ok := cfg["backup_retention_days"]; ok {
+			if days, err := strconv.Atoi(val); err == nil {
+				return days
+			}
+		}
+	}
+	return retentionDays
+}
+
+func (c *Command) performBackupCleanup(backupBaseDir string, entries []os.DirEntry, cutoff time.Time) {
+	for _, entry := range entries {
+		if !entry.IsDir() || len(entry.Name()) < 15 {
 			continue
 		}
 
 		folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
-		if err != nil {
+		if err != nil || !folderTime.Before(cutoff) {
 			continue
 		}
 
-		if folderTime.Before(cutoff) {
-			path := filepath.Join(backupBaseDir, entry.Name())
-			if err := os.RemoveAll(path); err != nil {
-				func() {
-					c.SM.TerminalLock()
-					defer c.SM.TerminalUnlock()
-					fmt.Fprintf(c.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
-				}()
-			}
+		path := filepath.Join(backupBaseDir, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			c.SM.TerminalLock()
+			fmt.Fprintf(c.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+			c.SM.TerminalUnlock()
 		}
 	}
 }
