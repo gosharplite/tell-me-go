@@ -99,9 +99,20 @@ func classifyHTTP(err error) (error, bool) {
 
 func classifyString(err error) (error, bool) {
 	msg := strings.ToUpper(err.Error())
+
+	// 1. Auth Failures (Immediate stop/refresh)
 	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
 		return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
 	}
+
+	// 2. Rate Limits & Quotas (Trigger engine retries)
+	// We use OR (||) to catch various SDK error formats (HTTP 429, gRPC RESOURCE_EXHAUSTED, or plain 'QUOTA')
+	if strings.Contains(msg, "429") ||
+		strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
+		strings.Contains(msg, "QUOTA") {
+		return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
+	}
+
 	return nil, false
 }
 
