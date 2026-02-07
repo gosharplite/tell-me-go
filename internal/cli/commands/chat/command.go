@@ -99,9 +99,9 @@ func NewCommand(ctx *command.Context) *Command {
 	}
 }
 
-// isTTY returns true if the writer is a terminal.
-func (c *Command) isTTY(w io.Writer) bool {
-	if f, ok := w.(*os.File); ok {
+// isTTY returns true if the value (usually an *os.File) is a terminal.
+func (c *Command) isTTY(v any) bool {
+	if f, ok := v.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	return false
@@ -517,57 +517,15 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		return val, nil
 	}
 
-	var fd int = -1
-	if f, ok := c.Stdin.(*os.File); ok {
-		fd = int(f.Fd())
-	}
-	isTerminal := fd != -1 && term.IsTerminal(fd)
-
-	useColorStdout := c.isTTY(c.Stdout) && !raw
-	useColorStderr := c.isTTY(c.Stderr) && !raw
-
-	if !isTerminal {
-		readChan := make(chan []byte, 1)
-		go func() {
-			b, _ := io.ReadAll(c.Stdin)
-			readChan <- b
-		}()
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case b := <-readChan:
-			if len(b) > 0 {
-				if prompt != "" {
-					prompt = prompt + "\n" + string(b)
-				} else {
-					prompt = string(b)
-				}
-			}
-		}
+	var err error
+	if !c.isTTY(c.Stdin) {
+		prompt, err = c.captureFromPipe(ctx, prompt)
 	} else if prompt == "" && lastN == 0 {
-		func() {
-			c.SM.TerminalLock()
-			defer c.SM.TerminalUnlock()
-			if useColorStdout {
-				fmt.Fprintf(c.Stdout, "%s[Reading multi-line input. Press Ctrl+D to send]%s\n", colors.ColorYellow, colors.ColorReset)
-			} else {
-				fmt.Fprintln(c.Stdout, "[Reading multi-line input. Press Ctrl+D to send]")
-			}
-		}()
+		prompt, err = c.captureFromTTY(ctx, !raw)
+	}
 
-		readChan := make(chan []byte, 1)
-		go func() {
-			b, _ := io.ReadAll(c.Stdin)
-			readChan <- b
-		}()
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case b := <-readChan:
-			prompt = string(b)
-		}
+	if err != nil {
+		return "", err
 	}
 
 	prompt = strings.TrimSpace(prompt)
@@ -579,16 +537,59 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		fs.PrintDefaults()
 		return "", fmt.Errorf("empty prompt")
 	}
-	func() {
-		c.SM.TerminalLock()
-		defer c.SM.TerminalUnlock()
-		if useColorStderr {
-			fmt.Fprintf(c.Stderr, "%s[%s] Input captured. Processing...%s\n", colors.ColorGreen, time.Now().Format("15:04:05"), colors.ColorReset)
-		} else {
-			fmt.Fprintf(c.Stderr, "[%s] Input captured. Processing...\n", time.Now().Format("15:04:05"))
-		}
-	}()
+
+	c.printFeedback(c.Stderr, !raw, colors.ColorGreen,
+		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
+
 	return prompt, nil
+}
+
+func (c *Command) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
+	readChan := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(c.Stdin)
+		readChan <- b
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case b := <-readChan:
+		if len(b) == 0 {
+			return initialPrompt, nil
+		}
+		if initialPrompt != "" {
+			return initialPrompt + "\n" + string(b), nil
+		}
+		return string(b), nil
+	}
+}
+
+func (c *Command) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
+	c.printFeedback(c.Stdout, useColor, colors.ColorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+
+	readChan := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(c.Stdin)
+		readChan <- b
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case b := <-readChan:
+		return string(b), nil
+	}
+}
+
+func (c *Command) printFeedback(w io.Writer, useColor bool, color, msg string) {
+	c.SM.TerminalLock()
+	defer c.SM.TerminalUnlock()
+	if useColor && c.isTTY(w) {
+		fmt.Fprintf(w, "%s%s%s\n", color, msg, colors.ColorReset)
+	} else {
+		fmt.Fprintln(w, msg)
+	}
 }
 
 func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showThoughts bool) {
