@@ -107,9 +107,11 @@ func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
 	m.lastSystemLevel = level
 }
 
+func (m *mockUIRenderer) SetUseColor(use bool) {}
+
 func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, "")
+	s := NewUISubscriber(renderer, false, false, false, false, "")
 
 	// This should not panic and should log a warning
 	t.Run("ResponseStreamEvent with nil context", func(t *testing.T) {
@@ -165,7 +167,7 @@ func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, true, true, false, "")
+	s := NewUISubscriber(renderer, true, true, false, false, "")
 
 	tests := []struct {
 		name     string
@@ -259,7 +261,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_Cancellation(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, "")
+	s := NewUISubscriber(renderer, false, false, false, false, "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -286,7 +288,7 @@ func TestUISubscriber_HandleEvent_Cancellation(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, "")
+	s := NewUISubscriber(renderer, false, false, false, false, "")
 
 	streamCh := make(chan *llm.Content, 2)
 	content1 := &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
@@ -317,7 +319,7 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_CancellationDuringBlock(t *testing.T) {
 	renderer := &mockUIRenderer{skipConsumer: true}
-	s := NewUISubscriber(renderer, false, false, false, "")
+	s := NewUISubscriber(renderer, false, false, false, false, "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	streamCh := make(chan *llm.Content)

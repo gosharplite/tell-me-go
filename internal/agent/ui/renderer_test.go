@@ -610,3 +610,27 @@ func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 		}
 	})
 }
+
+func TestStdUIRenderer_ColorLogic(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	tests := []struct {
+		name     string
+		useColor bool
+		input    string
+		expected string
+	}{
+		{"Color Enabled", true, "\033[0;31m", "\033[0;31m"},
+		{"Color Disabled", false, "\033[0;31m", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewStdUIRenderer(sm)
+			r.SetUseColor(tt.useColor)
+			ui := r.getUIState()
+			if got := ui.c(tt.input); got != tt.expected {
+				t.Errorf("ui.c(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
