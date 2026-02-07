@@ -17,11 +17,6 @@ var (
 	ErrTransient = agenerrors.ErrTransient
 	ErrFatal     = agenerrors.ErrFatal
 	ErrLogic     = agenerrors.ErrLogic
-
-	ErrToolNotFound      = agenerrors.ErrToolNotFound
-	ErrToolTimeout       = agenerrors.ErrToolTimeout
-	ErrSecurityViolation = agenerrors.ErrSecurityViolation
-	ErrInvalidArgs       = agenerrors.ErrInvalidArgs
 )
 
 // IsTransient checks if the error should trigger a retry.

@@ -334,10 +334,6 @@ func (c *Command) setupRegistry(client *api.Client, cfg *config.Config, paths *s
 }
 
 func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing pricing.PricingData) {
-	chatAgent.SetPersistentConfigPath(paths.persistentConfigPath)
-	chatAgent.SetMainConfigPath(opts.configPath)
-	chatAgent.SetLogFile(paths.logPath)
-
 	renderer := ui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
 	// Note: We need to handle UISubscriber. It was in the cli package.
@@ -376,7 +372,6 @@ func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config
 	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(threshold)
 	chatAgent.SetPrunedTurns(pruned)
-	chatAgent.SetConcurrency(cfg.MaxConcurrentTools, cfg.ToolTimeoutSeconds)
 }
 
 func (c *Command) archiveSessionFilesWithTimestamp(homeDir, timestamp string, filesToMove ...string) {

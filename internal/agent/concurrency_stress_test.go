@@ -64,7 +64,6 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			a.SetLimits(10, 1000+i, 20)
-			a.SetConcurrency(5+(i%5), 30)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()

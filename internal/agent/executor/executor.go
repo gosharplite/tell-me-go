@@ -50,8 +50,8 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityMa
 
 	if bus != nil {
 		bus.Subscribe(func(event events.Event) {
-			if cfg, ok := event.(events.ConfigUpdated); ok {
-				e.SetConcurrency(cfg.Execution.MaxConcurrent, cfg.Execution.Timeout)
+			if _, ok := event.(events.ConfigUpdated); ok {
+				// Config updated, but concurrency is now managed elsewhere or fixed.
 			}
 		})
 	}
@@ -336,7 +336,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 		return domaintools.ToolResult{
 			Text:  errorMessage,
-			Error: agenerrors.NewAgentError(agenerrors.ErrToolNotFound, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name)),
+			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name)),
 		}
 	}
 
@@ -345,7 +345,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: agenerrors.NewAgentError(agenerrors.ErrSecurityViolation, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name)),
+			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name)),
 		}
 	}
 
@@ -390,18 +390,18 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		}
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: agenerrors.NewAgentError(agenerrors.ErrToolTimeout, msg, err),
+			Error: agenerrors.NewAgentError(agenerrors.ErrTransient, msg, err),
 		}
 	case r := <-resChan:
 		if r.err != nil {
 			msg := fmt.Sprintf("Error: %v", r.err)
-			// For generic errors from the tool, we categorize as ErrInvalidArgs if it's related to inputs,
-			// or keep it generic. However, the instruction asks for ErrInvalidArgs for malformed args.
+			// For generic errors from the tool, we categorize as ErrLogic if it's related to inputs,
+			// or keep it generic. However, the instruction asks for ErrLogic for malformed args.
 			// Since we don't have a specific way to detect "malformed args" here yet,
-			// we'll use ErrInvalidArgs for tool errors that are not timeout/security/notfound.
+			// we'll use ErrLogic for tool errors that are not timeout/security/notfound.
 			return domaintools.ToolResult{
 				Text:  msg,
-				Error: agenerrors.NewAgentError(agenerrors.ErrInvalidArgs, msg, r.err),
+				Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, r.err),
 			}
 		}
 		return r.tr

@@ -33,13 +33,6 @@ func TestAgent_Setters(t *testing.T) {
 	if maxTurns != 5 || maxTokens != 1000 || maxHistTurns != 20 {
 		t.Errorf("SetLimits failed: tokens=%d, toolTurns=%d, histTurns=%d", maxTokens, maxTurns, maxHistTurns)
 	}
-
-	a.SetConcurrency(10, 60)
-
-	a.SetLogFile("test.log")
-	if a.config.LogFile != "test.log" {
-		t.Error("SetLogFile failed")
-	}
 }
 
 func TestAgent_EstimateTokens(t *testing.T) {
@@ -102,52 +95,6 @@ func TestAgent_Chat_AuthRefresh(t *testing.T) {
 
 	if authCalls != 1 {
 		t.Errorf("Expected 1 auth refresh call, got %d", authCalls)
-	}
-}
-
-func TestAgent_Chat_ToolTimeout(t *testing.T) {
-	tmpDir := t.TempDir()
-	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	reg := registry.New()
-	sm := &MockSecurityManager{AllowAll: true}
-
-	// Tool that hangs
-	reg.Register(&tools.ToolDeclaration{
-		Name: "slow_tool",
-	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		time.Sleep(2 * time.Second)
-		return tools.ToolResult{Text: "Too late"}, nil
-	})
-
-	callCount := 0
-	mockClient := &MockLLMClient{
-		StreamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-			callCount++
-			if callCount == 1 {
-				callback(&llm.Content{Role: "model", Parts: []*llm.Part{
-					{FunctionCall: &llm.FunctionCall{Name: "slow_tool"}},
-				}})
-			} else {
-				callback(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Done"}}})
-			}
-			return &llm.Metrics{}, nil
-		},
-	}
-
-	a := New(mockClient, hManager, reg, sm, false)
-	a.SetConcurrency(5, 1) // 1 second timeout
-
-	sess := NewSession(hManager)
-	_ = a.Chat(context.Background(), sess, "Run slow tool")
-
-	contents := hManager.GetContents()
-	if len(contents) >= 3 {
-		resp := contents[2].Parts[0].FunctionResponse.Response["result"].(string)
-		if !strings.Contains(resp, "timed out") {
-			t.Errorf("Expected timeout error message, got: %s", resp)
-		}
-	} else {
-		t.Errorf("Expected at least 3 history entries, got %d", len(contents))
 	}
 }
 
@@ -364,93 +311,16 @@ func TestAgent_Chat_ContextCancellation(t *testing.T) {
 	})
 }
 
-func TestAgent_RefreshLimits(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.json")
-
-	sm := &MockSecurityManager{AllowAll: true}
-	reg := registry.New()
-	a := New(nil, nil, reg, sm, false)
-	a.SetLimits(10, 1000, 20)
-
-	// Set the config path
-	a.SetPersistentConfigPath(configPath)
-
-	// Create config file with string values
-	configContent := `{"MAX_HISTORY_TOKENS": "5000", "MAX_TOOL_TURNS": "15"}`
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	a.applyConfig()
-
-	maxTokens, maxTurns, _ := a.strategy.GetLimits()
-	if maxTokens != 5000 {
-		t.Errorf("expected maxHistoryTokens 5000, got %d", maxTokens)
-	}
-	if maxTurns != 15 {
-		t.Errorf("expected maxToolTurns 15, got %d", maxTurns)
-	}
-}
-
-func TestAgent_RefreshLimits_YAML(t *testing.T) {
-	tmpDir := t.TempDir()
-	yamlPath := filepath.Join(tmpDir, "config.yaml")
-
-	sm := &MockSecurityManager{AllowAll: true}
-	reg := registry.New()
-	a := New(nil, nil, reg, sm, false)
-	a.SetLimits(10, 1000, 20)
-
-	// Set the main config path
-	a.SetMainConfigPath(yamlPath)
-
-	// Create YAML config file
-	yamlContent := "MAX_HISTORY_TOKENS: 200000\nMAX_TURNS: 25\nMAX_HISTORY_TURNS: 30"
-	if err := os.WriteFile(yamlPath, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("failed to write yaml config file: %v", err)
-	}
-
-	a.applyConfig()
-
-	maxTokens, maxTurns, maxHistTurns := a.strategy.GetLimits()
-	if maxTokens != 200000 {
-		t.Errorf("expected maxHistoryTokens 200000, got %d", maxTokens)
-	}
-	if maxTurns != 25 {
-		t.Errorf("expected maxToolTurns 25, got %d", maxTurns)
-	}
-	if maxHistTurns != 30 {
-		t.Errorf("expected maxHistoryTurns 30, got %d", maxHistTurns)
-	}
-}
-
 func TestAgent_FunctionalOptions(t *testing.T) {
 	sm := &MockSecurityManager{AllowAll: true}
 	reg := registry.New()
 
 	a := New(nil, nil, reg, sm, false,
 		WithLimits(5, 1000, 15),
-		WithConcurrency(10, 60),
-		WithLogFile("agent.log"),
-		WithPersistentConfigPath("session.json"),
-		WithMainConfigPath("config.yaml"),
 	)
 
 	if a.config.Limits.MaxToolTurns != 5 || a.config.Limits.MaxHistoryTokens != 1000 || a.config.Limits.MaxHistoryTurns != 15 {
 		t.Errorf("WithLimits failed: %+v", a.config.Limits)
-	}
-	if a.config.Execution.MaxConcurrent != 10 || a.config.Execution.Timeout != 60*time.Second {
-		t.Errorf("WithConcurrency failed: %+v", a.config.Execution)
-	}
-	if a.config.LogFile != "agent.log" {
-		t.Errorf("WithLogFile failed: %s", a.config.LogFile)
-	}
-	if a.config.PersistentConfigPath != "session.json" {
-		t.Errorf("WithPersistentConfigPath failed: %s", a.config.PersistentConfigPath)
-	}
-	if a.config.MainConfigPath != "config.yaml" {
-		t.Errorf("WithMainConfigPath failed: %s", a.config.MainConfigPath)
 	}
 }
 
@@ -790,20 +660,6 @@ func TestAgent_CoverageEnhancement(t *testing.T) {
 
 		if a.strategy.prunedTurns != 7 {
 			t.Errorf("expected prunedTurns 7, got %d", a.strategy.prunedTurns)
-		}
-	})
-
-	t.Run("LegacyConfigPaths", func(t *testing.T) {
-		a := New(mockClient, nil, reg, sm, false,
-			WithMainConfigPath("/tmp/main.yaml"),
-			WithPersistentConfigPath("/tmp/pers.json"),
-		)
-
-		if a.config.MainConfigPath != "/tmp/main.yaml" {
-			t.Errorf("expected /tmp/main.yaml, got %s", a.config.MainConfigPath)
-		}
-		if a.config.PersistentConfigPath != "/tmp/pers.json" {
-			t.Errorf("expected /tmp/pers.json, got %s", a.config.PersistentConfigPath)
 		}
 	})
 }

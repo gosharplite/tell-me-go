@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
@@ -25,14 +24,10 @@ import (
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
 	Chat(ctx context.Context, s *Session, prompt string) error
-	SetLogFile(path string)
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetHardBudgetLimit(limit float64)
 	SetTieredThreshold(threshold int)
 	SetPrunedTurns(n int)
-	SetConcurrency(maxConcurrent int, timeoutSeconds int)
-	SetPersistentConfigPath(path string)
-	SetMainConfigPath(path string)
 	SetSystemInstructions(instr string)
 	Subscribe(sub func(events.Event))
 	GetCostTracker() domain_pricing.ICostTracker
@@ -40,16 +35,12 @@ type Chatter interface {
 
 // RuntimeConfig consolidates all agent configuration parameters.
 type RuntimeConfig struct {
-	Limits               events.Limits
-	Execution            events.ExecutionConfig
-	LogFile              string
-	PersistentConfigPath string
-	MainConfigPath       string
-	Model                string
-	Mode                 string
-	PricingOverrides     map[string]pricing.ModelPricing
-	HardBudgetLimit      float64
-	SystemInstructions   string
+	Limits             events.Limits
+	Model              string
+	Mode               string
+	PricingOverrides   map[string]pricing.ModelPricing
+	HardBudgetLimit    float64
+	SystemInstructions string
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -95,37 +86,6 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 	}
 }
 
-// WithConcurrency sets the parallel execution limits for the agent.
-func WithConcurrency(maxConcurrent int, timeoutSeconds int) AgentOption {
-	return func(a *Agent) {
-		a.config.Execution = events.ExecutionConfig{
-			MaxConcurrent: maxConcurrent,
-			Timeout:       time.Duration(timeoutSeconds) * time.Second,
-		}
-	}
-}
-
-// WithLogFile sets the path for usage logging.
-func WithLogFile(path string) AgentOption {
-	return func(a *Agent) {
-		a.config.LogFile = path
-	}
-}
-
-// WithPersistentConfigPath sets the path to the persistent session configuration.
-func WithPersistentConfigPath(path string) AgentOption {
-	return func(a *Agent) {
-		a.config.PersistentConfigPath = path
-	}
-}
-
-// WithMainConfigPath sets the path to the main YAML configuration file.
-func WithMainConfigPath(path string) AgentOption {
-	return func(a *Agent) {
-		a.config.MainConfigPath = path
-	}
-}
-
 // New creates a new Agent using functional options.
 func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
@@ -147,10 +107,6 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
 				MaxToolTurns:     config.DefaultMaxToolTurns,
 				MaxHistoryTurns:  config.DefaultMaxHistoryTurns,
-			},
-			Execution: events.ExecutionConfig{
-				MaxConcurrent: config.DefaultMaxConcurrentTools,
-				Timeout:       time.Duration(config.DefaultToolTimeoutSeconds) * time.Second,
 			},
 		},
 	}
@@ -178,7 +134,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 
 	// Initialize engine
 	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus,
-		WithConfig(sm, a.config.LogFile, a.config.Model, a.config.PricingOverrides),
+		WithConfig(a.sm, a.config.Model, a.config.PricingOverrides),
 		WithCostTracker(a.tracker),
 	)
 
@@ -189,7 +145,6 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 
 func (a *Agent) applyConfig() {
 	a.mu.Lock()
-	a.configWatcher.SetPaths(a.config.MainConfigPath, a.config.PersistentConfigPath)
 	a.configWatcher.Refresh(a.config.Model)
 
 	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
@@ -208,22 +163,19 @@ func (a *Agent) applyConfig() {
 	}
 
 	// Capture values for engine reconfiguration outside of lock
-	logFile := a.config.LogFile
 	model := a.config.Model
 	overrides := a.config.PricingOverrides
 	budget := a.config.HardBudgetLimit
 
 	a.events.Publish(events.ConfigUpdated{
-		Limits:    a.config.Limits,
-		LogFile:   a.config.LogFile,
-		Execution: a.config.Execution,
+		Limits: a.config.Limits,
 	})
 	a.mu.Unlock()
 
 	// Sync engine configuration
 	if a.engine != nil {
 		a.engine.Reconfigure(
-			WithConfig(a.sm, logFile, model, overrides),
+			WithConfig(a.sm, model, overrides),
 			WithHardBudget(budget),
 			WithCostTracker(a.tracker),
 		)
@@ -298,42 +250,9 @@ func (a *Agent) SetTieredThreshold(threshold int) {
 	a.applyConfig()
 }
 
-// SetConcurrency sets the parallel execution limits for the agent.
-func (a *Agent) SetConcurrency(maxConcurrent int, timeoutSeconds int) {
-	a.mu.Lock()
-	a.config.Execution.MaxConcurrent = maxConcurrent
-	a.config.Execution.Timeout = time.Duration(timeoutSeconds) * time.Second
-	a.mu.Unlock()
-	a.applyConfig()
-}
-
-// SetLogFile sets the path for usage logging.
-func (a *Agent) SetLogFile(path string) {
-	a.mu.Lock()
-	a.config.LogFile = path
-	a.mu.Unlock()
-	a.applyConfig()
-}
-
 // SetPrunedTurns (Legacy support - usually in Session)
 func (a *Agent) SetPrunedTurns(n int) {
 	a.strategy.SetPrunedTurns(n)
-}
-
-// SetPersistentConfigPath sets the path to the persistent session configuration.
-func (a *Agent) SetPersistentConfigPath(path string) {
-	a.mu.Lock()
-	a.config.PersistentConfigPath = path
-	a.mu.Unlock()
-	a.applyConfig()
-}
-
-// SetMainConfigPath sets the path to the main YAML configuration file.
-func (a *Agent) SetMainConfigPath(path string) {
-	a.mu.Lock()
-	a.config.MainConfigPath = path
-	a.mu.Unlock()
-	a.applyConfig()
 }
 
 // Chat runs the multi-turn orchestration loop.

@@ -17,17 +17,9 @@ type Limits struct {
 	TieredThreshold  int
 }
 
-// ExecutionConfig defines the parallel execution and timeout settings.
-type ExecutionConfig struct {
-	MaxConcurrent int
-	Timeout       time.Duration
-}
-
 // ConfigUpdated signals that the agent's configuration has changed.
 type ConfigUpdated struct {
-	Limits    Limits
-	LogFile   string
-	Execution ExecutionConfig
+	Limits Limits
 }
 
 // TurnStatus contains the data needed for rendering turn status.
