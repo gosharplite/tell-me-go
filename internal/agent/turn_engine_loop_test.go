@@ -38,17 +38,17 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
 	// Sequence of responses: A -> B -> A
-	// Turn 0: returns "A"
+	// turn 0: returns "A"
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 	close(ch0)
 
-	// Turn 1: returns "B"
+	// turn 1: returns "B"
 	ch1 := make(chan *llm.Content, 1)
 	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response B"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 	close(ch1)
 
-	// Turn 2: returns "A" again
+	// turn 2: returns "A" again
 	ch2 := make(chan *llm.Content, 1)
 	ch2 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response A"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}}
 	close(ch2)
@@ -95,17 +95,17 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
 
 	// Sequence of tool-only responses: Tool A -> Tool B -> Tool A
-	// Turn 0: returns Tool A
+	// turn 0: returns Tool A
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
 	close(ch0)
 
-	// Turn 1: returns Tool B
+	// turn 1: returns Tool B
 	ch1 := make(chan *llm.Content, 1)
 	ch1 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_b"}}}}
 	close(ch1)
 
-	// Turn 2: returns Tool A again
+	// turn 2: returns Tool A again
 	ch2 := make(chan *llm.Content, 1)
 	ch2 <- &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "tool_a"}}}}
 	close(ch2)

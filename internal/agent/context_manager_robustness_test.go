@@ -30,28 +30,28 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	reg := &mockToolRegistry{}
 	bus := &events.SimpleEventBus{}
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
-	strategy.SetLimits(1000, 5, 20) // Turn 3/5 (remaining 2) -> Triggers warning
+	strategy.SetLimits(1000, 5, 20) // turn 3/5 (remaining 2) -> Triggers warning
 
 	cm := NewContextManager(strategy, hManager, bus, nil)
 
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
-		&HistoryPruner{
+		&historyPruner{
 			Policy: &SlidingWindowPolicy{MaxTurns: 20},
 		},
-		&TokenGatekeeper{
+		&tokenGatekeeper{
 			MaxTokens:  1000,
 			Estimator:  strategy,
 			Summarizer: cm.Summarizer,
 			Events:     cm.Events,
 		},
-		&ToolDeclarationGenerator{
+		&toolDeclarationGenerator{
 			Registry: reg,
 		},
-		&WarningInjector{
+		&warningInjector{
 			Strategy: strategy,
 		},
-		&TransientMerger{},
+		&transientMerger{},
 	)
 
 	// Prepare at turn 3 (approaching limit)
@@ -63,7 +63,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	// Verify the injected sequence:
 	// 0: User "call tool"
 	// 1: Model Call
-	// 2: User Response + Warning (Appended to TransientParts, merged by TransientMerger)
+	// 2: User Response + Warning (Appended to TransientParts, merged by transientMerger)
 
 	if len(apiContents) != 3 {
 		t.Fatalf("Expected 3 contents after injection, got %d", len(apiContents))
@@ -137,7 +137,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 	// Configure pipeline with a pruner that will prune history
 	cm.Pipeline = NewContextPipeline(
-		&HistoryPruner{
+		&historyPruner{
 			Policy: &SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
 			Events: bus,
 		},
@@ -245,10 +245,10 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 
 	cm := NewContextManager(strategy, hManager, nil, nil)
 
-	// Pipeline with WarningInjector (Transient)
+	// Pipeline with warningInjector (Transient)
 	cm.Pipeline = NewContextPipeline(
-		&WarningInjector{Strategy: strategy},
-		&TransientMerger{},
+		&warningInjector{Strategy: strategy},
+		&transientMerger{},
 	)
 
 	// Prepare at turn 8 (2 remaining -> triggers warning "Only 2 turns remain")
@@ -320,7 +320,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	<-summarizeStarted
 	// Concurrent append
-	_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
+	_ = cm.addContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
 	close(summarizeProceed)
 	wg.Wait()
 

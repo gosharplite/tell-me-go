@@ -203,7 +203,7 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	cs := setupWarningTest()
 
-	t.Run("History Turn Warnings", func(t *testing.T) {
+	t.Run("History turn Warnings", func(t *testing.T) {
 		tests := []struct {
 			turns    int
 			expected string

@@ -19,7 +19,7 @@ type blockingTransformer struct {
 	block    chan struct{}
 }
 
-func (t *blockingTransformer) Transform(ctx context.Context, req *ContextRequest) error {
+func (t *blockingTransformer) Transform(ctx context.Context, req *contextRequest) error {
 	// Signal we want history persisted so ExecuteWithPersistence calls persistFn
 	req.PersistHistory = true
 	if t.block != nil {
@@ -36,7 +36,7 @@ type noopTransformer struct {
 	priority int
 }
 
-func (t *noopTransformer) Transform(ctx context.Context, req *ContextRequest) error {
+func (t *noopTransformer) Transform(ctx context.Context, req *contextRequest) error {
 	return nil
 }
 
@@ -75,9 +75,9 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	// We want to ensure it's inside ExecuteWithPersistence, specifically blocked in bt.Transform
 	time.Sleep(100 * time.Millisecond)
 
-	// 3. Call cm.AddContent(...) to bump version
+	// 3. Call cm.addContent(...) to bump version
 	// This will increment cm.version
-	err := cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "concurrent update"}}})
+	err := cm.addContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "concurrent update"}}})
 	require.NoError(t, err)
 
 	// 4. Release blocking transformer

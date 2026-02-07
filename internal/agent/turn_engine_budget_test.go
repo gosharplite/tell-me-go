@@ -53,7 +53,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	ctx := context.Background()
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-	// Turn 0: Model returns a response with high metrics
+	// turn 0: Model returns a response with high metrics
 	ch0 := make(chan *llm.Content, 1)
 	ch0 <- &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hello"}}}
 	close(ch0)

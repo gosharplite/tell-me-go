@@ -400,9 +400,9 @@ func TestAgent_PinningIntegration(t *testing.T) {
 		})
 	}
 
-	// 2. Pin Turn 1 (messages 0 and 1)
+	// 2. Pin turn 1 (messages 0 and 1)
 	contents := hManager.GetContents()
-	contents[0].Pinned = true // Pinning User message of Turn 1
+	contents[0].Pinned = true // Pinning User message of turn 1
 	// contents[1] (Model) doesn't strictly need to be pinned as the turn-based policy handles pairs
 
 	// 3. Trigger context preparation
@@ -413,18 +413,18 @@ func TestAgent_PinningIntegration(t *testing.T) {
 
 	// 4. Verify results
 	// Expected turns:
-	// Turn 1 (Pinned)
-	// Turn 4 (Window)
-	// Turn 5 (Window)
+	// turn 1 (Pinned)
+	// turn 4 (Window)
+	// turn 5 (Window)
 
-	// Turn 2 and 3 should be pruned.
+	// turn 2 and 3 should be pruned.
 
-	// meta.PrunedTurns should be 2 (Turn 2 and Turn 3)
+	// meta.PrunedTurns should be 2 (Turn 2 and turn 3)
 	if meta.PrunedTurns != 2 {
 		t.Errorf("expected 2 pruned turns, got %d", meta.PrunedTurns)
 	}
 
-	// Check if Turn 1 is present
+	// Check if turn 1 is present
 	foundT1 := false
 	for _, c := range prepared {
 		if strings.Contains(c.Parts[0].Text, "Turn 1 User") {
@@ -436,14 +436,14 @@ func TestAgent_PinningIntegration(t *testing.T) {
 		t.Error("Turn 1 (Pinned) not found in prepared history")
 	}
 
-	// Check if Turn 2 is NOT present
+	// Check if turn 2 is NOT present
 	for _, c := range prepared {
 		if strings.Contains(c.Parts[0].Text, "Turn 2 User") {
 			t.Error("Turn 2 (Unpinned) found in prepared history, should have been pruned")
 		}
 	}
 
-	// Check if Turn 5 is present (Last turn)
+	// Check if turn 5 is present (Last turn)
 	foundT5 := false
 	for _, c := range prepared {
 		if strings.Contains(c.Parts[0].Text, "Turn 5 User") {
@@ -522,7 +522,7 @@ func TestOptimizationProfile_Precise(t *testing.T) {
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}})
 	}
 
-	req := &ContextRequest{
+	req := &contextRequest{
 		History: h.GetContents(),
 	}
 

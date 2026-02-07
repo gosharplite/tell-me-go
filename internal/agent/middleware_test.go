@@ -23,10 +23,10 @@ func (m *mockEventBus) Publish(e events.Event) {
 func (m *mockEventBus) Subscribe(f func(events.Event)) {}
 
 type mockProcessor struct {
-	res ProcessResult
+	res processResult
 }
 
-func (m *mockProcessor) Process(ctx context.Context, turn *Turn) ProcessResult {
+func (m *mockProcessor) Process(ctx context.Context, turn *turn) processResult {
 	return m.res
 }
 
@@ -34,11 +34,11 @@ func TestWithStreaming(t *testing.T) {
 	bus := &mockEventBus{}
 	e := &TurnEngine{events: bus}
 	mw := e.WithStreaming()
-	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
+	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	ctx := context.Background()
-	turn := &Turn{
-		State: &TurnState{Phase: PhaseInference},
+	turn := &turn{
+		State: &turnState{Phase: phaseInference},
 	}
 
 	mw(next).Process(ctx, turn)
@@ -62,7 +62,7 @@ func TestWithStatusReporter(t *testing.T) {
 	bus := &mockEventBus{}
 	e := &TurnEngine{events: bus}
 	mw := e.WithStatusReporter()
-	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
+	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	cs := NewContextStrategy(nil, nil)
 	h := history.NewManager("")
@@ -70,19 +70,19 @@ func TestWithStatusReporter(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		phase      TurnPhase
+		phase      turnPhase
 		wantEvents int
 	}{
-		{"Refining phase", PhaseRefining, 1},
-		{"Persisting phase", PhasePersisting, 1},
-		{"Other phase", PhaseExecuting, 0},
+		{"Refining phase", phaseRefining, 1},
+		{"Persisting phase", phasePersisting, 1},
+		{"Other phase", phaseExecuting, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bus.events = nil
-			turn := &Turn{
-				State:      &TurnState{Phase: tt.phase},
+			turn := &turn{
+				State:      &turnState{Phase: tt.phase},
 				CtxManager: cm,
 				Clock:      realClock{},
 			}
@@ -98,27 +98,27 @@ func TestWithMetrics(t *testing.T) {
 	bus := &mockEventBus{}
 	e := &TurnEngine{events: bus}
 	mw := e.WithMetrics()
-	next := &mockProcessor{res: ProcessResult{NextPhase: PhaseComplete}}
+	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	tests := []struct {
 		name       string
-		phase      TurnPhase
+		phase      turnPhase
 		hasMetrics bool
 		wantEvents int
 	}{
-		{"Persisting with metrics", PhasePersisting, true, 1},
-		{"Persisting without metrics", PhasePersisting, false, 0},
-		{"Other phase with metrics", PhaseExecuting, true, 0},
+		{"Persisting with metrics", phasePersisting, true, 1},
+		{"Persisting without metrics", phasePersisting, false, 0},
+		{"Other phase with metrics", phaseExecuting, true, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bus.events = nil
-			state := &TurnState{Phase: tt.phase}
+			state := &turnState{Phase: tt.phase}
 			if tt.hasMetrics {
 				state.Metrics = &llm.Metrics{}
 			}
-			turn := &Turn{
+			turn := &turn{
 				State: state,
 			}
 			mw(next).Process(context.Background(), turn)

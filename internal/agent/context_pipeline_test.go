@@ -14,7 +14,7 @@ type mockPriorityTransformer struct {
 	name     string
 }
 
-func (m *mockPriorityTransformer) Transform(ctx context.Context, req *ContextRequest) error {
+func (m *mockPriorityTransformer) Transform(ctx context.Context, req *contextRequest) error {
 	return nil
 }
 
