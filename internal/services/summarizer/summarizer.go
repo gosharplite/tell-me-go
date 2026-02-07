@@ -28,47 +28,14 @@ func NewSummarizer(g llm.LLMGateway, bus events.EventBus) services.Summarizer {
 func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	startTime := time.Now()
 
-	// Transform history to text-only to avoid INVALID_ARGUMENT
-	summarizerInput := make([]*llm.Content, len(subset))
-	for i, c := range subset {
-		summarizerInput[i] = &llm.Content{Role: c.Role}
-		for _, p := range c.Parts {
-			if p.Text != "" {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{Text: p.Text})
-			}
-			if p.FunctionCall != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
-					Text: fmt.Sprintf("[Model called tool: %s with args: %v]", p.FunctionCall.Name, p.FunctionCall.Args),
-				})
-			}
-			if p.FunctionResponse != nil {
-				res := p.FunctionResponse.Response["result"]
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
-					Text: fmt.Sprintf("[Tool %s returned: %v]", p.FunctionResponse.Name, res),
-				})
-			}
-			if p.InlineData != nil {
-				summarizerInput[i].Parts = append(summarizerInput[i].Parts, &llm.Part{
-					Text: fmt.Sprintf("[Binary Data: %s]", p.InlineData.MIMEType),
-				})
-			}
-		}
-	}
-
-	prompt := SummarizationPrompt
-	if focus != "" {
-		prompt += fmt.Sprintf("\nFocus: %s", focus)
-	}
-	summarizerInput = append(summarizerInput, &llm.Content{
-		Role:  "user",
-		Parts: []*llm.Part{{Text: prompt}},
-	})
+	summarizerInput := s.prepareSummarizerInput(subset, focus)
 
 	// We need a resolver for the gateway call, but since we've stripped binary data, it's mostly for satisfying the interface.
 	respCh, finalize := s.gateway.Generate(ctx, summarizerInput, nil, nil)
 	// Drain the channel; we don't stream summarization to the UI.
 	for range respCh {
 	}
+
 	respContent, metrics, err := finalize()
 	if err != nil {
 		if llm.IsTransient(err) {
@@ -77,21 +44,79 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 		return "", nil, fmt.Errorf("%w: summarization failed permanently", err)
 	}
 
-	// Emit metrics to the event bus
+	s.emitSummarizationMetrics(ctx, metrics, startTime)
+
+	text, err := s.validateSummarizationResponse(respContent)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return text, metrics, nil
+}
+
+// prepareSummarizerInput transforms history to text-only to avoid INVALID_ARGUMENT and appends the summarization prompt.
+func (s *Summarizer) prepareSummarizerInput(subset []*llm.Content, focus string) []*llm.Content {
+	input := make([]*llm.Content, len(subset))
+	for i, c := range subset {
+		input[i] = &llm.Content{Role: c.Role}
+		for _, p := range c.Parts {
+			s.transformPartToText(input[i], p)
+		}
+	}
+
+	prompt := SummarizationPrompt
+	if focus != "" {
+		prompt += fmt.Sprintf("\nFocus: %s", focus)
+	}
+	input = append(input, &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: prompt}},
+	})
+
+	return input
+}
+
+// transformPartToText converts a single part into its text representation within a content object.
+func (s *Summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
+	if p.Text != "" {
+		content.Parts = append(content.Parts, &llm.Part{Text: p.Text})
+	}
+	if p.FunctionCall != nil {
+		content.Parts = append(content.Parts, &llm.Part{
+			Text: fmt.Sprintf("[Model called tool: %s with args: %v]", p.FunctionCall.Name, p.FunctionCall.Args),
+		})
+	}
+	if p.FunctionResponse != nil {
+		res := p.FunctionResponse.Response["result"]
+		content.Parts = append(content.Parts, &llm.Part{
+			Text: fmt.Sprintf("[Tool %s returned: %v]", p.FunctionResponse.Name, res),
+		})
+	}
+	if p.InlineData != nil {
+		content.Parts = append(content.Parts, &llm.Part{
+			Text: fmt.Sprintf("[Binary Data: %s]", p.InlineData.MIMEType),
+		})
+	}
+}
+
+// emitSummarizationMetrics publishes usage metrics to the event bus.
+func (s *Summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
 	if s.events != nil && metrics != nil {
 		metrics.IsSummary = true
 		s.events.Publish(events.UsageMetricsEvent{
 			Context:   ctx,
 			Metrics:   metrics,
-			StartTime: startTime,
+			StartTime: start,
 		})
 	}
+}
 
-	if len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {
-		return "", nil, fmt.Errorf("summarization returned empty content")
+// validateSummarizationResponse ensures the LLM returned valid, non-empty content.
+func (s *Summarizer) validateSummarizationResponse(respContent *llm.Content) (string, error) {
+	if respContent == nil || len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {
+		return "", fmt.Errorf("summarization returned empty content")
 	}
-
-	return respContent.Parts[0].Text, metrics, nil
+	return respContent.Parts[0].Text, nil
 }
 
 // SummarizationPrompt is the system instruction for history compression.
