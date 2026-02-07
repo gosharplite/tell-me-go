@@ -182,3 +182,96 @@ func TestWriteFile_Failures(t *testing.T) {
 		}
 	})
 }
+
+func TestUndoFileChange(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "undo.txt")
+	content1 := "initial"
+	content2 := "modified"
+	os.WriteFile(path, []byte(content1), 0644)
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	bm := NewBackupManager(sm, 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	// Perform a write
+	_, err := w.writeFile(ctx, map[string]interface{}{
+		"filepath": path,
+		"content":  content2,
+		"reason":   "testing undo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify change
+	got, _ := os.ReadFile(path)
+	if string(got) != content2 {
+		t.Fatalf("expected %s, got %s", content2, string(got))
+	}
+
+	// Undo change
+	res, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "Undo successful") {
+		t.Errorf("unexpected undo result: %s", res.Text)
+	}
+
+	// Verify revert
+	got, _ = os.ReadFile(path)
+	if string(got) != content1 {
+		t.Errorf("after undo, expected %s, got %s", content1, string(got))
+	}
+}
+
+func TestReplaceText_NotFound(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "test.txt")
+	os.WriteFile(path, []byte("content"), 0644)
+
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: fsutil.DefaultFileSystem}
+	ctx := context.Background()
+
+	_, err := w.replaceText(ctx, map[string]interface{}{
+		"filepath": path,
+		"old_text": "missing",
+		"new_text": "new",
+		"reason":   "testing",
+	})
+	if err == nil || !strings.Contains(err.Error(), "old_text not found") {
+		t.Errorf("expected 'old_text not found' error, got %v", err)
+	}
+}
+
+func TestAppendText_Failures(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+
+	t.Run("open failure", func(t *testing.T) {
+		mfs := &mockFS_Append{FileSystem: fsutil.DefaultFileSystem, openErr: fmt.Errorf("open error")}
+		w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: mfs}
+		_, err := w.appendText(context.Background(), map[string]interface{}{
+			"filepath": "/tmp/any.txt",
+			"content":  "test",
+			"reason":   "testing",
+		})
+		if err == nil || !strings.Contains(err.Error(), "open error") {
+			t.Errorf("expected open error, got %v", err)
+		}
+	})
+}
+
+type mockFS_Append struct {
+	fsutil.FileSystem
+	openErr error
+}
+
+func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (fsutil.File, error) {
+	return nil, m.openErr
+}

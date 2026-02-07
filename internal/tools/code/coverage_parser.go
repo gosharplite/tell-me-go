@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -25,56 +26,77 @@ type UncoveredBlock struct {
 	Priority string `json:"priority"`
 }
 
+// classificationRule defines a rule for categorizing uncovered code blocks.
+type classificationRule struct {
+	category string
+	match    func(b *UncoveredBlock) bool
+}
+
+var (
+	businessLogicPaths = []string{"internal/service", "internal/services", "internal/domain", "internal/usecase", "internal/agent"}
+	adapterPaths       = []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth"}
+
+	classificationRules = []classificationRule{
+		{
+			category: "ERROR_HANDLING",
+			match:    func(b *UncoveredBlock) bool { return b.isErrorHandling() },
+		},
+		{
+			category: "BUSINESS_LOGIC",
+			match:    func(b *UncoveredBlock) bool { return b.isBusinessLogic() },
+		},
+		{
+			category: "ADAPTER",
+			match:    func(b *UncoveredBlock) bool { return b.isAdapter() },
+		},
+	}
+)
+
+func (b *UncoveredBlock) isErrorHandling() bool {
+	lowerCode := strings.ToLower(b.Code)
+	return strings.Contains(lowerCode, "if err != nil") ||
+		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
+		strings.Contains(lowerCode, "fmt.errorf") ||
+		strings.Contains(lowerCode, "errors.new")
+}
+
+func (b *UncoveredBlock) isBusinessLogic() bool {
+	for _, p := range businessLogicPaths {
+		if strings.HasPrefix(b.File, p+"/") || b.File == p {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *UncoveredBlock) isAdapter() bool {
+	for _, p := range adapterPaths {
+		if strings.HasPrefix(b.File, p+"/") || b.File == p {
+			return true
+		}
+	}
+	return false
+}
+
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *UncoveredBlock) Classify() {
-	// Categorize by content
-	isErrorHandling := false
-	lowerCode := strings.ToLower(b.Code)
-	if strings.Contains(lowerCode, "if err != nil") ||
-		strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err") ||
-		strings.Contains(lowerCode, "fmt.errorf") ||
-		strings.Contains(lowerCode, "errors.new") {
-		isErrorHandling = true
-	}
-
-	// Categorize by path
-	isBusinessLogic := false
-	isAdapter := false
-
-	pathParts := []string{"internal/service", "internal/services", "internal/domain", "internal/usecase", "internal/agent"}
-	for _, p := range pathParts {
-		if strings.Contains(b.File, p) {
-			isBusinessLogic = true
+	// Categorize by content and path using rule registry
+	b.Category = "OTHER"
+	for _, rule := range classificationRules {
+		if rule.match(b) {
+			b.Category = rule.category
 			break
 		}
-	}
-
-	adapterParts := []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth"}
-	for _, p := range adapterParts {
-		if strings.Contains(b.File, p) {
-			isAdapter = true
-			break
-		}
-	}
-
-	if isErrorHandling {
-		b.Category = "ERROR_HANDLING"
-	} else if isBusinessLogic {
-		b.Category = "BUSINESS_LOGIC"
-	} else if isAdapter {
-		b.Category = "ADAPTER"
-	} else {
-		b.Category = "OTHER"
 	}
 
 	// Assign Priority
-	if isErrorHandling && isBusinessLogic {
+	isErr := b.isErrorHandling()
+	isBiz := b.isBusinessLogic()
+	isAdap := b.isAdapter()
+
+	if isErr && isBiz {
 		b.Priority = "High"
-	} else if isErrorHandling && isAdapter {
-		b.Priority = "Medium"
-	} else if isErrorHandling {
-		b.Priority = "Medium" // Error handling elsewhere is still medium
-	} else if isBusinessLogic {
+	} else if isErr || isBiz || isAdap {
 		b.Priority = "Medium"
 	} else {
 		b.Priority = "Low"
@@ -129,6 +151,74 @@ func getModuleName(run commandRunner) string {
 	return mod
 }
 
+func parseLineNum(part string) (int, bool) {
+	subParts := strings.Split(part, ".")
+	if len(subParts) < 1 {
+		return 0, false
+	}
+	val, err := strconv.Atoi(subParts[0])
+	return val, err == nil
+}
+
+func parsePathAndRange(pathAndRange string, modulePrefix string) (*UncoveredBlock, bool) {
+	colonIdx := strings.LastIndex(pathAndRange, ":")
+	if colonIdx == -1 {
+		return nil, false
+	}
+
+	file := pathAndRange[:colonIdx]
+	if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
+		file = file[len(modulePrefix):]
+	}
+
+	rangePart := pathAndRange[colonIdx+1:]
+	rangeParts := strings.Split(rangePart, ",")
+	if len(rangeParts) != 2 {
+		return nil, false
+	}
+
+	startLine, ok1 := parseLineNum(rangeParts[0])
+	endLine, ok2 := parseLineNum(rangeParts[1])
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+
+	return &UncoveredBlock{
+		File:  file,
+		Start: startLine,
+		End:   endLine,
+	}, true
+}
+
+func parseCoverageLine(line string, modulePrefix string) (*UncoveredBlock, bool) {
+	if line == "" {
+		return nil, false
+	}
+
+	// Format: file.go:startline.startcol,endline.endcol numstmt count
+	parts := strings.Fields(line)
+	if len(parts) != 3 {
+		return nil, false
+	}
+
+	count, err := strconv.Atoi(parts[2])
+	if err != nil || count > 0 {
+		return nil, false
+	}
+
+	stmts, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, false
+	}
+
+	block, ok := parsePathAndRange(parts[0], modulePrefix)
+	if !ok {
+		return nil, false
+	}
+	block.Stmts = stmts
+	return block, true
+}
+
 // ParseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
 func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, error) {
 	var blocks []UncoveredBlock
@@ -141,68 +231,9 @@ func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, err
 	}
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
+		if block, ok := parseCoverageLine(scanner.Text(), modulePrefix); ok {
+			blocks = append(blocks, *block)
 		}
-
-		// Format: file.go:startline.startcol,endline.endcol numstmt count
-		parts := strings.Fields(line)
-		if len(parts) != 3 {
-			continue
-		}
-
-		count, err := strconv.Atoi(parts[2])
-		if err != nil {
-			continue
-		}
-
-		if count > 0 {
-			continue
-		}
-
-		stmts, err := strconv.Atoi(parts[1])
-		if err != nil {
-			continue
-		}
-
-		pathAndRange := parts[0]
-		colonIdx := strings.LastIndex(pathAndRange, ":")
-		if colonIdx == -1 {
-			continue
-		}
-
-		file := pathAndRange[:colonIdx]
-		// Strip module prefix if it exists to make path relative to project root
-		if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
-			file = file[len(modulePrefix):]
-		}
-		rangePart := pathAndRange[colonIdx+1:]
-
-		// startline.startcol,endline.endcol
-		rangeParts := strings.Split(rangePart, ",")
-		if len(rangeParts) != 2 {
-			continue
-		}
-
-		startPart := strings.Split(rangeParts[0], ".")
-		if len(startPart) < 1 {
-			continue
-		}
-		endPart := strings.Split(rangeParts[1], ".")
-		if len(endPart) < 1 {
-			continue
-		}
-
-		startLine, _ := strconv.Atoi(startPart[0])
-		endLine, _ := strconv.Atoi(endPart[0])
-
-		blocks = append(blocks, UncoveredBlock{
-			File:  file,
-			Start: startLine,
-			End:   endLine,
-			Stmts: stmts,
-		})
 	}
 
 	return blocks, scanner.Err()
@@ -269,12 +300,28 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 		return "", err
 	}
 
-	high := make([]UncoveredBlock, 0)
-	medium := make([]UncoveredBlock, 0)
-	lowCount := 0
+	high, medium, lowCount, catStats := aggregateCoverageStats(blocks)
 
-	catStats := make(map[string]int)
+	var sb strings.Builder
+	renderReportSummary(&sb, packagePath, len(blocks), high, medium, lowCount, catStats)
 
+	const maxItems = 10
+	renderBlockGaps(&sb, "HIGH PRIORITY GAPS", high, maxItems)
+
+	// Show Medium if High are few
+	if len(medium) > 0 && len(high) < 5 {
+		remainingSlots := maxItems - len(high)
+		if remainingSlots <= 0 {
+			remainingSlots = 5 // Minimum of 5 if we show them at all
+		}
+		renderBlockGaps(&sb, "MEDIUM PRIORITY GAPS", medium, remainingSlots)
+	}
+
+	return sb.String(), nil
+}
+
+func aggregateCoverageStats(blocks []UncoveredBlock) (high []UncoveredBlock, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
+	catStats = make(map[string]int)
 	for _, b := range blocks {
 		catStats[b.Category]++
 		switch b.Priority {
@@ -286,54 +333,49 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 			lowCount++
 		}
 	}
+	return
+}
 
-	var sb strings.Builder
+func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
 	sb.WriteString(fmt.Sprintf("Detailed Coverage Report for %s\n", packagePath))
 	sb.WriteString(strings.Repeat("-", len(packagePath)+29) + "\n")
 	sb.WriteString("Summary:\n")
-	sb.WriteString(fmt.Sprintf("- Total Gaps: %d\n", len(blocks)))
+	sb.WriteString(fmt.Sprintf("- Total Gaps: %d\n", total))
 	sb.WriteString(fmt.Sprintf("- High Priority (Architectural): %d\n", len(high)))
 	sb.WriteString(fmt.Sprintf("- Medium Priority (Technical Debt): %d\n", len(medium)))
 	sb.WriteString(fmt.Sprintf("- Low Priority: %d\n", lowCount))
 	sb.WriteString("\nBreakdown by Category:\n")
-	for cat, count := range catStats {
-		sb.WriteString(fmt.Sprintf("- %s: %d\n", cat, count))
+
+	// Sort categories for deterministic output
+	var cats []string
+	for c := range catStats {
+		cats = append(cats, c)
 	}
-
-	const maxItems = 10
-
-	if len(high) > 0 {
-		sb.WriteString("\n[HIGH PRIORITY GAPS]\n")
-		for i, b := range high {
-			if i >= maxItems {
-				sb.WriteString(fmt.Sprintf("... and %d more High priority gaps.\n", len(high)-maxItems))
-				break
-			}
-			sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
-			sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
-			sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
-		}
+	sort.Strings(cats)
+	for _, cat := range cats {
+		sb.WriteString(fmt.Sprintf("- %s: %d\n", cat, catStats[cat]))
 	}
+}
 
-	// Show Medium if High are few
-	if len(medium) > 0 && len(high) < 5 {
-		sb.WriteString("\n[MEDIUM PRIORITY GAPS]\n")
-		remainingSlots := maxItems - len(high)
-		if remainingSlots <= 0 {
-			remainingSlots = 5 // Minimum of 5 if we show them at all
-		}
-		for i, b := range medium {
-			if i >= remainingSlots {
-				sb.WriteString(fmt.Sprintf("... and %d more Medium priority gaps.\n", len(medium)-remainingSlots))
-				break
-			}
-			sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
-			sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
-			sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
-		}
+func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock, maxItems int) {
+	if len(blocks) == 0 {
+		return
 	}
+	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
 
-	return sb.String(), nil
+	// Prepare the label for "more" message
+	label := strings.ToLower(title)
+	label = strings.TrimSuffix(label, " gaps")
+
+	for i, b := range blocks {
+		if i >= maxItems {
+			sb.WriteString(fmt.Sprintf("... and %d more %s gaps.\n", len(blocks)-maxItems, label))
+			break
+		}
+		sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
+		sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
+		sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
+	}
 }
 
 // GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.

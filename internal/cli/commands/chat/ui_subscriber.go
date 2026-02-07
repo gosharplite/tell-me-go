@@ -8,6 +8,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // UISubscriber translates domain events into UI updates.
@@ -36,45 +37,87 @@ func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput,
 func (s *UISubscriber) HandleEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
-		s.renderer.LogTurnStatus(ev.Status)
+		s.handleTurnStatusEvent(ev)
 	case events.ResponseStreamEvent:
-		ctx := ev.Context
-		if ctx == nil {
-			s.renderer.LogSystemMessage("ResponseStreamEvent missing context", "warn")
-			ctx = context.Background()
-		}
-		uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
-	streamLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				break streamLoop
-			case c, ok := <-ev.Stream:
-				if !ok {
-					break streamLoop
-				}
-				select {
-				case uiCh <- c:
-				case <-ctx.Done():
-					break streamLoop
-				}
-			}
-		}
-		_ = uiFinalize()
+		s.handleTokenEvent(ev)
 	case events.UsageMetricsEvent:
-		ctx := ev.Context
-		if ctx == nil {
-			s.renderer.LogSystemMessage("UsageMetricsEvent missing context", "warn")
-			ctx = context.Background()
-		}
-		s.renderer.LogUsage(ctx, ev.Metrics, s.logFile, ev.StartTime)
+		s.handleFinalCostEvent(ev)
 	case events.ToolCallEvent:
-		s.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, s.showTools)
+		s.handleToolCallEvent(ev)
 	case events.ToolResultEvent:
-		s.renderer.LogToolResult(ev.Name, ev.Result, s.showTools)
+		s.handleToolResponseEvent(ev)
 	case events.SystemMessageEvent:
-		s.renderer.LogSystemMessage(ev.Message, ev.Level)
+		s.handleSystemMessageEvent(ev)
 	case events.StatusUpdate:
-		s.renderer.LogSystemMessage(ev.Message, ev.Level)
+		s.handleStatusUpdate(ev)
+	}
+}
+
+func (s *UISubscriber) handleTurnStatusEvent(ev events.TurnStatusEvent) {
+	s.renderer.LogTurnStatus(ev.Status)
+}
+
+func (s *UISubscriber) handleTokenEvent(ev events.ResponseStreamEvent) {
+	ctx := s.ensureContext(ev.Context, "ResponseStreamEvent")
+	uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
+	s.relayStream(ctx, ev.Stream, uiCh)
+	_ = uiFinalize()
+}
+
+func (s *UISubscriber) handleFinalCostEvent(ev events.UsageMetricsEvent) {
+	ctx := s.ensureContext(ev.Context, "UsageMetricsEvent")
+	s.renderer.LogUsage(ctx, ev.Metrics, s.logFile, ev.StartTime)
+}
+
+func (s *UISubscriber) handleToolCallEvent(ev events.ToolCallEvent) {
+	s.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, s.showTools)
+}
+
+func (s *UISubscriber) handleToolResponseEvent(ev events.ToolResultEvent) {
+	s.renderer.LogToolResult(ev.Name, ev.Result, s.showTools)
+}
+
+func (s *UISubscriber) handleSystemMessageEvent(ev events.SystemMessageEvent) {
+	s.renderer.LogSystemMessage(ev.Message, ev.Level)
+}
+
+func (s *UISubscriber) handleStatusUpdate(ev events.StatusUpdate) {
+	s.renderer.LogSystemMessage(ev.Message, ev.Level)
+}
+
+func (s *UISubscriber) ensureContext(ctx context.Context, name string) context.Context {
+	if ctx == nil {
+		s.renderer.LogSystemMessage(name+" missing context", "warn")
+		return context.Background()
+	}
+	return ctx
+}
+
+func (s *UISubscriber) relayStream(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) {
+	for {
+		if !s.relayNext(ctx, stream, uiCh) {
+			return
+		}
+	}
+}
+
+func (s *UISubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case c, ok := <-stream:
+		if !ok {
+			return false
+		}
+		return s.sendToUI(ctx, uiCh, c)
+	}
+}
+
+func (s *UISubscriber) sendToUI(ctx context.Context, uiCh chan<- *llm.Content, c *llm.Content) bool {
+	select {
+	case uiCh <- c:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }

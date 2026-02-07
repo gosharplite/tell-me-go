@@ -36,7 +36,7 @@ func RegisterAll(
 	framework.RegisterPolicy(r, sm)
 	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	system.Register(r, sm)
-	git.Register(r, sm)
+	git.Register(r, sm, &tools.RealExecutor{})
 	dev.Register(r, sm)
 	dev.RegisterRelease(r, sm)
 	code.Register(r, sm)

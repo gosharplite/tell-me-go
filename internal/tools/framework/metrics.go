@@ -238,28 +238,38 @@ func RecordSessionCost(ctx context.Context, sm security.ISecurityManager, tracke
 		return fmt.Errorf("failed to estimate and record session cost: %w", err)
 	}
 
-	// 2. Append legacy summary to the log file itself
-	var usage pricing.UsageStats
-	var totalCost float64
-
-	if tracker != nil {
-		usage, totalCost = tracker.GetStats(ctx)
-	} else {
-		pd := GetPricing(ctx, sm, filepath.Dir(logPath))
-		for k, v := range pricingOverrides {
-			pd.Models[k] = v
-		}
-
-		var err error
-		usage, totalCost, _, _, err = ParseUsage(logPath, pd, model)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return fmt.Errorf("failed to parse usage log for summary: %w", err)
-		}
+	// 2. Resolve usage stats
+	usage, totalCost, err := resolveUsageForSummary(ctx, sm, tracker, logPath, model, pricingOverrides)
+	if err != nil {
+		return err
 	}
 
+	// 3. Append summary to log
+	return appendSummaryToLog(logPath, usage, totalCost, model)
+}
+
+func resolveUsageForSummary(ctx context.Context, sm security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model string, overrides map[string]pricing.ModelPricing) (pricing.UsageStats, float64, error) {
+	if tracker != nil {
+		usage, totalCost := tracker.GetStats(ctx)
+		return usage, totalCost, nil
+	}
+
+	pd := GetPricing(ctx, sm, filepath.Dir(logPath))
+	for k, v := range overrides {
+		pd.Models[k] = v
+	}
+
+	usage, totalCost, _, _, err := ParseUsage(logPath, pd, model)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return pricing.UsageStats{}, 0, nil
+		}
+		return pricing.UsageStats{}, 0, fmt.Errorf("failed to parse usage log for summary: %w", err)
+	}
+	return usage, totalCost, nil
+}
+
+func appendSummaryToLog(logPath string, usage pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
 	}
@@ -280,6 +290,7 @@ func RecordSessionCost(ctx context.Context, sm security.ISecurityManager, tracke
 	if err != nil {
 		return fmt.Errorf("failed to marshal cost summary: %w", err)
 	}
+
 	fAppend, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file %q for summary append: %w", logPath, err)
@@ -306,14 +317,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock (with stale lock protection)
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			_ = os.Remove(lockPath)
-			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		}
-	}
-
+	lock, err := m.acquireLedgerLock(lockPath)
 	if err != nil {
 		return
 	}
@@ -322,9 +326,36 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		os.Remove(lockPath)
 	}()
 
+	// 2. Update history
+	m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, record)
+}
+
+func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil && os.IsExist(err) {
+		if isStale(lockPath) {
+			_ = os.Remove(lockPath)
+			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		}
+	}
+	return lock, err
+}
+
+func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath, globalDir string) {
+	if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
+		// Use a background context for recovery so it's not aborted if the request context is cancelled.
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
+		go func() {
+			defer cancel()
+			m.ledger.RecoverLedger(bgCtx, globalDir)
+		}()
+	}
+}
+
+func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record SessionCostRecord) {
 	var history []SessionCostRecord
 
-	// 2. Read existing history (or recover if missing)
+	// 1. Read existing history (or recover if missing)
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
@@ -332,17 +363,10 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) && m.ledger != nil {
-		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
-			// Use a background context for recovery so it's not aborted if the request context is cancelled.
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
-			go func() {
-				defer cancel()
-				m.ledger.RecoverLedger(bgCtx, globalDir)
-			}()
-		}
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
 	}
 
-	// 3. Update or Append (identify by session ID)
+	// 2. Update or Append (identify by session ID)
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -355,11 +379,11 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		history = append(history, record)
 	}
 
-	// 4. Apply Retention Policy
+	// 3. Apply Retention Policy
 	retentionDays := m.loadRetentionDays(outputDir)
 	history = m.applyRetentionPolicy(history, retentionDays)
 
-	// 5. Write back atomically
+	// 4. Write back atomically
 	bytes, err := json.Marshal(history)
 	if err != nil {
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
@@ -508,14 +532,7 @@ func (m *metricsManager) applyRetentionPolicy(history []SessionCostRecord, reten
 func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, globalDir string) ([]SessionCostRecord, string, error) {
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
-			// Use a background context for recovery so it's not aborted if the request context is cancelled.
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
-			go func() {
-				defer cancel()
-				m.ledger.RecoverLedger(bgCtx, globalDir)
-			}()
-		}
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
 		return nil, "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
 	}
 
@@ -536,66 +553,57 @@ func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, glo
 	return history, "", nil
 }
 
-func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
-	var startFilter, endFilter time.Time
-	// Determine the target location early
-	location := time.Local
-	billingZone := time.FixedZone("UTC-8", -8*3600)
-	if args.Billing {
-		location = billingZone
+func (m *metricsManager) getRecordTimestamp(r SessionCostRecord) time.Time {
+	ts := r.Timestamp
+	if ts.IsZero() {
+		var err error
+		ts, err = time.Parse("2006-01-02", r.Date)
+		if err != nil {
+			return time.Time{}
+		}
 	}
+	return ts
+}
 
+func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Location) (time.Time, time.Time, error) {
+	var startFilter, endFilter time.Time
 	if args.StartDate != "" {
 		var err error
-		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, location)
+		startFilter, err = time.ParseInLocation("2006-01-02", args.StartDate, loc)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid start_date format (use YYYY-MM-DD): %w", err)
 		}
 	}
 	if args.EndDate != "" {
-		end, err := time.ParseInLocation("2006-01-02", args.EndDate, location)
+		end, err := time.ParseInLocation("2006-01-02", args.EndDate, loc)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid end_date format (use YYYY-MM-DD): %w", err)
 		}
 		endFilter = end.Add(24 * time.Hour) // Make end date inclusive of the full day
 	}
+	return startFilter, endFilter, nil
+}
 
-	if args.Interval != "" && args.Interval != "day" && args.Interval != "hour" {
-		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
-	}
-
-	format := "2006-01-02"
-	if args.Interval == "hour" {
-		format = "2006-01-02 15:00"
-	}
-
-	// Aggregate by Interval
+func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
-	intervalUsage := make(map[string]pricing.UsageStats) // Track usage per interval
+	intervalUsage := make(map[string]pricing.UsageStats)
 
 	for _, r := range history {
-		ts := r.Timestamp
-		if ts.IsZero() {
-			var err error
-			ts, err = time.Parse("2006-01-02", r.Date)
-			if err != nil {
-				continue
-			}
-		}
+		ts := m.getRecordTimestamp(r)
 		if ts.IsZero() {
 			continue
 		}
 
 		// Apply range filter
-		if !startFilter.IsZero() && ts.Before(startFilter) {
+		if !start.IsZero() && ts.Before(start) {
 			continue
 		}
-		if !endFilter.IsZero() && !ts.Before(endFilter) {
+		if !end.IsZero() && !ts.Before(end) {
 			continue
 		}
 
 		// Determine the key for aggregation
-		effectiveKey := ts.In(location).Format(format)
+		effectiveKey := ts.In(loc).Format(format)
 
 		intervalTotals[effectiveKey] += r.TotalCost
 		u := intervalUsage[effectiveKey]
@@ -605,6 +613,31 @@ func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSu
 		u.ThinkingTokens += r.Usage.ThinkingTokens
 		intervalUsage[effectiveKey] = u
 	}
+	return intervalTotals, intervalUsage
+}
+
+func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
+	location := time.Local
+	if args.Billing {
+		location = time.FixedZone("UTC-8", -8*3600)
+	}
+
+	start, end, err := m.parseTimeFilters(args, location)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	format := "2006-01-02"
+	switch args.Interval {
+	case "", "day":
+		// use default
+	case "hour":
+		format = "2006-01-02 15:00"
+	default:
+		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
+	}
+
+	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format)
 
 	// Sort keys descending
 	var keys []string

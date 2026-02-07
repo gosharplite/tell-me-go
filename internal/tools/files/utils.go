@@ -23,16 +23,13 @@ type fileProcessor func(filePath string) error
 
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
 func walkAndProcess(ctx context.Context, sm *security.SecurityManager, fs fsutil.FileSystem, path string, fn fileProcessor) error {
-	// If path isn't absolute/resolved yet, check safety
-	if !filepath.IsAbs(path) {
-		if path == "" {
-			path = "."
-		}
-		var err error
-		path, err = sm.IsPathSafe(path)
-		if err != nil {
-			return err
-		}
+	if path == "" {
+		path = "."
+	}
+	var err error
+	path, err = sm.IsPathSafe(path)
+	if err != nil {
+		return err
 	}
 
 	return fs.Walk(ctx, path, func(filePath string, info os.FileInfo, err error) error {

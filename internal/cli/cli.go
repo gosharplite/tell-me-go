@@ -26,7 +26,7 @@ type App struct {
 }
 
 // New creates a new App instance with default IO and factories.
-func New(version string) *App {
+func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *App {
 	homeDir := os.Getenv("TELL_ME_HOME")
 	if homeDir == "" {
 		homeDir = os.Getenv("AIT_HOME")
@@ -35,21 +35,21 @@ func New(version string) *App {
 		homeDir = "."
 	}
 
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(stdin)
 
 	return &App{
 		Version: version,
-		Stdin:   os.Stdin,
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
+		Stdin:   stdin,
+		Stdout:  stdout,
+		Stderr:  stderr,
 		homeDir: homeDir,
 		sm:      sm,
 	}
 }
 
 // Run executes the application logic.
-func (a *App) Run(args []string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+func (a *App) Run(ctx context.Context, args []string) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
 	// Determine which command to run

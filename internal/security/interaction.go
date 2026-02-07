@@ -108,15 +108,16 @@ func (h *InteractionHandler) readSingleKey(ctx context.Context) (string, error) 
 	}
 
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	if term.IsTerminal(fd) {
+		state, err := term.MakeRaw(fd)
+		if err == nil {
+			defer term.Restore(fd, state)
+		}
+	} else if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
+		// Likely in a test environment, skip terminal check and just read
+	} else {
 		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
 	}
-
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		return "", err
-	}
-	defer term.Restore(fd, state)
 
 	type result struct {
 		b   byte

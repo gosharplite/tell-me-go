@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -859,101 +858,99 @@ func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) 
 	}
 }
 
-func TestInternalHelpers(t *testing.T) {
-	t.Run("groupTurns", func(t *testing.T) {
-		history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
-		turns := groupTurns(history)
-		if len(turns) != 2 {
-			t.Errorf("expected 2 turns, got %d", len(turns))
-		}
-		if len(turns[1]) != 1 {
-			t.Errorf("expected last turn to have 1 message, got %d", len(turns[1]))
-		}
-	})
+func TestGroupTurns_Helper(t *testing.T) {
+	history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
+	turns := groupTurns(history)
+	if len(turns) != 2 {
+		t.Errorf("expected 2 turns, got %d", len(turns))
+	}
+	if len(turns[1]) != 1 {
+		t.Errorf("expected last turn to have 1 message, got %d", len(turns[1]))
+	}
+}
 
-	t.Run("isTurnEmpty", func(t *testing.T) {
-		tests := []struct {
-			name     string
-			turn     []*llm.Content
-			expected bool
-		}{
-			{"Empty", []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, true},
-			{"Text", []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, false},
-			{"AssetID", []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, false},
-			{"Thought", []*llm.Content{{Parts: []*llm.Part{{Thought: true}}}}, false},
-			{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
+func TestIsTurnEmpty_Helper(t *testing.T) {
+	tests := []struct {
+		name     string
+		turn     []*llm.Content
+		expected bool
+	}{
+		{"Empty", []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, true},
+		{"Text", []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, false},
+		{"AssetID", []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, false},
+		{"Thought", []*llm.Content{{Parts: []*llm.Part{{Thought: true}}}}, false},
+		{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
+	}
+	for _, tt := range tests {
+		if got := isTurnEmpty(tt.turn); got != tt.expected {
+			t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
 		}
-		for _, tt := range tests {
-			if got := isTurnEmpty(tt.turn); got != tt.expected {
-				t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
-			}
-		}
-	})
+	}
+}
 
-	t.Run("findSummarizableRange", func(t *testing.T) {
-		tg := &tokenGatekeeper{}
-		// 10 turns (20 msgs)
-		history := make([]*llm.Content, 20)
-		for i := range history {
-			role := "user"
-			if i%2 == 1 {
-				role = "model"
-			}
-			history[i] = &llm.Content{Role: role}
+func TestFindSummarizableRange_Helper(t *testing.T) {
+	tg := &tokenGatekeeper{}
+	// 10 turns (20 msgs)
+	history := make([]*llm.Content, 20)
+	for i := range history {
+		role := "user"
+		if i%2 == 1 {
+			role = "model"
 		}
+		history[i] = &llm.Content{Role: role}
+	}
 
-		// No pins, should find range
-		start, end, numTurns, err := tg.findSummarizableRange(history)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if numTurns != 5 {
-			t.Errorf("expected 5 turns, got %d", numTurns)
-		}
-		if start != 0 || end != 10 {
-			t.Errorf("expected [0:10], got [%d:%d]", start, end)
-		}
+	// No pins, should find range
+	start, end, numTurns, err := tg.findSummarizableRange(history)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if numTurns != 5 {
+		t.Errorf("expected 5 turns, got %d", numTurns)
+	}
+	if start != 0 || end != 10 {
+		t.Errorf("expected [0:10], got [%d:%d]", start, end)
+	}
 
-		// Pin turn 0
-		history[0].Pinned = true
-		start, _, _, err = tg.findSummarizableRange(history)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if start != 2 {
-			t.Errorf("expected start 2, got %d", start)
-		}
+	// Pin turn 0
+	history[0].Pinned = true
+	start, _, _, err = tg.findSummarizableRange(history)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if start != 2 {
+		t.Errorf("expected start 2, got %d", start)
+	}
 
-		// Pin enough to make it fail
-		for i := 0; i < 20; i++ {
-			history[i].Pinned = true
-		}
-		_, _, _, err = tg.findSummarizableRange(history)
-		if err == nil {
-			t.Error("expected error when all turns are pinned")
-		}
-	})
+	// Pin enough to make it fail
+	for i := 0; i < 20; i++ {
+		history[i].Pinned = true
+	}
+	_, _, _, err = tg.findSummarizableRange(history)
+	if err == nil {
+		t.Error("expected error when all turns are pinned")
+	}
+}
 
-	t.Run("applySummary", func(t *testing.T) {
-		history := []*llm.Content{
-			{Role: "user", Parts: []*llm.Part{{Text: "0"}}},
-			{Role: "model", Parts: []*llm.Part{{Text: "1"}}},
-			{Role: "user", Parts: []*llm.Part{{Text: "2"}}},
-			{Role: "model", Parts: []*llm.Part{{Text: "3"}}},
-			{Role: "user", Parts: []*llm.Part{{Text: "4"}}},
-		}
-		// Replace turns [0,1] (msgs 0,1,2,3)
-		newHist := applySummaryToHistory(history, 0, 4, "summary")
-		if len(newHist) != 3 { // [SummaryUser, SummaryModel, Msg4]
-			t.Errorf("expected 3 messages, got %d", len(newHist))
-		}
-		if !strings.Contains(newHist[0].Parts[0].Text, "summary") {
-			t.Errorf("summary not found in first message: %s", newHist[0].Parts[0].Text)
-		}
-		if newHist[2].Parts[0].Text != "4" {
-			t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
-		}
-	})
+func TestApplySummary_Helper(t *testing.T) {
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "0"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "3"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "4"}}},
+	}
+	// Replace turns [0,1] (msgs 0,1,2,3)
+	newHist := applySummaryToHistory(history, 0, 4, "summary")
+	if len(newHist) != 3 { // [SummaryUser, SummaryModel, Msg4]
+		t.Errorf("expected 3 messages, got %d", len(newHist))
+	}
+	if !strings.Contains(newHist[0].Parts[0].Text, "summary") {
+		t.Errorf("summary not found in first message: %s", newHist[0].Parts[0].Text)
+	}
+	if newHist[2].Parts[0].Text != "4" {
+		t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
+	}
 }
 
 func TestToolDeclarationGenerator_MultipleTools(t *testing.T) {
@@ -1013,263 +1010,225 @@ func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
 	})
 }
 
-func TestApplySummaryToHistory_Comprehensive(t *testing.T) {
-	tests := []struct {
-		name      string
-		history   []*llm.Content
-		start     int
-		end       int
-		summary   string
-		wantRoles []string
-		verify    func(t *testing.T, res []*llm.Content)
-	}{
-		{
-			name: "Merge with previous User",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
-				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
-			},
-			start:     1,
-			end:       2,
-			summary:   "sum",
-			wantRoles: []string{"user", "model"},
-			verify: func(t *testing.T, res []*llm.Content) {
-				foundU1 := false
-				foundSum := false
-				for _, p := range res[0].Parts {
-					if strings.Contains(p.Text, "u1") {
-						foundU1 = true
-					}
-					if strings.Contains(p.Text, "sum") {
-						foundSum = true
-					}
-				}
-				if !foundU1 || !foundSum {
-					t.Errorf("expected u1 and sum in first message, got parts: %v", res[0].Parts)
-				}
-			},
-		},
-		{
-			name: "Suffix Merging with Model",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
-				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
-			},
-			start:     0,
-			end:       1,
-			summary:   "sum",
-			wantRoles: []string{"user", "model"},
-			verify: func(t *testing.T, res []*llm.Content) {
-				if !strings.Contains(res[0].Parts[0].Text, "sum") {
-					t.Errorf("expected summary in first message, got %s", res[0].Parts[0].Text)
-				}
-				foundUnderstood := false
-				foundM1 := false
-				for _, p := range res[1].Parts {
-					if strings.Contains(p.Text, "Understood") {
-						foundUnderstood = true
-					}
-					if strings.Contains(p.Text, "m1") {
-						foundM1 = true
-					}
-				}
-				if !foundUnderstood || !foundM1 {
-					t.Errorf("expected Understood and m1 in second message, got parts: %v", res[1].Parts)
-				}
-			},
-		},
-		{
-			name: "Prefix and Suffix Merging combined",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
-				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
-				{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
-				{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
-			},
-			start:     1,
-			end:       3,
-			summary:   "sum",
-			wantRoles: []string{"user", "model"},
-			verify: func(t *testing.T, res []*llm.Content) {
-				foundU1 := false
-				foundSum := false
-				for _, p := range res[0].Parts {
-					if strings.Contains(p.Text, "u1") {
-						foundU1 = true
-					}
-					if strings.Contains(p.Text, "sum") {
-						foundSum = true
-					}
-				}
-				if !foundU1 || !foundSum {
-					t.Errorf("u1 and sum should be in first message, got parts: %v", res[0].Parts)
-				}
+func TestApplySummaryToHistory_UserMerging(t *testing.T) {
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+	}
+	// start: 1, end: 2 -> keeps u1, replaces m1
+	got := applySummaryToHistory(history, 1, 2, "sum")
 
-				foundM2 := false
-				foundUnderstood := false
-				for _, p := range res[1].Parts {
-					if strings.Contains(p.Text, "m2") {
-						foundM2 = true
-					}
-					if strings.Contains(p.Text, "Understood") {
-						foundUnderstood = true
-					}
-				}
-				if !foundM2 || !foundUnderstood {
-					t.Errorf("m2 and Understood should be in second message, got parts: %v", res[1].Parts)
-				}
-			},
-		},
-		{
-			name:      "Empty History (Edge Case)",
-			history:   []*llm.Content{},
-			start:     0,
-			end:       0,
-			summary:   "sum",
-			wantRoles: []string{"user", "model"},
-		},
-		{
-			name: "Start=0, following is user",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
-			},
-			start:     0,
-			end:       0,
-			summary:   "sum",
-			wantRoles: []string{"user", "model", "user"},
-		},
-		{
-			name: "End=Len, previous is model",
-			history: []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
-				{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
-			},
-			start:     2,
-			end:       2,
-			summary:   "sum",
-			wantRoles: []string{"user", "model", "user", "model"},
-		},
+	if len(got) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(got))
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := applySummaryToHistory(tt.history, tt.start, tt.end, tt.summary)
-			var roles []string
-			for _, c := range got {
-				roles = append(roles, c.Role)
-			}
-			if !reflect.DeepEqual(roles, tt.wantRoles) {
-				t.Errorf("roles: expected %v, got %v", tt.wantRoles, roles)
-			}
-			if tt.verify != nil {
-				tt.verify(t, got)
-			}
-		})
+	foundU1 := false
+	foundSum := false
+	for _, p := range got[0].Parts {
+		if strings.Contains(p.Text, "u1") {
+			foundU1 = true
+		}
+		if strings.Contains(p.Text, "sum") {
+			foundSum = true
+		}
+	}
+	if !foundU1 || !foundSum {
+		t.Errorf("expected u1 and sum in first message, got parts: %v", got[0].Parts)
 	}
 }
 
-func TestTokenGatekeeper_HandleTieredThreshold(t *testing.T) {
+func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+	}
+	// start: 0, end: 1 -> replaces u1, keeps m1
+	got := applySummaryToHistory(history, 0, 1, "sum")
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(got))
+	}
+
+	if !strings.Contains(got[0].Parts[0].Text, "sum") {
+		t.Errorf("expected summary in first message, got %s", got[0].Parts[0].Text)
+	}
+
+	foundUnderstood := false
+	foundM1 := false
+	for _, p := range got[1].Parts {
+		if strings.Contains(p.Text, "Understood") {
+			foundUnderstood = true
+		}
+		if strings.Contains(p.Text, "m1") {
+			foundM1 = true
+		}
+	}
+	if !foundUnderstood || !foundM1 {
+		t.Errorf("expected Understood and m1 in second message, got parts: %v", got[1].Parts)
+	}
+}
+
+func TestApplySummaryToHistory_CombinedMerging(t *testing.T) {
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "u2"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
+	}
+	// start: 1, end: 3 -> keeps u1, replaces m1,u2, keeps m2
+	got := applySummaryToHistory(history, 1, 3, "sum")
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(got))
+	}
+
+	foundU1 := false
+	foundSum := false
+	for _, p := range got[0].Parts {
+		if strings.Contains(p.Text, "u1") {
+			foundU1 = true
+		}
+		if strings.Contains(p.Text, "sum") {
+			foundSum = true
+		}
+	}
+	if !foundU1 || !foundSum {
+		t.Errorf("u1 and sum should be in first message, got parts: %v", got[0].Parts)
+	}
+
+	foundM2 := false
+	foundUnderstood := false
+	for _, p := range got[1].Parts {
+		if strings.Contains(p.Text, "m2") {
+			foundM2 = true
+		}
+		if strings.Contains(p.Text, "Understood") {
+			foundUnderstood = true
+		}
+	}
+	if !foundM2 || !foundUnderstood {
+		t.Errorf("m2 and Understood should be in second message, got parts: %v", got[1].Parts)
+	}
+}
+
+func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
+	t.Run("Empty History", func(t *testing.T) {
+		got := applySummaryToHistory([]*llm.Content{}, 0, 0, "sum")
+		if len(got) != 2 {
+			t.Errorf("expected 2 messages for empty history, got %d", len(got))
+		}
+	})
+
+	t.Run("Start=0, following is user", func(t *testing.T) {
+		history := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+		}
+		got := applySummaryToHistory(history, 0, 0, "sum")
+		if len(got) != 3 {
+			t.Errorf("expected 3 roles, got %d", len(got))
+		}
+	})
+
+	t.Run("End=Len, previous is model", func(t *testing.T) {
+		history := []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
+		}
+		got := applySummaryToHistory(history, 2, 2, "sum")
+		if len(got) != 4 {
+			t.Errorf("expected 4 roles, got %d", len(got))
+		}
+	})
+}
+
+func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
-	counter := &mockTokenCounter{}
+	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(0)
+	tg := &tokenGatekeeper{Estimator: strategy}
+	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
 
-	t.Run("Threshold disabled (0)", func(t *testing.T) {
-		strategy.SetTieredThreshold(0)
-		counter.tokens = 1000
-		tg := &tokenGatekeeper{
-			Estimator: strategy,
-		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
-		tokens, err := tg.handleTieredThreshold(ctx, req)
-		if err != nil {
-			t.Fatalf("handleTieredThreshold failed: %v", err)
-		}
-		if tokens != 1000 {
-			t.Errorf("expected 1000 tokens, got %d", tokens)
-		}
-		if req.Metadata.SummarizationAttempted {
-			t.Error("summarization should not have been attempted")
-		}
-	})
+	tokens, err := tg.handleTieredThreshold(ctx, req)
+	if err != nil {
+		t.Fatalf("handleTieredThreshold failed: %v", err)
+	}
+	if tokens != 1000 {
+		t.Errorf("expected 1000 tokens, got %d", tokens)
+	}
+	if req.Metadata.SummarizationAttempted {
+		t.Error("summarization should not have been attempted")
+	}
+}
 
-	t.Run("Below threshold", func(t *testing.T) {
-		strategy.SetTieredThreshold(2000)
-		counter.tokens = 1000
-		tg := &tokenGatekeeper{
-			Estimator: strategy,
-		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
-		tokens, err := tg.handleTieredThreshold(ctx, req)
-		if err != nil {
-			t.Fatalf("handleTieredThreshold failed: %v", err)
-		}
-		if tokens != 1000 {
-			t.Errorf("expected 1000 tokens, got %d", tokens)
-		}
-		if req.Metadata.SummarizationAttempted {
-			t.Error("summarization should not have been attempted")
-		}
-	})
+func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{tokens: 1000}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(2000)
+	tg := &tokenGatekeeper{Estimator: strategy}
+	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
 
-	t.Run("Triggers summarization", func(t *testing.T) {
-		strategy.SetTieredThreshold(500)
-		counter.tokens = 1000 // Above threshold
+	tokens, err := tg.handleTieredThreshold(ctx, req)
+	if err != nil {
+		t.Fatalf("handleTieredThreshold failed: %v", err)
+	}
+	if tokens != 1000 {
+		t.Errorf("expected 1000 tokens, got %d", tokens)
+	}
+}
 
-		summarizerCalled := false
-		tg := &tokenGatekeeper{
-			Estimator: strategy,
-			Summarizer: &mockSummarizer{
-				summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-					summarizerCalled = true
-					return "summary", &llm.Metrics{}, nil
-				},
+func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{tokens: 1000}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(500)
+
+	summarizerCalled := false
+	tg := &tokenGatekeeper{
+		Estimator: strategy,
+		Summarizer: &mockSummarizer{
+			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+				summarizerCalled = true
+				return "summary", &llm.Metrics{}, nil
 			},
-		}
+		},
+	}
 
-		// Need enough history to auto-summarize
-		h := make([]*llm.Content, 10)
-		for i := range h {
-			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
-		}
-		req := &contextRequest{History: h}
+	h := make([]*llm.Content, 10)
+	for i := range h {
+		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
+	}
+	req := &contextRequest{History: h}
 
-		tokens, err := tg.handleTieredThreshold(ctx, req)
-		if err != nil {
-			t.Fatalf("handleTieredThreshold failed: %v", err)
-		}
-		if !summarizerCalled {
-			t.Error("summarizer should have been called")
-		}
-		if !req.Metadata.SummarizationAttempted {
-			t.Error("summarization should have been marked as attempted")
-		}
-		if tokens != 1000 {
-			t.Errorf("expected 1000 tokens, got %d", tokens)
-		}
-	})
+	_, err := tg.handleTieredThreshold(ctx, req)
+	if err != nil {
+		t.Fatalf("handleTieredThreshold failed: %v", err)
+	}
+	if !summarizerCalled {
+		t.Error("summarizer should have been called")
+	}
+	if !req.Metadata.SummarizationAttempted {
+		t.Error("summarization should have been marked as attempted")
+	}
+}
 
-	t.Run("Summarization failure (not enough history)", func(t *testing.T) {
-		strategy.SetTieredThreshold(500)
-		counter.tokens = 1000
-		tg := &tokenGatekeeper{
-			Estimator: strategy,
-		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}} // Only 1 msg
-		tokens, err := tg.handleTieredThreshold(ctx, req)
-		if err != nil {
-			t.Fatalf("handleTieredThreshold failed: %v", err)
-		}
+func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
+	ctx := context.Background()
+	counter := &mockTokenCounter{tokens: 1000}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.SetTieredThreshold(500)
+
+	t.Run("Not enough history", func(t *testing.T) {
+		tg := &tokenGatekeeper{Estimator: strategy}
+		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		_, _ = tg.handleTieredThreshold(ctx, req)
 		if !req.Metadata.MaintenanceBlocked {
 			t.Error("expected MaintenanceBlocked to be true")
 		}
-		if tokens != 1000 {
-			t.Errorf("expected 1000 tokens, got %d", tokens)
-		}
 	})
 
-	t.Run("Summarization failure (critical error)", func(t *testing.T) {
-		strategy.SetTieredThreshold(500)
-		counter.tokens = 1000
+	t.Run("Critical error", func(t *testing.T) {
 		tg := &tokenGatekeeper{
 			Estimator: strategy,
 			Summarizer: &mockSummarizer{
@@ -1278,7 +1237,6 @@ func TestTokenGatekeeper_HandleTieredThreshold(t *testing.T) {
 				},
 			},
 		}
-		// Enough history to NOT be immediately blocked by length
 		h := make([]*llm.Content, 20)
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
@@ -1287,20 +1245,6 @@ func TestTokenGatekeeper_HandleTieredThreshold(t *testing.T) {
 		_, err := tg.handleTieredThreshold(ctx, req)
 		if err == nil || err.Error() != "boom" {
 			t.Errorf("expected 'boom' error, got %v", err)
-		}
-	})
-
-	t.Run("Non-ContextStrategy estimator", func(t *testing.T) {
-		tg := &tokenGatekeeper{
-			Estimator: &mockEstimator{tokens: 1000},
-		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
-		tokens, err := tg.handleTieredThreshold(ctx, req)
-		if err != nil {
-			t.Fatalf("handleTieredThreshold failed: %v", err)
-		}
-		if tokens != 1000 {
-			t.Errorf("expected 1000 tokens, got %d", tokens)
 		}
 	})
 }

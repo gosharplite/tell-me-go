@@ -1,21 +1,9 @@
 package analysis
 
 import (
-	"context"
-	"os/exec"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-type CommandExecutor interface {
-	Output(ctx context.Context, name string, args ...string) ([]byte, error)
-	CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error)
-}
-
-type RealExecutor struct{}
-
-func (e *RealExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
-}
-
-func (e *RealExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
-}
+// Re-export or use the domain executor
+type CommandExecutor = tools.CommandExecutor
+type RealExecutor = tools.RealExecutor

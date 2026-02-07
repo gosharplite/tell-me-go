@@ -25,10 +25,89 @@ const (
 	LayerSecurity = "security"
 )
 
+// PackageProvider defines the interface for loading package information.
+type PackageProvider interface {
+	LoadPackages(ctx context.Context) (map[string][]string, error)
+}
+
+// ArchitectureManager validates the project's architectural integrity.
 type ArchitectureManager struct {
 	SP         security.SecurityProvider
 	ModulePath string
 	once       sync.Once
+	Loader     PackageProvider
+}
+
+// RealPackageProvider implements PackageProvider using the 'go list' command.
+type RealPackageProvider struct {
+	m *ArchitectureManager
+}
+
+func (r *RealPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+	if !r.m.SP.IsCommandAllowed("go") {
+		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
+	}
+
+	// Use a single call to go list -json ./...
+	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start go list: %w", err)
+	}
+
+	pkgs, err := r.decodePackageInfo(stdout)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("go list command failed: %w", err)
+	}
+
+	return pkgs, nil
+}
+
+func (r *RealPackageProvider) decodePackageInfo(rd io.Reader) (map[string][]string, error) {
+	pkgs := make(map[string][]string)
+	dec := json.NewDecoder(rd)
+	for {
+		var p pkgInfo
+		if err := dec.Decode(&p); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("failed to decode go list output: %w", err)
+		}
+
+		if r.m.ModulePath == "" && p.Module != nil {
+			r.m.once.Do(func() {
+				r.m.ModulePath = p.Module.Path
+			})
+		}
+
+		// Only track packages within this module and containing "internal/" or "cmd/"
+		if r.isTrackedPackage(p.ImportPath) {
+			var trackedImports []string
+			for _, imp := range p.Imports {
+				// Only care about imports within the same module
+				if strings.HasPrefix(imp, r.m.ModulePath) {
+					trackedImports = append(trackedImports, imp)
+				}
+			}
+			pkgs[p.ImportPath] = trackedImports
+		}
+	}
+	return pkgs, nil
+}
+
+func (r *RealPackageProvider) isTrackedPackage(pkgPath string) bool {
+	if !strings.HasPrefix(pkgPath, r.m.ModulePath) {
+		return false
+	}
+	return strings.Contains(pkgPath, "internal/") || strings.Contains(pkgPath, "cmd/")
 }
 
 type pkgInfo struct {
@@ -54,7 +133,11 @@ type Rule struct {
 }
 
 func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	pkgs, err := m.getInternalPackages(ctx)
+	if m.Loader == nil {
+		m.Loader = &RealPackageProvider{m: m}
+	}
+
+	pkgs, err := m.Loader.LoadPackages(ctx)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -67,63 +150,6 @@ func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[s
 	}
 
 	return tools.ToolResult{Text: m.formatReport(violations)}, nil
-}
-
-func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[string][]string, error) {
-	if !m.SP.IsCommandAllowed("go") {
-		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
-	}
-
-	// Use a single call to go list -json ./...
-	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start go list: %w", err)
-	}
-
-	pkgs := make(map[string][]string)
-	dec := json.NewDecoder(stdout)
-	for {
-		var p pkgInfo
-		if err := dec.Decode(&p); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("failed to decode go list output: %w", err)
-		}
-
-		if m.ModulePath == "" && p.Module != nil {
-			m.once.Do(func() {
-				m.ModulePath = p.Module.Path
-			})
-		}
-
-		// Only track packages within this module and containing "internal/" or "cmd/"
-		if strings.HasPrefix(p.ImportPath, m.ModulePath) {
-			isInternal := strings.Contains(p.ImportPath, "internal/")
-			isCmd := strings.Contains(p.ImportPath, "cmd/")
-
-			if isInternal || isCmd {
-				var trackedImports []string
-				for _, imp := range p.Imports {
-					// Only care about imports within the same module
-					if strings.HasPrefix(imp, m.ModulePath) {
-						trackedImports = append(trackedImports, imp)
-					}
-				}
-				pkgs[p.ImportPath] = trackedImports
-			}
-		}
-	}
-
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("go list command failed: %w", err)
-	}
-
-	return pkgs, nil
 }
 
 func isLayer(pkgPath, layerName string) bool {
@@ -187,60 +213,95 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	}
 
 	var violations []violation
-	for pkg, imports := range pkgs {
-		shortPkg := m.shorten(pkg)
 
-		// Apply defined rules
-		for _, rule := range rules {
-			if isLayer(pkg, rule.SourceLayer) {
-				for _, imp := range imports {
-					for _, forbidden := range rule.Forbidden {
-						match := false
-						if forbidden == "cmd" {
-							match = m.isCmd(imp)
-						} else {
-							match = isLayer(imp, forbidden)
-						}
+	// Sort packages for deterministic iteration
+	var sortedPkgs []string
+	for p := range pkgs {
+		sortedPkgs = append(sortedPkgs, p)
+	}
+	sort.Strings(sortedPkgs)
 
-						if match {
-							violations = append(violations, violation{
-								pkg:      shortPkg,
-								category: "[LAYER VIOLATION]",
-								target:   m.shorten(imp),
-								reason:   rule.Reason,
-							})
-						}
-					}
-				}
-			}
+	for _, pkg := range sortedPkgs {
+		imports := pkgs[pkg]
+		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
+		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
+	}
+
+	return violations
+}
+
+func (m *ArchitectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []Rule) []violation {
+	var violations []violation
+	shortPkg := m.shorten(pkg)
+
+	for _, rule := range rules {
+		if !isLayer(pkg, rule.SourceLayer) {
+			continue
 		}
 
-		// General rule: all internal packages must not import cmd/
-		if strings.Contains(pkg, "internal/") {
-			for _, imp := range imports {
-				if m.isCmd(imp) {
-					// Avoid duplicates if already caught by rules above
-					alreadyReported := false
-					for _, v := range violations {
-						if v.pkg == shortPkg && v.target == m.shorten(imp) {
-							alreadyReported = true
-							break
-						}
-					}
-					if !alreadyReported {
-						violations = append(violations, violation{
-							pkg:      shortPkg,
-							category: "[LAYER VIOLATION]",
-							target:   m.shorten(imp),
-							reason:   "Composition Root (cmd) should not be imported by internal packages.",
-						})
-					}
+		for _, imp := range imports {
+			for _, forbidden := range rule.Forbidden {
+				match := false
+				if forbidden == "cmd" {
+					match = m.isCmd(imp)
+				} else {
+					match = isLayer(imp, forbidden)
+				}
+
+				if match {
+					violations = append(violations, violation{
+						pkg:      shortPkg,
+						category: "[LAYER VIOLATION]",
+						target:   m.shorten(imp),
+						reason:   rule.Reason,
+					})
 				}
 			}
 		}
 	}
-
 	return violations
+}
+
+func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string, existing []violation) []violation {
+	if !strings.Contains(pkg, "internal/") {
+		return nil
+	}
+
+	var found []violation
+	shortPkg := m.shorten(pkg)
+	for _, imp := range imports {
+		if m.isCmd(imp) {
+			shortTarget := m.shorten(imp)
+			// Avoid duplicates if already caught by rules above or by previous iterations
+			alreadyReported := false
+			for _, v := range existing {
+				if v.pkg == shortPkg && v.target == shortTarget {
+					alreadyReported = true
+					break
+				}
+			}
+
+			if !alreadyReported {
+				// Also check against what we already found in this call
+				for _, v := range found {
+					if v.pkg == shortPkg && v.target == shortTarget {
+						alreadyReported = true
+						break
+					}
+				}
+			}
+
+			if !alreadyReported {
+				found = append(found, violation{
+					pkg:      shortPkg,
+					category: "[LAYER VIOLATION]",
+					target:   shortTarget,
+					reason:   "Composition Root (cmd) should not be imported by internal packages.",
+				})
+			}
+		}
+	}
+	return found
 }
 
 func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {

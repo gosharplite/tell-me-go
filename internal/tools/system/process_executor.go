@@ -303,140 +303,35 @@ func (p *pipeline) start() error {
 }
 
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string, bool) {
+	sp := &streamProcessor{
+		stdoutStr:  &strings.Builder{},
+		stderrStr:  &strings.Builder{},
+		wt:         &writeTracker{feedback: config.Feedback, filePath: config.OutputFile},
+		maxCapture: config.MaxCapture,
+		feedback:   config.Feedback,
+		file:       file,
+	}
+	if sp.maxCapture <= 0 {
+		sp.maxCapture = 1024 * 1024
+	}
+
 	var wg sync.WaitGroup
-	var stdoutStr, stderrStr strings.Builder
-	var mu sync.Mutex // Protects builders, feedback, file, writeTracker, and totalCaptured
-	var truncated atomic.Bool
-	wt := &writeTracker{feedback: config.Feedback, filePath: config.OutputFile}
-	var totalCaptured int
-	maxCapture := config.MaxCapture
-	if maxCapture <= 0 {
-		maxCapture = 1024 * 1024
-	}
-
-	appendErr := func(sb *strings.Builder, err error) {
-		if err == nil {
-			return
-		}
-		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
-		if err == bufio.ErrTooLong {
-			msg = "\n[Warning] Output line too long for scanner; truncated."
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		if config.Feedback != nil {
-			fmt.Fprintln(config.Feedback, msg)
-		}
-		remaining := maxCapture - totalCaptured
-		if remaining > 0 {
-			if len(msg+"\n") > remaining {
-				truncated.Store(true)
-			}
-			content := truncateToValidUTF8(msg+"\n", remaining)
-			sb.WriteString(content)
-			totalCaptured += len(content)
-		} else {
-			truncated.Store(true)
-		}
-	}
-
-	// Capture Stderr in parallel
 	for i, r := range p.stderrPipes {
 		wg.Add(1)
-		go func(idx int, src io.Reader) {
-			defer wg.Done()
-			scanner := bufio.NewScanner(src)
-			buf := make([]byte, 64*1024)
-			scanner.Buffer(buf, maxScannerCapacity)
-			var lineBuf []byte
-			for scanner.Scan() {
-				data := scanner.Bytes()
-				// Reuse buffer and append newline for atomic write
-				lineBuf = append(lineBuf[:0], data...)
-				lineBuf = append(lineBuf, '\n')
-
-				mu.Lock()
-				if file != nil {
-					wt.Write(file, lineBuf)
-				}
-
-				// Slice to remove the newline for other uses
-				rawLine := lineBuf[:len(data)]
-
-				feedbackMsg := ""
-				if config.Feedback != nil {
-					feedbackMsg = fmt.Sprintf("  %s[stderr:%d] %s%s\n", colors.ColorRed, idx, rawLine, colors.ColorReset)
-				}
-
-				remaining := maxCapture - totalCaptured
-				if remaining > 0 {
-					content := fmt.Sprintf("[stderr:%d] %s\n", idx, rawLine)
-					if len(content) > remaining {
-						truncated.Store(true)
-					}
-					content = truncateToValidUTF8(content, remaining)
-					stderrStr.WriteString(content)
-					totalCaptured += len(content)
-				} else {
-					truncated.Store(true)
-				}
-
-				if feedbackMsg != "" {
-					fmt.Fprint(config.Feedback, feedbackMsg)
-				}
-				mu.Unlock()
-			}
-			appendErr(&stderrStr, scanner.Err())
-		}(i, r)
+		go p.captureStderrAsync(&wg, sp, i, r)
 	}
 
 	// Capture Stdout sequentially (main thread)
 	scanner := bufio.NewScanner(p.stdoutPipe)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxScannerCapacity)
-	var lineBuf []byte
 	for scanner.Scan() {
-		data := scanner.Bytes()
-		// Reuse buffer and append newline for atomic write
-		lineBuf = append(lineBuf[:0], data...)
-		lineBuf = append(lineBuf, '\n')
-
-		mu.Lock()
-		if file != nil {
-			wt.Write(file, lineBuf)
-		}
-
-		// Slice to remove the newline for other uses
-		rawLine := lineBuf[:len(data)]
-
-		feedbackMsg := ""
-		if config.Feedback != nil {
-			feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
-		}
-
-		remaining := maxCapture - totalCaptured
-		if remaining > 0 {
-			content := string(lineBuf)
-			if len(content) > remaining {
-				truncated.Store(true)
-			}
-			content = truncateToValidUTF8(content, remaining)
-			stdoutStr.WriteString(content)
-			totalCaptured += len(content)
-		} else {
-			truncated.Store(true)
-		}
-
-		if feedbackMsg != "" {
-			fmt.Fprint(config.Feedback, feedbackMsg)
-		}
-		mu.Unlock()
+		sp.processLine(sp.stdoutStr, scanner.Bytes(), "", sp.feedback)
 	}
-	appendErr(&stdoutStr, scanner.Err())
+	sp.appendErr(sp.stdoutStr, scanner.Err())
 
 	wg.Wait()
-	return stdoutStr.String(), stderrStr.String(), truncated.Load()
+	return sp.stdoutStr.String(), sp.stderrStr.String(), sp.truncated.Load()
 }
 
 func (p *pipeline) wait() (int, error) {
@@ -466,6 +361,98 @@ func (p *pipeline) closePipes() {
 	}
 }
 
+type streamProcessor struct {
+	stdoutStr     *strings.Builder
+	stderrStr     *strings.Builder
+	mu            sync.Mutex
+	truncated     atomic.Bool
+	wt            *writeTracker
+	totalCaptured int
+	maxCapture    int
+	feedback      io.Writer
+	file          *os.File
+}
+
+func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, prefix string, feedback io.Writer) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+
+	if sp.file != nil {
+		lineWithNL := append([]byte(nil), rawLine...)
+		lineWithNL = append(lineWithNL, '\n')
+		sp.wt.Write(sp.file, lineWithNL)
+	}
+
+	content := string(rawLine) + "\n"
+	feedbackMsg := ""
+	if feedback != nil {
+		feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
+	}
+
+	if prefix != "" {
+		content = fmt.Sprintf("%s %s", prefix, content)
+		if feedback != nil {
+			feedbackMsg = fmt.Sprintf("  %s%s %s%s\n", colors.ColorRed, prefix, rawLine, colors.ColorReset)
+		}
+	}
+
+	remaining := sp.maxCapture - sp.totalCaptured
+	if remaining > 0 {
+		if len(content) > remaining {
+			sp.truncated.Store(true)
+		}
+		content = truncateToValidUTF8(content, remaining)
+		sb.WriteString(content)
+		sp.totalCaptured += len(content)
+	} else {
+		sp.truncated.Store(true)
+	}
+
+	if feedback != nil && feedbackMsg != "" {
+		fmt.Fprint(feedback, feedbackMsg)
+	}
+}
+
+func (sp *streamProcessor) appendErr(sb *strings.Builder, err error) {
+	if err == nil {
+		return
+	}
+	msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+	if err == bufio.ErrTooLong {
+		msg = "\n[Warning] Output line too long for scanner; truncated."
+	}
+
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.feedback != nil {
+		fmt.Fprintln(sp.feedback, msg)
+	}
+
+	remaining := sp.maxCapture - sp.totalCaptured
+	if remaining > 0 {
+		fullMsg := msg + "\n"
+		if len(fullMsg) > remaining {
+			sp.truncated.Store(true)
+		}
+		content := truncateToValidUTF8(fullMsg, remaining)
+		sb.WriteString(content)
+		sp.totalCaptured += len(content)
+	} else {
+		sp.truncated.Store(true)
+	}
+}
+
+func (p *pipeline) captureStderrAsync(wg *sync.WaitGroup, sp *streamProcessor, idx int, src io.Reader) {
+	defer wg.Done()
+	scanner := bufio.NewScanner(src)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxScannerCapacity)
+	for scanner.Scan() {
+		sp.processLine(sp.stderrStr, scanner.Bytes(), fmt.Sprintf("[stderr:%d]", idx), sp.feedback)
+	}
+	sp.appendErr(sp.stderrStr, scanner.Err())
+}
+
 func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, error) {
 	if config.OutputFile == "" {
 		return nil, nil
@@ -477,11 +464,24 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 	}
 	path = filepath.Clean(path)
 
-	// Simple security check: prevent escaping the current directory via relative paths.
+	// Robust security check: prevent escaping the current directory via relative paths.
 	// We allow absolute paths as the agent may need to write to specific system locations
 	// if authorized, but relative paths should stay within the project structure.
-	if !filepath.IsAbs(path) && (strings.HasPrefix(path, ".."+string(filepath.Separator)) || path == "..") {
-		return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
+	if !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current directory: %w", err)
+		}
+
+		// Join CWD with the path and Clean it to resolve any ".."
+		absPath := filepath.Join(cwd, path)
+
+		// Ensure the resulting absolute path is still within the CWD
+		rel, err := filepath.Rel(cwd, absPath)
+		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+			return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
+		}
+		path = absPath
 	}
 
 	flags := os.O_CREATE | os.O_WRONLY

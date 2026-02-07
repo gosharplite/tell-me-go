@@ -20,11 +20,15 @@ import (
 )
 
 type NetworkTool struct {
-	sm *security.SecurityManager
+	sm     *security.SecurityManager
+	client tools.HTTPClient
 }
 
-func NewNetworkTool(sm *security.SecurityManager) *NetworkTool {
-	return &NetworkTool{sm: sm}
+func NewNetworkTool(sm *security.SecurityManager, client tools.HTTPClient) *NetworkTool {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &NetworkTool{sm: sm, client: client}
 }
 
 func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -62,8 +66,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
 	}
@@ -106,12 +109,8 @@ func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("url argument is required")
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
 	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-	resp, err := client.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}

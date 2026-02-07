@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 )
 
 func TestLoad(t *testing.T) {
@@ -62,4 +64,89 @@ AIURL: "http://test.url"
 			t.Error("expected error for invalid YAML, got nil")
 		}
 	})
+}
+
+func TestLoad_EnvOverride(t *testing.T) {
+	os.Setenv("GOSHARP_MODE", "env-mode")
+	defer os.Unsetenv("GOSHARP_MODE")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env.yaml")
+	_ = os.WriteFile(configPath, []byte("MODE: yaml-mode"), 0644)
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Mode != "env-mode" {
+		t.Errorf("expected Mode 'env-mode' (from ENV), got '%s'", cfg.Mode)
+	}
+}
+
+func TestLoad_MoreEnvOverrides(t *testing.T) {
+	os.Setenv("GOSHARP_PERSON", "env-person")
+	os.Setenv("GOSHARP_AIMODEL", "env-model")
+	os.Setenv("GOSHARP_AIURL", "env-url")
+	os.Setenv("TELL_ME_NO_STREAM", "true")
+	defer func() {
+		os.Unsetenv("GOSHARP_PERSON")
+		os.Unsetenv("GOSHARP_AIMODEL")
+		os.Unsetenv("GOSHARP_AIURL")
+		os.Unsetenv("TELL_ME_NO_STREAM")
+	}()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env_more.yaml")
+	_ = os.WriteFile(configPath, []byte("PERSON: yaml-person"), 0644)
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Person != "env-person" {
+		t.Errorf("expected Person 'env-person', got '%s'", cfg.Person)
+	}
+	if cfg.Model != "env-model" {
+		t.Errorf("expected Model 'env-model', got '%s'", cfg.Model)
+	}
+	if cfg.URL != "env-url" {
+		t.Errorf("expected URL 'env-url', got '%s'", cfg.URL)
+	}
+	if !cfg.DisableStreaming {
+		t.Error("expected DisableStreaming to be true")
+	}
+}
+
+func TestResolveThinkingBudget(t *testing.T) {
+	cfg := &Config{
+		Models: map[string]ModelConfig{
+			"gemini-2.0-flash": {MaxThinkingBudget: 1000},
+			"pro":              {MaxThinkingBudget: 5000},
+		},
+	}
+	pricingData := pricing.PricingData{
+		ThinkingBudgets: map[string]int{
+			"default": 2000,
+			"extra":   10000,
+		},
+	}
+
+	tests := []struct {
+		model    string
+		expected int
+	}{
+		{"gemini-2.0-flash", 1000},   // Exact match
+		{"gemini-2.0-pro-exp", 5000}, // Substring match ("pro")
+		{"extra-special", 10000},     // Pricing match
+		{"unknown", 2000},            // Default
+	}
+
+	for _, tt := range tests {
+		got := cfg.ResolveThinkingBudget(tt.model, pricingData)
+		if got != tt.expected {
+			t.Errorf("model %s: expected %d, got %d", tt.model, tt.expected, got)
+		}
+	}
 }

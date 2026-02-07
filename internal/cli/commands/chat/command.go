@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -98,9 +99,9 @@ func NewCommand(ctx *command.Context) *Command {
 	}
 }
 
-// isTTY returns true if the writer is a terminal.
-func (c *Command) isTTY(w io.Writer) bool {
-	if f, ok := w.(*os.File); ok {
+// isTTY returns true if the value (usually an *os.File) is a terminal.
+func (c *Command) isTTY(v any) bool {
+	if f, ok := v.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}
 	return false
@@ -336,42 +337,55 @@ func (c *Command) setupRegistry(client *api.Client, cfg *config.Config, paths *s
 	return reg
 }
 
-func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing pricing.PricingData) {
+func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string) {
 	renderer := ui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
-	renderer.SetUseColor(c.isTTY(c.Stdout) && !opts.rawOutput)
-	// Note: We need to handle UISubscriber. It was in the cli package.
-	// I'll move it to a shared place or this package.
-	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, c.isTTY(c.Stdout) && !opts.rawOutput, paths.logPath)
-	chatAgent.Subscribe(subscriber.HandleEvent)
+	useColor := c.isTTY(c.Stdout) && !opts.rawOutput
+	renderer.SetUseColor(useColor)
 
+	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, useColor, logPath)
+	chatAgent.Subscribe(subscriber.HandleEvent)
+}
+
+func (c *Command) resolveContextWindow(cfg *config.Config) int {
 	maxTokens := cfg.MaxHistoryTokens
 	if mCfg, ok := cfg.Models[cfg.Model]; ok && mCfg.ContextWindow > 0 {
 		if maxTokens > mCfg.ContextWindow {
-			maxTokens = mCfg.ContextWindow
+			return mCfg.ContextWindow
 		}
-	} else {
-		for k, v := range cfg.Models {
-			if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
-				if maxTokens > v.ContextWindow {
-					maxTokens = v.ContextWindow
-				}
-				break
-			}
-		}
+		return maxTokens
 	}
 
-	threshold := config.DefaultTieredThreshold
-	if mPricing, ok := pricing.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
-		threshold = int(mPricing.TieredThreshold)
-	} else {
-		for k, v := range pricing.Models {
-			if k != "default" && strings.Contains(cfg.Model, k) && v.TieredThreshold > 0 {
-				threshold = int(v.TieredThreshold)
-				break
+	// Fallback to substring matching
+	for k, v := range cfg.Models {
+		if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
+			if maxTokens > v.ContextWindow {
+				return v.ContextWindow
 			}
+			break
 		}
 	}
+	return maxTokens
+}
+
+func (c *Command) resolveTieredThreshold(cfg *config.Config, pData pricing.PricingData) int {
+	if mPricing, ok := pData.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
+		return int(mPricing.TieredThreshold)
+	}
+
+	for k, v := range pData.Models {
+		if k != "default" && strings.Contains(cfg.Model, k) && v.TieredThreshold > 0 {
+			return int(v.TieredThreshold)
+		}
+	}
+	return config.DefaultTieredThreshold
+}
+
+func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pData pricing.PricingData) {
+	c.setupUIRendering(chatAgent, cfg, opts, paths.logPath)
+
+	maxTokens := c.resolveContextWindow(cfg)
+	threshold := c.resolveTieredThreshold(cfg, pData)
 
 	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(threshold)
@@ -419,47 +433,50 @@ func (c *Command) cleanupOldBackups(homeDir, mode string) {
 		return
 	}
 
-	retentionDays := 30
-	configPath := filepath.Join(homeDir, "output", mode, "config.json")
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg map[string]string
-		if err := json.Unmarshal(data, &cfg); err == nil {
-			if val, ok := cfg["backup_retention_days"]; ok {
-				if days, err := strconv.Atoi(val); err == nil {
-					retentionDays = days
-				}
-			}
-		}
-	}
-
+	retentionDays := c.loadBackupRetentionDays(homeDir, mode)
 	if retentionDays <= 0 {
 		return
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
+	c.performBackupCleanup(backupBaseDir, entries, cutoff)
+}
 
-		if len(entry.Name()) < 15 {
+func (c *Command) loadBackupRetentionDays(homeDir, mode string) int {
+	retentionDays := 30
+	configPath := filepath.Join(homeDir, "output", mode, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return retentionDays
+	}
+
+	var cfg map[string]string
+	if err := json.Unmarshal(data, &cfg); err == nil {
+		if val, ok := cfg["backup_retention_days"]; ok {
+			if days, err := strconv.Atoi(val); err == nil {
+				return days
+			}
+		}
+	}
+	return retentionDays
+}
+
+func (c *Command) performBackupCleanup(backupBaseDir string, entries []os.DirEntry, cutoff time.Time) {
+	for _, entry := range entries {
+		if !entry.IsDir() || len(entry.Name()) < 15 {
 			continue
 		}
 
 		folderTime, err := time.Parse("20060102_150405", entry.Name()[:15])
-		if err != nil {
+		if err != nil || !folderTime.Before(cutoff) {
 			continue
 		}
 
-		if folderTime.Before(cutoff) {
-			path := filepath.Join(backupBaseDir, entry.Name())
-			if err := os.RemoveAll(path); err != nil {
-				func() {
-					c.SM.TerminalLock()
-					defer c.SM.TerminalUnlock()
-					fmt.Fprintf(c.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
-				}()
-			}
+		path := filepath.Join(backupBaseDir, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			c.SM.TerminalLock()
+			fmt.Fprintf(c.Stderr, "Warning: Failed to cleanup old backup %s: %v\n", path, err)
+			c.SM.TerminalUnlock()
 		}
 	}
 }
@@ -516,57 +533,15 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		return val, nil
 	}
 
-	var fd int = -1
-	if f, ok := c.Stdin.(*os.File); ok {
-		fd = int(f.Fd())
-	}
-	isTerminal := fd != -1 && term.IsTerminal(fd)
-
-	useColorStdout := c.isTTY(c.Stdout) && !raw
-	useColorStderr := c.isTTY(c.Stderr) && !raw
-
-	if !isTerminal {
-		readChan := make(chan []byte, 1)
-		go func() {
-			b, _ := io.ReadAll(c.Stdin)
-			readChan <- b
-		}()
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case b := <-readChan:
-			if len(b) > 0 {
-				if prompt != "" {
-					prompt = prompt + "\n" + string(b)
-				} else {
-					prompt = string(b)
-				}
-			}
-		}
+	var err error
+	if !c.isTTY(c.Stdin) {
+		prompt, err = c.captureFromPipe(ctx, prompt)
 	} else if prompt == "" && lastN == 0 {
-		func() {
-			c.SM.TerminalLock()
-			defer c.SM.TerminalUnlock()
-			if useColorStdout {
-				fmt.Fprintf(c.Stdout, "%s[Reading multi-line input. Press Ctrl+D to send]%s\n", colors.ColorYellow, colors.ColorReset)
-			} else {
-				fmt.Fprintln(c.Stdout, "[Reading multi-line input. Press Ctrl+D to send]")
-			}
-		}()
+		prompt, err = c.captureFromTTY(ctx, !raw)
+	}
 
-		readChan := make(chan []byte, 1)
-		go func() {
-			b, _ := io.ReadAll(c.Stdin)
-			readChan <- b
-		}()
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case b := <-readChan:
-			prompt = string(b)
-		}
+	if err != nil {
+		return "", err
 	}
 
 	prompt = strings.TrimSpace(prompt)
@@ -578,16 +553,59 @@ func (c *Command) capturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int
 		fs.PrintDefaults()
 		return "", fmt.Errorf("empty prompt")
 	}
-	func() {
-		c.SM.TerminalLock()
-		defer c.SM.TerminalUnlock()
-		if useColorStderr {
-			fmt.Fprintf(c.Stderr, "%s[%s] Input captured. Processing...%s\n", colors.ColorGreen, time.Now().Format("15:04:05"), colors.ColorReset)
-		} else {
-			fmt.Fprintf(c.Stderr, "[%s] Input captured. Processing...\n", time.Now().Format("15:04:05"))
-		}
-	}()
+
+	c.printFeedback(c.Stderr, !raw, colors.ColorGreen,
+		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
+
 	return prompt, nil
+}
+
+func (c *Command) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
+	readChan := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(c.Stdin)
+		readChan <- b
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case b := <-readChan:
+		if len(b) == 0 {
+			return initialPrompt, nil
+		}
+		if initialPrompt != "" {
+			return initialPrompt + "\n" + string(b), nil
+		}
+		return string(b), nil
+	}
+}
+
+func (c *Command) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
+	c.printFeedback(c.Stdout, useColor, colors.ColorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+
+	readChan := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(c.Stdin)
+		readChan <- b
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case b := <-readChan:
+		return string(b), nil
+	}
+}
+
+func (c *Command) printFeedback(w io.Writer, useColor bool, color, msg string) {
+	c.SM.TerminalLock()
+	defer c.SM.TerminalUnlock()
+	if useColor && c.isTTY(w) {
+		fmt.Fprintf(w, "%s%s%s\n", color, msg, colors.ColorReset)
+	} else {
+		fmt.Fprintln(w, msg)
+	}
 }
 
 func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showThoughts bool) {
@@ -602,64 +620,89 @@ func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showTh
 	}
 
 	start := len(contents) - n
-	var r *glamour.TermRenderer
+	hr := &historyRenderer{
+		writer:       c.Stdout,
+		raw:          raw,
+		showThoughts: showThoughts,
+		useColor:     c.isTTY(c.Stdout) && !raw,
+	}
 	if !raw {
-		r, _ = glamour.NewTermRenderer(
+		hr.renderer, _ = glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithEmoji(),
 		)
 	}
 
-	useColor := c.isTTY(c.Stdout) && !raw
-
 	for i := start; i < len(contents); i++ {
-		c2 := contents[i]
-		roleStr := "[" + strings.ToUpper(c2.Role) + "]"
-		if useColor {
-			roleColor := colors.ColorBlue
-			if c2.Role != "user" {
-				roleColor = colors.ColorMagenta
-			}
-			fmt.Fprintf(c.Stdout, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
-		} else {
-			fmt.Fprintln(c.Stdout, roleStr)
-		}
+		content := contents[i]
+		hr.renderHeader(content.Role)
 
-		for _, p := range c2.Parts {
-			if p.Thought && !showThoughts {
-				continue
-			}
-
-			if p.Text != "" {
-				if raw || r == nil {
-					fmt.Fprint(c.Stdout, p.Text)
-					if !strings.HasSuffix(p.Text, "\n") {
-						fmt.Fprintln(c.Stdout)
-					}
-				} else {
-					out, err := r.Render(p.Text)
-					if err != nil {
-						fmt.Fprintln(c.Stdout, p.Text)
-					} else {
-						fmt.Fprint(c.Stdout, out)
-					}
-				}
-			}
-			if p.FunctionCall != nil {
-				if useColor {
-					fmt.Fprintf(c.Stdout, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
-				} else {
-					fmt.Fprintf(c.Stdout, "[Tool Call] %s\n", p.FunctionCall.Name)
-				}
-			}
-			if p.FunctionResponse != nil {
-				if useColor {
-					fmt.Fprintf(c.Stdout, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
-				} else {
-					fmt.Fprintf(c.Stdout, "[Tool Response] %s\n", p.FunctionResponse.Name)
-				}
+		for _, p := range content.Parts {
+			if p != nil {
+				hr.renderPart(*p)
 			}
 		}
 		fmt.Fprintln(c.Stdout)
+	}
+}
+
+type historyRenderer struct {
+	renderer     *glamour.TermRenderer
+	writer       io.Writer
+	raw          bool
+	showThoughts bool
+	useColor     bool
+}
+
+func (r *historyRenderer) renderHeader(role string) {
+	roleStr := "[" + strings.ToUpper(role) + "]"
+	if r.useColor {
+		roleColor := colors.ColorBlue
+		if role != "user" {
+			roleColor = colors.ColorMagenta
+		}
+		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
+	} else {
+		fmt.Fprintln(r.writer, roleStr)
+	}
+}
+
+func (r *historyRenderer) renderText(text string) {
+	if r.raw || r.renderer == nil {
+		fmt.Fprint(r.writer, text)
+		if !strings.HasSuffix(text, "\n") {
+			fmt.Fprintln(r.writer)
+		}
+	} else {
+		out, err := r.renderer.Render(text)
+		if err != nil {
+			fmt.Fprintln(r.writer, text)
+		} else {
+			fmt.Fprint(r.writer, out)
+		}
+	}
+}
+
+func (r *historyRenderer) renderPart(p llm.Part) {
+	if p.Thought && !r.showThoughts {
+		return
+	}
+
+	if p.Text != "" {
+		r.renderText(p.Text)
+	}
+	if p.FunctionCall != nil {
+		if r.useColor {
+			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
+		} else {
+			fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
+		}
+	}
+	if p.FunctionResponse != nil {
+		if r.useColor {
+			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
+		} else {
+			fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
+		}
 	}
 }

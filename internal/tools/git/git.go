@@ -6,7 +6,6 @@ package git
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -15,12 +14,13 @@ import (
 )
 
 type gitManager struct {
-	sm *security.SecurityManager
+	sm   *security.SecurityManager
+	Exec tools.CommandExecutor
 }
 
 // Register adds Git-related tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager) {
-	m := &gitManager{sm: sm}
+func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+	m := &gitManager{sm: sm, Exec: exec}
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_git_status",
@@ -121,7 +121,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 }
 
 func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	res, err := runGitCommand(ctx, "status", "--short")
+	res, err := m.runGitCommand(ctx, "status", "--short")
 	return tools.ToolResult{Text: res}, err
 }
 
@@ -136,9 +136,9 @@ func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}
 	var res string
 	var err error
 	if params.Staged {
-		res, err = runGitCommand(ctx, "diff", "--staged")
+		res, err = m.runGitCommand(ctx, "diff", "--staged")
 	} else {
-		res, err = runGitCommand(ctx, "diff")
+		res, err = m.runGitCommand(ctx, "diff")
 	}
 	return tools.ToolResult{Text: res}, err
 }
@@ -155,7 +155,7 @@ func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{})
 	if limit <= 0 {
 		limit = 10
 	}
-	res, err := runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
+	res, err := m.runGitCommand(ctx, "log", "--oneline", "-n", fmt.Sprintf("%d", limit))
 	return tools.ToolResult{Text: res}, err
 }
 
@@ -172,7 +172,7 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("hash argument is required")
 	}
 	// Truncate output to prevent hitting token limits on very large diffs
-	out, err := runGitCommand(ctx, "show", "--stat", "--patch", hash)
+	out, err := m.runGitCommand(ctx, "show", "--stat", "--patch", hash)
 	if err != nil {
 		return tools.ToolResult{Text: out}, err
 	}
@@ -201,7 +201,7 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	res, err := runGitCommand(ctx, "blame", "-w", resolvedPath)
+	res, err := m.runGitCommand(ctx, "blame", "-w", resolvedPath)
 	return tools.ToolResult{Text: res}, err
 }
 
@@ -226,7 +226,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	res, err := runGitCommand(ctx, "commit", "-m", message)
+	res, err := m.runGitCommand(ctx, "commit", "-m", message)
 	return tools.ToolResult{Text: res}, err
 }
 
@@ -252,13 +252,12 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	res, err := runGitCommand(ctx, "checkout", "-b", name)
+	res, err := m.runGitCommand(ctx, "checkout", "-b", name)
 	return tools.ToolResult{Text: res}, err
 }
 
-func runGitCommand(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	out, err := cmd.CombinedOutput()
+func (m *gitManager) runGitCommand(ctx context.Context, args ...string) (string, error) {
+	out, err := m.Exec.CombinedOutput(ctx, "git", args...)
 	if err != nil {
 		return string(out), fmt.Errorf("git command failed: %w", err)
 	}

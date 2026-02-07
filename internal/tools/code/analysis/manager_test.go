@@ -62,3 +62,14 @@ func TestAnalysisManager_Delegation(t *testing.T) {
 	_, _ = m.ListImplementations(ctx, map[string]interface{}{"interface_name": "I"})
 	_, _ = m.GetPackageGraph(ctx, nil)
 }
+
+func TestAnalysisManager_AnalyzeSequenceFlow(t *testing.T) {
+	tmpDir := t.TempDir()
+	idx, _ := index.NewIndexer(tmpDir)
+	cache := astutil.NewASTCache()
+	sp := &mockSecurityProvider{}
+	m := NewAnalysisManager(idx, cache, sp)
+
+	ctx := context.Background()
+	_, _ = m.AnalyzeSequenceFlow(ctx, map[string]interface{}{"start_symbol": "F"})
+}
