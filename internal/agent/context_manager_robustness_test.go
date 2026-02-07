@@ -87,26 +87,34 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 }
 
 func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
-	cm, capturedInput := setupSummarizationTest(t)
 	subset := createTestSubset()
 
 	t.Run("ExecuteSummarize", func(t *testing.T) {
+		cm, capturedInput := setupSummarizationTest(t)
 		verifyExecuteSummarize(t, cm, subset, capturedInput)
 	})
 
 	t.Run("PayloadIntegrity", func(t *testing.T) {
+		cm, capturedInput := setupSummarizationTest(t)
+		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyPayloadIntegrity(t, capturedInput)
 	})
 
 	t.Run("InputTransformation", func(t *testing.T) {
+		cm, capturedInput := setupSummarizationTest(t)
+		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyInputTransformation(t, capturedInput)
 	})
 
 	t.Run("ToolCallMapping", func(t *testing.T) {
+		cm, capturedInput := setupSummarizationTest(t)
+		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyToolCallMapping(t, capturedInput)
 	})
 
 	t.Run("BinaryDataMapping", func(t *testing.T) {
+		cm, capturedInput := setupSummarizationTest(t)
+		_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 		verifyBinaryDataMapping(t, capturedInput)
 	})
 }

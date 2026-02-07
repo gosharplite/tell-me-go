@@ -102,6 +102,7 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 }
 
 func testYamlLoading(t *testing.T) {
+	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500
@@ -123,6 +124,7 @@ MAX_TURNS: 5
 }
 
 func testModelIsolation(t *testing.T) {
+	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
 	yamlContent := `
 MODELS:
@@ -159,6 +161,7 @@ MODELS:
 }
 
 func testPrecedenceRules(t *testing.T) {
+	t.Parallel()
 	cw, mainPath, sessionPath := setupConfigWatcherTest(t)
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500
@@ -183,6 +186,7 @@ MAX_TURNS: 5
 }
 
 func testDeletionRobustness(t *testing.T) {
+	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500

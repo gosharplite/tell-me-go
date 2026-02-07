@@ -321,6 +321,9 @@ func (a *DeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *a
 }
 
 func (a *DeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *analysisState) {
+	if obj == nil || obj.Pkg() == nil {
+		return
+	}
 	if !obj.Exported() || obj.Name() == "init" {
 		return
 	}
@@ -347,6 +350,9 @@ func (a *DeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *analysi
 func (a *DeadCodeAnalyzer) harvestMethods(named *types.Named, state *analysisState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
+		if m == nil || m.Pkg() == nil {
+			continue
+		}
 		if m.Exported() {
 			mId := a.getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
