@@ -21,7 +21,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	ref := refactor.NewRefactorManager(sm)
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
 	inf := &InfoManager{SP: sm, Cache: cache, FS: fsutil.DefaultFileSystem}
-	sea := &SearchManager{SP: sm}
+	sea := &SearchManager{SP: sm, FS: fsutil.DefaultFileSystem}
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}
 
