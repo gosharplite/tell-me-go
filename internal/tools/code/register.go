@@ -5,6 +5,7 @@ package code
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
@@ -19,7 +20,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	cache := astutil.NewASTCache()
 	ref := refactor.NewRefactorManager(sm)
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
-	inf := &InfoManager{SP: sm, Cache: cache}
+	inf := &InfoManager{SP: sm, Cache: cache, FS: fsutil.DefaultFileSystem}
 	sea := &SearchManager{SP: sm}
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}

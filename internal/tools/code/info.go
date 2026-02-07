@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -22,15 +23,15 @@ import (
 type InfoManager struct {
 	SP    security.SecurityProvider
 	Cache *astutil.ASTCache
+	FS    fsutil.FileSystem
 }
 
 var genericSkeletonPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^func\s+`),
-	regexp.MustCompile(`^type\s+`),
-	regexp.MustCompile(`^def\s+`),
-	regexp.MustCompile(`^class\s+`),
-	regexp.MustCompile(`^function\s+`),
-	regexp.MustCompile(`^\w+\(\)\s*\{`),
+	regexp.MustCompile(`^(export\s+)?(async\s+)?func(tion)?\s+`),
+	regexp.MustCompile(`^(export\s+)?(async\s+)?class\s+`),
+	regexp.MustCompile(`^(export\s+)?(type|def)\s+`),
+	regexp.MustCompile(`^(export\s+)?\w+\(\)\s*\{`),
+	regexp.MustCompile(`^package\s+`),
 }
 
 func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -38,7 +39,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	sb.WriteString("Project Summary:\n")
 
 	// 1. Go Module Info
-	if content, err := os.ReadFile("go.mod"); err == nil {
+	if content, err := m.FS.ReadFile(ctx, "go.mod"); err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
 			if strings.HasPrefix(line, "module ") || strings.HasPrefix(line, "go ") {
@@ -52,12 +53,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	packages := make(map[string]bool)
 	totalLOC := 0
 
-	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	err := m.FS.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -77,7 +73,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 		if ext == ".go" {
 			packages[filepath.Dir(path)] = true
 			// Crude LOC count
-			if c, err := os.ReadFile(path); err == nil {
+			if c, err := m.FS.ReadFile(ctx, path); err == nil {
 				totalLOC += len(strings.Split(string(c), "\n"))
 			}
 		}
@@ -147,11 +143,11 @@ func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 		// Fallback to generic if AST parsing fails
 	}
 
-	return m.extractGenericSkeleton(path)
+	return m.extractGenericSkeleton(ctx, path)
 }
 
-func (m *InfoManager) extractGenericSkeleton(path string) (tools.ToolResult, error) {
-	content, err := os.ReadFile(path)
+func (m *InfoManager) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {
+	content, err := m.FS.ReadFile(ctx, path)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
