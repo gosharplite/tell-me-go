@@ -131,7 +131,7 @@ func (m *MockFileSystem) Remove(ctx context.Context, name string) error {
 func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
 	// Simple walk implementation
 	root = filepath.Clean(root)
-	
+
 	// Track directories we've already notified
 	dirsNotified := make(map[string]bool)
 	skippedDirs := make(map[string]bool)
@@ -146,7 +146,7 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 	for _, path := range paths {
 		content := m.Files[path]
 		cleanPath := filepath.Clean(path)
-		
+
 		// Check if it's within the root
 		isUnderRoot := false
 		if root == "." {
@@ -166,7 +166,7 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 				} else {
 					current = filepath.Join(current, parts[i])
 				}
-				
+
 				if skippedDirs[current] {
 					skipThisFile = true
 					break
@@ -208,7 +208,6 @@ func sortStrings(s []string) {
 		}
 	}
 }
-
 
 type mockDirEntry struct {
 	name  string

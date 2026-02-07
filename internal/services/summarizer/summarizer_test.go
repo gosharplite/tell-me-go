@@ -79,7 +79,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 
 		metrics := &llm.Metrics{PromptTokens: 10, ResponseTokens: 5}
 		respContent := &llm.Content{
-			Role: "model",
+			Role:  "model",
 			Parts: []*llm.Part{{Text: "Summary content"}},
 		}
 

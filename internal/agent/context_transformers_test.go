@@ -953,7 +953,6 @@ func TestApplySummary_Helper(t *testing.T) {
 	}
 }
 
-
 func TestToolDeclarationGenerator_MultipleTools(t *testing.T) {
 	t.Parallel()
 	registry := &mockToolRegistry{
@@ -1018,11 +1017,11 @@ func TestApplySummaryToHistory_UserMerging(t *testing.T) {
 	}
 	// start: 1, end: 2 -> keeps u1, replaces m1
 	got := applySummaryToHistory(history, 1, 2, "sum")
-	
+
 	if len(got) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(got))
 	}
-	
+
 	foundU1 := false
 	foundSum := false
 	for _, p := range got[0].Parts {
@@ -1045,15 +1044,15 @@ func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
 	}
 	// start: 0, end: 1 -> replaces u1, keeps m1
 	got := applySummaryToHistory(history, 0, 1, "sum")
-	
+
 	if len(got) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(got))
 	}
-	
+
 	if !strings.Contains(got[0].Parts[0].Text, "sum") {
 		t.Errorf("expected summary in first message, got %s", got[0].Parts[0].Text)
 	}
-	
+
 	foundUnderstood := false
 	foundM1 := false
 	for _, p := range got[1].Parts {
@@ -1078,11 +1077,11 @@ func TestApplySummaryToHistory_CombinedMerging(t *testing.T) {
 	}
 	// start: 1, end: 3 -> keeps u1, replaces m1,u2, keeps m2
 	got := applySummaryToHistory(history, 1, 3, "sum")
-	
+
 	if len(got) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(got))
 	}
-	
+
 	foundU1 := false
 	foundSum := false
 	for _, p := range got[0].Parts {
@@ -1142,7 +1141,6 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 	})
 }
 
-
 func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
@@ -1150,7 +1148,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	strategy.SetTieredThreshold(0)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
-	
+
 	tokens, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
 		t.Fatalf("handleTieredThreshold failed: %v", err)
@@ -1170,7 +1168,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	strategy.SetTieredThreshold(2000)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
-	
+
 	tokens, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
 		t.Fatalf("handleTieredThreshold failed: %v", err)
@@ -1250,7 +1248,6 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 		}
 	})
 }
-
 
 type mockTransformerEventBus struct {
 	publishFn func(event events.Event)
