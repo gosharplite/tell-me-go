@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -602,64 +603,89 @@ func (c *Command) showHistory(hManager *history.Manager, n int, raw bool, showTh
 	}
 
 	start := len(contents) - n
-	var r *glamour.TermRenderer
+	hr := &historyRenderer{
+		writer:       c.Stdout,
+		raw:          raw,
+		showThoughts: showThoughts,
+		useColor:     c.isTTY(c.Stdout) && !raw,
+	}
 	if !raw {
-		r, _ = glamour.NewTermRenderer(
+		hr.renderer, _ = glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithEmoji(),
 		)
 	}
 
-	useColor := c.isTTY(c.Stdout) && !raw
-
 	for i := start; i < len(contents); i++ {
-		c2 := contents[i]
-		roleStr := "[" + strings.ToUpper(c2.Role) + "]"
-		if useColor {
-			roleColor := colors.ColorBlue
-			if c2.Role != "user" {
-				roleColor = colors.ColorMagenta
-			}
-			fmt.Fprintf(c.Stdout, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
-		} else {
-			fmt.Fprintln(c.Stdout, roleStr)
-		}
+		content := contents[i]
+		hr.renderHeader(content.Role)
 
-		for _, p := range c2.Parts {
-			if p.Thought && !showThoughts {
-				continue
-			}
-
-			if p.Text != "" {
-				if raw || r == nil {
-					fmt.Fprint(c.Stdout, p.Text)
-					if !strings.HasSuffix(p.Text, "\n") {
-						fmt.Fprintln(c.Stdout)
-					}
-				} else {
-					out, err := r.Render(p.Text)
-					if err != nil {
-						fmt.Fprintln(c.Stdout, p.Text)
-					} else {
-						fmt.Fprint(c.Stdout, out)
-					}
-				}
-			}
-			if p.FunctionCall != nil {
-				if useColor {
-					fmt.Fprintf(c.Stdout, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
-				} else {
-					fmt.Fprintf(c.Stdout, "[Tool Call] %s\n", p.FunctionCall.Name)
-				}
-			}
-			if p.FunctionResponse != nil {
-				if useColor {
-					fmt.Fprintf(c.Stdout, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
-				} else {
-					fmt.Fprintf(c.Stdout, "[Tool Response] %s\n", p.FunctionResponse.Name)
-				}
+		for _, p := range content.Parts {
+			if p != nil {
+				hr.renderPart(*p)
 			}
 		}
 		fmt.Fprintln(c.Stdout)
+	}
+}
+
+type historyRenderer struct {
+	renderer     *glamour.TermRenderer
+	writer       io.Writer
+	raw          bool
+	showThoughts bool
+	useColor     bool
+}
+
+func (r *historyRenderer) renderHeader(role string) {
+	roleStr := "[" + strings.ToUpper(role) + "]"
+	if r.useColor {
+		roleColor := colors.ColorBlue
+		if role != "user" {
+			roleColor = colors.ColorMagenta
+		}
+		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
+	} else {
+		fmt.Fprintln(r.writer, roleStr)
+	}
+}
+
+func (r *historyRenderer) renderText(text string) {
+	if r.raw || r.renderer == nil {
+		fmt.Fprint(r.writer, text)
+		if !strings.HasSuffix(text, "\n") {
+			fmt.Fprintln(r.writer)
+		}
+	} else {
+		out, err := r.renderer.Render(text)
+		if err != nil {
+			fmt.Fprintln(r.writer, text)
+		} else {
+			fmt.Fprint(r.writer, out)
+		}
+	}
+}
+
+func (r *historyRenderer) renderPart(p llm.Part) {
+	if p.Thought && !r.showThoughts {
+		return
+	}
+
+	if p.Text != "" {
+		r.renderText(p.Text)
+	}
+	if p.FunctionCall != nil {
+		if r.useColor {
+			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
+		} else {
+			fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
+		}
+	}
+	if p.FunctionResponse != nil {
+		if r.useColor {
+			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
+		} else {
+			fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
+		}
 	}
 }
