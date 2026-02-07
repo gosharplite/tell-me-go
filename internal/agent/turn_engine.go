@@ -654,6 +654,16 @@ func (p *RecoveryStep) handleFailure(err error) processResult {
 func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
 	turn.State.RetryCount++
 
+	// Publish retry notification to the UI/EventBus
+	if turn.Events != nil {
+		msg := fmt.Sprintf("Transient error: %v. Retrying in %v (Attempt %d)...",
+			turn.State.LastError, delay.Round(time.Millisecond), turn.State.RetryCount)
+		turn.Events.Publish(events.SystemMessageEvent{
+			Message: msg,
+			Level:   "warn",
+		})
+	}
+
 	if err := ctx.Err(); err != nil {
 		return processResult{Error: err}
 	}
@@ -664,7 +674,7 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	case <-time.After(delay):
 	}
 
-	return processResult{NextPhase: phaseRefining} // Re-prepares context before next LLM call
+	return processResult{NextPhase: phaseRefining}
 }
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
