@@ -84,8 +84,21 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 		return nil, fmt.Errorf("failed to start go list: %w", err)
 	}
 
+	pkgs, err := m.decodePackageInfo(stdout)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("go list command failed: %w", err)
+	}
+
+	return pkgs, nil
+}
+
+func (m *ArchitectureManager) decodePackageInfo(r io.Reader) (map[string][]string, error) {
 	pkgs := make(map[string][]string)
-	dec := json.NewDecoder(stdout)
+	dec := json.NewDecoder(r)
 	for {
 		var p pkgInfo
 		if err := dec.Decode(&p); err != nil {
@@ -102,28 +115,25 @@ func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[stri
 		}
 
 		// Only track packages within this module and containing "internal/" or "cmd/"
-		if strings.HasPrefix(p.ImportPath, m.ModulePath) {
-			isInternal := strings.Contains(p.ImportPath, "internal/")
-			isCmd := strings.Contains(p.ImportPath, "cmd/")
-
-			if isInternal || isCmd {
-				var trackedImports []string
-				for _, imp := range p.Imports {
-					// Only care about imports within the same module
-					if strings.HasPrefix(imp, m.ModulePath) {
-						trackedImports = append(trackedImports, imp)
-					}
+		if m.isTrackedPackage(p.ImportPath) {
+			var trackedImports []string
+			for _, imp := range p.Imports {
+				// Only care about imports within the same module
+				if strings.HasPrefix(imp, m.ModulePath) {
+					trackedImports = append(trackedImports, imp)
 				}
-				pkgs[p.ImportPath] = trackedImports
 			}
+			pkgs[p.ImportPath] = trackedImports
 		}
 	}
-
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("go list command failed: %w", err)
-	}
-
 	return pkgs, nil
+}
+
+func (m *ArchitectureManager) isTrackedPackage(pkgPath string) bool {
+	if !strings.HasPrefix(pkgPath, m.ModulePath) {
+		return false
+	}
+	return strings.Contains(pkgPath, "internal/") || strings.Contains(pkgPath, "cmd/")
 }
 
 func isLayer(pkgPath, layerName string) bool {
@@ -188,59 +198,73 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 
 	var violations []violation
 	for pkg, imports := range pkgs {
-		shortPkg := m.shorten(pkg)
+		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
+		violations = m.checkGeneralCmdImport(pkg, imports, violations)
+	}
 
-		// Apply defined rules
-		for _, rule := range rules {
-			if isLayer(pkg, rule.SourceLayer) {
-				for _, imp := range imports {
-					for _, forbidden := range rule.Forbidden {
-						match := false
-						if forbidden == "cmd" {
-							match = m.isCmd(imp)
-						} else {
-							match = isLayer(imp, forbidden)
-						}
+	return violations
+}
 
-						if match {
-							violations = append(violations, violation{
-								pkg:      shortPkg,
-								category: "[LAYER VIOLATION]",
-								target:   m.shorten(imp),
-								reason:   rule.Reason,
-							})
-						}
-					}
-				}
-			}
+func (m *ArchitectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []Rule) []violation {
+	var violations []violation
+	shortPkg := m.shorten(pkg)
+
+	for _, rule := range rules {
+		if !isLayer(pkg, rule.SourceLayer) {
+			continue
 		}
 
-		// General rule: all internal packages must not import cmd/
-		if strings.Contains(pkg, "internal/") {
-			for _, imp := range imports {
-				if m.isCmd(imp) {
-					// Avoid duplicates if already caught by rules above
-					alreadyReported := false
-					for _, v := range violations {
-						if v.pkg == shortPkg && v.target == m.shorten(imp) {
-							alreadyReported = true
-							break
-						}
-					}
-					if !alreadyReported {
-						violations = append(violations, violation{
-							pkg:      shortPkg,
-							category: "[LAYER VIOLATION]",
-							target:   m.shorten(imp),
-							reason:   "Composition Root (cmd) should not be imported by internal packages.",
-						})
-					}
+		for _, imp := range imports {
+			for _, forbidden := range rule.Forbidden {
+				match := false
+				if forbidden == "cmd" {
+					match = m.isCmd(imp)
+				} else {
+					match = isLayer(imp, forbidden)
+				}
+
+				if match {
+					violations = append(violations, violation{
+						pkg:      shortPkg,
+						category: "[LAYER VIOLATION]",
+						target:   m.shorten(imp),
+						reason:   rule.Reason,
+					})
 				}
 			}
 		}
 	}
-
 	return violations
+}
+
+func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string, currentViolations []violation) []violation {
+	if !strings.Contains(pkg, "internal/") {
+		return currentViolations
+	}
+
+	shortPkg := m.shorten(pkg)
+	for _, imp := range imports {
+		if m.isCmd(imp) {
+			shortTarget := m.shorten(imp)
+			// Avoid duplicates if already caught by rules above
+			alreadyReported := false
+			for _, v := range currentViolations {
+				if v.pkg == shortPkg && v.target == shortTarget {
+					alreadyReported = true
+					break
+				}
+			}
+			if !alreadyReported {
+				currentViolations = append(currentViolations, violation{
+					pkg:      shortPkg,
+					category: "[LAYER VIOLATION]",
+					target:   shortTarget,
+					reason:   "Composition Root (cmd) should not be imported by internal packages.",
+				})
+			}
+		}
+	}
+	return currentViolations
 }
 
 func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
