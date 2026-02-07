@@ -15,7 +15,6 @@ const (
 	ColorBoldYellow = "\033[1;33m"
 	ColorBoldRed    = "\033[1;31m"
 	ColorBoldGreen  = "\033[1;32m"
-	ColorDim        = "\033[2m"
 
 	// Control sequences
 	TermSaveCursor    = "\0337"

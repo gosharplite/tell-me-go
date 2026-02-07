@@ -20,7 +20,7 @@ type mediaManager struct {
 func Register(r *registry.Registry, sm *security.SecurityManager, gateway tools.AgentGateway) {
 	m := &mediaManager{sm: sm, agentGateway: gateway}
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "create_image",
 		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
 		Parameters: &tools.Schema{
@@ -41,7 +41,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager, gateway tools.
 			},
 			Required: []string{"prompt"},
 		},
-	}, m.createImage)
+	}, m.createImage, registry.ToolOptions{LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "read_image",

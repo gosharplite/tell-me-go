@@ -26,10 +26,10 @@ func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 		executor: system.NewProcessExecutor(),
 	}
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, m.verifyReleaseReadiness)
+	}, m.verifyReleaseReadiness, registry.ToolOptions{Serial: true, LongRunning: true})
 }
 
 type releaseManager struct {

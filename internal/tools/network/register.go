@@ -14,7 +14,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	net := NewNetworkTool(sm)
 	RegisterTeams(r, sm)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
 		Parameters: &tools.Schema{
@@ -27,9 +27,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"url"},
 		},
-	}, net.ReadExternalDocs)
+	}, net.ReadExternalDocs, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "http_request",
 		Description: "Executes a custom HTTP request.",
 		Parameters: &tools.Schema{
@@ -57,5 +57,5 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, net.HttpRequest)
+	}, net.HttpRequest, registry.ToolOptions{LongRunning: true})
 }

@@ -12,13 +12,26 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"regexp"
 )
 
 type InfoManager struct {
-	SP security.SecurityProvider
+	SP    security.SecurityProvider
+	Cache *astutil.ASTCache
+	FS    fsutil.FileSystem
+}
+
+var genericSkeletonPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`^(export\s+)?(async\s+)?func(tion)?\s+`),
+	regexp.MustCompile(`^(export\s+)?(async\s+)?class\s+`),
+	regexp.MustCompile(`^(export\s+)?(type|def)\s+`),
+	regexp.MustCompile(`^(export\s+)?\w+\(\)\s*\{`),
+	regexp.MustCompile(`^package\s+`),
 }
 
 func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -26,7 +39,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	sb.WriteString("Project Summary:\n")
 
 	// 1. Go Module Info
-	if content, err := os.ReadFile("go.mod"); err == nil {
+	if content, err := m.FS.ReadFile(ctx, "go.mod"); err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
 			if strings.HasPrefix(line, "module ") || strings.HasPrefix(line, "go ") {
@@ -40,12 +53,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	packages := make(map[string]bool)
 	totalLOC := 0
 
-	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	err := m.FS.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -65,7 +73,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 		if ext == ".go" {
 			packages[filepath.Dir(path)] = true
 			// Crude LOC count
-			if c, err := os.ReadFile(path); err == nil {
+			if c, err := m.FS.ReadFile(ctx, path); err == nil {
 				totalLOC += len(strings.Split(string(c), "\n"))
 			}
 		}
@@ -112,4 +120,75 @@ func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
+}
+
+func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Filepath string `json:"filepath"`
+	}
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	path, err := m.SP.IsPathSafe(params.Filepath)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if filepath.Ext(path) == ".go" {
+		skeleton, err := m.Cache.GetFileSkeletonGo(path)
+		if err == nil {
+			return tools.ToolResult{Text: skeleton}, nil
+		}
+		// Fallback to generic if AST parsing fails
+	}
+
+	return m.extractGenericSkeleton(ctx, path)
+}
+
+func (m *InfoManager) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {
+	content, err := m.FS.ReadFile(ctx, path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	var sb strings.Builder
+	lines := strings.Split(string(content), "\n")
+	var lastComments []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			lastComments = append(lastComments, line)
+			continue
+		}
+
+		if trimmed == "" {
+			lastComments = nil
+			continue
+		}
+
+		isDef := false
+		for _, p := range genericSkeletonPatterns {
+			if p.MatchString(line) {
+				isDef = true
+				break
+			}
+		}
+
+		if isDef {
+			for _, c := range lastComments {
+				sb.WriteString(c + "\n")
+			}
+			sb.WriteString(line + "\n\n")
+		}
+		lastComments = nil
+	}
+
+	res := strings.TrimSpace(sb.String())
+	if res == "" {
+		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
+	}
+	return tools.ToolResult{Text: res}, nil
 }

@@ -48,8 +48,8 @@ func (s *ConfigStore) Load(ctx context.Context) error {
 	return json.Unmarshal(data, &s.config)
 }
 
-// Save saves configuration to disk.
-func (s *ConfigStore) Save(ctx context.Context) error {
+// save saves configuration to disk.
+func (s *ConfigStore) save(ctx context.Context) error {
 	s.mu.RLock()
 	data, err := json.MarshalIndent(s.config, "", "  ")
 	s.mu.RUnlock()
@@ -101,7 +101,7 @@ func (s *ConfigStore) set(ctx context.Context, key, val string) (tools.ToolResul
 	s.config[key] = val
 	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.save(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save config: %w", err)
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, val)}, nil
@@ -130,7 +130,7 @@ func (s *ConfigStore) delete(ctx context.Context, key string) (tools.ToolResult,
 	delete(s.config, key)
 	s.mu.Unlock()
 
-	if err := s.Save(ctx); err != nil {
+	if err := s.save(ctx); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to save config: %w", err)
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil

@@ -108,11 +108,3 @@ func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *ContextReq
 	}
 	return nil
 }
-
-// AddTransformer adds a transformer to the pipeline and re-sorts.
-func (p *ContextPipeline) AddTransformer(t ContextTransformer) {
-	p.transformers = append(p.transformers, t)
-	sort.Slice(p.transformers, func(i, j int) bool {
-		return p.transformers[i].Priority() < p.transformers[j].Priority()
-	})
-}

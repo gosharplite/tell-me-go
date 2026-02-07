@@ -155,7 +155,6 @@ type TurnEngine struct {
 	retryPolicy      RetryPolicy
 	clock            Clock
 	sm               security.ISecurityManager
-	logFile          string
 	model            string
 	pricingOverrides map[string]pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
@@ -221,13 +220,12 @@ func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
 }
 
 // WithConfig sets the security and usage configuration for the engine.
-func WithConfig(sm security.ISecurityManager, logFile, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
+func WithConfig(sm security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
 		e.sm = sm
-		e.logFile = logFile
 		e.model = model
 		e.pricingOverrides = pricingOverrides
 	}

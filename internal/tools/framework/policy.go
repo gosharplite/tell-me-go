@@ -332,7 +332,7 @@ func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface
 func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
 	p := NewPolicyTool(sm)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",
 		Description: "Adds a path to the persistent 'safe' list, allowing future AI sessions to read/write in that location without repeating security authorizations.",
 		Parameters: &tools.Schema{
@@ -349,14 +349,14 @@ func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterSafePath)
+	}, p.RegisterSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_safepaths",
 		Description: "Lists all currently authorized safe paths and files.",
 	}, p.ListSafePaths)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_safepath",
 		Description: "Removes a directory or file from the authorized boundaries.",
 		Parameters: &tools.Schema{
@@ -369,9 +369,9 @@ func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveSafePath)
+	}, p.RemoveSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_readpath",
 		Description: "Adds a directory or file to the allowed boundaries for READ-ONLY access. This is a persistent configuration.",
 		Parameters: &tools.Schema{
@@ -388,14 +388,14 @@ func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterReadPath)
+	}, p.RegisterReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_readpaths",
 		Description: "Lists all currently authorized read-only paths and files.",
 	}, p.ListReadPaths)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "remove_readpath",
 		Description: "Removes a directory or file from the read-only authorized boundaries.",
 		Parameters: &tools.Schema{
@@ -408,15 +408,15 @@ func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveReadPath)
+	}, p.RemoveReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, p.BypassConfirmation)
+	}, p.BypassConfirmation, registry.ToolOptions{Serial: true, LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, p.RevokeBypass)
+	}, p.RevokeBypass, registry.ToolOptions{Serial: true, LongRunning: true})
 }

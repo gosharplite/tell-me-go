@@ -191,7 +191,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, NewAgentError(ErrLogic, "tool not found", ErrToolNotFound)
+			return nil, NewAgentError(ErrLogic, "tool not found", ErrLogic)
 		},
 	}
 
@@ -203,8 +203,8 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	if !errors.Is(err, ErrToolNotFound) {
-		t.Errorf("Expected ErrToolNotFound, got: %v", err)
+	if !errors.Is(err, ErrLogic) {
+		t.Errorf("Expected ErrLogic, got: %v", err)
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).

@@ -18,6 +18,7 @@ import (
 
 type SearchManager struct {
 	SP security.SecurityProvider
+	FS fsutil.FileSystem
 }
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -35,7 +36,7 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	results, err := files.ConcurrentSearch(ctx, m.SP, fsutil.DefaultFileSystem, path, func(_, line string) bool {
+	results, err := files.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
 		return todoRegex.MatchString(line)
 	}, 500)
 
@@ -57,6 +58,7 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
+		Path  string `json:"path"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -67,7 +69,12 @@ func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
-	results, err := files.ConcurrentSearch(ctx, m.SP, fsutil.DefaultFileSystem, ".", func(_, line string) bool {
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+
+	results, err := files.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
 		return re.MatchString(line)
 	}, 100)
 

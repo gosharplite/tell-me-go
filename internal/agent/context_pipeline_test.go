@@ -34,13 +34,6 @@ func TestContextPipeline_Sort(t *testing.T) {
 		t.Errorf("NewContextPipeline: expected order %v, got %v", getNames(expected), getNames(p.transformers))
 	}
 
-	t4 := &mockPriorityTransformer{priority: 5, name: "T5"}
-	p.AddTransformer(t4)
-
-	expectedWithT4 := []ContextTransformer{t4, t2, t3, t1}
-	if !reflect.DeepEqual(p.transformers, expectedWithT4) {
-		t.Errorf("AddTransformer: expected order %v, got %v", getNames(expectedWithT4), getNames(p.transformers))
-	}
 }
 
 func getNames(transformers []ContextTransformer) []string {

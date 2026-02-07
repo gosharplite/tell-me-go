@@ -10,9 +10,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
 )
 
-// GenerateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
+// generateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
 // It is registered as a tool.
-func GenerateMermaidDiagram(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func generateMermaidDiagram(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	rawGraph, ok := args["graph"]
 	if !ok {
 		return tools.ToolResult{Text: "Error: missing 'graph' argument"}, nil

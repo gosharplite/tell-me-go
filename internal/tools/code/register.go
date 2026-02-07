@@ -5,6 +5,7 @@ package code
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
@@ -19,22 +20,22 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	cache := astutil.NewASTCache()
 	ref := refactor.NewRefactorManager(sm)
 	ana := analysis.NewAnalysisManager(idx, cache, sm)
-	inf := &InfoManager{SP: sm}
-	sea := &SearchManager{SP: sm}
+	inf := &InfoManager{SP: sm, Cache: cache, FS: fsutil.DefaultFileSystem}
+	sea := &SearchManager{SP: sm, FS: fsutil.DefaultFileSystem}
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_architecture",
 		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
-	}, arc.VerifyArchitecture)
+	}, arc.VerifyArchitecture, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_code_health",
 		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
-	}, hea.GetCodeHealth)
+	}, hea.GetCodeHealth, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_detailed_coverage",
 		Description: "Analyzes Go test coverage to identify specific untested code blocks, prioritizing error handling and business logic gaps.",
 		Parameters: &tools.Schema{
@@ -47,9 +48,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, hea.GetDetailedCoverage)
+	}, hea.GetDetailedCoverage, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
 		Parameters: &tools.Schema{
@@ -66,9 +67,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, ana.FindUsages)
+	}, ana.FindUsages, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_definitions",
 		Description: "Finds the exact declaration(s) of a symbol using AST.",
 		Parameters: &tools.Schema{
@@ -85,7 +86,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, ana.FindDefinitions)
+	}, ana.FindDefinitions, registry.ToolOptions{LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_symbols",
@@ -145,6 +146,21 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	}, inf.GetProjectSummary)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "get_file_skeleton",
+		Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the source code file.",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, inf.GetFileSkeleton)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "search_usages_globally",
 		Description: "Performs a high-speed text search across all non-ignored project files. Use this for non-code files (YAML, MD) or finding hardcoded strings.",
 		Parameters: &tools.Schema{
@@ -153,6 +169,10 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 				"query": {
 					Type:        "STRING",
 					Description: "The string or regex to search for.",
+				},
+				"path": {
+					Type:        "STRING",
+					Description: "The directory to search (defaults to '.')",
 				},
 			},
 			Required: []string{"query"},

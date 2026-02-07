@@ -15,7 +15,7 @@ import (
 func TestNewToolRegistry(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(r, sm, t.TempDir(), "v1.0.0", nil)
+	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil)
 
 	if len(r.GetDeclarations()) == 0 {
 		t.Error("expected registered tools, got none")
@@ -25,7 +25,7 @@ func TestNewToolRegistry(t *testing.T) {
 func TestToolExecution(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(r, sm, t.TempDir(), "v1.0.0", nil)
+	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil)
 
 	ctx := context.Background()
 	// list_files is registered by files.Register

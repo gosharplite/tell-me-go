@@ -52,7 +52,7 @@ func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir
 		Description: "Returns the active configuration, environment variables, and session file paths.",
 	}, m.getSessionInfo)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_scratchpad",
 		Description: "Read, write, or update the persistent scratchpad (scoped to current mode).",
 		Parameters: &tools.Schema{
@@ -70,9 +70,9 @@ func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir
 			},
 			Required: []string{"action"},
 		},
-	}, m.scratchpad.ManageScratchpad)
+	}, m.scratchpad.ManageScratchpad, registry.ToolOptions{Serial: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_config",
 		Description: "Manages persistent key-value configuration/settings scoped by mode.",
 		Parameters: &tools.Schema{
@@ -94,9 +94,9 @@ func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir
 			},
 			Required: []string{"action"},
 		},
-	}, m.config.ManageConfig)
+	}, m.config.ManageConfig, registry.ToolOptions{Serial: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_tasks",
 		Description: "Manages a to-do list of tasks (scoped to current mode).",
 		Parameters: &tools.Schema{
@@ -122,7 +122,7 @@ func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir
 			},
 			Required: []string{"action"},
 		},
-	}, m.tasks.ManageTasks)
+	}, m.tasks.ManageTasks, registry.ToolOptions{Serial: true})
 }
 
 func (m *stateManager) initSessionInfo(configDir string) {

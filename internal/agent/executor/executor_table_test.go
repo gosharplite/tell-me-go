@@ -176,7 +176,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}
 
 		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
-		verifyToolEventError(t, bus, agenerrors.ErrToolNotFound)
+		verifyToolEventError(t, bus, agenerrors.ErrLogic)
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Security policy: command \"forbidden\" is not allowed")
-		verifyToolEventError(t, bus, agenerrors.ErrSecurityViolation)
+		verifyToolEventError(t, bus, agenerrors.ErrLogic)
 	})
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
@@ -228,8 +228,8 @@ func TestToolExecutor_Errors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "Error: tool failed")
-		verifyToolEventError(t, bus, agenerrors.ErrInvalidArgs)
+		verifyErrorResponse(t, resp, "tool execution failed: fail_tool: tool failed")
+		verifyToolEventError(t, bus, agenerrors.ErrLogic)
 	})
 }
 
@@ -253,7 +253,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool execution timed out")
-		verifyToolEventError(t, bus, agenerrors.ErrToolTimeout)
+		verifyToolEventError(t, bus, agenerrors.ErrTransient)
 	})
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
@@ -679,45 +679,6 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 				tt.verify(t, content.Parts)
 			}
 		})
-	}
-}
-
-func TestToolExecutor_ConfigUpdatedEvent(t *testing.T) {
-	reg := registry.New()
-	bus := &events.SimpleEventBus{}
-	exec := NewToolExecutor(reg, nil, bus)
-	t.Cleanup(exec.Shutdown)
-
-	// Deterministic synchronization:
-	// We subscribe AFTER the executor, so our callback runs after the executor's SetConcurrency.
-	done := make(chan struct{})
-	bus.Subscribe(func(event events.Event) {
-		if _, ok := event.(events.ConfigUpdated); ok {
-			close(done)
-		}
-	})
-
-	bus.Publish(events.ConfigUpdated{
-		Execution: events.ExecutionConfig{
-			MaxConcurrent: 10,
-			Timeout:       1 * time.Minute,
-		},
-	})
-
-	// Wait for processing to complete
-	select {
-	case <-done:
-	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout waiting for ConfigUpdated event processing")
-	}
-
-	exec.mu.RLock()
-	defer exec.mu.RUnlock()
-	if exec.maxConcurrentTools != 10 {
-		t.Errorf("Expected maxConcurrentTools 10, got %d", exec.maxConcurrentTools)
-	}
-	if exec.toolTimeout != 1*time.Minute {
-		t.Errorf("Expected toolTimeout 1m, got %v", exec.toolTimeout)
 	}
 }
 

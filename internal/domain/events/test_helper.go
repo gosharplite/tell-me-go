@@ -100,15 +100,6 @@ func (b *CountingEventBus) Publish(e Event) {
 	b.mu.Unlock()
 }
 
-// WaitCount blocks until at least target events have been published.
-func (b *CountingEventBus) WaitCount(target int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for b.count < target {
-		b.cond.Wait()
-	}
-}
-
 // GetCount returns the current number of published events.
 func (b *CountingEventBus) GetCount() int {
 	b.mu.RLock()

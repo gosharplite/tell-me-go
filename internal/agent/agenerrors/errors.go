@@ -14,10 +14,6 @@ var (
 	ErrLogic     = errors.New("logic violation")   // Should stop, indicates bug or limit
 
 	// Tool-specific error categories
-	ErrToolNotFound      = errors.New("tool not found")
-	ErrToolTimeout       = errors.New("tool execution timeout")
-	ErrSecurityViolation = errors.New("security policy violation")
-	ErrInvalidArgs       = errors.New("invalid tool arguments")
 )
 
 // AgentError provides structured error context for the orchestration engine.

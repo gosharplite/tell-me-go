@@ -7,6 +7,7 @@ package tools
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
@@ -19,38 +20,25 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/system"
 )
 
-// Registry is a type alias for backward compatibility during refactoring.
-// Deprecated: Use registry.Registry directly.
-type Registry = registry.Registry
-
-// ToolFunc is a type alias for backward compatibility during refactoring.
-// Deprecated: Use registry.ToolFunc directly.
-type ToolFunc = registry.ToolFunc
-
-// ToolOptions is a type alias for backward compatibility during refactoring.
-// Deprecated: Use registry.ToolOptions directly.
-type ToolOptions = registry.ToolOptions
-
-// UnmarshalArgs is a wrapper for backward compatibility during refactoring.
-// Deprecated: Use registry.UnmarshalArgs directly.
-func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
-	return registry.UnmarshalArgs(args, target)
-}
-
-// NewRegistry initializes an empty tool registry.
-// Deprecated: Use registry.New() directly.
-func NewRegistry() *registry.Registry {
-	return registry.New()
-}
-
 // RegisterAll registers all available tools into the registry.
-func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir string, version string, gateway tools.AgentGateway) {
+func RegisterAll(
+	r *registry.Registry,
+	sm *security.SecurityManager,
+	outputDir string,
+	logFile string,
+	model string,
+	mode string,
+	pricingOverrides map[string]pricing.ModelPricing,
+	gateway tools.AgentGateway,
+) {
 	files.Register(r, sm)
-	framework.RegisterState(r, sm, configDir)
+	framework.RegisterState(r, sm, outputDir)
 	framework.RegisterPolicy(r, sm)
+	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	system.Register(r, sm)
 	git.Register(r, sm)
 	dev.Register(r, sm)
+	dev.RegisterRelease(r, sm)
 	code.Register(r, sm)
 	network.Register(r, sm)
 	media.Register(r, sm, gateway)
@@ -68,5 +56,5 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, configDir s
 			},
 			Required: []string{"graph"},
 		},
-	}, GenerateMermaidDiagram)
+	}, generateMermaidDiagram)
 }

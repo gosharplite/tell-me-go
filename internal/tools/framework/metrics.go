@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -48,20 +47,6 @@ func NewSessionCostTracker(sm security.ISecurityManager, logFile string, modelNa
 		model:     model,
 		pricing:   pricing,
 	}
-}
-
-// Subscribe registers the tracker to listen for usage metrics events.
-func (t *SessionCostTracker) Subscribe(bus events.EventBus) {
-	if bus == nil {
-		return
-	}
-	bus.Subscribe(func(e events.Event) {
-		if ev, ok := e.(events.UsageMetricsEvent); ok {
-			if ev.Metrics != nil {
-				t.Accumulate(*ev.Metrics)
-			}
-		}
-	})
 }
 
 // GetTotalCost returns the accumulated cost.
@@ -187,7 +172,7 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 		ledger:           NewLedgerStore(sm, model, pricingOverrides),
 	}
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "estimate_cost",
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -197,9 +182,9 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
-	})
+	}, registry.ToolOptions{Serial: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
 		Parameters: &tools.Schema{
@@ -233,7 +218,7 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 		_, _ = m.EstimateCost(ctx, true, "")
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
-	})
+	}, registry.ToolOptions{Serial: true})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.

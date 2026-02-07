@@ -16,8 +16,6 @@ type OptimizationProfile string
 const (
 	// ProfilePrecise prioritizes data integrity and code blocks.
 	ProfilePrecise OptimizationProfile = "precise"
-	// ProfileChatty prioritizes dialogue and recent turns.
-	ProfileChatty OptimizationProfile = "chatty"
 )
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
