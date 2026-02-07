@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package files
+package code
 
 import (
 	"context"
@@ -10,13 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 )
 
 func TestGetFileSkeleton(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	s := &fileSkeleton{sm: sm, fs: fsutil.DefaultFileSystem}
+	cache := astutil.NewASTCache()
+	m := &InfoManager{SP: sm, Cache: cache}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -24,27 +25,29 @@ func TestGetFileSkeleton(t *testing.T) {
 		filename string
 		content  string
 		mustHave []string
+		mustNot  []string
 	}{
 		{
-			name:     "Python",
+			name:     "Go AST Mode",
+			filename: "test.go",
+			content:  "package p\n// S is a struct\ntype S struct { A int }\nfunc (s *S) Foo() { fmt.Println(s.A) }",
+			mustHave: []string{"package p", "// S is a struct", "type S struct", "func (s *S) Foo()"},
+			mustNot:  []string{"fmt.Println"},
+		},
+		{
+			name:     "Python Generic Mode",
 			filename: "test.py",
 			content:  "# comment\ndef func():\n    pass\n\nclass MyClass:\n    pass",
 			mustHave: []string{"# comment", "def func():", "class MyClass:"},
 		},
 		{
-			name:     "Go",
-			filename: "test.go",
-			content:  "// Go comment\nfunc Main() {}\ntype MyStruct struct{}",
-			mustHave: []string{"// Go comment", "func Main()", "type MyStruct"},
-		},
-		{
-			name:     "JavaScript",
+			name:     "JavaScript Generic Mode",
 			filename: "test.js",
 			content:  "// JS comment\nfunction test() {}\nclass Boat {}",
 			mustHave: []string{"// JS comment", "function test()", "class Boat"},
 		},
 		{
-			name:     "Bash",
+			name:     "Bash Generic Mode",
 			filename: "test.sh",
 			content:  "# Bash comment\nmy_func() {\n  echo hi\n}",
 			mustHave: []string{"# Bash comment", "my_func() {"},
@@ -59,9 +62,12 @@ func TestGetFileSkeleton(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			res, err := s.getFileSkeleton(ctx, map[string]interface{}{"filepath": path})
+			// Authorize path for test
+			sm.RegisterSafePath(path)
+
+			res, err := m.GetFileSkeleton(ctx, map[string]interface{}{"filepath": path})
 			if err != nil {
-				t.Fatalf("getFileSkeleton failed: %v", err)
+				t.Fatalf("GetFileSkeleton failed: %v", err)
 			}
 
 			for _, want := range tt.mustHave {
@@ -69,17 +75,12 @@ func TestGetFileSkeleton(t *testing.T) {
 					t.Errorf("expected skeleton to contain %q, but it didn't. Got:\n%s", want, res.Text)
 				}
 			}
-		})
-	}
-}
 
-func TestScanForDefinitions_Empty(t *testing.T) {
-	r := strings.NewReader("just plain text\nwithout definitions")
-	got, err := scanForDefinitions(r, ".txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "" {
-		t.Errorf("expected empty string for file with no definitions, got %q", got)
+			for _, notWant := range tt.mustNot {
+				if strings.Contains(res.Text, notWant) {
+					t.Errorf("expected skeleton NOT to contain %q, but it did. Got:\n%s", notWant, res.Text)
+				}
+			}
+		})
 	}
 }

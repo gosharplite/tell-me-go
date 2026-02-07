@@ -16,11 +16,21 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"regexp"
 )
 
 type InfoManager struct {
 	SP    security.SecurityProvider
 	Cache *astutil.ASTCache
+}
+
+var genericSkeletonPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`^func\s+`),
+	regexp.MustCompile(`^type\s+`),
+	regexp.MustCompile(`^def\s+`),
+	regexp.MustCompile(`^class\s+`),
+	regexp.MustCompile(`^function\s+`),
+	regexp.MustCompile(`^\w+\(\)\s*\{`),
 }
 
 func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -129,10 +139,60 @@ func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, err
 	}
 
-	skeleton, err := m.Cache.GetFileSkeletonGo(path)
-	if err != nil {
-		return tools.ToolResult{Text: fmt.Sprintf("Error getting file skeleton: %v", err)}, nil
+	if filepath.Ext(path) == ".go" {
+		skeleton, err := m.Cache.GetFileSkeletonGo(path)
+		if err == nil {
+			return tools.ToolResult{Text: skeleton}, nil
+		}
+		// Fallback to generic if AST parsing fails
 	}
 
-	return tools.ToolResult{Text: skeleton}, nil
+	return m.extractGenericSkeleton(path)
+}
+
+func (m *InfoManager) extractGenericSkeleton(path string) (tools.ToolResult, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	var sb strings.Builder
+	lines := strings.Split(string(content), "\n")
+	var lastComments []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			lastComments = append(lastComments, line)
+			continue
+		}
+
+		if trimmed == "" {
+			lastComments = nil
+			continue
+		}
+
+		isDef := false
+		for _, p := range genericSkeletonPatterns {
+			if p.MatchString(line) {
+				isDef = true
+				break
+			}
+		}
+
+		if isDef {
+			for _, c := range lastComments {
+				sb.WriteString(c + "\n")
+			}
+			sb.WriteString(line + "\n\n")
+		}
+		lastComments = nil
+	}
+
+	res := strings.TrimSpace(sb.String())
+	if res == "" {
+		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
+	}
+	return tools.ToolResult{Text: res}, nil
 }

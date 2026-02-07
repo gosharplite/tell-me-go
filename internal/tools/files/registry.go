@@ -11,20 +11,18 @@ import (
 )
 
 type fileSystemManager struct {
-	reader   *fileReader
-	writer   *fileWriter
-	search   *fileSearcher
-	skeleton *fileSkeleton
+	reader *fileReader
+	writer *fileWriter
+	search *fileSearcher
 }
 
 // Register adds file-related tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	bm := NewBackupManager(sm, 10)
 	m := &fileSystemManager{
-		reader:   &fileReader{sm: sm, fs: fsutil.DefaultFileSystem},
-		writer:   &fileWriter{sm: sm, bm: bm, fs: fsutil.DefaultFileSystem},
-		search:   &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem},
-		skeleton: &fileSkeleton{sm: sm, fs: fsutil.DefaultFileSystem},
+		reader: &fileReader{sm: sm, fs: fsutil.DefaultFileSystem},
+		writer: &fileWriter{sm: sm, bm: bm, fs: fsutil.DefaultFileSystem},
+		search: &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem},
 	}
 
 	r.Register(&tools.ToolDeclaration{
@@ -156,21 +154,6 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 		},
 	}, m.search.grepDefinitions)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_file_skeleton",
-		Description: "Extracts the public API surface of a source file, including all exported types and function signatures, while omitting implementations.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the source code file.",
-				},
-			},
-			Required: []string{"filepath"},
-		},
-	}, m.skeleton.getFileSkeleton)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "write_file",
