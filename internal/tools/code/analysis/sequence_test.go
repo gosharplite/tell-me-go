@@ -67,18 +67,18 @@ func LoopFunc() {}
 
 	pkgATypes := types.NewPackage(pkgAPath, "pkgA")
 	pkgBImport := types.NewPkgName(token.NoPos, pkgATypes, "pkgB", pkgBTypes)
-	
+
 	pkgA := &packages.Package{
-		Name:      "pkgA",
-		PkgPath:   pkgAPath,
-		Syntax:    []*ast.File{fileA},
-		Types:     pkgATypes,
-		Imports:   map[string]*packages.Package{pkgBPath: pkgB},
+		Name:    "pkgA",
+		PkgPath: pkgAPath,
+		Syntax:  []*ast.File{fileA},
+		Types:   pkgATypes,
+		Imports: map[string]*packages.Package{pkgBPath: pkgB},
 		TypesInfo: &types.Info{
 			Uses: make(map[*ast.Ident]types.Object),
 		},
 	}
-	
+
 	ast.Inspect(fileA, func(n ast.Node) bool {
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			if id, ok := sel.X.(*ast.Ident); ok && id.Name == "pkgB" {
@@ -128,7 +128,7 @@ func LoopFunc() {}`
 		fileB2, _ := parser.ParseFile(fset, "b.go", codeB2, 0)
 		subFuncObj := types.NewFunc(token.NoPos, pkgBTypes, "SubFunc", types.NewSignatureType(nil, nil, nil, nil, nil, false))
 		pkgBTypes.Scope().Insert(subFuncObj)
-		
+
 		pkgB.Syntax = []*ast.File{fileB2}
 		ast.Inspect(fileB2, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && id.Name == "SubFunc" {

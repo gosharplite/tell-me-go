@@ -213,7 +213,7 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	}
 
 	var violations []violation
-	
+
 	// Sort packages for deterministic iteration
 	var sortedPkgs []string
 	for p := range pkgs {
@@ -224,7 +224,7 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	for _, pkg := range sortedPkgs {
 		imports := pkgs[pkg]
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
-		violations = m.checkGeneralCmdImport(pkg, imports, violations)
+		violations = append(violations, m.checkGeneralCmdImport(pkg, imports, violations)...)
 	}
 
 	return violations
@@ -262,25 +262,37 @@ func (m *ArchitectureManager) checkSinglePackageViolations(pkg string, imports [
 	return violations
 }
 
-func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string, currentViolations []violation) []violation {
+func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string, existing []violation) []violation {
 	if !strings.Contains(pkg, "internal/") {
-		return currentViolations
+		return nil
 	}
 
+	var found []violation
 	shortPkg := m.shorten(pkg)
 	for _, imp := range imports {
 		if m.isCmd(imp) {
 			shortTarget := m.shorten(imp)
-			// Avoid duplicates if already caught by rules above
+			// Avoid duplicates if already caught by rules above or by previous iterations
 			alreadyReported := false
-			for _, v := range currentViolations {
+			for _, v := range existing {
 				if v.pkg == shortPkg && v.target == shortTarget {
 					alreadyReported = true
 					break
 				}
 			}
+
 			if !alreadyReported {
-				currentViolations = append(currentViolations, violation{
+				// Also check against what we already found in this call
+				for _, v := range found {
+					if v.pkg == shortPkg && v.target == shortTarget {
+						alreadyReported = true
+						break
+					}
+				}
+			}
+
+			if !alreadyReported {
+				found = append(found, violation{
 					pkg:      shortPkg,
 					category: "[LAYER VIOLATION]",
 					target:   shortTarget,
@@ -289,7 +301,7 @@ func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string
 			}
 		}
 	}
-	return currentViolations
+	return found
 }
 
 func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {

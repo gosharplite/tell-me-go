@@ -362,11 +362,11 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock,
 		return
 	}
 	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
-	
+
 	// Prepare the label for "more" message
 	label := strings.ToLower(title)
 	label = strings.TrimSuffix(label, " gaps")
-	
+
 	for i, b := range blocks {
 		if i >= maxItems {
 			sb.WriteString(fmt.Sprintf("... and %d more %s gaps.\n", len(blocks)-maxItems, label))

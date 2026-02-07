@@ -194,7 +194,7 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 		},
 		"github.com/org/repo/internal/agent": {
 			"github.com/org/repo/internal/domain", // OK
-			"github.com/org/repo/cmd/app",        // Violation
+			"github.com/org/repo/cmd/app",         // Violation
 		},
 	}
 

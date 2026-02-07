@@ -109,7 +109,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 		want    string
 	}{
 		{
-			name: "standard go.mod",
+			name:    "standard go.mod",
 			content: "module github.com/test/repo\n\ngo 1.25\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n",
 			want:    "module github.com/test/repo\ngo 1.25\n",
 		},
@@ -214,7 +214,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	t.Run("files without extensions", func(t *testing.T) {
 		_ = fs.WriteFile(ctx, "LICENSE", []byte("MIT"), 0644)
 		_ = fs.WriteFile(ctx, "Makefile", []byte("all: test"), 0644)
-		
+
 		fileCounts, _, _, _ := m.collectFileStats(ctx)
 		if fileCounts["(no ext)"] != 2 {
 			t.Errorf("expected 2 files with (no ext), got %d", fileCounts["(no ext)"])
@@ -224,7 +224,7 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	t.Run("skip directories", func(t *testing.T) {
 		_ = fs.WriteFile(ctx, "vendor/pkg/v.go", []byte("package v"), 0644)
 		_ = fs.WriteFile(ctx, "node_modules/lib/n.js", []byte("const x = 1"), 0644)
-		
+
 		fileCounts, packages, _, _ := m.collectFileStats(ctx)
 		if fileCounts[".go"] != 0 {
 			t.Errorf("expected 0 .go files (vendor skipped), got %d", fileCounts[".go"])

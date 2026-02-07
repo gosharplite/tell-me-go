@@ -83,11 +83,11 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 
 func TestParseCoverageLine(t *testing.T) {
 	tests := []struct {
-		name    string
-		line    string
-		prefix  string
-		want    *UncoveredBlock
-		wantOk  bool
+		name   string
+		line   string
+		prefix string
+		want   *UncoveredBlock
+		wantOk bool
 	}{
 		{
 			name:   "uncovered line",
