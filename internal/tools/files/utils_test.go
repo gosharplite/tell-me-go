@@ -62,10 +62,10 @@ func TestWalkAndProcess(t *testing.T) {
 	tempDir := t.TempDir()
 	os.MkdirAll(filepath.Join(tempDir, "safe"), 0755)
 	os.WriteFile(filepath.Join(tempDir, "safe/f1.txt"), []byte("data"), 0644)
-	
+
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
-	
+
 	ctx := context.Background()
 	var seen []string
 	processor := func(path string) error {

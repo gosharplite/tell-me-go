@@ -137,10 +137,10 @@ func TestResolveThinkingBudget(t *testing.T) {
 		model    string
 		expected int
 	}{
-		{"gemini-2.0-flash", 1000}, // Exact match
+		{"gemini-2.0-flash", 1000},   // Exact match
 		{"gemini-2.0-pro-exp", 5000}, // Substring match ("pro")
-		{"extra-special", 10000},    // Pricing match
-		{"unknown", 2000},           // Default
+		{"extra-special", 10000},     // Pricing match
+		{"unknown", 2000},            // Default
 	}
 
 	for _, tt := range tests {
