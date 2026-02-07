@@ -25,56 +25,76 @@ type UncoveredBlock struct {
 	Priority string `json:"priority"`
 }
 
+// classificationRule defines a rule for categorizing uncovered code blocks.
+type classificationRule struct {
+	category string
+	match    func(b *UncoveredBlock) bool
+}
+
+var (
+	businessLogicPaths = []string{"internal/service", "internal/services", "internal/domain", "internal/usecase", "internal/agent"}
+	adapterPaths       = []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth"}
+
+	classificationRules = []classificationRule{
+		{
+			category: "ERROR_HANDLING",
+			match:    func(b *UncoveredBlock) bool { return b.isErrorHandling() },
+		},
+		{
+			category: "BUSINESS_LOGIC",
+			match:    func(b *UncoveredBlock) bool { return b.isBusinessLogic() },
+		},
+		{
+			category: "ADAPTER",
+			match:    func(b *UncoveredBlock) bool { return b.isAdapter() },
+		},
+	}
+)
+
+func (b *UncoveredBlock) isErrorHandling() bool {
+	lowerCode := strings.ToLower(b.Code)
+	return strings.Contains(lowerCode, "if err != nil") ||
+		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
+		strings.Contains(lowerCode, "fmt.errorf") ||
+		strings.Contains(lowerCode, "errors.new")
+}
+
+func (b *UncoveredBlock) isBusinessLogic() bool {
+	for _, p := range businessLogicPaths {
+		if strings.Contains(b.File, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *UncoveredBlock) isAdapter() bool {
+	for _, p := range adapterPaths {
+		if strings.Contains(b.File, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *UncoveredBlock) Classify() {
-	// Categorize by content
-	isErrorHandling := false
-	lowerCode := strings.ToLower(b.Code)
-	if strings.Contains(lowerCode, "if err != nil") ||
-		strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err") ||
-		strings.Contains(lowerCode, "fmt.errorf") ||
-		strings.Contains(lowerCode, "errors.new") {
-		isErrorHandling = true
-	}
-
-	// Categorize by path
-	isBusinessLogic := false
-	isAdapter := false
-
-	pathParts := []string{"internal/service", "internal/services", "internal/domain", "internal/usecase", "internal/agent"}
-	for _, p := range pathParts {
-		if strings.Contains(b.File, p) {
-			isBusinessLogic = true
+	// Categorize by content and path using rule registry
+	b.Category = "OTHER"
+	for _, rule := range classificationRules {
+		if rule.match(b) {
+			b.Category = rule.category
 			break
 		}
-	}
-
-	adapterParts := []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth"}
-	for _, p := range adapterParts {
-		if strings.Contains(b.File, p) {
-			isAdapter = true
-			break
-		}
-	}
-
-	if isErrorHandling {
-		b.Category = "ERROR_HANDLING"
-	} else if isBusinessLogic {
-		b.Category = "BUSINESS_LOGIC"
-	} else if isAdapter {
-		b.Category = "ADAPTER"
-	} else {
-		b.Category = "OTHER"
 	}
 
 	// Assign Priority
-	if isErrorHandling && isBusinessLogic {
+	isErr := b.isErrorHandling()
+	isBiz := b.isBusinessLogic()
+
+	if isErr && isBiz {
 		b.Priority = "High"
-	} else if isErrorHandling && isAdapter {
-		b.Priority = "Medium"
-	} else if isErrorHandling {
-		b.Priority = "Medium" // Error handling elsewhere is still medium
-	} else if isBusinessLogic {
+	} else if isErr || isBiz {
 		b.Priority = "Medium"
 	} else {
 		b.Priority = "Low"
