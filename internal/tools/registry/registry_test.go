@@ -60,3 +60,56 @@ func TestRegistry_Resilience(t *testing.T) {
 		}
 	})
 }
+
+func TestRegistry_Options(t *testing.T) {
+	r := registry.New()
+	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "serial_tool"}, nil, registry.ToolOptions{Serial: true})
+	r.RegisterWithOptions(&tools.ToolDeclaration{Name: "long_running_tool"}, nil, registry.ToolOptions{LongRunning: true})
+
+	if !r.IsSerial("serial_tool") {
+		t.Error("expected serial_tool to be serial")
+	}
+	if r.IsSerial("long_running_tool") {
+		t.Error("expected long_running_tool not to be serial")
+	}
+	if r.IsSerial("nonexistent") {
+		t.Error("expected nonexistent tool not to be serial")
+	}
+
+	if !r.IsLongRunning("long_running_tool") {
+		t.Error("expected long_running_tool to be long running")
+	}
+	if r.IsLongRunning("serial_tool") {
+		t.Error("expected serial_tool not to be long running")
+	}
+	if r.IsLongRunning("nonexistent") {
+		t.Error("expected nonexistent tool not to be long running")
+	}
+}
+
+func TestRegistry_GetDeclarations(t *testing.T) {
+	r := registry.New()
+	r.Register(&tools.ToolDeclaration{Name: "tool1"}, nil)
+	r.Register(&tools.ToolDeclaration{Name: "tool2"}, nil)
+
+	decls := r.GetDeclarations()
+	if len(decls) != 2 {
+		t.Errorf("expected 2 declarations, got %d", len(decls))
+	}
+}
+
+func TestRegistry_UnmarshalArgs(t *testing.T) {
+	type Args struct {
+		Name string `json:"name"`
+		Age  int    `json:"age"`
+	}
+	args := map[string]interface{}{"name": "Alice", "age": 30}
+	var target Args
+	err := registry.UnmarshalArgs(args, &target)
+	if err != nil {
+		t.Fatalf("UnmarshalArgs failed: %v", err)
+	}
+	if target.Name != "Alice" || target.Age != 30 {
+		t.Errorf("unexpected unmarshaled values: %+v", target)
+	}
+}
