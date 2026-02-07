@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"golang.org/x/term"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -73,6 +74,7 @@ type streamState struct {
 	rawOutput     bool
 	lineCount     int
 	hasScrolled   bool
+	scrollThreshold int
 }
 
 // NewStdUIRenderer creates a new StdUIRenderer.
@@ -323,10 +325,21 @@ func (r *StdUIRenderer) renderInlineData(part *llm.Part) {
 
 func (r *StdUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
 	ch := make(chan *llm.Content, 100)
+
+	threshold := 25
+	r.mu.RLock()
+	if f, ok := r.stdout.(*os.File); ok {
+		if _, h, err := term.GetSize(int(f.Fd())); err == nil && h > 0 {
+			threshold = h - 2
+		}
+	}
+	r.mu.RUnlock()
+
 	state := &streamState{
-		aggregated:   &llm.Content{Role: "model"},
-		showThoughts: showThoughts,
-		rawOutput:    rawOutput,
+		aggregated:      &llm.Content{Role: "model"},
+		showThoughts:    showThoughts,
+		rawOutput:       rawOutput,
+		scrollThreshold: threshold,
 	}
 
 	if !rawOutput && r.c(colors.TermSaveCursor) != "" {
@@ -410,10 +423,10 @@ func (r *StdUIRenderer) handleTextPart(state *streamState, part *llm.Part) {
 	fmt.Fprint(stdout, output)
 	r.sm.TerminalUnlock()
 
-	// Track scrolling: If we exceed a reasonable line count, we assume the terminal
-	// has scrolled, making the saved cursor position for redraws invalid.
+	// Track scrolling: If we exceed the threshold (based on terminal height), 
+	// we assume the terminal has scrolled, making the saved cursor position invalid.
 	state.lineCount += strings.Count(part.Text, "\n")
-	if state.lineCount > 25 {
+	if state.lineCount > state.scrollThreshold {
 		state.hasScrolled = true
 	}
 
