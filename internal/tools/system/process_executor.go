@@ -464,11 +464,24 @@ func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, erro
 	}
 	path = filepath.Clean(path)
 
-	// Simple security check: prevent escaping the current directory via relative paths.
+	// Robust security check: prevent escaping the current directory via relative paths.
 	// We allow absolute paths as the agent may need to write to specific system locations
 	// if authorized, but relative paths should stay within the project structure.
-	if !filepath.IsAbs(path) && (strings.HasPrefix(path, ".."+string(filepath.Separator)) || path == "..") {
-		return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
+	if !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current directory: %w", err)
+		}
+
+		// Join CWD with the path and Clean it to resolve any ".."
+		absPath := filepath.Join(cwd, path)
+
+		// Ensure the resulting absolute path is still within the CWD
+		rel, err := filepath.Rel(cwd, absPath)
+		if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+			return nil, fmt.Errorf("output file path cannot escape current directory: %q", config.OutputFile)
+		}
+		path = absPath
 	}
 
 	flags := os.O_CREATE | os.O_WRONLY
