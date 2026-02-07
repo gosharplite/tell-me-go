@@ -337,42 +337,55 @@ func (c *Command) setupRegistry(client *api.Client, cfg *config.Config, paths *s
 	return reg
 }
 
-func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pricing pricing.PricingData) {
+func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string) {
 	renderer := ui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
-	renderer.SetUseColor(c.isTTY(c.Stdout) && !opts.rawOutput)
-	// Note: We need to handle UISubscriber. It was in the cli package.
-	// I'll move it to a shared place or this package.
-	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, c.isTTY(c.Stdout) && !opts.rawOutput, paths.logPath)
-	chatAgent.Subscribe(subscriber.HandleEvent)
+	useColor := c.isTTY(c.Stdout) && !opts.rawOutput
+	renderer.SetUseColor(useColor)
 
+	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, useColor, logPath)
+	chatAgent.Subscribe(subscriber.HandleEvent)
+}
+
+func (c *Command) resolveContextWindow(cfg *config.Config) int {
 	maxTokens := cfg.MaxHistoryTokens
 	if mCfg, ok := cfg.Models[cfg.Model]; ok && mCfg.ContextWindow > 0 {
 		if maxTokens > mCfg.ContextWindow {
-			maxTokens = mCfg.ContextWindow
+			return mCfg.ContextWindow
 		}
-	} else {
-		for k, v := range cfg.Models {
-			if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
-				if maxTokens > v.ContextWindow {
-					maxTokens = v.ContextWindow
-				}
-				break
-			}
-		}
+		return maxTokens
 	}
 
-	threshold := config.DefaultTieredThreshold
-	if mPricing, ok := pricing.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
-		threshold = int(mPricing.TieredThreshold)
-	} else {
-		for k, v := range pricing.Models {
-			if k != "default" && strings.Contains(cfg.Model, k) && v.TieredThreshold > 0 {
-				threshold = int(v.TieredThreshold)
-				break
+	// Fallback to substring matching
+	for k, v := range cfg.Models {
+		if k != "default" && strings.Contains(cfg.Model, k) && v.ContextWindow > 0 {
+			if maxTokens > v.ContextWindow {
+				return v.ContextWindow
 			}
+			break
 		}
 	}
+	return maxTokens
+}
+
+func (c *Command) resolveTieredThreshold(cfg *config.Config, pData pricing.PricingData) int {
+	if mPricing, ok := pData.Models[cfg.Model]; ok && mPricing.TieredThreshold > 0 {
+		return int(mPricing.TieredThreshold)
+	}
+
+	for k, v := range pData.Models {
+		if k != "default" && strings.Contains(cfg.Model, k) && v.TieredThreshold > 0 {
+			return int(v.TieredThreshold)
+		}
+	}
+	return config.DefaultTieredThreshold
+}
+
+func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *sessionPaths, pruned int, pData pricing.PricingData) {
+	c.setupUIRendering(chatAgent, cfg, opts, paths.logPath)
+
+	maxTokens := c.resolveContextWindow(cfg)
+	threshold := c.resolveTieredThreshold(cfg, pData)
 
 	chatAgent.SetLimits(cfg.MaxToolTurns, maxTokens, cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(threshold)
