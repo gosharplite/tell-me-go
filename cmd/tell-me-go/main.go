@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -15,8 +16,8 @@ import (
 const Version = "2.4.0-dev"
 
 func main() {
-	app := cli.New(Version)
-	if err := app.Run(os.Args); err != nil {
+	app := cli.New(Version, os.Stdin, os.Stdout, os.Stderr)
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
