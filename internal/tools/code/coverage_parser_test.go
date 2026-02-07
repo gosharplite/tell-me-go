@@ -48,6 +48,24 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 			wantCat:  "OTHER",
 			wantPrio: "Low",
 		},
+		{
+			name: "false positive business logic",
+			block: UncoveredBlock{
+				File: "third_party/some-lib/internal/agent_mock.go",
+				Code: "x := 1",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
+		{
+			name: "false positive adapter",
+			block: UncoveredBlock{
+				File: "external/internal/api/client.go",
+				Code: "x := 1",
+			},
+			wantCat:  "OTHER",
+			wantPrio: "Low",
+		},
 	}
 
 	for _, tt := range tests {

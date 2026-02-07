@@ -62,7 +62,7 @@ func (b *UncoveredBlock) isErrorHandling() bool {
 
 func (b *UncoveredBlock) isBusinessLogic() bool {
 	for _, p := range businessLogicPaths {
-		if strings.Contains(b.File, p) {
+		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
 		}
 	}
@@ -71,7 +71,7 @@ func (b *UncoveredBlock) isBusinessLogic() bool {
 
 func (b *UncoveredBlock) isAdapter() bool {
 	for _, p := range adapterPaths {
-		if strings.Contains(b.File, p) {
+		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
 		}
 	}
