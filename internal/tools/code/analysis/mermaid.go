@@ -12,15 +12,15 @@ import (
 
 // StyleRule defines a regex pattern and the CSS class to apply.
 type StyleRule struct {
-	Pattern string
+	Pattern *regexp.Regexp
 	Class   string
 }
 
 // DefaultStyleRules provides a set of regex patterns for Clean Architecture layers.
 var DefaultStyleRules = []StyleRule{
-	{Pattern: ".*(api|transport).*", Class: "transport"},
-	{Pattern: ".*domain.*", Class: "domain"},
-	{Pattern: ".*(infra|tools|security|fsutil).*", Class: "infrastructure"},
+	{Pattern: regexp.MustCompile(`.*(api|transport).*`), Class: "transport"},
+	{Pattern: regexp.MustCompile(`.*domain.*`), Class: "domain"},
+	{Pattern: regexp.MustCompile(`.*(infra|tools|security|fsutil).*`), Class: "infrastructure"},
 }
 
 // GenerateMermaid transforms a dependency map into a Mermaid.js diagram.
@@ -115,8 +115,7 @@ func renderStyles(sb *strings.Builder, pkgs []string, cycleEdgeIndices []string)
 
 	for _, pkg := range pkgs {
 		for _, rule := range DefaultStyleRules {
-			matched, _ := regexp.MatchString(rule.Pattern, pkg)
-			if matched {
+			if rule.Pattern.MatchString(pkg) {
 				sb.WriteString(fmt.Sprintf("  class %s %s;\n", sanitize(pkg), rule.Class))
 				break
 			}
