@@ -306,14 +306,7 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 	lockPath := historyPath + ".lock"
 
 	// 1. Acquire simple file-based lock (with stale lock protection)
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil && os.IsExist(err) {
-		if isStale(lockPath) {
-			_ = os.Remove(lockPath)
-			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
-		}
-	}
-
+	lock, err := m.acquireLedgerLock(lockPath)
 	if err != nil {
 		return
 	}
@@ -322,9 +315,36 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		os.Remove(lockPath)
 	}()
 
+	// 2. Update history
+	m.updateLedgerHistory(ctx, historyPath, globalDir, outputDir, record)
+}
+
+func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil && os.IsExist(err) {
+		if isStale(lockPath) {
+			_ = os.Remove(lockPath)
+			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
+		}
+	}
+	return lock, err
+}
+
+func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath, globalDir string) {
+	if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
+		// Use a background context for recovery so it's not aborted if the request context is cancelled.
+		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
+		go func() {
+			defer cancel()
+			m.ledger.RecoverLedger(bgCtx, globalDir)
+		}()
+	}
+}
+
+func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record SessionCostRecord) {
 	var history []SessionCostRecord
 
-	// 2. Read existing history (or recover if missing)
+	// 1. Read existing history (or recover if missing)
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
@@ -332,17 +352,10 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) && m.ledger != nil {
-		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
-			// Use a background context for recovery so it's not aborted if the request context is cancelled.
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
-			go func() {
-				defer cancel()
-				m.ledger.RecoverLedger(bgCtx, globalDir)
-			}()
-		}
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
 	}
 
-	// 3. Update or Append (identify by session ID)
+	// 2. Update or Append (identify by session ID)
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -355,11 +368,11 @@ func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode 
 		history = append(history, record)
 	}
 
-	// 4. Apply Retention Policy
+	// 3. Apply Retention Policy
 	retentionDays := m.loadRetentionDays(outputDir)
 	history = m.applyRetentionPolicy(history, retentionDays)
 
-	// 5. Write back atomically
+	// 4. Write back atomically
 	bytes, err := json.Marshal(history)
 	if err != nil {
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
@@ -508,14 +521,7 @@ func (m *metricsManager) applyRetentionPolicy(history []SessionCostRecord, reten
 func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, globalDir string) ([]SessionCostRecord, string, error) {
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
-		if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
-			// Use a background context for recovery so it's not aborted if the request context is cancelled.
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
-			go func() {
-				defer cancel()
-				m.ledger.RecoverLedger(bgCtx, globalDir)
-			}()
-		}
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
 		return nil, "Cost history ledger is missing. Recovery has been started in the background. Please try again in a few moments.", nil
 	}
 
