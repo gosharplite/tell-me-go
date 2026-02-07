@@ -35,10 +35,17 @@ var genericSkeletonPatterns = []*regexp.Regexp{
 }
 
 func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var sb strings.Builder
-	sb.WriteString("Project Summary:\n")
+	modInfo := m.resolveModuleInfo(ctx)
+	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	summary := m.renderProjectSummary(modInfo, fileCounts, packages, totalLOC)
+	return tools.ToolResult{Text: summary}, nil
+}
 
-	// 1. Go Module Info
+func (m *InfoManager) resolveModuleInfo(ctx context.Context) string {
+	var sb strings.Builder
 	if content, err := m.FS.ReadFile(ctx, "go.mod"); err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -47,8 +54,10 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 			}
 		}
 	}
+	return sb.String()
+}
 
-	// 2. Stats and Packages
+func (m *InfoManager) collectFileStats(ctx context.Context) (map[string]int, map[string]bool, int, error) {
 	fileCounts := make(map[string]int)
 	packages := make(map[string]bool)
 	totalLOC := 0
@@ -58,7 +67,8 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 			return nil
 		}
 		if info.IsDir() {
-			if info.Name() == ".git" || info.Name() == "vendor" || info.Name() == "node_modules" {
+			name := info.Name()
+			if name == ".git" || name == "vendor" || name == "node_modules" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -72,7 +82,6 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 
 		if ext == ".go" {
 			packages[filepath.Dir(path)] = true
-			// Crude LOC count
 			if c, err := m.FS.ReadFile(ctx, path); err == nil {
 				totalLOC += len(strings.Split(string(c), "\n"))
 			}
@@ -80,9 +89,13 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 		return nil
 	})
 
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
+	return fileCounts, packages, totalLOC, err
+}
+
+func (m *InfoManager) renderProjectSummary(modInfo string, fileCounts map[string]int, packages map[string]bool, totalLOC int) string {
+	var sb strings.Builder
+	sb.WriteString("Project Summary:\n")
+	sb.WriteString(modInfo)
 
 	sb.WriteString("\nFile Counts:\n")
 	for ext, count := range fileCounts {
@@ -95,7 +108,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	}
 	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))
 
-	return tools.ToolResult{Text: sb.String()}, nil
+	return sb.String()
 }
 
 func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
