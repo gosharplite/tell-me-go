@@ -448,7 +448,6 @@ func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
 	}
 }
 
-
 func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
 	closest := ""
 	hallucinatedLower := strings.ToLower(hallucinated)
