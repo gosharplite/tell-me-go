@@ -28,7 +28,21 @@ func GenerateMermaid(graph map[string][]string) string {
 	var builder strings.Builder
 	builder.WriteString("graph TD\n")
 
-	// 1. Cycle Detection
+	cycleEdges := markCycleEdges(graph)
+	renderSubgraphs(&builder, graph)
+	cycleEdgeIndices := renderRelationships(&builder, graph, cycleEdges)
+
+	pkgs := make([]string, 0, len(graph))
+	for pkg := range graph {
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
+	renderStyles(&builder, pkgs, cycleEdgeIndices)
+
+	return builder.String()
+}
+
+func markCycleEdges(graph map[string][]string) map[string]bool {
 	cycles := findCycles(graph)
 	cycleEdges := make(map[string]bool)
 	for _, cycle := range cycles {
@@ -37,8 +51,10 @@ func GenerateMermaid(graph map[string][]string) string {
 			cycleEdges[edgeKey] = true
 		}
 	}
+	return cycleEdges
+}
 
-	// 2. Subgraphs for Layers
+func renderSubgraphs(sb *strings.Builder, graph map[string][]string) {
 	layers := map[string][]string{}
 	for pkg := range graph {
 		parts := strings.Split(pkg, "/")
@@ -58,14 +74,15 @@ func GenerateMermaid(graph map[string][]string) string {
 	for _, root := range layerNames {
 		pkgs := layers[root]
 		sort.Strings(pkgs)
-		builder.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", sanitize(root), root))
+		sb.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", sanitize(root), root))
 		for _, p := range pkgs {
-			builder.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", sanitize(p), p))
+			sb.WriteString(fmt.Sprintf("    %s[\"%s\"]\n", sanitize(p), p))
 		}
-		builder.WriteString("  end\n")
+		sb.WriteString("  end\n")
 	}
+}
 
-	// 3. Relationships & Cycle Highlighting
+func renderRelationships(sb *strings.Builder, graph map[string][]string, cycleEdges map[string]bool) []string {
 	srcs := make([]string, 0, len(graph))
 	for src := range graph {
 		srcs = append(srcs, src)
@@ -80,35 +97,35 @@ func GenerateMermaid(graph map[string][]string) string {
 		for _, dst := range deps {
 			edgeKey := fmt.Sprintf("%s|%s", src, dst)
 			if cycleEdges[edgeKey] {
-				builder.WriteString(fmt.Sprintf("  %s -->|cycle| %s\n", sanitize(src), sanitize(dst)))
+				sb.WriteString(fmt.Sprintf("  %s -->|cycle| %s\n", sanitize(src), sanitize(dst)))
 				cycleEdgeIndices = append(cycleEdgeIndices, fmt.Sprint(edgeIndex))
 			} else {
-				builder.WriteString(fmt.Sprintf("  %s --> %s\n", sanitize(src), sanitize(dst)))
+				sb.WriteString(fmt.Sprintf("  %s --> %s\n", sanitize(src), sanitize(dst)))
 			}
 			edgeIndex++
 		}
 	}
+	return cycleEdgeIndices
+}
 
-	// 4. Styling
-	builder.WriteString("\n  classDef transport fill:#f9f,stroke:#333,stroke-width:2px;\n")
-	builder.WriteString("  classDef domain fill:#dfd,stroke:#333,stroke-width:2px;\n")
-	builder.WriteString("  classDef infrastructure fill:#fdd,stroke:#333,stroke-width:2px;\n")
+func renderStyles(sb *strings.Builder, pkgs []string, cycleEdgeIndices []string) {
+	sb.WriteString("\n  classDef transport fill:#f9f,stroke:#333,stroke-width:2px;\n")
+	sb.WriteString("  classDef domain fill:#dfd,stroke:#333,stroke-width:2px;\n")
+	sb.WriteString("  classDef infrastructure fill:#fdd,stroke:#333,stroke-width:2px;\n")
 
-	for _, pkg := range srcs {
+	for _, pkg := range pkgs {
 		for _, rule := range DefaultStyleRules {
 			matched, _ := regexp.MatchString(rule.Pattern, pkg)
 			if matched {
-				builder.WriteString(fmt.Sprintf("  class %s %s;\n", sanitize(pkg), rule.Class))
+				sb.WriteString(fmt.Sprintf("  class %s %s;\n", sanitize(pkg), rule.Class))
 				break
 			}
 		}
 	}
 
 	if len(cycleEdgeIndices) > 0 {
-		builder.WriteString(fmt.Sprintf("  linkStyle %s stroke:#f00,stroke-width:4px;\n", strings.Join(cycleEdgeIndices, ",")))
+		sb.WriteString(fmt.Sprintf("  linkStyle %s stroke:#f00,stroke-width:4px;\n", strings.Join(cycleEdgeIndices, ",")))
 	}
-
-	return builder.String()
 }
 
 func findCycles(graph map[string][]string) [][]string {
