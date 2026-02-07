@@ -587,7 +587,7 @@ func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		calls := []*llm.FunctionCall{{Name: "get_image"}}
 		results := []tools.ToolResult{{
-			Text: "Here is your image",
+			Text:       "Here is your image",
 			BinaryData: []tools.BinaryData{{MIMEType: "image/png", Data: []byte("blob")}},
 		}}
 		content := e.assembleResponse(calls, results)

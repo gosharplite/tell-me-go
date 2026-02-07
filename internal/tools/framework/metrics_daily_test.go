@@ -14,15 +14,15 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 	currentSessionID := "interactive/session1.tokens.log"
 
 	tests := []struct {
-		name             string
-		totalCost        float64
-		records          []SessionCostRecord
-		expectedDaily    float64
+		name          string
+		totalCost     float64
+		records       []SessionCostRecord
+		expectedDaily float64
 	}{
 		{
-			name:      "Empty Ledger",
-			totalCost: 1.50,
-			records:   []SessionCostRecord{},
+			name:          "Empty Ledger",
+			totalCost:     1.50,
+			records:       []SessionCostRecord{},
 			expectedDaily: 1.50,
 		},
 		{
@@ -133,9 +133,9 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 func TestSessionIDConsistency(t *testing.T) {
 	mode := "interactive"
 	logFile := "/path/to/some/dir/2026-01-02-12-00-tokens.log"
-	
+
 	expected := "interactive/2026-01-02-12-00-tokens.log"
-	
+
 	// Test internal helper directly
 	generated := generateSessionID(mode, logFile)
 	if generated != expected {
@@ -147,22 +147,22 @@ func TestSessionIDConsistency(t *testing.T) {
 		mode:    mode,
 		logFile: logFile,
 	}
-	
+
 	manager := &metricsManager{
 		mode:    mode,
 		logFile: logFile,
 	}
-	
+
 	// Simulate the logic used in GetDailyCost
 	trackerID := generateSessionID(tracker.mode, tracker.logFile)
-	
+
 	// Simulate the logic used in EstimateCost
 	managerID := generateSessionID(manager.mode, manager.logFile)
-	
+
 	if trackerID != managerID {
 		t.Errorf("Tracker ID %q does not match Manager ID %q", trackerID, managerID)
 	}
-	
+
 	if trackerID != expected {
 		t.Errorf("Final generated ID %q does not match expected %q", trackerID, expected)
 	}

@@ -302,7 +302,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	summarizerCalled := false
 	tg := &tokenGatekeeper{
 		MaxTokens: 10000,
-		Estimator:  &dynamicMockEstimator{tokens: 9500},
+		Estimator: &dynamicMockEstimator{tokens: 9500},
 		Summarizer: &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				summarizerCalled = true
