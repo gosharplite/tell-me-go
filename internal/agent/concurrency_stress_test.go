@@ -172,8 +172,8 @@ func TestContextManager_Race(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "ping"}}})
-			_ = cm.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "pong"}}})
+			_ = cm.addContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "ping"}}})
+			_ = cm.addContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "pong"}}})
 			time.Sleep(3 * time.Millisecond)
 		}
 	}()

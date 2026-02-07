@@ -98,31 +98,31 @@ func (m *MockClock) Now() time.Time { return m.CurrentTime }
 func TestTurnEngine_StateTransitions(t *testing.T) {
 	tests := []struct {
 		name     string
-		phase    TurnPhase
+		phase    turnPhase
 		hasTools bool
-		expected TurnPhase
+		expected turnPhase
 	}{
-		{"Refining to Inference", PhaseRefining, false, PhaseInference},
-		{"Inference to Executing", PhaseInference, true, PhaseExecuting},
-		{"Inference to Persisting", PhaseInference, false, PhasePersisting},
-		{"Executing to Persisting", PhaseExecuting, true, PhasePersisting},
-		{"Persisting to Complete", PhasePersisting, false, PhaseComplete},
-		{"Recovery to Refining", PhaseRecovering, false, PhaseRefining},
+		{"Refining to Inference", phaseRefining, false, phaseInference},
+		{"Inference to Executing", phaseInference, true, phaseExecuting},
+		{"Inference to Persisting", phaseInference, false, phasePersisting},
+		{"Executing to Persisting", phaseExecuting, true, phasePersisting},
+		{"Persisting to Complete", phasePersisting, false, phaseComplete},
+		{"Recovery to Refining", phaseRecovering, false, phaseRefining},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var p TurnProcessor
+			var p turnProcessor
 			switch tt.phase {
-			case PhaseRefining:
+			case phaseRefining:
 				p = &ContextRefiner{}
-			case PhaseInference:
+			case phaseInference:
 				p = &InferenceStep{}
-			case PhaseExecuting:
+			case phaseExecuting:
 				p = &ExecutionStep{}
-			case PhasePersisting:
+			case phasePersisting:
 				p = &PersistenceStep{}
-			case PhaseRecovering:
+			case phaseRecovering:
 				p = &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
 			}
 
@@ -133,19 +133,19 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 					close(ch)
 					return ch, func() (*llm.Content, *llm.Metrics, error) {
 						content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-						if tt.hasTools && tt.phase == PhaseInference {
+						if tt.hasTools && tt.phase == phaseInference {
 							content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
 						}
 						return content, &llm.Metrics{}, nil
 					}
 				},
 			}
-			turn := &Turn{
-				State: &TurnState{
+			turn := &turn{
+				State: &turnState{
 					HasToolCalls: tt.hasTools,
 					RetryCount:   0,
 					LastError:    &AgentError{Category: ErrTransient, Message: "transient error"}, // only for recovery
-					Metadata: &ContextMetadata{
+					Metadata: &contextMetadata{
 						History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 					},
 				},
@@ -162,7 +162,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 				Registry: &MockRegistry{},
 				Clock:    &realClock{},
 			}
-			if tt.phase == PhaseRefining {
+			if tt.phase == phaseRefining {
 				turn.CtxManager.Pipeline = NewContextPipeline()
 			}
 
@@ -425,16 +425,16 @@ func TestTurnEngine_RecoveryLogic(t *testing.T) {
 
 func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	var order []string
-	m1 := func(next TurnProcessor) TurnProcessor {
-		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+	m1 := func(next turnProcessor) turnProcessor {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			order = append(order, "m1_in")
 			res := next.Process(ctx, turn)
 			order = append(order, "m1_out")
 			return res
 		})
 	}
-	m2 := func(next TurnProcessor) TurnProcessor {
-		return TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+	m2 := func(next turnProcessor) turnProcessor {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			order = append(order, "m2_in")
 			res := next.Process(ctx, turn)
 			order = append(order, "m2_out")
@@ -459,10 +459,10 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithMiddleware(m1, m2))
 
 	// We only want to test one phase to see order
-	turn := &Turn{
-		State: &TurnState{
-			Phase: PhaseInference,
-			Metadata: &ContextMetadata{
+	turn := &turn{
+		State: &turnState{
+			Phase: phaseInference,
+			Metadata: &contextMetadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
@@ -472,7 +472,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		Clock:      &realClock{},
 	}
 
-	e.processors[PhaseInference].Process(context.Background(), turn)
+	e.processors[phaseInference].Process(context.Background(), turn)
 
 	expected := []string{"m1_in", "m2_in", "m2_out", "m1_out"}
 	if strings.Join(order, ",") != strings.Join(expected, ",") {
@@ -552,10 +552,10 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 				defer cancel()
 			}
 
-			turn := &Turn{
-				State: &TurnState{
+			turn := &turn{
+				State: &turnState{
 					LastError: tt.err,
-					Phase:     PhaseRecovering,
+					Phase:     phaseRecovering,
 				},
 			}
 
@@ -668,15 +668,15 @@ func TestTurnEngine_WithProcessor(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	customRefinerCalled := false
-	customRefiner := TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
+	customRefiner := turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 		customRefinerCalled = true
-		turn.State.Metadata = &ContextMetadata{
+		turn.State.Metadata = &contextMetadata{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
 		}
-		return ProcessResult{NextPhase: PhaseInference}
+		return processResult{NextPhase: phaseInference}
 	})
 
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(PhaseRefining, customRefiner))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(phaseRefining, customRefiner))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -694,9 +694,9 @@ type mockHook struct {
 	transCalled  int
 }
 
-func (h *mockHook) BeforeTurn(turn *Turn)                              { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *Turn, err error)                    { h.afterCalled++ }
-func (h *mockHook) OnPhaseTransition(from, to TurnPhase, s *TurnState) { h.transCalled++ }
+func (h *mockHook) BeforeTurn(turn *turn)                              { h.beforeCalled++ }
+func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.afterCalled++ }
+func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.transCalled++ }
 
 func TestTurnEngine_Hooks(t *testing.T) {
 	mockGw := &MockGateway{
@@ -782,12 +782,12 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	stopProcessor := TurnProcessorFunc(func(ctx context.Context, turn *Turn) ProcessResult {
-		return ProcessResult{Stop: true, NextPhase: PhaseComplete}
+	stopProcessor := turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return processResult{Stop: true, NextPhase: phaseComplete}
 	})
 
 	// Override Inference with a processor that returns Stop: true
-	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(PhaseInference, stopProcessor))
+	e := NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithProcessor(phaseInference, stopProcessor))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -798,7 +798,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	// However, Run loop checks turn.Stop. Let's use a hook to verify we didn't go further than Inference.
 	hook := &mockHook{}
 	e = NewTurnEngine(mockGw, nil, newTestContextManager(NewContextStrategy(NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil,
-		WithProcessor(PhaseInference, stopProcessor),
+		WithProcessor(phaseInference, stopProcessor),
 		WithHook(hook),
 	)
 
@@ -918,7 +918,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 			attemptsInTurn++
 			totalAttempts++
 
-			// Turn 0: Fail twice, then tool call
+			// turn 0: Fail twice, then tool call
 			if turnIndex == 0 {
 				if attemptsInTurn <= 2 {
 					return nil, nil, llm.ErrTransient
@@ -929,7 +929,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 				}, &llm.Metrics{}, nil
 			}
 
-			// Turn 1: Fail twice, then success
+			// turn 1: Fail twice, then success
 			if turnIndex == 1 {
 				if attemptsInTurn <= 2 {
 					return nil, nil, llm.ErrTransient
@@ -957,8 +957,8 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 
 	e := NewTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil)
 	// Default MaxRetries is 3.
-	// If retries were global, Turn 1 would fail because totalRetries would be 2 from Turn 0,
-	// and Turn 1's first failure would set it to 3, then second would hit limit.
+	// If retries were global, turn 1 would fail because totalRetries would be 2 from turn 0,
+	// and turn 1's first failure would set it to 3, then second would hit limit.
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {

@@ -260,33 +260,45 @@ func (r *StdUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, r
 	r.sm.TerminalLock()
 	defer r.sm.TerminalUnlock()
 
-	ts := r.getTimestamp()
-	stdout := r.getStdout()
-	stderr := r.getStderr()
-
 	for _, part := range respContent.Parts {
-		if showThoughts && part.Thought && part.Text != "" {
-			sanitized := sanitizeForTerminal(part.Text)
-			fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, ts, sanitized, colors.ColorReset)
-		}
+		r.renderThought(part, showThoughts)
 	}
 	for _, part := range respContent.Parts {
-		if part.Text != "" && !part.Thought {
-			if rawOutput {
-				fmt.Fprint(stdout, part.Text)
-				if !strings.HasSuffix(part.Text, "\n") {
-					fmt.Fprintln(stdout)
-				}
-			} else {
-				sanitized := sanitizeForTerminal(part.Text)
-				r.renderMarkdown(sanitized)
-			}
-		}
+		r.renderText(part, rawOutput)
+		r.renderInlineData(part)
+	}
+}
 
-		if part.InlineData != nil {
-			fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
-				colors.ColorGray, ts, part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
+func (r *StdUIRenderer) renderThought(part *llm.Part, showThoughts bool) {
+	if showThoughts && part.Thought && part.Text != "" {
+		ts := r.getTimestamp()
+		stderr := r.getStderr()
+		sanitized := sanitizeForTerminal(part.Text)
+		fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", colors.ColorGray, ts, sanitized, colors.ColorReset)
+	}
+}
+
+func (r *StdUIRenderer) renderText(part *llm.Part, raw bool) {
+	if part.Text != "" && !part.Thought {
+		stdout := r.getStdout()
+		if raw {
+			fmt.Fprint(stdout, part.Text)
+			if !strings.HasSuffix(part.Text, "\n") {
+				fmt.Fprintln(stdout)
+			}
+		} else {
+			sanitized := sanitizeForTerminal(part.Text)
+			r.renderMarkdown(sanitized)
 		}
+	}
+}
+
+func (r *StdUIRenderer) renderInlineData(part *llm.Part) {
+	if part.InlineData != nil {
+		ts := r.getTimestamp()
+		stderr := r.getStderr()
+		fmt.Fprintf(stderr, "%s[%s] [Media] %s (%d bytes)%s\n",
+			colors.ColorGray, ts, part.InlineData.MIMEType, len(part.InlineData.Data), colors.ColorReset)
 	}
 }
 

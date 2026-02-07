@@ -66,7 +66,7 @@ func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus ev
 }
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *ContextMetadata, error) {
+func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *contextMetadata, error) {
 	cm.mu.Lock()
 	snapshotVersion := cm.version
 	contents := cm.History.GetContents()
@@ -78,7 +78,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	cm.mu.Unlock()
 
 	// Initialize request with snapshot of history
-	req := &ContextRequest{
+	req := &contextRequest{
 		Turn:    turn,
 		History: history,
 	}
@@ -89,7 +89,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 
 	// We execute the pipeline. Since some transformers might modify history
 	// and want it persisted (Pruner, Gatekeeper), but others only want it
-	// for the API (WarningInjector), we handle persistence carefully through the pipeline.
+	// for the API (warningInjector), we handle persistence carefully through the pipeline.
 	err := pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
 		cm.mu.Lock()
 		defer cm.mu.Unlock()
@@ -108,8 +108,8 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	return req.History, &req.Metadata, nil
 }
 
-// AddContent appends content to the history in a thread-safe manner.
-func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
+// addContent appends content to the history in a thread-safe manner.
+func (cm *ContextManager) addContent(ctx context.Context, content *llm.Content) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++
@@ -134,7 +134,7 @@ type PruningPolicy interface {
 	Name() string
 }
 
-// RegisterToolRegistry updates the pipeline if it contains a ToolDeclarationGenerator.
+// RegisterToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
 func (cm *ContextManager) RegisterToolRegistry(reg ToolRegistry) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
@@ -143,14 +143,14 @@ func (cm *ContextManager) RegisterToolRegistry(reg ToolRegistry) {
 		return
 	}
 	for _, t := range cm.Pipeline.transformers {
-		if tg, ok := t.(*ToolDeclarationGenerator); ok {
+		if tg, ok := t.(*toolDeclarationGenerator); ok {
 			tg.Registry = reg
 		}
 	}
 }
 
-// Ensure Standard Pipeline is built if not present
-func (cm *ContextManager) EnsureStandardPipeline(limits events.Limits) {
+// ensureStandardPipeline is built if not present
+func (cm *ContextManager) ensureStandardPipeline(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 

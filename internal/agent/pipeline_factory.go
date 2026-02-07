@@ -42,7 +42,7 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	}
 
 	transformers := []ContextTransformer{
-		&HistoryPruner{
+		&historyPruner{
 			Policy: &CompositePruningPolicy{
 				Policies: []PruningPolicy{
 					// 2. Use the profile-adjusted window size
@@ -56,18 +56,18 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	}
 
 	transformers = append(transformers,
-		&TokenGatekeeper{
+		&tokenGatekeeper{
 			MaxTokens:  limits.MaxHistoryTokens,
 			Estimator:  f.Estimator,
 			Summarizer: f.Summarizer,
 			Events:     f.Events,
 		},
-		&EmptyTurnFilter{},
-		&WarningInjector{
+		&emptyTurnFilter{},
+		&warningInjector{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
-		&TransientMerger{},
-		&FinalContextValidator{
+		&transientMerger{},
+		&finalContextValidator{
 			Strategy: f.Estimator.(*ContextStrategy),
 		},
 	)

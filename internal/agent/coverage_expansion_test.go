@@ -18,7 +18,7 @@ type mockExpTransformer struct {
 	err      error
 }
 
-func (m *mockExpTransformer) Transform(ctx context.Context, req *ContextRequest) error {
+func (m *mockExpTransformer) Transform(ctx context.Context, req *contextRequest) error {
 	return m.err
 }
 
@@ -32,14 +32,14 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		req         *ContextRequest
+		req         *contextRequest
 		pipeline    []ContextTransformer
 		persistFn   func(context.Context, []*llm.Content) error
 		expectedErr error
 	}{
 		{
 			name: "Error in canonical transformer",
-			req:  &ContextRequest{},
+			req:  &contextRequest{},
 			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10, err: transformErr},
 			},
@@ -47,7 +47,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "Error in transient transformer",
-			req:  &ContextRequest{},
+			req:  &contextRequest{},
 			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 150, err: transformErr},
 			},
@@ -55,7 +55,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "Error in persistence",
-			req:  &ContextRequest{PersistHistory: true},
+			req:  &contextRequest{PersistHistory: true},
 			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10},
 				&mockExpTransformer{priority: 150},
@@ -67,7 +67,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "No persist function, no error",
-			req:  &ContextRequest{PersistHistory: true},
+			req:  &contextRequest{PersistHistory: true},
 			pipeline: []ContextTransformer{
 				&mockExpTransformer{priority: 10},
 			},
@@ -98,7 +98,7 @@ func (m *mockExpEventBus) Subscribe(sub func(events.Event)) {}
 
 func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &TokenGatekeeper{
+	tg := &tokenGatekeeper{
 		MaxTokens: 5000, // Buffer will be 500 (10% of 5000)
 		Events:    bus,
 	}
@@ -118,7 +118,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bus.events = nil
-			err := tg.validateHardLimits(context.Background(), &ContextRequest{}, tt.tokens)
+			err := tg.validateHardLimits(context.Background(), &contextRequest{}, tt.tokens)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				assert.NotEmpty(t, bus.events)
@@ -131,11 +131,11 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 
 	// MaxTokens <= 0 case
 	tg.MaxTokens = 0
-	assert.NoError(t, tg.validateHardLimits(context.Background(), &ContextRequest{}, 9999))
+	assert.NoError(t, tg.validateHardLimits(context.Background(), &contextRequest{}, 9999))
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := &tokenGatekeeper{}
 
 	pinnedTurn := []*llm.Content{{Pinned: true}}
 	unpinnedTurn := []*llm.Content{{Pinned: false}}
@@ -189,7 +189,7 @@ func TestCompositePruningPolicy_Name_Coverage(t *testing.T) {
 }
 
 func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
-	tg := &TokenGatekeeper{}
+	tg := &tokenGatekeeper{}
 	// History with no summarizable blocks (all pinned)
 	history := []*llm.Content{
 		{Role: "user", Pinned: true},
@@ -201,25 +201,25 @@ func TestTokenGatekeeper_FindSummarizableRange_ErrorPath(t *testing.T) {
 
 func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	bus := &mockExpEventBus{}
-	tg := &TokenGatekeeper{
+	tg := &tokenGatekeeper{
 		MaxTokens: 1000,
 		Events:    bus,
 	}
 
 	// Case 1: MaxTokens <= 0
 	tg.MaxTokens = 0
-	tokens, err := tg.handleSafetyPressure(context.Background(), &ContextRequest{}, 2000)
+	tokens, err := tg.handleSafetyPressure(context.Background(), &contextRequest{}, 2000)
 	assert.NoError(t, err)
 	assert.Equal(t, 2000, tokens)
 
 	// Case 2: Tokens under 90%
 	tg.MaxTokens = 1000
-	tokens, err = tg.handleSafetyPressure(context.Background(), &ContextRequest{}, 800)
+	tokens, err = tg.handleSafetyPressure(context.Background(), &contextRequest{}, 800)
 	assert.NoError(t, err)
 	assert.Equal(t, 800, tokens)
 
 	// Case 3: autoSummarize fails but blocked (history too short)
-	req := &ContextRequest{
+	req := &contextRequest{
 		History: make([]*llm.Content, 5),
 	}
 	tokens, err = tg.handleSafetyPressure(context.Background(), req, 950)

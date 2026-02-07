@@ -15,10 +15,10 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 	strategy.SetLimits(1000, 10, 20)
 
-	injector := &WarningInjector{Strategy: strategy}
+	injector := &warningInjector{Strategy: strategy}
 
 	// Case where last message is a FunctionResponse
-	req := &ContextRequest{
+	req := &contextRequest{
 		Turn: 8, // Triggers turn warning (8/10)
 		History: []*llm.Content{
 			{

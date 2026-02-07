@@ -22,11 +22,11 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tg := &TokenGatekeeper{
+			tg := &tokenGatekeeper{
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
-			req := &ContextRequest{
+			req := &contextRequest{
 				History: []*llm.Content{{Role: "user"}},
 			}
 			err := tg.Transform(context.Background(), req)

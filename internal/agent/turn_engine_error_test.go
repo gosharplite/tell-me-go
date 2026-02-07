@@ -18,15 +18,15 @@ import (
 )
 
 type errorPhaseTracker struct {
-	phases    []TurnPhase
-	lastState *TurnState
+	phases    []turnPhase
+	lastState *turnState
 }
 
-func (t *errorPhaseTracker) BeforeTurn(turn *Turn) {}
-func (t *errorPhaseTracker) AfterTurn(turn *Turn, err error) {
+func (t *errorPhaseTracker) BeforeTurn(turn *turn) {}
+func (t *errorPhaseTracker) AfterTurn(turn *turn, err error) {
 	t.lastState = turn.State
 }
-func (t *errorPhaseTracker) OnPhaseTransition(from, to TurnPhase, state *TurnState) {
+func (t *errorPhaseTracker) OnPhaseTransition(from, to turnPhase, state *turnState) {
 	t.phases = append(t.phases, to)
 }
 
@@ -102,7 +102,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	}
 
 	// Verification: Phase sequence should include: Inference -> Recovering -> Refining -> Inference
-	expectedPhases := []TurnPhase{PhaseInference, PhaseRecovering, PhaseRefining, PhaseInference, PhasePersisting, PhaseComplete}
+	expectedPhases := []turnPhase{phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -161,7 +161,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	// 1. Refining -> Inference
 	// 2. Inference -> Recovering
 	// 3. Recovering -> Complete
-	expectedPhases := []TurnPhase{PhaseInference, PhaseRecovering, PhaseComplete}
+	expectedPhases := []turnPhase{phaseInference, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -208,7 +208,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).
-	expectedPhases := []TurnPhase{PhaseInference, PhaseExecuting, PhaseRecovering, PhaseComplete}
+	expectedPhases := []turnPhase{phaseInference, phaseExecuting, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {

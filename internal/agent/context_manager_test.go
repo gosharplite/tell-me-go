@@ -52,17 +52,17 @@ func TestContextManager_PipelineMethods(t *testing.T) {
 	cm.SetPipeline(p)
 	assert.Equal(t, p, cm.Pipeline)
 
-	// Test EnsureStandardPipeline - should create if nil
+	// Test ensureStandardPipeline - should create if nil
 	cm.Pipeline = nil
 	limits := events.Limits{MaxHistoryTurns: 10}
-	cm.EnsureStandardPipeline(limits)
+	cm.ensureStandardPipeline(limits)
 	assert.NotNil(t, cm.Pipeline)
 	assert.Greater(t, len(cm.Pipeline.transformers), 0)
 
-	// Test EnsureStandardPipeline - should NOT overwrite if non-nil
+	// Test ensureStandardPipeline - should NOT overwrite if non-nil
 	existingPipeline := NewContextPipeline()
 	cm.Pipeline = existingPipeline
-	cm.EnsureStandardPipeline(limits)
+	cm.ensureStandardPipeline(limits)
 	assert.Equal(t, existingPipeline, cm.Pipeline)
 }
 
@@ -76,16 +76,16 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 		cm.RegisterToolRegistry(&mockToolRegistry{})
 	})
 
-	// Case 2: cm.Pipeline contains a ToolDeclarationGenerator.
-	tg := &ToolDeclarationGenerator{}
+	// Case 2: cm.Pipeline contains a toolDeclarationGenerator.
+	tg := &toolDeclarationGenerator{}
 	p := NewContextPipeline(tg)
 	cm.SetPipeline(p)
 	reg := &mockToolRegistry{}
 	cm.RegisterToolRegistry(reg)
 	assert.Equal(t, reg, tg.Registry)
 
-	// Case 3: cm.Pipeline contains other transformers but no ToolDeclarationGenerator.
-	p2 := NewContextPipeline(&EmptyTurnFilter{})
+	// Case 3: cm.Pipeline contains other transformers but no toolDeclarationGenerator.
+	p2 := NewContextPipeline(&emptyTurnFilter{})
 	cm.SetPipeline(p2)
 	assert.NotPanics(t, func() {
 		cm.RegisterToolRegistry(reg)
