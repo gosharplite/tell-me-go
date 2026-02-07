@@ -4,8 +4,14 @@
 package files
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -50,4 +56,37 @@ func TestFormatMatch(t *testing.T) {
 	if len(got) > 550 { // approximate
 		t.Errorf("formatted match too long: %d", len(got))
 	}
+}
+
+func TestWalkAndProcess(t *testing.T) {
+	tempDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tempDir, "safe"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "safe/f1.txt"), []byte("data"), 0644)
+	
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(tempDir)
+	
+	ctx := context.Background()
+	var seen []string
+	processor := func(path string) error {
+		seen = append(seen, filepath.Base(path))
+		return nil
+	}
+
+	t.Run("safe path", func(t *testing.T) {
+		err := walkAndProcess(ctx, sm, fsutil.DefaultFileSystem, tempDir, processor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(seen) != 1 || seen[0] != "f1.txt" {
+			t.Errorf("unexpected files seen: %v", seen)
+		}
+	})
+
+	t.Run("unsafe path", func(t *testing.T) {
+		err := walkAndProcess(ctx, sm, fsutil.DefaultFileSystem, "/etc", processor)
+		if err == nil {
+			t.Error("expected error for unsafe path")
+		}
+	})
 }
