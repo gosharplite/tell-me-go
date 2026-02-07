@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -298,12 +299,28 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 		return "", err
 	}
 
-	high := make([]UncoveredBlock, 0)
-	medium := make([]UncoveredBlock, 0)
-	lowCount := 0
+	high, medium, lowCount, catStats := aggregateCoverageStats(blocks)
 
-	catStats := make(map[string]int)
+	var sb strings.Builder
+	renderReportSummary(&sb, packagePath, len(blocks), high, medium, lowCount, catStats)
 
+	const maxItems = 10
+	renderBlockGaps(&sb, "HIGH PRIORITY GAPS", high, maxItems)
+
+	// Show Medium if High are few
+	if len(medium) > 0 && len(high) < 5 {
+		remainingSlots := maxItems - len(high)
+		if remainingSlots <= 0 {
+			remainingSlots = 5 // Minimum of 5 if we show them at all
+		}
+		renderBlockGaps(&sb, "MEDIUM PRIORITY GAPS", medium, remainingSlots)
+	}
+
+	return sb.String(), nil
+}
+
+func aggregateCoverageStats(blocks []UncoveredBlock) (high []UncoveredBlock, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
+	catStats = make(map[string]int)
 	for _, b := range blocks {
 		catStats[b.Category]++
 		switch b.Priority {
@@ -315,54 +332,44 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 			lowCount++
 		}
 	}
+	return
+}
 
-	var sb strings.Builder
+func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
 	sb.WriteString(fmt.Sprintf("Detailed Coverage Report for %s\n", packagePath))
 	sb.WriteString(strings.Repeat("-", len(packagePath)+29) + "\n")
 	sb.WriteString("Summary:\n")
-	sb.WriteString(fmt.Sprintf("- Total Gaps: %d\n", len(blocks)))
+	sb.WriteString(fmt.Sprintf("- Total Gaps: %d\n", total))
 	sb.WriteString(fmt.Sprintf("- High Priority (Architectural): %d\n", len(high)))
 	sb.WriteString(fmt.Sprintf("- Medium Priority (Technical Debt): %d\n", len(medium)))
 	sb.WriteString(fmt.Sprintf("- Low Priority: %d\n", lowCount))
 	sb.WriteString("\nBreakdown by Category:\n")
-	for cat, count := range catStats {
-		sb.WriteString(fmt.Sprintf("- %s: %d\n", cat, count))
+
+	// Sort categories for deterministic output
+	var cats []string
+	for c := range catStats {
+		cats = append(cats, c)
 	}
-
-	const maxItems = 10
-
-	if len(high) > 0 {
-		sb.WriteString("\n[HIGH PRIORITY GAPS]\n")
-		for i, b := range high {
-			if i >= maxItems {
-				sb.WriteString(fmt.Sprintf("... and %d more High priority gaps.\n", len(high)-maxItems))
-				break
-			}
-			sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
-			sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
-			sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
-		}
+	sort.Strings(cats)
+	for _, cat := range cats {
+		sb.WriteString(fmt.Sprintf("- %s: %d\n", cat, catStats[cat]))
 	}
+}
 
-	// Show Medium if High are few
-	if len(medium) > 0 && len(high) < 5 {
-		sb.WriteString("\n[MEDIUM PRIORITY GAPS]\n")
-		remainingSlots := maxItems - len(high)
-		if remainingSlots <= 0 {
-			remainingSlots = 5 // Minimum of 5 if we show them at all
-		}
-		for i, b := range medium {
-			if i >= remainingSlots {
-				sb.WriteString(fmt.Sprintf("... and %d more Medium priority gaps.\n", len(medium)-remainingSlots))
-				break
-			}
-			sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
-			sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
-			sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
-		}
+func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock, maxItems int) {
+	if len(blocks) == 0 {
+		return
 	}
-
-	return sb.String(), nil
+	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
+	for i, b := range blocks {
+		if i >= maxItems {
+			sb.WriteString(fmt.Sprintf("... and %d more %s priority gaps.\n", len(blocks)-maxItems, strings.ToLower(title)))
+			break
+		}
+		sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
+		sb.WriteString(fmt.Sprintf("   Category: %s\n", b.Category))
+		sb.WriteString(fmt.Sprintf("   Code:\n%s\n\n", b.Code))
+	}
 }
 
 // GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
