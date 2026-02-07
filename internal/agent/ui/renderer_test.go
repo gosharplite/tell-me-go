@@ -627,8 +627,9 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := NewStdUIRenderer(sm)
 			r.SetUseColor(tt.useColor)
-			if got := r.c(tt.input); got != tt.expected {
-				t.Errorf("r.c(%q) = %q, want %q", tt.input, got, tt.expected)
+			ui := r.getUIState()
+			if got := ui.c(tt.input); got != tt.expected {
+				t.Errorf("ui.c(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
