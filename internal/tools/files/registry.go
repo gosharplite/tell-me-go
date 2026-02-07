@@ -237,7 +237,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		},
 	}, m.reader.getFileDiff)
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "undo_file_change",
 		Description: "Reverts the last N file modifications (WRITE or REPLACE actions).",
 		Parameters: &tools.Schema{
@@ -249,5 +249,5 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 				},
 			},
 		},
-	}, m.writer.undoFileChange)
+	}, m.writer.undoFileChange, registry.ToolOptions{Serial: true})
 }

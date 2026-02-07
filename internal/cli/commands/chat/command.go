@@ -30,15 +30,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 	internal_security "github.com/gosharplite/tell-me-go/internal/security"
 	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
-	"github.com/gosharplite/tell-me-go/internal/tools/code"
-	"github.com/gosharplite/tell-me-go/internal/tools/dev"
-	"github.com/gosharplite/tell-me-go/internal/tools/files"
+	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/git"
-	"github.com/gosharplite/tell-me-go/internal/tools/media"
-	"github.com/gosharplite/tell-me-go/internal/tools/network"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/tools/system"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 	"golang.org/x/term"
 )
@@ -318,17 +312,18 @@ func (c *Command) handleNewSession(paths *sessionPaths, cfg *config.Config, pric
 func (c *Command) setupRegistry(client *api.Client, cfg *config.Config, paths *sessionPaths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
 	reg := registry.New()
 
-	files.Register(reg, c.SM)
-	code.Register(reg, c.SM)
-	system.Register(reg, c.SM)
-	git.Register(reg, c.SM)
-	dev.Register(reg, c.SM)
-	network.Register(reg, c.SM)
-	framework.RegisterState(reg, c.SM, paths.modeDir)
-	framework.RegisterPolicy(reg, c.SM)
-	framework.RegisterMetrics(reg, c.SM, paths.logPath, cfg.Model, cfg.Mode, pricingOverrides)
-	dev.RegisterRelease(reg, c.SM)
-	media.Register(reg, c.SM, mediasvc.NewService(client, filepath.Join(c.HomeDir, "assets/generated")))
+	gateway := mediasvc.NewService(client, filepath.Join(c.HomeDir, "assets/generated"))
+
+	tools.RegisterAll(
+		reg,
+		c.SM,
+		paths.modeDir,
+		paths.logPath,
+		cfg.Model,
+		cfg.Mode,
+		pricingOverrides,
+		gateway,
+	)
 
 	return reg
 }

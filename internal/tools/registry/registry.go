@@ -48,6 +48,9 @@ func (r *Registry) Register(def *tools.ToolDeclaration, handler ToolFunc) {
 
 // RegisterWithOptions adds a new tool to the registry with specific options.
 func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler ToolFunc, opts ToolOptions) {
+	if def.Name == "" {
+		panic("cannot register tool with empty name")
+	}
 	r.declarations = append(r.declarations, def)
 	r.entries[def.Name] = ToolEntry{
 		Declaration: def,
@@ -67,7 +70,11 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 	if !ok {
 		return tools.ToolResult{}, fmt.Errorf("tool not found: %s", name)
 	}
-	return entry.Handler(ctx, args)
+	res, err := entry.Handler(ctx, args)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("tool execution failed: %s: %w", name, err)
+	}
+	return res, nil
 }
 
 // IsSerial returns true if the tool is configured for serial execution.

@@ -49,11 +49,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityMa
 	}
 
 	if bus != nil {
-		bus.Subscribe(func(event events.Event) {
-			if _, ok := event.(events.ConfigUpdated); ok {
-				// Config updated, but concurrency is now managed elsewhere or fixed.
-			}
-		})
+		// Event subscriptions could be added here if needed in the future.
 	}
 
 	return e

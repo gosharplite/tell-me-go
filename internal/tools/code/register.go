@@ -24,17 +24,17 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_architecture",
 		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
-	}, arc.VerifyArchitecture)
+	}, arc.VerifyArchitecture, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_code_health",
 		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
-	}, hea.GetCodeHealth)
+	}, hea.GetCodeHealth, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_detailed_coverage",
 		Description: "Analyzes Go test coverage to identify specific untested code blocks, prioritizing error handling and business logic gaps.",
 		Parameters: &tools.Schema{
@@ -47,9 +47,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, hea.GetDetailedCoverage)
+	}, hea.GetDetailedCoverage, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",
 		Description: "Uses static analysis (AST) to find all precise references to a specific Go symbol. Use this for accurate refactoring or impact analysis.",
 		Parameters: &tools.Schema{
@@ -66,9 +66,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, ana.FindUsages)
+	}, ana.FindUsages, registry.ToolOptions{LongRunning: true})
 
-	r.Register(&tools.ToolDeclaration{
+	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_definitions",
 		Description: "Finds the exact declaration(s) of a symbol using AST.",
 		Parameters: &tools.Schema{
@@ -85,7 +85,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"query"},
 		},
-	}, ana.FindDefinitions)
+	}, ana.FindDefinitions, registry.ToolOptions{LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_symbols",

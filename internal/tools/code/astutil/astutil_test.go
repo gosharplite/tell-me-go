@@ -203,28 +203,6 @@ func TestASTCache(t *testing.T) {
 	}
 }
 
-func TestGetFileSkeletonGo(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.go")
-	code := `package p
-// F is a function
-func F() {}
-type S struct{}
-type I interface{}
-`
-	os.WriteFile(path, []byte(code), 0644)
-	cache := NewASTCache()
-	got, err := cache.GetFileSkeletonGo(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"func F()", "type S struct", "type I interface"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("skeleton missing %q", want)
-		}
-	}
-}
-
 func TestCompareASTs(t *testing.T) {
 	fset := token.NewFileSet()
 	baseCode := `package p
@@ -254,24 +232,6 @@ type T1 struct { A int }
 		if !found {
 			t.Errorf("expected change %q not found in %v", exp, changes)
 		}
-	}
-}
-
-func TestGetFuncTypeSig(t *testing.T) {
-	code := `package p
-type T func(a int, b string) (int, error)
-`
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "test.go", code, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := f.Decls[0].(*ast.GenDecl).Specs[0].(*ast.TypeSpec)
-	ft := ts.Type.(*ast.FuncType)
-	got := GetFuncTypeSig(ft)
-	want := "(int, string) (int, error)"
-	if got != want {
-		t.Errorf("GetFuncTypeSig() = %v, want %v", got, want)
 	}
 }
 

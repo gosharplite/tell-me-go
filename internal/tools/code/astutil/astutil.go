@@ -172,76 +172,6 @@ func GetFuncSignature(f *ast.FuncDecl) string {
 	return sb.String()
 }
 
-func GetFuncTypeSig(f *ast.FuncType) string {
-	var sb strings.Builder
-	sb.WriteString("(")
-	if f.Params != nil {
-		for i, field := range f.Params.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(ExprToString(field.Type))
-		}
-	}
-	sb.WriteString(")")
-	if f.Results != nil {
-		sb.WriteString(" ")
-		if len(f.Results.List) > 1 {
-			sb.WriteString("(")
-		}
-		for i, field := range f.Results.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(ExprToString(field.Type))
-		}
-		if len(f.Results.List) > 1 {
-			sb.WriteString(")")
-		}
-	}
-	return sb.String()
-}
-
-func (c *ASTCache) GetFileSkeletonGo(filePath string) (string, error) {
-	f, _, err := c.Get(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse Go file: %w", err)
-	}
-
-	var sb strings.Builder
-	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			if d.Doc != nil {
-				sb.WriteString(d.Doc.Text())
-			}
-			sb.WriteString(GetFuncSignature(d) + "\n\n")
-		case *ast.GenDecl:
-			if d.Tok == token.TYPE {
-				if d.Doc != nil {
-					sb.WriteString(d.Doc.Text())
-				}
-				for _, spec := range d.Specs {
-					tSpec := spec.(*ast.TypeSpec)
-					sb.WriteString(fmt.Sprintf("type %s ", tSpec.Name.Name))
-					switch t := tSpec.Type.(type) {
-					case *ast.StructType:
-						sb.WriteString("struct { ... }\n")
-					case *ast.InterfaceType:
-						sb.WriteString("interface { ... }\n")
-					default:
-						_ = t
-						sb.WriteString("...\n")
-					}
-				}
-				sb.WriteString("\n")
-			}
-		}
-	}
-
-	return sb.String(), nil
-}
-
 func CalculateComplexity(fd *ast.FuncDecl) int {
 	complexity := 1
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
@@ -283,7 +213,7 @@ func CompareASTs(base, curr *ast.File) []string {
 		if baseDecl, ok := baseDecls[k]; !ok {
 			changes = append(changes, "Added: "+k)
 		} else {
-			if !IsDeclEqual(baseDecl, currDecl) {
+			if !isDeclEqual(baseDecl, currDecl) {
 				changes = append(changes, "Modified: "+k)
 			}
 		}
@@ -330,7 +260,7 @@ func GetDeclKey(decl ast.Decl) string {
 	return "unknown"
 }
 
-func IsDeclEqual(a, b ast.Decl) bool {
+func isDeclEqual(a, b ast.Decl) bool {
 	// Crude but effective for semantic diff: compare formatted strings
 	fset := token.NewFileSet()
 	var bufA, bufB bytes.Buffer

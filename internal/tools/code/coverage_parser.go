@@ -109,17 +109,7 @@ func extractFromLines(lines []string, start, end int) string {
 	return strings.Join(lines[startIdx:endIdx], "\n")
 }
 
-// ExtractCode reads the source file and extracts the lines for the block.
-func (b *UncoveredBlock) ExtractCode() error {
-	content, err := os.ReadFile(b.File)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(string(content), "\n")
-	b.Code = extractFromLines(lines, b.Start, b.End)
-	return nil
-}
-
+// commandRunner is a function type for executing commands.
 type commandRunner func(name string, arg ...string) ([]byte, error)
 
 // ShellRunner is the default implementation of commandRunner using exec.Command.
@@ -272,31 +262,6 @@ func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBloc
 	return blocks, nil
 }
 
-// GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, optionally filtered by priority.
-func GetDetailedCoverageJSON(packagePath string, minPriority string, run commandRunner) (string, error) {
-	blocks, err := GetDetailedCoverage(packagePath, run)
-	if err != nil {
-		return "", err
-	}
-
-	filtered := make([]UncoveredBlock, 0)
-	priorityMap := map[string]int{"High": 3, "Medium": 2, "Low": 1, "": 0}
-	minP := priorityMap[minPriority]
-
-	for _, b := range blocks {
-		if priorityMap[b.Priority] >= minP {
-			filtered = append(filtered, b)
-		}
-	}
-
-	data, err := json.MarshalIndent(filtered, "", "  ")
-	if err != nil {
-		return "", err
-	}
-
-	return string(data), nil
-}
-
 // GetDetailedCoverageReport generates a formatted report optimized for LLM consumption.
 func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, error) {
 	blocks, err := GetDetailedCoverage(packagePath, run)
@@ -369,4 +334,34 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 	}
 
 	return sb.String(), nil
+}
+
+// GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
+func GetDetailedCoverageJSON(packagePath string, minPriority string, run commandRunner) (string, error) {
+	blocks, err := GetDetailedCoverage(packagePath, run)
+	if err != nil {
+		return "", err
+	}
+
+	priorityMap := map[string]int{
+		"High":   3,
+		"Medium": 2,
+		"Low":    1,
+		"":       0,
+	}
+
+	minP := priorityMap[minPriority]
+	var filtered []UncoveredBlock
+	for _, b := range blocks {
+		if priorityMap[b.Priority] >= minP {
+			filtered = append(filtered, b)
+		}
+	}
+
+	data, err := json.MarshalIndent(filtered, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }

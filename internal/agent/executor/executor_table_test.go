@@ -228,7 +228,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "Error: tool failed")
+		verifyErrorResponse(t, resp, "tool execution failed: fail_tool: tool failed")
 		verifyToolEventError(t, bus, agenerrors.ErrLogic)
 	})
 }
