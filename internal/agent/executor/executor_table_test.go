@@ -750,3 +750,72 @@ func (s *MockStrategy) Format(name string, result tools.ToolResult) *llm.Part {
 		},
 	}
 }
+
+type panicRegistry struct {
+	tools.IToolRegistry
+	panicOnGet bool
+	serial     bool
+}
+
+func (r *panicRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	if r.panicOnGet {
+		panic("registry GetDeclarations panic")
+	}
+	return []*tools.ToolDeclaration{{Name: "panic_tool"}}
+}
+
+func (r *panicRegistry) IsSerial(name string) bool {
+	return r.serial
+}
+
+func (r *panicRegistry) IsLongRunning(name string) bool {
+	return false
+}
+
+func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
+
+func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Serial executeTool Panic", func(t *testing.T) {
+		t.Parallel()
+		reg := &panicRegistry{panicOnGet: true, serial: true}
+		bus := &events.TestEventBus{}
+		exec := NewToolExecutor(reg, nil, bus)
+		defer exec.Shutdown()
+		exec.SetStrategy(&MockStrategy{})
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "any"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
+		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+	})
+
+	t.Run("Parallel executeTool Panic", func(t *testing.T) {
+		t.Parallel()
+		reg := &panicRegistry{panicOnGet: true, serial: false}
+		bus := &events.TestEventBus{}
+		exec := NewToolExecutor(reg, nil, bus)
+		defer exec.Shutdown()
+		exec.SetStrategy(&MockStrategy{})
+
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "any"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
+		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+	})
+}
