@@ -129,11 +129,66 @@ func (m *MockFileSystem) Remove(ctx context.Context, name string) error {
 }
 
 func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
-	// Very simple walk implementation
-	for path, content := range m.Files {
-		if strings.HasPrefix(path, root) {
-			info := &MockFileInfo{name: filepath.Base(path), size: int64(len(content)), dir: false}
-			if err := fn(path, info, nil); err != nil {
+	// Simple walk implementation
+	root = filepath.Clean(root)
+	
+	// Track directories we've already notified
+	dirsNotified := make(map[string]bool)
+	skippedDirs := make(map[string]bool)
+
+	// Collect all paths and sort them to simulate a real walk
+	var paths []string
+	for p := range m.Files {
+		paths = append(paths, p)
+	}
+	sortStrings(paths) // We need a sort helper or use sort package
+
+	for _, path := range paths {
+		content := m.Files[path]
+		cleanPath := filepath.Clean(path)
+		
+		// Check if it's within the root
+		isUnderRoot := false
+		if root == "." {
+			isUnderRoot = true
+		} else if strings.HasPrefix(cleanPath, root) {
+			isUnderRoot = true
+		}
+
+		if isUnderRoot {
+			// Notify directories leading to this file
+			parts := strings.Split(cleanPath, string(os.PathSeparator))
+			current := ""
+			skipThisFile := false
+			for i := 0; i < len(parts)-1; i++ {
+				if current == "" {
+					current = parts[i]
+				} else {
+					current = filepath.Join(current, parts[i])
+				}
+				
+				if skippedDirs[current] {
+					skipThisFile = true
+					break
+				}
+
+				if !dirsNotified[current] {
+					dirsNotified[current] = true
+					info := &MockFileInfo{name: filepath.Base(current), size: 0, dir: true}
+					if err := fn(current, info, nil); err == filepath.SkipDir {
+						skippedDirs[current] = true
+						skipThisFile = true
+						break
+					}
+				}
+			}
+
+			if skipThisFile {
+				continue
+			}
+
+			info := &MockFileInfo{name: filepath.Base(cleanPath), size: int64(len(content)), dir: false}
+			if err := fn(cleanPath, info, nil); err != nil {
 				if err == filepath.SkipDir {
 					continue
 				}
@@ -143,6 +198,17 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 	}
 	return nil
 }
+
+func sortStrings(s []string) {
+	for i := 0; i < len(s); i++ {
+		for j := i + 1; j < len(s); j++ {
+			if s[i] > s[j] {
+				s[i], s[j] = s[j], s[i]
+			}
+		}
+	}
+}
+
 
 type mockDirEntry struct {
 	name  string

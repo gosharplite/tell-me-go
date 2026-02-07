@@ -160,3 +160,15 @@ func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 		t.Fatal("expected error when directory is not writable")
 	}
 }
+
+func TestAtomicWrite_Cancel(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "cancel.txt")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := AtomicWrite(ctx, path, []byte("data"), 0644)
+	if err == nil {
+		t.Error("Expected error for cancelled context, got nil")
+	}
+}

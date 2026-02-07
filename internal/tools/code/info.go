@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -83,7 +84,16 @@ func (m *InfoManager) collectFileStats(ctx context.Context) (map[string]int, map
 		if ext == ".go" {
 			packages[filepath.Dir(path)] = true
 			if c, err := m.FS.ReadFile(ctx, path); err == nil {
-				totalLOC += len(strings.Split(string(c), "\n"))
+				content := string(c)
+				if content != "" {
+					lines := strings.Split(content, "\n")
+					// If file ends with newline, the last element is empty
+					if len(lines) > 0 && lines[len(lines)-1] == "" {
+						totalLOC += len(lines) - 1
+					} else {
+						totalLOC += len(lines)
+					}
+				}
 			}
 		}
 		return nil
@@ -98,12 +108,22 @@ func (m *InfoManager) renderProjectSummary(modInfo string, fileCounts map[string
 	sb.WriteString(modInfo)
 
 	sb.WriteString("\nFile Counts:\n")
-	for ext, count := range fileCounts {
-		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, count))
+	exts := make([]string, 0, len(fileCounts))
+	for ext := range fileCounts {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	for _, ext := range exts {
+		sb.WriteString(fmt.Sprintf("  %s: %d\n", ext, fileCounts[ext]))
 	}
 
 	sb.WriteString(fmt.Sprintf("\nGo Packages (%d):\n", len(packages)))
+	pkgs := make([]string, 0, len(packages))
 	for pkg := range packages {
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
+	for _, pkg := range pkgs {
 		sb.WriteString(fmt.Sprintf("  - %s\n", pkg))
 	}
 	sb.WriteString(fmt.Sprintf("\nEstimated Go LOC: %d\n", totalLOC))

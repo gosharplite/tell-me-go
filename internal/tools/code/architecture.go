@@ -25,10 +25,89 @@ const (
 	LayerSecurity = "security"
 )
 
+// PackageProvider defines the interface for loading package information.
+type PackageProvider interface {
+	LoadPackages(ctx context.Context) (map[string][]string, error)
+}
+
+// ArchitectureManager validates the project's architectural integrity.
 type ArchitectureManager struct {
 	SP         security.SecurityProvider
 	ModulePath string
 	once       sync.Once
+	Loader     PackageProvider
+}
+
+// RealPackageProvider implements PackageProvider using the 'go list' command.
+type RealPackageProvider struct {
+	m *ArchitectureManager
+}
+
+func (r *RealPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+	if !r.m.SP.IsCommandAllowed("go") {
+		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
+	}
+
+	// Use a single call to go list -json ./...
+	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start go list: %w", err)
+	}
+
+	pkgs, err := r.decodePackageInfo(stdout)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("go list command failed: %w", err)
+	}
+
+	return pkgs, nil
+}
+
+func (r *RealPackageProvider) decodePackageInfo(rd io.Reader) (map[string][]string, error) {
+	pkgs := make(map[string][]string)
+	dec := json.NewDecoder(rd)
+	for {
+		var p pkgInfo
+		if err := dec.Decode(&p); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("failed to decode go list output: %w", err)
+		}
+
+		if r.m.ModulePath == "" && p.Module != nil {
+			r.m.once.Do(func() {
+				r.m.ModulePath = p.Module.Path
+			})
+		}
+
+		// Only track packages within this module and containing "internal/" or "cmd/"
+		if r.isTrackedPackage(p.ImportPath) {
+			var trackedImports []string
+			for _, imp := range p.Imports {
+				// Only care about imports within the same module
+				if strings.HasPrefix(imp, r.m.ModulePath) {
+					trackedImports = append(trackedImports, imp)
+				}
+			}
+			pkgs[p.ImportPath] = trackedImports
+		}
+	}
+	return pkgs, nil
+}
+
+func (r *RealPackageProvider) isTrackedPackage(pkgPath string) bool {
+	if !strings.HasPrefix(pkgPath, r.m.ModulePath) {
+		return false
+	}
+	return strings.Contains(pkgPath, "internal/") || strings.Contains(pkgPath, "cmd/")
 }
 
 type pkgInfo struct {
@@ -54,7 +133,11 @@ type Rule struct {
 }
 
 func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	pkgs, err := m.getInternalPackages(ctx)
+	if m.Loader == nil {
+		m.Loader = &RealPackageProvider{m: m}
+	}
+
+	pkgs, err := m.Loader.LoadPackages(ctx)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -67,73 +150,6 @@ func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[s
 	}
 
 	return tools.ToolResult{Text: m.formatReport(violations)}, nil
-}
-
-func (m *ArchitectureManager) getInternalPackages(ctx context.Context) (map[string][]string, error) {
-	if !m.SP.IsCommandAllowed("go") {
-		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
-	}
-
-	// Use a single call to go list -json ./...
-	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start go list: %w", err)
-	}
-
-	pkgs, err := m.decodePackageInfo(stdout)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("go list command failed: %w", err)
-	}
-
-	return pkgs, nil
-}
-
-func (m *ArchitectureManager) decodePackageInfo(r io.Reader) (map[string][]string, error) {
-	pkgs := make(map[string][]string)
-	dec := json.NewDecoder(r)
-	for {
-		var p pkgInfo
-		if err := dec.Decode(&p); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("failed to decode go list output: %w", err)
-		}
-
-		if m.ModulePath == "" && p.Module != nil {
-			m.once.Do(func() {
-				m.ModulePath = p.Module.Path
-			})
-		}
-
-		// Only track packages within this module and containing "internal/" or "cmd/"
-		if m.isTrackedPackage(p.ImportPath) {
-			var trackedImports []string
-			for _, imp := range p.Imports {
-				// Only care about imports within the same module
-				if strings.HasPrefix(imp, m.ModulePath) {
-					trackedImports = append(trackedImports, imp)
-				}
-			}
-			pkgs[p.ImportPath] = trackedImports
-		}
-	}
-	return pkgs, nil
-}
-
-func (m *ArchitectureManager) isTrackedPackage(pkgPath string) bool {
-	if !strings.HasPrefix(pkgPath, m.ModulePath) {
-		return false
-	}
-	return strings.Contains(pkgPath, "internal/") || strings.Contains(pkgPath, "cmd/")
 }
 
 func isLayer(pkgPath, layerName string) bool {
@@ -197,7 +213,16 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	}
 
 	var violations []violation
-	for pkg, imports := range pkgs {
+	
+	// Sort packages for deterministic iteration
+	var sortedPkgs []string
+	for p := range pkgs {
+		sortedPkgs = append(sortedPkgs, p)
+	}
+	sort.Strings(sortedPkgs)
+
+	for _, pkg := range sortedPkgs {
+		imports := pkgs[pkg]
 		violations = append(violations, m.checkSinglePackageViolations(pkg, imports, rules)...)
 		violations = m.checkGeneralCmdImport(pkg, imports, violations)
 	}

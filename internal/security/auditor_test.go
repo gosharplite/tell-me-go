@@ -1,0 +1,39 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package security
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestAuditor_LogAudit(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "audit.log")
+	a := NewAuditor()
+	a.SetLogFile(logFile)
+
+	a.LogAudit("Action", "Test", "Detail", "Something")
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "Action: Test") {
+		t.Error("Log missing Action: Test")
+	}
+	if !strings.Contains(content, "Detail: Something") {
+		t.Error("Log missing Detail: Something")
+	}
+}
+
+func TestAuditor_NoLogFile(t *testing.T) {
+	a := NewAuditor()
+	// Should not panic or fail when logFile is empty
+	a.LogAudit("Action", "Test", "Detail", "Something")
+}

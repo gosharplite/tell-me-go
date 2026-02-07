@@ -24,6 +24,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	sea := &SearchManager{SP: sm, FS: fsutil.DefaultFileSystem}
 	hea := &HealthManager{SP: sm, Ana: ana}
 	arc := &ArchitectureManager{SP: sm}
+	arc.Loader = &RealPackageProvider{m: arc}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_architecture",

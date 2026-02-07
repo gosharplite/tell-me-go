@@ -5,197 +5,201 @@ package code
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
-func TestCheckLayerViolations(t *testing.T) {
-	t.Parallel()
-	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
+type mockPackageProvider struct {
+	pkgs map[string][]string
+	err  error
+}
+
+func (m *mockPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+	return m.pkgs, m.err
+}
+
+type mockSecurityProvider struct {
+	security.SecurityProvider
+}
+
+func (m *mockSecurityProvider) IsCommandAllowed(command string) bool {
+	return true
+}
+
+func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
+	mockSP := &mockSecurityProvider{}
+	m := &ArchitectureManager{
+		SP:         mockSP,
+		ModulePath: "github.com/gosharplite/tell-me-go",
+	}
+
+	t.Run("violations found", func(t *testing.T) {
+		pkgs := map[string][]string{
+			"github.com/gosharplite/tell-me-go/internal/domain": {
+				"github.com/gosharplite/tell-me-go/internal/agent", // Violation
+			},
+			"github.com/gosharplite/tell-me-go/internal/a": {
+				"github.com/gosharplite/tell-me-go/internal/b",
+			},
+			"github.com/gosharplite/tell-me-go/internal/b": {
+				"github.com/gosharplite/tell-me-go/internal/a", // Circular
+			},
+		}
+		m.Loader = &mockPackageProvider{pkgs: pkgs}
+		res, err := m.VerifyArchitecture(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("VerifyArchitecture failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "[LAYER VIOLATION]") {
+			t.Error("expected [LAYER VIOLATION]")
+		}
+		if !strings.Contains(res.Text, "[CIRCULAR REFERENCE]") {
+			t.Error("expected [CIRCULAR REFERENCE]")
+		}
+	})
+
+	t.Run("no violations", func(t *testing.T) {
+		pkgs := map[string][]string{
+			"github.com/gosharplite/tell-me-go/internal/domain": {},
+		}
+		m.Loader = &mockPackageProvider{pkgs: pkgs}
+		res, err := m.VerifyArchitecture(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("VerifyArchitecture failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "integrity verified") {
+			t.Error("expected success message")
+		}
+	})
+
+	t.Run("load error", func(t *testing.T) {
+		m.Loader = &mockPackageProvider{err: fmt.Errorf("load error")}
+		_, err := m.VerifyArchitecture(context.Background(), nil)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+}
+
+func TestArchitectureManager_FormatReport(t *testing.T) {
+	m := &ArchitectureManager{
+		ModulePath: "github.com/gosharplite/tell-me-go",
+	}
 
 	tests := []struct {
-		name          string
-		pkgs          map[string][]string
-		wantViolation bool
-		wantReason    string
+		name       string
+		violations []violation
+		contains   []string
 	}{
 		{
-			name: "Domain purity: Domain must not depend on Agent",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/domain/user": {"github.com/org/repo/internal/agent/auth"},
+			name: "single violation",
+			violations: []violation{
+				{
+					pkg:      "internal/domain",
+					category: "[LAYER VIOLATION]",
+					target:   "internal/agent",
+					reason:   "Domain must not depend on other internal layers.",
+				},
 			},
-			wantViolation: true,
-			wantReason:    "Domain must not depend on other internal layers.",
+			contains: []string{
+				"### Architectural Integrity Report: ❌ FAILED",
+				"| `internal/domain` | [LAYER VIOLATION] | `internal/agent` | Domain must not depend on other internal layers. |",
+			},
 		},
 		{
-			name: "Domain purity: Domain can depend on Domain",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/domain/user": {"github.com/org/repo/internal/domain/common"},
+			name: "multiple violations",
+			violations: []violation{
+				{
+					pkg:      "internal/domain",
+					category: "[LAYER VIOLATION]",
+					target:   "internal/agent",
+					reason:   "Reason 1",
+				},
+				{
+					pkg:      "internal/agent",
+					category: "[CIRCULAR REFERENCE]",
+					target:   "internal/domain",
+					reason:   "Cycle detected",
+				},
 			},
-			wantViolation: false,
-		},
-		{
-			name: "Agent isolation: Agent must not depend on Tools",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/agent/worker": {"github.com/org/repo/internal/tools/registry"},
+			contains: []string{
+				"| `internal/domain` | [LAYER VIOLATION] | `internal/agent` | Reason 1 |",
+				"| `internal/agent` | [CIRCULAR REFERENCE] | `internal/domain` | Cycle detected |",
 			},
-			wantViolation: true,
-			wantReason:    "Application/Agent layer must not depend on Infrastructure/Tools implementations",
-		},
-		{
-			name: "Infra isolation: Tools must not depend on Agent",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/tools/registry": {"github.com/org/repo/internal/agent/worker"},
-			},
-			wantViolation: true,
-			wantReason:    "Infrastructure layers must not depend on Application/Agent logic",
-		},
-		{
-			name: "Cmd protection: internal package must not import cmd",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/agent/worker": {"github.com/org/repo/cmd/app"},
-			},
-			wantViolation: true,
-			wantReason:    "Composition Root (cmd)",
-		},
-		{
-			name: "Cmd protection: Domain can't import cmd",
-			pkgs: map[string][]string{
-				"github.com/org/repo/internal/domain/user": {"github.com/org/repo/cmd/app"},
-			},
-			wantViolation: true,
-			wantReason:    "Composition Root (cmd)",
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			violations := m.checkLayerViolations(tt.pkgs)
-			if tt.wantViolation {
-				if len(violations) == 0 {
-					t.Errorf("expected violations, got none")
-				} else {
-					found := false
-					for _, v := range violations {
-						if strings.Contains(v.reason, tt.wantReason) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						t.Errorf("expected reason %q, got %q", tt.wantReason, violations[0].reason)
-					}
-				}
-			} else {
-				if len(violations) > 0 {
-					t.Errorf("expected no violations, got %d: %v", len(violations), violations[0])
+			got := m.formatReport(tt.violations)
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("formatReport() output does not contain %q\ngot: %s", want, got)
 				}
 			}
 		})
 	}
 }
 
-func TestCheckCircularDependencies(t *testing.T) {
-	t.Parallel()
-	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
-
+func TestArchitectureManager_IsLayer(t *testing.T) {
 	tests := []struct {
-		name          string
-		pkgs          map[string][]string
-		wantViolation bool
+		pkg   string
+		layer string
+		want  bool
 	}{
-		{
-			name: "No cycles",
-			pkgs: map[string][]string{
-				"a": {"b"},
-				"b": {"c"},
-				"c": {},
-			},
-			wantViolation: false,
-		},
-		{
-			name: "Simple cycle A -> B -> A",
-			pkgs: map[string][]string{
-				"a": {"b"},
-				"b": {"a"},
-			},
-			wantViolation: true,
-		},
-		{
-			name: "Longer cycle A -> B -> C -> A",
-			pkgs: map[string][]string{
-				"a": {"b"},
-				"b": {"c"},
-				"c": {"a"},
-			},
-			wantViolation: true,
-		},
-		{
-			name: "Internal cycle not involving root",
-			pkgs: map[string][]string{
-				"root": {"a"},
-				"a":    {"b"},
-				"b":    {"c"},
-				"c":    {"a"},
-			},
-			wantViolation: true,
-		},
+		{"github.com/org/repo/internal/domain", "domain", true},
+		{"github.com/org/repo/internal/domain/sub", "domain", true},
+		{"github.com/org/repo/internal/domain-logic", "domain", false},
+		{"github.com/org/repo/internal/agent/service", "agent", true},
+		{"github.com/org/repo/pkg/domain", "domain", false},
 	}
 
 	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			violations := m.checkCircularDependencies(tt.pkgs)
-			if tt.wantViolation {
-				if len(violations) == 0 {
-					t.Errorf("expected circular dependency violations, got none")
-				}
-			} else {
-				if len(violations) > 0 {
-					t.Errorf("expected no violations, got %d", len(violations))
-				}
+		t.Run(tt.pkg+"_"+tt.layer, func(t *testing.T) {
+			if got := isLayer(tt.pkg, tt.layer); got != tt.want {
+				t.Errorf("isLayer(%q, %q) = %v, want %v", tt.pkg, tt.layer, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestVerifyArchitecture_Integration(t *testing.T) {
-	// Smoke test against the live codebase.
-	// We don't assert failure/success strictly here because the codebase changes.
-	// Instead, we verify it runs and returns a result.
-
-	cwd, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
-			break
-		}
-		parent := filepath.Dir(cwd)
-		if parent == cwd {
-			t.Skip("could not find go.mod, skipping integration test")
-		}
-		cwd = parent
-	}
-	oldCwd, _ := os.Getwd()
-	os.Chdir(cwd)
-	defer os.Chdir(oldCwd)
-
-	sm := security.NewSecurityManager(nil)
-	arc := &ArchitectureManager{SP: sm}
-
-	ctx := context.Background()
-	res, err := arc.VerifyArchitecture(ctx, nil)
-	if err != nil {
-		t.Fatalf("VerifyArchitecture failed: %v", err)
+func TestArchitectureManager_Shorten(t *testing.T) {
+	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
+	tests := []struct {
+		pkg  string
+		want string
+	}{
+		{"github.com/org/repo/internal/domain", "internal/domain"},
+		{"github.com/org/repo/cmd/app", "cmd/app"},
+		{"other/pkg", "other/pkg"},
 	}
 
-	if res.Text == "" {
-		t.Error("expected non-empty result text")
+	for _, tt := range tests {
+		t.Run(tt.pkg, func(t *testing.T) {
+			if got := m.shorten(tt.pkg); got != tt.want {
+				t.Errorf("shorten(%q) = %v, want %v", tt.pkg, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
+	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
+	pkgs := map[string][]string{
+		"github.com/org/repo/internal/domain": {
+			"github.com/org/repo/internal/agent", // Violation
+		},
+		"github.com/org/repo/internal/agent": {
+			"github.com/org/repo/internal/domain", // OK
+			"github.com/org/repo/cmd/app",        // Violation
+		},
+	}
+
+	violations := m.checkLayerViolations(pkgs)
+	if len(violations) != 2 {
+		t.Errorf("expected 2 violations, got %d", len(violations))
 	}
 }

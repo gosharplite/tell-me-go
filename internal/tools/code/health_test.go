@@ -56,3 +56,74 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 		t.Errorf("expected cancellation message, got %q", res.Text)
 	}
 }
+
+func TestHealthManager_GenerateRecommendation(t *testing.T) {
+	hea := &HealthManager{}
+
+	tests := []struct {
+		name string
+		test string
+		cov  string
+		lint string
+		comp string
+		sec  string
+		want []string
+	}{
+		{
+			name: "excellent health",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			sec:  "CLEAN",
+			want: []string{"Project health is excellent."},
+		},
+		{
+			name: "failing tests",
+			test: "FAIL",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			sec:  "CLEAN",
+			want: []string{"Fix failing tests immediately."},
+		},
+		{
+			name: "low coverage",
+			test: "PASS",
+			cov:  "70.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			sec:  "CLEAN",
+			want: []string{"Coverage (70.0%) is below the 80% target."},
+		},
+		{
+			name: "security vulnerabilities",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			sec:  "VULNS",
+			want: []string{"Review and fix security vulnerabilities."},
+		},
+		{
+			name: "complexity and linting",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "5 Issues",
+			comp: "3 Alerts",
+			sec:  "CLEAN",
+			want: []string{"Refactor high-complexity functions.", "Address linting issues."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.sec)
+			for _, w := range tt.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("generateRecommendation() = %q, want it to contain %q", got, w)
+				}
+			}
+		})
+	}
+}

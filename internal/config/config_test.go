@@ -63,3 +63,21 @@ AIURL: "http://test.url"
 		}
 	})
 }
+
+func TestLoad_EnvOverride(t *testing.T) {
+	os.Setenv("GOSHARP_MODE", "env-mode")
+	defer os.Unsetenv("GOSHARP_MODE")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_env.yaml")
+	_ = os.WriteFile(configPath, []byte("MODE: yaml-mode"), 0644)
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Mode != "env-mode" {
+		t.Errorf("expected Mode 'env-mode' (from ENV), got '%s'", cfg.Mode)
+	}
+}

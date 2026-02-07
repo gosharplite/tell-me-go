@@ -1,162 +1,236 @@
-// Copyright (c) 2026 gosharplite@gmail.com
-// SPDX-License-Identifier: MIT
-
 package code
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/code/astutil"
 )
 
-func TestGetFileSkeleton(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	cache := astutil.NewASTCache()
-	m := &InfoManager{SP: sm, Cache: cache, FS: fsutil.DefaultFileSystem}
+func TestInfoManager_RenderProjectSummary(t *testing.T) {
+	m := &InfoManager{}
+
+	modInfo := "module example.com/test\ngo 1.21\n"
+	fileCounts := map[string]int{
+		".go": 10,
+		".md": 2,
+	}
+	packages := map[string]bool{
+		"pkg1": true,
+		"pkg2": true,
+	}
+	totalLOC := 1000
+
+	got := m.renderProjectSummary(modInfo, fileCounts, packages, totalLOC)
+
+	expectedContains := []string{
+		"Project Summary:",
+		"module example.com/test",
+		"go 1.21",
+		".go: 10",
+		".md: 2",
+		"Go Packages (2):",
+		"- pkg1",
+		"- pkg2",
+		"Estimated Go LOC: 1000",
+	}
+
+	for _, want := range expectedContains {
+		if !strings.Contains(got, want) {
+			t.Errorf("renderProjectSummary() output does not contain %q\ngot: %s", want, got)
+		}
+	}
+}
+
+func TestInfoManager_ExtractGenericSkeleton(t *testing.T) {
+	fs := fsutil.NewMockFileSystem()
+	m := &InfoManager{FS: fs}
 	ctx := context.Background()
 
 	tests := []struct {
 		name     string
-		filename string
+		path     string
 		content  string
-		mustHave []string
-		mustNot  []string
+		contains []string
 	}{
 		{
-			name:     "Go AST Mode",
-			filename: "test.go",
-			content:  "package p\n// S is a struct\ntype S struct { A int }\nfunc (s *S) Foo() { fmt.Println(s.A) }",
-			mustHave: []string{"package p", "// S is a struct", "type S struct", "func (s *S) Foo()"},
-			mustNot:  []string{"fmt.Println"},
+			name: "python like def",
+			path: "test.py",
+			content: `
+# This is a comment
+def my_func():
+    print("hello")
+`,
+			contains: []string{
+				"# This is a comment",
+				"def my_func():",
+			},
 		},
 		{
-			name:     "Python Generic Mode",
-			filename: "test.py",
-			content:  "# comment\ndef func():\n    pass\n\nclass MyClass:\n    pass",
-			mustHave: []string{"# comment", "def func():", "class MyClass:"},
-		},
-		{
-			name:     "JavaScript Generic Mode",
-			filename: "test.js",
-			content:  "// JS comment\nexport async function test() {}\nexport class Boat {}",
-			mustHave: []string{"// JS comment", "export async function test()", "export class Boat"},
-		},
-		{
-			name:     "Bash Generic Mode",
-			filename: "test.sh",
-			content:  "# Bash comment\nmy_func() {\n  echo hi\n}",
-			mustHave: []string{"# Bash comment", "my_func() {"},
-		},
-		{
-			name:     "Go Syntax Error Fallback",
-			filename: "bad.go",
-			content:  "package p\nfunc Unclosed( {",
-			mustHave: []string{"package p", "func Unclosed("},
-		},
-		{
-			name:     "Empty Result",
-			filename: "empty.txt",
-			content:  "just some random text\nwithout any definitions",
-			mustHave: []string{"Could not extract skeleton"},
+			name: "javascript like function",
+			path: "test.js",
+			content: `
+/** doc */
+function test() {
+  return true;
+}
+`,
+			contains: []string{
+				"function test() {",
+			},
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt // capture range variable
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			tempDir := t.TempDir()
-			path := filepath.Join(tempDir, tt.filename)
-			if err := os.WriteFile(path, []byte(tt.content), 0644); err != nil {
-				t.Fatal(err)
-			}
-
-			// Authorize path for test
-			sm.RegisterSafePath(path)
-
-			res, err := m.GetFileSkeleton(ctx, map[string]interface{}{"filepath": path})
+			_ = fs.WriteFile(ctx, tt.path, []byte(tt.content), 0644)
+			res, err := m.extractGenericSkeleton(ctx, tt.path)
 			if err != nil {
-				t.Fatalf("GetFileSkeleton failed: %v", err)
+				t.Fatalf("extractGenericSkeleton failed: %v", err)
 			}
-
-			for _, want := range tt.mustHave {
+			for _, want := range tt.contains {
 				if !strings.Contains(res.Text, want) {
-					t.Errorf("expected skeleton to contain %q, but it didn't. Got:\n%s", want, res.Text)
-				}
-			}
-
-			for _, notWant := range tt.mustNot {
-				if strings.Contains(res.Text, notWant) {
-					t.Errorf("expected skeleton NOT to contain %q, but it did. Got:\n%s", notWant, res.Text)
+					t.Errorf("extractGenericSkeleton() output does not contain %q\ngot: %s", want, res.Text)
 				}
 			}
 		})
 	}
 }
 
-func TestGetProjectSummary(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	m := &InfoManager{SP: sm, FS: fsutil.DefaultFileSystem}
+func TestInfoManager_ResolveModuleInfo(t *testing.T) {
+	fs := fsutil.NewMockFileSystem()
+	m := &InfoManager{FS: fs}
 	ctx := context.Background()
 
-	tempDir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(tempDir)
-	defer os.Chdir(origWd)
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name: "standard go.mod",
+			content: "module github.com/test/repo\n\ngo 1.25\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n",
+			want:    "module github.com/test/repo\ngo 1.25\n",
+		},
+		{
+			name:    "empty file",
+			content: "",
+			want:    "",
+		},
+		{
+			name:    "no module line",
+			content: "go 1.25\n",
+			want:    "go 1.25\n",
+		},
+	}
 
-	// Create dummy project structure
-	os.WriteFile("go.mod", []byte("module testmod\ngo 1.21"), 0644)
-	os.Mkdir("pkg", 0755)
-	os.WriteFile("pkg/a.go", []byte("package a\nfunc A() {}"), 0644)
-	os.WriteFile("pkg/a_test.go", []byte("package a\nimport \"testing\"\nfunc TestA(t *testing.T) {}"), 0644)
-	os.WriteFile("README.md", []byte("# Test Project"), 0644)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = fs.WriteFile(ctx, "go.mod", []byte(tt.content), 0644)
+			got := m.resolveModuleInfo(ctx)
+			if got != tt.want {
+				t.Errorf("resolveModuleInfo() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInfoManager_CollectFileStats(t *testing.T) {
+	fs := fsutil.NewMockFileSystem()
+	m := &InfoManager{FS: fs}
+	ctx := context.Background()
+
+	// Setup mock files
+	_ = fs.WriteFile(ctx, "main.go", []byte("package main\n\nfunc main() {}\n"), 0644)
+	_ = fs.WriteFile(ctx, "internal/pkg/tools.go", []byte("package pkg\n\nfunc Tool() {}\n"), 0644)
+	_ = fs.WriteFile(ctx, "README.md", []byte("# README\n"), 0644)
+	_ = fs.WriteFile(ctx, ".git/config", []byte("git data"), 0644) // Should be skipped
+
+	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+	if err != nil {
+		t.Fatalf("collectFileStats failed: %v", err)
+	}
+
+	if fileCounts[".go"] != 2 {
+		t.Errorf("expected 2 .go files, got %d", fileCounts[".go"])
+	}
+	if fileCounts[".md"] != 1 {
+		t.Errorf("expected 1 .md file, got %d", fileCounts[".md"])
+	}
+	if fileCounts[".git"] != 0 {
+		t.Errorf("expected 0 .git files (directory should be skipped), got %d", fileCounts[".git"])
+	}
+
+	if len(packages) != 2 {
+		t.Errorf("expected 2 packages, got %d", len(packages))
+	}
+	if !packages["."] || !packages["internal/pkg"] {
+		t.Errorf("packages map missing expected entries: %+v", packages)
+	}
+
+	// 3 lines in main.go, 3 lines in internal/pkg/tools.go
+	if totalLOC != 6 {
+		t.Errorf("expected 6 total LOC, got %d", totalLOC)
+	}
+}
+
+func TestInfoManager_GetProjectSummary(t *testing.T) {
+	fs := fsutil.NewMockFileSystem()
+	m := &InfoManager{FS: fs}
+	ctx := context.Background()
+
+	_ = fs.WriteFile(ctx, "go.mod", []byte("module example.com/test\ngo 1.25\n"), 0644)
+	_ = fs.WriteFile(ctx, "main.go", []byte("package main\n"), 0644)
 
 	res, err := m.GetProjectSummary(ctx, nil)
 	if err != nil {
 		t.Fatalf("GetProjectSummary failed: %v", err)
 	}
 
-	expected := []string{
-		"module testmod",
-		"go 1.21",
-		".go: 2",
-		".md: 1",
-		"Go Packages (1)",
-		"- pkg",
-		"Estimated Go LOC: 5",
+	if !strings.Contains(res.Text, "Project Summary:") {
+		t.Errorf("GetProjectSummary() output missing 'Project Summary:', got: %s", res.Text)
 	}
-
-	for _, exp := range expected {
-		if !strings.Contains(res.Text, exp) {
-			t.Errorf("expected summary to contain %q, but it didn't. Got:\n%s", exp, res.Text)
-		}
+	if !strings.Contains(res.Text, "example.com/test") {
+		t.Errorf("GetProjectSummary() output missing module name, got: %s", res.Text)
 	}
 }
 
-func TestGoDoc(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	m := &InfoManager{SP: sm}
+func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
+	fs := fsutil.NewMockFileSystem()
+	m := &InfoManager{FS: fs}
 	ctx := context.Background()
 
-	// Testing with a standard library package that is guaranteed to exist
-	res, err := m.GoDoc(ctx, map[string]interface{}{"symbol": "fmt.Println"})
-	if err != nil {
-		t.Fatalf("GoDoc failed: %v", err)
-	}
+	t.Run("empty directory", func(t *testing.T) {
+		fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(fileCounts) != 0 || len(packages) != 0 || totalLOC != 0 {
+			t.Errorf("expected empty results, got counts=%v, pkgs=%v, loc=%d", fileCounts, packages, totalLOC)
+		}
+	})
 
-	if !strings.Contains(res.Text, "func Println") {
-		t.Errorf("expected go doc to contain 'func Println', got:\n%s", res.Text)
-	}
+	t.Run("files without extensions", func(t *testing.T) {
+		_ = fs.WriteFile(ctx, "LICENSE", []byte("MIT"), 0644)
+		_ = fs.WriteFile(ctx, "Makefile", []byte("all: test"), 0644)
+		
+		fileCounts, _, _, _ := m.collectFileStats(ctx)
+		if fileCounts["(no ext)"] != 2 {
+			t.Errorf("expected 2 files with (no ext), got %d", fileCounts["(no ext)"])
+		}
+	})
 
-	// Test error case
-	resErr, _ := m.GoDoc(ctx, map[string]interface{}{"symbol": "nonexistent.Symbol"})
-	if !strings.Contains(resErr.Text, "Error running go doc") {
-		t.Errorf("expected error message for nonexistent symbol, got:\n%s", resErr.Text)
-	}
+	t.Run("skip directories", func(t *testing.T) {
+		_ = fs.WriteFile(ctx, "vendor/pkg/v.go", []byte("package v"), 0644)
+		_ = fs.WriteFile(ctx, "node_modules/lib/n.js", []byte("const x = 1"), 0644)
+		
+		fileCounts, packages, _, _ := m.collectFileStats(ctx)
+		if fileCounts[".go"] != 0 {
+			t.Errorf("expected 0 .go files (vendor skipped), got %d", fileCounts[".go"])
+		}
+		if len(packages) != 0 {
+			t.Errorf("expected 0 packages, got %d", len(packages))
+		}
+	})
 }

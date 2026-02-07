@@ -379,31 +379,14 @@ func TestAgent_WithSystemInstructions(t *testing.T) {
 }
 
 func TestAgent_PinningIntegration(t *testing.T) {
-	tmpDir := t.TempDir()
-	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-	reg := registry.New()
-	sm := &MockSecurityManager{AllowAll: true}
-
-	// Create agent with limit of 2 turns (4 messages)
-	a := New(nil, hManager, reg, sm, false, WithLimits(10, 2000, 2))
-	ctx := context.Background()
+	a, hManager, ctx := setupPinningTest(t)
 
 	// 1. Add 5 turns to history (10 messages)
-	for i := 1; i <= 5; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{
-			Role:  "user",
-			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d User", i)}},
-		})
-		_ = hManager.AddContent(ctx, &llm.Content{
-			Role:  "model",
-			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d Model", i)}},
-		})
-	}
+	addTurns(ctx, hManager, 5)
 
 	// 2. Pin turn 1 (messages 0 and 1)
 	contents := hManager.GetContents()
-	contents[0].Pinned = true // Pinning User message of turn 1
-	// contents[1] (Model) doesn't strictly need to be pinned as the turn-based policy handles pairs
+	contents[0].Pinned = true
 
 	// 3. Trigger context preparation
 	prepared, meta, err := a.ctxManager.Prepare(ctx, 1)
@@ -412,48 +395,56 @@ func TestAgent_PinningIntegration(t *testing.T) {
 	}
 
 	// 4. Verify results
-	// Expected turns:
-	// turn 1 (Pinned)
-	// turn 4 (Window)
-	// turn 5 (Window)
+	verifyPinningResults(t, meta, prepared)
+}
 
-	// turn 2 and 3 should be pruned.
+func setupPinningTest(t *testing.T) (*Agent, HistoryManager, context.Context) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	reg := registry.New()
+	sm := &MockSecurityManager{AllowAll: true}
+	a := New(nil, hManager, reg, sm, false, WithLimits(10, 2000, 2))
+	return a, hManager, context.Background()
+}
 
-	// meta.PrunedTurns should be 2 (Turn 2 and turn 3)
+func addTurns(ctx context.Context, h HistoryManager, count int) {
+	for i := 1; i <= count; i++ {
+		_ = h.AddContent(ctx, &llm.Content{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d User", i)}},
+		})
+		_ = h.AddContent(ctx, &llm.Content{
+			Role:  "model",
+			Parts: []*llm.Part{{Text: fmt.Sprintf("Turn %d Model", i)}},
+		})
+	}
+}
+
+func verifyPinningResults(t *testing.T, meta *contextMetadata, prepared []*llm.Content) {
 	if meta.PrunedTurns != 2 {
 		t.Errorf("expected 2 pruned turns, got %d", meta.PrunedTurns)
 	}
 
-	// Check if turn 1 is present
-	foundT1 := false
-	for _, c := range prepared {
-		if strings.Contains(c.Parts[0].Text, "Turn 1 User") {
-			foundT1 = true
-			break
-		}
-	}
-	if !foundT1 {
+	if !containsText(prepared, "Turn 1 User") {
 		t.Error("Turn 1 (Pinned) not found in prepared history")
 	}
 
-	// Check if turn 2 is NOT present
-	for _, c := range prepared {
-		if strings.Contains(c.Parts[0].Text, "Turn 2 User") {
-			t.Error("Turn 2 (Unpinned) found in prepared history, should have been pruned")
-		}
+	if containsText(prepared, "Turn 2 User") {
+		t.Error("Turn 2 (Unpinned) found in prepared history, should have been pruned")
 	}
 
-	// Check if turn 5 is present (Last turn)
-	foundT5 := false
-	for _, c := range prepared {
-		if strings.Contains(c.Parts[0].Text, "Turn 5 User") {
-			foundT5 = true
-			break
-		}
-	}
-	if !foundT5 {
+	if !containsText(prepared, "Turn 5 User") {
 		t.Error("Turn 5 (Window) not found in prepared history")
 	}
+}
+
+func containsText(contents []*llm.Content, text string) bool {
+	for _, c := range contents {
+		if len(c.Parts) > 0 && strings.Contains(c.Parts[0].Text, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestToolInjection_NoPersistence(t *testing.T) {

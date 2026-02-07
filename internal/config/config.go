@@ -66,6 +66,20 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to decode yaml: %w", err)
 	}
 
+	// Environment overrides
+	if val := os.Getenv("GOSHARP_MODE"); val != "" {
+		cfg.Mode = val
+	}
+	if val := os.Getenv("GOSHARP_PERSON"); val != "" {
+		cfg.Person = val
+	}
+	if val := os.Getenv("GOSHARP_AIMODEL"); val != "" {
+		cfg.Model = val
+	}
+	if val := os.Getenv("GOSHARP_AIURL"); val != "" {
+		cfg.URL = val
+	}
+
 	return &cfg, nil
 }
 

@@ -92,10 +92,11 @@ func (b *UncoveredBlock) Classify() {
 	// Assign Priority
 	isErr := b.isErrorHandling()
 	isBiz := b.isBusinessLogic()
+	isAdap := b.isAdapter()
 
 	if isErr && isBiz {
 		b.Priority = "High"
-	} else if isErr || isBiz {
+	} else if isErr || isBiz || isAdap {
 		b.Priority = "Medium"
 	} else {
 		b.Priority = "Low"
@@ -361,9 +362,14 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock,
 		return
 	}
 	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
+	
+	// Prepare the label for "more" message
+	label := strings.ToLower(title)
+	label = strings.TrimSuffix(label, " gaps")
+	
 	for i, b := range blocks {
 		if i >= maxItems {
-			sb.WriteString(fmt.Sprintf("... and %d more %s priority gaps.\n", len(blocks)-maxItems, strings.ToLower(title)))
+			sb.WriteString(fmt.Sprintf("... and %d more %s gaps.\n", len(blocks)-maxItems, label))
 			break
 		}
 		sb.WriteString(fmt.Sprintf("%d. File: %s (Lines %d-%d)\n", i+1, b.File, b.Start, b.End))
