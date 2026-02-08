@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -94,7 +93,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		defer cm.mu.Unlock()
 
 		if cm.version != snapshotVersion {
-			return agenerrors.NewAgentError(agenerrors.ErrTransient, "concurrent history modification detected", nil)
+			return fmt.Errorf("%w: concurrent history modification detected", llm.ErrTransient)
 		}
 
 		cm.version++
@@ -171,7 +170,7 @@ func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
 func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", nil, agenerrors.NewAgentError(agenerrors.ErrLogic, "summarizer not initialized", nil)
+		return "", nil, fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
 	}
 
 	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(numTurns)
@@ -192,11 +191,11 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	// Slow LLM call outside the lock
 	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		category := agenerrors.ErrFatal
-		if agenerrors.IsTransient(err) {
-			category = agenerrors.ErrTransient
+		category := llm.ErrTerminal
+		if llm.IsTransient(err) {
+			category = llm.ErrTransient
 		}
-		return "", nil, agenerrors.NewAgentError(category, "summarization failed", err)
+		return "", nil, fmt.Errorf("%w: summarization failed: %v", category, err)
 	}
 
 	if err := cm.finalizeSummarization(ctx, subset, endIdx, summary); err != nil {
@@ -244,7 +243,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	window := cm.Strategy.GetContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
-		return nil, 0, 0, agenerrors.NewAgentError(agenerrors.ErrLogic, fmt.Sprintf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit), llm.ErrContextLimitExceeded)
+		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, safetyLimit)
 	}
 
 	return subset, endIdx, tokens, nil
@@ -256,12 +255,12 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 
 	currentContents := cm.History.GetContents()
 	if len(currentContents) < endIdx {
-		return agenerrors.NewAgentError(agenerrors.ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
+		return fmt.Errorf("%w: summarization aborted: history was pruned while summarizing", llm.ErrTerminal)
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
 		if !currentContents[i].Equal(subset[i]) {
-			return agenerrors.NewAgentError(agenerrors.ErrLogic, "summarization aborted: history content changed while summarizing", nil)
+			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}
 	}
 
@@ -269,11 +268,11 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	newHistory := applySummaryToHistory(currentContents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
-		category := agenerrors.ErrFatal
-		if agenerrors.IsTransient(err) {
-			category = agenerrors.ErrTransient
+		category := llm.ErrTerminal
+		if llm.IsTransient(err) {
+			category = llm.ErrTransient
 		}
-		return agenerrors.NewAgentError(category, "failed to update history after summarization", err)
+		return fmt.Errorf("%w: failed to update history after summarization: %v", category, err)
 	}
 
 	return nil

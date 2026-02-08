@@ -211,9 +211,9 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 		t.Fatal("expected error due to safety check, got nil")
 	}
 
-	expectedPrefix := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
-	if !strings.HasPrefix(err.Error(), expectedPrefix) {
-		t.Errorf("expected error prefix %q, got %q", expectedPrefix, err.Error())
+	expectedPart := "summarization failed: the selected 1 turns contain ~950000 tokens, which exceeds the safety limit of 900000. Please try summarizing a smaller number of turns"
+	if !strings.Contains(err.Error(), expectedPart) {
+		t.Errorf("expected error containing %q, got %q", expectedPart, err.Error())
 	}
 	if !errors.Is(err, domain_llm.ErrContextLimitExceeded) {
 		t.Errorf("expected error to wrap domain_llm.ErrContextLimitExceeded")

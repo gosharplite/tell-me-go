@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -176,7 +175,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}
 
 		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -211,7 +210,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Security policy: command \"forbidden\" is not allowed")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
@@ -229,7 +228,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "tool execution failed: fail_tool: tool failed")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
 
@@ -253,7 +252,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool execution timed out")
-		verifyToolEventError(t, bus, agenerrors.ErrTransient)
+		verifyToolEventError(t, bus, llm.ErrTransient)
 	})
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
@@ -316,7 +315,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: kaboom")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Serial Panic", func(t *testing.T) {
@@ -760,7 +759,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
@@ -780,7 +779,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
 

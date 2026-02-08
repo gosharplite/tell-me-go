@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -168,7 +167,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	for err := range errors {
 		// Concurrent Prepare calls might collide on the persistence step.
 		// This is expected behavior with the version-based conflict detection.
-		if !agenerrors.IsTransient(err) {
+		if !llm.IsTransient(err) {
 			errs = append(errs, err)
 		}
 	}

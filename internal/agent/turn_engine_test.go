@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -1045,7 +1044,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond}
 
 	t.Run("Transient error", func(t *testing.T) {
-		err := &agenerrors.AgentError{Category: ErrTransient, Message: "retry"}
+		err := &AgentError{Category: ErrTransient, Message: "retry"}
 		delay, retry := policy.ShouldRetry(err, 0)
 		if !retry || delay != 10*time.Millisecond {
 			t.Errorf("expected retry with 10ms, got %v, %v", retry, delay)
@@ -1063,7 +1062,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	})
 
 	t.Run("Fatal error", func(t *testing.T) {
-		err := &agenerrors.AgentError{Category: ErrFatal, Message: "fatal"}
+		err := &AgentError{Category: ErrFatal, Message: "fatal"}
 		_, retry := policy.ShouldRetry(err, 0)
 		if retry {
 			t.Error("expected no retry for fatal error")

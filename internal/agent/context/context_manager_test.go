@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
@@ -202,7 +201,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-		return "", nil, agenerrors.NewAgentError(agenerrors.ErrTransient, "transient fail", nil)
+		return "", nil, fmt.Errorf("%w: transient fail", llm.ErrTransient)
 	}
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
@@ -237,7 +236,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	history.setContentsErr = nil
 
 	// Case 11: finalizeSummarization fails (Transient)
-	history.setContentsErr = agenerrors.NewAgentError(agenerrors.ErrTransient, "persist fail transient", nil)
+	history.setContentsErr = fmt.Errorf("%w: persist fail transient", llm.ErrTransient)
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
 	history.setContentsErr = nil
