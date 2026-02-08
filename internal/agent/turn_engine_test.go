@@ -1251,11 +1251,26 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	strategy := agentctx.NewContextStrategy(agentctx.NewHeuristicTokenCounter(reg), bus)
 	cm := newTestContextManager(strategy, hManager, bus)
 
-	_ = NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus, WithCostTracker(tracker))
+	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus, WithCostTracker(tracker))
 
-	t.Run("Background cost tracking via event", func(t *testing.T) {
+	t.Run("Cost tracking via middleware", func(t *testing.T) {
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}
-		bus.Publish(events.UsageMetricsEvent{Metrics: metrics})
+		tn := &turn{
+			State: &turnState{
+				Phase:   phasePersisting,
+				Metrics: metrics,
+			},
+			CostTracker: tracker,
+			StartTime:   time.Now(),
+		}
+
+		// Use the engine's middleware directly
+		middleware := e.WithMetrics()
+		finalProcessor := turnProcessorFunc(func(ctx context.Context, t *turn) processResult {
+			return processResult{}
+		})
+
+		middleware(finalProcessor).Process(context.Background(), tn)
 
 		if metrics.Cost <= 0 {
 			t.Errorf("expected cost to be populated in event metrics, got %f", metrics.Cost)

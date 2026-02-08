@@ -203,8 +203,6 @@ func WithClock(c Clock) EngineOption {
 // Feature is intended for internal/API use only to maintain a clean UI.
 func WithHardBudget(limit float64) EngineOption {
 	return func(e *TurnEngine) {
-		e.mu.Lock()
-		defer e.mu.Unlock()
 		e.HardBudgetLimit = limit
 	}
 }
@@ -212,8 +210,6 @@ func WithHardBudget(limit float64) EngineOption {
 // WithCostTracker sets the cost tracker for the engine.
 func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
 	return func(e *TurnEngine) {
-		e.mu.Lock()
-		defer e.mu.Unlock()
 		e.costTracker = tracker
 	}
 }
@@ -221,9 +217,6 @@ func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
 // WithConfig sets the security and usage configuration for the engine.
 func WithConfig(sm security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
-		e.mu.Lock()
-		defer e.mu.Unlock()
-
 		e.sm = sm
 		e.model = model
 		e.pricingOverrides = pricingOverrides
@@ -232,6 +225,8 @@ func WithConfig(sm security.ISecurityManager, model string, pricingOverrides map
 
 // ApplyOptions applies new options to the engine.
 func (e *TurnEngine) ApplyOptions(opts ...EngineOption) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -277,20 +272,6 @@ func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *context.ContextManag
 
 	// Default middleware for eventing if bus is provided
 	if e.events != nil {
-		// Subscribe the cost tracker to metrics events via delegation to allow reconfiguration
-		// without leaking subscribers or handling unsubscription.
-		e.events.Subscribe(func(ev events.Event) {
-			if um, ok := ev.(events.UsageMetricsEvent); ok {
-				e.mu.RLock()
-				tracker := e.costTracker
-				e.mu.RUnlock()
-				if tracker != nil && um.Metrics != nil {
-					// Calculate cost for the UI and accumulate in one step
-					um.Metrics.Cost = tracker.AccumulateAndReturn(*um.Metrics)
-				}
-			}
-		})
-
 		e.middleware = append(e.middleware,
 			e.WithStreaming(),
 			e.WithStatusReporter(),

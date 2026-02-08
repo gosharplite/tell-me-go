@@ -87,11 +87,11 @@ func (e *TurnEngine) WithMetrics() turnMiddleware {
 			res := next.Process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
-					// Calculate the cost for this specific turn
-					turnCost := turn.CostTracker.CalculateCost(*turn.State.Metrics)
-					// Populate the field so the UI can display it
+					// Calculate and accumulate into session total (thread-safe)
+					turnCost := turn.CostTracker.AccumulateAndReturn(*turn.State.Metrics)
+
+					// Populate fields for the UI/EventBus
 					turn.State.Metrics.Cost = turnCost
-					// Accumulate into the task total
 					turn.State.TaskCost += turnCost
 				}
 
