@@ -52,15 +52,8 @@ func IsTransient(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Domain-level transient errors (e.g., rate limits)
-	if llm.IsTransient(err) {
-		return true
-	}
-	var ae *AgentError
-	if errors.As(err, &ae) {
-		return errors.Is(ae.Category, ErrTransient)
-	}
-	return false
+	// Domain-level transient errors (e.g., rate limits) or direct category match
+	return llm.IsTransient(err) || errors.Is(err, ErrTransient)
 }
 
 // IsFatal checks if the error should halt the current turn and session.
@@ -68,16 +61,11 @@ func IsFatal(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Domain-level fatal errors
-	if llm.IsTerminal(err) || llm.IsAuth(err) ||
+	// Domain-level fatal errors, budget/limit errors, or direct category match
+	return llm.IsTerminal(err) || llm.IsAuth(err) ||
 		errors.Is(err, llm.ErrBudgetExceeded) ||
 		errors.Is(err, llm.ErrMaxTurnsReached) ||
-		errors.Is(err, llm.ErrContextLimitExceeded) {
-		return true
-	}
-	var ae *AgentError
-	if errors.As(err, &ae) {
-		return errors.Is(ae.Category, ErrFatal) || errors.Is(ae.Category, ErrLogic)
-	}
-	return false
+		errors.Is(err, llm.ErrContextLimitExceeded) ||
+		errors.Is(err, ErrFatal) ||
+		errors.Is(err, ErrLogic)
 }

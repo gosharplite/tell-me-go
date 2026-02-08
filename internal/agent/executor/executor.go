@@ -404,6 +404,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		err error
 	}
 	resChan := make(chan res, 1)
+	startTime := time.Now()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -424,6 +425,24 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		if err == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
 		}
+
+		// Spawn watcher for the "Zombie" tool
+		go func(toolName string, startTime time.Time) {
+			// This goroutine waits indefinitely for the non-compliant tool to return
+			<-resChan
+			actualDuration := time.Since(startTime)
+
+			e.mu.RLock()
+			bus := e.events
+			e.mu.RUnlock()
+			if bus != nil {
+				bus.Publish(events.SystemMessageEvent{
+					Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
+					Level:   "warn",
+				})
+			}
+		}(tool.Name, startTime)
+
 		return domaintools.ToolResult{
 			Text:  msg,
 			Error: agenerrors.NewAgentError(agenerrors.ErrTransient, msg, err),

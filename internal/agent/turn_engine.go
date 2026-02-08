@@ -99,6 +99,7 @@ type turnState struct {
 	ToolCallCount        map[string]int    `json:"-"`
 	RecentResponseHashes []string          `json:"-"`
 	PreparedHistory      []*llm.Content    `json:"-"`
+	TaskCost             float64           `json:"task_cost"`
 }
 
 // IToolExecutor defines the interface for tool execution.
@@ -162,7 +163,6 @@ type TurnEngine struct {
 	pricingOverrides map[string]pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
-	taskCost         float64 // Cumulative cost for the current Run() call.
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -307,10 +307,6 @@ func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *context.ContextManag
 
 // Run executes the multi-turn orchestration loop.
 func (e *TurnEngine) Run(ctx stdctx.Context, startTime time.Time) error {
-	e.mu.Lock()
-	e.taskCost = 0
-	e.mu.Unlock()
-
 	var lastState *turnState
 	sessionToolCallCount := make(map[string]int)
 	for i := 0; ; i++ {
@@ -322,6 +318,7 @@ func (e *TurnEngine) Run(ctx stdctx.Context, startTime time.Time) error {
 		if lastState != nil {
 			// Only carry over response hashes to detect text/turn repetition loops
 			turn.State.RecentResponseHashes = append([]string(nil), lastState.RecentResponseHashes...)
+			turn.State.TaskCost = lastState.TaskCost
 		}
 		// Tool calls are tracked at the session level to detect loops spanning multiple turn boundaries.
 		turn.State.ToolCallCount = sessionToolCallCount
@@ -719,10 +716,6 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
-				e.mu.RLock()
-				currentTaskCost := e.taskCost
-				e.mu.RUnlock()
-
 				e.events.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
@@ -737,7 +730,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
 						DailyCost:        dailyCost,
-						TaskCost:         currentTaskCost,
+						TaskCost:         turn.State.TaskCost,
 						TotalM:           totalM,
 						TotalH:           totalH,
 						TotalO:           totalO,
@@ -756,14 +749,12 @@ func (e *TurnEngine) WithMetrics() turnMiddleware {
 			res := next.Process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
-					e.mu.Lock()
 					// Calculate the cost for this specific turn
 					turnCost := turn.CostTracker.CalculateCost(*turn.State.Metrics)
 					// Populate the field so the UI can display it
 					turn.State.Metrics.Cost = turnCost
 					// Accumulate into the task total
-					e.taskCost += turnCost
-					e.mu.Unlock()
+					turn.State.TaskCost += turnCost
 				}
 
 				e.events.Publish(events.UsageMetricsEvent{

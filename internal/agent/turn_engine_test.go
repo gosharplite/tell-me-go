@@ -863,11 +863,15 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, bus), reg, bus, WithCostTracker(tracker))
 
 	var turnCosts []float64
+	var lastTaskCost float64
 	bus.Subscribe(func(ev events.Event) {
 		if um, ok := ev.(events.UsageMetricsEvent); ok {
 			if um.Metrics != nil {
 				turnCosts = append(turnCosts, um.Metrics.Cost)
 			}
+		}
+		if ts, ok := ev.(events.TurnStatusEvent); ok {
+			lastTaskCost = ts.Status.TaskCost
 		}
 	})
 
@@ -904,8 +908,8 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// Cost per turn: (1000 * 0.10 / 1e6) + (500 * 0.40 / 1e6) = 0.0001 + 0.0002 = 0.0003
 	// Total Task Cost (2 turns): 0.0006
 	expectedTaskCost := 0.0006
-	if fmt.Sprintf("%.6f", e.taskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
-		t.Errorf("expected task cost %f, got %f", expectedTaskCost, e.taskCost)
+	if fmt.Sprintf("%.6f", lastTaskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
+		t.Errorf("expected task cost %f, got %f", expectedTaskCost, lastTaskCost)
 	}
 
 	if len(turnCosts) != 2 {
@@ -920,9 +924,10 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	// Run again, taskCost should reset
 	turnCount = 0
 	turnCosts = nil
+	lastTaskCost = 0
 	_ = e.Run(context.Background(), time.Now())
-	if fmt.Sprintf("%.6f", e.taskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
-		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, e.taskCost)
+	if fmt.Sprintf("%.6f", lastTaskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
+		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, lastTaskCost)
 	}
 
 	if len(turnCosts) != 2 {
@@ -1203,6 +1208,7 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 }
 
 type mockEngineCostTracker struct {
+	mu               sync.Mutex
 	accumulatedCount int
 }
 
@@ -1211,11 +1217,15 @@ func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
 }
 
 func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.accumulatedCount++
 	return 0.05
 }
 
 func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.accumulatedCount++
 }
 

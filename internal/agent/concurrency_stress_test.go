@@ -205,3 +205,54 @@ func TestContextManager_Race(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
+	// Setup
+	reg := registry.New()
+	bus := &events.SimpleEventBus{}
+
+	// Create a single engine instance
+	gw := &MockGateway{
+		GenerateFunc: func(ctx stdctx.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{
+					PromptTokens:   1000,
+					ResponseTokens: 1000,
+				}, nil
+			}
+		},
+	}
+
+	executor := &MockExecutor{
+		ExecuteFunc: func(ctx stdctx.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+			return nil, nil
+		},
+	}
+
+	h := history.NewManager("")
+	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(reg), bus)
+	cm := context.NewContextManager(strategy, h, bus, nil)
+	cm.Pipeline = context.NewContextPipeline()
+
+	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
+
+	e := NewTurnEngine(gw, executor, cm, reg, bus, WithCostTracker(tracker))
+	strategy.SetLimits(10000, 10, 10)
+
+	var wg sync.WaitGroup
+	numConcurrent := 20
+	wg.Add(numConcurrent)
+
+	// We'll use a local bus for each goroutine if we wanted to verify perfectly,
+	// but here we just want to ensure NO PANICS and NO RACE conditions under -race.
+	for i := 0; i < numConcurrent; i++ {
+		go func() {
+			defer wg.Done()
+			_ = e.Run(stdctx.Background(), time.Now())
+		}()
+	}
+
+	wg.Wait()
+}
