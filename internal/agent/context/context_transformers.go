@@ -17,11 +17,11 @@ import (
 
 // historyPruner enforces history turn limits using a policy.
 type historyPruner struct {
-	Policy PruningPolicy
+	Policy services.PruningPolicy
 	Events events.EventBus
 }
 
-func (t *historyPruner) Transform(ctx context.Context, req *Request) error {
+func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequest) error {
 	initialLen := len(req.History)
 	if initialLen == 0 {
 		return nil
@@ -76,7 +76,7 @@ func (t *historyPruner) Priority() int { return 1 }
 
 // CompositePruningPolicy aggregates multiple policies using OR logic.
 type CompositePruningPolicy struct {
-	Policies []PruningPolicy
+	Policies []services.PruningPolicy
 }
 
 func (p *CompositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
@@ -171,12 +171,12 @@ func (p *PinningPolicy) Name() string { return "Pinning" }
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type tokenGatekeeper struct {
 	MaxTokens  int
-	Estimator  TokenEstimator
+	Estimator  llm.TokenEstimator
 	Summarizer services.Summarizer
 	Events     events.EventBus
 }
 
-func (t *tokenGatekeeper) Transform(ctx context.Context, req *Request) error {
+func (t *tokenGatekeeper) Transform(ctx context.Context, req *services.ContextRequest) error {
 	// Stage 1: Initial Analysis (includes Tiered Threshold)
 	tokens, err := t.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -442,7 +442,7 @@ type warningInjector struct {
 	Strategy *ContextStrategy
 }
 
-func (t *warningInjector) Transform(ctx context.Context, req *Request) error {
+func (t *warningInjector) Transform(ctx context.Context, req *services.ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
 	currentTurns := len(req.History) / 2
 
@@ -509,7 +509,7 @@ type toolDeclarationGenerator struct {
 	Registry ToolRegistry
 }
 
-func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *Request) error {
+func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *services.ContextRequest) error {
 	if t.Registry == nil {
 		return nil
 	}
@@ -551,7 +551,7 @@ func (t *toolDeclarationGenerator) Priority() int { return 75 }
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type emptyTurnFilter struct{}
 
-func (t *emptyTurnFilter) Transform(ctx context.Context, req *Request) error {
+func (t *emptyTurnFilter) Transform(ctx context.Context, req *services.ContextRequest) error {
 	turns := groupTurns(req.History)
 	var filtered []*llm.Content
 	for i, turn := range turns {
@@ -579,7 +579,7 @@ type finalContextValidator struct {
 	Strategy *ContextStrategy
 }
 
-func (t *finalContextValidator) Transform(ctx context.Context, req *Request) error {
+func (t *finalContextValidator) Transform(ctx context.Context, req *services.ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.GetLimits()
 	finalTokens := t.Strategy.EstimateTokens(req.History)
 
@@ -597,7 +597,7 @@ func (t *finalContextValidator) Priority() int { return PriorityTransientThresho
 // transientMerger merges TransientParts into Parts for the final API payload.
 type transientMerger struct{}
 
-func (t *transientMerger) Transform(ctx context.Context, req *Request) error {
+func (t *transientMerger) Transform(ctx context.Context, req *services.ContextRequest) error {
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared

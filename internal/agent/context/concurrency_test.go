@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ type blockingTransformer struct {
 	block    chan struct{}
 }
 
-func (t *blockingTransformer) Transform(ctx context.Context, req *Request) error {
+func (t *blockingTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
 	// Signal we want history persisted so ExecuteWithPersistence calls persistFn
 	req.PersistHistory = true
 	if t.block != nil {
@@ -36,7 +37,7 @@ type noopTransformer struct {
 	priority int
 }
 
-func (t *noopTransformer) Transform(ctx context.Context, req *Request) error {
+func (t *noopTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
 	return nil
 }
 

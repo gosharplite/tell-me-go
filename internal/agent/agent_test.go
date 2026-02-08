@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	security_impl "github.com/gosharplite/tell-me-go/internal/security"
@@ -336,7 +337,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*Agent, context.HistoryManager, stdctx.Context) {
+func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, stdctx.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(filepath.Join(tmpDir, "pin_prune.json"))
 	reg := registry.New()
@@ -348,7 +349,7 @@ func setupPinningTest(t *testing.T) (*Agent, context.HistoryManager, stdctx.Cont
 	return a, a.ctxManager.History, ctx
 }
 
-func addTurns(ctx stdctx.Context, h context.HistoryManager, count int) {
+func addTurns(ctx stdctx.Context, h services.HistoryManager, count int) {
 	for i := 0; i < count; i++ {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})

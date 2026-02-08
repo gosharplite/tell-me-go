@@ -20,7 +20,7 @@ type ContextManager struct {
 	mu         sync.Mutex
 	version    int
 	Strategy   *ContextStrategy
-	History    HistoryManager
+	History    services.HistoryManager
 	Events     events.EventBus
 	Pipeline   *ContextPipeline
 	Factory    *PipelineFactory
@@ -28,7 +28,7 @@ type ContextManager struct {
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history services.HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,

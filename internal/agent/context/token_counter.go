@@ -5,15 +5,16 @@ package context
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // HeuristicTokenCounter provides a rule-of-thumb token estimation.
 type HeuristicTokenCounter struct {
-	registry ToolRegistry
+	registry tools.IToolRegistry
 }
 
 // NewHeuristicTokenCounter creates a new heuristic-based counter.
-func NewHeuristicTokenCounter(registry ToolRegistry) *HeuristicTokenCounter {
+func NewHeuristicTokenCounter(registry tools.IToolRegistry) *HeuristicTokenCounter {
 	return &HeuristicTokenCounter{registry: registry}
 }
 

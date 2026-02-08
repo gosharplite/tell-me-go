@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,7 +19,7 @@ type mockExpTransformer struct {
 	err      error
 }
 
-func (m *mockExpTransformer) Transform(ctx context.Context, req *Request) error {
+func (m *mockExpTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
 	return m.err
 }
 
@@ -33,14 +34,14 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 	tests := []struct {
 		name        string
 		req         *Request
-		pipeline    []ContextTransformer
+		pipeline    []services.ContextTransformer
 		persistFn   func(context.Context, []*llm.Content) error
 		expectedErr error
 	}{
 		{
 			name: "Error in canonical transformer",
 			req:  &Request{},
-			pipeline: []ContextTransformer{
+			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10, err: transformErr},
 			},
 			expectedErr: transformErr,
@@ -48,7 +49,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "Error in transient transformer",
 			req:  &Request{},
-			pipeline: []ContextTransformer{
+			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 150, err: transformErr},
 			},
 			expectedErr: transformErr,
@@ -56,7 +57,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "Error in persistence",
 			req:  &Request{PersistHistory: true},
-			pipeline: []ContextTransformer{
+			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 				&mockExpTransformer{priority: 150},
 			},
@@ -68,7 +69,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "No persist function, no error",
 			req:  &Request{PersistHistory: true},
-			pipeline: []ContextTransformer{
+			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 			},
 			persistFn:   nil,
