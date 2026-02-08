@@ -9,8 +9,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
-	"github.com/gosharplite/tell-me-go/internal/session"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )

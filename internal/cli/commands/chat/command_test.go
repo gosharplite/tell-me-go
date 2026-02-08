@@ -23,7 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/session"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 )
 
 func TestSanitizeArgs(t *testing.T) {
