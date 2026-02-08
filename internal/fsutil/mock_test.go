@@ -139,14 +139,18 @@ func TestMockFileSystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Errorf("Close failed: %v", err)
+	}
 
 	// OpenFile
 	f, err = fs.OpenFile(ctx, "dir/test.txt", os.O_RDONLY, 0)
 	if err != nil {
 		t.Fatalf("OpenFile failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Errorf("Close failed: %v", err)
+	}
 
 	// Remove
 	err = fs.Remove(ctx, "dir/test.txt")
@@ -163,9 +167,15 @@ func TestMockFileSystem_Walk(t *testing.T) {
 	ctx := context.Background()
 	fs := NewMockFileSystem()
 
-	fs.WriteFile(ctx, "a/b/f1.txt", []byte("1"), 0644)
-	fs.WriteFile(ctx, "a/c/f2.txt", []byte("2"), 0644)
-	fs.WriteFile(ctx, "d/f3.txt", []byte("3"), 0644)
+	if err := fs.WriteFile(ctx, "a/b/f1.txt", []byte("1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile(ctx, "a/c/f2.txt", []byte("2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile(ctx, "d/f3.txt", []byte("3"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	visited := make(map[string]bool)
 	err := fs.Walk(ctx, "a", func(path string, info os.FileInfo, err error) error {
