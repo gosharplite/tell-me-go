@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package chat
+package cli
 
 import (
 	"bytes"
@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -27,7 +26,7 @@ import (
 )
 
 func TestSanitizeArgs(t *testing.T) {
-	cmd := &Command{}
+	cmd := &ChatCommand{}
 	tests := []struct {
 		name     string
 		args     []string
@@ -100,7 +99,7 @@ func TestRunCapturePrompt(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	sm := security.NewSecurityManager(os.Stdin)
-	cmd := NewCommand(&command.Context{
+	cmd := NewChatCommand(&Context{
 		Version: "test",
 		Stdin:   os.Stdin,
 		Stdout:  &out,
@@ -138,7 +137,7 @@ func TestRunEmptyPromptError(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(os.Stdin)
-	cmd := &Command{
+	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		Stdin:   bytes.NewReader(nil),
 		Stderr:  io.Discard,
@@ -168,7 +167,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	}()
 
 	sm := security.NewSecurityManager(os.Stdin)
-	cmd := &Command{
+	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		Stdin:   strings.NewReader("\n"),
 		Stderr:  io.Discard,
@@ -191,7 +190,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := security.NewSecurityManager(os.Stdin)
-	cmd := &Command{
+	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		SM:      sm,
 	}

@@ -9,9 +9,6 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/cli/command"
-	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/version"
 )
 
 func TestNew(t *testing.T) {
@@ -86,7 +83,7 @@ func (m *mockCommand) Execute(ctx context.Context, args []string) error {
 
 func TestApp_Run_ContextCanceled(t *testing.T) {
 	// Register a mock command for "chat" to test error handling
-	command.Register("chat", func(ctx *command.Context) command.Command {
+	Register("chat", func(ctx *Context) Command {
 		return &mockCommand{err: context.Canceled}
 	})
 
@@ -110,13 +107,13 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 func TestApp_Run_CommandError(t *testing.T) {
 	// Register a mock command for a custom error
 	customErr := errors.New("custom error")
-	command.Register("error-cmd", func(ctx *command.Context) command.Command {
+	Register("error-cmd", func(ctx *Context) Command {
 		return &mockCommand{err: customErr}
 	})
 
 	// Since App.Run doesn't allow choosing a command name except via hardcoded logic,
 	// we'll temporarily hijack "chat" again (it's already registered by previous test).
-	command.Register("chat", func(ctx *command.Context) command.Command {
+	Register("chat", func(ctx *Context) Command {
 		return &mockCommand{err: customErr}
 	})
 

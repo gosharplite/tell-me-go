@@ -9,8 +9,6 @@ import (
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
-	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/chat"
-	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/version"
 )
 
 const Version = "3.1.1-dev"

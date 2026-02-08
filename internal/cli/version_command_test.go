@@ -1,17 +1,15 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package version
+package cli
 
 import (
 	"bytes"
 	"context"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/cli/command"
 )
 
-func TestCommand_Execute(t *testing.T) {
+func TestVersionCommand_Execute(t *testing.T) {
 	tests := []struct {
 		name     string
 		version  string
@@ -32,7 +30,7 @@ func TestCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-			cmd := &Command{
+			cmd := &VersionCommand{
 				Version: tt.version,
 				Stdout:  &out,
 			}
@@ -49,21 +47,21 @@ func TestCommand_Execute(t *testing.T) {
 	}
 }
 
-func TestCommandFactory(t *testing.T) {
-	factory, err := command.Get("version")
+func TestVersionCommandFactory(t *testing.T) {
+	factory, err := Get("version")
 	if err != nil {
-		t.Fatalf("command.Get(\"version\") error = %v", err)
+		t.Fatalf("Get(\"version\") error = %v", err)
 	}
 
-	ctx := &command.Context{
+	ctx := &Context{
 		Version: "1.2.3-test",
 		Stdout:  &bytes.Buffer{},
 	}
 
 	cmd := factory(ctx)
-	vCmd, ok := cmd.(*Command)
+	vCmd, ok := cmd.(*VersionCommand)
 	if !ok {
-		t.Fatalf("factory did not return *Command, got %T", cmd)
+		t.Fatalf("factory did not return *VersionCommand, got %T", cmd)
 	}
 
 	if vCmd.Version != ctx.Version {

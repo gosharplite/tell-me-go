@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package chat
+package cli
 
 import (
 	"context"
@@ -94,7 +94,7 @@ MAX_HISTORY_TURNS: 10
 	var stderr strings.Builder
 	sm := security.NewSecurityManager(strings.NewReader(""))
 
-	cmd := &Command{
+	cmd := &ChatCommand{
 		Version: "1.0.0",
 		Stdin:   strings.NewReader("hello"),
 		Stdout:  &stdout,

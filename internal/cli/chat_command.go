@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package chat
+package cli
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	agentui "github.com/gosharplite/tell-me-go/internal/agent/ui"
-	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -30,13 +29,13 @@ import (
 )
 
 func init() {
-	command.Register("chat", func(ctx *command.Context) command.Command {
-		return NewCommand(ctx)
+	Register("chat", func(ctx *Context) Command {
+		return NewChatCommand(ctx)
 	})
 }
 
-// Command implements the main chat command.
-type Command struct {
+// ChatCommand implements the main chat command.
+type ChatCommand struct {
 	Version string
 	Stdin   io.Reader
 	Stdout  io.Writer
@@ -56,9 +55,9 @@ type cliOptions struct {
 	rawOutput   bool
 }
 
-// NewCommand creates a new Chat Command with default factories.
-func NewCommand(ctx *command.Context) *Command {
-	return &Command{
+// NewChatCommand creates a new Chat Command with default factories.
+func NewChatCommand(ctx *Context) *ChatCommand {
+	return &ChatCommand{
 		Version: ctx.Version,
 		Stdin:   ctx.Stdin,
 		Stdout:  ctx.Stdout,
@@ -80,7 +79,7 @@ func NewCommand(ctx *command.Context) *Command {
 }
 
 // Execute runs the chat command logic.
-func (c *Command) Execute(ctx context.Context, args []string) error {
+func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	c.SM.SetInputReader(c.Stdin)
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
 
@@ -137,9 +136,13 @@ func (c *Command) Execute(ctx context.Context, args []string) error {
 	return c.finalizeSession(ctx, chatAgent, hManager, *paths, cfg, pricingOverrides)
 }
 
-func (c *Command) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
+func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
 	args = c.sanitizeArgs(args)
-	opts, fs, err := c.parseFlags(args[1:])
+	var flagArgs []string
+	if len(args) > 0 {
+		flagArgs = args[1:]
+	}
+	opts, fs, err := c.parseFlags(flagArgs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -153,7 +156,7 @@ func (c *Command) initializeConfiguration(args []string) (*cliOptions, *flag.Fla
 	return opts, fs, cfg, nil
 }
 
-func (c *Command) initializeDependencies(ctx context.Context, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
+func (c *ChatCommand) initializeDependencies(ctx context.Context, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, nil, nil, 0, pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)
@@ -175,7 +178,7 @@ func (c *Command) initializeDependencies(ctx context.Context, paths session.Path
 	return hManager, client, registry, tracker, pruned, pricingData, nil
 }
 
-func (c *Command) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
+func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
@@ -185,7 +188,7 @@ func (c *Command) finalizeSession(ctx context.Context, chatAgent agent.Chatter, 
 	return nil
 }
 
-func (c *Command) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
+func (c *ChatCommand) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
 	pricingOverrides := make(map[string]pricing.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
@@ -195,7 +198,7 @@ func (c *Command) getPricingOverrides(cfg *config.Config) map[string]pricing.Mod
 	return pricingOverrides
 }
 
-func (c *Command) setupSecurity(paths *session.Paths, configPath string) {
+func (c *ChatCommand) setupSecurity(paths *session.Paths, configPath string) {
 	c.SM.SetSafePathsFile(paths.SafePathsPath)
 	c.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
 	c.SM.SetBypassFile(paths.BypassPath)
@@ -211,7 +214,7 @@ func (c *Command) setupSecurity(paths *session.Paths, configPath string) {
 	c.SM.RegisterReadOnlyPath(configPath)
 }
 
-func (c *Command) handleNewSession(ctx context.Context, paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+func (c *ChatCommand) handleNewSession(ctx context.Context, paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := framework.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -223,7 +226,7 @@ func (c *Command) handleNewSession(ctx context.Context, paths *session.Paths, cf
 	}
 }
 
-func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
+func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
 	renderer := agentui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
 	useColor := capturer.IsTTY(c.Stdout) && !opts.rawOutput
@@ -232,14 +235,14 @@ func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, 
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *session.Paths, pruned int, pData pricing.PricingData, capturer *ui.Capturer) {
+func (c *ChatCommand) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *session.Paths, pruned int, pData pricing.PricingData, capturer *ui.Capturer) {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(cfg.ResolveTieredThreshold(pData))
 	chatAgent.SetPrunedTurns(pruned)
 }
 
-func (c *Command) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
+func (c *ChatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
 	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	opts := &cliOptions{}
@@ -254,7 +257,7 @@ func (c *Command) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) 
 	return opts, fs, nil
 }
 
-func (c *Command) sanitizeArgs(args []string) []string {
+func (c *ChatCommand) sanitizeArgs(args []string) []string {
 	if len(args) < 2 {
 		return args
 	}

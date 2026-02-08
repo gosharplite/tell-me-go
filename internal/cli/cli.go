@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -61,12 +60,12 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	factory, err := command.Get(cmdName)
+	factory, err := Get(cmdName)
 	if err != nil {
 		return err
 	}
 
-	cmdCtx := &command.Context{
+	cmdCtx := &Context{
 		Version: a.Version,
 		Stdin:   a.Stdin,
 		Stdout:  a.Stdout,

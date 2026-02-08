@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package chat
+package cli
 
 import (
 	"path/filepath"
@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
-func (c *Command) setupRegistry(client *llm.Client, cfg *config.Config, paths *session.Paths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
+func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *session.Paths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
 	reg := registry.New()
 
 	gateway := mediasvc.NewService(client, filepath.Join(c.HomeDir, "assets/generated"))
