@@ -4,7 +4,7 @@
 package agent
 
 import (
-	"context"
+	stdctx "context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -85,36 +86,37 @@ type turnHook interface {
 
 // turnState carries data between the phases of a turn and tracks the current phase.
 type turnState struct {
-	Phase                turnPhase        `json:"phase"`
-	HasToolCalls         bool             `json:"has_tool_calls"`
-	Metrics              *llm.Metrics     `json:"metrics,omitempty"`
-	Tokens               int              `json:"tokens"`
-	CurrentTurns         int              `json:"current_turns"`
-	Metadata             *contextMetadata `json:"metadata,omitempty"`
-	Response             *llm.Content     `json:"response,omitempty"`
-	ToolResponse         *llm.Content     `json:"tool_response,omitempty"`
-	LastError            error            `json:"-"`
-	RetryCount           int              `json:"retry_count"`
-	ToolCallCount        map[string]int   `json:"-"`
-	RecentResponseHashes []string         `json:"-"`
-	PreparedHistory      []*llm.Content   `json:"-"`
+	Phase                turnPhase         `json:"phase"`
+	HasToolCalls         bool              `json:"has_tool_calls"`
+	Metrics              *llm.Metrics      `json:"metrics,omitempty"`
+	Tokens               int               `json:"tokens"`
+	CurrentTurns         int               `json:"current_turns"`
+	Metadata             *context.Metadata `json:"metadata,omitempty"`
+	Response             *llm.Content      `json:"response,omitempty"`
+	ToolResponse         *llm.Content      `json:"tool_response,omitempty"`
+	LastError            error             `json:"-"`
+	RetryCount           int               `json:"retry_count"`
+	ToolCallCount        map[string]int    `json:"-"`
+	RecentResponseHashes []string          `json:"-"`
+	PreparedHistory      []*llm.Content    `json:"-"`
+	TaskCost             float64           `json:"task_cost"`
 }
 
 // IToolExecutor defines the interface for tool execution.
 type IToolExecutor interface {
-	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
+	Execute(ctx stdctx.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
 // turnProcessor defines a single stage in the TurnEngine pipeline.
 type turnProcessor interface {
-	Process(ctx context.Context, turn *turn) processResult
+	Process(ctx stdctx.Context, turn *turn) processResult
 }
 
 // turnProcessorFunc is an adapter to allow the use of ordinary functions as turnProcessors.
-type turnProcessorFunc func(context.Context, *turn) processResult
+type turnProcessorFunc func(stdctx.Context, *turn) processResult
 
 // Process calls f(ctx, turn).
-func (f turnProcessorFunc) Process(ctx context.Context, turn *turn) processResult {
+func (f turnProcessorFunc) Process(ctx stdctx.Context, turn *turn) processResult {
 	return f(ctx, turn)
 }
 
@@ -126,7 +128,7 @@ type turn struct {
 	Index        int
 	StartTime    time.Time
 	State        *turnState
-	CtxManager   *ContextManager
+	CtxManager   *context.ContextManager
 	Gateway      llm.LLMGateway
 	Executor     IToolExecutor
 	Registry     tools.IToolRegistry
@@ -137,7 +139,7 @@ type turn struct {
 	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
-	StreamHandler func(context.Context, <-chan *llm.Content)
+	StreamHandler func(stdctx.Context, <-chan *llm.Content)
 
 	// Results/Outputs
 	Stop bool
@@ -146,7 +148,7 @@ type turn struct {
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
 	mu               sync.RWMutex
-	ctxManager       *ContextManager
+	ctxManager       *context.ContextManager
 	gateway          llm.LLMGateway
 	executor         IToolExecutor
 	registry         tools.IToolRegistry
@@ -161,7 +163,6 @@ type TurnEngine struct {
 	pricingOverrides map[string]pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
-	taskCost         float64 // Cumulative cost for the current Run() call.
 }
 
 // EngineOption allows configuring the TurnEngine.
@@ -241,7 +242,7 @@ func (e *TurnEngine) Reconfigure(opts ...EngineOption) {
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
-func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
+func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *context.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:     gw,
 		executor:    ex,
@@ -305,11 +306,7 @@ func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *ContextManager, reg 
 }
 
 // Run executes the multi-turn orchestration loop.
-func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
-	e.mu.Lock()
-	e.taskCost = 0
-	e.mu.Unlock()
-
+func (e *TurnEngine) Run(ctx stdctx.Context, startTime time.Time) error {
 	var lastState *turnState
 	sessionToolCallCount := make(map[string]int)
 	for i := 0; ; i++ {
@@ -321,6 +318,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 		if lastState != nil {
 			// Only carry over response hashes to detect text/turn repetition loops
 			turn.State.RecentResponseHashes = append([]string(nil), lastState.RecentResponseHashes...)
+			turn.State.TaskCost = lastState.TaskCost
 		}
 		// Tool calls are tracked at the session level to detect loops spanning multiple turn boundaries.
 		turn.State.ToolCallCount = sessionToolCallCount
@@ -342,7 +340,7 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	return nil
 }
 
-func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
+func (e *TurnEngine) checkLimits(ctx stdctx.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -409,7 +407,7 @@ func (e *TurnEngine) shouldStopRunning(turn *turn) bool {
 	return !turn.State.HasToolCalls || turn.Stop
 }
 
-func (e *TurnEngine) executeTurn(ctx context.Context, turn *turn) error {
+func (e *TurnEngine) executeTurn(ctx stdctx.Context, turn *turn) error {
 	for turn.State.Phase != phaseComplete {
 		res, err := e.executePhase(ctx, turn)
 		if err != nil {
@@ -419,7 +417,7 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *turn) error {
 			if turn.State.Response != nil && len(turn.State.Response.Parts) > 0 {
 				if p, ok := e.processors[phasePersisting]; ok {
 					// Use a timeout for emergency persistence to prevent hanging the shutdown sequence.
-					saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					saveCtx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
 					defer cancel()
 					_ = p.Process(saveCtx, turn)
 				}
@@ -436,7 +434,7 @@ func (e *TurnEngine) executeTurn(ctx context.Context, turn *turn) error {
 	return nil
 }
 
-func (e *TurnEngine) executePhase(ctx context.Context, turn *turn) (processResult, error) {
+func (e *TurnEngine) executePhase(ctx stdctx.Context, turn *turn) (processResult, error) {
 	processor, ok := e.processors[turn.State.Phase]
 	if !ok {
 		return processResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
@@ -483,7 +481,7 @@ func (e *TurnEngine) notifyTransition(from, to turnPhase, state *turnState) {
 // ContextRefiner prepares the context for the LLM call.
 type ContextRefiner struct{}
 
-func (p *ContextRefiner) Process(ctx context.Context, turn *turn) processResult {
+func (p *ContextRefiner) Process(ctx stdctx.Context, turn *turn) processResult {
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
 		category := ErrFatal
@@ -502,7 +500,7 @@ func (p *ContextRefiner) Process(ctx context.Context, turn *turn) processResult 
 // InferenceStep calls the LLM.
 type InferenceStep struct{}
 
-func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *InferenceStep) Process(ctx stdctx.Context, turn *turn) processResult {
 	respContent, metrics, err := p.invokeModel(ctx, turn)
 	if respContent != nil {
 		p.updateState(turn, respContent, metrics)
@@ -519,7 +517,7 @@ func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
 	return p.routeBasedOnContent(respContent)
 }
 
-func (p *InferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
+func (p *InferenceStep) invokeModel(ctx stdctx.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
 	history := turn.State.PreparedHistory
 	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
@@ -574,7 +572,7 @@ func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
 // ExecutionStep executes tools if any.
 type ExecutionStep struct{}
 
-func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *ExecutionStep) Process(ctx stdctx.Context, turn *turn) processResult {
 	if !turn.State.HasToolCalls {
 		return processResult{NextPhase: phasePersisting}
 	}
@@ -603,9 +601,9 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 // PersistenceStep saves the response and tool results to history.
 type PersistenceStep struct{}
 
-func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *PersistenceStep) Process(ctx stdctx.Context, turn *turn) processResult {
 	if turn.State.Response != nil {
-		if err := turn.CtxManager.addContent(ctx, turn.State.Response); err != nil {
+		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := ErrFatal
 			if IsTransient(err) {
 				category = ErrTransient
@@ -615,7 +613,7 @@ func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult
 	}
 
 	if turn.State.ToolResponse != nil {
-		if err := turn.CtxManager.addContent(ctx, turn.State.ToolResponse); err != nil {
+		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
 			category := ErrFatal
 			if IsTransient(err) {
 				category = ErrTransient
@@ -632,7 +630,7 @@ type RecoveryStep struct {
 	Policy RetryPolicy
 }
 
-func (p *RecoveryStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *RecoveryStep) Process(ctx stdctx.Context, turn *turn) processResult {
 	err := turn.State.LastError
 	if err == nil {
 		return processResult{NextPhase: phaseComplete}
@@ -653,7 +651,7 @@ func (p *RecoveryStep) handleFailure(err error) processResult {
 	return processResult{NextPhase: phaseComplete, Error: err}
 }
 
-func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
+func (p *RecoveryStep) attemptRetry(ctx stdctx.Context, turn *turn, delay time.Duration) processResult {
 	turn.State.RetryCount++
 
 	// Publish retry notification to the UI/EventBus
@@ -682,9 +680,9 @@ func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 // WithStreaming returns a middleware that injects a stream handler into the turn.
 func (e *TurnEngine) WithStreaming() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
 			if turn.State.Phase == phaseInference && e.events != nil {
-				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
+				turn.StreamHandler = func(ctx stdctx.Context, stream <-chan *llm.Content) {
 					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
@@ -696,7 +694,7 @@ func (e *TurnEngine) WithStreaming() turnMiddleware {
 // WithStatusReporter returns a middleware that publishes turn status events.
 func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 			if e.events == nil || res.Error != nil {
 				return res
@@ -718,10 +716,6 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
-				e.mu.RLock()
-				currentTaskCost := e.taskCost
-				e.mu.RUnlock()
-
 				e.events.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
@@ -736,7 +730,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 						StartTime:        turn.StartTime,
 						SessionCost:      cost,
 						DailyCost:        dailyCost,
-						TaskCost:         currentTaskCost,
+						TaskCost:         turn.State.TaskCost,
 						TotalM:           totalM,
 						TotalH:           totalH,
 						TotalO:           totalO,
@@ -751,18 +745,16 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 // WithMetrics returns a middleware that publishes usage metrics.
 func (e *TurnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
-					e.mu.Lock()
 					// Calculate the cost for this specific turn
 					turnCost := turn.CostTracker.CalculateCost(*turn.State.Metrics)
 					// Populate the field so the UI can display it
 					turn.State.Metrics.Cost = turnCost
 					// Accumulate into the task total
-					e.taskCost += turnCost
-					e.mu.Unlock()
+					turn.State.TaskCost += turnCost
 				}
 
 				e.events.Publish(events.UsageMetricsEvent{
@@ -779,7 +771,7 @@ func (e *TurnEngine) WithMetrics() turnMiddleware {
 // WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
 func WithLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 
 			if turn.State.Phase == phaseInference && res.Error == nil && turn.State.Response != nil {

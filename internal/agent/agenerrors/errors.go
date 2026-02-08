@@ -5,6 +5,8 @@ package agenerrors
 
 import (
 	"errors"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // Category definitions
@@ -12,8 +14,6 @@ var (
 	ErrTransient = errors.New("transient failure") // Should retry
 	ErrFatal     = errors.New("terminal failure")  // Should stop
 	ErrLogic     = errors.New("logic violation")   // Should stop, indicates bug or limit
-
-	// Tool-specific error categories
 )
 
 // AgentError provides structured error context for the orchestration engine.
@@ -45,4 +45,27 @@ func NewAgentError(category error, message string, err error) error {
 		Message:  message,
 		Err:      err,
 	}
+}
+
+// IsTransient checks if the error should trigger a retry.
+func IsTransient(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Domain-level transient errors (e.g., rate limits) or direct category match
+	return llm.IsTransient(err) || errors.Is(err, ErrTransient)
+}
+
+// IsFatal checks if the error should halt the current turn and session.
+func IsFatal(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Domain-level fatal errors, budget/limit errors, or direct category match
+	return llm.IsTerminal(err) || llm.IsAuth(err) ||
+		errors.Is(err, llm.ErrBudgetExceeded) ||
+		errors.Is(err, llm.ErrMaxTurnsReached) ||
+		errors.Is(err, llm.ErrContextLimitExceeded) ||
+		errors.Is(err, ErrFatal) ||
+		errors.Is(err, ErrLogic)
 }

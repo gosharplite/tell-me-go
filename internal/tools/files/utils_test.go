@@ -60,8 +60,12 @@ func TestFormatMatch(t *testing.T) {
 
 func TestWalkAndProcess(t *testing.T) {
 	tempDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tempDir, "safe"), 0755)
-	os.WriteFile(filepath.Join(tempDir, "safe/f1.txt"), []byte("data"), 0644)
+	if err := os.MkdirAll(filepath.Join(tempDir, "safe"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "safe/f1.txt"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)

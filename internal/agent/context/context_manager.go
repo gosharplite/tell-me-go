@@ -1,14 +1,15 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package agent coordinates the interaction between the LLM client, tools, and history.
-package agent
+// Package context handles the preparation and optimization of history for LLM consumption.
+package context
 
 import (
 	"context"
 	"fmt"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -24,17 +25,6 @@ type ContextManager struct {
 	Pipeline   *ContextPipeline
 	Factory    *PipelineFactory
 	Summarizer services.Summarizer
-}
-
-// HistoryManager defines the interface for interacting with history.
-type HistoryManager interface {
-	GetContents() []*llm.Content
-	SetContents(ctx context.Context, contents []*llm.Content) error
-	Snapshot()
-	Rollback(ctx context.Context)
-	AddContent(ctx context.Context, content *llm.Content) error
-	GetResolver() llm.AssetResolver
-	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
 }
 
 // NewContextManager creates a new context manager.
@@ -66,7 +56,7 @@ func NewContextManager(strategy *ContextStrategy, history HistoryManager, bus ev
 }
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
-func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *contextMetadata, error) {
+func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	cm.mu.Lock()
 	snapshotVersion := cm.version
 	contents := cm.History.GetContents()
@@ -78,7 +68,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	cm.mu.Unlock()
 
 	// Initialize request with snapshot of history
-	req := &contextRequest{
+	req := &Request{
 		Turn:    turn,
 		History: history,
 	}
@@ -95,7 +85,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		defer cm.mu.Unlock()
 
 		if cm.version != snapshotVersion {
-			return NewAgentError(ErrTransient, "concurrent history modification detected", nil)
+			return agenerrors.NewAgentError(agenerrors.ErrTransient, "concurrent history modification detected", nil)
 		}
 
 		cm.version++
@@ -108,8 +98,8 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	return req.History, &req.Metadata, nil
 }
 
-// addContent appends content to the history in a thread-safe manner.
-func (cm *ContextManager) addContent(ctx context.Context, content *llm.Content) error {
+// AddContent appends content to the history in a thread-safe manner.
+func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.version++
@@ -121,17 +111,6 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.Pipeline = p
-}
-
-// TokenEstimator defines the interface for token counting.
-type TokenEstimator interface {
-	EstimateTokens(contents []*llm.Content) int
-}
-
-// PruningPolicy defines how to mark turns for pruning.
-type PruningPolicy interface {
-	MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int
-	Name() string
 }
 
 // RegisterToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
@@ -183,7 +162,7 @@ func (cm *ContextManager) Summarize(ctx context.Context, contents []*llm.Content
 // SummarizeRange summarizes the first numTurns in the history and replaces them with a summary message.
 func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focus string) (string, *llm.Metrics, error) {
 	if cm.Summarizer == nil {
-		return "", nil, NewAgentError(ErrLogic, "summarizer not initialized", nil)
+		return "", nil, agenerrors.NewAgentError(agenerrors.ErrLogic, "summarizer not initialized", nil)
 	}
 
 	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(numTurns)
@@ -204,11 +183,11 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	// Slow LLM call outside the lock
 	summary, metrics, err := cm.Summarizer.Summarize(ctx, subset, focus)
 	if err != nil {
-		category := ErrFatal
-		if IsTransient(err) {
-			category = ErrTransient
+		category := agenerrors.ErrFatal
+		if agenerrors.IsTransient(err) {
+			category = agenerrors.ErrTransient
 		}
-		return "", nil, NewAgentError(category, "summarization failed", err)
+		return "", nil, agenerrors.NewAgentError(category, "summarization failed", err)
 	}
 
 	if err := cm.finalizeSummarization(ctx, subset, endIdx, summary); err != nil {
@@ -256,7 +235,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	window := cm.Strategy.GetContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
-		return nil, 0, 0, NewAgentError(ErrLogic, fmt.Sprintf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit), llm.ErrContextLimitExceeded)
+		return nil, 0, 0, agenerrors.NewAgentError(agenerrors.ErrLogic, fmt.Sprintf("summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", numTurns, tokens, safetyLimit), llm.ErrContextLimitExceeded)
 	}
 
 	return subset, endIdx, tokens, nil
@@ -268,12 +247,12 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 
 	currentContents := cm.History.GetContents()
 	if len(currentContents) < endIdx {
-		return NewAgentError(ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
+		return agenerrors.NewAgentError(agenerrors.ErrLogic, "summarization aborted: history was pruned while summarizing", nil)
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
 		if !currentContents[i].Equal(subset[i]) {
-			return NewAgentError(ErrLogic, "summarization aborted: history content changed while summarizing", nil)
+			return agenerrors.NewAgentError(agenerrors.ErrLogic, "summarization aborted: history content changed while summarizing", nil)
 		}
 	}
 
@@ -281,11 +260,11 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	newHistory := applySummaryToHistory(currentContents, 0, endIdx, summary)
 	cm.version++
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
-		category := ErrFatal
-		if IsTransient(err) {
-			category = ErrTransient
+		category := agenerrors.ErrFatal
+		if agenerrors.IsTransient(err) {
+			category = agenerrors.ErrTransient
 		}
-		return NewAgentError(category, "failed to update history after summarization", err)
+		return agenerrors.NewAgentError(category, "failed to update history after summarization", err)
 	}
 
 	return nil

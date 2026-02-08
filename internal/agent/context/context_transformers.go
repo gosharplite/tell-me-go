@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type historyPruner struct {
 	Events events.EventBus
 }
 
-func (t *historyPruner) Transform(ctx context.Context, req *contextRequest) error {
+func (t *historyPruner) Transform(ctx context.Context, req *Request) error {
 	initialLen := len(req.History)
 	if initialLen == 0 {
 		return nil
@@ -176,7 +176,7 @@ type tokenGatekeeper struct {
 	Events     events.EventBus
 }
 
-func (t *tokenGatekeeper) Transform(ctx context.Context, req *contextRequest) error {
+func (t *tokenGatekeeper) Transform(ctx context.Context, req *Request) error {
 	// Stage 1: Initial Analysis (includes Tiered Threshold)
 	tokens, err := t.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -198,7 +198,7 @@ func (t *tokenGatekeeper) Transform(ctx context.Context, req *contextRequest) er
 	return nil
 }
 
-func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *contextRequest) (int, error) {
+func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *Request) (int, error) {
 	tokens := t.Estimator.EstimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
@@ -229,7 +229,7 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *contex
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *contextRequest, tokens int) (int, error) {
+func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *Request, tokens int) (int, error) {
 	if t.MaxTokens <= 0 {
 		return tokens, nil
 	}
@@ -259,7 +259,7 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *context
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *contextRequest, tokens int) error {
+func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *Request, tokens int) error {
 	if t.MaxTokens <= 0 {
 		return nil
 	}
@@ -293,7 +293,7 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *contextRe
 
 func (t *tokenGatekeeper) Priority() int { return 80 }
 
-func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *contextRequest) (int, error) {
+func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *Request) (int, error) {
 	if len(req.History) < 10 {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))
@@ -442,7 +442,7 @@ type warningInjector struct {
 	Strategy *ContextStrategy
 }
 
-func (t *warningInjector) Transform(ctx context.Context, req *contextRequest) error {
+func (t *warningInjector) Transform(ctx context.Context, req *Request) error {
 	tokens := req.Metadata.FinalTokenCount
 	currentTurns := len(req.History) / 2
 
@@ -458,7 +458,7 @@ func (t *warningInjector) Transform(ctx context.Context, req *contextRequest) er
 	return nil
 }
 
-func (t *warningInjector) gatherWarnings(req *contextRequest, tokens, turns int) (string, []string) {
+func (t *warningInjector) gatherWarnings(req *Request, tokens, turns int) (string, []string) {
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
 
@@ -487,7 +487,7 @@ func (t *warningInjector) gatherWarnings(req *contextRequest, tokens, turns int)
 	return combined, list
 }
 
-func (t *warningInjector) injectWarning(req *contextRequest, combined string) {
+func (t *warningInjector) injectWarning(req *Request, combined string) {
 	if len(req.History) == 0 {
 		return
 	}
@@ -509,7 +509,7 @@ type toolDeclarationGenerator struct {
 	Registry ToolRegistry
 }
 
-func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *contextRequest) error {
+func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *Request) error {
 	if t.Registry == nil {
 		return nil
 	}
@@ -551,7 +551,7 @@ func (t *toolDeclarationGenerator) Priority() int { return 75 }
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type emptyTurnFilter struct{}
 
-func (t *emptyTurnFilter) Transform(ctx context.Context, req *contextRequest) error {
+func (t *emptyTurnFilter) Transform(ctx context.Context, req *Request) error {
 	turns := groupTurns(req.History)
 	var filtered []*llm.Content
 	for i, turn := range turns {
@@ -579,7 +579,7 @@ type finalContextValidator struct {
 	Strategy *ContextStrategy
 }
 
-func (t *finalContextValidator) Transform(ctx context.Context, req *contextRequest) error {
+func (t *finalContextValidator) Transform(ctx context.Context, req *Request) error {
 	maxTokens, _, _ := t.Strategy.GetLimits()
 	finalTokens := t.Strategy.EstimateTokens(req.History)
 
@@ -597,7 +597,7 @@ func (t *finalContextValidator) Priority() int { return PriorityTransientThresho
 // transientMerger merges TransientParts into Parts for the final API payload.
 type transientMerger struct{}
 
-func (t *transientMerger) Transform(ctx context.Context, req *contextRequest) error {
+func (t *transientMerger) Transform(ctx context.Context, req *Request) error {
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared

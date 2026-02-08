@@ -50,7 +50,9 @@ func TestAtomicWrite(t *testing.T) {
 			perm:    0644,
 			wantErr: true,
 			setup: func(t *testing.T) {
-				os.WriteFile(filepath.Join(tmpDir, "file_as_dir"), []byte("not a dir"), 0644)
+				if err := os.WriteFile(filepath.Join(tmpDir, "file_as_dir"), []byte("not a dir"), 0644); err != nil {
+					t.Fatal(err)
+				}
 			},
 		},
 	}
@@ -110,7 +112,10 @@ func TestAtomicWrite_CancellationCleanup(t *testing.T) {
 	}
 
 	// Verify no temp file left behind
-	matches, _ := filepath.Glob(path + ".*.tmp")
+	matches, err := filepath.Glob(path + ".*.tmp")
+	if err != nil {
+		t.Errorf("Glob failed: %v", err)
+	}
 	if len(matches) > 0 {
 		t.Errorf("temp files %v still exist after cancellation", matches)
 	}
@@ -131,7 +136,10 @@ func TestAtomicWrite_RenameFailure(t *testing.T) {
 	}
 
 	// Verify no temp file left behind
-	matches, _ := filepath.Glob(path + ".*.tmp")
+	matches, err := filepath.Glob(path + ".*.tmp")
+	if err != nil {
+		t.Errorf("Glob failed: %v", err)
+	}
 	if len(matches) > 0 {
 		t.Errorf("temp files %v still exist after rename failure", matches)
 	}
@@ -152,7 +160,11 @@ func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 	if err := os.Chmod(subDir, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(subDir, 0755)
+	defer func() {
+		if err := os.Chmod(subDir, 0755); err != nil {
+			t.Errorf("failed to restore permissions: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 	err := AtomicWrite(ctx, path, []byte("data"), 0644)

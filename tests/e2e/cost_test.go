@@ -42,15 +42,22 @@ func TestCostLedgerSystem(t *testing.T) {
 	defer os.Remove("tell-me-go-test")
 
 	// 2. Setup Env
-	tmpDir, _ := os.MkdirTemp("", "e2e_cost")
+	tmpDir, err := os.MkdirTemp("", "e2e_cost")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(tmpDir)
 
-	os.Setenv("TELL_ME_HOME", tmpDir)
+	if err := os.Setenv("TELL_ME_HOME", tmpDir); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Unsetenv("TELL_ME_HOME")
 
 	// 3. Create dummy log
 	logDir := filepath.Join(tmpDir, "output")
-	os.MkdirAll(logDir, 0755)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	logFile := filepath.Join(logDir, "vertex-tokens.log")
 
 	// Create a log that has enough info to generate cost
@@ -58,7 +65,9 @@ func TestCostLedgerSystem(t *testing.T) {
 	logContent := `[10:00:00] [System] Init
 [10:00:05] H: 100000 M: 1000 C: 500 T: 101500 N: 101500(80%) S: 0 Th: 0 [2.00s]
 `
-	os.WriteFile(logFile, []byte(logContent), 0644)
+	if err := os.WriteFile(logFile, []byte(logContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Since we can't easily force the binary to *just* run `estimate_cost` without an LLM prompt,
 	// and we don't want to make live API calls in E2E unless necessary,
@@ -86,8 +95,13 @@ func TestCostLedgerSystem(t *testing.T) {
 		{Date: "2026-01-27", Session: "test-session", Model: "gpt-4", TotalCost: 0.50},
 	}
 
-	data, _ := json.Marshal(records)
-	os.WriteFile(historyPath, data, 0644)
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(historyPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Now read it back
 	readData, err := os.ReadFile(historyPath)

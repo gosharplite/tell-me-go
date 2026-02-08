@@ -222,7 +222,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 
 	if err := p.start(); err != nil {
-		p.wait() // Ensure started processes are cleaned up
+		_, _ = p.wait() // Ensure started processes are cleaned up
 		return ExecutionResult{ExitCode: 1, Error: err.Error()}, nil
 	}
 

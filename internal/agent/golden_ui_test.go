@@ -135,7 +135,9 @@ func verifyGolden(t *testing.T, goldenFile, actual string) {
 	goldenPath := filepath.Join("testdata", goldenFile)
 
 	if os.Getenv("UPDATE_GOLDEN") == "true" {
-		os.MkdirAll("testdata", 0755)
+		if err := os.MkdirAll("testdata", 0755); err != nil {
+			t.Fatalf("failed to create testdata directory: %v", err)
+		}
 		err := os.WriteFile(goldenPath, []byte(actual), 0644)
 		if err != nil {
 			t.Fatalf("failed to update golden file: %v", err)

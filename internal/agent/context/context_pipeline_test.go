@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -14,7 +14,7 @@ type mockPriorityTransformer struct {
 	name     string
 }
 
-func (m *mockPriorityTransformer) Transform(ctx context.Context, req *contextRequest) error {
+func (m *mockPriorityTransformer) Transform(ctx context.Context, req *Request) error {
 	return nil
 }
 

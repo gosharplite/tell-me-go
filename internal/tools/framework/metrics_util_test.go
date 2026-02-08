@@ -121,9 +121,6 @@ func TestParseUsage_Robustness(t *testing.T) {
 			if tt.expectedTime && timestamp.IsZero() {
 				t.Error("expected non-zero timestamp, got zero")
 			}
-			if !tt.expectedTime && !timestamp.IsZero() && tt.name != "Multi-line summation" && tt.name != "Calculated cost (cost field missing)" {
-				// Special check for zero timestamp when not expected, but some cases might have it if not specified in JSON
-			}
 		})
 	}
 }

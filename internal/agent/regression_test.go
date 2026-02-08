@@ -101,41 +101,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	sm := &MockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
-	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-			// Find the user prompt to decide what to do
-			lastUserPrompt := ""
-			for i := len(history) - 1; i >= 0; i-- {
-				if history[i].Role == "user" && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
-					lastUserPrompt = history[i].Parts[0].Text
-					break
-				}
-			}
-
-			// If last user message is the tool response, return final text
-			if len(history) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
-				return &llm.Content{
-					Role:  "model",
-					Parts: []*llm.Part{{Text: "I see the cat image."}},
-				}, &llm.Metrics{}, nil
-			}
-
-			// Otherwise, if it's the start, trigger the tool
-			if lastUserPrompt == "Show me a cat" {
-				return &llm.Content{
-					Role: "model",
-					Parts: []*llm.Part{
-						{FunctionCall: &llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
-					},
-				}, &llm.Metrics{}, nil
-			}
-
-			return &llm.Content{
-				Role:  "model",
-				Parts: []*llm.Part{{Text: "Default response"}},
-			}, &llm.Metrics{}, nil
-		},
-	}
+	mockClient := newMultiModalMockClient()
 
 	a := New(mockClient, h, registry, sm, false)
 	sess := NewSession(h)
@@ -173,5 +139,43 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	if !hasInlineData {
 		t.Error("InlineData was not injected into history")
+	}
+}
+
+func newMultiModalMockClient() *MockLLMClient {
+	return &MockLLMClient{
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			// 1. Identify the last user prompt
+			lastUserPrompt := ""
+			for i := len(history) - 1; i >= 0; i-- {
+				if history[i].Role == "user" && len(history[i].Parts) > 0 && history[i].Parts[0].Text != "" && !strings.Contains(history[i].Parts[0].Text, "System") {
+					lastUserPrompt = history[i].Parts[0].Text
+					break
+				}
+			}
+
+			// 2. Handle Tool Response state
+			if len(history) > 0 && len(history[len(history)-1].Parts) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
+				return &llm.Content{
+					Role:  "model",
+					Parts: []*llm.Part{{Text: "I see the cat image."}},
+				}, &llm.Metrics{}, nil
+			}
+
+			// 3. Handle Initial Prompt state
+			if lastUserPrompt == "Show me a cat" {
+				return &llm.Content{
+					Role: "model",
+					Parts: []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+					},
+				}, &llm.Metrics{}, nil
+			}
+
+			return &llm.Content{
+				Role:  "model",
+				Parts: []*llm.Part{{Text: "Default response"}},
+			}, &llm.Metrics{}, nil
+		},
 	}
 }

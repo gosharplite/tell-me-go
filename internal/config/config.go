@@ -107,3 +107,39 @@ func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.Pricing
 	// 4. Ultimate fallback
 	return pricingData.ThinkingBudgets["default"]
 }
+
+// ResolveContextWindow returns the appropriate context window limit.
+func (c *Config) ResolveContextWindow() int {
+	maxTokens := c.MaxHistoryTokens
+	if mCfg, ok := c.Models[c.Model]; ok && mCfg.ContextWindow > 0 {
+		if maxTokens > mCfg.ContextWindow {
+			return mCfg.ContextWindow
+		}
+		return maxTokens
+	}
+
+	// Fallback to substring matching
+	for k, v := range c.Models {
+		if k != "default" && strings.Contains(c.Model, k) && v.ContextWindow > 0 {
+			if maxTokens > v.ContextWindow {
+				return v.ContextWindow
+			}
+			break
+		}
+	}
+	return maxTokens
+}
+
+// ResolveTieredThreshold returns the tiered cost threshold for the model.
+func (c *Config) ResolveTieredThreshold(pData pricing.PricingData) int {
+	if mPricing, ok := pData.Models[c.Model]; ok && mPricing.TieredThreshold > 0 {
+		return int(mPricing.TieredThreshold)
+	}
+
+	for k, v := range pData.Models {
+		if k != "default" && strings.Contains(c.Model, k) && v.TieredThreshold > 0 {
+			return int(v.TieredThreshold)
+		}
+	}
+	return DefaultTieredThreshold
+}

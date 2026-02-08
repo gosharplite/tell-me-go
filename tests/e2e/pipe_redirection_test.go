@@ -129,7 +129,9 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	outFile := filepath.Join(homeDir, "piped_out.txt")
 
 	// Pre-create file with some content for append test
-	os.WriteFile(outFile, []byte("initial\n"), 0644)
+	if err := os.WriteFile(outFile, []byte("initial\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 1. Setup Mock Server
 	var turns int

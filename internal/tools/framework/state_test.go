@@ -31,11 +31,13 @@ func TestStateManager_GetSessionInfo(t *testing.T) {
 	m.initSessionInfo(tempDir)
 
 	t.Run("Get Session Info", func(t *testing.T) {
-		m.config.ManageConfig(ctx, map[string]interface{}{
+		if _, err := m.config.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
 			"key":    "test_key",
 			"value":  "test_val",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		res, err := m.getSessionInfo(ctx, nil)
 		if err != nil {

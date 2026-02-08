@@ -298,7 +298,9 @@ func RegisterMetrics(r *registry.Registry, sm security.ISecurityManager, logFile
 		}
 
 		// Silent update: Calculate and record the current session's latest cost before summary.
-		_, _ = m.EstimateCost(ctx, true, "")
+		if _, err := m.EstimateCost(ctx, true, ""); err != nil {
+			log.Printf("Warning: Failed to record cost before summary: %v", err)
+		}
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
 	}, registry.ToolOptions{Serial: true})
@@ -417,7 +419,9 @@ func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil && os.IsExist(err) {
 		if isStale(lockPath) {
-			_ = os.Remove(lockPath)
+			if err := os.Remove(lockPath); err != nil {
+				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
+			}
 			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 		}
 	}
@@ -442,7 +446,9 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
-			_ = os.Rename(historyPath, historyPath+".bak")
+			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
+				log.Printf("Warning: Failed to backup corrupted ledger: %v", err)
+			}
 			history = []SessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) && m.ledger != nil {
@@ -472,7 +478,9 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	if err := fsutil.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+	}
 }
 
 func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArgs) (string, error) {

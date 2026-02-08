@@ -78,7 +78,9 @@ func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "interactive", "session.tokens.log")
-	os.MkdirAll(filepath.Dir(logFile), 0755)
+	if err := os.MkdirAll(filepath.Dir(logFile), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	p := config.DefaultPricing()
 	modelName := "gemini-1.5-flash"

@@ -1,11 +1,10 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"testing"
-	"time"
 )
 
 func TestHeuristicTokenCounter_EstimateMapSize(t *testing.T) {
@@ -60,42 +59,4 @@ func TestHeuristicTokenCounter_EstimateMapSize(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestDefaultRetryPolicy_Coverage(t *testing.T) {
-	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond}
-
-	t.Run("Transient error", func(t *testing.T) {
-		err := &AgentError{Category: ErrTransient, Message: "retry"}
-		delay, retry := policy.ShouldRetry(err, 0)
-		if !retry || delay != 10*time.Millisecond {
-			t.Errorf("expected retry with 10ms, got %v, %v", retry, delay)
-		}
-
-		delay, retry = policy.ShouldRetry(err, 1)
-		if !retry || delay != 20*time.Millisecond {
-			t.Errorf("expected retry with 20ms, got %v, %v", retry, delay)
-		}
-
-		_, retry = policy.ShouldRetry(err, 2)
-		if retry {
-			t.Error("expected no retry after MaxRetries")
-		}
-	})
-
-	t.Run("Fatal error", func(t *testing.T) {
-		err := &AgentError{Category: ErrFatal, Message: "fatal"}
-		_, retry := policy.ShouldRetry(err, 0)
-		if retry {
-			t.Error("expected no retry for fatal error")
-		}
-	})
-
-	t.Run("Generic error", func(t *testing.T) {
-		// If err is nil, it returns false.
-		_, retry := policy.ShouldRetry(nil, 0)
-		if retry {
-			t.Error("expected no retry for nil error")
-		}
-	})
 }

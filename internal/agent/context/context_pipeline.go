@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -15,14 +15,8 @@ const (
 	PriorityTransientThreshold = 100 // Transformers above this are usually transient/non-persistent
 )
 
-// ContextTransformer modifies the context before it's sent to the LLM.
-type ContextTransformer interface {
-	Transform(ctx context.Context, req *contextRequest) error
-	Priority() int // Lower runs first
-}
-
-// contextMetadata contains diagnostics and auxiliary data from the pipeline.
-type contextMetadata struct {
+// Metadata contains diagnostics and auxiliary data from the pipeline.
+type Metadata struct {
 	OriginalTokenCount     int
 	FinalTokenCount        int
 	FinalTurnCount         int
@@ -36,11 +30,11 @@ type contextMetadata struct {
 	History                []*llm.Content
 }
 
-// contextRequest represents the input and state of a context preparation pipeline.
-type contextRequest struct {
+// Request represents the input and state of a context preparation pipeline.
+type Request struct {
 	Turn           int
 	History        []*llm.Content
-	Metadata       contextMetadata
+	Metadata       Metadata
 	PersistHistory bool
 }
 
@@ -58,7 +52,7 @@ func NewContextPipeline(transformers ...ContextTransformer) *ContextPipeline {
 }
 
 // Execute runs the pipeline on the given request.
-func (p *ContextPipeline) Execute(ctx context.Context, req *contextRequest) error {
+func (p *ContextPipeline) Execute(ctx context.Context, req *Request) error {
 	for _, t := range p.transformers {
 		if err := t.Transform(ctx, req); err != nil {
 			return err
@@ -69,7 +63,7 @@ func (p *ContextPipeline) Execute(ctx context.Context, req *contextRequest) erro
 
 // ExecuteWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
-func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *contextRequest, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *Request, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
 	for _, t := range canonical {
@@ -102,7 +96,7 @@ func (p *ContextPipeline) partitionTransformers() (canonical, transient []Contex
 	return
 }
 
-func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *contextRequest, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *Request, persistFn func(context.Context, []*llm.Content) error) error {
 	if req.PersistHistory && persistFn != nil {
 		return persistFn(ctx, req.History)
 	}

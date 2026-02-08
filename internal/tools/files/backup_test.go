@@ -24,11 +24,15 @@ func TestBackupManager_Undo(t *testing.T) {
 
 	// 1. Snapshot new file creation
 	bm.Snapshot(path, "WRITE")
-	os.WriteFile(path, []byte("v1"), 0644)
+	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 2. Snapshot modification
 	bm.Snapshot(path, "REPLACE")
-	os.WriteFile(path, []byte("v2"), 0644)
+	if err := os.WriteFile(path, []byte("v2"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 3. Undo modification
 	res, err := bm.Undo(ctx, 1)
@@ -38,7 +42,10 @@ func TestBackupManager_Undo(t *testing.T) {
 	if !strings.Contains(res, "Restored") {
 		t.Errorf("expected Restored, got %s", res)
 	}
-	content, _ := os.ReadFile(path)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(content) != "v1" {
 		t.Errorf("got %s, want v1", content)
 	}

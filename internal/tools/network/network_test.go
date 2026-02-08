@@ -258,8 +258,15 @@ func TestSendTeamsMessage(t *testing.T) {
 				DoFunc: func(req *http.Request) (*http.Response, error) {
 					// Verify payload
 					var payload map[string]interface{}
-					body, _ := io.ReadAll(req.Body)
-					json.Unmarshal(body, &payload)
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Errorf("Failed to read request body: %v", err)
+						return nil, err
+					}
+					if err := json.Unmarshal(body, &payload); err != nil {
+						t.Errorf("Failed to unmarshal request body: %v", err)
+						return nil, err
+					}
 					if payload["type"] != "AdaptiveCard" {
 						t.Errorf("Expected AdaptiveCard payload, got %v", payload["type"])
 					}

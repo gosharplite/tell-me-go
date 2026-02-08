@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -55,7 +55,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			Policy: &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 		}
 
-		req := &contextRequest{
+		req := &Request{
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 				{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -89,7 +89,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		pruner := &historyPruner{
 			Policy: &SlidingWindowPolicy{MaxTurns: 10},
 		}
-		req := &contextRequest{
+		req := &Request{
 			History: []*llm.Content{{Role: "user"}},
 		}
 		err := pruner.Transform(ctx, req)
@@ -185,7 +185,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 500},
 		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		req := &Request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		if err != nil {
 			t.Fatalf("Transform failed: %v", err)
@@ -210,7 +210,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 		}
-		req := &contextRequest{History: h}
+		req := &Request{History: h}
 		err := tg.Transform(ctx, req)
 		if !errors.Is(err, llm.ErrContextLimitExceeded) {
 			t.Errorf("expected ErrContextLimitExceeded, got %v", err)
@@ -231,7 +231,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 		}
-		req := &contextRequest{History: h}
+		req := &Request{History: h}
 		err := tg.Transform(ctx, req)
 		// Should still succeed if under limit, but metadata won't show summarization
 		if err != nil {
@@ -251,7 +251,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Inject turn warning", func(t *testing.T) {
-		req := &contextRequest{
+		req := &Request{
 			Turn: 8, // 2 remaining
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -317,7 +317,7 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 		h[i].Pinned = true
 	}
 
-	req := &contextRequest{History: h}
+	req := &Request{History: h}
 	if err := tg.Transform(ctx, req); err != nil {
 		t.Fatalf("Transform failed: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Inject clogged warning", func(t *testing.T) {
-		req := &contextRequest{
+		req := &Request{
 			Turn: 1,
 			History: []*llm.Content{
 				{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}},
@@ -387,7 +387,7 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 	}
-	req := &contextRequest{History: h}
+	req := &Request{History: h}
 	err := tg.Transform(ctx, req)
 	if err != nil {
 		t.Fatalf("Transform failed: %v", err)
@@ -413,7 +413,7 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 		}
 		h[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}, Pinned: true}
 	}
-	req := &contextRequest{History: h}
+	req := &Request{History: h}
 
 	err := tg.Transform(ctx, req)
 	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
@@ -434,7 +434,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	t.Run("Blocked triggers clogged warning", func(t *testing.T) {
-		req := &contextRequest{
+		req := &Request{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}}},
 		}
 		req.Metadata.FinalTokenCount = 900 // > 85%
@@ -483,7 +483,7 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
-			req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+			req := &Request{History: []*llm.Content{{Role: "user"}}}
 			err := tg.Transform(ctx, req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
@@ -497,7 +497,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	maxTokens := 2000
 	pipeline, strategy := setupTestPipeline(maxTokens)
 
-	req := &contextRequest{
+	req := &Request{
 		History: generatePinnedHistory(20, 400),
 		Turn:    1,
 	}
@@ -517,7 +517,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	tg := pipeline.transformers[1].(*tokenGatekeeper)
 	tg.MaxTokens = maxTokens
 
-	req2 := &contextRequest{
+	req2 := &Request{
 		History: generatePinnedHistory(20, 2960),
 		Turn:    1,
 	}
@@ -540,7 +540,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 			MaxTokens: 1000,
 			Estimator: &mockEstimator{tokens: 901},
 		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		req := &Request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		if !errors.Is(err, llm.ErrContextLimitExceeded) {
 			t.Errorf("expected ErrContextLimitExceeded for 901 tokens (limit 900), got %v", err)
@@ -558,7 +558,7 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 			MaxTokens: 10000,
 			Estimator: &mockEstimator{tokens: 9001},
 		}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		req := &Request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
 		if !errors.Is(err, llm.ErrContextLimitExceeded) {
 			t.Errorf("expected ErrContextLimitExceeded for 9001 tokens (limit 9000), got %v", err)
@@ -665,7 +665,7 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &contextRequest{History: tt.input}
+			req := &Request{History: tt.input}
 			err := filter.Transform(ctx, req)
 			if err != nil {
 				t.Fatalf("Transform failed: %v", err)
@@ -722,7 +722,7 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 			strategy.SetLimits(tt.maxTokens, 10, 20)
 			counter.tokens = tt.tokens
 
-			req := &contextRequest{
+			req := &Request{
 				History: []*llm.Content{
 					{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
 					{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
@@ -752,7 +752,7 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 		Policy: &SlidingWindowPolicy{MaxTurns: 1},
 	}
 
-	req := &contextRequest{
+	req := &Request{
 		History: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "1"}}},
 			{Role: "model", Parts: []*llm.Part{{Text: "2"}}},
@@ -777,7 +777,7 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 func TestToolDeclarationGenerator_Transform_SafeWithNilRegistry(t *testing.T) {
 	t.Parallel()
 	tg := &toolDeclarationGenerator{Registry: nil}
-	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+	req := &Request{History: []*llm.Content{{Role: "user"}}}
 	err := tg.Transform(context.Background(), req)
 	if err != nil {
 		t.Errorf("expected no error for nil registry, got %v", err)
@@ -787,7 +787,7 @@ func TestToolDeclarationGenerator_Transform_SafeWithNilRegistry(t *testing.T) {
 func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) {
 	t.Parallel()
 	tg := &toolDeclarationGenerator{Registry: &mockToolRegistry{}}
-	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+	req := &Request{History: []*llm.Content{{Role: "user"}}}
 	err := tg.Transform(context.Background(), req)
 	if err != nil {
 		t.Errorf("expected no error for empty registry, got %v", err)
@@ -895,7 +895,7 @@ func TestToolDeclarationGenerator_MultipleTools(t *testing.T) {
 		},
 	}
 	tg := &toolDeclarationGenerator{Registry: registry}
-	req := &contextRequest{
+	req := &Request{
 		History: []*llm.Content{
 			{Role: "system", Parts: []*llm.Part{{Text: "System prompt"}}},
 		},
@@ -923,7 +923,7 @@ func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
 
 	t.Run("Empty History", func(t *testing.T) {
 		tg := &toolDeclarationGenerator{Registry: &mockToolRegistry{}}
-		req := &contextRequest{History: []*llm.Content{}}
+		req := &Request{History: []*llm.Content{}}
 		err := tg.Transform(context.Background(), req)
 		if err != nil {
 			t.Fatalf("expected no error for empty history, got %v", err)
@@ -934,7 +934,7 @@ func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
 	t.Run("Typed Nil Registry", func(t *testing.T) {
 		var r *mockToolRegistry = nil
 		tg := &toolDeclarationGenerator{Registry: r}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		req := &Request{History: []*llm.Content{{Role: "user"}}}
 		// This should not panic because of reflect.IsNil check in Transform
 		err := tg.Transform(context.Background(), req)
 		if err != nil {
@@ -1067,7 +1067,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	strategy := NewContextStrategy(counter, nil)
 	strategy.SetTieredThreshold(0)
 	tg := &tokenGatekeeper{Estimator: strategy}
-	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+	req := &Request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -1087,7 +1087,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	strategy := NewContextStrategy(counter, nil)
 	strategy.SetTieredThreshold(2000)
 	tg := &tokenGatekeeper{Estimator: strategy}
-	req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+	req := &Request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -1119,7 +1119,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 	}
-	req := &contextRequest{History: h}
+	req := &Request{History: h}
 
 	_, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -1141,7 +1141,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 
 	t.Run("Not enough history", func(t *testing.T) {
 		tg := &tokenGatekeeper{Estimator: strategy}
-		req := &contextRequest{History: []*llm.Content{{Role: "user"}}}
+		req := &Request{History: []*llm.Content{{Role: "user"}}}
 		_, _ = tg.handleTieredThreshold(ctx, req)
 		if !req.Metadata.MaintenanceBlocked {
 			t.Error("expected MaintenanceBlocked to be true")
@@ -1161,7 +1161,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 		for i := range h {
 			h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 		}
-		req := &contextRequest{History: h}
+		req := &Request{History: h}
 		_, err := tg.handleTieredThreshold(ctx, req)
 		if err == nil || err.Error() != "boom" {
 			t.Errorf("expected 'boom' error, got %v", err)
@@ -1208,7 +1208,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	for i := range h {
 		h[i] = &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}}
 	}
-	req := &contextRequest{History: h}
+	req := &Request{History: h}
 
 	_, err := tg.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -1247,9 +1247,9 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 		Estimator: strategy,
 	}
 
-	req := &contextRequest{
+	req := &Request{
 		History: []*llm.Content{{Role: "user"}},
-		Metadata: contextMetadata{
+		Metadata: Metadata{
 			SummarizationAttempted: true,
 		},
 	}

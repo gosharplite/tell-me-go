@@ -47,10 +47,12 @@ func TestScratchpadStore(t *testing.T) {
 		scratchFile := filepath.Join(tempDir, "scratchpad.md")
 		store := NewScratchpadStore(fs, scratchFile)
 
-		store.ManageScratchpad(ctx, map[string]interface{}{
+		if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "write",
 			"content": "Line 1",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		_, err := store.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "append",
@@ -60,7 +62,10 @@ func TestScratchpadStore(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, _ := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		expected := "Line 1\nLine 2"
 		if res.Text != expected {
 			t.Errorf("got %q, want %q", res.Text, expected)
@@ -72,17 +77,22 @@ func TestScratchpadStore(t *testing.T) {
 		scratchFile := filepath.Join(tempDir, "scratchpad.md")
 		store := NewScratchpadStore(fs, scratchFile)
 
-		store.ManageScratchpad(ctx, map[string]interface{}{
+		if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "write",
 			"content": "Something",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		_, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		res, _ := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if res.Text != "(Scratchpad is empty)" {
 			t.Errorf("expected empty message, got %q", res.Text)
 		}
@@ -93,10 +103,12 @@ func TestScratchpadStore(t *testing.T) {
 		scratchFile := filepath.Join(tempDir, "scratchpad.md")
 		store1 := NewScratchpadStore(fs, scratchFile)
 
-		store1.ManageScratchpad(ctx, map[string]interface{}{
+		if _, err := store1.ManageScratchpad(ctx, map[string]interface{}{
 			"action":  "write",
 			"content": "Persist me",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		store2 := NewScratchpadStore(fs, scratchFile)
 		err := store2.Load(ctx)
@@ -104,7 +116,10 @@ func TestScratchpadStore(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, _ := store2.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		res, err := store2.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if res.Text != "Persist me" {
 			t.Error("scratchpad was not persisted")
 		}

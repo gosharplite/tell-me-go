@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -41,19 +42,19 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*TurnEngine, *ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*TurnEngine, *agentctx.ContextManager) {
 	bus := &events.SimpleEventBus{}
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(fmt.Sprintf("%s/history.json", tmpDir))
-	strategy := NewContextStrategy(&mockTokenCounter{}, bus)
-	factory := &PipelineFactory{
+	strategy := agentctx.NewContextStrategy(&mockTokenCounter{}, bus)
+	factory := &agentctx.PipelineFactory{
 		History:   hManager,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm := agentctx.NewContextManager(strategy, hManager, bus, factory)
 
 	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
 

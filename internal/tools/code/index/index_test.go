@@ -89,17 +89,17 @@ type MyAlias = int
 
 func TestIndexer_FindImplementors(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
 	code := `package test
 type I interface { M() }
 type S struct{}
 func (s S) M() {}
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
 	idx, _ := NewIndexer(tmpDir)
 	ctx := context.Background()
-	idx.Refresh(ctx)
+	_ = idx.Refresh(ctx)
 
 	implementors, err := idx.FindImplementors(ctx, "I")
 	if err != nil {
@@ -120,15 +120,15 @@ func (s S) M() {}
 
 func TestIndexer_Lookup(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
 	code := `package test
 type T struct{}
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
 	idx, _ := NewIndexer(tmpDir)
 	ctx := context.Background()
-	idx.Refresh(ctx)
+	_ = idx.Refresh(ctx)
 
 	locs, err := idx.Lookup(ctx, "T")
 	if err != nil {
@@ -144,14 +144,14 @@ type T struct{}
 
 func TestIndexer_ErrorPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
 
 	// Valid file
-	os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}"), 0644)
 
 	idx, _ := NewIndexer(tmpDir)
 	ctx := context.Background()
-	idx.Refresh(ctx)
+	_ = idx.Refresh(ctx)
 
 	syms, _ := idx.SearchSymbols(ctx, tmpDir, "F", false)
 	if len(syms) != 1 {
@@ -159,7 +159,7 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 	}
 
 	// Create a file with syntax error
-	os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte("package test\nfunc G() {"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "invalid.go"), []byte("package test\nfunc G() {"), 0644)
 
 	// Force refresh by resetting lastRefresh
 	idx.mu.Lock()

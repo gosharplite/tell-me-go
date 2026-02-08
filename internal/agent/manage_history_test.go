@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
 )
@@ -23,7 +24,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
-	cm := &ContextManager{History: hManager}
+	cm := &agentctx.ContextManager{History: hManager}
 	it := NewInternalTools(cm)
 
 	tests := []struct {

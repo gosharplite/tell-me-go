@@ -24,18 +24,27 @@ func TestArchiveCostPreservation(t *testing.T) {
 	defer os.Remove(binaryPath)
 
 	// 2. Setup Test Environment
-	tmpHome, _ := os.MkdirTemp("", "archive_cost_home")
+	tmpHome, err := os.MkdirTemp("", "archive_cost_home")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(tmpHome)
 
-	os.Setenv("TELL_ME_HOME", tmpHome)
+	if err := os.Setenv("TELL_ME_HOME", tmpHome); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Unsetenv("TELL_ME_HOME")
 
 	outputDir := filepath.Join(tmpHome, "output")
-	os.MkdirAll(outputDir, 0755)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create a dummy config
 	configDir := filepath.Join(tmpHome, "configs")
-	os.MkdirAll(configDir, 0755)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(configDir, "test.yaml")
 	configContent := `
 MODE: "test"
@@ -43,7 +52,9 @@ AIMODEL: "gemini-test-flash"
 AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models"
 MAX_HISTORY_TURNS: 10
 `
-	os.WriteFile(configPath, []byte(configContent), 0644)
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 3. Seed the ledger with a "previous" session cost
 	ledgerPath := filepath.Join(outputDir, "global_costs.json")
@@ -55,24 +66,37 @@ MAX_HISTORY_TURNS: 10
 			"total_cost": 1.2345,
 		},
 	}
-	ledgerBytes, _ := json.MarshalIndent(initialLedger, "", "  ")
-	os.WriteFile(ledgerPath, ledgerBytes, 0644)
+	ledgerBytes, err := json.MarshalIndent(initialLedger, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ledgerPath, ledgerBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate a previous session log file
 	modeDir := filepath.Join(outputDir, "test")
-	os.MkdirAll(modeDir, 0755)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	logFile := filepath.Join(modeDir, "tokens.log")
 	logContent := "[10:00:00] H: 100 M: 100 C: 100 T: 300 N: 300(1%) S: 0 Th: 0 [1.00s]\n"
-	os.WriteFile(logFile, []byte(logContent), 0644)
+	if err := os.WriteFile(logFile, []byte(logContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 4. Run the tool with -new flag to trigger archiving
-	os.Setenv("TELL_ME_MOCK_ANSWER", "Acknowledged.")
+	if err := os.Setenv("TELL_ME_MOCK_ANSWER", "Acknowledged."); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
-	os.Setenv("TELL_ME_MOCK_URL", "http://localhost:9999")
+	if err := os.Setenv("TELL_ME_MOCK_URL", "http://localhost:9999"); err != nil {
+		t.Fatal(err)
+	}
 	defer os.Unsetenv("TELL_ME_MOCK_URL")
 
 	cmd = exec.Command(binaryPath, "-c", configPath, "-new", "New session start")
-	cmd.CombinedOutput() // Expected to fail after archiving
+	_ = cmd.Run() // Expected to fail after archiving due to mock server not existing, but we only care about the archiving logic here.
 
 	// 5. Verify the ledger (global_costs.json)
 	data, err := os.ReadFile(ledgerPath)

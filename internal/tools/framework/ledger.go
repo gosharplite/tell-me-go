@@ -204,7 +204,9 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil && os.IsExist(err) {
 		if isStale(lockPath) {
-			_ = os.Remove(lockPath)
+			if err := os.Remove(lockPath); err != nil {
+				log.Printf("Warning: Failed to remove stale lock %s: %v", lockPath, err)
+			}
 			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 		}
 	}
@@ -213,8 +215,12 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 		return // Another process is writing or we failed to break the lock
 	}
 	defer func() {
-		f.Close()
-		os.Remove(lockPath)
+		if err := f.Close(); err != nil {
+			log.Printf("Warning: Failed to close lock file %s: %v", lockPath, err)
+		}
+		if err := os.Remove(lockPath); err != nil {
+			log.Printf("Warning: Failed to remove lock file %s: %v", lockPath, err)
+		}
 	}()
 
 	var history []SessionCostRecord
@@ -242,5 +248,7 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	_ = fsutil.AtomicWrite(ctx, historyPath, bytes, 0644)
+	if err := fsutil.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+	}
 }

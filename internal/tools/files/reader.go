@@ -115,7 +115,9 @@ func buildTree(ctx context.Context, fs fsutil.FileSystem, path, indent string, d
 			if entry.Name() == ".git" {
 				continue
 			}
-			buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb)
+			if err := buildTree(ctx, fs, filepath.Join(path, entry.Name()), newIndent, depth+1, maxDepth, sb); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

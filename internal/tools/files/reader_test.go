@@ -16,9 +16,15 @@ import (
 
 func TestListFiles(t *testing.T) {
 	tempDir := t.TempDir()
-	os.WriteFile(filepath.Join(tempDir, "a.txt"), []byte("a"), 0644)
-	os.Mkdir(filepath.Join(tempDir, "sub"), 0755)
-	os.WriteFile(filepath.Join(tempDir, "sub", "b.txt"), []byte("b"), 0644)
+	if err := os.WriteFile(filepath.Join(tempDir, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(tempDir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "sub", "b.txt"), []byte("b"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -46,7 +52,9 @@ func TestReadFile(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "test.txt")
 	content := "some content"
-	os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -63,8 +71,12 @@ func TestReadFile(t *testing.T) {
 
 func TestGetTree(t *testing.T) {
 	tempDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tempDir, "a/b"), 0755)
-	os.WriteFile(filepath.Join(tempDir, "a/b/c.txt"), []byte("test"), 0644)
+	if err := os.MkdirAll(filepath.Join(tempDir, "a/b"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "a/b/c.txt"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -83,10 +95,18 @@ func TestGetTree(t *testing.T) {
 
 func TestFindFile(t *testing.T) {
 	tempDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755)
-	os.WriteFile(filepath.Join(tempDir, "match.go"), []byte(""), 0644)
-	os.WriteFile(filepath.Join(tempDir, "subdir", "match.go"), []byte(""), 0644)
-	os.WriteFile(filepath.Join(tempDir, "no-match.txt"), []byte(""), 0644)
+	if err := os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "match.go"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "subdir", "match.go"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "no-match.txt"), []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -118,8 +138,12 @@ func TestGetFileDiff(t *testing.T) {
 	tempDir := t.TempDir()
 	f1 := filepath.Join(tempDir, "f1.txt")
 	f2 := filepath.Join(tempDir, "f2.txt")
-	os.WriteFile(f1, []byte("line1\nline2\n"), 0644)
-	os.WriteFile(f2, []byte("line1\nline3\n"), 0644)
+	if err := os.WriteFile(f1, []byte("line1\nline2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte("line1\nline3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -150,7 +174,9 @@ func TestReadFile_Truncation(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "large.txt")
 	content := strings.Repeat("a", 150000)
-	os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}

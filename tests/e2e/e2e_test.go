@@ -33,7 +33,12 @@ func TestMain(m *testing.M) {
 	binPath = filepath.Join(tempDir, "tell-me-go")
 
 	// Get absolute path to project root
-	wd, _ := os.Getwd()
+	wd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
+		os.RemoveAll(tempDir)
+		os.Exit(1)
+	}
 	projectRoot = filepath.Dir(filepath.Dir(wd))
 	mainPath := filepath.Join(projectRoot, "cmd/tell-me-go/main.go")
 
@@ -97,13 +102,19 @@ func TestSessionArchiving(t *testing.T) {
 	// 2. Create dummy session files
 	outputDir := filepath.Join(homeDir, "output")
 	modeDir := filepath.Join(outputDir, "vertex")
-	os.MkdirAll(modeDir, 0755)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	histFile := filepath.Join(modeDir, "history.json")
 	logFile := filepath.Join(modeDir, "tokens.log")
 
-	os.WriteFile(histFile, []byte("[]"), 0644)
-	os.WriteFile(logFile, []byte("log data"), 0644)
+	if err := os.WriteFile(histFile, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logFile, []byte("log data"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 3. Run with -new flag (and a dummy prompt to trigger the logic)
 	// We expect it to fail on API call but archive the files first
@@ -132,13 +143,19 @@ func TestBypassArchiving(t *testing.T) {
 	// 2. Create dummy session files including bypass
 	outputDir := filepath.Join(homeDir, "output")
 	modeDir := filepath.Join(outputDir, "vertex")
-	os.MkdirAll(modeDir, 0755)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	histFile := filepath.Join(modeDir, "history.json")
 	bypassFile := filepath.Join(modeDir, "bypass.log")
 
-	os.WriteFile(histFile, []byte("[]"), 0644)
-	os.WriteFile(bypassFile, []byte("true"), 0644)
+	if err := os.WriteFile(histFile, []byte("[]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bypassFile, []byte("true"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// 3. Run with -new flag
 	_, _, _ = runCommandWithEnv(env, "", "-new", "hello")
@@ -167,16 +184,22 @@ func TestEnvironmentPersistence(t *testing.T) {
 	// 2. Create dummy persistent and session files
 	outputDir := filepath.Join(homeDir, "output")
 	modeDir := filepath.Join(outputDir, "vertex")
-	os.MkdirAll(modeDir, 0755)
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	sessionFiles := []string{"history.json", "tokens.log", "commands.log"}
 	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
 
 	for _, f := range sessionFiles {
-		os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
+		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, f := range persistentFiles {
-		os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
+		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// 3. Run with -new flag
@@ -191,7 +214,10 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	// 5. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
-	entries, _ := os.ReadDir(backupsDir)
+	entries, err := os.ReadDir(backupsDir)
+	if err != nil {
+		t.Fatalf("Failed to read backups directory: %v", err)
+	}
 	if len(entries) == 0 {
 		t.Fatalf("Expected backup directory to contain entries")
 	}
@@ -581,7 +607,9 @@ func TestSymlinkAttack(t *testing.T) {
 	homeDir := t.TempDir()
 	// Create a symlink in the homeDir
 	evilLink := filepath.Join(homeDir, "evil_link")
-	os.Symlink("/etc/passwd", evilLink)
+	if err := os.Symlink("/etc/passwd", evilLink); err != nil {
+		t.Fatal(err)
+	}
 
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,

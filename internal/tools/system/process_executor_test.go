@@ -44,8 +44,8 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 			},
 			wantExit: 1, // ls should fail
 			check: func(t *testing.T, res ExecutionResult) {
-				if !strings.Contains(res.Output, "Errors:") {
-					// Some systems might not write to stderr for this, but ls usually does
+				if res.ExitCode == 0 {
+					t.Errorf("expected non-zero exit code")
 				}
 			},
 		},
@@ -162,7 +162,9 @@ func TestRunPipeline_FeedbackRace(t *testing.T) {
 	}
 	// Run many times with -race
 	for i := 0; i < 10; i++ {
-		_, _ = executor.RunPipeline(context.Background(), pipedParts, config)
+		if _, err := executor.RunPipeline(context.Background(), pipedParts, config); err != nil {
+			t.Logf("Feedback race run %d error: %v", i, err)
+		}
 	}
 }
 
@@ -239,15 +241,22 @@ func TestRunCommand_Append(t *testing.T) {
 	config1 := ExecutionConfig{
 		OutputFile: tmpFile,
 	}
-	executor.RunCommand(context.Background(), []string{"echo", "line 1"}, config1)
+	if _, err := executor.RunCommand(context.Background(), []string{"echo", "line 1"}, config1); err != nil {
+		t.Fatalf("First RunCommand failed: %v", err)
+	}
 
 	config2 := ExecutionConfig{
 		OutputFile: tmpFile,
 		Append:     true,
 	}
-	executor.RunCommand(context.Background(), []string{"echo", "line 2"}, config2)
+	if _, err := executor.RunCommand(context.Background(), []string{"echo", "line 2"}, config2); err != nil {
+		t.Fatalf("Second RunCommand failed: %v", err)
+	}
 
-	content, _ := os.ReadFile(tmpFile)
+	content, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to read file: %v", err)
+	}
 	if !strings.Contains(string(content), "line 1") || !strings.Contains(string(content), "line 2") {
 		t.Errorf("expected file to contain both lines, got %q", string(content))
 	}
@@ -396,14 +405,10 @@ func TestRunPipeline_Advanced(t *testing.T) {
 			}
 
 			if tt.config.OutputFile != "" {
-				content, err := os.ReadFile(tt.config.OutputFile)
-				if err == nil {
-					if tt.checkOutput != nil && !tt.checkOutput(string(content)) {
-						// Note: Output file captures EVERYTHING, while ExecutionResult.Output might be truncated or formatted differently.
-						// Actually, our implementation writes to file BEFORE truncation in RunPipeline.capture?
-						// Let's re-verify the implementation.
-					}
+				if _, err := os.ReadFile(tt.config.OutputFile); err != nil {
+					t.Logf("Note: could not read output file %s: %v", tt.config.OutputFile, err)
 				}
+				// Note: Output file captures EVERYTHING, while ExecutionResult.Output might be truncated or formatted differently.
 			}
 		})
 	}
@@ -415,7 +420,11 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 	defer cancel()
 
 	pipedParts := [][]string{{"sleep", "10"}, {"cat"}}
-	res, _ := executor.RunPipeline(ctx, pipedParts, ExecutionConfig{})
+	res, err := executor.RunPipeline(ctx, pipedParts, ExecutionConfig{})
+
+	if err != nil && !strings.Contains(err.Error(), "context") {
+		t.Logf("Note: RunPipeline returned non-context error: %v", err)
+	}
 
 	if res.ExitCode == 0 {
 		t.Error("expected non-zero exit code or error for cancelled context, got 0")
@@ -425,7 +434,9 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 func TestRunCommand_FileWriteError(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "readonly.txt")
-	os.WriteFile(outputPath, []byte("init"), 0444) // Read-only
+	if err := os.WriteFile(outputPath, []byte("init"), 0444); err != nil { // Read-only
+		t.Fatal(err)
+	}
 
 	var feedback safeBuffer
 	executor := NewProcessExecutor()
@@ -478,7 +489,9 @@ func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
 func TestRunPipeline_FileWriteError(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "readonly_pipe.txt")
-	os.WriteFile(outputPath, []byte("init"), 0444)
+	if err := os.WriteFile(outputPath, []byte("init"), 0444); err != nil {
+		t.Fatal(err)
+	}
 
 	var feedback safeBuffer
 	executor := NewProcessExecutor()
@@ -732,9 +745,18 @@ func TestOpenOutputFile_Security(t *testing.T) {
 
 	// Run in a temporary directory to avoid polluting the project and to have a controlled environment
 	tmpDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name string

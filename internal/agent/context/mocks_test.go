@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -52,6 +52,39 @@ func (m *mockTokenCounter) Count(contents []*llm.Content) int {
 	return m.tokens
 }
 
+type mockEstimator struct {
+	tokens int
+}
+
+func (m *mockEstimator) EstimateTokens(contents []*llm.Content) int {
+	return m.tokens
+}
+
+type mockHistoryManager struct {
+	contents       []*llm.Content
+	resolver       llm.AssetResolver
+	setContentsErr error
+}
+
+func (m *mockHistoryManager) GetContents() []*llm.Content { return m.contents }
+func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	if m.setContentsErr != nil {
+		return m.setContentsErr
+	}
+	m.contents = contents
+	return nil
+}
+func (m *mockHistoryManager) Snapshot()                    {}
+func (m *mockHistoryManager) Rollback(ctx context.Context) {}
+func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+	m.contents = append(m.contents, content)
+	return nil
+}
+func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver }
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	return nil
+}
+
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
 	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
@@ -87,19 +120,3 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
 func (m *mockGateway) SetSystemInstructions(instr string) {}
-
-type MockSecurityManager struct {
-	AllowAll bool
-}
-
-func (m *MockSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return true, nil
-}
-func (m *MockSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
-func (m *MockSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
-func (m *MockSecurityManager) TerminalLock()                              {}
-func (m *MockSecurityManager) TerminalUnlock()                            {}
-func (m *MockSecurityManager) IsBypassActive() bool                       { return true }
-func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
-	return m.AllowAll
-}

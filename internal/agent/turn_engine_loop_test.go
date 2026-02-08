@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -18,18 +19,18 @@ import (
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
-	counter := &HeuristicTokenCounter{}
-	strategy := NewContextStrategy(counter, bus)
+	counter := &agentctx.HeuristicTokenCounter{}
+	strategy := agentctx.NewContextStrategy(counter, bus)
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &PipelineFactory{
+	factory := &agentctx.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := NewContextManager(strategy, h, bus, factory)
+	cm := agentctx.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus)
@@ -75,18 +76,18 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
-	counter := &HeuristicTokenCounter{}
-	strategy := NewContextStrategy(counter, bus)
+	counter := &agentctx.HeuristicTokenCounter{}
+	strategy := agentctx.NewContextStrategy(counter, bus)
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &PipelineFactory{
+	factory := &agentctx.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
-	cm := NewContextManager(strategy, h, bus, factory)
+	cm := agentctx.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus)

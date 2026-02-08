@@ -228,9 +228,10 @@ func (m *HealthManager) generateRecommendation(test, cov, lint, comp, sec string
 	}
 	if strings.HasSuffix(cov, "%") {
 		var val float64
-		fmt.Sscanf(cov, "%f%%", &val)
-		if val < 80 {
-			recs = append(recs, fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val))
+		if _, err := fmt.Sscanf(cov, "%f%%", &val); err == nil {
+			if val < 80 {
+				recs = append(recs, fmt.Sprintf("Coverage (%.1f%%) is below the 80%% target.", val))
+			}
 		}
 	}
 	if strings.Contains(comp, "Alerts") {

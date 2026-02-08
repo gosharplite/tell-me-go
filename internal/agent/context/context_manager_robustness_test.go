@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -167,7 +168,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	for err := range errors {
 		// Concurrent Prepare calls might collide on the persistence step.
 		// This is expected behavior with the version-based conflict detection.
-		if !IsTransient(err) {
+		if !agenerrors.IsTransient(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -320,7 +321,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	<-summarizeStarted
 	// Concurrent append
-	_ = cm.addContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
+	_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
 	close(summarizeProceed)
 	wg.Wait()
 

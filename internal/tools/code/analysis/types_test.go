@@ -109,13 +109,17 @@ type I2 interface {
 
 func TestTypeManager_ListImplementations(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	code := `package test
 type I interface { M() }
 type S struct{}
 func (s S) M() {}
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	m := NewTypeManager(idx, astutil.NewASTCache(), &mockSecurityProvider{})
@@ -131,14 +135,18 @@ func (s S) M() {}
 
 func TestTypeManager_ListSymbols(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	code := `package p
 func F() {}
 type T struct{}
 var V int
 const C = 1
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	m := NewTypeManager(idx, astutil.NewASTCache(), &mockSecurityProvider{})
@@ -156,13 +164,17 @@ const C = 1
 
 func TestTypeManager_FindUsages(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	code := `package p
 func F() {
 	F()
 }
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	m := NewTypeManager(idx, astutil.NewASTCache(), &mockSecurityProvider{})
@@ -178,11 +190,15 @@ func F() {
 
 func TestTypeManager_FindDefinitions(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	code := `package p
 func MyFunc() {}
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	m := NewTypeManager(idx, astutil.NewASTCache(), &mockSecurityProvider{})
@@ -222,12 +238,16 @@ func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 
 func TestTypeManager_ListSymbols_ExportedOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	code := `package p
 func Exported() {}
 func unexported() {}
 `
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	m := NewTypeManager(idx, astutil.NewASTCache(), &mockSecurityProvider{})
