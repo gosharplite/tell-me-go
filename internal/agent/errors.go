@@ -4,10 +4,7 @@
 package agent
 
 import (
-	"errors"
-
 	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 )
 
 // Re-export types and variables for backward compatibility
@@ -21,37 +18,12 @@ var (
 
 // IsTransient checks if the error should trigger a retry.
 func IsTransient(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Domain-level transient errors (e.g., rate limits)
-	if llm.IsTransient(err) {
-		return true
-	}
-	var ae *agenerrors.AgentError
-	if errors.As(err, &ae) {
-		return errors.Is(ae.Category, ErrTransient)
-	}
-	return false
+	return agenerrors.IsTransient(err)
 }
 
 // IsFatal checks if the error should halt the current turn and session.
 func IsFatal(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Domain-level fatal errors
-	if llm.IsTerminal(err) || llm.IsAuth(err) ||
-		errors.Is(err, llm.ErrBudgetExceeded) ||
-		errors.Is(err, llm.ErrMaxTurnsReached) ||
-		errors.Is(err, llm.ErrContextLimitExceeded) {
-		return true
-	}
-	var ae *agenerrors.AgentError
-	if errors.As(err, &ae) {
-		return errors.Is(ae.Category, ErrFatal) || errors.Is(ae.Category, ErrLogic)
-	}
-	return false
+	return agenerrors.IsFatal(err)
 }
 
 // NewAgentError is a helper for creating categorized errors.

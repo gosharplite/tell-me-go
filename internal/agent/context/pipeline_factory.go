@@ -1,13 +1,12 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
 )
 
 // OptimizationProfile defines the behavior of the context pipeline.
@@ -21,7 +20,7 @@ const (
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
 	Registry   tools.IToolRegistry
-	History    *history.Manager
+	History    HistoryManager
 	Summarizer services.Summarizer
 	Estimator  TokenEstimator
 	Events     events.EventBus

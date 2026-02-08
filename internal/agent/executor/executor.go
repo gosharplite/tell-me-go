@@ -49,10 +49,6 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityMa
 		strategy:           &MarkdownStrategy{},
 	}
 
-	if bus != nil {
-		// Event subscriptions could be added here if needed in the future.
-	}
-
 	return e
 }
 

@@ -4,10 +4,11 @@
 package agent
 
 import (
-	"context"
+	stdctx "context"
 	"fmt"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -23,7 +24,7 @@ import (
 
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
-	Chat(ctx context.Context, s *Session, prompt string) error
+	Chat(ctx stdctx.Context, s *Session, prompt string) error
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetHardBudgetLimit(limit float64)
 	SetTieredThreshold(threshold int)
@@ -48,11 +49,11 @@ type Agent struct {
 	mu            sync.RWMutex
 	gateway       *gateway.ResilientClient
 	engine        *TurnEngine
-	ctxManager    *ContextManager
+	ctxManager    *context.ContextManager
 	registry      tools.IToolRegistry
 	sm            security.ISecurityManager
 	configWatcher *ConfigWatcher
-	strategy      *ContextStrategy
+	strategy      *context.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
@@ -91,7 +92,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 
-	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
 	a := &Agent{
@@ -121,7 +122,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 		a.gateway.SetSystemInstructions(a.config.SystemInstructions)
 	}
 
-	factory := &PipelineFactory{
+	factory := &context.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: summarizer.NewSummarizer(gw, bus),
@@ -129,7 +130,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 		Events:     bus,
 	}
 
-	ctxManager := NewContextManager(strategy, hManager, bus, factory)
+	ctxManager := context.NewContextManager(strategy, hManager, bus, factory)
 	a.ctxManager = ctxManager
 
 	// Initialize engine
@@ -256,7 +257,7 @@ func (a *Agent) SetPrunedTurns(n int) {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
+func (a *Agent) Chat(ctx stdctx.Context, s *Session, prompt string) error {
 	if err := s.History.AddContent(ctx, &llm.Content{
 		Role:  "user",
 		Parts: []*llm.Part{{Text: prompt}},

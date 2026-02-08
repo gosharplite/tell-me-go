@@ -4,24 +4,25 @@
 package agent
 
 import (
-	"context"
+	stdctx "context"
 	"fmt"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager *ContextManager
+	ctxManager *context.ContextManager
 }
 
 // NewInternalTools creates a new InternalTools provider.
-func NewInternalTools(cm *ContextManager) *InternalTools {
+func NewInternalTools(cm *context.ContextManager) *InternalTools {
 	return &InternalTools{ctxManager: cm}
 }
 
 // SummarizeHistory wraps ContextManager.SummarizeRange as a tool.
-func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *InternalTools) SummarizeHistory(ctx stdctx.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
 		Focus string  `json:"focus"`
@@ -47,7 +48,7 @@ func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]in
 }
 
 // ManageHistory manages conversation history by pinning or unpinning specific turns.
-func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *InternalTools) ManageHistory(ctx stdctx.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action string  `json:"action"`
 		Index  float64 `json:"index"`

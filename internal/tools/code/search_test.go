@@ -23,9 +23,9 @@ func TestListTodos(t *testing.T) {
 	tempDir := "/tmp/test"
 
 	// Create some files with TODOs in mock FS
-	fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644)
-	fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644)
-	fs.WriteFile(ctx, filepath.Join(tempDir, "file3.txt"), []byte("No todos here"), 0644)
+	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644)
+	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644)
+	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file3.txt"), []byte("No todos here"), 0644)
 
 	// Authorize path
 	sm.RegisterSafePath(tempDir)

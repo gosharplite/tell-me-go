@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	// Case where last message is a FunctionResponse
-	req := &contextRequest{
+	req := &Request{
 		Turn: 8, // Triggers turn warning (8/10)
 		History: []*llm.Content{
 			{

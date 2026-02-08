@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"

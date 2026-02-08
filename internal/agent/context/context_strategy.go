@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Warning represents a safety or limit message for the model.
@@ -29,9 +28,6 @@ type ContextStrategy struct {
 	contextWindow    int
 	prunedTurns      int
 }
-
-// ToolRegistry defines the interface for accessing tool declarations.
-type ToolRegistry = tools.IToolRegistry
 
 // NewContextStrategy creates a new context strategy.
 func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextStrategy {
@@ -237,4 +233,11 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string 
 // GetCloggedWarning returns a warning message for when summarization fails to reduce context.
 func (cs *ContextStrategy) GetCloggedWarning() string {
 	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to the 'manage_scratchpad' immediately to avoid a session crash.]"
+}
+
+// GetPrunedTurns returns the current pruned turns count (for testing).
+func (cs *ContextStrategy) GetPrunedTurns() int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.prunedTurns
 }

@@ -44,8 +44,8 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 			},
 			wantExit: 1, // ls should fail
 			check: func(t *testing.T, res ExecutionResult) {
-				if !strings.Contains(res.Output, "Errors:") {
-					// Some systems might not write to stderr for this, but ls usually does
+				if res.ExitCode == 0 {
+					t.Errorf("expected non-zero exit code")
 				}
 			},
 		},
@@ -396,14 +396,8 @@ func TestRunPipeline_Advanced(t *testing.T) {
 			}
 
 			if tt.config.OutputFile != "" {
-				content, err := os.ReadFile(tt.config.OutputFile)
-				if err == nil {
-					if tt.checkOutput != nil && !tt.checkOutput(string(content)) {
-						// Note: Output file captures EVERYTHING, while ExecutionResult.Output might be truncated or formatted differently.
-						// Actually, our implementation writes to file BEFORE truncation in RunPipeline.capture?
-						// Let's re-verify the implementation.
-					}
-				}
+				_, _ = os.ReadFile(tt.config.OutputFile)
+				// Note: Output file captures EVERYTHING, while ExecutionResult.Output might be truncated or formatted differently.
 			}
 		})
 	}

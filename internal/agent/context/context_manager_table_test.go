@@ -1,4 +1,4 @@
-package agent
+package context
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
-			req := &contextRequest{
+			req := &Request{
 				History: []*llm.Content{{Role: "user"}},
 			}
 			err := tg.Transform(context.Background(), req)

@@ -1,45 +1,18 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
 	"fmt"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/stretchr/testify/assert"
 )
-
-type mockHistoryManager struct {
-	contents       []*llm.Content
-	setContentsErr error
-}
-
-func (m *mockHistoryManager) GetContents() []*llm.Content {
-	return m.contents
-}
-
-func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
-	if m.setContentsErr != nil {
-		return m.setContentsErr
-	}
-	m.contents = contents
-	return nil
-}
-
-func (m *mockHistoryManager) Snapshot()                    {}
-func (m *mockHistoryManager) Rollback(ctx context.Context) {}
-func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
-	m.contents = append(m.contents, content)
-	return nil
-}
-func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return nil }
-func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
-	return nil
-}
 
 func TestContextManager_PipelineMethods(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
@@ -229,7 +202,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-		return "", nil, NewAgentError(ErrTransient, "transient fail", nil)
+		return "", nil, agenerrors.NewAgentError(agenerrors.ErrTransient, "transient fail", nil)
 	}
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
@@ -253,7 +226,8 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 		return "summary", nil, nil
 	}
-	cm.SummarizeRange(ctx, 1, "")
+	_, _, err = cm.SummarizeRange(ctx, 1, "")
+	assert.NoError(t, err)
 	assert.True(t, received)
 
 	// Case 10: finalizeSummarization fails
@@ -263,7 +237,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	history.setContentsErr = nil
 
 	// Case 11: finalizeSummarization fails (Transient)
-	history.setContentsErr = NewAgentError(ErrTransient, "persist fail transient", nil)
+	history.setContentsErr = agenerrors.NewAgentError(agenerrors.ErrTransient, "persist fail transient", nil)
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
 	history.setContentsErr = nil

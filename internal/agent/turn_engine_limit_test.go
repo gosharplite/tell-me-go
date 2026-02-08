@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -67,21 +68,21 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
 
-	counter := &HeuristicTokenCounter{}
-	strategy := NewContextStrategy(counter, bus)
+	counter := &agentctx.HeuristicTokenCounter{}
+	strategy := agentctx.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
 
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 
 	// Pipeline factory
-	factory := &PipelineFactory{
+	factory := &agentctx.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
 
-	cm := NewContextManager(strategy, h, bus, factory)
+	cm := agentctx.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}

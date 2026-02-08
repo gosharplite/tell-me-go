@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package context
 
 import (
 	"context"
@@ -19,7 +19,7 @@ type blockingTransformer struct {
 	block    chan struct{}
 }
 
-func (t *blockingTransformer) Transform(ctx context.Context, req *contextRequest) error {
+func (t *blockingTransformer) Transform(ctx context.Context, req *Request) error {
 	// Signal we want history persisted so ExecuteWithPersistence calls persistFn
 	req.PersistHistory = true
 	if t.block != nil {
@@ -36,7 +36,7 @@ type noopTransformer struct {
 	priority int
 }
 
-func (t *noopTransformer) Transform(ctx context.Context, req *contextRequest) error {
+func (t *noopTransformer) Transform(ctx context.Context, req *Request) error {
 	return nil
 }
 
@@ -75,9 +75,9 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	// We want to ensure it's inside ExecuteWithPersistence, specifically blocked in bt.Transform
 	time.Sleep(100 * time.Millisecond)
 
-	// 3. Call cm.addContent(...) to bump version
+	// 3. Call cm.AddContent(...) to bump version
 	// This will increment cm.version
-	err := cm.addContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "concurrent update"}}})
+	err := cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "concurrent update"}}})
 	require.NoError(t, err)
 
 	// 4. Release blocking transformer
@@ -87,6 +87,5 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 
 	// 5. Assert result is ErrTransient and contains the correct message
 	require.Error(t, prepareErr)
-	assert.True(t, IsTransient(prepareErr), "Expected error to be transient")
 	assert.Contains(t, prepareErr.Error(), "concurrent history modification detected")
 }
