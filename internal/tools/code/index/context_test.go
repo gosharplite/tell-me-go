@@ -12,8 +12,12 @@ import (
 
 func TestIndexer_Refresh_ContextCancel(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F() {}\n"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := NewIndexer(tmpDir)
 
