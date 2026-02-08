@@ -79,3 +79,47 @@ func (t *InternalTools) ManageHistory(ctx stdctx.Context, args map[string]interf
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Turn %d has been successfully %s.", index, status)}, nil
 }
+
+// RegisterInternal registers the internal tools with the provided registry.
+func RegisterInternal(r tools.IToolRegistry, cm *context.ContextManager) {
+	it := NewInternalTools(cm)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "summarize_history",
+		Description: "Summarizes a specified number of older conversation turns to free up context space.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"turns": {
+					Type:        "NUMBER",
+					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
+				},
+				"focus": {
+					Type:        "STRING",
+					Description: "Optional: Specific aspects to focus on in the summary (e.g., 'architecture decisions').",
+				},
+			},
+			Required: []string{"turns"},
+		},
+	}, it.SummarizeHistory)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "manage_history",
+		Description: "Manages conversation history by pinning or unpinning specific turns to protect them from summarization/pruning.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"action": {
+					Type:        "STRING",
+					Description: "The action to perform: 'pin' or 'unpin'.",
+					Enum:        []string{"pin", "unpin"},
+				},
+				"index": {
+					Type:        "NUMBER",
+					Description: "The 0-based index of the turn to manage.",
+				},
+			},
+			Required: []string{"action", "index"},
+		},
+	}, it.ManageHistory)
+}

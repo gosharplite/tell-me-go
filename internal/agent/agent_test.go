@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
@@ -248,7 +249,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	a.registerInternalTools()
+	RegisterInternal(reg, a.ctxManager)
 
 	// Verify that at least one transformer has the registry
 	// This is verified via behavior in the Prepare phase or by inspecting the pipeline
@@ -430,4 +431,46 @@ func TestAgent_SetPrunedTurns(t *testing.T) {
 			t.Errorf("expected prunedTurns 7, got %d", a.ctxManager.Strategy.GetPrunedTurns())
 		}
 	})
+}
+
+func TestAgent_Reconfiguration(t *testing.T) {
+	client := &MockLLMClient{}
+	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+
+	// Test initial injection via option
+	tracker1 := &MockCostTracker{}
+	a := New(client, h, reg, sm, false,
+		WithSessionCostTracker(tracker1),
+	)
+
+	if a.GetCostTracker() != tracker1 {
+		t.Error("WithSessionCostTracker didn't set tracker")
+	}
+	if a.engine.GetCostTracker() != tracker1 {
+		t.Error("engine didn't receive tracker from WithSessionCostTracker")
+	}
+
+	// Test runtime budget update
+	a.SetHardBudgetLimit(2.50)
+	if a.engine.HardBudgetLimit != 2.50 {
+		t.Errorf("expected Engine HardBudgetLimit 2.50, got %.2f", a.engine.HardBudgetLimit)
+	}
+
+	// Test tracker replacement
+	tracker2 := &MockCostTracker{}
+	a.tracker = tracker2
+	a.applyConfig()
+
+	if a.GetCostTracker() != tracker2 {
+		t.Error("GetCostTracker didn't return updated tracker")
+	}
+	if a.engine.GetCostTracker() != tracker2 {
+		t.Error("engine didn't receive updated tracker after applyConfig")
+	}
+}
+
+type MockCostTracker struct {
+	domain_pricing.ICostTracker
 }

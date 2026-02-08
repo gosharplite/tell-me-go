@@ -55,6 +55,15 @@ func NewContextManager(strategy *ContextStrategy, history services.HistoryManage
 	return cm
 }
 
+// Reconfigure updates the context manager's pipeline based on new limits.
+func (cm *ContextManager) Reconfigure(limits events.Limits) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.Factory != nil {
+		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
+	}
+}
+
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	cm.mu.Lock()

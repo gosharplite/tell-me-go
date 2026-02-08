@@ -139,7 +139,7 @@ func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistr
 		WithCostTracker(a.tracker),
 	)
 
-	a.registerInternalTools()
+	RegisterInternal(reg, ctxManager)
 	a.applyConfig() // Broadcast initial config
 	return a
 }
@@ -149,37 +149,26 @@ func (a *Agent) applyConfig() {
 	a.configWatcher.Refresh(a.config.Model)
 
 	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
-	threshold := a.configWatcher.GetTieredThreshold()
-	window := a.configWatcher.GetContextWindow()
-
-	// Update config from watcher if it changed
 	a.config.Limits.MaxHistoryTokens = tokens
 	a.config.Limits.MaxToolTurns = toolTurns
 	a.config.Limits.MaxHistoryTurns = histTurns
-	a.config.Limits.TieredThreshold = threshold
+	a.config.Limits.TieredThreshold = a.configWatcher.GetTieredThreshold()
 
-	// Update strategy with latest context window
 	if a.strategy != nil {
-		a.strategy.SetContextWindow(window)
+		a.strategy.SetContextWindow(a.configWatcher.GetContextWindow())
 	}
 
-	// Capture values for engine reconfiguration outside of lock
-	model := a.config.Model
-	overrides := a.config.PricingOverrides
-	budget := a.config.HardBudgetLimit
-
-	a.events.Publish(events.ConfigUpdated{
-		Limits: a.config.Limits,
-	})
+	cfg := a.config
+	tracker := a.tracker
 	a.mu.Unlock()
 
-	// Sync engine configuration
+	a.events.Publish(events.ConfigUpdated{Limits: cfg.Limits})
+
 	if a.engine != nil {
-		a.engine.Reconfigure(
-			WithConfig(a.sm, model, overrides),
-			WithHardBudget(budget),
-			WithCostTracker(a.tracker),
-		)
+		a.engine.Reconfigure(cfg, tracker)
+	}
+	if a.ctxManager != nil {
+		a.ctxManager.Reconfigure(cfg.Limits)
 	}
 }
 
@@ -189,48 +178,6 @@ func (a *Agent) Subscribe(sub func(events.Event)) {
 
 func (a *Agent) emit(e events.Event) {
 	a.events.Publish(e)
-}
-
-func (a *Agent) registerInternalTools() {
-	it := NewInternalTools(a.ctxManager)
-	a.registry.Register(&tools.ToolDeclaration{
-		Name:        "summarize_history",
-		Description: "Summarizes a specified number of older conversation turns to free up context space.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"turns": {
-					Type:        "NUMBER",
-					Description: "The number of turns (user+model pairs) to summarize from the beginning of history.",
-				},
-				"focus": {
-					Type:        "STRING",
-					Description: "Optional: Specific aspects to focus on in the summary (e.g., 'architecture decisions').",
-				},
-			},
-			Required: []string{"turns"},
-		},
-	}, it.SummarizeHistory)
-
-	a.registry.Register(&tools.ToolDeclaration{
-		Name:        "manage_history",
-		Description: "Manages conversation history by pinning or unpinning specific turns to protect them from summarization/pruning.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"action": {
-					Type:        "STRING",
-					Description: "The action to perform: 'pin' or 'unpin'.",
-					Enum:        []string{"pin", "unpin"},
-				},
-				"index": {
-					Type:        "NUMBER",
-					Description: "The 0-based index of the turn to manage.",
-				},
-			},
-			Required: []string{"action", "index"},
-		},
-	}, it.ManageHistory)
 }
 
 // SetLimits sets the operational limits for the agent.
@@ -298,7 +245,7 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
 	return func(a *Agent) {
 		a.tracker = tracker
 		if a.engine != nil {
-			a.engine.Reconfigure(WithCostTracker(tracker))
+			a.engine.ApplyOptions(WithCostTracker(tracker))
 		}
 	}
 }
