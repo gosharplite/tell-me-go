@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/agent/ui"
+	agentui "github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -26,8 +26,7 @@ import (
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/ui/input"
-	"github.com/gosharplite/tell-me-go/internal/ui/render"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 func init() {
@@ -83,7 +82,7 @@ func NewCommand(ctx *command.Context) *Command {
 // Execute runs the chat command logic.
 func (c *Command) Execute(ctx context.Context, args []string) error {
 	c.SM.SetInputReader(c.Stdin)
-	capturer := input.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
 
 	opts, fs, cfg, err := c.initializeConfiguration(args)
 	if err != nil {
@@ -116,7 +115,7 @@ func (c *Command) Execute(ctx context.Context, args []string) error {
 	}
 
 	if opts.lastN > 0 {
-		render.History(c.Stdout, hManager, opts.lastN, render.RenderOptions{
+		ui.History(c.Stdout, hManager, opts.lastN, ui.RenderOptions{
 			Raw:          opts.rawOutput,
 			ShowThoughts: cfg.ShowThoughts,
 			UseColor:     capturer.IsTTY(c.Stdout) && !opts.rawOutput,
@@ -224,8 +223,8 @@ func (c *Command) handleNewSession(ctx context.Context, paths *session.Paths, cf
 	}
 }
 
-func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *input.Capturer) {
-	renderer := ui.NewStdUIRenderer(c.SM)
+func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
+	renderer := agentui.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
 	useColor := capturer.IsTTY(c.Stdout) && !opts.rawOutput
 	renderer.SetUseColor(useColor)
@@ -233,7 +232,7 @@ func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, 
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *session.Paths, pruned int, pData pricing.PricingData, capturer *input.Capturer) {
+func (c *Command) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *session.Paths, pruned int, pData pricing.PricingData, capturer *ui.Capturer) {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(cfg.ResolveTieredThreshold(pData))

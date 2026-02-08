@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package colors
+package ui
 
 const (
 	ColorGray       = "\033[0;90m"

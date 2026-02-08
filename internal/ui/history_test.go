@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package render
+package ui
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 func TestHistory_Rendering(t *testing.T) {
@@ -57,7 +56,7 @@ func TestHistory_Rendering(t *testing.T) {
 		History(&buf, h, 10, RenderOptions{Raw: true, UseColor: true})
 
 		output := buf.String()
-		if !strings.Contains(output, colors.ColorBlue) {
+		if !strings.Contains(output, ColorBlue) {
 			t.Errorf("output should contain color codes for user role")
 		}
 	})

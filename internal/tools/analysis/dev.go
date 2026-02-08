@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type devManager struct {
@@ -315,7 +315,7 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
-	fmt.Fprintf(m.stderr, colors.ColorCyan+"[Tool Action] "+format+colors.ColorReset+"\n", a...)
+	fmt.Fprintf(m.stderr, ui.ColorCyan+"[Tool Action] "+format+ui.ColorReset+"\n", a...)
 }
 
 func newDevManager(sm security.SecurityProvider) *devManager {

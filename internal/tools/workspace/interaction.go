@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type InteractionTool struct {
@@ -41,7 +41,7 @@ func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface
 	}
 
 	// Tell-me style: Question in magenta, followed by "Answer > " prompt
-	fmt.Fprintf(os.Stderr, "%s[AI Question] %s%s\n", colors.ColorMagenta, question, colors.ColorReset)
+	fmt.Fprintf(os.Stderr, "%s[AI Question] %s%s\n", ui.ColorMagenta, question, ui.ColorReset)
 	fmt.Fprintf(os.Stderr, "Answer > ")
 
 	s, err := t.sm.ReadLine(ctx)

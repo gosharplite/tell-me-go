@@ -9,7 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type DependencyAnalyzer struct {
@@ -28,7 +28,7 @@ func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	func() {
 		a.SP.TerminalLock()
 		defer a.SP.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Analyzing package dependencies%s\n", colors.ColorCyan, colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] Analyzing package dependencies%s\n", ui.ColorCyan, ui.ColorReset)
 	}()
 
 	format, _ := args["format"].(string)

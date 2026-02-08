@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/shlex"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // CommandValidator handles command validation and security checks.
@@ -271,7 +271,7 @@ func (v *CommandValidator) CheckPathSafety(parts []string) (bool, string) {
 		if _, err := v.sm.IsPathSafe(arg); err != nil {
 			// Some args might not be paths, but we try to check them anyway if they look like paths
 			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
-				fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", colors.ColorRed, err, colors.ColorReset)
+				fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", ui.ColorRed, err, ui.ColorReset)
 				return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 			}
 		}

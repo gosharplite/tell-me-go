@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package input
+package ui
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 	"golang.org/x/term"
 )
 
@@ -77,7 +76,7 @@ func (c *Capturer) Prompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw 
 		return "", fmt.Errorf("empty prompt")
 	}
 
-	c.PrintFeedback(c.Stderr, !raw, colors.ColorGreen,
+	c.PrintFeedback(c.Stderr, !raw, ColorGreen,
 		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
 
 	return prompt, nil
@@ -105,7 +104,7 @@ func (c *Capturer) captureFromPipe(ctx context.Context, initialPrompt string) (s
 }
 
 func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
-	c.PrintFeedback(c.Stdout, useColor, colors.ColorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+	c.PrintFeedback(c.Stdout, useColor, ColorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
 	readChan := make(chan []byte, 1)
 	go func() {
@@ -128,7 +127,7 @@ func (c *Capturer) PrintFeedback(w io.Writer, useColor bool, color, msg string) 
 		defer c.SM.TerminalUnlock()
 	}
 	if useColor && c.IsTTY(w) {
-		fmt.Fprintf(w, "%s%s%s\n", color, msg, colors.ColorReset)
+		fmt.Fprintf(w, "%s%s%s\n", color, msg, ColorReset)
 	} else {
 		fmt.Fprintln(w, msg)
 	}

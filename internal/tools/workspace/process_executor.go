@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // ExecutionConfig defines parameters for command or pipeline execution.
@@ -151,10 +151,10 @@ func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.
 		var content string
 		var feedbackMsg string
 		if isStderr {
-			feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", colors.ColorRed, rawLine, colors.ColorReset)
+			feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", ui.ColorRed, rawLine, ui.ColorReset)
 			content = fmt.Sprintf("[stderr] %s\n", rawLine)
 		} else {
-			feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
+			feedbackMsg = fmt.Sprintf("  %s%s%s\n", ui.ColorGray, rawLine, ui.ColorReset)
 			content = string(lineBuf)
 		}
 
@@ -386,13 +386,13 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 	content := string(rawLine) + "\n"
 	feedbackMsg := ""
 	if feedback != nil {
-		feedbackMsg = fmt.Sprintf("  %s%s%s\n", colors.ColorGray, rawLine, colors.ColorReset)
+		feedbackMsg = fmt.Sprintf("  %s%s%s\n", ui.ColorGray, rawLine, ui.ColorReset)
 	}
 
 	if prefix != "" {
 		content = fmt.Sprintf("%s %s", prefix, content)
 		if feedback != nil {
-			feedbackMsg = fmt.Sprintf("  %s%s %s%s\n", colors.ColorRed, prefix, rawLine, colors.ColorReset)
+			feedbackMsg = fmt.Sprintf("  %s%s %s%s\n", ui.ColorRed, prefix, rawLine, ui.ColorReset)
 		}
 	}
 

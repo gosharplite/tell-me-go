@@ -16,7 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type NetworkTool struct {
@@ -49,7 +49,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	func() {
 		t.sm.TerminalLock()
 		defer t.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] HTTP %s %s%s\n", colors.ColorCyan, method, url, colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%s[Tool Action] HTTP %s %s%s\n", ui.ColorCyan, method, url, ui.ColorReset)
 	}()
 
 	var reqBody io.Reader

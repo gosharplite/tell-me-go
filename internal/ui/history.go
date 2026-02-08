@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package render
+package ui
 
 import (
 	"fmt"
@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
 // RenderOptions defines the options for rendering chat history.
@@ -71,11 +70,11 @@ type historyRenderer struct {
 func (r *historyRenderer) renderHeader(role string) {
 	roleStr := "[" + strings.ToUpper(role) + "]"
 	if r.useColor {
-		roleColor := colors.ColorBlue
+		roleColor := ColorBlue
 		if role != "user" {
-			roleColor = colors.ColorMagenta
+			roleColor = ColorMagenta
 		}
-		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colors.ColorReset)
+		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, ColorReset)
 	} else {
 		fmt.Fprintln(r.writer, roleStr)
 	}
@@ -107,14 +106,14 @@ func (r *historyRenderer) renderPart(p llm.Part) {
 	}
 	if p.FunctionCall != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colors.ColorCyan, p.FunctionCall.Name, colors.ColorReset)
+			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", ColorCyan, p.FunctionCall.Name, ColorReset)
 		} else {
 			fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
 		}
 	}
 	if p.FunctionResponse != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colors.ColorCyan, p.FunctionResponse.Name, colors.ColorReset)
+			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", ColorCyan, p.FunctionResponse.Name, ColorReset)
 		} else {
 			fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
 		}

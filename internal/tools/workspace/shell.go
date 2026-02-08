@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type ShellTool struct {
@@ -179,24 +179,24 @@ func (t *ShellTool) handleAuthResult(approved bool, err error, label string) (to
 
 func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved (bypass_confirmation enabled).%s\n", colors.ColorGreen, label, colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved (bypass_confirmation enabled).%s\n", ui.ColorGreen, label, ui.ColorReset)
 		return true, nil
 	}
 	if isSafe {
-		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Safe %s detected.%s\n", colors.ColorGreen, strings.ToLower(label), colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Safe %s detected.%s\n", ui.ColorGreen, strings.ToLower(label), ui.ColorReset)
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "%sExecute %s: %s%s\n", colors.ColorCyan, label, colors.ColorReset, detail)
+	fmt.Fprintf(os.Stderr, "%sExecute %s: %s%s\n", ui.ColorCyan, label, ui.ColorReset, detail)
 	if reason != "" {
-		fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", colors.ColorYellow, reason, colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
 	}
 	if outputFile != "" {
 		redir := ">"
 		if append {
 			redir = ">>"
 		}
-		fmt.Fprintf(os.Stderr, "%sRedirect: %s %s%s\n", colors.ColorBlue, redir, outputFile, colors.ColorReset)
+		fmt.Fprintf(os.Stderr, "%sRedirect: %s %s%s\n", ui.ColorBlue, redir, outputFile, ui.ColorReset)
 	}
 	fmt.Fprintf(os.Stderr, "⚠️  Execute this %s? (y/N) ", strings.ToLower(label))
 
@@ -209,10 +209,10 @@ func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string,
 }
 
 func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
-	fmt.Fprintf(os.Stderr, "%s%s... (Output shown below)%s\n", colors.ColorGray, msg, colors.ColorReset)
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", colors.ColorGray, colors.ColorReset)
+	fmt.Fprintf(os.Stderr, "%s%s... (Output shown below)%s\n", ui.ColorGray, msg, ui.ColorReset)
+	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
 	res, err := runFn()
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", colors.ColorGray, colors.ColorReset)
+	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
 	return res, err
 }
 

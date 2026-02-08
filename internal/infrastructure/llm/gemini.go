@@ -16,7 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
-	"github.com/gosharplite/tell-me-go/internal/ui/colors"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 	"google.golang.org/genai"
 )
 
@@ -217,7 +217,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 		if actualBudget > 0 {
 			maxBudget := maxThinkingBudget
 			if maxBudget > 0 && actualBudget > maxBudget {
-				fmt.Fprintf(os.Stderr, "%s[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.%s\n", colors.ColorYellow, actualBudget, model, maxBudget, maxBudget, colors.ColorReset)
+				fmt.Fprintf(os.Stderr, "%s[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.%s\n", ui.ColorYellow, actualBudget, model, maxBudget, maxBudget, ui.ColorReset)
 				actualBudget = maxBudget
 			}
 		}
