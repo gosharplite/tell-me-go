@@ -36,45 +36,67 @@ func ToSDKPart(ctx context.Context, p *llm.Part, resolver llm.AssetResolver) *ge
 		Text:             p.Text,
 		Thought:          p.Thought,
 		ThoughtSignature: p.ThoughtSignature,
+		InlineData:       toSDKBlob(p.InlineData),
+		FunctionCall:     toSDKFunctionCall(p.FunctionCall),
+		FunctionResponse: toSDKFunctionResponse(p.FunctionResponse),
 	}
 
-	if p.InlineData != nil {
-		res.InlineData = &genai.Blob{
-			MIMEType: p.InlineData.MIMEType,
-			Data:     p.InlineData.Data,
-		}
-	}
-
-	if p.FunctionCall != nil {
-		res.FunctionCall = &genai.FunctionCall{
-			Name: p.FunctionCall.Name,
-			Args: p.FunctionCall.Args,
-		}
-	}
-
-	if p.FunctionResponse != nil {
-		res.FunctionResponse = &genai.FunctionResponse{
-			Name:     p.FunctionResponse.Name,
-			Response: p.FunctionResponse.Response,
-		}
-	}
-
-	// Lazy hydration: if asset ID is present and data is missing, resolve it.
-	if p.AssetID != "" && resolver != nil && (res.InlineData == nil || len(res.InlineData.Data) == 0) {
-		data, err := resolver.Resolve(ctx, p.AssetID)
-		if err == nil {
-			if res.InlineData == nil {
-				res.InlineData = &genai.Blob{}
-			} else {
-				// Shallow copy the blob to avoid mutating the original in the internal Part
-				blobClone := *res.InlineData
-				res.InlineData = &blobClone
-			}
-			res.InlineData.Data = data
-		}
-	}
-
+	hydrateAsset(ctx, p, res, resolver)
 	return res
+}
+
+func toSDKBlob(b *llm.Blob) *genai.Blob {
+	if b == nil {
+		return nil
+	}
+	return &genai.Blob{
+		MIMEType: b.MIMEType,
+		Data:     b.Data,
+	}
+}
+
+func toSDKFunctionCall(f *llm.FunctionCall) *genai.FunctionCall {
+	if f == nil {
+		return nil
+	}
+	return &genai.FunctionCall{
+		Name: f.Name,
+		Args: f.Args,
+	}
+}
+
+func toSDKFunctionResponse(f *llm.FunctionResponse) *genai.FunctionResponse {
+	if f == nil {
+		return nil
+	}
+	return &genai.FunctionResponse{
+		Name:     f.Name,
+		Response: f.Response,
+	}
+}
+
+func hydrateAsset(ctx context.Context, p *llm.Part, res *genai.Part, resolver llm.AssetResolver) {
+	if p.AssetID == "" || resolver == nil {
+		return
+	}
+	// Skip if data is already present
+	if res.InlineData != nil && len(res.InlineData.Data) > 0 {
+		return
+	}
+
+	data, err := resolver.Resolve(ctx, p.AssetID)
+	if err != nil {
+		return
+	}
+
+	if res.InlineData == nil {
+		res.InlineData = &genai.Blob{}
+	} else {
+		// Shallow copy the blob to avoid mutating the original in the internal Part
+		blobClone := *res.InlineData
+		res.InlineData = &blobClone
+	}
+	res.InlineData.Data = data
 }
 
 // FromSDKContent converts genai.Content to internal Content.
@@ -96,32 +118,42 @@ func FromSDKPart(p *genai.Part) *llm.Part {
 	if p == nil {
 		return nil
 	}
-	res := &llm.Part{
+	return &llm.Part{
 		Text:             p.Text,
 		Thought:          p.Thought,
 		ThoughtSignature: p.ThoughtSignature,
+		InlineData:       fromSDKBlob(p.InlineData),
+		FunctionCall:     fromSDKFunctionCall(p.FunctionCall),
+		FunctionResponse: fromSDKFunctionResponse(p.FunctionResponse),
 	}
+}
 
-	if p.InlineData != nil {
-		res.InlineData = &llm.Blob{
-			MIMEType: p.InlineData.MIMEType,
-			Data:     p.InlineData.Data,
-		}
+func fromSDKBlob(b *genai.Blob) *llm.Blob {
+	if b == nil {
+		return nil
 	}
-
-	if p.FunctionCall != nil {
-		res.FunctionCall = &llm.FunctionCall{
-			Name: p.FunctionCall.Name,
-			Args: p.FunctionCall.Args,
-		}
+	return &llm.Blob{
+		MIMEType: b.MIMEType,
+		Data:     b.Data,
 	}
+}
 
-	if p.FunctionResponse != nil {
-		res.FunctionResponse = &llm.FunctionResponse{
-			Name:     p.FunctionResponse.Name,
-			Response: p.FunctionResponse.Response,
-		}
+func fromSDKFunctionCall(f *genai.FunctionCall) *llm.FunctionCall {
+	if f == nil {
+		return nil
 	}
+	return &llm.FunctionCall{
+		Name: f.Name,
+		Args: f.Args,
+	}
+}
 
-	return res
+func fromSDKFunctionResponse(f *genai.FunctionResponse) *llm.FunctionResponse {
+	if f == nil {
+		return nil
+	}
+	return &llm.FunctionResponse{
+		Name:     f.Name,
+		Response: f.Response,
+	}
 }
