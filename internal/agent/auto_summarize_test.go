@@ -42,7 +42,9 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Auto-summary content"}}}},
 			},
 		}
-		json.NewEncoder(w).Encode(apiResp)
+		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -110,7 +112,9 @@ func TestAutoSummarize_Logging(t *testing.T) {
 				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Summary"}}}},
 			},
 		}
-		json.NewEncoder(w).Encode(apiResp)
+		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -171,7 +175,9 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Summary"}}}},
 			},
 		}
-		json.NewEncoder(w).Encode(apiResp)
+		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -236,7 +242,9 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Compressed history summary"}}}},
 			},
 		}
-		json.NewEncoder(w).Encode(apiResp)
+		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 

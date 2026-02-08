@@ -60,7 +60,9 @@ func TestSearchToolSelection(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				var req map[string]interface{}
-				json.Unmarshal(body, &req)
+				if err := json.Unmarshal(body, &req); err != nil {
+					t.Errorf("failed to unmarshal request body: %v", err)
+				}
 				if tools, ok := req["tools"].([]interface{}); ok {
 					capturer.Set(tools)
 				}
@@ -69,7 +71,9 @@ func TestSearchToolSelection(t *testing.T) {
 					// The SDK might complain about empty stream but we capture tools.
 					w.WriteHeader(http.StatusOK)
 				} else {
-					w.Write([]byte(`{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}`))
+					if _, err := w.Write([]byte(`{"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}`)); err != nil {
+						t.Errorf("failed to write response: %v", err)
+					}
 				}
 			}))
 			defer server.Close()

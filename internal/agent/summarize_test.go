@@ -99,7 +99,9 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 						TotalTokenCount:      150,
 					},
 				}
-				json.NewEncoder(w).Encode(apiResp)
+				if err := json.NewEncoder(w).Encode(apiResp); err != nil {
+					t.Errorf("failed to encode response: %v", err)
+				}
 			}))
 			defer server.Close()
 
