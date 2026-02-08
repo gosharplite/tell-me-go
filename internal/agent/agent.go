@@ -13,13 +13,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
-	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -88,7 +88,7 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
+func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 
@@ -125,7 +125,7 @@ func New(client llm.LLMClient, hManager services.HistoryManager, reg tools.ITool
 	factory := &context.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
-		Summarizer: summarizer.NewSummarizer(gw, bus),
+		Summarizer: llm.NewSummarizer(gw, bus),
 		Estimator:  strategy,
 		Events:     bus,
 	}
@@ -205,9 +205,9 @@ func (a *Agent) SetPrunedTurns(n int) {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx stdctx.Context, s *Session, prompt string) error {
-	if err := s.History.AddContent(ctx, &llm.Content{
+	if err := s.History.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
-		Parts: []*llm.Part{{Text: prompt}},
+		Parts: []*domain_llm.Part{{Text: prompt}},
 	}); err != nil {
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}

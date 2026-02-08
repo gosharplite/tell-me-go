@@ -11,10 +11,10 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
@@ -23,9 +23,9 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test_tool"}}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "call tool"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{FunctionCall: &domain_llm.FunctionCall{Name: "test_tool"}}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{FunctionResponse: &domain_llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "ok"}}}}})
 
 	reg := &mockToolRegistry{}
 	bus := &events.SimpleEventBus{}
@@ -126,8 +126,8 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 	// 1. Fill history with 10 messages (5 turns)
 	for i := 0; i < 5; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "user"}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "model"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "user"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "model"}}})
 	}
 
 	bus := events.NewCountingEventBus()
@@ -167,7 +167,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	for err := range errors {
 		// Concurrent Prepare calls might collide on the persistence step.
 		// This is expected behavior with the version-based conflict detection.
-		if !llm.IsTransient(err) {
+		if !domain_llm.IsTransient(err) {
 			errs = append(errs, err)
 		}
 	}
@@ -192,16 +192,16 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	// Add 4 messages (2 turns)
 	for i := 0; i < 2; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
 	// Test case: Exactly below threshold (0.9 * contextWindow)
 	window := strategy.GetContextWindow()
 	counter.tokens = int(float64(window) * 0.89)
 	cm.Summarizer = &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-			return "summary", &llm.Metrics{}, nil
+		summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
+			return "summary", &domain_llm.Metrics{}, nil
 		},
 	}
 
@@ -214,8 +214,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
 	hManager2 := history.NewManager(tmpDir + "/history2.json")
 	for i := 0; i < 2; i++ {
-		_ = hManager2.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
-		_ = hManager2.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
+		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 	cm2 := NewContextManager(strategy, hManager2, nil, nil)
 	cm2.Summarizer = &mockSummarizer{}
@@ -236,8 +236,8 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	ctx := context.Background()
 
 	// Initial history: 1 turn
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "hi"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "hello"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "hi"}}})
 
 	counter := &mockTokenCounter{tokens: 100}
 	strategy := NewContextStrategy(counter, nil)
@@ -288,8 +288,8 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	// Initial history: 4 turns (8 messages)
 	for i := 0; i < 4; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "msg"}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
 	}
 
 	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
@@ -303,10 +303,10 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	summarizeProceed := make(chan struct{})
 
 	cm.Summarizer = &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 			close(summarizeStarted)
 			<-summarizeProceed
-			return "Safe Summary", &llm.Metrics{}, nil
+			return "Safe Summary", &domain_llm.Metrics{}, nil
 		},
 	}
 
@@ -320,7 +320,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	<-summarizeStarted
 	// Concurrent append
-	_ = cm.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "new turn"}}})
+	_ = cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "new turn"}}})
 	close(summarizeProceed)
 	wg.Wait()
 
@@ -336,10 +336,10 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	summarizeProceed = make(chan struct{})
 
 	cm.Summarizer = &mockSummarizer{
-		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+		summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
 			close(summarizeStarted)
 			<-summarizeProceed
-			return "Unsafe Summary", &llm.Metrics{}, nil
+			return "Unsafe Summary", &domain_llm.Metrics{}, nil
 		},
 	}
 
@@ -369,48 +369,48 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	}
 }
 
-func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*llm.Content) {
+func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(tmpDir + "/history.json")
-	capturedInput := new([]*llm.Content)
+	capturedInput := new([]*domain_llm.Content)
 	g := &mockGateway{
-		sendChatFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		sendChatFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			*capturedInput = input
-			return &llm.Content{Parts: []*llm.Part{{Text: "Summary"}}}, &llm.Metrics{}, nil
+			return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
 		},
 	}
 	bus := &events.SimpleEventBus{}
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
-	cm.Summarizer = summarizer.NewSummarizer(gateway.NewResilientClient(g, true), bus)
+	cm.Summarizer = llm.NewSummarizer(gateway.NewResilientClient(g, true), bus)
 	return cm, capturedInput
 }
 
-func createTestSubset() []*llm.Content {
-	return []*llm.Content{
+func createTestSubset() []*domain_llm.Content {
+	return []*domain_llm.Content{
 		{
 			Role: "model",
-			Parts: []*llm.Part{
-				{FunctionCall: &llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
-				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			Parts: []*domain_llm.Part{
+				{FunctionCall: &domain_llm.FunctionCall{Name: "tool", Args: map[string]interface{}{"a": 1}}},
+				{InlineData: &domain_llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
 			},
 		},
 		{
 			Role: "user",
-			Parts: []*llm.Part{
-				{FunctionResponse: &llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
+			Parts: []*domain_llm.Part{
+				{FunctionResponse: &domain_llm.FunctionResponse{Name: "tool", Response: map[string]interface{}{"result": "done"}}},
 			},
 		},
 	}
 }
 
-func verifyExecuteSummarize(t *testing.T, cm *ContextManager, subset []*llm.Content, capturedInput *[]*llm.Content) {
+func verifyExecuteSummarize(t *testing.T, cm *ContextManager, subset []*domain_llm.Content, capturedInput *[]*domain_llm.Content) {
 	_, _, _ = cm.Summarizer.Summarize(context.Background(), subset, "test focus")
 	if len(*capturedInput) == 0 {
 		t.Fatal("Generate was not called")
 	}
 }
 
-func verifyPayloadIntegrity(t *testing.T, capturedInput *[]*llm.Content) {
+func verifyPayloadIntegrity(t *testing.T, capturedInput *[]*domain_llm.Content) {
 	for i, content := range *capturedInput {
 		// Last one is the prompt
 		if i == len(*capturedInput)-1 {
@@ -427,7 +427,7 @@ func verifyPayloadIntegrity(t *testing.T, capturedInput *[]*llm.Content) {
 	}
 }
 
-func verifyInputTransformation(t *testing.T, capturedInput *[]*llm.Content) {
+func verifyInputTransformation(t *testing.T, capturedInput *[]*domain_llm.Content) {
 	modelTurn := (*capturedInput)[0]
 	userTurn := (*capturedInput)[1]
 
@@ -442,7 +442,7 @@ func verifyInputTransformation(t *testing.T, capturedInput *[]*llm.Content) {
 	}
 }
 
-func verifyToolCallMapping(t *testing.T, capturedInput *[]*llm.Content) {
+func verifyToolCallMapping(t *testing.T, capturedInput *[]*domain_llm.Content) {
 	modelTurn := (*capturedInput)[0]
 	found := false
 	for _, p := range modelTurn.Parts {
@@ -456,7 +456,7 @@ func verifyToolCallMapping(t *testing.T, capturedInput *[]*llm.Content) {
 	}
 }
 
-func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*llm.Content) {
+func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content) {
 	modelTurn := (*capturedInput)[0]
 	found := false
 	for _, p := range modelTurn.Parts {

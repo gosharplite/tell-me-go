@@ -6,6 +6,7 @@
 package tools
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -26,7 +27,8 @@ func RegisterAll(
 	model string,
 	mode string,
 	pricingOverrides map[string]pricing.ModelPricing,
-	gateway tools.AgentGateway,
+	client llm.LLMClient,
+	assetsDir string,
 ) {
 	workspace.Register(r, sm, &tools.RealExecutor{})
 	framework.RegisterState(r, sm, outputDir)
@@ -34,7 +36,7 @@ func RegisterAll(
 	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm)
 	network.Register(r, sm)
-	media.Register(r, sm, gateway)
+	media.Register(r, sm, client, assetsDir)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "generate_mermaid_diagram",

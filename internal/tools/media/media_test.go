@@ -5,83 +5,71 @@ package media
 
 import (
 	"context"
-	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
-type mockAgentGateway struct {
-	generateImageFunc func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	readImageFunc     func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+type mockLLMClient struct {
+	llm.LLMClient
+	generateImagesFunc func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 }
 
-func (m *mockAgentGateway) GenerateImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	if m.generateImageFunc != nil {
-		return m.generateImageFunc(ctx, args)
+func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	if m.generateImagesFunc != nil {
+		return m.generateImagesFunc(ctx, model, prompt, mimeType)
 	}
-	return tools.ToolResult{}, nil
-}
-
-func (m *mockAgentGateway) ReadImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	if m.readImageFunc != nil {
-		return m.readImageFunc(ctx, args)
-	}
-	return tools.ToolResult{}, nil
+	return nil, nil
 }
 
 func TestMediaTools(t *testing.T) {
 	ctx := context.Background()
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
-	gateway := &mockAgentGateway{
-		generateImageFunc: func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-			return tools.ToolResult{Text: "image generated"}, nil
-		},
-		readImageFunc: func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-			return tools.ToolResult{Text: "image read"}, nil
+	client := &mockLLMClient{
+		generateImagesFunc: func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+			return [][]byte{[]byte("fake-image")}, nil
 		},
 	}
 
-	Register(r, sm, gateway)
+	Register(r, sm, client, t.TempDir())
 
 	// Test create_image
 	res, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
 	if err != nil {
 		t.Fatalf("create_image failed: %v", err)
 	}
-	if res.Text != "image generated" {
-		t.Errorf("expected image generated, got %s", res.Text)
+	if len(res.BinaryData) == 0 {
+		t.Errorf("expected binary data, got none")
 	}
 
-	// Test read_image
-	res, err = r.Execute(ctx, "read_image", map[string]interface{}{"filepath": "test.png"})
+	// Test read_image - need a real file
+	tmpFile := filepath.Join(t.TempDir(), "test.png")
+	_ = os.WriteFile(tmpFile, []byte("fake-image"), 0644)
+
+	res, err = r.Execute(ctx, "read_image", map[string]interface{}{"filepath": tmpFile})
 	if err != nil {
 		t.Fatalf("read_image failed: %v", err)
 	}
-	if res.Text != "image read" {
-		t.Errorf("expected image read, got %s", res.Text)
+	if len(res.BinaryData) == 0 {
+		t.Errorf("expected binary data, got none")
 	}
 }
 
-func TestMediaTools_NoGateway(t *testing.T) {
+func TestMediaTools_NoClient(t *testing.T) {
 	ctx := context.Background()
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 
-	Register(r, sm, nil)
+	Register(r, sm, nil, "")
 
 	// Test create_image
 	_, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
-	if !errors.Is(err, tools.ErrNotImplemented) {
-		t.Errorf("expected ErrNotImplemented, got %v", err)
-	}
-
-	// Test read_image
-	_, err = r.Execute(ctx, "read_image", map[string]interface{}{"filepath": "test.png"})
-	if !errors.Is(err, tools.ErrNotImplemented) {
-		t.Errorf("expected ErrNotImplemented, got %v", err)
+	if err == nil {
+		t.Errorf("expected error, got nil")
 	}
 }

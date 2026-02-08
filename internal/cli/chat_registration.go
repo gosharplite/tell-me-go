@@ -10,15 +10,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
-	mediasvc "github.com/gosharplite/tell-me-go/internal/services/media"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *session.Paths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
 	reg := registry.New()
-
-	gateway := mediasvc.NewService(client, filepath.Join(c.HomeDir, "assets/generated"))
 
 	tools.RegisterAll(
 		reg,
@@ -28,7 +25,8 @@ func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, path
 		cfg.Model,
 		cfg.Mode,
 		pricingOverrides,
-		gateway,
+		client,
+		filepath.Join(c.HomeDir, "assets/generated"),
 	)
 
 	return reg

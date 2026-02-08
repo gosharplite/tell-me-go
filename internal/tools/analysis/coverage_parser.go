@@ -33,7 +33,7 @@ type classificationRule struct {
 }
 
 var (
-	businessLogicPaths = []string{"internal/service", "internal/services", "internal/domain", "internal/usecase", "internal/agent"}
+	businessLogicPaths = []string{"internal/domain", "internal/usecase", "internal/agent"}
 	adapterPaths       = []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth"}
 
 	classificationRules = []classificationRule{

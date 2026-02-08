@@ -38,7 +38,6 @@ The project is organized into the following top-level directories:
         - `internal/infrastructure/pricing`: Cost calculation logic.
     - `internal/tools`: High-level agent capabilities (Analysis, Workspace, Media).
     - `internal/ui`: Flat UI rendering and interaction layer.
-    - `internal/services`: High-level business services (Media processing, Summarizer).
 - **`configs/`**: Storage for default configuration templates (YAML).
 - **`SOP/`**: Project governance and process documentation.
 - **`assets/`**: Static assets like pricing data.
@@ -75,7 +74,6 @@ tell-me-go/
 │   │   ├── pricing/      # Cost Calculation
 │   │   ├── security/     # Security Guardrails
 │   │   └── storage/      # FS Utilities & Assets
-│   ├── services/         # Business Services
 │   ├── tools/            # Agent Capabilities
 │   └── ui/               # Flat UI Layer
 ├── configs/              # Templates

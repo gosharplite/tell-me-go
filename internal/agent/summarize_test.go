@@ -24,7 +24,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"google.golang.org/genai"
 )
@@ -238,7 +237,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}
-	summarizerImpl := summarizer.NewSummarizer(mockG, bus)
+	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
 	cm := &agentctx.ContextManager{
 		Strategy:   strategy,
