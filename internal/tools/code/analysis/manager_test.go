@@ -13,8 +13,12 @@ import (
 
 func TestAnalysisManager_Delegation(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\ngo 1.24"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F(){}"), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\ngo 1.24"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F(){}"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	idx, _ := index.NewIndexer(tmpDir)
 	cache := astutil.NewASTCache()
