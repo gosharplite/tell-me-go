@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // fileProcessor is a callback function for processing a file during a walk.

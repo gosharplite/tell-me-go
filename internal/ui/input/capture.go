@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 	"golang.org/x/term"
 )
@@ -27,11 +27,11 @@ type Capturer struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
-	SM     security.ISecurityManager
+	SM     domain_security.ISecurityManager
 }
 
 // NewCapturer creates a new Capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm security.ISecurityManager) *Capturer {
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager) *Capturer {
 	return &Capturer{
 		Stdin:  stdin,
 		Stdout: stdout,

@@ -10,7 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestStreamResponse(t *testing.T) {

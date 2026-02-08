@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
@@ -51,7 +51,7 @@ type Agent struct {
 	engine        *TurnEngine
 	ctxManager    *context.ContextManager
 	registry      tools.IToolRegistry
-	sm            security.ISecurityManager
+	sm            domain_security.ISecurityManager
 	configWatcher *ConfigWatcher
 	strategy      *context.ContextStrategy
 	executor      *executor.ToolExecutor
@@ -88,7 +88,7 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
+func New(client llm.LLMClient, hManager *history.Manager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
 	gw := gateway.NewResilientClient(client, disableStreaming)
 

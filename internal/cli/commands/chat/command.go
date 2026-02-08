@@ -23,7 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
-	internal_security "github.com/gosharplite/tell-me-go/internal/security"
+	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/session"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/ui/input"

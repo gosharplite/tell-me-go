@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/require"
 )
 

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 

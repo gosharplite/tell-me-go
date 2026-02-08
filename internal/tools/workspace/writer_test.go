@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {

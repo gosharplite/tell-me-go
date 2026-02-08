@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -29,7 +29,7 @@ type toolExecResult struct {
 type ToolExecutor struct {
 	mu                 sync.RWMutex
 	registry           domaintools.IToolRegistry
-	sm                 security.ISecurityManager
+	sm                 domain_security.ISecurityManager
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -38,7 +38,7 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,

@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	security_impl "github.com/gosharplite/tell-me-go/internal/security"
+	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 

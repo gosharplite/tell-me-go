@@ -12,7 +12,7 @@ import (
 	"os/signal"
 
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // App represents the tell-me-go application.

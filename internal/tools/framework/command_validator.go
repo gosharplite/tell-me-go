@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/shlex"
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 

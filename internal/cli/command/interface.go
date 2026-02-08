@@ -7,7 +7,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // Context provides shared dependencies for commands.

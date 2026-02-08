@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
@@ -154,7 +154,7 @@ type TurnEngine struct {
 	hooks            []turnHook
 	retryPolicy      RetryPolicy
 	clock            Clock
-	sm               security.ISecurityManager
+	sm               domain_security.ISecurityManager
 	model            string
 	pricingOverrides map[string]pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
@@ -215,7 +215,7 @@ func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
 }
 
 // WithConfig sets the security and usage configuration for the engine.
-func WithConfig(sm security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
+func WithConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
 		e.sm = sm
 		e.model = model

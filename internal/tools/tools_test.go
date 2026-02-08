@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
