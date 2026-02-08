@@ -188,7 +188,9 @@ func TestUndoFileChange(t *testing.T) {
 	path := filepath.Join(tempDir, "undo.txt")
 	content1 := "initial"
 	content2 := "modified"
-	os.WriteFile(path, []byte(content1), 0644)
+	if err := os.WriteFile(path, []byte(content1), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
@@ -231,7 +233,9 @@ func TestUndoFileChange(t *testing.T) {
 func TestReplaceText_NotFound(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "test.txt")
-	os.WriteFile(path, []byte("content"), 0644)
+	if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
