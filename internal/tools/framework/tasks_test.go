@@ -12,12 +12,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestTaskStore(t *testing.T) {
 	ctx := context.Background()
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 
 	t.Run("Add and List Tasks", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -173,7 +173,7 @@ func TestTaskStore(t *testing.T) {
 func TestTaskStore_Concurrency(t *testing.T) {
 	tempDir := t.TempDir()
 	tasksFile := filepath.Join(tempDir, "stress.json")
-	store := NewTaskStore(fsutil.DefaultFileSystem, tasksFile)
+	store := NewTaskStore(storage.DefaultFileSystem, tasksFile)
 	ctx := context.Background()
 
 	const workers = 100
@@ -242,7 +242,7 @@ func TestTaskStore_Concurrency(t *testing.T) {
 	}
 
 	// Verify disk file
-	data, err := fsutil.DefaultFileSystem.ReadFile(ctx, tasksFile)
+	data, err := storage.DefaultFileSystem.ReadFile(ctx, tasksFile)
 	if err != nil {
 		t.Fatalf("Failed to read tasks file: %v", err)
 	}

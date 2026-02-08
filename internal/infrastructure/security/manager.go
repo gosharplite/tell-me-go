@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.
@@ -106,7 +106,7 @@ func (sm *SecurityManager) SaveBypassState(ctx context.Context) {
 	if active {
 		val = "true"
 	}
-	_ = fsutil.AtomicWrite(ctx, file, []byte(val), 0644)
+	_ = storage.AtomicWrite(ctx, file, []byte(val), 0644)
 }
 
 // SetBypassActive sets the bypass state.

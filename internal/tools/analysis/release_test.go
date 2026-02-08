@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type mockFileSystem struct {
-	fsutil.FileSystem
+	storage.FileSystem
 	files map[string][]byte
 }
 
@@ -28,7 +28,7 @@ func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, err
 	return nil, os.ErrNotExist
 }
 
-func (m *mockFileSystem) Walk(ctx context.Context, root string, fn fsutil.WalkFunc) error {
+func (m *mockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
 	for path, data := range m.files {
 		fullPath := path
 		if root != "." && !filepath.IsAbs(path) {

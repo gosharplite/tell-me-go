@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestScratchpadStore(t *testing.T) {
 	ctx := context.Background()
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 
 	t.Run("Write and Read", func(t *testing.T) {
 		tempDir := t.TempDir()
@@ -129,7 +129,7 @@ func TestScratchpadStore(t *testing.T) {
 func TestScratchpadStore_Concurrency(t *testing.T) {
 	tempDir := t.TempDir()
 	scratchFile := filepath.Join(tempDir, "stress_scratch.md")
-	store := NewScratchpadStore(fsutil.DefaultFileSystem, scratchFile)
+	store := NewScratchpadStore(storage.DefaultFileSystem, scratchFile)
 	ctx := context.Background()
 
 	const workers = 100
@@ -179,7 +179,7 @@ func TestScratchpadStore_Concurrency(t *testing.T) {
 	}
 
 	// Verify disk file
-	data, err := fsutil.DefaultFileSystem.ReadFile(ctx, scratchFile)
+	data, err := storage.DefaultFileSystem.ReadFile(ctx, scratchFile)
 	if err != nil {
 		t.Fatalf("Failed to read scratchpad file: %v", err)
 	}

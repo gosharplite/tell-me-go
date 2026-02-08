@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestConfigStore(t *testing.T) {
 	ctx := context.Background()
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 
 	t.Run("Set and Get Config", func(t *testing.T) {
 		tempDir := t.TempDir()

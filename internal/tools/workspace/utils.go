@@ -14,15 +14,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // fileProcessor is a callback function for processing a file during a walk.
 type fileProcessor func(filePath string) error
 
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
-func walkAndProcess(ctx context.Context, sm *security.SecurityManager, fs fsutil.FileSystem, path string, fn fileProcessor) error {
+func walkAndProcess(ctx context.Context, sm *security.SecurityManager, fs storage.FileSystem, path string, fn fileProcessor) error {
 	if path == "" {
 		path = "."
 	}
@@ -52,7 +52,7 @@ func walkAndProcess(ctx context.Context, sm *security.SecurityManager, fs fsutil
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs fsutil.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
+func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs storage.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -85,7 +85,7 @@ func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs fsut
 }
 
 type searchPipeline struct {
-	fs          fsutil.FileSystem
+	fs          storage.FileSystem
 	matcher     func(path, line string) bool
 	limit       int
 	pathsChan   chan string
@@ -245,7 +245,7 @@ func (p *searchPipeline) handleDone(results []string, finalErr error) ([]string,
 }
 
 // checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.
-func checkBinary(file fsutil.File) (bool, error) {
+func checkBinary(file storage.File) (bool, error) {
 	buf := make([]byte, 1024)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
@@ -254,7 +254,7 @@ func checkBinary(file fsutil.File) (bool, error) {
 	if _, err := file.Seek(0, 0); err != nil {
 		return false, err
 	}
-	return fsutil.IsBinary(buf[:n]), nil
+	return storage.IsBinary(buf[:n]), nil
 }
 
 func isIgnoredDir(name string) bool {

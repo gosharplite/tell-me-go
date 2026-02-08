@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"google.golang.org/genai"
 )
 
@@ -349,7 +349,7 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 		t.Error("GetResolver() should not be nil for JSONLStore")
 	}
 
-	fs := &fsutil.OSFileSystem{}
+	fs := &storage.OSFileSystem{}
 	m.WithFileSystem(fs)
 	// Verify it reached the store
 	if s, ok := m.store.(*JSONLStore); ok {

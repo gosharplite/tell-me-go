@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Authenticator defines the interface for injecting credentials into API requests.
@@ -87,7 +87,7 @@ func (a *VertexAuth) GetToken() (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = fsutil.AtomicWrite(context.Background(), cacheFile, []byte(token), 0600)
+		_ = storage.AtomicWrite(context.Background(), cacheFile, []byte(token), 0600)
 	}
 
 	a.Token = token

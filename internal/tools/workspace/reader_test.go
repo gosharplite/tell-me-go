@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestListFiles(t *testing.T) {
@@ -27,7 +27,7 @@ func TestListFiles(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	t.Run("list root", func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestReadFile(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
@@ -79,7 +79,7 @@ func TestGetTree(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	t.Run("basic tree", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestFindFile(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	t.Run("find .go files", func(t *testing.T) {
@@ -146,7 +146,7 @@ func TestGetFileDiff(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	t.Run("diff existing files", func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestReadFile_Truncation(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	r := &fileReader{sm: sm, fs: fsutil.DefaultFileSystem}
+	r := &fileReader{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})

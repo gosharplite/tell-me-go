@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Task represents a unit of work in the to-do list.
@@ -30,11 +30,11 @@ type TaskStore struct {
 	tasks    map[float64]Task
 	nextID   float64
 	filePath string
-	fs       fsutil.FileSystem
+	fs       storage.FileSystem
 }
 
 // NewTaskStore creates a new TaskStore.
-func NewTaskStore(fs fsutil.FileSystem, filePath string) *TaskStore {
+func NewTaskStore(fs storage.FileSystem, filePath string) *TaskStore {
 	return &TaskStore{
 		tasks:    make(map[float64]Task),
 		nextID:   1,

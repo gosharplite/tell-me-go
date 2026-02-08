@@ -20,8 +20,8 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -478,7 +478,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	if err := fsutil.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
 		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 	}
 }

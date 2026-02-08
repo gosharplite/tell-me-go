@@ -1,8 +1,8 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-// Package fsutil provides shared file system utilities.
-package fsutil
+// Package storage provides shared file system utilities.
+package storage
 
 import (
 	"context"

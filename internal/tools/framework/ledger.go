@@ -16,8 +16,8 @@ import (
 	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // SessionCostRecord represents a single session's financial footprint.
@@ -248,7 +248,7 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	if err := fsutil.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
 		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 	}
 }

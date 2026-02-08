@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestSearchFiles_SkipsBinary(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem}
+	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -76,7 +76,7 @@ func TestGrepDefinitions(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem}
+	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	t.Run("grep all definitions", func(t *testing.T) {
@@ -124,7 +124,7 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem}
+	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	args := map[string]interface{}{

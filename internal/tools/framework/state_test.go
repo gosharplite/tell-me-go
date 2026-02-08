@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestStateManager_GetSessionInfo(t *testing.T) {
 	tempDir := t.TempDir()
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 

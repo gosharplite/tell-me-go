@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -32,7 +32,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	sm.RegisterSafePath(tmpDir)
 	sm.SetBypassActive(true) // Avoid interactive prompts
 
-	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: fsutil.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -67,7 +67,7 @@ func TestWriteFile(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: fsutil.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "new.txt")
@@ -91,7 +91,7 @@ func TestAppendText(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: fsutil.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "append.txt")
@@ -131,7 +131,7 @@ func TestAppendText(t *testing.T) {
 }
 
 type mockFS struct {
-	fsutil.FileSystem
+	storage.FileSystem
 	mkdirErr error
 	writeErr error
 }
@@ -195,7 +195,7 @@ func TestUndoFileChange(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 	bm := NewBackupManager(sm, 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: fsutil.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: bm, fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	// Perform a write
@@ -239,7 +239,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: fsutil.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: storage.DefaultFileSystem}
 	ctx := context.Background()
 
 	_, err := w.replaceText(ctx, map[string]interface{}{
@@ -258,7 +258,7 @@ func TestAppendText_Failures(t *testing.T) {
 	sm.SetBypassActive(true)
 
 	t.Run("open failure", func(t *testing.T) {
-		mfs := &mockFS_Append{FileSystem: fsutil.DefaultFileSystem, openErr: fmt.Errorf("open error")}
+		mfs := &mockFS_Append{FileSystem: storage.DefaultFileSystem, openErr: fmt.Errorf("open error")}
 		w := &fileWriter{sm: sm, bm: NewBackupManager(sm, 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
 			"filepath": "/tmp/any.txt",
@@ -272,10 +272,10 @@ func TestAppendText_Failures(t *testing.T) {
 }
 
 type mockFS_Append struct {
-	fsutil.FileSystem
+	storage.FileSystem
 	openErr error
 }
 
-func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (fsutil.File, error) {
+func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (storage.File, error) {
 	return nil, m.openErr
 }

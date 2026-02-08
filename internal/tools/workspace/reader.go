@@ -11,14 +11,14 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 type fileReader struct {
 	sm *security.SecurityManager
-	fs fsutil.FileSystem
+	fs storage.FileSystem
 }
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -89,7 +89,7 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func buildTree(ctx context.Context, fs fsutil.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
+func buildTree(ctx context.Context, fs storage.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
 	if depth > maxDepth {
 		return nil
 	}

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // PathPolicy manages allowed boundaries and validates paths.
@@ -301,7 +301,7 @@ func (p *PathPolicy) SavePaths(ctx context.Context, writable bool) error {
 		return fmt.Errorf("failed to marshal paths: %w", err)
 	}
 
-	return fsutil.AtomicWrite(ctx, file, data, 0644)
+	return storage.AtomicWrite(ctx, file, data, 0644)
 }
 
 func (p *PathPolicy) checkBoundary(target, boundary string) (bool, error) {

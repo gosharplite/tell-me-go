@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -32,7 +32,7 @@ type SessionInfo struct {
 
 // RegisterState adds state management tools (scratchpad, config, tasks) to the registry.
 func RegisterState(r *registry.Registry, sm *security.SecurityManager, configDir string) {
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 	m := &stateManager{
 		sm:         sm,
 		tasks:      NewTaskStore(fs, filepath.Join(configDir, "tasks.json")),

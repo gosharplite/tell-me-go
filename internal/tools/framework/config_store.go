@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // ConfigStore manages persistent configuration settings.
@@ -19,11 +19,11 @@ type ConfigStore struct {
 	mu       sync.RWMutex
 	config   map[string]string
 	filePath string
-	fs       fsutil.FileSystem
+	fs       storage.FileSystem
 }
 
 // NewConfigStore creates a new ConfigStore.
-func NewConfigStore(fs fsutil.FileSystem, filePath string) *ConfigStore {
+func NewConfigStore(fs storage.FileSystem, filePath string) *ConfigStore {
 	return &ConfigStore{
 		config:   make(map[string]string),
 		filePath: filePath,

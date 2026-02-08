@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // ScratchpadStore manages a persistent scratchpad.
@@ -17,11 +17,11 @@ type ScratchpadStore struct {
 	mu         sync.RWMutex
 	scratchpad string
 	filePath   string
-	fs         fsutil.FileSystem
+	fs         storage.FileSystem
 }
 
 // NewScratchpadStore creates a new ScratchpadStore.
-func NewScratchpadStore(fs fsutil.FileSystem, filePath string) *ScratchpadStore {
+func NewScratchpadStore(fs storage.FileSystem, filePath string) *ScratchpadStore {
 	return &ScratchpadStore{
 		filePath: filePath,
 		fs:       fs,

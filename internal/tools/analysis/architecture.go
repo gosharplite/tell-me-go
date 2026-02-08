@@ -21,8 +21,8 @@ const (
 	LayerDomain   = "domain"
 	LayerAgent    = "agent"
 	LayerTools    = "tools"
-	LayerFsutil   = "fsutil"
-	LayerSecurity = "security"
+	LayerStorage  = "infrastructure/storage"
+	LayerSecurity = "infrastructure/security"
 )
 
 // PackageProvider defines the interface for loading package information.
@@ -187,12 +187,12 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	rules := []Rule{
 		{
 			SourceLayer: LayerDomain,
-			Forbidden:   []string{LayerAgent, LayerTools, LayerFsutil, LayerSecurity},
+			Forbidden:   []string{LayerAgent, LayerTools, LayerStorage, LayerSecurity},
 			Reason:      "Domain must not depend on other internal layers.",
 		},
 		{
 			SourceLayer: LayerAgent,
-			Forbidden:   []string{LayerTools, LayerFsutil, "cmd"},
+			Forbidden:   []string{LayerTools, LayerStorage, "cmd"},
 			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
 		},
 		{
@@ -201,7 +201,7 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerFsutil,
+			SourceLayer: LayerStorage,
 			Forbidden:   []string{LayerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},

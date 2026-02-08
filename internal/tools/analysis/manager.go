@@ -7,8 +7,8 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Analyzer interfaces for segregation and testing
@@ -67,7 +67,7 @@ type AnalysisManager struct {
 
 func NewAnalysisManager(idx SymbolIndex, cache *ASTCache, sp security.SecurityProvider) *AnalysisManager {
 	exec := &RealExecutor{}
-	fs := fsutil.DefaultFileSystem
+	fs := storage.DefaultFileSystem
 
 	m := &AnalysisManager{
 		Complexity: NewComplexityAnalyzer(cache, sp),

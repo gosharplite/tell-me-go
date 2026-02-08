@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
@@ -22,7 +22,7 @@ import (
 func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 	m := &releaseManager{
 		sm:       sm,
-		fs:       fsutil.DefaultFileSystem,
+		fs:       storage.DefaultFileSystem,
 		executor: workspace.NewProcessExecutor(),
 	}
 
@@ -34,7 +34,7 @@ func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 
 type releaseManager struct {
 	sm       *security.SecurityManager
-	fs       fsutil.FileSystem
+	fs       storage.FileSystem
 	executor workspace.CommandExecutor
 }
 
@@ -84,7 +84,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 // SecretScanner implementation
 type SecretScanner struct {
 	sm *security.SecurityManager
-	fs fsutil.FileSystem
+	fs storage.FileSystem
 }
 
 func (s *SecretScanner) Name() string { return "Security Scan" }
@@ -114,7 +114,7 @@ func (s *SecretScanner) Run(ctx context.Context) CheckResult {
 		if err != nil {
 			return nil
 		}
-		if fsutil.IsBinary(content) {
+		if storage.IsBinary(content) {
 			return nil
 		}
 		s.scanContent(content, path, &findings, &secretsFound, compiledPatterns)
@@ -146,7 +146,7 @@ func (s *SecretScanner) isIgnored(path string) bool {
 
 // DependencyChecker implementation
 type DependencyChecker struct {
-	fs fsutil.FileSystem
+	fs storage.FileSystem
 }
 
 func (c *DependencyChecker) Name() string { return "Dependency Check" }

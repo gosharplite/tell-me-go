@@ -5,8 +5,8 @@ package workspace
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
@@ -26,9 +26,9 @@ func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.Com
 func registerFiles(r *registry.Registry, sm *security.SecurityManager) {
 	bm := NewBackupManager(sm, 10)
 	m := &fileSystemManager{
-		reader: &fileReader{sm: sm, fs: fsutil.DefaultFileSystem},
-		writer: &fileWriter{sm: sm, bm: bm, fs: fsutil.DefaultFileSystem},
-		search: &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem},
+		reader: &fileReader{sm: sm, fs: storage.DefaultFileSystem},
+		writer: &fileWriter{sm: sm, bm: bm, fs: storage.DefaultFileSystem},
+		search: &fileSearcher{sm: sm, fs: storage.DefaultFileSystem},
 	}
 
 	r.Register(&tools.ToolDeclaration{

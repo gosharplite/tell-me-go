@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Store defines the interface for history persistence.
@@ -24,8 +24,8 @@ type Store interface {
 // JSONLStore implements Store using a JSON Lines file.
 type JSONLStore struct {
 	filePath   string
-	assetStore *fsutil.AssetStore
-	fs         fsutil.FileSystem
+	assetStore *storage.AssetStore
+	fs         storage.FileSystem
 }
 
 // NewJSONLStore creates a new JSONLStore.
@@ -33,13 +33,13 @@ func NewJSONLStore(filePath string) *JSONLStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
 	return &JSONLStore{
 		filePath:   filePath,
-		assetStore: fsutil.NewAssetStore(assetDir),
-		fs:         fsutil.DefaultFileSystem,
+		assetStore: storage.NewAssetStore(assetDir),
+		fs:         storage.DefaultFileSystem,
 	}
 }
 
 // WithFileSystem sets the filesystem implementation.
-func (s *JSONLStore) WithFileSystem(fs fsutil.FileSystem) *JSONLStore {
+func (s *JSONLStore) WithFileSystem(fs storage.FileSystem) *JSONLStore {
 	s.fs = fs
 	s.assetStore.WithFileSystem(fs)
 	return s

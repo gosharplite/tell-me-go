@@ -20,7 +20,7 @@ type StyleRule struct {
 var DefaultStyleRules = []StyleRule{
 	{Pattern: regexp.MustCompile(`.*(api|transport).*`), Class: "transport"},
 	{Pattern: regexp.MustCompile(`.*domain.*`), Class: "domain"},
-	{Pattern: regexp.MustCompile(`.*(infra|tools|security|fsutil).*`), Class: "infrastructure"},
+	{Pattern: regexp.MustCompile(`.*(infra|tools|security|storage).*`), Class: "infrastructure"},
 }
 
 // GenerateMermaid transforms a dependency map into a Mermaid.js diagram.

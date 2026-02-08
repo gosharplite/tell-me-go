@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/fsutil"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Manager handles loading, saving, and manipulating conversation history.
@@ -39,7 +39,7 @@ func (m *Manager) SetStore(store Store) {
 }
 
 // WithFileSystem sets the filesystem implementation for the default store.
-func (m *Manager) WithFileSystem(fs fsutil.FileSystem) *Manager {
+func (m *Manager) WithFileSystem(fs storage.FileSystem) *Manager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.store.(*JSONLStore); ok {
