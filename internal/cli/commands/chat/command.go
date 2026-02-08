@@ -107,7 +107,7 @@ func (c *Command) Execute(ctx context.Context, args []string) error {
 	pricingOverrides := c.getPricingOverrides(cfg)
 	c.setupSecurity(paths, opts.configPath)
 	if opts.newSession {
-		c.handleNewSession(paths, cfg, pricingOverrides)
+		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
 	hManager, client, registry, tracker, pruned, pData, err := c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
@@ -201,19 +201,27 @@ func (c *Command) setupSecurity(paths *session.Paths, configPath string) {
 	c.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
 	c.SM.SetBypassFile(paths.BypassPath)
 	c.SM.SetCommandsLogFile(paths.CommandsLogPath)
-	_ = c.SM.LoadSafePaths()
-	_ = c.SM.LoadReadOnlyPaths()
+	if err := c.SM.LoadSafePaths(); err != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to load safe paths: %v\n", err)
+	}
+	if err := c.SM.LoadReadOnlyPaths(); err != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
+	}
 	c.SM.LoadBypassState()
 	c.SM.RegisterSafePath(filepath.Join(c.HomeDir, "output"))
 	c.SM.RegisterReadOnlyPath(configPath)
 }
 
-func (c *Command) handleNewSession(paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+func (c *Command) handleNewSession(ctx context.Context, paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
-	_ = framework.RecordSessionCost(context.Background(), c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides)
+	if err := framework.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
+	}
 	retentionDays := session.LoadBackupRetentionDays(*paths)
-	_ = session.RotateSession(c.Stdout, *paths, retentionDays)
+	if err := session.RotateSession(c.Stdout, *paths, retentionDays); err != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Session rotation failed: %v\n", err)
+	}
 }
 
 func (c *Command) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *input.Capturer) {

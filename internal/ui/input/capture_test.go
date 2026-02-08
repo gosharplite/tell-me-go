@@ -57,7 +57,9 @@ func TestPrompt_Args(t *testing.T) {
 	}
 	
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.Parse([]string{"hello", "world"})
+	if err := fs.Parse([]string{"hello", "world"}); err != nil {
+		t.Fatal(err)
+	}
 	
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
@@ -114,7 +116,9 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 	}
 	
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.Parse([]string{"initial", "prompt"})
+	if err := fs.Parse([]string{"initial", "prompt"}); err != nil {
+		t.Fatal(err)
+	}
 	
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
@@ -152,7 +156,9 @@ func TestPrompt_Combined(t *testing.T) {
 	}
 	
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.Parse([]string{"initial"})
+	if err := fs.Parse([]string{"initial"}); err != nil {
+		t.Fatal(err)
+	}
 	
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {

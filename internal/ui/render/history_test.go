@@ -6,6 +6,7 @@ package render
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,12 +17,17 @@ import (
 
 func TestHistory_Rendering(t *testing.T) {
 	ctx := context.Background()
-	h := history.NewManager("")
-	h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}})
-	h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+	tmp := t.TempDir()
+	h := history.NewManager(filepath.Join(tmp, "history.json"))
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
 		{Thought: true, Text: "I am thinking"},
 		{Text: "hi there"},
-	}})
+	}}); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("HideThoughts", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -59,7 +65,8 @@ func TestHistory_Rendering(t *testing.T) {
 
 
 func TestHistory_Empty(t *testing.T) {
-	h := history.NewManager("")
+	tmp := t.TempDir()
+	h := history.NewManager(filepath.Join(tmp, "history.json"))
 	var buf bytes.Buffer
 	History(&buf, h, 10, RenderOptions{Raw: true})
 	
@@ -70,14 +77,21 @@ func TestHistory_Empty(t *testing.T) {
 
 func TestHistory_RenderPart_Tool(t *testing.T) {
 	ctx := context.Background()
-	h := history.NewManager("")
-	h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}})
-	h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
+	tmp := t.TempDir()
+	h := history.NewManager(filepath.Join(tmp, "history.json"))
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
 		{FunctionCall: &llm.FunctionCall{Name: "test_tool"}},
-	}})
-	h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{
 		{FunctionResponse: &llm.FunctionResponse{Name: "test_tool", Response: map[string]interface{}{"result": "result"}}},
-	}})
+	}}); err != nil {
+		t.Fatal(err)
+	}
 
 	var buf bytes.Buffer
 	History(&buf, h, 10, RenderOptions{Raw: true})

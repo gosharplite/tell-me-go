@@ -17,6 +17,11 @@ import (
 	"golang.org/x/term"
 )
 
+const (
+	// maxPromptSize limits standard input to 1MB to prevent memory exhaustion.
+	maxPromptSize = 1024 * 1024
+)
+
 // Capturer handles capturing user input from TTY or pipes.
 type Capturer struct {
 	Stdin  io.Reader
@@ -81,7 +86,7 @@ func (c *Capturer) Prompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw 
 func (c *Capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
 	readChan := make(chan []byte, 1)
 	go func() {
-		b, _ := io.ReadAll(c.Stdin)
+		b, _ := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
 		readChan <- b
 	}()
 
@@ -104,7 +109,7 @@ func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 
 	readChan := make(chan []byte, 1)
 	go func() {
-		b, _ := io.ReadAll(c.Stdin)
+		b, _ := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
 		readChan <- b
 	}()
 

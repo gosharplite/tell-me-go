@@ -34,7 +34,10 @@ func TestRotateSession(t *testing.T) {
 	homeDir := tmp
 	mode := "test-mode"
 	
-	paths, _ := InitializePaths(homeDir, mode)
+	paths, err := InitializePaths(homeDir, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
 	
 	// Create dummy files
 	files := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
@@ -45,7 +48,7 @@ func TestRotateSession(t *testing.T) {
 	}
 
 	// Rotate
-	err := RotateSession(nil, *paths, 30)
+	err = RotateSession(nil, *paths, 30)
 	if err != nil {
 		t.Fatalf("RotateSession failed: %v", err)
 	}
@@ -59,7 +62,10 @@ func TestRotateSession(t *testing.T) {
 
 	// Verify backup exists
 	backupBase := filepath.Join(tmp, "output", "backups")
-	entries, _ := os.ReadDir(backupBase)
+	entries, err := os.ReadDir(backupBase)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(entries) != 1 {
 		t.Errorf("expected 1 backup directory, got %d", len(entries))
 	}
@@ -68,22 +74,29 @@ func TestRotateSession(t *testing.T) {
 func TestCleanupOldBackups(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-mode"
-	paths, _ := InitializePaths(tmp, mode)
+	paths, err := InitializePaths(tmp, mode)
+	if err != nil {
+		t.Fatal(err)
+	}
 	
 	backupBase := filepath.Join(tmp, "output", "backups")
 	
 	// Create an old backup (31 days ago)
 	oldTimestamp := time.Now().AddDate(0, 0, -31).Format("20060102_150405")
 	oldDir := filepath.Join(backupBase, oldTimestamp)
-	os.MkdirAll(oldDir, 0755)
+	if err := os.MkdirAll(oldDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	
 	// Create a fresh backup
 	newTimestamp := time.Now().Format("20060102_150405")
 	newDir := filepath.Join(backupBase, newTimestamp)
-	os.MkdirAll(newDir, 0755)
+	if err := os.MkdirAll(newDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Cleanup with 30 day retention
-	err := CleanupOldBackups(*paths, 30)
+	err = CleanupOldBackups(*paths, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +121,9 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 	}
 
 	// Test override
-	os.WriteFile(paths.PersistentConfigPath, []byte(`{"backup_retention_days": "15"}`), 0644)
+	if err := os.WriteFile(paths.PersistentConfigPath, []byte(`{"backup_retention_days": "15"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 	if days := LoadBackupRetentionDays(paths); days != 15 {
 		t.Errorf("expected overridden 15, got %d", days)
 	}
