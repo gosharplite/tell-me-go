@@ -160,7 +160,11 @@ func TestAtomicWrite_OpenFileFailure(t *testing.T) {
 	if err := os.Chmod(subDir, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(subDir, 0755)
+	defer func() {
+		if err := os.Chmod(subDir, 0755); err != nil {
+			t.Errorf("failed to restore permissions: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 	err := AtomicWrite(ctx, path, []byte("data"), 0644)

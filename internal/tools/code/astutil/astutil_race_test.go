@@ -15,7 +15,9 @@ func TestASTCache_Concurrency_Race(t *testing.T) {
 	files := make([]string, numFiles)
 	for i := 0; i < numFiles; i++ {
 		path := filepath.Join(tmpDir, fmt.Sprintf("file%d.go", i))
-		os.WriteFile(path, []byte(fmt.Sprintf("package p%d\nfunc F%d() {}\n", i, i)), 0644)
+		if err := os.WriteFile(path, []byte(fmt.Sprintf("package p%d\nfunc F%d() {}\n", i, i)), 0644); err != nil {
+			t.Fatal(err)
+		}
 		files[i] = path
 	}
 

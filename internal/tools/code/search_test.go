@@ -23,9 +23,15 @@ func TestListTodos(t *testing.T) {
 	tempDir := "/tmp/test"
 
 	// Create some files with TODOs in mock FS
-	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644)
-	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644)
-	_ = fs.WriteFile(ctx, filepath.Join(tempDir, "file3.txt"), []byte("No todos here"), 0644)
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file3.txt"), []byte("No todos here"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Authorize path
 	sm.RegisterSafePath(tempDir)
@@ -59,8 +65,13 @@ func TestListTodos(t *testing.T) {
 	for i := 0; i < 600; i++ {
 		content.WriteString("TODO: line\n")
 	}
-	fs.WriteFile(ctx, filepath.Join(tooManyDir, "big.go"), []byte(content.String()), 0644)
-	res3, _ := m.ListTodos(ctx, map[string]interface{}{"path": tooManyDir})
+	if err := fs.WriteFile(ctx, filepath.Join(tooManyDir, "big.go"), []byte(content.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+	res3, err := m.ListTodos(ctx, map[string]interface{}{"path": tooManyDir})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(res3.Text, "(truncated)") {
 		t.Errorf("expected truncated message for too many results")
 	}
@@ -75,8 +86,12 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	tempDir := "/tmp/usages"
 
 	// Create some files in mock FS
-	fs.WriteFile(ctx, filepath.Join(tempDir, "a.go"), []byte("package a\nfunc MyFunc() {}"), 0644)
-	fs.WriteFile(ctx, filepath.Join(tempDir, "b.go"), []byte("package b\nimport \"a\"\nfunc main() { a.MyFunc() }"), 0644)
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "a.go"), []byte("package a\nfunc MyFunc() {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "b.go"), []byte("package b\nimport \"a\"\nfunc main() { a.MyFunc() }"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Authorize root
 	sm.RegisterSafePath(tempDir)

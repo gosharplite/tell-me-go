@@ -174,7 +174,9 @@ func TestASTCache(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.go")
 	content := "package main\nfunc main() {}\n"
-	os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cache := NewASTCache()
 	cache.maxSize = 2
@@ -189,15 +191,23 @@ func TestASTCache(t *testing.T) {
 	}
 
 	// Test Cache Hit
-	f2, fset2, _ := cache.Get(path)
+	f2, fset2, err := cache.Get(path)
+	if err != nil {
+		t.Fatalf("Get (cached) failed: %v", err)
+	}
 	if f1 != f2 || fset1 != fset2 {
 		t.Error("expected cache hit to return same objects")
 	}
 
 	// Test Cache Invalidation (Update file)
 	time.Sleep(10 * time.Millisecond) // Ensure modTime changes
-	os.WriteFile(path, []byte("package main\nfunc main() { _ = 1 }\n"), 0644)
-	f3, _, _ := cache.Get(path)
+	if err := os.WriteFile(path, []byte("package main\nfunc main() { _ = 1 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	f3, _, err := cache.Get(path)
+	if err != nil {
+		t.Fatalf("Get (updated) failed: %v", err)
+	}
 	if f1 == f3 {
 		t.Error("expected cache invalidation after file update")
 	}
@@ -210,20 +220,32 @@ func TestASTCache(t *testing.T) {
 
 	// Test Invalid Go syntax
 	invalidPath := filepath.Join(tmpDir, "invalid.go")
-	os.WriteFile(invalidPath, []byte("package"), 0644)
+	if err := os.WriteFile(invalidPath, []byte("package"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	_, _, err = cache.Get(invalidPath)
 	if err == nil {
 		t.Error("expected error for invalid syntax")
 	}
 
 	// Test Eviction
-	cache.Get(path)
+	if _, _, err := cache.Get(path); err != nil {
+		t.Fatal(err)
+	}
 	path2 := filepath.Join(tmpDir, "test2.go")
-	os.WriteFile(path2, []byte("package p2"), 0644)
-	cache.Get(path2)
+	if err := os.WriteFile(path2, []byte("package p2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := cache.Get(path2); err != nil {
+		t.Fatal(err)
+	}
 	path3 := filepath.Join(tmpDir, "test3.go")
-	os.WriteFile(path3, []byte("package p3"), 0644)
-	cache.Get(path3)
+	if err := os.WriteFile(path3, []byte("package p3"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := cache.Get(path3); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(cache.files) > 2 {
 		t.Errorf("expected cache size <= 2, got %d", len(cache.files))
@@ -258,7 +280,9 @@ type unexported string
 func ExportedFunc() {}
 func unexportedFunc() {}
 `
-	os.WriteFile(path, []byte(code), 0644)
+	if err := os.WriteFile(path, []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cache := NewASTCache()
 	skeleton, err := cache.GetFileSkeletonGo(path)

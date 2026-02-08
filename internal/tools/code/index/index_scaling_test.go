@@ -50,9 +50,14 @@ func TestIndexer_Scaling(t *testing.T) {
 }
 
 func TestIndexer_GetUsages_Scaling(t *testing.T) {
-	idx, _ := NewIndexer(".")
+	idx, err := NewIndexer(".")
+	if err != nil {
+		t.Fatalf("failed to create indexer: %v", err)
+	}
 	ctx := context.Background()
-	idx.Refresh(ctx)
+	if err := idx.Refresh(ctx); err != nil {
+		t.Fatalf("failed to refresh index: %v", err)
+	}
 
 	start := time.Now()
 	usages, err := idx.GetUsages(ctx, "Indexer", ".")
