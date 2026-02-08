@@ -45,9 +45,18 @@ func NewFunc() {}
 
 	cache := astutil.NewASTCache()
 	// We need to change directory to tmpDir so that cache.Get(relPath) finds the file
-	oldDir, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldDir)
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldDir); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
+	}()
 
 	analyzer := NewChangeAnalyzer(cache, mockExec)
 	res, err := analyzer.SemanticDiff(context.Background(), map[string]interface{}{"target": "HEAD~1"})

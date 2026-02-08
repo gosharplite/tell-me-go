@@ -47,11 +47,13 @@ func TestConfigStore(t *testing.T) {
 		configFile := filepath.Join(tempDir, "config.json")
 		store := NewConfigStore(fs, configFile)
 
-		store.ManageConfig(ctx, map[string]interface{}{
+		if _, err := store.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
 			"key":    "theme",
 			"value":  "dark",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		_, err := store.ManageConfig(ctx, map[string]interface{}{
 			"action": "delete",
@@ -90,11 +92,13 @@ func TestConfigStore(t *testing.T) {
 		configFile := filepath.Join(tempDir, "config.json")
 		store1 := NewConfigStore(fs, configFile)
 
-		store1.ManageConfig(ctx, map[string]interface{}{
+		if _, err := store1.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
 			"key":    "theme",
 			"value":  "dark",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		store2 := NewConfigStore(fs, configFile)
 		err := store2.Load(ctx)
@@ -102,10 +106,13 @@ func TestConfigStore(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, _ := store2.ManageConfig(ctx, map[string]interface{}{
+		res, err := store2.ManageConfig(ctx, map[string]interface{}{
 			"action": "get",
 			"key":    "theme",
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if res.Text != "dark" {
 			t.Error("config was not persisted")
 		}
@@ -116,11 +123,13 @@ func TestConfigStore(t *testing.T) {
 		configFile := filepath.Join(tempDir, "config.json")
 		store := NewConfigStore(fs, configFile)
 
-		store.ManageConfig(ctx, map[string]interface{}{
+		if _, err := store.ManageConfig(ctx, map[string]interface{}{
 			"action": "set",
 			"key":    "k1",
 			"value":  "v1",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		res, err := store.ManageConfig(ctx, map[string]interface{}{
 			"action": "list",
@@ -138,9 +147,12 @@ func TestConfigStore(t *testing.T) {
 		configFile := filepath.Join(tempDir, "config.json")
 		store := NewConfigStore(fs, configFile)
 
-		res, _ := store.ManageConfig(ctx, map[string]interface{}{
+		res, err := store.ManageConfig(ctx, map[string]interface{}{
 			"action": "list",
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(res.Text, "Configuration is empty") {
 			t.Errorf("expected empty message, got %s", res.Text)
 		}
@@ -149,7 +161,9 @@ func TestConfigStore(t *testing.T) {
 	t.Run("Corrupted JSON", func(t *testing.T) {
 		tempDir := t.TempDir()
 		configFile := filepath.Join(tempDir, "config.json")
-		fs.WriteFile(ctx, configFile, []byte("invalid json"), 0644)
+		if err := fs.WriteFile(ctx, configFile, []byte("invalid json"), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		store := NewConfigStore(fs, configFile)
 		err := store.Load(ctx)

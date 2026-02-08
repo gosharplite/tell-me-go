@@ -94,7 +94,9 @@ func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker          { re
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
-	os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644)
+	if err := os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	var out, errOut bytes.Buffer
 	sm := security.NewSecurityManager(os.Stdin)
@@ -106,7 +108,9 @@ func TestRunCapturePrompt(t *testing.T) {
 		HomeDir: tmpDir,
 		SM:      sm,
 	})
-	os.MkdirAll(filepath.Join(tmpDir, "output"), 0755)
+	if err := os.MkdirAll(filepath.Join(tmpDir, "output"), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	mock := &mockChatter{}
 	cmd.AgentFactory = func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
@@ -129,7 +133,9 @@ func TestRunCapturePrompt(t *testing.T) {
 func TestRunEmptyPromptError(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
-	os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644)
+	if err := os.WriteFile(configPath, []byte("url: http://test\nmodel: test-model\nmode: test-mode\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(os.Stdin)
 	cmd := &Command{
@@ -148,9 +154,18 @@ func TestRunEmptyPromptError(t *testing.T) {
 
 func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldWd, _ := os.Getwd()
-	os.Chdir(tmpDir)
-	defer os.Chdir(oldWd)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
+	}()
 
 	sm := security.NewSecurityManager(os.Stdin)
 	cmd := &Command{
@@ -162,7 +177,9 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	}
 
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
-	os.WriteFile(configPath, []byte("mode: test-mode\n"), 0644)
+	if err := os.WriteFile(configPath, []byte("mode: test-mode\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	_ = cmd.Execute(context.Background(), []string{"bin", "-c", configPath})
 

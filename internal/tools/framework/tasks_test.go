@@ -53,10 +53,12 @@ func TestTaskStore(t *testing.T) {
 		tasksFile := filepath.Join(tempDir, "tasks.json")
 		store := NewTaskStore(fs, tasksFile)
 
-		store.ManageTasks(ctx, map[string]interface{}{
+		if _, err := store.ManageTasks(ctx, map[string]interface{}{
 			"action":  "add",
 			"content": "Initial",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		// Update task
 		_, err := store.ManageTasks(ctx, map[string]interface{}{
@@ -70,7 +72,10 @@ func TestTaskStore(t *testing.T) {
 		}
 
 		// Verify update
-		res, _ := store.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		res, err := store.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(res.Text, "[x] Updated (completed)") {
 			t.Errorf("task status not updated correctly: %s", res.Text)
 		}
@@ -99,10 +104,12 @@ func TestTaskStore(t *testing.T) {
 		tasksFile := filepath.Join(tempDir, "tasks.json")
 		store := NewTaskStore(fs, tasksFile)
 
-		store.ManageTasks(ctx, map[string]interface{}{
+		if _, err := store.ManageTasks(ctx, map[string]interface{}{
 			"action":  "add",
 			"content": "To be deleted",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		_, err := store.ManageTasks(ctx, map[string]interface{}{
 			"action":  "delete",
@@ -112,7 +119,10 @@ func TestTaskStore(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, _ := store.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		res, err := store.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(res.Text, "No tasks found") {
 			t.Errorf("expected no tasks, got: %s", res.Text)
 		}
@@ -123,10 +133,12 @@ func TestTaskStore(t *testing.T) {
 		tasksFile := filepath.Join(tempDir, "tasks.json")
 		store1 := NewTaskStore(fs, tasksFile)
 
-		store1.ManageTasks(ctx, map[string]interface{}{
+		if _, err := store1.ManageTasks(ctx, map[string]interface{}{
 			"action":  "add",
 			"content": "Persist me",
-		})
+		}); err != nil {
+			t.Fatal(err)
+		}
 
 		store2 := NewTaskStore(fs, tasksFile)
 		err := store2.Load(ctx)
@@ -134,7 +146,10 @@ func TestTaskStore(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		res, _ := store2.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		res, err := store2.ManageTasks(ctx, map[string]interface{}{"action": "list"})
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(res.Text, "Persist me") {
 			t.Error("tasks were not persisted")
 		}
@@ -143,7 +158,9 @@ func TestTaskStore(t *testing.T) {
 	t.Run("Corrupted JSON", func(t *testing.T) {
 		tempDir := t.TempDir()
 		tasksFile := filepath.Join(tempDir, "tasks.json")
-		fs.WriteFile(ctx, tasksFile, []byte("invalid json"), 0644)
+		if err := fs.WriteFile(ctx, tasksFile, []byte("invalid json"), 0644); err != nil {
+			t.Fatal(err)
+		}
 
 		store := NewTaskStore(fs, tasksFile)
 		err := store.Load(ctx)
