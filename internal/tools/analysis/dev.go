@@ -12,15 +12,14 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type devManager struct {
 	sm             security.SecurityProvider
-	validator      *framework.CommandValidator
+	validator      *security.CommandValidator
 	executor       Executor
 	stderr         io.Writer
 	createTempFile func(dir, pattern string) (*os.File, error)
@@ -106,12 +105,12 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 
 	outStr := string(output)
 	if err != nil {
-		outStr = framework.TruncateOutput(outStr, 100)
+		outStr = security.TruncateOutput(outStr, 100)
 		// Return the failure output in the result, but still return an error for the status
 		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
 	}
 
-	return tools.ToolResult{Text: framework.TruncateOutput(outStr, 100)}, nil
+	return tools.ToolResult{Text: security.TruncateOutput(outStr, 100)}, nil
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -129,11 +128,11 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 	m.logToolAction("Running go mod tidy and go fmt")
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", framework.TruncateOutput(string(out), 50))
+		return tools.ToolResult{}, fmt.Errorf("go mod tidy failed: %s", security.TruncateOutput(string(out), 50))
 	}
 
 	if out, err := m.executor.Execute(ctx, "go", "fmt", "./..."); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", framework.TruncateOutput(string(out), 50))
+		return tools.ToolResult{}, fmt.Errorf("go fmt failed: %s", security.TruncateOutput(string(out), 50))
 	}
 
 	return tools.ToolResult{Text: "Success: Project tidied and formatted."}, nil
@@ -178,7 +177,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	out, err := m.executor.Execute(ctx, "go", "test", "-coverprofile="+tempName, path)
 
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, framework.TruncateOutput(string(out), 50))
+		return tools.ToolResult{}, fmt.Errorf("tests failed or coverage error: %w\n%s", err, security.TruncateOutput(string(out), 50))
 	}
 
 	// Get summary
@@ -187,7 +186,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, fmt.Errorf("failed to generate coverage summary: %w", err)
 	}
 
-	return tools.ToolResult{Text: framework.TruncateOutput(string(summaryOut), 100)}, nil
+	return tools.ToolResult{Text: security.TruncateOutput(string(summaryOut), 100)}, nil
 }
 
 func (m *devManager) runLinter(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -223,7 +222,7 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("linter execution failed: %w", err)
 	}
 
-	outStr := framework.TruncateOutput(string(out), 100)
+	outStr := security.TruncateOutput(string(out), 100)
 	if err != nil {
 		return tools.ToolResult{Text: outStr}, fmt.Errorf("linter found issues: %w", err)
 	}
@@ -269,7 +268,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, framework.TruncateOutput(string(out), 100))
+		return tools.ToolResult{}, fmt.Errorf("benchmark failed: %w\n%s", err, security.TruncateOutput(string(out), 100))
 	}
 
 	return tools.ToolResult{Text: string(out)}, nil
@@ -300,7 +299,7 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("govulncheck failed: %w", err)
 	}
 
-	outStr := framework.TruncateOutput(string(out), 100)
+	outStr := security.TruncateOutput(string(out), 100)
 	if err != nil {
 		return tools.ToolResult{Text: outStr}, fmt.Errorf("vulnerabilities found: %w", err)
 	}
@@ -321,7 +320,7 @@ func (m *devManager) logToolAction(format string, a ...any) {
 func newDevManager(sm security.SecurityProvider) *devManager {
 	return &devManager{
 		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
+		validator:      security.NewCommandValidator(sm),
 		executor:       &realExecutor{},
 		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,

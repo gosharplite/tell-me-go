@@ -10,15 +10,14 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type ShellTool struct {
 	sm        *security.SecurityManager
-	validator *framework.CommandValidator
+	validator *security.CommandValidator
 	executor  *ProcessExecutor
 	maxOutput int
 }
@@ -26,7 +25,7 @@ type ShellTool struct {
 func NewShellTool(sm *security.SecurityManager) *ShellTool {
 	return &ShellTool{
 		sm:        sm,
-		validator: framework.NewCommandValidator(sm),
+		validator: security.NewCommandValidator(sm),
 		executor:  NewProcessExecutor(),
 		maxOutput: 50000,
 	}

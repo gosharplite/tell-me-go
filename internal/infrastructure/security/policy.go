@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package framework
+package security
 
 import (
 	"context"
@@ -11,17 +11,16 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type PolicyTool struct {
-	sm *security.SecurityManager
+	sm *SecurityManager
 }
 
 // NewPolicyTool creates a new PolicyTool.
-func NewPolicyTool(sm *security.SecurityManager) *PolicyTool {
+func NewPolicyTool(sm *SecurityManager) *PolicyTool {
 	return &PolicyTool{sm: sm}
 }
 
@@ -329,7 +328,7 @@ func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface
 }
 
 // RegisterPolicy adds security policy management tools to the registry.
-func RegisterPolicy(r *registry.Registry, sm *security.SecurityManager) {
+func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
 	p := NewPolicyTool(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{

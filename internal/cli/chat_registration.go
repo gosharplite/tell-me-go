@@ -9,9 +9,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *session.Paths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {

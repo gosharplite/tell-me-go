@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
 
 func TestNewToolRegistry(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil)
+	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil, t.TempDir())
 
 	if len(r.GetDeclarations()) == 0 {
 		t.Error("expected registered tools, got none")
@@ -26,7 +26,7 @@ func TestNewToolRegistry(t *testing.T) {
 func TestToolExecution(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil)
+	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil, t.TempDir())
 
 	ctx := context.Background()
 	// list_files is registered by files.Register
@@ -39,7 +39,7 @@ func TestToolExecution(t *testing.T) {
 func TestGenerateMermaidDiagram(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	r := registry.New()
-	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil)
+	tools.RegisterAll(r, sm, t.TempDir(), "tokens.log", "model", "mode", nil, nil, t.TempDir())
 
 	ctx := context.Background()
 	graph := map[string]interface{}{

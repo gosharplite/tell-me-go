@@ -24,7 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -162,7 +162,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths session.
 		return nil, nil, nil, nil, 0, pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)
 	}
 	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
-	pricingData := framework.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
+	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
 	hManager.Snapshot()
 
 	client, err := c.ClientFactory(cfg, pricingData)
@@ -171,8 +171,8 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths session.
 	}
 
 	registry := c.setupRegistry(client, cfg, &paths, pricingOverrides)
-	modelPricing := framework.GetModelPricing(cfg.Model, pricingData)
-	tracker := framework.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
+	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
+	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
 	return hManager, client, registry, tracker, pruned, pricingData, nil
@@ -182,7 +182,7 @@ func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatt
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
-	if err := framework.RecordSessionCost(ctx, c.SM, chatAgent.GetCostTracker(), paths.LogPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
+	if err := telemetry.RecordSessionCost(ctx, c.SM, chatAgent.GetCostTracker(), paths.LogPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
 		fmt.Fprintf(c.Stderr, "Warning: Failed to record final session cost: %v\n", err)
 	}
 	return nil
@@ -217,7 +217,7 @@ func (c *ChatCommand) setupSecurity(paths *session.Paths, configPath string) {
 func (c *ChatCommand) handleNewSession(ctx context.Context, paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
-	if err := framework.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
+	if err := telemetry.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
 		fmt.Fprintf(c.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
 	}
 	retentionDays := session.LoadBackupRetentionDays(*paths)

@@ -1,17 +1,15 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package framework
+package security
 
 import (
 	"strings"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestCommandValidator(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	sm.RegisterReadOnlyPath("/etc")
 	v := NewCommandValidator(sm)
 
@@ -78,7 +76,7 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 }
 
 func TestCommandValidator_Go(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
 
 	tests := []struct {
@@ -105,7 +103,7 @@ func TestCommandValidator_Go(t *testing.T) {
 }
 
 func TestCommandValidator_Git(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
 
 	tests := []struct {
@@ -141,7 +139,7 @@ func TestCommandValidator_Git(t *testing.T) {
 }
 
 func TestCommandValidator_PathSafety(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	sm.RegisterSafePath("/safe")
 	v := NewCommandValidator(sm)
 
@@ -183,7 +181,7 @@ func TestCommandValidator_SplitError(t *testing.T) {
 }
 
 func TestCommandValidator_EmptyCommand(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
 	allowed, reason := v.IsSafe("")
 	if allowed {
@@ -195,7 +193,7 @@ func TestCommandValidator_EmptyCommand(t *testing.T) {
 }
 
 func TestCommandValidator_UnsafeChars(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
 
 	unsafe := []string{
@@ -214,7 +212,7 @@ func TestCommandValidator_UnsafeChars(t *testing.T) {
 }
 
 func TestCommandValidator_GranularAuthorization(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	v := NewCommandValidator(sm)
 
 	tests := []struct {

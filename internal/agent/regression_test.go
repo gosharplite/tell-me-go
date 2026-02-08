@@ -13,7 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	internaltools "github.com/gosharplite/tell-me-go/internal/tools/registry"
+	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {

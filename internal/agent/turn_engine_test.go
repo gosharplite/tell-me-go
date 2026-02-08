@@ -20,7 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
@@ -684,8 +684,8 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 
 	pricing := config.DefaultPricing()
 	modelName := "gemini-1.5-flash"
-	modelPricing := framework.GetModelPricing(modelName, pricing)
-	tracker := framework.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
+	modelPricing := telemetry.GetModelPricing(modelName, pricing)
+	tracker := telemetry.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
 	e := NewTurnEngine(env.gw, &MockExecutor{}, env.cm, env.reg, env.bus, WithCostTracker(tracker))
 	capturer := newCostCapturer(env.bus)

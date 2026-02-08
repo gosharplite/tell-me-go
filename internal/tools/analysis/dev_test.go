@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
 type mockDevExecutor struct {
@@ -43,7 +42,7 @@ func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.Sec
 	executor := &mockDevExecutor{}
 	m := &devManager{
 		sm:             sm,
-		validator:      framework.NewCommandValidator(sm),
+		validator:      security.NewCommandValidator(sm),
 		executor:       executor,
 		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,

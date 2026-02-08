@@ -1,15 +1,13 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package framework
+package security
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestPolicyTool(t *testing.T) {
@@ -17,7 +15,7 @@ func TestPolicyTool(t *testing.T) {
 	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 
 	tempDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
+	sm := NewSecurityManager(nil)
 	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
 
 	p := NewPolicyTool(sm)

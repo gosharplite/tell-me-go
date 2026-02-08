@@ -8,13 +8,14 @@ package tools
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/network"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
@@ -31,9 +32,9 @@ func RegisterAll(
 	assetsDir string,
 ) {
 	workspace.Register(r, sm, &tools.RealExecutor{})
-	framework.RegisterState(r, sm, outputDir)
-	framework.RegisterPolicy(r, sm)
-	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
+	persistence.RegisterState(r, sm, outputDir)
+	security.RegisterPolicy(r, sm)
+	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm)
 	network.Register(r, sm)
 	media.Register(r, sm, client, assetsDir)

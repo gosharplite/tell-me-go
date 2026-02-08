@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package framework
+package security
 
 import (
 	"fmt"
@@ -9,17 +9,16 @@ import (
 	"strings"
 
 	"github.com/google/shlex"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // CommandValidator handles command validation and security checks.
 type CommandValidator struct {
-	sm security.SecurityProvider
+	sm SecurityProvider
 }
 
 // NewCommandValidator creates a new CommandValidator.
-func NewCommandValidator(sm security.SecurityProvider) *CommandValidator {
+func NewCommandValidator(sm SecurityProvider) *CommandValidator {
 	return &CommandValidator{sm: sm}
 }
 

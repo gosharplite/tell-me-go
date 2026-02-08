@@ -14,7 +14,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -47,7 +47,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 		},
 	}
 	modelPricing := pricingData.Models["test-model"]
-	var tracker domain_pricing.ICostTracker = framework.NewSessionCostTracker(nil, "", "test-mode", "test-model", modelPricing, pricingData)
+	var tracker domain_pricing.ICostTracker = telemetry.NewSessionCostTracker(nil, "", "test-mode", "test-model", modelPricing, pricingData)
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001), WithCostTracker(tracker)) // Very low budget
 

@@ -10,7 +10,7 @@ The "Economic Awareness" milestone implements cost monitoring and loop detection
 
 ## Core Components
 
-### 1. Cost Tracking (`internal/tools/framework/metrics.go`)
+### 1. Cost Tracking (`internal/infrastructure/telemetry/metrics.go`)
 - **Event-Driven**: The `TurnEngine` and `Agent` do not calculate costs directly. Instead, they publish `UsageMetricsEvent` containing `llm.Metrics`.
 - **SessionCostTracker**: A central component (often used by `TurnEngine`) that subscribes to metrics events and calculates USD costs using `pricing.PricingData`.
 - **Persistence**: Costs are logged to `tokens.log` and summarized in `history.json`.
