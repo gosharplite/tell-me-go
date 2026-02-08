@@ -61,13 +61,19 @@ func TestGrepDefinitions(t *testing.T) {
 	tempDir := t.TempDir()
 
 	pyFile := filepath.Join(tempDir, "script.py")
-	os.WriteFile(pyFile, []byte("def my_func():\n    pass\nclass MyClass:\n    pass"), 0644)
+	if err := os.WriteFile(pyFile, []byte("def my_func():\n    pass\nclass MyClass:\n    pass"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	jsFile := filepath.Join(tempDir, "script.js")
-	os.WriteFile(jsFile, []byte("function jsFunc() {}\nconst arrow = () => {}"), 0644)
+	if err := os.WriteFile(jsFile, []byte("function jsFunc() {}\nconst arrow = () => {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	goFile := filepath.Join(tempDir, "main.go")
-	os.WriteFile(goFile, []byte("func main() {}"), 0644)
+	if err := os.WriteFile(goFile, []byte("func main() {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	sm := security.NewSecurityManager(nil)
 	s := &fileSearcher{sm: sm, fs: fsutil.DefaultFileSystem}
@@ -112,7 +118,9 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 	// The limit in searchFiles is hardcoded to 100.
 	// We need 101 matches to trigger truncation.
 	for i := 0; i < 101; i++ {
-		os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("file%d.txt", i)), []byte("match"), 0644)
+		if err := os.WriteFile(filepath.Join(tempDir, fmt.Sprintf("file%d.txt", i)), []byte("match"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	sm := security.NewSecurityManager(nil)
