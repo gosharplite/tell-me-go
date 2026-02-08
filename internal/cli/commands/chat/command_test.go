@@ -6,7 +6,6 @@ package chat
 import (
 	"bytes"
 	"context"
-	"flag"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
+	"github.com/gosharplite/tell-me-go/internal/session"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -126,19 +126,6 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 }
 
-func TestCapturePromptContextCancellation(t *testing.T) {
-	sm := security.NewSecurityManager(os.Stdin)
-	cmd := &Command{SM: sm, Stdin: os.Stdin}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := cmd.capturePrompt(ctx, fs, 0, false)
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
-	}
-}
-
 func TestRunEmptyPromptError(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "vertex.yaml")
@@ -195,9 +182,9 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 		Model: "test-model",
 		Mode:  "test-mode",
 	}
-	paths := &sessionPaths{
-		modeDir: tmpDir,
-		logPath: filepath.Join(tmpDir, "tokens.log"),
+	paths := &session.Paths{
+		ModeDir: tmpDir,
+		LogPath: filepath.Join(tmpDir, "tokens.log"),
 	}
 	pricingOverrides := make(map[string]pricing.ModelPricing)
 

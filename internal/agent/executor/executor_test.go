@@ -99,7 +99,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 	defer pool.Shutdown()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	started := make(chan struct{})
 	finished := make(chan struct{})
 
@@ -107,29 +107,29 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 		close(started)
 		select {
 		case <-taskCtx.Done(): // Pool context
-		case <-ctx.Done():     // Task context (our local one)
+		case <-ctx.Done(): // Task context (our local one)
 		}
 		close(finished)
 	}
 
 	pool.Submit(task)
 	<-started
-	
+
 	cancel() // Cancel the task context
-	
+
 	select {
 	case <-finished:
 		// Worker should be free now
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Worker did not release after task context cancellation")
 	}
-	
+
 	// Pool should still be functional for other tasks
 	task2Started := make(chan struct{})
 	pool.Submit(func(ctx context.Context) {
 		close(task2Started)
 	})
-	
+
 	select {
 	case <-task2Started:
 		// Success
