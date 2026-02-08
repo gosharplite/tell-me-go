@@ -36,14 +36,14 @@ func TestPrompt_Pipe(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	
+
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if prompt != inputStr {
 		t.Errorf("expected %q, got %q", inputStr, prompt)
 	}
@@ -55,22 +55,21 @@ func TestPrompt_Args(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	if err := fs.Parse([]string{"hello", "world"}); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if prompt != "hello world" {
 		t.Errorf("expected 'hello world', got %q", prompt)
 	}
 }
-
 
 func TestPrompt_Empty(t *testing.T) {
 	capturer := &Capturer{
@@ -78,7 +77,7 @@ func TestPrompt_Empty(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	_, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err == nil {
@@ -95,13 +94,13 @@ func TestPrompt_MockEnv(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if prompt != "mocked prompt" {
 		t.Errorf("expected 'mocked prompt', got %q", prompt)
 	}
@@ -114,17 +113,17 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	if err := fs.Parse([]string{"initial", "prompt"}); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	// Should return the initial prompt from args
 	if prompt != "initial prompt" {
 		t.Errorf("expected 'initial prompt', got %q", prompt)
@@ -139,7 +138,7 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 		Stderr: io.Discard,
 		SM:     nil, // No security manager
 	}
-	
+
 	// Should not panic and should print the message
 	capturer.PrintFeedback(&buf, false, "", "test message")
 	if !strings.Contains(buf.String(), "test message") {
@@ -154,17 +153,17 @@ func TestPrompt_Combined(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	if err := fs.Parse([]string{"initial"}); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	expected := "initial\npipe input"
 	if prompt != expected {
 		t.Errorf("expected %q, got %q", expected, prompt)
@@ -185,12 +184,12 @@ func TestCaptureFromTTY(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}
-	
+
 	prompt, err := capturer.captureFromTTY(context.Background(), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if prompt != inputStr {
 		t.Errorf("expected %q, got %q", inputStr, prompt)
 	}
@@ -204,7 +203,7 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	
+
 	_, err := capturer.captureFromTTY(ctx, false)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)

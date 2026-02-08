@@ -13,7 +13,7 @@ import (
 func TestInitializePaths(t *testing.T) {
 	tmp := t.TempDir()
 	mode := "test-mode"
-	
+
 	paths, err := InitializePaths(tmp, mode)
 	if err != nil {
 		t.Fatalf("InitializePaths failed: %v", err)
@@ -33,12 +33,12 @@ func TestRotateSession(t *testing.T) {
 	tmp := t.TempDir()
 	homeDir := tmp
 	mode := "test-mode"
-	
+
 	paths, err := InitializePaths(homeDir, mode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Create dummy files
 	files := []string{paths.HistoryPath, paths.LogPath, paths.CommandsLogPath}
 	for _, f := range files {
@@ -78,16 +78,16 @@ func TestCleanupOldBackups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	backupBase := filepath.Join(tmp, "output", "backups")
-	
+
 	// Create an old backup (31 days ago)
 	oldTimestamp := time.Now().AddDate(0, 0, -31).Format("20060102_150405")
 	oldDir := filepath.Join(backupBase, oldTimestamp)
 	if err := os.MkdirAll(oldDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	
+
 	// Create a fresh backup
 	newTimestamp := time.Now().Format("20060102_150405")
 	newDir := filepath.Join(backupBase, newTimestamp)

@@ -98,7 +98,6 @@ MAX_HISTORY_TURNS: 10
 	cmd = exec.Command(binaryPath, "-c", configPath, "-new", "New session start")
 	_ = cmd.Run() // Expected to fail after archiving due to mock server not existing, but we only care about the archiving logic here.
 
-
 	// 5. Verify the ledger (global_costs.json)
 	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
