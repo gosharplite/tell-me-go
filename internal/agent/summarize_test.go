@@ -16,12 +16,12 @@ import (
 	"testing"
 
 	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -120,8 +120,8 @@ func setupTestHistory(t *testing.T, turns int) *history.Manager {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	ctx := context.Background()
 	for i := 1; i <= turns; i++ {
-		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn User"}}})
-		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn Model"}}})
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "Turn User"}}})
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Turn Model"}}})
 	}
 	return h
 }
@@ -142,17 +142,17 @@ func setupMockGeminiServer() *httptest.Server {
 	}))
 }
 
-func setupTestClient(t *testing.T, url string) *api.Client {
+func setupTestClient(t *testing.T, url string) *llm.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	client, err := llm.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	return client
 }
 
-func setupInternalTools(client *api.Client, h *history.Manager) *InternalTools {
+func setupInternalTools(client *llm.Client, h *history.Manager) *InternalTools {
 	sm := security.NewSecurityManager(nil)
 	a := New(client, h, registry.New(), sm, true)
 	return NewInternalTools(a.ctxManager)
@@ -177,7 +177,7 @@ func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolRe
 			t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
 		}
 		// Verify metadata propagation
-		if m, ok := resp.Metadata["metrics"].(*llm.Metrics); !ok || m == nil {
+		if m, ok := resp.Metadata["metrics"].(*domain_llm.Metrics); !ok || m == nil {
 			t.Errorf("expected metrics in tool result metadata, got: %v", resp.Metadata["metrics"])
 		} else if m.PromptTokens != 100 {
 			t.Errorf("expected PromptTokens 100 in metrics, got %d", m.PromptTokens)
@@ -194,10 +194,10 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 
 	ctx := context.Background()
 	// Add 2 turns (4 messages)
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "2"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "3"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "1"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "2"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	cm := &agentctx.ContextManager{
 		Strategy:   strategy,
@@ -214,8 +214,8 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), expectedPrefix) {
 		t.Errorf("expected error prefix %q, got %q", expectedPrefix, err.Error())
 	}
-	if !errors.Is(err, llm.ErrContextLimitExceeded) {
-		t.Errorf("expected error to wrap llm.ErrContextLimitExceeded")
+	if !errors.Is(err, domain_llm.ErrContextLimitExceeded) {
+		t.Errorf("expected error to wrap domain_llm.ErrContextLimitExceeded")
 	}
 }
 
@@ -225,10 +225,10 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	ctx := context.Background()
 
 	// Add 2 turns (4 messages)
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "1"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "2"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "3"}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "4"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "1"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "2"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}

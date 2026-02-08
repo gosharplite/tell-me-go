@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 func TestParseUsage_Robustness(t *testing.T) {

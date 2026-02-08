@@ -17,7 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // SessionCostRecord represents a single session's financial footprint.

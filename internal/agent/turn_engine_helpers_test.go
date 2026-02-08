@@ -16,7 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // MockGateway implements llm.LLMGateway for testing.

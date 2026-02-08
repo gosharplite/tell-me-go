@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/ui"
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
@@ -22,7 +21,8 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	internal_security "github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/session"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
@@ -45,8 +45,8 @@ type Command struct {
 	HomeDir string
 	SM      *internal_security.SecurityManager
 
-	AgentFactory  func(client *api.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error)
+	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing pricing.PricingData) (*llm.Client, error)
 }
 
 type cliOptions struct {
@@ -66,16 +66,16 @@ func NewCommand(ctx *command.Context) *Command {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return agent.New(client, hManager, reg, sm, disableStreaming,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 			)
 		},
-		ClientFactory: func(cfg *config.Config, pricing pricing.PricingData) (*api.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing pricing.PricingData) (*llm.Client, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
-			return api.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
+			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
 		},
 	}
 }
@@ -154,7 +154,7 @@ func (c *Command) initializeConfiguration(args []string) (*cliOptions, *flag.Fla
 	return opts, fs, cfg, nil
 }
 
-func (c *Command) initializeDependencies(ctx context.Context, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *api.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
+func (c *Command) initializeDependencies(ctx context.Context, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, nil, nil, 0, pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)

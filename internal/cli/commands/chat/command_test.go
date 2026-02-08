@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/cli/command"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -21,7 +20,8 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/session"
 )
@@ -113,10 +113,10 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client *api.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 		return mock
 	}
-	cmd.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*api.Client, error) {
+	cmd.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*llm.Client, error) {
 		return nil, nil
 	}
 

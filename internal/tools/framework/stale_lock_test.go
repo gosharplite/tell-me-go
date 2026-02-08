@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 

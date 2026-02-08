@@ -15,7 +15,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // Clock provides a way to get the current time and handle delays, facilitating deterministic testing.

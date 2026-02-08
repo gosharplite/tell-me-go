@@ -11,9 +11,9 @@ func (s *mockSecurityProvider) IsPathWritable(path string) (string, error) { ret
 func (s *mockSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSecurityProvider) TerminalLock()   {}
-func (s *mockSecurityProvider) TerminalUnlock() {}
-func (s *mockSecurityProvider) IsCommandAllowed(command string) bool { return true }
+func (s *mockSecurityProvider) TerminalLock()                              {}
+func (s *mockSecurityProvider) TerminalUnlock()                            {}
+func (s *mockSecurityProvider) IsCommandAllowed(command string) bool       { return true }
 func (s *mockSecurityProvider) LogAudit(label1, val1, label2, val2 string) {}
 func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil

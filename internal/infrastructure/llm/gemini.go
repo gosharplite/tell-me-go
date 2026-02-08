@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package api handles communication with the Gemini API using the Google GenAI SDK.
-package api
+package llm
 
 import (
 	"context"

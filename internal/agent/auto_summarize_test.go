@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 	"google.golang.org/genai"
@@ -49,7 +49,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	client, err := llm.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -65,8 +65,8 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	// Add 95k tokens of history.
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
 	for i := 0; i < 9; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Response"}}})
 	}
 
 	// Verify initial count
@@ -146,7 +146,7 @@ func setupAutoSummarizeTest(t *testing.T) (*history.Manager, *Agent, *httptest.S
 	}))
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
 	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 
 	return hManager, a, server
@@ -157,8 +157,8 @@ func addHeavyHistory(t *testing.T, h *history.Manager, turns int) {
 	ctx := context.Background()
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
 	for i := 0; i < turns; i++ {
-		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
-		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Response"}}})
 	}
 }
 
@@ -195,7 +195,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	// Set initial system instructions
-	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
 
 	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 	a.SetLimits(10, 3500, 20) // Limit to trigger summarization
@@ -203,8 +203,8 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	// Add some turns (approx 3451 tokens with base overhead and tools)
 	longText := strings.Repeat("A", 1600) // approx 500 tokens
 	for i := 0; i < 6; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Response"}}})
 	}
 
 	// Trigger Prepare
@@ -261,7 +261,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
 
 	sm := security.NewSecurityManager(nil)
 	a := New(client, hManager, reg, sm, true)
@@ -279,13 +279,13 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	// 2900 > 2700, so it should trigger summarization.
 	ctx := context.Background()
 	longText := strings.Repeat("B", 1920) // approx 600 tokens
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Short response"}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: longText}}})
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "Short response"}}})
 
 	// Add more turns to have something to summarize (need at least 10 messages for auto-summarize)
 	for i := 0; i < 4; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn message"}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "Turn message"}}})
+		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "ok"}}})
 	}
 	// Total messages = 2 + 8 = 10.
 

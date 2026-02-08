@@ -57,9 +57,9 @@ type I2 interface {
 			want:     []string{"Type: I2", "M2"},
 		},
 		{
-			name:     "empty typename",
-			code:     `package test`,
-			want:     []string{"Please provide a typename."},
+			name: "empty typename",
+			code: `package test`,
+			want: []string{"Please provide a typename."},
 		},
 		{
 			name:     "missing type",

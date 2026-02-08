@@ -11,15 +11,15 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	"github.com/gosharplite/tell-me-go/internal/api"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
 )
 
@@ -54,10 +54,10 @@ func (m *integrationMockCostTracker) GetDailyCost(ctx context.Context) float64 {
 func (m *integrationMockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
 	return pricing.UsageStats{}, 0
 }
-func (m *integrationMockCostTracker) Accumulate(mt llm.Metrics)                  {}
-func (m *integrationMockCostTracker) CalculateCost(mt llm.Metrics) float64       { return 0 }
-func (m *integrationMockCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 { return 0 }
-func (m *integrationMockCostTracker) Warmup()                                    {}
+func (m *integrationMockCostTracker) Accumulate(mt domain_llm.Metrics)                  {}
+func (m *integrationMockCostTracker) CalculateCost(mt domain_llm.Metrics) float64       { return 0 }
+func (m *integrationMockCostTracker) AccumulateAndReturn(mt domain_llm.Metrics) float64 { return 0 }
+func (m *integrationMockCostTracker) Warmup()                                           {}
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -101,11 +101,11 @@ MAX_HISTORY_TURNS: 10
 		Stderr:  &stderr,
 		HomeDir: tmpDir,
 		SM:      sm,
-		AgentFactory: func(client *api.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return &integrationMockChatter{}
 		},
-		ClientFactory: func(cfg *config.Config, p pricing.PricingData) (*api.Client, error) {
-			return &api.Client{}, nil
+		ClientFactory: func(cfg *config.Config, p pricing.PricingData) (*llm.Client, error) {
+			return &llm.Client{}, nil
 		},
 	}
 

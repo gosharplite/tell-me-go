@@ -114,7 +114,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 			want:    "module github.com/test/repo\ngo 1.25\n",
 		},
 		{
-			name:    "empty file",
+			name: "empty file",
 		},
 		{
 			name:    "no module line",

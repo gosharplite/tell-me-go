@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"gopkg.in/yaml.v3"
 )
 

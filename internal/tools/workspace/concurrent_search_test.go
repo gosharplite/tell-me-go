@@ -92,9 +92,9 @@ func (s *mockSP) IsPathWritable(path string) (string, error) {
 func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSP) TerminalLock()                        {}
-func (s *mockSP) TerminalUnlock()                      {}
-func (s *mockSP) IsCommandAllowed(command string) bool { return true }
+func (s *mockSP) TerminalLock()                              {}
+func (s *mockSP) TerminalUnlock()                            {}
+func (s *mockSP) IsCommandAllowed(command string) bool       { return true }
 func (s *mockSP) LogAudit(label1, val1, label2, val2 string) {}
 func (s *mockSP) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil

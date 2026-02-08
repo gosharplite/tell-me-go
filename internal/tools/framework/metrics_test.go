@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 func TestCostCalculator_Calculate(t *testing.T) {
