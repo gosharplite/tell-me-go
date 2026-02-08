@@ -20,6 +20,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
@@ -27,32 +28,22 @@ import (
 	"google.golang.org/genai"
 )
 
-func TestAgent_SummarizeHistory(t *testing.T) {
-	tests := []struct {
-		name           string
-		turns          float64
-		historyTurns   int
-		expectedMsgs   int
-		expectedErr    bool
-		expectedResult string
-	}{
+type summarizeTestCase struct {
+	name           string
+	turns          float64
+	historyTurns   int
+	expectedMsgs   int
+	expectedErr    bool
+	expectedResult string
+}
+
+func TestAgent_SummarizeHistory_Success(t *testing.T) {
+	tests := []summarizeTestCase{
 		{
 			name:         "summarize some turns",
 			turns:        3,
 			historyTurns: 5,
 			expectedMsgs: 6, // 10 - 6 + 2 = 6
-		},
-		{
-			name:         "invalid turns zero",
-			turns:        0,
-			historyTurns: 5,
-			expectedErr:  true,
-		},
-		{
-			name:         "invalid turns negative",
-			turns:        -5,
-			historyTurns: 5,
-			expectedErr:  true,
 		},
 		{
 			name:           "clamp too many turns",
@@ -77,77 +68,120 @@ func TestAgent_SummarizeHistory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
-			reg := registry.New()
-			ctx := context.Background()
-
-			// Fill history with some turns
-			for i := 1; i <= tt.historyTurns; i++ {
-				_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn User"}}})
-				_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn Model"}}})
-			}
-
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				apiResp := genai.GenerateContentResponse{
-					Candidates: []*genai.Candidate{
-						{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
-					},
-					UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
-						PromptTokenCount:     100,
-						CandidatesTokenCount: 50,
-						TotalTokenCount:      150,
-					},
-				}
-				if err := json.NewEncoder(w).Encode(apiResp); err != nil {
-					t.Errorf("failed to encode response: %v", err)
-				}
-			}))
-			defer server.Close()
-
-			apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-			client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
-			if err != nil {
-				t.Fatalf("failed to create client: %v", err)
-			}
-
-			sm := security.NewSecurityManager(nil)
-			a := New(client, hManager, reg, sm, true)
-
-			args := map[string]interface{}{
-				"turns": tt.turns,
-			}
-			if tt.name == "with focus" {
-				args["focus"] = "refactoring"
-			}
-			it := NewInternalTools(a.ctxManager)
-			resp, err := it.SummarizeHistory(ctx, args)
-
-			if (err != nil) != tt.expectedErr {
-				t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)
-			}
-
-			if tt.expectedErr {
-				return
-			}
-
-			if tt.expectedResult != "" && resp.Text != tt.expectedResult {
-				t.Errorf("expected result text %q, got %q", tt.expectedResult, resp.Text)
-			}
-
-			if tt.expectedMsgs > 0 {
-				contents := hManager.GetContents()
-				if len(contents) != tt.expectedMsgs {
-					t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
-				}
-				// Verify metadata propagation
-				if m, ok := resp.Metadata["metrics"].(*llm.Metrics); !ok || m == nil {
-					t.Errorf("expected metrics in tool result metadata, got: %v", resp.Metadata["metrics"])
-				} else if m.PromptTokens != 100 {
-					t.Errorf("expected PromptTokens 100 in metrics, got %d", m.PromptTokens)
-				}
-			}
+			runSummarizeTest(t, tt)
 		})
+	}
+}
+
+func TestAgent_SummarizeHistory_Errors(t *testing.T) {
+	tests := []summarizeTestCase{
+		{
+			name:         "invalid turns zero",
+			turns:        0,
+			historyTurns: 5,
+			expectedErr:  true,
+		},
+		{
+			name:         "invalid turns negative",
+			turns:        -5,
+			historyTurns: 5,
+			expectedErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runSummarizeTest(t, tt)
+		})
+	}
+}
+
+func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
+	ctx := context.Background()
+	hManager := setupTestHistory(t, tt.historyTurns)
+
+	server := setupMockGeminiServer()
+	defer server.Close()
+
+	client := setupTestClient(t, server.URL)
+	it := setupInternalTools(client, hManager)
+
+	args := map[string]interface{}{"turns": tt.turns}
+	if tt.name == "with focus" {
+		args["focus"] = "refactoring"
+	}
+
+	resp, err := it.SummarizeHistory(ctx, args)
+	verifySummarizeResult(t, tt, resp, err, hManager)
+}
+
+func setupTestHistory(t *testing.T, turns int) *history.Manager {
+	t.Helper()
+	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+	for i := 1; i <= turns; i++ {
+		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn User"}}})
+		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn Model"}}})
+	}
+	return h
+}
+
+func setupMockGeminiServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "This is a summary."}}}},
+			},
+			UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+				PromptTokenCount:     100,
+				CandidatesTokenCount: 50,
+				TotalTokenCount:      150,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(apiResp)
+	}))
+}
+
+func setupTestClient(t *testing.T, url string) *api.Client {
+	t.Helper()
+	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	client, err := api.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	return client
+}
+
+func setupInternalTools(client *api.Client, h *history.Manager) *InternalTools {
+	sm := security.NewSecurityManager(nil)
+	a := New(client, h, registry.New(), sm, true)
+	return NewInternalTools(a.ctxManager)
+}
+
+func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h *history.Manager) {
+	t.Helper()
+	if (err != nil) != tt.expectedErr {
+		t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)
+	}
+	if tt.expectedErr {
+		return
+	}
+
+	if tt.expectedResult != "" && resp.Text != tt.expectedResult {
+		t.Errorf("expected result text %q, got %q", tt.expectedResult, resp.Text)
+	}
+
+	if tt.expectedMsgs > 0 {
+		contents := h.GetContents()
+		if len(contents) != tt.expectedMsgs {
+			t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
+		}
+		// Verify metadata propagation
+		if m, ok := resp.Metadata["metrics"].(*llm.Metrics); !ok || m == nil {
+			t.Errorf("expected metrics in tool result metadata, got: %v", resp.Metadata["metrics"])
+		} else if m.PromptTokens != 100 {
+			t.Errorf("expected PromptTokens 100 in metrics, got %d", m.PromptTokens)
+		}
 	}
 }
 

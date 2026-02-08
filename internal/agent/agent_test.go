@@ -257,53 +257,60 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 }
 
 func TestAgent_PinningFlow(t *testing.T) {
+	a, h, ctx := setupPinningFlowTest(t)
+	it := NewInternalTools(a.ctxManager)
+
+	// Step 1: Pin turn 0
+	t.Run("Pin turn 0", func(t *testing.T) {
+		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "pin", "index": 0.0})
+		if err != nil {
+			t.Fatalf("ManageHistory failed: %v", err)
+		}
+		if resp.Text != "Turn 0 has been successfully pinned." {
+			t.Errorf("unexpected response: %s", resp.Text)
+		}
+
+		contents := h.GetContents()
+		if !contents[0].Pinned || !contents[1].Pinned {
+			t.Error("expected turn 0 to be pinned")
+		}
+		if contents[2].Pinned || contents[3].Pinned {
+			t.Error("expected turn 1 to remain unpinned")
+		}
+	})
+
+	// Step 2: Unpin turn 0
+	t.Run("Unpin turn 0", func(t *testing.T) {
+		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "unpin", "index": 0.0})
+		if err != nil {
+			t.Fatalf("ManageHistory failed: %v", err)
+		}
+		if resp.Text != "Turn 0 has been successfully unpinned." {
+			t.Errorf("unexpected response: %s", resp.Text)
+		}
+
+		contents := h.GetContents()
+		if contents[0].Pinned || contents[1].Pinned {
+			t.Error("expected turn 0 to be unpinned")
+		}
+	})
+}
+
+func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, stdctx.Context) {
+	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	tmpDir := t.TempDir()
-	h := history.NewManager(filepath.Join(tmpDir, "history_pinning.json"))
+	h := history.NewManager(filepath.Join(t.TempDir(), "history_pinning.json"))
 	ctx := stdctx.Background()
 
-	// 1. Add some turns
-	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "t1"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "r1"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "t2"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "r2"}}})
+	// Add 2 turns
+	for i := 1; i <= 2; i++ {
+		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("t%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
+	}
 
 	a := New(&MockLLMClient{}, h, reg, sm, false)
-
-	// 2. Pin turn 0
-	it := NewInternalTools(a.ctxManager)
-	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "pin", "index": 0.0})
-	if err != nil {
-		t.Fatalf("ManageHistory failed: %v", err)
-	}
-	if resp.Text != "Turn 0 has been successfully pinned." {
-		t.Errorf("unexpected response: %s", resp.Text)
-	}
-
-	// 3. Verify in history
-	contents := h.GetContents()
-	if !contents[0].Pinned || !contents[1].Pinned {
-		t.Error("expected turn 0 (msgs 0 and 1) to be pinned")
-	}
-	if contents[2].Pinned || contents[3].Pinned {
-		t.Error("expected turn 1 to remain unpinned")
-	}
-
-	// 4. Unpin turn 0
-	resp, err = it.ManageHistory(ctx, map[string]interface{}{"action": "unpin", "index": 0.0})
-	if err != nil {
-		t.Fatalf("ManageHistory failed: %v", err)
-	}
-	if resp.Text != "Turn 0 has been successfully unpinned." {
-		t.Errorf("unexpected response: %s", resp.Text)
-	}
-
-	// 5. Verify in history
-	contents = h.GetContents()
-	if contents[0].Pinned || contents[1].Pinned {
-		t.Error("expected turn 0 to be unpinned")
-	}
+	return a, h, ctx
 }
 
 func TestAgent_Integration_PinningPruning(t *testing.T) {

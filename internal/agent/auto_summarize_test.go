@@ -100,40 +100,15 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 }
 
 func TestAutoSummarize_Logging(t *testing.T) {
-	tmpDir := t.TempDir()
-	hManager := history.NewManager(filepath.Join(tmpDir, "log_test_history.json"))
-	reg := registry.New()
 	ctx := context.Background()
-
-	// Mock server that returns a simple summary
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		apiResp := genai.GenerateContentResponse{
-			Candidates: []*genai.Candidate{
-				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Summary"}}}},
-			},
-		}
-		if err := json.NewEncoder(w).Encode(apiResp); err != nil {
-			t.Errorf("failed to encode response: %v", err)
-		}
-	}))
+	hManager, a, server := setupAutoSummarizeTest(t)
 	defer server.Close()
-
-	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 
 	// Set a limit to trigger auto-summarization (90% threshold = 90k tokens)
 	a.SetLimits(10, 100000, 20)
 
 	// Add enough turns to exceed 90k tokens
-	longText := strings.Repeat("A", 32000) // approx 10k tokens
-	for i := 0; i < 9; i++ {
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
-		_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
-	}
+	addHeavyHistory(t, hManager, 9)
 
 	// Channel to capture the log event
 	logReceived := make(chan string, 1)
@@ -146,14 +121,51 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	})
 
 	// Trigger the pipeline via Prepare
-	_, _, err = a.ctxManager.Prepare(ctx, 1)
+	_, _, err := a.ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
 	// Verify the log was emitted and contains expected data
+	verifyAutoSummarizeLog(t, logReceived)
+}
+
+func setupAutoSummarizeTest(t *testing.T) (*history.Manager, *Agent, *httptest.Server) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(filepath.Join(tmpDir, "log_test_history.json"))
+	reg := registry.New()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiResp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: "Summary"}}}},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(apiResp)
+	}))
+
+	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
+	client, _ := api.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
+
+	return hManager, a, server
+}
+
+func addHeavyHistory(t *testing.T, h *history.Manager, turns int) {
+	t.Helper()
+	ctx := context.Background()
+	longText := strings.Repeat("A", 32000) // approx 10k tokens
+	for i := 0; i < turns; i++ {
+		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: longText}}})
+		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}})
+	}
+}
+
+func verifyAutoSummarizeLog(t *testing.T, logCh <-chan string) {
+	t.Helper()
 	select {
-	case msg := <-logReceived:
+	case msg := <-logCh:
 		t.Logf("Caught expected event: %s", msg)
 		if !strings.Contains(msg, "turns") || !strings.Contains(msg, "tokens") {
 			t.Errorf("Log message format incorrect, got: %s", msg)

@@ -9,8 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/code"
-	"github.com/gosharplite/tell-me-go/internal/tools/dev"
+	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 	"github.com/gosharplite/tell-me-go/internal/tools/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/network"
@@ -33,9 +32,7 @@ func RegisterAll(
 	framework.RegisterState(r, sm, outputDir)
 	framework.RegisterPolicy(r, sm)
 	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
-	dev.Register(r, sm)
-	dev.RegisterRelease(r, sm)
-	code.Register(r, sm)
+	analysis.Register(r, sm)
 	network.Register(r, sm)
 	media.Register(r, sm, gateway)
 

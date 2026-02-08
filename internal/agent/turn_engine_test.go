@@ -20,88 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
-
-// MockGateway implements llm.LLMGateway for testing.
-type MockGateway struct {
-	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
-}
-
-func (m *MockGateway) Generate(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return m.GenerateFunc(ctx, input, t, resolver)
-}
-
-func (m *MockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	return nil, nil, nil
-}
-
-func (m *MockGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
-}
-
-func (m *MockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, nil
-}
-
-func (m *MockGateway) RefreshAuth() error { return nil }
-
-func (m *MockGateway) SetSystemInstructions(instr string) {}
-
-// MockRegistry implements ToolRegistry for testing.
-type MockRegistry struct {
-	Declarations []*tools.ToolDeclaration
-}
-
-func (m *MockRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return m.Declarations
-}
-
-func (m *MockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
-
-func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
-	return tools.ToolResult{}, nil
-}
-
-func (m *MockRegistry) IsSerial(name string) bool      { return false }
-func (m *MockRegistry) IsLongRunning(name string) bool { return false }
-
-// MockExecutor implements IToolExecutor for testing.
-type MockExecutor struct {
-	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
-}
-
-func (m *MockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
-}
-
-// MockStore implements history.Store for testing.
-type MockStore struct {
-	LoadFunc   func(ctx context.Context) ([]*llm.Content, error)
-	SaveFunc   func(ctx context.Context, contents []*llm.Content) error
-	AppendFunc func(ctx context.Context, content *llm.Content) error
-}
-
-func (m *MockStore) Load(ctx context.Context) ([]*llm.Content, error) { return m.LoadFunc(ctx) }
-func (m *MockStore) Save(ctx context.Context, contents []*llm.Content) error {
-	return m.SaveFunc(ctx, contents)
-}
-func (m *MockStore) Append(ctx context.Context, content *llm.Content) error {
-	return m.AppendFunc(ctx, content)
-}
-
-// MockClock for deterministic tests
-type MockClock struct {
-	CurrentTime time.Time
-}
-
-func (m *MockClock) Now() time.Time { return m.CurrentTime }
-func (m *MockClock) After(d time.Duration) <-chan time.Time {
-	ch := make(chan time.Time, 1)
-	ch <- m.CurrentTime
-	return ch
-}
 
 func TestTurnEngine_StateTransitions(t *testing.T) {
 	tests := []struct {
@@ -120,59 +40,8 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var p turnProcessor
-			switch tt.phase {
-			case phaseRefining:
-				p = &ContextRefiner{}
-			case phaseInference:
-				p = &InferenceStep{}
-			case phaseExecuting:
-				p = &ExecutionStep{}
-			case phasePersisting:
-				p = &PersistenceStep{}
-			case phaseRecovering:
-				p = &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
-			}
-
-			// Mock Turn
-			mockGw := &MockGateway{
-				GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
-						if tt.hasTools && tt.phase == phaseInference {
-							content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}
-						}
-						return content, &llm.Metrics{}, nil
-					}
-				},
-			}
-			turn := &turn{
-				State: &turnState{
-					HasToolCalls: tt.hasTools,
-					RetryCount:   0,
-					LastError:    &AgentError{Category: ErrTransient, Message: "transient error"}, // only for recovery
-					Metadata: &agentctx.Metadata{
-						History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
-					},
-				},
-				CtxManager: &agentctx.ContextManager{
-					History:  history.NewManager(""),
-					Strategy: agentctx.NewContextStrategy(agentctx.NewHeuristicTokenCounter(&MockRegistry{}), nil),
-				},
-				Gateway: mockGw,
-				Executor: &MockExecutor{
-					ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-						return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
-					},
-				},
-				Registry: &MockRegistry{},
-				Clock:    &realClock{},
-			}
-			if tt.phase == phaseRefining {
-				turn.CtxManager.Pipeline = agentctx.NewContextPipeline()
-			}
+			p := createProcessorForPhase(tt.phase)
+			turn := setupTransitionTurn(tt.hasTools, tt.phase)
 
 			res := p.Process(context.Background(), turn)
 			if res.NextPhase != tt.expected {
@@ -183,19 +52,14 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 }
 
 func TestTurnEngine_Run_TurnLimit(t *testing.T) {
-	reg := &MockRegistry{}
-	bus := &events.SimpleEventBus{}
-	strategy := agentctx.NewContextStrategy(agentctx.NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	cm := newTestContextManager(strategy, hManager, bus)
-	e := NewTurnEngine(&MockGateway{}, &MockExecutor{}, cm, reg, bus)
+	env := setupTurnEngineTest(t)
+	e := NewTurnEngine(env.gw, &MockExecutor{}, env.cm, env.reg, env.bus)
 	e.ctxManager.Strategy.SetLimits(1000, 5, 2) // Max 2 turns (0, 1, 2)
 
 	ctx := context.Background()
-	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
 	// Force tool calls to keep the loop going
-	e.gateway.(*MockGateway).GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 		ch := make(chan *llm.Content)
 		close(ch)
 		return ch, func() (*llm.Content, *llm.Metrics, error) {
@@ -638,16 +502,6 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 	}
 }
 
-func minimalPipeline() *agentctx.ContextPipeline {
-	return agentctx.NewContextPipeline()
-}
-
-func newTestContextManager(s *agentctx.ContextStrategy, h *history.Manager, bus events.EventBus) *agentctx.ContextManager {
-	cm := agentctx.NewContextManager(s, h, bus, nil)
-	cm.Pipeline = minimalPipeline()
-	return cm
-}
-
 func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
@@ -719,16 +573,6 @@ func TestTurnEngine_WithProcessor(t *testing.T) {
 	}
 }
 
-type mockHook struct {
-	beforeCalled int
-	afterCalled  int
-	transCalled  int
-}
-
-func (h *mockHook) BeforeTurn(turn *turn)                              { h.beforeCalled++ }
-func (h *mockHook) AfterTurn(turn *turn, err error)                    { h.afterCalled++ }
-func (h *mockHook) OnPhaseTransition(from, to turnPhase, s *turnState) { h.transCalled++ }
-
 func TestTurnEngine_Hooks(t *testing.T) {
 	mockGw := &MockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
@@ -762,17 +606,6 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	if hook.transCalled != 3 {
 		t.Errorf("expected 3 transition calls, got %d", hook.transCalled)
 	}
-}
-
-type mockRetryPolicy struct {
-	shouldRetryCalled bool
-	delay             time.Duration
-	retry             bool
-}
-
-func (m *mockRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
-	m.shouldRetryCalled = true
-	return m.delay, m.retry
 }
 
 func TestTurnEngine_WithRetryPolicy(t *testing.T) {
@@ -843,56 +676,29 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 }
 
 func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
-	mockGw := &MockGateway{}
-	reg := &MockRegistry{}
-	bus := &events.SimpleEventBus{}
-	strategy := agentctx.NewContextStrategy(agentctx.NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
-		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
-	})
-	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+	env := setupTurnEngineTest(t)
 
 	pricing := config.DefaultPricing()
 	modelName := "gemini-1.5-flash"
 	modelPricing := framework.GetModelPricing(modelName, pricing)
-	// We need internal/tools/framework imported as framework
 	tracker := framework.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
-	e := NewTurnEngine(mockGw, &MockExecutor{}, newTestContextManager(strategy, hManager, bus), reg, bus, WithCostTracker(tracker))
-
-	var turnCosts []float64
-	var lastTaskCost float64
-	bus.Subscribe(func(ev events.Event) {
-		if um, ok := ev.(events.UsageMetricsEvent); ok {
-			if um.Metrics != nil {
-				turnCosts = append(turnCosts, um.Metrics.Cost)
-			}
-		}
-		if ts, ok := ev.(events.TurnStatusEvent); ok {
-			lastTaskCost = ts.Status.TaskCost
-		}
-	})
+	e := NewTurnEngine(env.gw, &MockExecutor{}, env.cm, env.reg, env.bus, WithCostTracker(tracker))
+	capturer := newCostCapturer(env.bus)
 
 	// First turn: 1000 prompt tokens, 500 response tokens
 	// Second turn: 1000 prompt tokens, 500 response tokens
 	turnCount := 0
-	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-		ch := make(chan *llm.Content)
-		close(ch)
-		return ch, func() (*llm.Content, *llm.Metrics, error) {
-			turnCount++
-			content := &llm.Content{Role: "model"}
-			if turnCount == 1 {
-				content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}
-			} else {
-				content.Parts = []*llm.Part{{Text: "done"}}
-			}
-			return content, &llm.Metrics{
-				PromptTokens:   1000,
-				ResponseTokens: 500,
-			}, nil
+	env.gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		turnCount++
+		content := &llm.Content{Role: "model"}
+		if turnCount == 1 {
+			content.Parts = []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "t"}}}
+		} else {
+			content.Parts = []*llm.Part{{Text: "done"}}
+		}
+		return closedChan(content), func() (*llm.Content, *llm.Metrics, error) {
+			return content, &llm.Metrics{PromptTokens: 1000, ResponseTokens: 500}, nil
 		}
 	}
 
@@ -900,38 +706,23 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "t"}}}}, nil
 	}
 
-	err := e.Run(context.Background(), time.Now())
-	if err != nil {
+	if err := e.Run(context.Background(), time.Now()); err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
 
 	// Cost per turn: (1000 * 0.10 / 1e6) + (500 * 0.40 / 1e6) = 0.0001 + 0.0002 = 0.0003
 	// Total Task Cost (2 turns): 0.0006
 	expectedTaskCost := 0.0006
-	if fmt.Sprintf("%.6f", lastTaskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
-		t.Errorf("expected task cost %f, got %f", expectedTaskCost, lastTaskCost)
-	}
-
-	if len(turnCosts) != 2 {
-		t.Errorf("expected 2 usage metrics events, got %d", len(turnCosts))
-	}
-	for i, c := range turnCosts {
-		if fmt.Sprintf("%.6f", c) != "0.000300" {
-			t.Errorf("turn %d: expected turn cost 0.000300, got %f", i, c)
-		}
-	}
+	capturer.assertTaskCost(t, expectedTaskCost)
+	capturer.assertTurnCosts(t, []float64{0.0003, 0.0003})
 
 	// Run again, taskCost should reset
 	turnCount = 0
-	turnCosts = nil
-	lastTaskCost = 0
+	capturer.reset()
 	_ = e.Run(context.Background(), time.Now())
-	if fmt.Sprintf("%.6f", lastTaskCost) != fmt.Sprintf("%.6f", expectedTaskCost) {
-		t.Errorf("expected reset and re-accumulation to %f, got %f", expectedTaskCost, lastTaskCost)
-	}
-
-	if len(turnCosts) != 2 {
-		t.Errorf("expected 2 usage metrics events on second run, got %d", len(turnCosts))
+	capturer.assertTaskCost(t, expectedTaskCost)
+	if len(capturer.turnCosts) != 2 {
+		t.Errorf("expected 2 usage metrics events on second run, got %d", len(capturer.turnCosts))
 	}
 }
 
@@ -1206,42 +997,6 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 		t.Error("emergency checkpoint failed: partial response was not persisted to history")
 	}
 }
-
-type mockEngineCostTracker struct {
-	mu               sync.Mutex
-	accumulatedCount int
-}
-
-func (m *mockEngineCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-	return 0.05
-}
-
-func (m *mockEngineCostTracker) Accumulate(mt llm.Metrics) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.accumulatedCount++
-}
-
-func (m *mockEngineCostTracker) GetTotalCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetDailyCost(ctx context.Context) float64 {
-	return 0
-}
-
-func (m *mockEngineCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
-	return pricing.UsageStats{}, 0
-}
-
-func (m *mockEngineCostTracker) Warmup() {}
 
 func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	bus := &events.SimpleEventBus{}

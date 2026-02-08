@@ -13,4 +13,6 @@ type SecurityProvider interface {
 	TerminalLock()
 	TerminalUnlock()
 	IsCommandAllowed(command string) bool
+	LogAudit(label1, val1, label2, val2 string)
+	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }

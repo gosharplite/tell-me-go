@@ -15,11 +15,11 @@ import (
 
 // CommandValidator handles command validation and security checks.
 type CommandValidator struct {
-	sm *security.SecurityManager
+	sm security.SecurityProvider
 }
 
 // NewCommandValidator creates a new CommandValidator.
-func NewCommandValidator(sm *security.SecurityManager) *CommandValidator {
+func NewCommandValidator(sm security.SecurityProvider) *CommandValidator {
 	return &CommandValidator{sm: sm}
 }
 

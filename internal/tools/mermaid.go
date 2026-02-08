@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/code/analysis"
+	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
 
 // generateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
