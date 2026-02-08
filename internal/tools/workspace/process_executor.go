@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package system
+package workspace
 
 import (
 	"bufio"
@@ -62,7 +62,7 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 	}
 
 	if err := cmd.Start(); err != nil {
-		return ExecutionResult{ExitCode: 1, Error: fmt.Sprintf("failed to start: %v", err)}, nil
+		return ExecutionResult{}, fmt.Errorf("failed to start: %w", err)
 	}
 
 	var sb strings.Builder
@@ -223,7 +223,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	if err := p.start(); err != nil {
 		_, _ = p.wait() // Ensure started processes are cleaned up
-		return ExecutionResult{ExitCode: 1, Error: err.Error()}, nil
+		return ExecutionResult{}, fmt.Errorf("pipeline failed to start: %w", err)
 	}
 
 	stdoutStr, stderrStr, truncated := p.capture(config, file)

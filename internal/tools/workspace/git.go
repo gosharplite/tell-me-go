@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package git
+package workspace
 
 import (
 	"context"
@@ -16,108 +16,6 @@ import (
 type gitManager struct {
 	sm   *security.SecurityManager
 	Exec tools.CommandExecutor
-}
-
-// Register adds Git-related tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
-	m := &gitManager{sm: sm, Exec: exec}
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_status",
-		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
-	}, m.getGitStatus)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_diff",
-		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"staged": {
-					Type:        "BOOLEAN",
-					Description: "If true, shows staged changes.",
-				},
-			},
-		},
-	}, m.getGitDiff)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_log",
-		Description: "Retrieves the git commit log.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"limit": {
-					Type:        "INTEGER",
-					Description: "Number of commits to show (default: 10).",
-				},
-			},
-		},
-	}, m.getGitLog)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_show",
-		Description: "Shows the full details (diff and metadata) of a specific commit hash (runs git show).",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"hash": {
-					Type:        "STRING",
-					Description: "The commit hash to inspect.",
-				},
-			},
-			Required: []string{"hash"},
-		},
-	}, m.getGitCommit)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "get_git_blame",
-		Description: "Shows who changed which lines in a file.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the file.",
-				},
-			},
-			Required: []string{"filepath"},
-		},
-	}, m.getGitBlame)
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "git_commit",
-		Description: "Commits staged changes with a message.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"message": {
-					Type:        "STRING",
-					Description: "The commit message.",
-				},
-			},
-			Required: []string{"message"},
-		},
-	}, m.gitCommit, registry.ToolOptions{Serial: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "git_create_branch",
-		Description: "Creates and checks out a new git branch.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"name": {
-					Type:        "STRING",
-					Description: "The name of the new branch.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for creating this branch.",
-				},
-			},
-			Required: []string{"name", "reason"},
-		},
-	}, m.gitCreateBranch, registry.ToolOptions{Serial: true})
 }
 
 func (m *gitManager) getGitStatus(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

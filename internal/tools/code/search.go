@@ -12,8 +12,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/files"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type SearchManager struct {
@@ -36,7 +36,7 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	results, err := files.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
 		return todoRegex.MatchString(line)
 	}, 500)
 
@@ -74,7 +74,7 @@ func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		path = "."
 	}
 
-	results, err := files.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
 		return re.MatchString(line)
 	}, 100)
 

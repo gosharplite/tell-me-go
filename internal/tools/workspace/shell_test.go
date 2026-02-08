@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package system
+package workspace
 
 import (
 	"context"
@@ -268,4 +268,61 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShellTool_PipeCommands(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := NewShellTool(sm)
+	ctx := context.Background()
+
+	t.Run("Simple pipe", func(t *testing.T) {
+		args := map[string]interface{}{
+			"commands": []interface{}{"echo hello world", "grep hello"},
+			"reason":   "test pipe",
+		}
+		res, err := tool.PipeCommands(ctx, args)
+		if err != nil {
+			t.Fatalf("PipeCommands failed: %v", err)
+		}
+		if !strings.Contains(res.Text, "hello world") {
+			t.Errorf("expected output to contain 'hello world', got %q", res.Text)
+		}
+	})
+
+	t.Run("Pipe with invalid command", func(t *testing.T) {
+		args := map[string]interface{}{
+			"commands": []interface{}{"echo hello", "invalid-cmd-12345"},
+			"reason":   "test pipe failure",
+		}
+		_, err := tool.PipeCommands(ctx, args)
+		if err == nil {
+			t.Error("expected error for invalid command in pipe")
+		}
+	})
+
+	t.Run("Pipe with shell operators (denied)", func(t *testing.T) {
+		args := map[string]interface{}{
+			"commands": []interface{}{"echo hello", "grep hi > out.txt"},
+			"reason":   "test pipe security",
+		}
+		_, err := tool.PipeCommands(ctx, args)
+		if err == nil {
+			t.Error("expected error for shell operator in pipe")
+		}
+	})
+
+	t.Run("Empty commands list", func(t *testing.T) {
+		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": []interface{}{}})
+		if err == nil {
+			t.Error("expected error for empty commands list")
+		}
+	})
+
+	t.Run("Invalid commands type", func(t *testing.T) {
+		_, err := tool.PipeCommands(ctx, map[string]interface{}{"commands": "not a list"})
+		if err == nil {
+			t.Error("expected error for invalid commands type")
+		}
+	})
 }

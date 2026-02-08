@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package system
+package workspace
 
 import (
 	"context"
@@ -102,14 +102,9 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"/nonexistent/command/12345"},
 				{"cat"},
 			},
-			wantErr: false, // Start failure returns ExecutionResult with Error set
+			wantErr: true,
 			check: func(t *testing.T, res ExecutionResult) {
-				if res.Error == "" {
-					t.Errorf("expected error message in result, got empty")
-				}
-				if res.ExitCode == 0 {
-					t.Errorf("expected non-zero exit code for invalid command, got 0")
-				}
+				// Nothing to check if err != nil
 			},
 		},
 	}

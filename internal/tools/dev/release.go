@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/tools/system"
+	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 // RegisterRelease adds release management tools to the registry.
@@ -23,7 +23,7 @@ func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 	m := &releaseManager{
 		sm:       sm,
 		fs:       fsutil.DefaultFileSystem,
-		executor: system.NewProcessExecutor(),
+		executor: workspace.NewProcessExecutor(),
 	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -35,7 +35,7 @@ func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
 type releaseManager struct {
 	sm       *security.SecurityManager
 	fs       fsutil.FileSystem
-	executor system.CommandExecutor
+	executor workspace.CommandExecutor
 }
 
 type ReadinessCheck interface {
@@ -166,7 +166,7 @@ func (c *DependencyChecker) Run(ctx context.Context) CheckResult {
 
 // BuildChecker implementation
 type BuildChecker struct {
-	executor system.CommandExecutor
+	executor workspace.CommandExecutor
 }
 
 func (c *BuildChecker) Name() string { return "Clean Room Build Simulation" }
@@ -177,7 +177,7 @@ func (c *BuildChecker) Run(ctx context.Context) CheckResult {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	res, err := c.executor.RunCommand(ctx, []string{"go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go"}, system.ExecutionConfig{})
+	res, err := c.executor.RunCommand(ctx, []string{"go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go"}, workspace.ExecutionConfig{})
 	if err != nil || res.ExitCode != 0 {
 		return CheckResult{OK: false, Message: fmt.Sprintf("Clean build failed (Exit %d):\n%s", res.ExitCode, res.Output)}
 	}
@@ -186,12 +186,12 @@ func (c *BuildChecker) Run(ctx context.Context) CheckResult {
 
 // TestRunner implementation
 type TestRunner struct {
-	executor system.CommandExecutor
+	executor workspace.CommandExecutor
 }
 
 func (c *TestRunner) Name() string { return "Test Suite Verification" }
 func (c *TestRunner) Run(ctx context.Context) CheckResult {
-	res, err := c.executor.RunCommand(ctx, []string{"go", "test", "-race", "./..."}, system.ExecutionConfig{})
+	res, err := c.executor.RunCommand(ctx, []string{"go", "test", "-race", "./..."}, workspace.ExecutionConfig{})
 	if err != nil || res.ExitCode != 0 {
 		return CheckResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed (Exit %d):\n%s", res.ExitCode, res.Output)}
 	}

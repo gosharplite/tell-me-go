@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package files
+package workspace
 
 import (
 	"context"
@@ -178,8 +178,6 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 		return nil
 	}
 
-	// fileReader doesn't have walkAndProcess, I should probably move it to a shared place or redefine it.
-	// Actually, search_files uses walkAndProcess. I'll move walkAndProcess to a internal helper in this package.
 	if err := walkAndProcess(ctx, r.sm, r.fs, params.Path, processor); err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -222,7 +220,6 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{Text: "Files are identical."}, nil
 	}
 
-	// diff returns exit code 1 if files differ, which is an error for Command.CombinedOutput
 	if err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
 			return tools.ToolResult{}, fmt.Errorf("diff failed: %w", err)

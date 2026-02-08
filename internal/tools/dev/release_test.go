@@ -13,7 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/fsutil"
 	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/system"
+	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type mockFileSystem struct {
@@ -63,15 +63,15 @@ func (m *mockFileInfo) IsDir() bool        { return false }
 func (m *mockFileInfo) Sys() interface{}   { return nil }
 
 type mockCommandExecutor struct {
-	system.CommandExecutor
-	runFunc func(ctx context.Context, parts []string, config system.ExecutionConfig) (system.ExecutionResult, error)
+	workspace.CommandExecutor
+	runFunc func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error)
 }
 
-func (m *mockCommandExecutor) RunCommand(ctx context.Context, parts []string, config system.ExecutionConfig) (system.ExecutionResult, error) {
+func (m *mockCommandExecutor) RunCommand(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
 	if m.runFunc != nil {
 		return m.runFunc(ctx, parts, config)
 	}
-	return system.ExecutionResult{ExitCode: 0}, nil
+	return workspace.ExecutionResult{ExitCode: 0}, nil
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
@@ -152,9 +152,9 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := &mockFileSystem{files: tt.files()}
 			executor := &mockCommandExecutor{
-				runFunc: func(ctx context.Context, parts []string, config system.ExecutionConfig) (system.ExecutionResult, error) {
+				runFunc: func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
 					// Build and Test are the two commands executed
-					return system.ExecutionResult{ExitCode: tt.exitCode, Output: "failed"}, nil
+					return workspace.ExecutionResult{ExitCode: tt.exitCode, Output: "failed"}, nil
 				},
 			}
 

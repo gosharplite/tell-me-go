@@ -1,11 +1,12 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package files
+package workspace
 
 import (
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
 )
@@ -13,7 +14,7 @@ import (
 func TestRegister(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	Register(reg, sm)
+	Register(reg, sm, &tools.RealExecutor{})
 
 	decls := reg.GetDeclarations()
 	found := make(map[string]bool)
@@ -33,6 +34,16 @@ func TestRegister(t *testing.T) {
 		"append_text",
 		"get_file_diff",
 		"undo_file_change",
+		"execute_command",
+		"pipe_commands",
+		"ask_user",
+		"get_git_status",
+		"get_git_diff",
+		"get_git_log",
+		"get_git_show",
+		"get_git_blame",
+		"git_commit",
+		"git_create_branch",
 	}
 
 	for _, name := range expectedTools {

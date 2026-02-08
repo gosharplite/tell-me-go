@@ -11,13 +11,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/code"
 	"github.com/gosharplite/tell-me-go/internal/tools/dev"
-	"github.com/gosharplite/tell-me-go/internal/tools/files"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
-	"github.com/gosharplite/tell-me-go/internal/tools/git"
 	"github.com/gosharplite/tell-me-go/internal/tools/media"
 	"github.com/gosharplite/tell-me-go/internal/tools/network"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
-	"github.com/gosharplite/tell-me-go/internal/tools/system"
+	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 // RegisterAll registers all available tools into the registry.
@@ -31,12 +29,10 @@ func RegisterAll(
 	pricingOverrides map[string]pricing.ModelPricing,
 	gateway tools.AgentGateway,
 ) {
-	files.Register(r, sm)
+	workspace.Register(r, sm, &tools.RealExecutor{})
 	framework.RegisterState(r, sm, outputDir)
 	framework.RegisterPolicy(r, sm)
 	framework.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
-	system.Register(r, sm)
-	git.Register(r, sm, &tools.RealExecutor{})
 	dev.Register(r, sm)
 	dev.RegisterRelease(r, sm)
 	code.Register(r, sm)

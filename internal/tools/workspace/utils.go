@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package files
+package workspace
 
 import (
 	"bufio"
@@ -53,6 +53,9 @@ func walkAndProcess(ctx context.Context, sm *security.SecurityManager, fs fsutil
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
 func ConcurrentSearch(ctx context.Context, sp security.SecurityProvider, fs fsutil.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if limit <= 0 {
 		limit = 100
 	}

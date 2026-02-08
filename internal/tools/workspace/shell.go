@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package system
+package workspace
 
 import (
 	"context"
@@ -127,7 +127,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	// 2. Execute
 	pipedParts, err := t.splitPipeline(params.Commands)
 	if err != nil {
-		return tools.ToolResult{Text: err.Error()}, nil
+		return tools.ToolResult{}, err
 	}
 
 	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (ExecutionResult, error) {
@@ -161,6 +161,9 @@ func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
 		parts, err := t.validator.Split(cmdStr)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing command at index %d: %w", i, err)
+		}
+		if err := t.validator.ValidateStructure(parts); err != nil {
+			return nil, fmt.Errorf("invalid command at index %d: %w", i, err)
 		}
 		pipedParts[i] = parts
 	}

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package files
+package workspace
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -16,8 +16,14 @@ type fileSystemManager struct {
 	search *fileSearcher
 }
 
-// Register adds file-related tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager) {
+// Register adds all workspace-related tools (file, git, system) to the registry.
+func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+	registerFiles(r, sm)
+	registerSystem(r, sm)
+	registerGit(r, sm, exec)
+}
+
+func registerFiles(r *registry.Registry, sm *security.SecurityManager) {
 	bm := NewBackupManager(sm, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: fsutil.DefaultFileSystem},
@@ -233,4 +239,182 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 		},
 	}, m.writer.undoFileChange, registry.ToolOptions{Serial: true})
+}
+
+func registerSystem(r *registry.Registry, sm *security.SecurityManager) {
+	shell := NewShellTool(sm)
+	interaction := NewInteractionTool(sm)
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "execute_command",
+		Description: "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"command": {
+					Type:        "STRING",
+					Description: "The shell command to execute (e.g., 'ls -la', 'go test ./...').",
+				},
+				"reason": {
+					Type:        "STRING",
+					Description: "A short explanation of why this command needs to be executed.",
+				},
+				"output_file": {
+					Type:        "STRING",
+					Description: "Optional: Redirect output to this file.",
+				},
+				"append": {
+					Type:        "BOOLEAN",
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
+			},
+			Required: []string{"command", "reason"},
+		},
+	}, shell.ExecuteCommand, registry.ToolOptions{Serial: true, LongRunning: true})
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "pipe_commands",
+		Description: "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"commands": {
+					Type: "ARRAY",
+					Items: &tools.Schema{
+						Type: "STRING",
+					},
+					Description: "The sequence of commands to pipe (e.g., ['ls -la', 'grep .go']).",
+				},
+				"reason": {
+					Type:        "STRING",
+					Description: "A short explanation of why this pipeline needs to be executed.",
+				},
+				"output_file": {
+					Type:        "STRING",
+					Description: "Optional: Redirect the final output to this file.",
+				},
+				"append": {
+					Type:        "BOOLEAN",
+					Description: "Optional: If output_file is set, append to it instead of overwriting.",
+				},
+			},
+			Required: []string{"commands", "reason"},
+		},
+	}, shell.PipeCommands, registry.ToolOptions{Serial: true, LongRunning: true})
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "ask_user",
+		Description: "Asks the user a specific question to clarify requirements or request confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"question": {
+					Type:        "STRING",
+					Description: "The question to ask the user.",
+				},
+			},
+			Required: []string{"question"},
+		},
+	}, interaction.AskUser, registry.ToolOptions{Serial: true, LongRunning: true})
+}
+
+func registerGit(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+	m := &gitManager{sm: sm, Exec: exec}
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_git_status",
+		Description: "Retrieves the short status of the git repository (staged, unstaged, and untracked files).",
+	}, m.getGitStatus)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_git_diff",
+		Description: "Retrieves the git diff between the working directory (or staged index) and the last commit. Use this to review changes before committing.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"staged": {
+					Type:        "BOOLEAN",
+					Description: "If true, shows staged changes.",
+				},
+			},
+		},
+	}, m.getGitDiff)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_git_log",
+		Description: "Retrieves the git commit log.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"limit": {
+					Type:        "INTEGER",
+					Description: "Number of commits to show (default: 10).",
+				},
+			},
+		},
+	}, m.getGitLog)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_git_show",
+		Description: "Shows the full details (diff and metadata) of a specific commit hash (runs git show).",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"hash": {
+					Type:        "STRING",
+					Description: "The commit hash to inspect.",
+				},
+			},
+			Required: []string{"hash"},
+		},
+	}, m.getGitCommit)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "get_git_blame",
+		Description: "Shows who changed which lines in a file.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the file.",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, m.getGitBlame)
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "git_commit",
+		Description: "Commits staged changes with a message.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"message": {
+					Type:        "STRING",
+					Description: "The commit message.",
+				},
+			},
+			Required: []string{"message"},
+		},
+	}, m.gitCommit, registry.ToolOptions{Serial: true})
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "git_create_branch",
+		Description: "Creates and checks out a new git branch.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"name": {
+					Type:        "STRING",
+					Description: "The name of the new branch.",
+				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for creating this branch.",
+				},
+			},
+			Required: []string{"name", "reason"},
+		},
+	}, m.gitCreateBranch, registry.ToolOptions{Serial: true})
 }
