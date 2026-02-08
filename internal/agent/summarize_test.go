@@ -19,8 +19,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/services/summarizer"
@@ -115,7 +116,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 	verifySummarizeResult(t, tt, resp, err, hManager)
 }
 
-func setupTestHistory(t *testing.T, turns int) *history.Manager {
+func setupTestHistory(t *testing.T, turns int) services.HistoryManager {
 	t.Helper()
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	ctx := context.Background()
@@ -152,13 +153,13 @@ func setupTestClient(t *testing.T, url string) *llm.Client {
 	return client
 }
 
-func setupInternalTools(client *llm.Client, h *history.Manager) *InternalTools {
+func setupInternalTools(client *llm.Client, h services.HistoryManager) *InternalTools {
 	sm := security.NewSecurityManager(nil)
 	a := New(client, h, registry.New(), sm, true)
 	return NewInternalTools(a.ctxManager)
 }
 
-func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h *history.Manager) {
+func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h services.HistoryManager) {
 	t.Helper()
 	if (err != nil) != tt.expectedErr {
 		t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)

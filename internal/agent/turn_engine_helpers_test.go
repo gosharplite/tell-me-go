@@ -14,8 +14,9 @@ import (
 	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
@@ -159,7 +160,7 @@ func minimalPipeline() *agentctx.ContextPipeline {
 	return agentctx.NewContextPipeline()
 }
 
-func newTestContextManager(s *agentctx.ContextStrategy, h *history.Manager, bus events.EventBus) *agentctx.ContextManager {
+func newTestContextManager(s *agentctx.ContextStrategy, h services.HistoryManager, bus events.EventBus) *agentctx.ContextManager {
 	cm := agentctx.NewContextManager(s, h, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
@@ -171,7 +172,7 @@ type testTurnEnv struct {
 	reg      *MockRegistry
 	bus      *events.SimpleEventBus
 	cm       *agentctx.ContextManager
-	hManager *history.Manager
+	hManager services.HistoryManager
 }
 
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {

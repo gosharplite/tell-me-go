@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/ui/colors"
 )
 
@@ -22,7 +22,7 @@ type RenderOptions struct {
 }
 
 // History renders the chat history to the provided writer.
-func History(w io.Writer, h *history.Manager, n int, options RenderOptions) {
+func History(w io.Writer, h services.HistoryManager, n int, options RenderOptions) {
 	contents := h.GetContents()
 	if len(contents) == 0 {
 		fmt.Fprintln(w, "No history found.")

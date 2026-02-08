@@ -17,8 +17,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/auth"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools/registry"
@@ -130,7 +131,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (*history.Manager, *Agent, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *Agent, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "log_test_history.json"))
@@ -152,7 +153,7 @@ func setupAutoSummarizeTest(t *testing.T) (*history.Manager, *Agent, *httptest.S
 	return hManager, a, server
 }
 
-func addHeavyHistory(t *testing.T, h *history.Manager, turns int) {
+func addHeavyHistory(t *testing.T, h services.HistoryManager, turns int) {
 	t.Helper()
 	ctx := context.Background()
 	longText := strings.Repeat("A", 32000) // approx 10k tokens

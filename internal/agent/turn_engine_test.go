@@ -18,8 +18,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/tools/framework"
 )
 
@@ -133,12 +134,12 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 func TestTurnEngine_Run_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(gw *MockGateway, hm *history.Manager)
+		setup   func(gw *MockGateway, hm services.HistoryManager)
 		wantErr string
 	}{
 		{
 			name: "History error in Persistence",
-			setup: func(gw *MockGateway, hm *history.Manager) {
+			setup: func(gw *MockGateway, hm services.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -146,22 +147,24 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 						return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "resp"}}}, &llm.Metrics{}, nil
 					}
 				}
-				hm.SetStore(&MockStore{
-					AppendFunc: func(ctx context.Context, content *llm.Content) error {
-						if content.Role == "model" {
-							return errors.New("append failed")
-						}
-						return nil
-					},
-					SaveFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
-					LoadFunc: func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
-				})
+				if h, ok := hm.(*history.Manager); ok {
+					h.SetStore(&MockStore{
+						AppendFunc: func(ctx context.Context, content *llm.Content) error {
+							if content.Role == "model" {
+								return errors.New("append failed")
+							}
+							return nil
+						},
+						SaveFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
+						LoadFunc: func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
+					})
+				}
 			},
 			wantErr: "history error",
 		},
 		{
 			name: "Finalize error in Inference",
-			setup: func(gw *MockGateway, hm *history.Manager) {
+			setup: func(gw *MockGateway, hm services.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -169,7 +172,9 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 						return nil, nil, errors.New("finalize failed")
 					}
 				}
-				hm.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+				if h, ok := hm.(*history.Manager); ok {
+					h.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+				}
 			},
 			wantErr: "finalize failed",
 		},
