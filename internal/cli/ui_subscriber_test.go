@@ -172,96 +172,99 @@ func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 }
 
 func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
-	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, true, true, false, false, "")
-
 	tests := []struct {
-		name     string
-		event    events.Event
-		validate func(t *testing.T, m *mockUIRenderer)
+		name  string
+		event events.Event
+		check func(*testing.T, *mockUIRenderer)
 	}{
 		{
 			name:  "TurnStatusEvent",
 			event: events.TurnStatusEvent{Status: events.TurnStatus{CurrentTurns: 1}},
-			validate: func(t *testing.T, m *mockUIRenderer) {
-				t.Helper()
-				if !m.logTurnStatusCalled {
-					t.Error("LogTurnStatus was not called")
-				}
-				if m.lastTurnStatus.CurrentTurns != 1 {
-					t.Errorf("Expected turn 1, got %d", m.lastTurnStatus.CurrentTurns)
-				}
-			},
+			check: checkTurnStatus,
 		},
 		{
 			name:  "ToolCallEvent",
 			event: events.ToolCallEvent{Calls: []*llm.FunctionCall{{Name: "test"}}},
-			validate: func(t *testing.T, m *mockUIRenderer) {
-				t.Helper()
-				if !m.logToolCallCalled {
-					t.Error("LogToolCall was not called")
-				}
-				if len(m.lastToolCalls) != 1 || m.lastToolCalls[0].Name != "test" {
-					t.Errorf("Wrong tool calls logged: %+v", m.lastToolCalls)
-				}
-			},
+			check: checkToolCall,
 		},
 		{
 			name:  "ToolResultEvent",
 			event: events.ToolResultEvent{Name: "test", Result: tools.ToolResult{Text: "ok"}},
-			validate: func(t *testing.T, m *mockUIRenderer) {
-				t.Helper()
-				if !m.logToolResultCalled {
-					t.Error("LogToolResult was not called")
-				}
-				if m.lastToolName != "test" || m.lastToolResult.Text != "ok" {
-					t.Errorf("Wrong tool result logged: %s, %v", m.lastToolName, m.lastToolResult)
-				}
-			},
+			check: checkToolResult,
 		},
 		{
 			name:  "SystemMessageEvent",
 			event: events.SystemMessageEvent{Message: "msg", Level: "info"},
-			validate: func(t *testing.T, m *mockUIRenderer) {
-				t.Helper()
-				if !m.logSystemMessageCalled {
-					t.Error("LogSystemMessage was not called")
-				}
-				if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
-					t.Errorf("Wrong system message logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
-				}
-			},
+			check: checkSystemMessage,
 		},
 		{
 			name:  "StatusUpdate",
 			event: events.StatusUpdate{Message: "msg", Level: "info"},
-			validate: func(t *testing.T, m *mockUIRenderer) {
-				t.Helper()
-				if !m.logSystemMessageCalled {
-					t.Error("LogSystemMessage was not called by StatusUpdate")
-				}
-				if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
-					t.Errorf("Wrong status update logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
-				}
-			},
+			check: checkStatusUpdate,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			renderer.mu.Lock()
-			renderer.logTurnStatusCalled = false
-			renderer.logToolCallCalled = false
-			renderer.logToolResultCalled = false
-			renderer.logSystemMessageCalled = false
-			renderer.mu.Unlock()
+			renderer := &mockUIRenderer{}
+			s := NewUISubscriber(renderer, true, true, false, false, "")
 
 			s.HandleEvent(tt.event)
 
 			renderer.mu.Lock()
 			defer renderer.mu.Unlock()
-			tt.validate(t, renderer)
+			tt.check(t, renderer)
 		})
+	}
+}
+
+func checkTurnStatus(t *testing.T, m *mockUIRenderer) {
+	t.Helper()
+	if !m.logTurnStatusCalled {
+		t.Error("LogTurnStatus was not called")
+	}
+	if m.lastTurnStatus.CurrentTurns != 1 {
+		t.Errorf("Expected turn 1, got %d", m.lastTurnStatus.CurrentTurns)
+	}
+}
+
+func checkToolCall(t *testing.T, m *mockUIRenderer) {
+	t.Helper()
+	if !m.logToolCallCalled {
+		t.Error("LogToolCall was not called")
+	}
+	if len(m.lastToolCalls) != 1 || m.lastToolCalls[0].Name != "test" {
+		t.Errorf("Wrong tool calls logged: %+v", m.lastToolCalls)
+	}
+}
+
+func checkToolResult(t *testing.T, m *mockUIRenderer) {
+	t.Helper()
+	if !m.logToolResultCalled {
+		t.Error("LogToolResult was not called")
+	}
+	if m.lastToolName != "test" || m.lastToolResult.Text != "ok" {
+		t.Errorf("Wrong tool result logged: %s, %v", m.lastToolName, m.lastToolResult)
+	}
+}
+
+func checkSystemMessage(t *testing.T, m *mockUIRenderer) {
+	t.Helper()
+	if !m.logSystemMessageCalled {
+		t.Error("LogSystemMessage was not called")
+	}
+	if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
+		t.Errorf("Wrong system message logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
+	}
+}
+
+func checkStatusUpdate(t *testing.T, m *mockUIRenderer) {
+	t.Helper()
+	if !m.logSystemMessageCalled {
+		t.Error("LogSystemMessage was not called by StatusUpdate")
+	}
+	if m.lastSystemMessage != "msg" || m.lastSystemLevel != "info" {
+		t.Errorf("Wrong status update logged: %s, %s", m.lastSystemMessage, m.lastSystemLevel)
 	}
 }
 
