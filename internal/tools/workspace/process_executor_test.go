@@ -72,7 +72,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"sleep", "2"},
 				{"cat"},
 			},
-			timeout:          100 * time.Millisecond,
+			timeout:          500 * time.Millisecond,
 			expectedExitCode: -1, // non-zero
 		},
 		{
