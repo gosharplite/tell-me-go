@@ -264,105 +264,115 @@ func TestTurnEngine_Run_MultiTurn(t *testing.T) {
 	}
 }
 
-func TestTurnEngine_RecoveryLogic(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupMocks    func(gw *MockGateway, cm *orchestration.ContextManager, attempts *int)
-		expectedCalls int
-		wantErr       string
-	}{
-		{
-			name: "Inference transient recovery",
-			setupMocks: func(gw *MockGateway, cm *orchestration.ContextManager, attempts *int) {
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-					ch := make(chan *llm.Content)
-					close(ch)
-					return ch, func() (*llm.Content, *llm.Metrics, error) {
-						*attempts++
-						if *attempts < 3 {
-							return nil, nil, llm.ErrTransient
-						}
-						return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
-					}
-				}
-			},
-			expectedCalls: 3,
-		},
-		{
-			name: "Prepare transient recovery",
-			setupMocks: func(gw *MockGateway, cm *orchestration.ContextManager, attempts *int) {
-				// Success for gateway
-				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-					return closedChan(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}), func() (*llm.Content, *llm.Metrics, error) {
-						return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
-					}
-				}
+func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
+	t.Parallel()
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	bus := &events.SimpleEventBus{}
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-				// Failure for Prepare via mock transformer
-				mt := &mockTransformer{
-					transformFunc: func(ctx context.Context, req *services.ContextRequest) error {
-						*attempts++
-						if *attempts < 2 {
-							return llm.ErrTransient
-						}
-						return nil
-					},
-				}
-				cm.SetPipeline(orchestration.NewContextPipeline(mt))
-			},
-			expectedCalls: 2,
-		},
+	var mu sync.Mutex
+	var retryMsgs []string
+	bus.Subscribe(func(ev events.Event) {
+		if sme, ok := ev.(events.SystemMessageEvent); ok {
+			mu.Lock()
+			retryMsgs = append(retryMsgs, sme.Message)
+			mu.Unlock()
+		}
+	})
+
+	attempts := 0
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		ch := make(chan *llm.Content)
+		close(ch)
+		return ch, func() (*llm.Content, *llm.Metrics, error) {
+			attempts++
+			if attempts < 3 {
+				return nil, nil, llm.ErrTransient
+			}
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockGw := &MockGateway{}
-			reg := &MockRegistry{}
-			bus := &events.SimpleEventBus{}
-			strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
-			hManager := history.NewManager(filepath.Join(t.TempDir(), tt.name+"_history.json"))
-			hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
-			_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
+	cm := newTestContextManager(strategy, hManager, bus)
+	e := NewTurnEngine(mockGw, nil, cm, reg, bus, WithClock(&MockClock{}))
+	strategy.SetLimits(1000, 5, 10)
 
-			var mu sync.Mutex
-			var retryMsgs []string
-			bus.Subscribe(func(ev events.Event) {
-				if sme, ok := ev.(events.SystemMessageEvent); ok {
-					mu.Lock()
-					retryMsgs = append(retryMsgs, sme.Message)
-					mu.Unlock()
-				}
-			})
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
 
-			attempts := 0
-			cm := newTestContextManager(strategy, hManager, bus)
-			tt.setupMocks(mockGw, cm, &attempts)
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
 
-			e := NewTurnEngine(mockGw, nil, cm, reg, bus, WithClock(&MockClock{}))
-			strategy.SetLimits(1000, 5, 10)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(retryMsgs) != 2 {
+		t.Errorf("expected 2 retry notifications, got %d", len(retryMsgs))
+	}
+}
 
-			err := e.Run(context.Background(), time.Now())
-			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
-				}
-				return
-			}
+func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
+	t.Parallel()
+	mockGw := &MockGateway{}
+	reg := &MockRegistry{}
+	bus := &events.SimpleEventBus{}
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
+	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil }})
+	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
 
-			if err != nil {
-				t.Fatalf("Run failed: %v", err)
-			}
-
-			if attempts != tt.expectedCalls {
-				t.Errorf("expected %d attempts, got %d", tt.expectedCalls, attempts)
-			}
-
+	var mu sync.Mutex
+	var retryMsgs []string
+	bus.Subscribe(func(ev events.Event) {
+		if sme, ok := ev.(events.SystemMessageEvent); ok {
 			mu.Lock()
-			defer mu.Unlock()
-			if len(retryMsgs) != tt.expectedCalls-1 {
-				t.Errorf("expected %d retry notifications, got %d", tt.expectedCalls-1, len(retryMsgs))
+			retryMsgs = append(retryMsgs, sme.Message)
+			mu.Unlock()
+		}
+	})
+
+	// Success for gateway
+	mockGw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		return closedChan(&llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}), func() (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}, &llm.Metrics{}, nil
+		}
+	}
+
+	attempts := 0
+	cm := newTestContextManager(strategy, hManager, bus)
+	mt := &mockTransformer{
+		transformFunc: func(ctx context.Context, req *services.ContextRequest) error {
+			attempts++
+			if attempts < 2 {
+				return llm.ErrTransient
 			}
-		})
+			return nil
+		},
+	}
+	cm.SetPipeline(orchestration.NewContextPipeline(mt))
+
+	e := NewTurnEngine(mockGw, nil, cm, reg, bus, WithClock(&MockClock{}))
+	strategy.SetLimits(1000, 5, 10)
+
+	err := e.Run(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(retryMsgs) != 1 {
+		t.Errorf("expected 1 retry notification, got %d", len(retryMsgs))
 	}
 }
 
