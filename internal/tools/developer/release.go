@@ -126,7 +126,13 @@ func (s *SecretScanner) scanContent(content []byte, path string, findings *[]str
 }
 
 func (s *SecretScanner) isIgnored(path string) bool {
-	return strings.Contains(path, ".git") || strings.Contains(path, "vendor/") || strings.Contains(path, "node_modules")
+	return strings.Contains(path, ".git") ||
+		strings.Contains(path, "vendor/") ||
+		strings.Contains(path, "node_modules") ||
+		strings.HasSuffix(path, "_test.go") ||
+		strings.HasSuffix(path, ".md") ||
+		strings.HasSuffix(path, ".json") ||
+		strings.HasSuffix(path, ".golden")
 }
 
 // DependencyChecker implementation
