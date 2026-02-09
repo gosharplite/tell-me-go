@@ -12,7 +12,7 @@ To define how `tell-me-go` authenticates exclusively with Google Vertex AI using
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
+- Go toolchain 1.25+.
 - `gcloud` SDK installed (for User Authentication).
 - Valid Google Cloud Project ID and Region (for Vertex AI).
 

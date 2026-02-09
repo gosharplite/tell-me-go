@@ -12,7 +12,7 @@ To define strict safety protocols when the agent is tasked with modifying its ow
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
+- Go toolchain 1.25+.
 - [Git Workflow](../standards/git_workflow.md) (for verification chain).
 
 ---
@@ -23,7 +23,8 @@ To define strict safety protocols when the agent is tasked with modifying its ow
 Core entry points are high-risk files where the main orchestration logic resides:
 - `cmd/tell-me-go/main.go`
 - `internal/agent/agent.go`
-- `internal/api/gemini.go`
+- `internal/agent/turn_engine.go`
+- `internal/infrastructure/llm/gemini.go`
 
 #### 2. Modification Workflow (⚠️ CRITICAL)
 When modifying a Core Entry Point:
@@ -37,7 +38,7 @@ When modifying a Core Entry Point:
 7.  **Final State Verification**: Read the task list and scratchpad to confirm all safety steps were completed and verified.
 
 #### 3. Protection Against Infinite Loops
-If modifying the orchestration loop in `internal/agent/agent.go`:
+If modifying the orchestration loop in `internal/agent/turn_engine.go` or `internal/agent/orchestration`:
 - **Timeout Preservation**: Ensure that context timeouts and `MAX_TURNS` logic are not accidentally removed or bypassed.
 - **Error Handling**: Verify that new logic does not swallow errors that could trigger a tool-calling recursion.
 

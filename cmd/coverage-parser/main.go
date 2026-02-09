@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gosharplite/tell-me-go/internal/tools/code"
+	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
 
 func main() {
@@ -21,14 +21,14 @@ func main() {
 	}
 
 	if *priority == "" {
-		report, err := code.GetDetailedCoverageReport(packagePath, code.ShellRunner)
+		report, err := analysis.GetDetailedCoverageReport(packagePath, analysis.ShellRunner)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Print(report)
 	} else {
-		jsonOutput, err := code.GetDetailedCoverageJSON(packagePath, *priority, code.ShellRunner)
+		jsonOutput, err := analysis.GetDetailedCoverageJSON(packagePath, *priority, analysis.ShellRunner)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

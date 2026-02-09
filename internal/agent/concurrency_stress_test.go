@@ -4,20 +4,21 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
@@ -30,13 +31,13 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Register a slow tool to keep the agent busy
 	reg.Register(&tools.ToolDeclaration{
 		Name: "slow_tool",
-	}, func(ctx stdctx.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(50 * time.Millisecond)
 		return tools.ToolResult{Text: "done"}, nil
 	})
 
-	mockClient := &mockLLMClient{
-		sendChatFn: func(ctx stdctx.Context, history []*llm.Content, t []*tools.ToolDeclaration) (*llm.Content, *llm.Metrics, error) {
+	mockClient := &stressMockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			// Logic for slow tool
 			if len(history) < 4 {
 				return &llm.Content{Role: "model", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "slow_tool"}}}}, &llm.Metrics{}, nil
@@ -46,9 +47,9 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	a := New(mockClient, hManager, reg, sm, true)
-	session := &Session{History: hManager, StartTime: time.Now()}
+	session := &orchestration.Session{History: hManager, StartTime: time.Now()}
 
-	ctx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -72,44 +73,44 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	wg.Wait()
 }
 
-type mockLLMClient struct {
-	sendChatFn func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration) (*llm.Content, *llm.Metrics, error)
+type stressMockLLMClient struct {
+	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
-func (m *mockLLMClient) SendChat(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	return m.sendChatFn(ctx, history, tools)
+func (m *stressMockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	return m.sendChatFn(ctx, history, tools, resolver)
 }
 
-func (m *mockLLMClient) StreamChat(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	content, metrics, err := m.sendChatFn(ctx, history, tools)
+func (m *stressMockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	content, metrics, err := m.sendChatFn(ctx, history, tools, resolver)
 	if err == nil {
 		callback(content)
 	}
 	return metrics, err
 }
 
-func (m *mockLLMClient) GenerateImages(ctx stdctx.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (m *stressMockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
 
-func (m *mockLLMClient) RefreshAuth() error {
+func (m *stressMockLLMClient) RefreshAuth() error {
 	return nil
 }
 
-func (m *mockLLMClient) SetSystemInstructions(instr string) {}
+func (m *stressMockLLMClient) SetSystemInstructions(instr string) {}
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
-	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx stdctx.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	reg.Register(&tools.ToolDeclaration{Name: "task"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		time.Sleep(10 * time.Millisecond)
 		return tools.ToolResult{Text: "ok"}, nil
 	})
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	var wg sync.WaitGroup
 
 	// Run concurrent executions
@@ -146,15 +147,15 @@ func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(tmpDir + "/history.json")
 	bus := &events.SimpleEventBus{}
-	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(nil), bus)
-	factory := &context.PipelineFactory{
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil), bus)
+	factory := &orchestration.PipelineFactory{
 		Estimator: strategy,
 		Events:    bus,
 		History:   h,
 	}
-	cm := context.NewContextManager(strategy, h, bus, factory)
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 
-	ctx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -213,7 +214,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 
 	// Create a single engine instance
 	gw := &MockGateway{
-		GenerateFunc: func(ctx stdctx.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
@@ -226,15 +227,15 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	}
 
 	executor := &MockExecutor{
-		ExecuteFunc: func(ctx stdctx.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 			return nil, nil
 		},
 	}
 
 	h := history.NewManager("")
-	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(reg), bus)
-	cm := context.NewContextManager(strategy, h, bus, nil)
-	cm.Pipeline = context.NewContextPipeline()
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
+	cm := orchestration.NewContextManager(strategy, h, bus, nil)
+	cm.Pipeline = orchestration.NewContextPipeline()
 
 	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
 
@@ -250,7 +251,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	for i := 0; i < numConcurrent; i++ {
 		go func() {
 			defer wg.Done()
-			_ = e.Run(stdctx.Background(), time.Now())
+			_ = e.Run(context.Background(), time.Now())
 		}()
 	}
 

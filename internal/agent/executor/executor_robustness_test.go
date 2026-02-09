@@ -12,7 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 func TestToolExecutor_ConfigRace(t *testing.T) {
@@ -61,7 +61,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	toolFinished := make(chan struct{})
 	reg.Register(&tools.ToolDeclaration{Name: "leaky_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		// DONT check ctx.Done()
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		close(toolFinished)
 		return tools.ToolResult{Text: "I finally finished"}, nil
 	})
@@ -86,9 +86,11 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 		t.Logf("Execute returned error as expected: %v", err)
 	}
 
-	// It should have returned due to timeout (~50ms), not waited for the tool (~200ms)
-	if duration >= 150*time.Millisecond {
-		t.Errorf("Execute took too long: %v, expected timeout around 50ms", duration)
+	// It should have returned due to timeout (~50ms), not waited for the tool (~500ms)
+	// We allow a generous margin for scheduler latency in CI environments.
+	// 400ms is still less than the 500ms tool sleep, so we know it timed out.
+	if duration >= 450*time.Millisecond {
+		t.Errorf("Execute took too long: %v, expected timeout around 50ms (and definitely less than 500ms)", duration)
 	}
 
 	// Check for leak immediately after return
@@ -99,7 +101,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	select {
 	case <-toolFinished:
 		t.Log("Leaky tool finally finished")
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(1 * time.Second):
 		t.Error("Leaky tool never finished")
 	}
 

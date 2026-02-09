@@ -9,11 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/api"
-	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
-	internaltools "github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
@@ -25,9 +26,9 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	ctx := context.Background()
 
 	// Manually add a content with no parts (which previously caused 400 error)
-	_ = h.AddContent(ctx, &llm.Content{
+	_ = h.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
-		Parts: []*llm.Part{},
+		Parts: []*domain_llm.Part{},
 	})
 
 	if err := h.Save(ctx); err != nil {
@@ -60,7 +61,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	}
 
 	// Client returns a simple response
-	client := &api.Client{} // Using real client type but we won't call real API
+	client := &llm.Client{} // Using real client type but we won't call real API
 
 	sm := &MockSecurityManager{AllowAll: true}
 	a := New(client, h, registry, sm, false)
@@ -104,7 +105,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	a := New(mockClient, h, registry, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -144,7 +145,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 func newMultiModalMockClient() *MockLLMClient {
 	return &MockLLMClient{
-		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			// 1. Identify the last user prompt
 			lastUserPrompt := ""
 			for i := len(history) - 1; i >= 0; i-- {
@@ -156,26 +157,26 @@ func newMultiModalMockClient() *MockLLMClient {
 
 			// 2. Handle Tool Response state
 			if len(history) > 0 && len(history[len(history)-1].Parts) > 0 && history[len(history)-1].Parts[0].FunctionResponse != nil {
-				return &llm.Content{
+				return &domain_llm.Content{
 					Role:  "model",
-					Parts: []*llm.Part{{Text: "I see the cat image."}},
-				}, &llm.Metrics{}, nil
+					Parts: []*domain_llm.Part{{Text: "I see the cat image."}},
+				}, &domain_llm.Metrics{}, nil
 			}
 
 			// 3. Handle Initial Prompt state
 			if lastUserPrompt == "Show me a cat" {
-				return &llm.Content{
+				return &domain_llm.Content{
 					Role: "model",
-					Parts: []*llm.Part{
-						{FunctionCall: &llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
+					Parts: []*domain_llm.Part{
+						{FunctionCall: &domain_llm.FunctionCall{Name: "get_image", Args: map[string]interface{}{}}},
 					},
-				}, &llm.Metrics{}, nil
+				}, &domain_llm.Metrics{}, nil
 			}
 
-			return &llm.Content{
+			return &domain_llm.Content{
 				Role:  "model",
-				Parts: []*llm.Part{{Text: "Default response"}},
-			}, &llm.Metrics{}, nil
+				Parts: []*domain_llm.Part{{Text: "Default response"}},
+			}, &domain_llm.Metrics{}, nil
 		},
 	}
 }

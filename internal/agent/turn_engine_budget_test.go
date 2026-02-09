@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/history"
-	"github.com/gosharplite/tell-me-go/internal/pricing"
-	"github.com/gosharplite/tell-me-go/internal/tools/framework"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -23,31 +22,31 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
 
-	counter := &agentctx.HeuristicTokenCounter{}
-	strategy := agentctx.NewContextStrategy(counter, bus)
+	counter := &orchestration.HeuristicTokenCounter{}
+	strategy := orchestration.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 10, 10)
 
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &agentctx.PipelineFactory{
+	factory := &orchestration.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
 
-	cm := agentctx.NewContextManager(strategy, h, bus, factory)
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	// Setup cost tracker with a high rate
-	pricingData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
 			"test-model": {Miss: 1.0, Comp: 1.0}, // $1 per million tokens
 		},
 	}
 	modelPricing := pricingData.Models["test-model"]
-	var tracker domain_pricing.ICostTracker = framework.NewSessionCostTracker(nil, "", "test-mode", "test-model", modelPricing, pricingData)
+	var tracker domain_pricing.ICostTracker = telemetry.NewSessionCostTracker(nil, "", "test-mode", "test-model", modelPricing, pricingData)
 
 	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001), WithCostTracker(tracker)) // Very low budget
 

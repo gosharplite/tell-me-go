@@ -12,7 +12,7 @@ To define a consistent, scalable, and idiomatic Go directory structure for `tell
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
+- Go toolchain 1.25+.
 - Familiarity with the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 ---
@@ -25,23 +25,32 @@ The project is organized into the following top-level directories:
 - **`cmd/`**: Contains the main entry points for the application. Each subdirectory should match the binary name (e.g., `cmd/tell-me-go/`).
     - *Constraint*: Keep `main.go` extremely minimal. It MUST ONLY initialize the `cli.App` and call `Run()`. All logic, specifically flag definitions, configuration loading, and component wiring, must reside in `internal/cli` to ensure the application lifecycle is programmatically testable.
 - **`internal/`**: Contains private application and library code.
-    - `internal/agent`: The high-level orchestration loop (Agent/Orchestrator).
-    - `internal/config`: Configuration loading and YAML parsing.
-    - `internal/api`: Communication logic using `google.golang.org/genai`.
-    - `internal/history`: Session management and JSON persistence.
-    - `internal/cli`: Terminal UI, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic to ensure environment isolation.
-    - `internal/security`: Centralized **Security Manager** and guardrails (e.g., path sanitization, bypass management).
-    - `internal/domain`: Core domain models and interfaces (e.g., `llm`, `tools`) used to decouple packages.
-    - `internal/auth`: Token management for Vertex AI.
-    - `internal/tools`: Registry and implementation of executable functions.
-    - `internal/fsutil`: Filesystem utilities, including content-addressable **Asset Storage**.
-    - `internal/pricing`: Model-specific pricing and cost calculation logic.
+    - `internal/agent`: The high-level coordination layer.
+        - `internal/agent/orchestration`: Multi-turn loop, state management, and turn-based logic.
+        - `internal/agent/executor`: Tool execution and worker pool management.
+    - `internal/cli`: Flat CLI layer, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic.
+    - `internal/domain`: Pure interfaces and entities (LLM, Tools, Pricing, Security, Events).
+    - `internal/infrastructure`: All external adapters and concrete implementations:
+        - `internal/infrastructure/config`: Configuration loading and defaults.
+        - `internal/infrastructure/auth`: Authentication and token management (e.g., Google/Vertex).
+        - `internal/infrastructure/llm`: Language model provider adapters.
+        - `internal/infrastructure/history`: Conversation history persistence.
+        - `internal/infrastructure/storage`: File system and asset management.
+        - `internal/infrastructure/security`: Sandbox, path guardrails, and confirmation gates.
+        - `internal/infrastructure/telemetry`: Logging, metrics, and event tracking.
+        - `internal/infrastructure/registry`: Tool and command registration.
+        - `internal/infrastructure/exec`: OS-level command execution.
+        - `internal/infrastructure/testing`: Shared mocks and test helpers.
+    - `internal/tools`: Categorized agent capabilities:
+        - `internal/tools/analysis`: AST-based code intelligence and semantic search.
+        - `internal/tools/workspace`: Basic file system and project management.
+        - `internal/tools/developer`: Testing, linting, and development workflow tools.
+        - `internal/tools/integrations`: External service integrations (e.g., MS Teams).
+    - `internal/ui`: Flat UI rendering and interaction layer.
 - **`configs/`**: Storage for default configuration templates (YAML).
-    - `configs/vertex.yaml`: The primary configuration template.
 - **`SOP/`**: Project governance and process documentation.
 - **`assets/`**: Static assets like pricing data.
 - **`tests/`**: Integration and End-to-End tests.
-    - `tests/e2e`: Comprehensive testing of the CLI, Agent, and Tool interactions.
 
 #### 2. Package Naming and Visibility
 - **Naming**: Use short, lowercase, single-word names (e.g., `config`, not `config_loader`).
@@ -51,7 +60,7 @@ The project is organized into the following top-level directories:
 #### 3. Dependency Management
 - **Constructor Pattern**: Use `New<StructName>` functions to initialize packages (e.g., `func NewClient(apiKey string) *Client`).
 - **Interfaces**: Define interfaces at the *consumer* side to enable easy mocking in tests.
-- **Avoid Globals**: Do not use global variables for state (e.g., global API keys or history buffers). Pass dependencies explicitly via constructors.
+- **Avoid Globals**: Do not use global variables for state. Pass dependencies explicitly via constructors.
 
 ---
 
@@ -63,38 +72,43 @@ tell-me-go/
 │   └── tell-me-go/
 │       └── main.go       # Orchestration and Entry Point
 ├── internal/
-│   ├── agent/            # High-level Agent Loop (Think-Act-Observe)
-│   ├── api/              # Gemini/Vertex AI Client Logic
-│   ├── auth/             # Token Management
-│   ├── cli/              # CLI logic, Flag Parsing, and Mode Scoping
-│   ├── config/           # YAML/Env Loading
-│   ├── domain/           # Core Domain Models (LLM, Tools, Pricing)
-│   ├── fsutil/           # Asset Storage and FS Helpers
-│   ├── history/          # Conversation Storage and Turn Management
-│   ├── pricing/          # Model-specific pricing data
-│   ├── security/         # Security Manager and Guardrails
-│   ├── services/         # External service abstractions (Media, etc.)
-│   └── tools/            # Agent Tool Registry and Implementations
-├── configs/
-│   └── vertex.yaml       # Vertex AI Template
-├── tests/
-│   └── e2e/              # End-to-End Tests
+│   ├── agent/            # Coordination Layer
+│   │   ├── orchestration/ # Turn-based loop
+│   │   └── executor/     # Tool execution
+│   ├── cli/              # Flat CLI Layer
+│   ├── domain/           # Core Domain Models & Interfaces
+│   ├── infrastructure/   # External Adapters
+│   │   ├── auth/         # Token Management
+│   │   ├── config/       # Configuration
+│   │   ├── history/      # Persistence
+│   │   ├── llm/          # Gemini Adapter
+│   │   ├── security/     # Security Guardrails
+│   │   ├── storage/      # FS Utilities & Assets
+│   │   ├── telemetry/    # Observability
+│   │   └── testing/      # Shared Mocks
+│   ├── tools/            # Agent Capabilities
+│   │   ├── analysis/     # AST/Code Intelligence
+│   │   ├── developer/    # Dev Workflow (Tests, Linters)
+│   │   ├── integrations/ # External Services
+│   │   └── workspace/    # File Operations
+│   └── ui/               # Flat UI Layer
+├── configs/              # Templates
+├── tests/                # E2E Tests
 ├── SOP/                  # Documentation
 ├── go.mod
 └── go.sum
 ```
 
 #### 4. Mode-Scoped Storage
-To prevent context leakage between different environments (e.g., "Development" vs "Production"), the application implements **Mode-Scoped Storage**. 
+To prevent context leakage between different environments, the application implements **Mode-Scoped Storage**. 
 
-- **Mechanism**: All session data, persistent state, and logs are stored within subdirectories under `output/` named after the `MODE` variable in the configuration file.
+- **Mechanism**: All session data, persistent state, and logs are stored within subdirectories under `output/` named after the `MODE` variable.
 - **Paths Managed**:
     - `output/<MODE>/history.json`: Conversation history.
     - `output/<MODE>/config.json`: Persistent key-value settings.
     - `output/<MODE>/safepaths.json`: Authorized directory permissions.
     - `output/<MODE>/tasks.json`: Persistent task list.
-    - `output/<MODE>/scratchpad.md`: Persistent working memory (Scratchpad).
-- **Implementation**: The `internal/cli` package is responsible for resolving these paths during application startup based on the active config.
+    - `output/<MODE>/scratchpad.md`: Working memory.
 
 ---
 
@@ -119,14 +133,14 @@ func New() *Config {
 ---
 
 ### Verification
-1.  **Circular Dependency Check**: Ensure no package imports another that eventually imports it back. Run `go list -f '{{.ImportPath}} -> {{.Imports}}' ./...`.
+1.  **Circular Dependency Check**: Run `go test ./internal/tools/analysis/...` to verify architecture.
 2.  **Architecture Alignment**: Before committing, verify that new files follow the directory map above.
-3.  **Encapsulation**: Check that `internal/` code is not being leaked to `pkg/`.
+3.  **Encapsulation**: Check that `internal/` code is not being leaked.
 
 ---
 
 ### Best Practices
-- **Flat is Better**: Avoid deep nesting (e.g., `internal/api/gemini/v1/client`). Keep the hierarchy as flat as possible.
-- **Main is for Wiring**: Use `main.go` only to instantiate dependencies and "wire" them together.
-- **Context Propagation**: Always propagate `context.Context` from the entry point (`cli.Run`) down to all leaf operations (API calls, tool execution, DB/File I/O). Respect context cancellation to allow for graceful shutdown on user signals (SIGINT).
-- **Standard Library First**: Prefer Go's standard library over external dependencies (e.g., `encoding/json` over `easyjson`).
+- **Flat is Better**: Avoid deep nesting.
+- **Main is for Wiring**: Use `main.go` only to instantiate dependencies.
+- **Context Propagation**: Always propagate `context.Context`.
+- **Standard Library First**: Prefer Go's standard library over external dependencies.

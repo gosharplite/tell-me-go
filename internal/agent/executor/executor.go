@@ -12,10 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -29,7 +28,7 @@ type toolExecResult struct {
 type ToolExecutor struct {
 	mu                 sync.RWMutex
 	registry           domaintools.IToolRegistry
-	sm                 security.ISecurityManager
+	sm                 domain_security.ISecurityManager
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -38,7 +37,7 @@ type ToolExecutor struct {
 }
 
 // NewToolExecutor creates a new ToolExecutor.
-func NewToolExecutor(registry domaintools.IToolRegistry, sm security.ISecurityManager, bus events.EventBus) *ToolExecutor {
+func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
 		sm:                 sm,
@@ -291,7 +290,6 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.ToolResult {
 	stack := debug.Stack()
-	err := fmt.Errorf("panic: %v", r)
 
 	e.mu.RLock()
 	bus := e.events
@@ -307,7 +305,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 
 	return domaintools.ToolResult{
 		Text:  fmt.Sprintf("Error: Panic detected: %v (in tool %q)", r, toolName),
-		Error: agenerrors.NewAgentError(agenerrors.ErrFatal, fmt.Sprintf("Panic detected: %v", r), err),
+		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
 	}
 }
 
@@ -329,7 +327,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		msg := fmt.Sprintf("Error: %v", err)
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: agenerrors.NewAgentError(agenerrors.ErrLogic, msg, err),
+			Error: fmt.Errorf("%w: %s", llm.ErrTerminal, msg),
 		}
 	}
 
@@ -363,7 +361,7 @@ func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDec
 
 		errorMessage += " Please check the spelling or use a different tool from the authorized list."
 
-		return nil, agenerrors.NewAgentError(agenerrors.ErrLogic, errorMessage, fmt.Errorf("unexpected tool call: %s", call.Name))
+		return nil, fmt.Errorf("%w: %s", llm.ErrTerminal, errorMessage)
 	}
 
 	return tool, nil
@@ -376,7 +374,7 @@ func (e *ToolExecutor) authorizeTool(tool *domaintools.ToolDeclaration, call *ll
 
 	if sm != nil && !sm.IsCommandAllowed(call.Name) {
 		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
-		return agenerrors.NewAgentError(agenerrors.ErrLogic, msg, fmt.Errorf("security policy: command %q is not allowed", call.Name))
+		return fmt.Errorf("%w: %s", llm.ErrTerminal, msg)
 	}
 
 	return nil
@@ -445,7 +443,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 		return domaintools.ToolResult{
 			Text:  msg,
-			Error: agenerrors.NewAgentError(agenerrors.ErrTransient, msg, err),
+			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
 		}, nil
 	case r := <-resChan:
 		return r.tr, r.err
@@ -454,9 +452,9 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
 	msg := err.Error()
-	if ae, ok := err.(*agenerrors.AgentError); ok {
-		msg = ae.Message
-	}
+	// Since we no longer use AgentError in subpackages, we don't need this check here
+	// unless we want to keep support for it if it comes from elsewhere.
+	// But to break cycle we can't use agent.AgentError.
 	return domaintools.ToolResult{
 		Text:  msg,
 		Error: err,

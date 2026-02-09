@@ -4,19 +4,21 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/history"
-	security_impl "github.com/gosharplite/tell-me-go/internal/security"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestAgent_SetLimits(t *testing.T) {
@@ -43,7 +45,7 @@ func TestAgent_Chat(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
 				Parts: []*llm.Part{{Text: "Hello! How can I help you today?"}},
@@ -52,9 +54,9 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -149,7 +151,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	callCount := 0
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
 				return nil, nil, llm.ErrTransient
@@ -162,9 +164,9 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
 
 	if callCount != 2 {
@@ -173,28 +175,43 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 }
 
 func TestAgent_InternalTools_Registration(t *testing.T) {
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	_ = New(&MockLLMClient{}, nil, reg, sm, false)
+	t.Run("Default - No internal tools", func(t *testing.T) {
+		reg := registry.New()
+		sm := security_impl.NewSecurityManager(nil)
+		_ = New(&MockLLMClient{}, nil, reg, sm, false)
 
-	decls := reg.GetDeclarations()
-	foundSumm := false
-	foundManage := false
-	for _, d := range decls {
-		if d.Name == "summarize_history" {
-			foundSumm = true
+		decls := reg.GetDeclarations()
+		for _, d := range decls {
+			if d.Name == "summarize_history" || d.Name == "manage_history" {
+				t.Errorf("internal tool %s registered by default", d.Name)
+			}
 		}
-		if d.Name == "manage_history" {
-			foundManage = true
-		}
-	}
+	})
 
-	if !foundSumm {
-		t.Error("summarize_history tool not registered")
-	}
-	if !foundManage {
-		t.Error("manage_history tool not registered")
-	}
+	t.Run("Opt-in - With internal tools", func(t *testing.T) {
+		reg := registry.New()
+		sm := security_impl.NewSecurityManager(nil)
+		_ = New(&MockLLMClient{}, nil, reg, sm, false, WithInternalTools())
+
+		decls := reg.GetDeclarations()
+		foundSumm := false
+		foundManage := false
+		for _, d := range decls {
+			if d.Name == "summarize_history" {
+				foundSumm = true
+			}
+			if d.Name == "manage_history" {
+				foundManage = true
+			}
+		}
+
+		if !foundSumm {
+			t.Error("summarize_history tool not registered")
+		}
+		if !foundManage {
+			t.Error("manage_history tool not registered")
+		}
+	})
 }
 
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
@@ -204,15 +221,15 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, llm.ErrContextLimitExceeded
 		},
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
 
 	if err == nil {
@@ -247,7 +264,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	a.registerInternalTools()
+	orchestration.RegisterInternal(reg, a.ctxManager)
 
 	// Verify that at least one transformer has the registry
 	// This is verified via behavior in the Prepare phase or by inspecting the pipeline
@@ -255,53 +272,60 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 }
 
 func TestAgent_PinningFlow(t *testing.T) {
+	a, h, ctx := setupPinningFlowTest(t)
+	it := orchestration.NewInternalTools(a.ctxManager)
+
+	// Step 1: Pin turn 0
+	t.Run("Pin turn 0", func(t *testing.T) {
+		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "pin", "index": 0.0})
+		if err != nil {
+			t.Fatalf("ManageHistory failed: %v", err)
+		}
+		if resp.Text != "Turn 0 has been successfully pinned." {
+			t.Errorf("unexpected response: %s", resp.Text)
+		}
+
+		contents := h.GetContents()
+		if !contents[0].Pinned || !contents[1].Pinned {
+			t.Error("expected turn 0 to be pinned")
+		}
+		if contents[2].Pinned || contents[3].Pinned {
+			t.Error("expected turn 1 to remain unpinned")
+		}
+	})
+
+	// Step 2: Unpin turn 0
+	t.Run("Unpin turn 0", func(t *testing.T) {
+		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "unpin", "index": 0.0})
+		if err != nil {
+			t.Fatalf("ManageHistory failed: %v", err)
+		}
+		if resp.Text != "Turn 0 has been successfully unpinned." {
+			t.Errorf("unexpected response: %s", resp.Text)
+		}
+
+		contents := h.GetContents()
+		if contents[0].Pinned || contents[1].Pinned {
+			t.Error("expected turn 0 to be unpinned")
+		}
+	})
+}
+
+func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
+	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	tmpDir := t.TempDir()
-	h := history.NewManager(filepath.Join(tmpDir, "history_pinning.json"))
-	ctx := stdctx.Background()
+	h := history.NewManager(filepath.Join(t.TempDir(), "history_pinning.json"))
+	ctx := context.Background()
 
-	// 1. Add some turns
-	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "t1"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "r1"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "t2"}}})
-	_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "r2"}}})
-
-	a := New(&MockLLMClient{}, h, reg, sm, false)
-
-	// 2. Pin turn 0
-	it := NewInternalTools(a.ctxManager)
-	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "pin", "index": 0.0})
-	if err != nil {
-		t.Fatalf("ManageHistory failed: %v", err)
-	}
-	if resp.Text != "Turn 0 has been successfully pinned." {
-		t.Errorf("unexpected response: %s", resp.Text)
+	// Add 2 turns
+	for i := 1; i <= 2; i++ {
+		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("t%d", i)}}})
+		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
 	}
 
-	// 3. Verify in history
-	contents := h.GetContents()
-	if !contents[0].Pinned || !contents[1].Pinned {
-		t.Error("expected turn 0 (msgs 0 and 1) to be pinned")
-	}
-	if contents[2].Pinned || contents[3].Pinned {
-		t.Error("expected turn 1 to remain unpinned")
-	}
-
-	// 4. Unpin turn 0
-	resp, err = it.ManageHistory(ctx, map[string]interface{}{"action": "unpin", "index": 0.0})
-	if err != nil {
-		t.Fatalf("ManageHistory failed: %v", err)
-	}
-	if resp.Text != "Turn 0 has been successfully unpinned." {
-		t.Errorf("unexpected response: %s", resp.Text)
-	}
-
-	// 5. Verify in history
-	contents = h.GetContents()
-	if contents[0].Pinned || contents[1].Pinned {
-		t.Error("expected turn 0 to be unpinned")
-	}
+	a := New(&MockLLMClient{}, h, reg, sm, false, WithInternalTools())
+	return a, h, ctx
 }
 
 func TestAgent_Integration_PinningPruning(t *testing.T) {
@@ -318,7 +342,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	a.SetLimits(10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
-	err := a.Chat(ctx, &Session{History: h}, "next")
+	err := a.Chat(ctx, &orchestration.Session{History: h}, "next")
 	if err != nil {
 		t.Logf("Chat returned error (expected in mock): %v", err)
 	}
@@ -336,26 +360,26 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*Agent, context.HistoryManager, stdctx.Context) {
+func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(filepath.Join(tmpDir, "pin_prune.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	ctx := stdctx.Background()
+	ctx := context.Background()
 
 	mockClient := &MockLLMClient{}
-	a := New(mockClient, h, reg, sm, false)
+	a := New(mockClient, h, reg, sm, false, WithInternalTools())
 	return a, a.ctxManager.History, ctx
 }
 
-func addTurns(ctx stdctx.Context, h context.HistoryManager, count int) {
+func addTurns(ctx context.Context, h services.HistoryManager, count int) {
 	for i := 0; i < count; i++ {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})
 	}
 }
 
-func verifyPinningResults(t *testing.T, meta *context.Metadata, prepared []*llm.Content) {
+func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
 	for _, c := range prepared {
@@ -386,21 +410,21 @@ func TestAgent_PreciseProfile_Sync(t *testing.T) {
 	a := New(mockClient, h, reg, sm, false)
 	a.events = bus
 
-	counter := &context.HeuristicTokenCounter{}
-	strategy := context.NewContextStrategy(counter, bus)
-	factory := &context.PipelineFactory{
+	counter := &orchestration.HeuristicTokenCounter{}
+	strategy := orchestration.NewContextStrategy(counter, bus)
+	factory := &orchestration.PipelineFactory{
 		Registry:  reg,
 		History:   h,
 		Estimator: strategy,
 		Events:    bus,
-		Profile:   context.ProfilePrecise,
+		Profile:   orchestration.ProfilePrecise,
 	}
-	cm := context.NewContextManager(strategy, h, bus, factory)
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	a.ctxManager = cm
 
 	// Test Prepare under precise profile
-	ctx := stdctx.Background()
-	req := &context.Request{
+	ctx := context.Background()
+	req := &orchestration.Request{
 		Turn:    1,
 		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 	}
@@ -429,4 +453,46 @@ func TestAgent_SetPrunedTurns(t *testing.T) {
 			t.Errorf("expected prunedTurns 7, got %d", a.ctxManager.Strategy.GetPrunedTurns())
 		}
 	})
+}
+
+func TestAgent_Reconfiguration(t *testing.T) {
+	client := &MockLLMClient{}
+	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+
+	// Test initial injection via option
+	tracker1 := &MockCostTracker{}
+	a := New(client, h, reg, sm, false,
+		WithSessionCostTracker(tracker1),
+	)
+
+	if a.GetCostTracker() != tracker1 {
+		t.Error("WithSessionCostTracker didn't set tracker")
+	}
+	if a.engine.GetCostTracker() != tracker1 {
+		t.Error("engine didn't receive tracker from WithSessionCostTracker")
+	}
+
+	// Test runtime budget update
+	a.SetHardBudgetLimit(2.50)
+	if a.engine.HardBudgetLimit != 2.50 {
+		t.Errorf("expected Engine HardBudgetLimit 2.50, got %.2f", a.engine.HardBudgetLimit)
+	}
+
+	// Test tracker replacement
+	tracker2 := &MockCostTracker{}
+	a.tracker = tracker2
+	a.applyConfig()
+
+	if a.GetCostTracker() != tracker2 {
+		t.Error("GetCostTracker didn't return updated tracker")
+	}
+	if a.engine.GetCostTracker() != tracker2 {
+		t.Error("engine didn't receive updated tracker after applyConfig")
+	}
+}
+
+type MockCostTracker struct {
+	domain_pricing.ICostTracker
 }

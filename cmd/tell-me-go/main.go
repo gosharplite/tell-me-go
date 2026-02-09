@@ -9,11 +9,9 @@ import (
 	"os"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
-	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/chat"
-	_ "github.com/gosharplite/tell-me-go/internal/cli/commands/version"
 )
 
-const Version = "3.1.0"
+const Version = "3.2.0"
 
 func main() {
 	app := cli.New(Version, os.Stdin, os.Stdout, os.Stderr)

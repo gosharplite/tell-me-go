@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/agenerrors"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 type toolBehavior struct {
@@ -31,7 +31,7 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *events.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {
@@ -71,7 +71,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 		sm = &mockSecurityManager{allowAll: true}
 	}
 
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 	exec.SetStrategy(&MockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
@@ -90,7 +90,7 @@ func verifyErrorResponse(t *testing.T, resp *llm.Content, expectedMsg string) {
 	}
 }
 
-func verifyToolEventError(t *testing.T, bus *events.TestEventBus, expectedErr error) {
+func verifyToolEventError(t *testing.T, bus *inframock.TestEventBus, expectedErr error) {
 	t.Helper()
 	evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
 	if len(evs) == 0 {
@@ -176,7 +176,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 		}
 
 		verifyErrorResponse(t, resp, "Tool \"missing\" is not defined")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Tool Suggestion", func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Security policy: command \"forbidden\" is not allowed")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Tool Returns Error", func(t *testing.T) {
@@ -229,7 +229,7 @@ func TestToolExecutor_Errors(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "tool execution failed: fail_tool: tool failed")
-		verifyToolEventError(t, bus, agenerrors.ErrLogic)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
 
@@ -253,7 +253,7 @@ func TestToolExecutor_SafetyLimits(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Tool execution timed out")
-		verifyToolEventError(t, bus, agenerrors.ErrTransient)
+		verifyToolEventError(t, bus, llm.ErrTransient)
 	})
 
 	t.Run("Max Turns Reached", func(t *testing.T) {
@@ -316,7 +316,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: kaboom")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Serial Panic", func(t *testing.T) {
@@ -652,7 +652,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
 
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	exec := NewToolExecutor(reg, nil, bus)
 	t.Cleanup(exec.Shutdown)
 
@@ -746,7 +746,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnGet: true, serial: true}
-		bus := &events.TestEventBus{}
+		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
 		exec.SetStrategy(&MockStrategy{})
@@ -760,13 +760,13 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnGet: true, serial: false}
-		bus := &events.TestEventBus{}
+		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
 		exec.SetStrategy(&MockStrategy{})
@@ -780,7 +780,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		verifyErrorResponse(t, resp, "Panic detected: registry GetDeclarations panic")
-		verifyToolEventError(t, bus, agenerrors.ErrFatal)
+		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
 
