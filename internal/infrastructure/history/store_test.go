@@ -63,44 +63,74 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 		},
 	}
 
-	// 1. Save
-	if err := store.Save(ctx, []*llm.Content{content}); err != nil {
-		t.Fatalf("Save failed: %v", err)
-	}
+	t.Run("Save", func(t *testing.T) {
+		if err := store.Save(ctx, []*llm.Content{content}); err != nil {
+			t.Fatalf("Save failed: %v", err)
+		}
+	})
 
-	// 2. Verify JSON file does NOT contain the raw data but has an AssetID
+	t.Run("VerifyJSONFile", func(t *testing.T) {
+		verifyJSONFile(t, filePath, "fake-image-data")
+	})
+
+	t.Run("VerifyAssetDirectory", func(t *testing.T) {
+		verifyAssetDir(t, tmpDir)
+	})
+
+	var loaded []*llm.Content
+	t.Run("LoadWithoutHydration", func(t *testing.T) {
+		var err error
+		loaded, err = store.Load(ctx)
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		verifyLoaded(t, loaded)
+	})
+
+	t.Run("ResolveAsset", func(t *testing.T) {
+		verifyResolve(t, ctx, store, loaded, "fake-image-data")
+	})
+}
+
+func verifyJSONFile(t *testing.T, filePath string, unexpectedData string) {
+	t.Helper()
 	rawJSON, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jsonStr := string(rawJSON)
-	if strings.Contains(jsonStr, "fake-image-data") {
+	if strings.Contains(jsonStr, unexpectedData) {
 		t.Error("JSON still contains raw binary data")
 	}
 	if !strings.Contains(jsonStr, "asset_id") {
 		t.Error("JSON missing asset_id")
 	}
+}
 
-	// 3. Verify asset exists in assets directory
+func verifyAssetDir(t *testing.T, tmpDir string) {
+	t.Helper()
 	assetDir := filepath.Join(tmpDir, "assets")
 	files, _ := os.ReadDir(assetDir)
 	if len(files) == 0 {
 		t.Error("Assets directory is empty")
 	}
+}
 
-	// 4. Load and verify NO eager hydration
-	loaded, err := store.Load(ctx)
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
+func verifyLoaded(t *testing.T, loaded []*llm.Content) {
+	t.Helper()
 	if len(loaded) != 1 || loaded[0].Parts[0].InlineData == nil {
 		t.Fatal("Failed to load content or parts")
 	}
 	if len(loaded[0].Parts[0].InlineData.Data) != 0 {
 		t.Error("Data should not be eagerly hydrated")
 	}
+}
 
-	// 5. Verify manual hydration via Resolve
+func verifyResolve(t *testing.T, ctx context.Context, store *JSONLStore, loaded []*llm.Content, expectedData string) {
+	t.Helper()
+	if len(loaded) == 0 {
+		t.Skip("No loaded content to test Resolve")
+	}
 	assetID := loaded[0].Parts[0].AssetID
 	if assetID == "" {
 		t.Fatal("AssetID should not be empty")
@@ -110,7 +140,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve failed: %v", err)
 	}
-	if string(resolvedData) != "fake-image-data" {
+	if string(resolvedData) != expectedData {
 		t.Errorf("Resolved data mismatch: got %s", string(resolvedData))
 	}
 }
