@@ -138,7 +138,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		WithCostTracker(a.tracker),
 	)
 
-	RegisterInternal(reg, ctxManager)
+	orchestration.RegisterInternal(reg, ctxManager)
 	a.applyConfig() // Broadcast initial config
 	return a
 }

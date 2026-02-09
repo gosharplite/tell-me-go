@@ -249,7 +249,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
 
 	// Register should update pipeline via ContextManager
-	RegisterInternal(reg, a.ctxManager)
+	orchestration.RegisterInternal(reg, a.ctxManager)
 
 	// Verify that at least one transformer has the registry
 	// This is verified via behavior in the Prepare phase or by inspecting the pipeline
@@ -258,7 +258,7 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 
 func TestAgent_PinningFlow(t *testing.T) {
 	a, h, ctx := setupPinningFlowTest(t)
-	it := NewInternalTools(a.ctxManager)
+	it := orchestration.NewInternalTools(a.ctxManager)
 
 	// Step 1: Pin turn 0
 	t.Run("Pin turn 0", func(t *testing.T) {

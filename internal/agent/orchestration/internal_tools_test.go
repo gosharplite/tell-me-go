@@ -1,14 +1,13 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestration
 
 import (
 	"context"
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
@@ -24,7 +23,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "U2"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "M2"}}})
 
-	cm := &orchestration.ContextManager{History: hManager}
+	cm := &ContextManager{History: hManager}
 	it := NewInternalTools(cm)
 
 	tests := []struct {

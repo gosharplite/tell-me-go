@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestration
 
 import (
 	"context"
@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -24,7 +23,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"google.golang.org/genai"
 )
@@ -154,9 +152,19 @@ func setupTestClient(t *testing.T, url string) *llm.Client {
 }
 
 func setupInternalTools(client *llm.Client, h services.HistoryManager) *InternalTools {
-	sm := security.NewSecurityManager(nil)
-	a := New(client, h, registry.New(), sm, true)
-	return NewInternalTools(a.ctxManager)
+	bus := &events.SimpleEventBus{}
+	reg := registry.New()
+	gw := llm.NewResilientClient(client, true)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    h,
+		Summarizer: llm.NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+	cm := NewContextManager(strategy, h, bus, factory)
+	return NewInternalTools(cm)
 }
 
 func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h services.HistoryManager) {
@@ -190,7 +198,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
 	mockCounter := &mockTokenCounter{tokens: 950000} // Above 90% of 1M
-	strategy := orchestration.NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter, nil)
 	hManager := history.NewManager(historyFile)
 
 	ctx := context.Background()
@@ -200,7 +208,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
-	cm := &orchestration.ContextManager{
+	cm := &ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
 		Summarizer: &mockSummarizer{},
@@ -233,14 +241,14 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}
-	strategy := orchestration.NewContextStrategy(mockCounter, nil)
+	strategy := NewContextStrategy(mockCounter, nil)
 	bus := &inframock.TestEventBus{}
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
-	cm := &orchestration.ContextManager{
+	cm := &ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
 		Summarizer: summarizerImpl,

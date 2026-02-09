@@ -1,23 +1,22 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestration
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // InternalTools provides tool wrappers that interact with agent services.
 type InternalTools struct {
-	ctxManager *orchestration.ContextManager
+	ctxManager *ContextManager
 }
 
 // NewInternalTools creates a new InternalTools provider.
-func NewInternalTools(cm *orchestration.ContextManager) *InternalTools {
+func NewInternalTools(cm *ContextManager) *InternalTools {
 	return &InternalTools{ctxManager: cm}
 }
 
@@ -81,7 +80,7 @@ func (t *InternalTools) ManageHistory(ctx context.Context, args map[string]inter
 }
 
 // RegisterInternal registers the internal tools with the provided registry.
-func RegisterInternal(r tools.IToolRegistry, cm *orchestration.ContextManager) {
+func RegisterInternal(r tools.IToolRegistry, cm *ContextManager) {
 	it := NewInternalTools(cm)
 
 	r.Register(&tools.ToolDeclaration{

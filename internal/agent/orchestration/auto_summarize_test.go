@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package orchestration
 
 import (
 	"context"
@@ -22,7 +22,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"google.golang.org/genai"
 )
 
@@ -35,6 +34,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		Description: "A dummy tool for token estimation stability",
 	}, nil)
 	ctx := context.Background()
+	bus := &events.SimpleEventBus{}
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,13 +55,20 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 
-	sm := security.NewSecurityManager(nil)
-	// Disable streaming for testing convenience with httptest
-	a := New(client, hManager, reg, sm, true)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	gw := llm.NewResilientClient(client, true)
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: llm.NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+	cm := NewContextManager(strategy, hManager, bus, factory)
 
 	// Set a token limit to trigger auto-summarization.
 	// Use 100000. Safety limit = 99000. 90% = 90000.
-	a.SetLimits(10, 100000, 20)
+	cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20})
 
 	// Add 95k tokens of history.
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
@@ -77,7 +84,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	}
 
 	// Call Prepare, which should trigger AutoSummarize
-	_, metadata, err := a.ctxManager.Prepare(ctx, 1)
+	_, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -102,18 +109,18 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 
 func TestAutoSummarize_Logging(t *testing.T) {
 	ctx := context.Background()
-	hManager, a, server := setupAutoSummarizeTest(t)
+	hManager, cm, bus, server := setupAutoSummarizeTest(t)
 	defer server.Close()
 
 	// Set a limit to trigger auto-summarization (90% threshold = 90k tokens)
-	a.SetLimits(10, 100000, 20)
+	cm.Reconfigure(events.Limits{MaxHistoryTokens: 100000, MaxToolTurns: 10, MaxHistoryTurns: 20})
 
 	// Add enough turns to exceed 90k tokens
 	addHeavyHistory(t, hManager, 9)
 
 	// Channel to capture the log event
 	logReceived := make(chan string, 1)
-	a.Subscribe(func(e events.Event) {
+	bus.Subscribe(func(e events.Event) {
 		if msg, ok := e.(events.SystemMessageEvent); ok {
 			if strings.Contains(msg.Message, "Auto-summarizing") {
 				logReceived <- msg.Message
@@ -122,7 +129,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	})
 
 	// Trigger the pipeline via Prepare
-	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	_, _, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -131,11 +138,12 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *Agent, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "log_test_history.json"))
 	reg := registry.New()
+	bus := &events.SimpleEventBus{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -148,9 +156,19 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *Agent, *htt
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
-	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
 
-	return hManager, a, server
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	gw := llm.NewResilientClient(client, true)
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: llm.NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+	cm := NewContextManager(strategy, hManager, bus, factory)
+
+	return hManager, cm, bus, server
 }
 
 func addHeavyHistory(t *testing.T, h services.HistoryManager, turns int) {
@@ -181,6 +199,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(filepath.Join(tmpDir, "history_sys.json"))
 	reg := registry.New()
 	ctx := context.Background()
+	bus := &events.SimpleEventBus{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -198,8 +217,17 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	// Set initial system instructions
 	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
 
-	a := New(client, hManager, reg, security.NewSecurityManager(nil), true)
-	a.SetLimits(10, 3500, 20) // Limit to trigger summarization
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	gw := llm.NewResilientClient(client, true)
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: llm.NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+	cm := NewContextManager(strategy, hManager, bus, factory)
+	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3500, MaxToolTurns: 10, MaxHistoryTurns: 20}) // Limit to trigger summarization
 
 	// Add some turns (approx 3451 tokens with base overhead and tools)
 	longText := strings.Repeat("A", 1600) // approx 500 tokens
@@ -209,7 +237,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	}
 
 	// Trigger Prepare
-	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	_, _, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -238,6 +266,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	tmpDir := t.TempDir()
 	hManager := history.NewManager(filepath.Join(tmpDir, "tool_pressure_history.json"))
 	reg := registry.New()
+	bus := &events.SimpleEventBus{}
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {
@@ -264,15 +293,23 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
 
-	sm := security.NewSecurityManager(nil)
-	a := New(client, hManager, reg, sm, true)
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
+	gw := llm.NewResilientClient(client, true)
+	factory := &PipelineFactory{
+		Registry:   reg,
+		History:    hManager,
+		Summarizer: llm.NewSummarizer(gw, bus),
+		Estimator:  strategy,
+		Events:     bus,
+	}
+	cm := NewContextManager(strategy, hManager, bus, factory)
 
 	// 3. Set a tight token limit.
 	// Base overhead ~300.
 	// Tools ~2000.
 	// Total overhead ~2300.
 	// Set limit to 3000.
-	a.SetLimits(10, 3000, 20)
+	cm.Reconfigure(events.Limits{MaxHistoryTokens: 3000, MaxToolTurns: 10, MaxHistoryTurns: 20})
 
 	// 4. Add history (600 tokens)
 	// Total = 2300 (overhead) + 600 (history) = 2900.
@@ -291,7 +328,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	// Total messages = 2 + 8 = 10.
 
 	// 5. Call Prepare. It should trigger auto-summarize because of tool schema injection.
-	_, metadata, err := a.ctxManager.Prepare(ctx, 1)
+	_, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
