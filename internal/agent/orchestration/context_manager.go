@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // ContextManager handles the preparation of context for the LLM.
@@ -122,7 +123,7 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 }
 
 // RegisterToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
-func (cm *ContextManager) RegisterToolRegistry(reg ToolRegistry) {
+func (cm *ContextManager) RegisterToolRegistry(reg tools.IToolRegistry) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 

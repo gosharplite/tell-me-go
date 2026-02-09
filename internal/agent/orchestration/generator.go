@@ -11,11 +11,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // toolDeclarationGenerator injects tool schemas from the registry.
 type toolDeclarationGenerator struct {
-	Registry ToolRegistry
+	Registry tools.IToolRegistry
 }
 
 func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *services.ContextRequest) error {
