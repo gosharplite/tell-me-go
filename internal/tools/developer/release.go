@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package analysis
+package developer
 
 import (
 	"context"
@@ -12,25 +12,10 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
-
-// RegisterRelease adds release management tools to the registry.
-func RegisterRelease(r *registry.Registry, sm *security.SecurityManager) {
-	m := &releaseManager{
-		sm:       sm,
-		fs:       storage.DefaultFileSystem,
-		executor: workspace.NewProcessExecutor(),
-	}
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "verify_release_readiness",
-		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, m.verifyReleaseReadiness, registry.ToolOptions{Serial: true, LongRunning: true})
-}
 
 type releaseManager struct {
 	sm       *security.SecurityManager

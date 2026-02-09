@@ -60,9 +60,6 @@ type AnalysisManager struct {
 	// Project Health & Architecture
 	Health *HealthManager
 	Arch   *ArchitectureManager
-
-	// Development Tools
-	Dev *devManager
 }
 
 func NewAnalysisManager(idx SymbolIndex, cache *ASTCache, sp security.SecurityProvider) *AnalysisManager {
@@ -85,7 +82,6 @@ func NewAnalysisManager(idx SymbolIndex, cache *ASTCache, sp security.SecurityPr
 
 	m.Arch.Loader = &RealPackageProvider{m: m.Arch}
 	m.Health = &HealthManager{SP: sp, Ana: m}
-	m.Dev = newDevManager(sp)
 
 	return m
 }

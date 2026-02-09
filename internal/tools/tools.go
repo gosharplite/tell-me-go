@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
+	"github.com/gosharplite/tell-me-go/internal/tools/developer"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
@@ -35,5 +36,6 @@ func RegisterAll(
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm)
+	developer.Register(r, sm)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }

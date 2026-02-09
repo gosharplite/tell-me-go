@@ -7,11 +7,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
-// Register adds all consolidated analysis and development tools to the registry.
+// Register adds all consolidated analysis tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
 	idx, _ := NewIndexer(".")
 	cache := NewASTCache()
@@ -339,80 +337,6 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			Required: []string{"symbol", "src_file", "dst_file", "reason"},
 		},
 	}, m.Refactor.MoveDefinition, registry.ToolOptions{Serial: true})
-
-	// Dev Tools
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "run_tests",
-		Description: "Executes project tests using authorized tools (go, pytest, npm, cargo, make). Returns 'PASS' or truncated failure logs. Shell metacharacters are forbidden for security.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"command": {
-					Type:        "STRING",
-					Description: "The test command to execute (e.g., 'go test ./...', 'npm test').",
-				},
-			},
-			Required: []string{"command"},
-		},
-	}, m.Dev.runTests, registry.ToolOptions{Serial: true, LongRunning: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "go_tidy",
-		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, m.Dev.goTidy, registry.ToolOptions{Serial: true, LongRunning: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "get_coverage",
-		Description: "Runs Go tests with coverage and returns the summary.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The package path to test (default './...')",
-				},
-			},
-		},
-	}, m.Dev.getCoverage, registry.ToolOptions{LongRunning: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "run_linter",
-		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
-	}, m.Dev.runLinter, registry.ToolOptions{LongRunning: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "run_benchmark",
-		Description: "Runs Go benchmarks and returns performance metrics (ns/op, B/op).",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"path": {
-					Type:        "STRING",
-					Description: "The package path to benchmark (default './...')",
-				},
-				"bench": {
-					Type:        "STRING",
-					Description: "Regex for benchmarks to run (default '.')",
-				},
-			},
-		},
-	}, m.Dev.runBenchmark, registry.ToolOptions{LongRunning: true})
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "check_vulnerabilities",
-		Description: "Runs 'govulncheck'.",
-	}, m.Dev.checkVulnerabilities, registry.ToolOptions{LongRunning: true})
-
-	// Release Management
-	rel := &releaseManager{
-		sm:       sm,
-		fs:       storage.DefaultFileSystem,
-		executor: workspace.NewProcessExecutor(),
-	}
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "verify_release_readiness",
-		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, rel.verifyReleaseReadiness, registry.ToolOptions{Serial: true, LongRunning: true})
 
 	// Visualization Tools
 	r.Register(&tools.ToolDeclaration{
