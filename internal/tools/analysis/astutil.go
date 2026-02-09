@@ -122,52 +122,50 @@ func ExprToString(expr ast.Expr) string {
 	}
 }
 
-func GetFuncSignature(f *ast.FuncDecl) string {
-	var sb strings.Builder
-	sb.WriteString("func ")
-	if f.Recv != nil {
-		sb.WriteString("(")
-		for i, field := range f.Recv.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			if len(field.Names) > 0 {
-				sb.WriteString(field.Names[0].Name + " ")
-			}
-			sb.WriteString(ExprToString(field.Type))
+func writeFields(sb *strings.Builder, fields *ast.FieldList, showNames bool) {
+	for i, field := range fields.List {
+		if i > 0 {
+			sb.WriteString(", ")
 		}
-		sb.WriteString(") ")
-	}
-	sb.WriteString(f.Name.Name + "(")
-	if f.Type.Params != nil {
-		for i, field := range f.Type.Params.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
+		if showNames && len(field.Names) > 0 {
 			for j, name := range field.Names {
 				if j > 0 {
 					sb.WriteString(", ")
 				}
 				sb.WriteString(name.Name)
 			}
-			sb.WriteString(" " + ExprToString(field.Type))
+			sb.WriteString(" ")
 		}
+		sb.WriteString(ExprToString(field.Type))
+	}
+}
+
+func writeResults(sb *strings.Builder, results *ast.FieldList) {
+	if len(results.List) > 1 {
+		sb.WriteString("(")
+	}
+	writeFields(sb, results, false)
+	if len(results.List) > 1 {
+		sb.WriteString(")")
+	}
+}
+
+func GetFuncSignature(f *ast.FuncDecl) string {
+	var sb strings.Builder
+	sb.WriteString("func ")
+	if f.Recv != nil {
+		sb.WriteString("(")
+		writeFields(&sb, f.Recv, true)
+		sb.WriteString(") ")
+	}
+	sb.WriteString(f.Name.Name + "(")
+	if f.Type.Params != nil {
+		writeFields(&sb, f.Type.Params, true)
 	}
 	sb.WriteString(")")
 	if f.Type.Results != nil {
 		sb.WriteString(" ")
-		if len(f.Type.Results.List) > 1 {
-			sb.WriteString("(")
-		}
-		for i, field := range f.Type.Results.List {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(ExprToString(field.Type))
-		}
-		if len(f.Type.Results.List) > 1 {
-			sb.WriteString(")")
-		}
+		writeResults(&sb, f.Type.Results)
 	}
 	return sb.String()
 }
