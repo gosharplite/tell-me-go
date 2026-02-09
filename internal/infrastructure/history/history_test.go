@@ -455,35 +455,38 @@ func TestHistoryManager_SetPinned(t *testing.T) {
 	_ = m.AddEntry(ctx, "user", "U2")
 	_ = m.AddEntry(ctx, "model", "M2")
 
-	// Pin Turn 0
-	if err := m.SetPinned(ctx, 0, true); err != nil {
-		t.Fatalf("SetPinned(0, true) failed: %v", err)
-	}
+	t.Run("PinValidTurn", func(t *testing.T) {
+		if err := m.SetPinned(ctx, 0, true); err != nil {
+			t.Fatalf("SetPinned(0, true) failed: %v", err)
+		}
 
-	contents := m.GetContents()
-	if !contents[0].Pinned || !contents[1].Pinned {
-		t.Error("Turn 0 (messages 0 and 1) should be pinned")
-	}
-	if contents[2].Pinned || contents[3].Pinned {
-		t.Error("Turn 1 should not be pinned")
-	}
+		contents := m.GetContents()
+		if !contents[0].Pinned || !contents[1].Pinned {
+			t.Error("Turn 0 (messages 0 and 1) should be pinned")
+		}
+		if contents[2].Pinned || contents[3].Pinned {
+			t.Error("Turn 1 should not be pinned")
+		}
+	})
 
-	// Unpin Turn 0
-	if err := m.SetPinned(ctx, 0, false); err != nil {
-		t.Fatalf("SetPinned(0, false) failed: %v", err)
-	}
-	contents = m.GetContents()
-	if contents[0].Pinned || contents[1].Pinned {
-		t.Error("Turn 0 should be unpinned")
-	}
+	t.Run("UnpinTurn", func(t *testing.T) {
+		if err := m.SetPinned(ctx, 0, false); err != nil {
+			t.Fatalf("SetPinned(0, false) failed: %v", err)
+		}
+		contents := m.GetContents()
+		if contents[0].Pinned || contents[1].Pinned {
+			t.Error("Turn 0 should be unpinned")
+		}
+	})
 
-	// Invalid Index
-	if err := m.SetPinned(ctx, 2, true); err == nil {
-		t.Error("expected error for invalid turn index")
-	}
-	if err := m.SetPinned(ctx, -1, true); err == nil {
-		t.Error("expected error for negative turn index")
-	}
+	t.Run("InvalidIndex", func(t *testing.T) {
+		if err := m.SetPinned(ctx, 2, true); err == nil {
+			t.Error("expected error for invalid turn index")
+		}
+		if err := m.SetPinned(ctx, -1, true); err == nil {
+			t.Error("expected error for negative turn index")
+		}
+	})
 }
 
 func TestHistoryManager_ClonePersistent(t *testing.T) {
