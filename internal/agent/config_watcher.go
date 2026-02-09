@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // ConfigWatcher monitors configuration files for changes and caches values.

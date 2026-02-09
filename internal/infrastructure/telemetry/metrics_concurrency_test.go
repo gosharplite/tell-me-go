@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 func TestGetDailyCost_Concurrency(t *testing.T) {

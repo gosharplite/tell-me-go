@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	baseui "github.com/gosharplite/tell-me-go/internal/ui"
 	"golang.org/x/term"

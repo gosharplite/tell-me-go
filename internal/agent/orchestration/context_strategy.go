@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // Warning represents a safety or limit message for the model.

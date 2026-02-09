@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
