@@ -59,6 +59,20 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		return tools.ToolResult{Text: "Action cancelled by user."}, nil
 	}
 
+	body, err := buildTeamsRequestBody(message, params.Reason)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	status, err := m.postToWebhook(ctx, webhookURL, body)
+	if err != nil {
+		return tools.ToolResult{Text: err.Error()}, nil
+	}
+
+	return tools.ToolResult{Text: fmt.Sprintf("Successfully sent message to Teams. Status: %s", status)}, nil
+}
+
+func buildTeamsRequestBody(message, reason string) ([]byte, error) {
 	payload := map[string]interface{}{
 		"type":    "AdaptiveCard",
 		"version": "1.2",
@@ -71,25 +85,25 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		},
 		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
-	}
+	return json.Marshal(payload)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(body))
+func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byte) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to send message: %w", err)
+		return "", fmt.Errorf("failed to send message: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return tools.ToolResult{Text: fmt.Sprintf("Successfully sent message to Teams. Status: %s", resp.Status)}, nil
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("Failed to send message to Teams. Status: %s", resp.Status)
 	}
 
-	return tools.ToolResult{Text: fmt.Sprintf("Failed to send message to Teams. Status: %s", resp.Status)}, nil
+	return resp.Status, nil
 }
+

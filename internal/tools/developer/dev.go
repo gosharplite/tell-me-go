@@ -49,24 +49,53 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, err
 	}
 
-	command := params.Command
+	parts, err := m.validateTestCommand(params.Command)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	// 3. User Authorization
+	approved, err := m.authorizeAction(ctx, "Test Execution", params.Command, "Executing project tests")
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !approved {
+		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+	}
+
+	m.logToolAction("Running Tests: %s", params.Command)
+
+	// Execute the command directly without shell wrapper
+	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
+
+	outStr := string(output)
+	if err != nil {
+		outStr = security.TruncateOutput(outStr, 100)
+		// Return the failure output in the result, but still return an error for the status
+		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
+	}
+
+	return tools.ToolResult{Text: security.TruncateOutput(outStr, 100)}, nil
+}
+
+func (m *devManager) validateTestCommand(command string) ([]string, error) {
 	if command == "" {
-		return tools.ToolResult{}, fmt.Errorf("command argument is required")
+		return nil, fmt.Errorf("command argument is required")
 	}
 
 	// 1. Technical Validation: Split and check structure
 	parts, err := m.validator.Split(command)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("error parsing command: %w", err)
+		return nil, fmt.Errorf("error parsing command: %w", err)
 	}
 
 	if err := m.validator.ValidateStructure(parts); err != nil {
-		return tools.ToolResult{}, err
+		return nil, err
 	}
 
 	// 2. Path Safety: Ensure arguments don't escape allowed boundaries
 	if safe, reason := m.validator.CheckPathSafety(parts); !safe {
-		return tools.ToolResult{}, fmt.Errorf("security violation: %s", reason)
+		return nil, fmt.Errorf("security violation: %s", reason)
 	}
 
 	baseCmd := parts[0]
@@ -83,48 +112,38 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 	isAllowedScript := baseCmd == "./run_tests.sh" || baseCmd == "run_tests.sh"
 
 	if !allowedTools[baseCmd] && !isAllowedScript {
-		return tools.ToolResult{}, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
+		return nil, fmt.Errorf("security violation: command '%s' is not an authorized test tool", baseCmd)
 	}
 
-	// 3. User Authorization
+	return parts, nil
+}
+
+func (m *devManager) authorizeAction(ctx context.Context, action, command, detail string) (bool, error) {
 	isSafe, _ := m.validator.IsSafe(command)
-	approved, err := m.sm.Authorize(ctx, "Test Execution", command, "Executing project tests", isSafe)
+	approved, err := m.sm.Authorize(ctx, action, command, detail, isSafe)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return false, fmt.Errorf("authorization error: %w", err)
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return false, nil
 	}
 
-	m.sm.LogAudit("ACTION", "run_tests", "COMMAND", command)
-
-	m.logToolAction("Running Tests: %s", command)
-
-	// Execute the command directly without shell wrapper
-	output, err := m.executor.Execute(ctx, parts[0], parts[1:]...)
-
-	outStr := string(output)
-	if err != nil {
-		outStr = security.TruncateOutput(outStr, 100)
-		// Return the failure output in the result, but still return an error for the status
-		return tools.ToolResult{Text: fmt.Sprintf("FAIL:\n%s", outStr)}, fmt.Errorf("tests failed: %w", err)
-	}
-
-	return tools.ToolResult{Text: security.TruncateOutput(outStr, 100)}, nil
+	// Use a consistent audit action name
+	auditAction := strings.ToLower(strings.ReplaceAll(action, " ", "_"))
+	m.sm.LogAudit("ACTION", auditAction, "COMMAND", command)
+	return true, nil
 }
 
 func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	command := "go mod tidy && go fmt ./..."
-	isSafe, _ := m.validator.IsSafe(command)
-	approved, err := m.sm.Authorize(ctx, "Go Tidy", command, "Tidying project dependencies and formatting", isSafe)
+	approved, err := m.authorizeAction(ctx, "Go Tidy", command, "Tidying project dependencies and formatting")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return tools.ToolResult{}, err
 	}
 	if !approved {
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
-	m.sm.LogAudit("ACTION", "go_tidy", "COMMAND", command)
 	m.logToolAction("Running go mod tidy and go fmt")
 
 	if out, err := m.executor.Execute(ctx, "go", "mod", "tidy"); err != nil {
@@ -152,16 +171,13 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 	}
 
 	command := fmt.Sprintf("go test -coverprofile=coverage.out %s", path)
-	isSafe, _ := m.validator.IsSafe(command)
-	approved, err := m.sm.Authorize(ctx, "Test Coverage", command, "Getting test coverage summary", isSafe)
+	approved, err := m.authorizeAction(ctx, "Test Coverage", command, "Getting test coverage summary")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return tools.ToolResult{}, err
 	}
 	if !approved {
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
-
-	m.sm.LogAudit("ACTION", "get_coverage", "PATH", path)
 
 	m.logToolAction("Getting test coverage for %s", path)
 
@@ -204,16 +220,13 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 	}
 
 	fullCmd := command + " " + strings.Join(argsList, " ")
-	isSafe, _ := m.validator.IsSafe(fullCmd)
-	approved, err := m.sm.Authorize(ctx, "Linter Execution", fullCmd, "Running code analysis", isSafe)
+	approved, err := m.authorizeAction(ctx, "Linter Execution", fullCmd, "Running code analysis")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return tools.ToolResult{}, err
 	}
 	if !approved {
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
-
-	m.sm.LogAudit("ACTION", "run_linter", "COMMAND", fullCmd)
 
 	m.logToolAction("Running linter: %s", fullCmd)
 
@@ -253,18 +266,15 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	}
 
 	command := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
-	isSafe, _ := m.validator.IsSafe(command)
-	approved, err := m.sm.Authorize(ctx, "Benchmark Execution", command, "Running project benchmarks", isSafe)
+	approved, err := m.authorizeAction(ctx, "Benchmark Execution", command, "Running project benchmarks")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return tools.ToolResult{}, err
 	}
 	if !approved {
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
 
 	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
-
-	m.sm.LogAudit("ACTION", "run_benchmark", "COMMAND", command)
 
 	out, err := m.executor.Execute(ctx, "go", "test", "-bench="+bench, "-benchmem", "-run=^$", path)
 	if err != nil {
@@ -280,16 +290,13 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 	}
 
 	command := "govulncheck ./..."
-	isSafe, _ := m.validator.IsSafe(command)
-	approved, err := m.sm.Authorize(ctx, "Vulnerability Check", command, "Checking for known vulnerabilities", isSafe)
+	approved, err := m.authorizeAction(ctx, "Vulnerability Check", command, "Checking for known vulnerabilities")
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("authorization error: %w", err)
+		return tools.ToolResult{}, err
 	}
 	if !approved {
 		return tools.ToolResult{Text: "Unauthorized by user"}, nil
 	}
-
-	m.sm.LogAudit("ACTION", "check_vulnerabilities", "COMMAND", command)
 
 	m.logToolAction("Checking for vulnerabilities: %s", command)
 
