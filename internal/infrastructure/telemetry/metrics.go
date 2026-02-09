@@ -427,6 +427,22 @@ func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
 	return lock, err
 }
 
+func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir string) []SessionCostRecord {
+	var history []SessionCostRecord
+	if content, err := os.ReadFile(historyPath); err == nil {
+		if err := json.Unmarshal(content, &history); err != nil {
+			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
+			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
+				log.Printf("Warning: Failed to backup corrupted ledger: %v", err)
+			}
+			return []SessionCostRecord{}
+		}
+	} else if os.IsNotExist(err) && m.ledger != nil {
+		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
+	}
+	return history
+}
+
 func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath, globalDir string) {
 	if _, recovering := recoveryInProgress.Load(historyPath); !recovering {
 		// Use a background context for recovery so it's not aborted if the request context is cancelled.
@@ -439,22 +455,22 @@ func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath,
 }
 
 func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record SessionCostRecord) {
-	var history []SessionCostRecord
+	history := m.loadHistory(ctx, historyPath, globalDir)
+	history = upsertRecord(history, record)
+	history = m.applyRetentionPolicy(history, m.loadRetentionDays(outputDir))
 
-	// 1. Read existing history (or recover if missing)
-	if content, err := os.ReadFile(historyPath); err == nil {
-		if err := json.Unmarshal(content, &history); err != nil {
-			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
-			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
-				log.Printf("Warning: Failed to backup corrupted ledger: %v", err)
-			}
-			history = []SessionCostRecord{}
-		}
-	} else if os.IsNotExist(err) && m.ledger != nil {
-		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
+	// Write back atomically
+	bytes, err := json.Marshal(history)
+	if err != nil {
+		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
+		return
 	}
+	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+	}
+}
 
-	// 2. Update or Append (identify by session ID)
+func upsertRecord(history []SessionCostRecord, record SessionCostRecord) []SessionCostRecord {
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -466,20 +482,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 	if !found {
 		history = append(history, record)
 	}
-
-	// 3. Apply Retention Policy
-	retentionDays := m.loadRetentionDays(outputDir)
-	history = m.applyRetentionPolicy(history, retentionDays)
-
-	// 4. Write back atomically
-	bytes, err := json.Marshal(history)
-	if err != nil {
-		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
-		return
-	}
-	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
-		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
-	}
+	return history
 }
 
 func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArgs) (string, error) {
