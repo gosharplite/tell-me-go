@@ -16,14 +16,11 @@ import (
 // It accepts a permission mode for the file (e.g., 0600 for secrets, 0644 for public).
 func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+	f, err := prepareTempFile(dir, filepath.Base(path)+".*.tmp", perm)
+	if err != nil {
+		return err
 	}
 
-	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
 	tmp := f.Name()
 	cleanup := true
 	defer func() {
@@ -32,10 +29,6 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 			_ = os.Remove(tmp)
 		}
 	}()
-
-	if err := f.Chmod(perm); err != nil {
-		return fmt.Errorf("failed to chmod temp file: %w", err)
-	}
 
 	// Periodic check for cancellation
 	select {
@@ -55,6 +48,34 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 	default:
 	}
 
+	if err := commitTempFile(f, tmp, path); err != nil {
+		return err
+	}
+
+	cleanup = false // Rename succeeded, no need to remove
+	return nil
+}
+
+func prepareTempFile(dir, pattern string, perm os.FileMode) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	f, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return nil, fmt.Errorf("failed to chmod temp file: %w", err)
+	}
+
+	return f, nil
+}
+
+func commitTempFile(f *os.File, tmpPath, targetPath string) error {
 	// Force flush to disk to prevent stale reads or zero-byte files on power loss
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp file: %w", err)
@@ -64,10 +85,9 @@ func AtomicWrite(ctx context.Context, path string, data []byte, perm os.FileMode
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Rename(tmp, path); err != nil {
+	if err := os.Rename(tmpPath, targetPath); err != nil {
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
-	cleanup = false // Rename succeeded, no need to remove
 	return nil
 }

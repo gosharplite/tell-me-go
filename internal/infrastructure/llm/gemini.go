@@ -64,49 +64,12 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 func (c *Client) initSDK() error {
 	ctx := context.Background()
 
-	// 1. Determine Backend and parse Project/Location/BaseURL
-	backend := genai.BackendGeminiAPI
-	var project, location, baseURL string
-
 	c.mu.RLock()
 	apiURL := c.apiURL
 	c.mu.RUnlock()
 
-	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
-		backend = genai.BackendVertexAI
-		parts := strings.Split(apiURL, "/")
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-			}
-			if p == "locations" && i+1 < len(parts) {
-				location = parts[i+1]
-			}
-		}
-		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
-			baseURL = apiURL[:idx+1]
-		}
-	}
-
-	// Support for local E2E mocking
-	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
-		baseURL = mockURL
-	}
-
-	// 2. Prepare Auth Headers
-	authReq := &auth.Request{
-		Headers: make(map[string]string),
-	}
-	c.mu.RLock()
-	authenticator := c.authenticator
-	c.mu.RUnlock()
-	authenticator.Apply(authReq)
-
-	// 3. Initialize SDK Client
-	headers := make(http.Header)
-	for k, v := range authReq.Headers {
-		headers.Set(k, v)
-	}
+	backend, project, location, baseURL := c.determineBackend(apiURL)
+	headers := c.prepareAuthHeader()
 
 	clientConfig := &genai.ClientConfig{
 		Backend:  backend,
@@ -129,6 +92,51 @@ func (c *Client) initSDK() error {
 	c.sdkClient = sdkClient
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string) {
+	backend := genai.BackendGeminiAPI
+	var project, location, baseURL string
+
+	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
+		backend = genai.BackendVertexAI
+		parts := strings.Split(apiURL, "/")
+		for i, p := range parts {
+			if p == "projects" && i+1 < len(parts) {
+				project = parts[i+1]
+			}
+			if p == "locations" && i+1 < len(parts) {
+				location = parts[i+1]
+			}
+		}
+		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
+			baseURL = apiURL[:idx+1]
+		}
+	}
+
+	// Support for local E2E mocking
+	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
+		baseURL = mockURL
+	}
+
+	return backend, project, location, baseURL
+}
+
+func (c *Client) prepareAuthHeader() http.Header {
+	authReq := &auth.Request{
+		Headers: make(map[string]string),
+	}
+	c.mu.RLock()
+	authenticator := c.authenticator
+	c.mu.RUnlock()
+
+	authenticator.Apply(authReq)
+
+	headers := make(http.Header)
+	for k, v := range authReq.Headers {
+		headers.Set(k, v)
+	}
+	return headers
 }
 
 // RefreshAuth invalidates the current token and re-initializes the SDK client.
@@ -184,13 +192,22 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+	activeTools, systemInstruction := c.configureTools(ctx, tools, resolver)
+
+	config := &genai.GenerateContentConfig{
+		Tools:             activeTools,
+		SystemInstruction: systemInstruction,
+	}
+
+	c.configureThinking(config)
+
+	return config, c.toSDKHistory(ctx, history, resolver)
+}
+
+func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) ([]*genai.Tool, *genai.Content) {
 	c.mu.RLock()
 	useSearch := c.useSearch
 	instr := c.systemInstruction
-	thinkingLevel := c.thinkingLevel
-	thinkingBudget := c.thinkingBudget
-	maxThinkingBudget := c.maxThinkingBudget
-	model := c.model
 	c.mu.RUnlock()
 
 	// Add Search tool
@@ -202,10 +219,16 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 		})
 	}
 
-	config := &genai.GenerateContentConfig{
-		Tools:             activeTools,
-		SystemInstruction: ToSDKContent(ctx, instr, resolver),
-	}
+	return activeTools, ToSDKContent(ctx, instr, resolver)
+}
+
+func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
+	c.mu.RLock()
+	thinkingLevel := c.thinkingLevel
+	thinkingBudget := c.thinkingBudget
+	maxThinkingBudget := c.maxThinkingBudget
+	model := c.model
+	c.mu.RUnlock()
 
 	// Apply Thinking Config
 	if thinkingLevel != "" || thinkingBudget > 0 {
@@ -228,7 +251,9 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(thinkingLevel)
 		}
 	}
+}
 
+func (c *Client) toSDKHistory(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
 		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
@@ -238,8 +263,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
 		}
 	}
-
-	return config, sdkHistory
+	return sdkHistory
 }
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.

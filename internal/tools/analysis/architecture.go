@@ -271,37 +271,28 @@ func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string
 	shortPkg := m.shorten(pkg)
 	for _, imp := range imports {
 		if m.isCmd(imp) {
-			shortTarget := m.shorten(imp)
-			// Avoid duplicates if already caught by rules above or by previous iterations
-			alreadyReported := false
-			for _, v := range existing {
-				if v.pkg == shortPkg && v.target == shortTarget {
-					alreadyReported = true
-					break
-				}
+			candidate := violation{
+				pkg:      shortPkg,
+				category: "[LAYER VIOLATION]",
+				target:   m.shorten(imp),
+				reason:   "Composition Root (cmd) should not be imported by internal packages.",
 			}
 
-			if !alreadyReported {
-				// Also check against what we already found in this call
-				for _, v := range found {
-					if v.pkg == shortPkg && v.target == shortTarget {
-						alreadyReported = true
-						break
-					}
-				}
-			}
-
-			if !alreadyReported {
-				found = append(found, violation{
-					pkg:      shortPkg,
-					category: "[LAYER VIOLATION]",
-					target:   shortTarget,
-					reason:   "Composition Root (cmd) should not be imported by internal packages.",
-				})
+			if !isAlreadyReported(candidate, existing) && !isAlreadyReported(candidate, found) {
+				found = append(found, candidate)
 			}
 		}
 	}
 	return found
+}
+
+func isAlreadyReported(v violation, list []violation) bool {
+	for _, item := range list {
+		if item.pkg == v.pkg && item.target == v.target {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {

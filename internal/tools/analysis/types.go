@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,11 +96,7 @@ func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-	resolvedPath, err := m.SP.IsPathSafe(path)
+	resolvedPath, err := m.resolvePath(params.Path)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -108,33 +105,12 @@ func (m *TypeManager) ListSymbols(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, "", params.ExportedOnly)
+	results, err := m.collectSymbols(resolvedPath, "", params.ExportedOnly)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	var results []string
-	for _, sym := range symbols {
-		desc := sym.Name
-		switch sym.Kind {
-		case "type":
-			desc = "type " + sym.Name
-		case "func":
-			if sym.Signature != "" {
-				desc = sym.Signature
-			}
-		case "var":
-			desc = "var " + sym.Name
-		case "const":
-			desc = "const " + sym.Name
-		}
-		results = append(results, fmt.Sprintf("%s:%d: %s", sym.Path, sym.Line, desc))
-	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: "No symbols found."}, nil
-	}
-	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return m.wrapResults(results, "No symbols found."), nil
 }
 
 func (m *TypeManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -220,11 +196,7 @@ func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-	resolvedPath, err := m.SP.IsPathSafe(path)
+	resolvedPath, err := m.resolvePath(params.Path)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -233,33 +205,12 @@ func (m *TypeManager) FindDefinitions(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, err
 	}
 
-	symbols, err := m.Indexer.SearchSymbols(ctx, resolvedPath, params.Query, false)
+	results, err := m.collectSymbols(resolvedPath, params.Query, false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	var results []string
-	for _, sym := range symbols {
-		desc := sym.Name
-		switch sym.Kind {
-		case "type":
-			desc = "type " + sym.Name
-		case "func":
-			if sym.Signature != "" {
-				desc = sym.Signature
-			}
-		case "var":
-			desc = "var " + sym.Name
-		case "const":
-			desc = "const " + sym.Name
-		}
-		results = append(results, fmt.Sprintf("%s:%d: %s", sym.Path, sym.Line, desc))
-	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: "No definitions found."}, nil
-	}
-	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
+	return m.wrapResults(results, "No definitions found."), nil
 }
 
 func (m *TypeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc Location) TypeDefinition {
@@ -377,4 +328,97 @@ func (m *TypeManager) renderTypeInfo(def TypeDefinition, receivers []string) str
 	}
 
 	return sb.String()
+}
+
+func (m *TypeManager) classifySymbol(decl ast.Decl) (string, string, bool) {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		return d.Name.Name, "func", true
+	case *ast.GenDecl:
+		if len(d.Specs) == 0 {
+			return "", "", false
+		}
+		switch s := d.Specs[0].(type) {
+		case *ast.TypeSpec:
+			return s.Name.Name, "type", true
+		case *ast.ValueSpec:
+			if len(s.Names) > 0 {
+				kind := "var"
+				if d.Tok == token.CONST {
+					kind = "const"
+				}
+				return s.Names[0].Name, kind, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func (m *TypeManager) shouldIncludeSymbol(name, query string, exportedOnly bool) bool {
+	if exportedOnly && !ast.IsExported(name) {
+		return false
+	}
+	if query != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
+		return false
+	}
+	return true
+}
+
+func (m *TypeManager) formatSymbol(name, kind string, decl ast.Decl) string {
+	switch kind {
+	case "type":
+		return "type " + name
+	case "func":
+		if fd, ok := decl.(*ast.FuncDecl); ok {
+			return GetFuncSignature(fd)
+		}
+	case "var":
+		return "var " + name
+	case "const":
+		return "const " + name
+	}
+	return name
+}
+
+func (m *TypeManager) matchSymbolInFile(f *ast.File, fset *token.FileSet, filePath string, query string, exportedOnly bool) []string {
+	var results []string
+	for _, decl := range f.Decls {
+		name, kind, ok := m.classifySymbol(decl)
+		if ok && m.shouldIncludeSymbol(name, query, exportedOnly) {
+			desc := m.formatSymbol(name, kind, decl)
+			pos := fset.Position(decl.Pos())
+			results = append(results, fmt.Sprintf("%s:%d: %s", filePath, pos.Line, desc))
+		}
+	}
+	return results
+}
+
+func (m *TypeManager) collectSymbols(root, query string, exportedOnly bool) ([]string, error) {
+	var results []string
+	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(p) != ".go" {
+			return nil
+		}
+		f, fset, err := m.Cache.Get(p)
+		if err != nil {
+			return nil
+		}
+		results = append(results, m.matchSymbolInFile(f, fset, p, query, exportedOnly)...)
+		return nil
+	})
+	return results, err
+}
+
+func (m *TypeManager) resolvePath(path string) (string, error) {
+	if path == "" {
+		path = "."
+	}
+	return m.SP.IsPathSafe(path)
+}
+
+func (m *TypeManager) wrapResults(results []string, notFoundMsg string) tools.ToolResult {
+	if len(results) == 0 {
+		return tools.ToolResult{Text: notFoundMsg}
+	}
+	return tools.ToolResult{Text: strings.Join(results, "\n")}
 }
