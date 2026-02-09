@@ -105,7 +105,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
-	_ = a.applyConfig(context.Background(), "")
+	_ = a.applyConfig(context.Background())
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1234 || tools != 42 {
@@ -484,7 +484,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	// Test tracker replacement
 	tracker2 := &MockCostTracker{}
 	a.tracker = tracker2
-	_ = a.applyConfig(context.Background(), "")
+	_ = a.applyConfig(context.Background())
 
 	if a.GetCostTracker() != tracker2 {
 		t.Error("GetCostTracker didn't return updated tracker")
@@ -597,7 +597,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	sess := orchestration.NewSession("valid", h)
+	sess := orchestration.NewSession("test-config-application", h)
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())

@@ -22,13 +22,33 @@ import (
 
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
+	// Chat runs the multi-turn orchestration loop.
+	// It returns an error if the conversation cannot be initialized or the engine fails.
 	Chat(ctx context.Context, s *orchestration.Session, prompt string) error
+
+	// SetLimits sets the operational limits for the agent.
+	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetLimits(toolTurns, historyTokens, historyTurns int) error
+
+	// SetHardBudgetLimit sets the hard budget limit for the agent.
+	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetHardBudgetLimit(limit float64) error
+
+	// SetTieredThreshold sets the tiered threshold for the agent.
+	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetTieredThreshold(threshold int) error
+
+	// SetPrunedTurns sets the number of turns to prune from history.
 	SetPrunedTurns(n int)
+
+	// SetSystemInstructions updates the system instructions used by the context pipeline.
+	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetSystemInstructions(instr string) error
+
+	// Subscribe adds a subscriber for agent events.
 	Subscribe(sub func(events.Event))
+
+	// GetCostTracker returns the session cost tracker.
 	GetCostTracker() domain_pricing.ICostTracker
 }
 
@@ -149,13 +169,13 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		orchestration.RegisterInternal(reg, ctxManager)
 	}
 
-	if err := a.applyConfig(context.Background(), ""); err != nil {
-		fmt.Printf("Warning: failed to apply initial configuration: %v\n", err)
+	if err := a.applyConfig(context.Background()); err != nil {
+		a.emit(events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
 	return a
 }
 
-func (a *Agent) applyConfig(ctx context.Context, sessionID string) error {
+func (a *Agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -197,21 +217,26 @@ func (a *Agent) emit(e events.Event) {
 }
 
 // SetLimits sets the operational limits for the agent.
+// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-	return a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background())
 }
 
+// SetHardBudgetLimit sets the hard budget limit for the agent.
+// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *Agent) SetHardBudgetLimit(limit float64) error {
 	a.mu.Lock()
 	a.config.HardBudgetLimit = limit
 	a.mu.Unlock()
-	return a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background())
 }
 
+// SetTieredThreshold sets the tiered threshold for the agent.
+// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *Agent) SetTieredThreshold(threshold int) error {
 	a.configWatcher.SetTieredThreshold(threshold)
-	return a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background())
 }
 
 // SetPrunedTurns (Legacy support - usually in Session)
@@ -228,7 +253,7 @@ func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}
 
-	if err := a.applyConfig(ctx, s.ID); err != nil {
+	if err := a.applyConfig(ctx); err != nil {
 		return err
 	}
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
@@ -241,6 +266,7 @@ func (a *Agent) GetCostTracker() domain_pricing.ICostTracker {
 }
 
 // SetSystemInstructions updates the system instructions used by the context pipeline.
+// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *Agent) SetSystemInstructions(instr string) error {
 	a.mu.Lock()
 	a.config.SystemInstructions = instr
@@ -248,7 +274,7 @@ func (a *Agent) SetSystemInstructions(instr string) error {
 		a.gateway.SetSystemInstructions(instr)
 	}
 	a.mu.Unlock()
-	return a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background())
 }
 
 // WithSystemInstructions sets the initial system instructions.
