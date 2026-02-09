@@ -65,34 +65,63 @@ func isStale(path string) bool {
 // RecoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
 func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 	historyPath := filepath.Join(globalDir, "global_costs.json")
-	if _, loaded := recoveryInProgress.LoadOrStore(historyPath, true); loaded {
+	if !ls.tryStartRecovery(historyPath) {
 		return
 	}
 	defer recoveryInProgress.Delete(historyPath)
 
-	seen := make(map[string]bool)
-	if content, err := os.ReadFile(historyPath); err == nil {
-		var existing []SessionCostRecord
-		if err := json.Unmarshal(content, &existing); err != nil {
-			log.Printf("Warning: Failed to parse existing ledger during recovery: %v", err)
-		} else {
-			for _, r := range existing {
-				seen[r.Session] = true
-			}
-		}
-	}
-
-	// Fetch pricing once for all calculations
-	pricing := GetPricing(ctx, ls.sm, globalDir)
-	for k, v := range ls.pricingOverrides {
-		pricing.Models[k] = v
-	}
+	seen := ls.loadExistingSessionIDs(historyPath)
+	pricing := ls.getPricingWithOverrides(ctx, globalDir)
 
 	files, err := ls.findLogFiles(globalDir)
 	if err != nil {
 		log.Printf("Recovery: walk failed: %v\n", err)
 	}
 
+	discovered := ls.discoverNewRecords(ctx, files, globalDir, seen, pricing)
+
+	if len(discovered) > 0 {
+		ls.persistMergedLedger(ctx, historyPath, discovered)
+	}
+}
+
+// tryStartRecovery attempts to mark the ledger recovery as in-progress.
+func (ls *LedgerStore) tryStartRecovery(historyPath string) bool {
+	_, loaded := recoveryInProgress.LoadOrStore(historyPath, true)
+	return !loaded
+}
+
+// loadExistingSessionIDs reads the existing ledger and extracts already processed session IDs.
+func (ls *LedgerStore) loadExistingSessionIDs(historyPath string) map[string]bool {
+	seen := make(map[string]bool)
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		return seen
+	}
+
+	var existing []SessionCostRecord
+	if err := json.Unmarshal(content, &existing); err != nil {
+		log.Printf("Warning: Failed to parse existing ledger during recovery: %v", err)
+		return seen
+	}
+
+	for _, r := range existing {
+		seen[r.Session] = true
+	}
+	return seen
+}
+
+// getPricingWithOverrides fetches the latest pricing data and applies any local overrides.
+func (ls *LedgerStore) getPricingWithOverrides(ctx context.Context, globalDir string) domain_pricing.PricingData {
+	pricing := GetPricing(ctx, ls.sm, globalDir)
+	for k, v := range ls.pricingOverrides {
+		pricing.Models[k] = v
+	}
+	return pricing
+}
+
+// discoverNewRecords scans the list of log files for new sessions not yet in the ledger.
+func (ls *LedgerStore) discoverNewRecords(ctx context.Context, files []string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) []SessionCostRecord {
 	var discovered []SessionCostRecord
 	for _, path := range files {
 		if ctx.Err() != nil {
@@ -123,10 +152,7 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 			seen[record.Session] = true
 		}
 	}
-
-	if len(discovered) > 0 {
-		ls.persistMergedLedger(ctx, historyPath, discovered)
-	}
+	return discovered
 }
 
 func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
