@@ -106,4 +106,3 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 
 	return resp.Status, nil
 }
-
