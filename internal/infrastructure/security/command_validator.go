@@ -39,8 +39,27 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	if len(parts) == 0 {
 		return false, "empty command"
 	}
-	base := parts[0]
 
+	// 1 & 2. Whitelist checks
+	if safe, reason := v.validateWhitelists(parts[0]); !safe {
+		return false, reason
+	}
+
+	// 3 & 4. Specialized subcommand checks
+	if safe, reason := v.validateSubcommandSpecifics(parts); !safe {
+		return false, reason
+	}
+
+	// 5. Check for unsafe characters (pipes, redirects, expansion, etc.)
+	if safe, reason := v.hasUnsafeChars(command); !safe {
+		return false, reason
+	}
+
+	// 6. Path Safety Check: Ensure all arguments stay within allowed boundaries.
+	return v.CheckPathSafety(parts)
+}
+
+func (v *CommandValidator) validateWhitelists(base string) (bool, string) {
 	// 1. Check against central security policy whitelist (Single Source of Truth)
 	if !v.sm.IsCommandAllowed(base) {
 		return false, fmt.Sprintf("command '%s' is not allowed by security policy", base)
@@ -50,31 +69,17 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	if !autoApprovableCommands[base] {
 		return false, fmt.Sprintf("command '%s' is not in the auto-approval whitelist", base)
 	}
+	return true, ""
+}
 
-	// 3. Specialized Check for 'git'
-	if base == "git" {
-		if safe, reason := v.isSafeGit(parts); !safe {
-			return false, reason
-		}
+func (v *CommandValidator) validateSubcommandSpecifics(parts []string) (bool, string) {
+	base := parts[0]
+	switch base {
+	case "git":
+		return v.isSafeGit(parts)
+	case "go":
+		return v.isSafeGo(parts)
 	}
-
-	// 4. Specialized check for 'go'
-	if base == "go" {
-		if safe, reason := v.isSafeGo(parts); !safe {
-			return false, reason
-		}
-	}
-
-	// 5. Check for unsafe characters (pipes, redirects, expansion, etc.)
-	if safe, reason := v.hasUnsafeChars(command); !safe {
-		return false, reason
-	}
-
-	// 6. Path Safety Check: Ensure all arguments stay within allowed boundaries.
-	if safe, reason := v.CheckPathSafety(parts); !safe {
-		return false, reason
-	}
-
 	return true, ""
 }
 
@@ -156,8 +161,7 @@ func TruncateOutput(output string, maxLines int) string {
 	return output
 }
 
-func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
-	sub := ""
+func extractSubcommand(parts []string) string {
 	for i := 1; i < len(parts); i++ {
 		if strings.HasPrefix(parts[i], "-") {
 			// Skip flags. If it's -C or -c, skip the next part too if it's a separate arg.
@@ -166,10 +170,13 @@ func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
 			}
 			continue
 		}
-		sub = parts[i]
-		break
+		return parts[i]
 	}
+	return ""
+}
 
+func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
+	sub := extractSubcommand(parts)
 	if sub == "" {
 		return false, "missing git subcommand"
 	}
@@ -186,14 +193,7 @@ func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
 }
 
 func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
-	sub := ""
-	for i := 1; i < len(parts); i++ {
-		if strings.HasPrefix(parts[i], "-") {
-			continue
-		}
-		sub = parts[i]
-		break
-	}
+	sub := extractSubcommand(parts)
 	allowedGo := map[string]bool{
 		"list": true, "help": true, "version": true, "env": true,
 		"vet": true, "test": true, "tool": true,
@@ -202,28 +202,42 @@ func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
 		return false, fmt.Sprintf("go subcommand '%s' is not in the safe whitelist", sub)
 	}
 
-	if sub == "test" {
-		for _, arg := range parts {
-			if strings.HasPrefix(arg, "-o") || strings.HasPrefix(arg, "--output") {
-				return false, "go test with output redirection is not auto-approvable"
-			}
-		}
+	var err error
+	switch sub {
+	case "test":
+		err = v.validateGoTest(parts)
+	case "tool":
+		err = v.validateGoTool(parts)
 	}
 
-	if sub == "tool" {
-		isCover := false
-		for _, arg := range parts {
-			if arg == "cover" {
-				isCover = true
-				break
-			}
-		}
-		if !isCover {
-			return false, "only 'go tool cover' is authorized for auto-approval"
-		}
+	if err != nil {
+		return false, err.Error()
 	}
 
 	return true, ""
+}
+
+func (v *CommandValidator) validateGoTest(parts []string) error {
+	for _, arg := range parts {
+		if strings.HasPrefix(arg, "-o") || strings.HasPrefix(arg, "--output") {
+			return fmt.Errorf("go test with output redirection is not auto-approvable")
+		}
+	}
+	return nil
+}
+
+func (v *CommandValidator) validateGoTool(parts []string) error {
+	isCover := false
+	for _, arg := range parts {
+		if arg == "cover" {
+			isCover = true
+			break
+		}
+	}
+	if !isCover {
+		return fmt.Errorf("only 'go tool cover' is authorized for auto-approval")
+	}
+	return nil
 }
 
 func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
