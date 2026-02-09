@@ -6,7 +6,7 @@ package workspace
 import (
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -14,7 +14,7 @@ import (
 func TestRegister(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	Register(reg, sm, &tools.RealExecutor{})
+	Register(reg, sm, &executor.RealExecutor{})
 
 	decls := reg.GetDeclarations()
 	found := make(map[string]bool)

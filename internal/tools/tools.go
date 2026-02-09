@@ -6,8 +6,8 @@
 package tools
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -31,7 +31,7 @@ func RegisterAll(
 	client llm.LLMClient,
 	assetsDir string,
 ) {
-	workspace.Register(r, sm, &tools.RealExecutor{})
+	workspace.Register(r, sm, &executor.RealExecutor{})
 	persistence.RegisterState(r, sm, outputDir)
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
