@@ -12,7 +12,7 @@ To define a consistent, scalable, and idiomatic Go directory structure for `tell
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
+- Go toolchain 1.25+.
 - Familiarity with the [Standard Go Project Layout](https://github.com/golang-standards/project-layout).
 
 ---
@@ -25,18 +25,28 @@ The project is organized into the following top-level directories:
 - **`cmd/`**: Contains the main entry points for the application. Each subdirectory should match the binary name (e.g., `cmd/tell-me-go/`).
     - *Constraint*: Keep `main.go` extremely minimal. It MUST ONLY initialize the `cli.App` and call `Run()`. All logic, specifically flag definitions, configuration loading, and component wiring, must reside in `internal/cli` to ensure the application lifecycle is programmatically testable.
 - **`internal/`**: Contains private application and library code.
-    - `internal/agent`: The high-level orchestration engine.
+    - `internal/agent`: The high-level coordination layer.
+        - `internal/agent/orchestration`: Multi-turn loop, state management, and turn-based logic.
+        - `internal/agent/executor`: Tool execution and worker pool management.
     - `internal/cli`: Flat CLI layer, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic.
-    - `internal/config`: Global configuration and YAML parsing.
-    - `internal/domain`: Pure interfaces and entities (LLM, Tools, Pricing, Security).
+    - `internal/domain`: Pure interfaces and entities (LLM, Tools, Pricing, Security, Events).
     - `internal/infrastructure`: All external adapters and concrete implementations:
-        - `internal/infrastructure/llm`: Gemini/Vertex AI adapter.
-        - `internal/infrastructure/storage`: Filesystem utilities and asset storage.
-        - `internal/infrastructure/security`: Security Manager and path guardrails.
-        - `internal/infrastructure/auth`: Token management for Vertex AI.
-        - `internal/infrastructure/history`: Session management and persistence.
-        - `internal/infrastructure/pricing`: Cost calculation logic.
-    - `internal/tools`: High-level agent capabilities (Analysis, Workspace, Media).
+        - `internal/infrastructure/config`: Configuration loading and defaults.
+        - `internal/infrastructure/auth`: Authentication and token management (e.g., Google/Vertex).
+        - `internal/infrastructure/llm`: Language model provider adapters.
+        - `internal/infrastructure/history`: Conversation history persistence.
+        - `internal/infrastructure/storage`: File system and asset management.
+        - `internal/infrastructure/security`: Sandbox, path guardrails, and confirmation gates.
+        - `internal/infrastructure/pricing`: Economic awareness and cost calculation.
+        - `internal/infrastructure/telemetry`: Logging, metrics, and event tracking.
+        - `internal/infrastructure/registry`: Tool and command registration.
+        - `internal/infrastructure/exec`: OS-level command execution.
+        - `internal/infrastructure/testing`: Shared mocks and test helpers.
+    - `internal/tools`: Categorized agent capabilities:
+        - `internal/tools/analysis`: AST-based code intelligence and semantic search.
+        - `internal/tools/workspace`: Basic file system and project management.
+        - `internal/tools/developer`: Testing, linting, and development workflow tools.
+        - `internal/tools/integrations`: External service integrations (e.g., MS Teams).
     - `internal/ui`: Flat UI rendering and interaction layer.
 - **`configs/`**: Storage for default configuration templates (YAML).
 - **`SOP/`**: Project governance and process documentation.
@@ -63,18 +73,26 @@ tell-me-go/
 │   └── tell-me-go/
 │       └── main.go       # Orchestration and Entry Point
 ├── internal/
-│   ├── agent/            # Orchestration Engine
+│   ├── agent/            # Coordination Layer
+│   │   ├── orchestration/ # Turn-based loop
+│   │   └── executor/     # Tool execution
 │   ├── cli/              # Flat CLI Layer
-│   ├── config/           # Configuration
 │   ├── domain/           # Core Domain Models & Interfaces
 │   ├── infrastructure/   # External Adapters
 │   │   ├── auth/         # Token Management
+│   │   ├── config/       # Configuration
 │   │   ├── history/      # Persistence
 │   │   ├── llm/          # Gemini Adapter
 │   │   ├── pricing/      # Cost Calculation
 │   │   ├── security/     # Security Guardrails
-│   │   └── storage/      # FS Utilities & Assets
+│   │   ├── storage/      # FS Utilities & Assets
+│   │   ├── telemetry/    # Observability
+│   │   └── testing/      # Shared Mocks
 │   ├── tools/            # Agent Capabilities
+│   │   ├── analysis/     # AST/Code Intelligence
+│   │   ├── developer/    # Dev Workflow (Tests, Linters)
+│   │   ├── integrations/ # External Services
+│   │   └── workspace/    # File Operations
 │   └── ui/               # Flat UI Layer
 ├── configs/              # Templates
 ├── tests/                # E2E Tests

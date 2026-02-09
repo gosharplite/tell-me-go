@@ -26,11 +26,9 @@ type mockLocker struct {
 func (m *mockLocker) TerminalLock() {
 	m.mu.Lock()
 	m.locked = true
-	m.mu.Unlock()
 }
 
 func (m *mockLocker) TerminalUnlock() {
-	m.mu.Lock()
 	m.locked = false
 	m.mu.Unlock()
 }

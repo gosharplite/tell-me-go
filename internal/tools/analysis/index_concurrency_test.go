@@ -13,7 +13,7 @@ func TestIndexer_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a dummy project
-	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}

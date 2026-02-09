@@ -13,9 +13,9 @@ To define the standards for managing conversation history in `tell-me-go`, ensur
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
-- `SOP/technical/architecture_and_packages.md` (defining the `internal/history` package).
-- `internal/api` (for the `Content` and `Part` struct definitions).
+- Go toolchain 1.25+.
+- `SOP/technical/architecture_and_packages.md` (defining the `internal/infrastructure/history` package).
+- `internal/domain/llm` (for the `Content` and `Part` struct definitions).
 
 ---
 
@@ -34,7 +34,7 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 - **First Message**: Must be `user`.
 - **Subsequent Messages**: Must alternate `user` -> `model` -> `user` -> `model`.
 - **Function Responses**: When the model requests a function call, the results must be sent back as a `functionResponse` part within a `user` role content. This ensures the `user` -> `model` alternation is maintained even during tool execution loops.
-- **Validation**: Before sending to the API, the `internal/history` package must verify this sequence. Two consecutive messages with the same role are forbidden.
+- **Validation**: Before sending to the API, the `internal/infrastructure/history` package must verify this sequence. Two consecutive messages with the same role are forbidden.
 
 #### 3. Persistence
 - **Loading**: On startup, the system should attempt to load the history file corresponding to the active `MODE`.
@@ -57,7 +57,7 @@ The history manager must distinguish between data that belongs in the permanent 
 ---
 
 ### Package Standards
-- **Location**: `internal/history`
+- **Location**: `internal/infrastructure/history`
 - **Responsibilities**:
     - Loading/Saving JSON history.
     - Appending new turns.

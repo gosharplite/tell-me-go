@@ -72,7 +72,7 @@ type I2 interface {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644)
+			err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,7 +105,7 @@ type I2 interface {
 
 func TestTypeManager_ListImplementations(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	code := `package test
@@ -131,7 +131,7 @@ func (s S) M() {}
 
 func TestTypeManager_ListSymbols(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	code := `package p
@@ -160,7 +160,7 @@ const C = 1
 
 func TestTypeManager_FindUsages(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	code := `package p
@@ -186,7 +186,7 @@ func F() {
 
 func TestTypeManager_FindDefinitions(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	code := `package p
@@ -234,7 +234,7 @@ func TestComplexityAnalyzer_Analyze_Empty(t *testing.T) {
 
 func TestTypeManager_ListSymbols_ExportedOnly(t *testing.T) {
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.24"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	code := `package p

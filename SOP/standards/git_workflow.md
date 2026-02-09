@@ -12,7 +12,7 @@ To ensure that all changes to the `tell-me-go` repository are verified, logicall
 ---
 
 ### Prerequisites
-- Go toolchain (`go`) 1.24+ installed.
+- Go toolchain (`go`) 1.25+ installed.
 - All functional changes must be verified via the Go testing suite.
 - No sensitive information (API keys, secrets) should be staged.
 
@@ -77,7 +77,7 @@ Follow the "Summary + Details" format:
 ### ⚠️ AI Agent Implementation Guide
 When an AI assistant performs a commit, it must:
 1.  **Explicitly verify** `go mod tidy`, `go fmt`, `go vet`, and `go test` status before recommending a commit.
-2.  **Generate a structured message** based on the specific packages (e.g., `pkg/core`, `internal/api`) modified.
+2.  **Generate a structured message** based on the specific packages (e.g., `internal/infrastructure/llm`, `internal/agent/orchestration`) modified.
 3.  **Confirm the branch name** using `git branch --show-current`.
 4.  **Atomic State Management**: After pushing, the agent **MUST** perform a separate turn to update the Task Manager and Scratchpad. Do not batch technical execution with process reporting.
 5.  **State Verification**: After updating tasks, run `manage_tasks list` to verify.
@@ -96,7 +96,7 @@ go mod tidy && go fmt ./... && go vet ./... && go test -race ./... && go build .
 git add .
 git commit -m "Feat: Implement core history management module
 
-- Added HistoryManager struct in pkg/history.
+- Added HistoryManager struct in internal/infrastructure/history.
 - Implemented JSON serialization for conversation persistence.
 - Added unit tests for pruning logic.
 - Verified PASS on all tests (including race detector)."

@@ -11,7 +11,7 @@ To define the mandatory security protocols for the `tell-me-go` agent, ensuring 
 ---
 
 ### Prerequisites
-- Go toolchain 1.24+.
+- Go toolchain 1.25+.
 - [Agentic Capabilities](../agent/agentic_capabilities.md) (defining tool execution).
 
 ---
@@ -50,7 +50,7 @@ The assistant must never perform destructive or high-risk actions without explic
 For trusted environments or highly repetitive automated tasks, a `bypass_confirmation` tool is available.
 
 *   **Scope**: Disables all interactive security prompts.
-*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<MODE>_bypass.log`).
+*   **Persistence**: The bypass state is **persistent for the current session** (stored in `output/<MODE>/bypass.log`).
 *   **Archival**: When a new session is started (`--new`), the bypass state is **not** archived. It persists across new sessions to allow uninterrupted automation until manually revoked via `revoke_bypass`.
 *   **Revocation**: Use the `revoke_bypass` tool to re-enable confirmations.
 *   **AI Awareness**: The AI "remembers" it has enabled bypass via chat history. Because the state is persistent, the AI's mental model and the process state will remain in sync across multiple runs within the same session.
