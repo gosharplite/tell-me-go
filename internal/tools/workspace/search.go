@@ -55,7 +55,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return re.MatchString(line)
 	}, 100)
 
-	return s.formatSearchResults(results, err)
+	return s.formatSearchResults(results, err, "No matches found.")
 }
 
 func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -72,22 +72,31 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 		path = "."
 	}
 
-	// Prepare Regex for Fallback
 	var reQuery *regexp.Regexp
 	if params.Query != "" {
 		reQuery, _ = regexp.Compile("(?i)" + params.Query)
 	}
 
-	// Prepare Compiled Def Patterns for performance
-	compiledDefs := make([]*regexp.Regexp, len(defPatterns))
-	for i, p := range defPatterns {
-		compiledDefs[i] = regexp.MustCompile(p)
-	}
+	matcher := getDefinitionMatcher(reQuery, getCompiledPatterns())
+	results, err := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher, 100)
 
-	results, err := ConcurrentSearch(ctx, s.sm, s.fs, path, func(path, line string) bool {
+	return s.formatSearchResults(results, err, "No definitions found.")
+}
+
+func getCompiledPatterns() []*regexp.Regexp {
+	compiled := make([]*regexp.Regexp, len(defPatterns))
+	for i, p := range defPatterns {
+		compiled[i] = regexp.MustCompile(p)
+	}
+	return compiled
+}
+
+func getDefinitionMatcher(reQuery *regexp.Regexp, compiledDefs []*regexp.Regexp) func(string, string) bool {
+	return func(path, line string) bool {
 		if !isSupportedDefExt(filepath.Ext(path)) {
 			return false
 		}
+
 		isDef := false
 		for _, re := range compiledDefs {
 			if re.MatchString(line) {
@@ -95,34 +104,22 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 				break
 			}
 		}
+
 		if !isDef {
 			return false
 		}
+
 		return reQuery == nil || reQuery.MatchString(line)
-	}, 100)
-
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
 	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: "No definitions found."}, nil
-	}
-
-	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
-		out += "\n... (truncated)"
-	}
-	return tools.ToolResult{Text: out}, nil
 }
 
-func (s *fileSearcher) formatSearchResults(results []string, err error) (tools.ToolResult, error) {
+func (s *fileSearcher) formatSearchResults(results []string, err error, emptyMsg string) (tools.ToolResult, error) {
 	if err != nil && err.Error() != "too many results" {
 		return tools.ToolResult{}, err
 	}
 
 	if len(results) == 0 {
-		return tools.ToolResult{Text: "No matches found."}, nil
+		return tools.ToolResult{Text: emptyMsg}, nil
 	}
 
 	out := strings.Join(results, "\n")
