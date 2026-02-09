@@ -14,8 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
-	"github.com/gosharplite/tell-me-go/internal/tools/media"
-	"github.com/gosharplite/tell-me-go/internal/tools/network"
+	"github.com/gosharplite/tell-me-go/internal/tools/integrations"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
@@ -36,8 +35,7 @@ func RegisterAll(
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm)
-	network.Register(r, sm)
-	media.Register(r, sm, client, assetsDir)
+	integrations.RegisterAll(r, sm, client, assetsDir)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "generate_mermaid_diagram",

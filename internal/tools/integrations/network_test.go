@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package network
+package integrations
 
 import (
 	"context"
@@ -302,7 +302,7 @@ func TestNewNetworkTool(t *testing.T) {
 func TestRegister(t *testing.T) {
 	r := registry.New()
 	sm := security.NewSecurityManager(strings.NewReader(""))
-	Register(r, sm)
+	RegisterAll(r, sm, nil, "")
 
 	decls := r.GetDeclarations()
 	found := make(map[string]bool)
@@ -310,7 +310,7 @@ func TestRegister(t *testing.T) {
 		found[d.Name] = true
 	}
 
-	expected := []string{"read_external_docs", "http_request", "send_teams_message"}
+	expected := []string{"read_external_docs", "http_request", "send_teams_message", "create_image", "read_image"}
 	for _, name := range expected {
 		if !found[name] {
 			t.Errorf("Tool %s not registered", name)

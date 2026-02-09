@@ -10,7 +10,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -47,7 +46,7 @@ type RuntimeConfig struct {
 // Agent represents the chat orchestration logic (Stateless Service).
 type Agent struct {
 	mu            sync.RWMutex
-	gateway       *gateway.ResilientClient
+	gateway       *ResilientClient
 	engine        *TurnEngine
 	ctxManager    *context.ContextManager
 	registry      tools.IToolRegistry
@@ -90,7 +89,7 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 // New creates a new Agent using functional options.
 func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
-	gw := gateway.NewResilientClient(client, disableStreaming)
+	gw := NewResilientClient(client, disableStreaming)
 
 	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)

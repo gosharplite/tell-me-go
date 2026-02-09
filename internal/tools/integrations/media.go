@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package media
+package integrations
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -21,49 +20,6 @@ type mediaManager struct {
 	sm        *security.SecurityManager
 	client    llm.LLMClient
 	assetsDir string
-}
-
-// Register adds media generation tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
-	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
-
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "create_image",
-		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"prompt": {
-					Type:        "STRING",
-					Description: "Detailed description of the image to generate.",
-				},
-				"aspect_ratio": {
-					Type:        "STRING",
-					Description: "Aspect ratio (e.g., '1:1', '4:3', '16:9'). Default '1:1'.",
-				},
-				"model": {
-					Type:        "STRING",
-					Description: "The model to use for generation (e.g., 'imagen-3.0-generate-001', 'imagen-3.0-fast-001').",
-				},
-			},
-			Required: []string{"prompt"},
-		},
-	}, m.createImage, registry.ToolOptions{LongRunning: true})
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "read_image",
-		Description: "Reads a local image file for vision analysis.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"filepath": {
-					Type:        "STRING",
-					Description: "The path to the image file (e.g., './assets/screenshot.png').",
-				},
-			},
-			Required: []string{"filepath"},
-		},
-	}, m.readImage)
 }
 
 func (m *mediaManager) createImage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

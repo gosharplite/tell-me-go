@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package network
+package integrations
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -19,36 +18,6 @@ import (
 type teamsManager struct {
 	sm     *security.SecurityManager
 	client tools.HTTPClient
-}
-
-// RegisterTeams adds Teams-related tools to the registry.
-func RegisterTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-	m := &teamsManager{sm: sm, client: client}
-	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "send_teams_message",
-		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"webhook_url": {
-					Type:        "STRING",
-					Description: "The Power Automate workflow URL (must start with https://).",
-				},
-				"message": {
-					Type:        "STRING",
-					Description: "The message to send to the channel.",
-				},
-				"reason": {
-					Type:        "STRING",
-					Description: "Reason for sending this message.",
-				},
-			},
-			Required: []string{"webhook_url", "message", "reason"},
-		},
-	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
 }
 
 func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

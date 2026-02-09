@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package media
+package integrations
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func TestMediaTools(t *testing.T) {
 		},
 	}
 
-	Register(r, sm, client, t.TempDir())
+	RegisterAll(r, sm, client, t.TempDir())
 
 	// Test create_image
 	res, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})
@@ -65,7 +65,7 @@ func TestMediaTools_NoClient(t *testing.T) {
 	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 
-	Register(r, sm, nil, "")
+	RegisterAll(r, sm, nil, "")
 
 	// Test create_image
 	_, err := r.Execute(ctx, "create_image", map[string]interface{}{"prompt": "a sunset"})

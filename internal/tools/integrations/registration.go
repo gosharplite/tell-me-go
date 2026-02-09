@@ -1,0 +1,139 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package integrations
+
+import (
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+)
+
+// RegisterAll registers all external integration tools.
+func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
+	// Register Media Tools
+	registerMedia(r, sm, client, assetsDir)
+
+	// Register Network Tools
+	net := NewNetworkTool(sm, nil)
+	registerNetwork(r, net)
+
+	// Register Teams Tools
+	registerTeams(r, sm, nil)
+}
+
+func registerMedia(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
+	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "create_image",
+		Description: "Generates an image from a text prompt using an Imagen model (default: imagen-3.0-generate-001). Saves to assets/generated/.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"prompt": {
+					Type:        "STRING",
+					Description: "Detailed description of the image to generate.",
+				},
+				"aspect_ratio": {
+					Type:        "STRING",
+					Description: "Aspect ratio (e.g., '1:1', '4:3', '16:9'). Default '1:1'.",
+				},
+				"model": {
+					Type:        "STRING",
+					Description: "The model to use for generation (e.g., 'imagen-3.0-generate-001', 'imagen-3.0-fast-001').",
+				},
+			},
+			Required: []string{"prompt"},
+		},
+	}, m.createImage, registry.ToolOptions{LongRunning: true})
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "read_image",
+		Description: "Reads a local image file for vision analysis.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"filepath": {
+					Type:        "STRING",
+					Description: "The path to the image file (e.g., './assets/screenshot.png').",
+				},
+			},
+			Required: []string{"filepath"},
+		},
+	}, m.readImage)
+}
+
+func registerNetwork(r *registry.Registry, net *NetworkTool) {
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "read_external_docs",
+		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"url": {
+					Type:        "STRING",
+					Description: "The documentation URL to fetch.",
+				},
+			},
+			Required: []string{"url"},
+		},
+	}, net.ReadExternalDocs, registry.ToolOptions{LongRunning: true})
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "http_request",
+		Description: "Executes a custom HTTP request.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"method": {
+					Type:        "STRING",
+					Description: "HTTP method (GET, POST, PUT, DELETE, etc.).",
+				},
+				"url": {
+					Type:        "STRING",
+					Description: "The target URL.",
+				},
+				"headers": {
+					Type:        "OBJECT",
+					Description: "HTTP headers as a map of strings.",
+					Properties: map[string]*tools.Schema{
+						"Content-Type": {Type: "STRING"},
+					},
+				},
+				"body": {
+					Type:        "STRING",
+					Description: "Request body content.",
+				},
+			},
+			Required: []string{"method", "url"},
+		},
+	}, net.HttpRequest, registry.ToolOptions{LongRunning: true})
+}
+
+func registerTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+	m := &teamsManager{sm: sm, client: client}
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "send_teams_message",
+		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"webhook_url": {
+					Type:        "STRING",
+					Description: "The Power Automate workflow URL (must start with https://).",
+				},
+				"message": {
+					Type:        "STRING",
+					Description: "The message to send to the channel.",
+				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for sending this message.",
+				},
+			},
+			Required: []string{"webhook_url", "message", "reason"},
+		},
+	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
+}

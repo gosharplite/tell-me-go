@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
-	agentui "github.com/gosharplite/tell-me-go/internal/agent/ui"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -227,7 +226,7 @@ func (c *ChatCommand) handleNewSession(ctx context.Context, paths *session.Paths
 }
 
 func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
-	renderer := agentui.NewStdUIRenderer(c.SM)
+	renderer := agent.NewStdUIRenderer(c.SM)
 	renderer.SetWriters(c.Stdout, c.Stderr)
 	useColor := capturer.IsTTY(c.Stdout) && !opts.rawOutput
 	renderer.SetUseColor(useColor)

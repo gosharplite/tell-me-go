@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/gateway"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -374,14 +373,18 @@ func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Conte
 	hManager := history.NewManager(tmpDir + "/history.json")
 	capturedInput := new([]*domain_llm.Content)
 	g := &mockGateway{
-		sendChatFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+		generateFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
 			*capturedInput = input
-			return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
+			ch := make(chan *domain_llm.Content)
+			close(ch)
+			return ch, func() (*domain_llm.Content, *domain_llm.Metrics, error) {
+				return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "Summary"}}}, &domain_llm.Metrics{}, nil
+			}
 		},
 	}
 	bus := &events.SimpleEventBus{}
 	cm := NewContextManager(NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus), hManager, bus, nil)
-	cm.Summarizer = llm.NewSummarizer(gateway.NewResilientClient(g, true), bus)
+	cm.Summarizer = llm.NewSummarizer(g, bus)
 	return cm, capturedInput
 }
 
