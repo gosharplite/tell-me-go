@@ -20,9 +20,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -198,7 +198,7 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 		Model: "test-model",
 		Mode:  "test-mode",
 	}
-	paths := &session.Paths{
+	paths := &persistence.Paths{
 		ModeDir: tmpDir,
 		LogPath: filepath.Join(tmpDir, "tokens.log"),
 	}

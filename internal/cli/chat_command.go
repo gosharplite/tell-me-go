@@ -20,9 +20,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/session"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
@@ -96,7 +96,7 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	paths, err := session.InitializePaths(c.HomeDir, cfg.Mode)
+	paths, err := persistence.InitializePaths(c.HomeDir, cfg.Mode)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag
 	return opts, fs, cfg, nil
 }
 
-func (c *ChatCommand) initializeDependencies(ctx context.Context, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
+func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, pricing.PricingData, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, nil, nil, 0, pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)
@@ -177,7 +177,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths session.
 	return hManager, client, registry, tracker, pruned, pricingData, nil
 }
 
-func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
+func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) error {
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
@@ -197,7 +197,7 @@ func (c *ChatCommand) getPricingOverrides(cfg *config.Config) map[string]pricing
 	return pricingOverrides
 }
 
-func (c *ChatCommand) setupSecurity(paths *session.Paths, configPath string) {
+func (c *ChatCommand) setupSecurity(paths *persistence.Paths, configPath string) {
 	c.SM.SetSafePathsFile(paths.SafePathsPath)
 	c.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
 	c.SM.SetBypassFile(paths.BypassPath)
@@ -213,14 +213,14 @@ func (c *ChatCommand) setupSecurity(paths *session.Paths, configPath string) {
 	c.SM.RegisterReadOnlyPath(configPath)
 }
 
-func (c *ChatCommand) handleNewSession(ctx context.Context, paths *session.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+func (c *ChatCommand) handleNewSession(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
 		fmt.Fprintf(c.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
 	}
-	retentionDays := session.LoadBackupRetentionDays(*paths)
-	if err := session.RotateSession(c.Stdout, *paths, retentionDays); err != nil {
+	retentionDays := persistence.LoadBackupRetentionDays(*paths)
+	if err := persistence.RotateSession(c.Stdout, *paths, retentionDays); err != nil {
 		fmt.Fprintf(c.Stderr, "Warning: Session rotation failed: %v\n", err)
 	}
 }
@@ -234,7 +234,7 @@ func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Conf
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *ChatCommand) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *session.Paths, pruned int, pData pricing.PricingData, capturer *ui.Capturer) {
+func (c *ChatCommand) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pruned int, pData pricing.PricingData, capturer *ui.Capturer) {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns)
 	chatAgent.SetTieredThreshold(cfg.ResolveTieredThreshold(pData))
