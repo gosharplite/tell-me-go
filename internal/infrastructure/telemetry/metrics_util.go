@@ -35,10 +35,7 @@ func ParseUsage(path string, pd domain_pricing.PricingData, defaultModel string)
 	}
 	defer f.Close()
 
-	var stats domain_pricing.UsageStats
-	var totalCost float64
-	var detectedModel string
-	var firstTimestamp time.Time
+	state := &parseState{}
 	scanner := bufio.NewScanner(f)
 	// Increase buffer capacity to 10MB to handle large JSON log entries
 	const maxCapacity = 10 * 1024 * 1024
@@ -46,45 +43,55 @@ func ParseUsage(path string, pd domain_pricing.PricingData, defaultModel string)
 	scanner.Buffer(buf, maxCapacity)
 
 	for scanner.Scan() {
-		data := scanner.Bytes()
-		if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
-			continue
-		}
+		_ = processLogLine(scanner.Bytes(), state, pd, defaultModel)
+	}
+	return state.stats, state.totalCost, state.detectedModel, state.firstTimestamp, scanner.Err()
+}
 
-		var mt llm.Metrics
+type parseState struct {
+	stats          domain_pricing.UsageStats
+	totalCost      float64
+	detectedModel  string
+	firstTimestamp time.Time
+}
 
-		// Try JSON first (SOP: Structured over Procedural)
-		if err := json.Unmarshal(data, &mt); err == nil {
-			if mt.IsSummary {
-				continue
-			}
+func processLogLine(data []byte, state *parseState, pd domain_pricing.PricingData, defaultModel string) error {
+	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
+		return nil
+	}
 
-			if firstTimestamp.IsZero() && mt.Timestamp != "" {
-				if t, err := time.Parse(time.RFC3339, mt.Timestamp); err == nil {
-					firstTimestamp = t
-				}
-			}
+	var mt llm.Metrics
+	if err := json.Unmarshal(data, &mt); err != nil {
+		return nil
+	}
 
-			mtModel := mt.Model
-			if mtModel == "" {
-				mtModel = defaultModel
-			}
-			if detectedModel == "" && mtModel != "" {
-				detectedModel = mtModel
-			}
+	if mt.IsSummary {
+		return nil
+	}
 
-			p := GetModelPricing(mtModel, pd)
-			turnStats := Accumulate(&stats, mt)
-			if mt.Cost > 0 {
-				totalCost += mt.Cost
-			} else {
-				calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
-				totalCost += calc.Calculate(turnStats).TotalCost
-			}
-			continue
+	if state.firstTimestamp.IsZero() && mt.Timestamp != "" {
+		if t, err := time.Parse(time.RFC3339, mt.Timestamp); err == nil {
+			state.firstTimestamp = t
 		}
 	}
-	return stats, totalCost, detectedModel, firstTimestamp, scanner.Err()
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = defaultModel
+	}
+	if state.detectedModel == "" && mtModel != "" {
+		state.detectedModel = mtModel
+	}
+
+	p := GetModelPricing(mtModel, pd)
+	turnStats := Accumulate(&state.stats, mt)
+	if mt.Cost > 0 {
+		state.totalCost += mt.Cost
+	} else {
+		calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
+		state.totalCost += calc.Calculate(turnStats).TotalCost
+	}
+	return nil
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
