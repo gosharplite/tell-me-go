@@ -12,86 +12,133 @@ import (
 
 func TestOSFileSystem(t *testing.T) {
 	fs := &OSFileSystem{}
-	tmpDir := t.TempDir()
 	ctx := context.Background()
 
-	t.Run("Write and Read File", func(t *testing.T) {
-		path := filepath.Join(tmpDir, "test.txt")
-		data := []byte("content")
-		if err := fs.WriteFile(ctx, path, data, 0644); err != nil {
-			t.Fatalf("WriteFile failed: %v", err)
-		}
-
-		got, err := fs.ReadFile(ctx, path)
-		if err != nil {
-			t.Fatalf("ReadFile failed: %v", err)
-		}
-		if string(got) != string(data) {
-			t.Errorf("got %s, want %s", got, data)
-		}
+	t.Run("WriteAndRead", func(t *testing.T) {
+		testWriteAndRead(t, fs, ctx)
 	})
-
-	t.Run("ReadDir", func(t *testing.T) {
-		entries, err := fs.ReadDir(ctx, tmpDir)
-		if err != nil {
-			t.Fatalf("ReadDir failed: %v", err)
-		}
-		if len(entries) == 0 {
-			t.Error("expected at least one entry")
-		}
+	t.Run("StatAndMetadata", func(t *testing.T) {
+		testStatAndMetadata(t, fs, ctx)
 	})
-
-	t.Run("MkdirAll and Stat", func(t *testing.T) {
-		path := filepath.Join(tmpDir, "a/b/c")
-		if err := fs.MkdirAll(ctx, path, 0755); err != nil {
-			t.Fatalf("MkdirAll failed: %v", err)
-		}
-		info, err := fs.Stat(ctx, path)
-		if err != nil {
-			t.Fatalf("Stat failed: %v", err)
-		}
-		if !info.IsDir() {
-			t.Error("expected directory")
-		}
+	t.Run("DirectoryOps", func(t *testing.T) {
+		testDirectoryOps(t, fs, ctx)
 	})
-
-	t.Run("Open and Close", func(t *testing.T) {
-		path := filepath.Join(tmpDir, "test.txt")
-		f, err := fs.Open(ctx, path)
-		if err != nil {
-			t.Fatalf("Open failed: %v", err)
-		}
-		f.Close()
-	})
-
-	t.Run("Remove", func(t *testing.T) {
-		path := filepath.Join(tmpDir, "test.txt")
-		if err := fs.Remove(ctx, path); err != nil {
-			t.Fatalf("Remove failed: %v", err)
-		}
-		_, err := fs.Stat(ctx, path)
-		if !os.IsNotExist(err) {
-			t.Error("expected file to be removed")
-		}
-	})
-
-	t.Run("Walk", func(t *testing.T) {
-		count := 0
-		err := fs.Walk(ctx, tmpDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			count++
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("Walk failed: %v", err)
-		}
-		if count == 0 {
-			t.Error("expected to walk at least one file/dir")
-		}
+	t.Run("Cleanup", func(t *testing.T) {
+		testCleanup(t, fs, ctx)
 	})
 }
+
+func testWriteAndRead(t *testing.T, fs FileSystem, ctx context.Context) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+	data := []byte("content")
+
+	if err := fs.WriteFile(ctx, path, data, 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	assertFileExists(t, path)
+
+	got, err := fs.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Errorf("got %s, want %s", got, data)
+	}
+
+	f, err := fs.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	f.Close()
+}
+
+func testStatAndMetadata(t *testing.T, fs FileSystem, ctx context.Context) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "meta.txt")
+	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := fs.Stat(ctx, path)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+	if info.Size() != 4 {
+		t.Errorf("expected size 4, got %d", info.Size())
+	}
+	if info.IsDir() {
+		t.Error("expected not to be a directory")
+	}
+}
+
+func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "a/b/c")
+	if err := fs.MkdirAll(ctx, path, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	assertFileExists(t, path)
+
+	entries, err := fs.ReadDir(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected entries")
+	}
+
+	count := 0
+	err = fs.Walk(ctx, tmpDir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk failed: %v", err)
+	}
+	if count == 0 {
+		t.Error("expected to walk at least one item")
+	}
+}
+
+func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
+	tmpDir := t.TempDir()
+
+	// Test Remove
+	path := filepath.Join(tmpDir, "remove.txt")
+	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.Remove(ctx, path); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("expected file to be removed")
+	}
+
+	// Test RemoveAll
+	dirPath := filepath.Join(tmpDir, "dir")
+	if err := os.MkdirAll(filepath.Join(dirPath, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.RemoveAll(ctx, dirPath); err != nil {
+		t.Fatalf("RemoveAll failed: %v", err)
+	}
+	if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
+		t.Error("expected directory to be removed")
+	}
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected file %s to exist, but got error: %v", path, err)
+	}
+}
+
 
 func TestIsBinary(t *testing.T) {
 	tests := []struct {
@@ -154,6 +201,11 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 	})
 	t.Run("Remove cancelled", func(t *testing.T) {
 		if err := fs.Remove(ctx, path); err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+	t.Run("RemoveAll cancelled", func(t *testing.T) {
+		if err := fs.RemoveAll(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})

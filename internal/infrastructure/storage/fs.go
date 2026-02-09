@@ -28,6 +28,7 @@ type FileSystem interface {
 	Open(ctx context.Context, name string) (File, error)
 	OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
 	Remove(ctx context.Context, name string) error
+	RemoveAll(ctx context.Context, path string) error
 	Walk(ctx context.Context, root string, fn WalkFunc) error
 }
 
@@ -97,6 +98,13 @@ func (f *OSFileSystem) Remove(ctx context.Context, name string) error {
 		return err
 	}
 	return os.Remove(name)
+}
+
+func (f *OSFileSystem) RemoveAll(ctx context.Context, path string) error {
+	if err := f.checkDone(ctx); err != nil {
+		return err
+	}
+	return os.RemoveAll(path)
 }
 
 func (f *OSFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
