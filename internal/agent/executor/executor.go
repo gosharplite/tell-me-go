@@ -216,26 +216,10 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	for i, fc := range calls {
 		e.mu.RLock()
 		reg := e.registry
-		pool := e.pool
 		e.mu.RUnlock()
 
 		if reg.IsSerial(fc.Name) {
-			// Wait for all previous tools to finish before starting serial tool
-			wg.Wait()
-			var tr domaintools.ToolResult
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						tr = e.handlePanic(r, fc.Name)
-					}
-				}()
-				tr = e.executeTool(ctx, fc)
-			}()
-			resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
-
-			// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
-			// continue (especially for timeouts/cancellations where the goroutine is orphaned).
-			if ctx.Err() != nil || tr.Error != nil {
+			if !e.executeSerialTask(ctx, i, fc, resChan, &wg) {
 				// Fill remaining slots in resChan so the collector doesn't hang
 				for j := i + 1; j < len(calls); j++ {
 					resChan <- toolExecResult{
@@ -247,45 +231,71 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 				return // Exit the execution plan early
 			}
 		} else {
-			wg.Add(1)
-			idx, call := i, fc // captured for closure
-
-			task := func(_ context.Context) {
-				defer wg.Done()
-
-				if ctx.Err() != nil {
-					resChan <- toolExecResult{
-						index: idx,
-						name:  call.Name,
-						tr:    domaintools.ToolResult{Text: "Skipped: Context cancelled"},
-					}
-					return
-				}
-
-				defer func() {
-					if r := recover(); r != nil {
-						resChan <- toolExecResult{
-							index: idx,
-							name:  call.Name,
-							tr:    e.handlePanic(r, call.Name),
-						}
-					}
-				}()
-				tr := e.executeTool(ctx, call)
-				resChan <- toolExecResult{index: idx, name: call.Name, tr: tr}
-			}
-
-			if !pool.Submit(task) {
-				wg.Done()
-				resChan <- toolExecResult{
-					index: idx,
-					name:  call.Name,
-					tr:    domaintools.ToolResult{Text: "Error: Task submission failed (pool closed or context cancelled)"},
-				}
-			}
+			e.enqueueParallelTask(ctx, i, fc, resChan, &wg)
 		}
 	}
 	wg.Wait()
+}
+
+func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult, wg *sync.WaitGroup) bool {
+	// Wait for all previous tools to finish before starting serial tool
+	wg.Wait()
+	var tr domaintools.ToolResult
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				tr = e.handlePanic(r, fc.Name)
+			}
+		}()
+		tr = e.executeTool(ctx, fc)
+	}()
+	resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+
+	// If the serial tool failed, timed out, or context was cancelled, we CANNOT safely
+	// continue (especially for timeouts/cancellations where the goroutine is orphaned).
+	return ctx.Err() == nil && tr.Error == nil
+}
+
+func (e *ToolExecutor) enqueueParallelTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult, wg *sync.WaitGroup) {
+	wg.Add(1)
+
+	e.mu.RLock()
+	pool := e.pool
+	e.mu.RUnlock()
+
+	task := func(_ context.Context) {
+		defer wg.Done()
+
+		if ctx.Err() != nil {
+			resChan <- toolExecResult{
+				index: i,
+				name:  fc.Name,
+				tr:    domaintools.ToolResult{Text: "Skipped: Context cancelled"},
+			}
+			return
+		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				resChan <- toolExecResult{
+					index: i,
+					name:  fc.Name,
+					tr:    e.handlePanic(r, fc.Name),
+				}
+			}
+		}()
+		tr := e.executeTool(ctx, fc)
+		resChan <- toolExecResult{index: i, name: fc.Name, tr: tr}
+	}
+
+	if !pool.Submit(task) {
+		wg.Done()
+		resChan <- toolExecResult{
+			index: i,
+			name:  fc.Name,
+			tr:    domaintools.ToolResult{Text: "Error: Task submission failed (pool closed or context cancelled)"},
+		}
+	}
 }
 
 func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.ToolResult {
