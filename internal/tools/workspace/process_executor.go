@@ -120,82 +120,68 @@ func (e *ProcessExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.R
 	}
 
 	wg.Add(2)
-	go e.captureStream(stdout, false, sb, &mu, &wg, truncated, wt, config, file, maxCapture)
-	go e.captureStream(stderr, true, sb, &mu, &wg, truncated, wt, config, file, maxCapture)
+	totalCaptured := 0
+	go e.captureStream(stdout, false, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
+	go e.captureStream(stderr, true, sb, &mu, &wg, truncated, wt, config, file, maxCapture, &totalCaptured)
 	wg.Wait()
 
 	return truncated
 }
 
-func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.Builder, mu *sync.Mutex, wg *sync.WaitGroup, truncated *atomic.Bool, wt *writeTracker, config ExecutionConfig, file *os.File, maxCapture int) {
+func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.Builder, mu *sync.Mutex, wg *sync.WaitGroup, truncated *atomic.Bool, wt *writeTracker, config ExecutionConfig, file *os.File, maxCapture int, totalCaptured *int) {
 	defer wg.Done()
+
+	sp := &streamProcessor{
+		mu:            mu,
+		truncated:     truncated,
+		totalCaptured: totalCaptured,
+		wt:            wt,
+		maxCapture:    maxCapture,
+		feedback:      config.Feedback,
+		file:          file,
+	}
 
 	scanner := bufio.NewScanner(r)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, maxScannerCapacity)
-	var lineBuf []byte
-	for scanner.Scan() {
-		data := scanner.Bytes()
-		// Reuse buffer and append newline for atomic write
-		lineBuf = append(lineBuf[:0], data...)
-		lineBuf = append(lineBuf, '\n')
 
-		mu.Lock()
-		if file != nil {
-			wt.Write(file, lineBuf)
-		}
-
-		// Slice to remove the newline for other uses
-		rawLine := lineBuf[:len(data)]
-
-		var content string
-		var feedbackMsg string
-		if isStderr {
-			feedbackMsg = fmt.Sprintf("  %s[stderr] %s%s\n", ui.ColorRed, rawLine, ui.ColorReset)
-			content = fmt.Sprintf("[stderr] %s\n", rawLine)
-		} else {
-			feedbackMsg = fmt.Sprintf("  %s%s%s\n", ui.ColorGray, rawLine, ui.ColorReset)
-			content = string(lineBuf)
-		}
-
-		if sb.Len() < maxCapture {
-			remaining := maxCapture - sb.Len()
-			if len(content) > remaining {
-				truncated.Store(true)
-			}
-			content = truncateToValidUTF8(content, remaining)
-			sb.WriteString(content)
-		} else {
-			truncated.Store(true)
-		}
-
-		if config.Feedback != nil {
-			fmt.Fprint(config.Feedback, feedbackMsg)
-		}
-		mu.Unlock()
+	prefix := ""
+	if isStderr {
+		prefix = "[stderr]"
 	}
 
-	if err := scanner.Err(); err != nil {
-		msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
-		if err == bufio.ErrTooLong {
-			msg = "\n[Warning] Output line too long for scanner; truncated."
-		}
+	for scanner.Scan() {
+		sp.processLine(sb, scanner.Bytes(), prefix, config.Feedback)
+	}
 
-		mu.Lock()
-		if config.Feedback != nil {
-			fmt.Fprintln(config.Feedback, msg)
-		}
-		remaining := maxCapture - sb.Len()
-		if remaining > 0 {
-			if len(msg+"\n") > remaining {
-				truncated.Store(true)
-			}
-			content := truncateToValidUTF8(msg+"\n", remaining)
-			sb.WriteString(content)
-		} else {
+	e.handleCaptureError(scanner.Err(), sb, mu, config, truncated, maxCapture)
+}
+
+func (e *ProcessExecutor) handleCaptureError(err error, sb *strings.Builder, mu *sync.Mutex, config ExecutionConfig, truncated *atomic.Bool, maxCapture int) {
+	if err == nil {
+		return
+	}
+	msg := fmt.Sprintf("\n[Warning] Output read error: %v", err)
+	if err == bufio.ErrTooLong {
+		msg = "\n[Warning] Output line too long for scanner; truncated."
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if config.Feedback != nil {
+		fmt.Fprintln(config.Feedback, msg)
+	}
+
+	remaining := maxCapture - sb.Len()
+	if remaining > 0 {
+		fullMsg := msg + "\n"
+		if len(fullMsg) > remaining {
 			truncated.Store(true)
 		}
-		mu.Unlock()
+		content := truncateToValidUTF8(fullMsg, remaining)
+		sb.WriteString(content)
+	} else {
+		truncated.Store(true)
 	}
 }
 
@@ -303,13 +289,19 @@ func (p *pipeline) start() error {
 }
 
 func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string, bool) {
+	var mu sync.Mutex
+	var truncated atomic.Bool
+	totalCaptured := 0
 	sp := &streamProcessor{
-		stdoutStr:  &strings.Builder{},
-		stderrStr:  &strings.Builder{},
-		wt:         &writeTracker{feedback: config.Feedback, filePath: config.OutputFile},
-		maxCapture: config.MaxCapture,
-		feedback:   config.Feedback,
-		file:       file,
+		stdoutStr:     &strings.Builder{},
+		stderrStr:     &strings.Builder{},
+		mu:            &mu,
+		truncated:     &truncated,
+		totalCaptured: &totalCaptured,
+		wt:            &writeTracker{feedback: config.Feedback, filePath: config.OutputFile},
+		maxCapture:    config.MaxCapture,
+		feedback:      config.Feedback,
+		file:          file,
 	}
 	if sp.maxCapture <= 0 {
 		sp.maxCapture = 1024 * 1024
@@ -364,10 +356,10 @@ func (p *pipeline) closePipes() {
 type streamProcessor struct {
 	stdoutStr     *strings.Builder
 	stderrStr     *strings.Builder
-	mu            sync.Mutex
-	truncated     atomic.Bool
+	mu            *sync.Mutex
+	truncated     *atomic.Bool
 	wt            *writeTracker
-	totalCaptured int
+	totalCaptured *int
 	maxCapture    int
 	feedback      io.Writer
 	file          *os.File
@@ -396,14 +388,14 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 		}
 	}
 
-	remaining := sp.maxCapture - sp.totalCaptured
+	remaining := sp.maxCapture - *sp.totalCaptured
 	if remaining > 0 {
 		if len(content) > remaining {
 			sp.truncated.Store(true)
 		}
 		content = truncateToValidUTF8(content, remaining)
 		sb.WriteString(content)
-		sp.totalCaptured += len(content)
+		*sp.totalCaptured += len(content)
 	} else {
 		sp.truncated.Store(true)
 	}
@@ -428,7 +420,7 @@ func (sp *streamProcessor) appendErr(sb *strings.Builder, err error) {
 		fmt.Fprintln(sp.feedback, msg)
 	}
 
-	remaining := sp.maxCapture - sp.totalCaptured
+	remaining := sp.maxCapture - *sp.totalCaptured
 	if remaining > 0 {
 		fullMsg := msg + "\n"
 		if len(fullMsg) > remaining {
@@ -436,7 +428,7 @@ func (sp *streamProcessor) appendErr(sb *strings.Builder, err error) {
 		}
 		content := truncateToValidUTF8(fullMsg, remaining)
 		sb.WriteString(content)
-		sp.totalCaptured += len(content)
+		*sp.totalCaptured += len(content)
 	} else {
 		sp.truncated.Store(true)
 	}
