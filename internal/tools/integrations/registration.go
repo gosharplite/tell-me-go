@@ -113,7 +113,7 @@ func registerNetwork(r *registry.Registry, net *NetworkTool) {
 }
 
 func registerTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	m := &teamsManager{sm: sm, client: client}
+	m := NewTeamsManager(sm, client)
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",

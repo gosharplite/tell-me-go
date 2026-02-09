@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -18,6 +19,13 @@ import (
 type teamsManager struct {
 	sm     *security.SecurityManager
 	client tools.HTTPClient
+}
+
+func NewTeamsManager(sm *security.SecurityManager, client tools.HTTPClient) *teamsManager {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &teamsManager{sm: sm, client: client}
 }
 
 func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
