@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package ui
 
 import (
 	"bytes"
@@ -14,12 +14,11 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestUIRendererGolden(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	renderer := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	renderer := NewStdUIRenderer(locker)
 
 	var stdout, stderr bytes.Buffer
 	renderer.SetWriters(&stdout, &stderr)

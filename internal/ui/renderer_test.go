@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package agent
+package ui
 
 import (
 	"bytes"
@@ -16,13 +16,29 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
+
+type mockLocker struct {
+	locked bool
+	mu     sync.Mutex
+}
+
+func (m *mockLocker) TerminalLock() {
+	m.mu.Lock()
+	m.locked = true
+	m.mu.Unlock()
+}
+
+func (m *mockLocker) TerminalUnlock() {
+	m.mu.Lock()
+	m.locked = false
+	m.mu.Unlock()
+}
 
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -77,8 +93,8 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 
 func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -144,8 +160,8 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 func TestStdUIRenderer_Streaming(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -209,8 +225,8 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 
 func TestLogTurnStatus_Format(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 21, 4, 52, 0, time.UTC) })
 
@@ -271,8 +287,8 @@ func TestLogTurnStatus_Format(t *testing.T) {
 
 func TestStreamResponseCursorAnchoring(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 
 	t.Run("Anchoring enabled when rawOutput is false", func(t *testing.T) {
@@ -320,8 +336,8 @@ func TestStreamResponseCursorAnchoring(t *testing.T) {
 
 func TestStdUIRenderer_Colors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -374,8 +390,8 @@ func TestStdUIRenderer_Colors(t *testing.T) {
 
 func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -418,8 +434,8 @@ func TestStdUIRenderer_ToolMetrics(t *testing.T) {
 
 func TestStdUIRenderer_Concurrency(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 
 	const (
@@ -462,11 +478,11 @@ func TestStdUIRenderer_Concurrency(t *testing.T) {
 }
 
 func TestStdUIRenderer_GetTimestamp(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	locker := &mockLocker{}
 
 	t.Run("Mocked time", func(t *testing.T) {
 		r := &StdUIRenderer{
-			sm: sm,
+			locker: locker,
 		}
 		r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 34, 56, 0, time.UTC) })
 		got := r.getTimestamp()
@@ -477,7 +493,7 @@ func TestStdUIRenderer_GetTimestamp(t *testing.T) {
 	})
 
 	t.Run("Nil now fallback", func(t *testing.T) {
-		r := &StdUIRenderer{sm: sm}
+		r := &StdUIRenderer{locker: locker}
 		got := r.getTimestamp()
 		// Just verify it doesn't panic and returns a valid looking timestamp (HH:MM:SS)
 		if len(got) != 8 || got[2] != ':' || got[5] != ':' {
@@ -528,8 +544,8 @@ func TestStdUIRenderer_NowSafeRace(t *testing.T) {
 
 func TestStreamResponse_ScrollAware(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 
 	t.Run("Redraw on no scroll", func(t *testing.T) {
@@ -594,8 +610,8 @@ func TestStreamResponse_ScrollAware(t *testing.T) {
 
 func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	sm := security.NewSecurityManager(nil)
-	r := NewStdUIRenderer(sm)
+	locker := &mockLocker{}
+	r := NewStdUIRenderer(locker)
 	r.SetWriters(&stdout, &stderr)
 	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
@@ -612,7 +628,7 @@ func TestStdUIRenderer_LogUsage_Terminal(t *testing.T) {
 }
 
 func TestStdUIRenderer_ColorLogic(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
+	locker := &mockLocker{}
 	tests := []struct {
 		name     string
 		useColor bool
@@ -625,7 +641,7 @@ func TestStdUIRenderer_ColorLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := NewStdUIRenderer(sm)
+			r := NewStdUIRenderer(locker)
 			r.SetUseColor(tt.useColor)
 			ui := r.getUIState()
 			if got := ui.c(tt.input); got != tt.expected {

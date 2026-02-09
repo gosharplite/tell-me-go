@@ -107,6 +107,12 @@ func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
 	m.lastSystemLevel = level
 }
 
+func (m *mockUIRenderer) RenderStatus(ctx context.Context, status events.TurnStatus) {
+	m.LogTurnStatus(status)
+}
+
+func (m *mockUIRenderer) RenderEvent(ctx context.Context, event events.Event) {}
+
 func (m *mockUIRenderer) SetUseColor(use bool) {}
 
 func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {

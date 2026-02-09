@@ -6,14 +6,14 @@ package cli
 import (
 	"context"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // UISubscriber translates domain events into UI updates.
 type UISubscriber struct {
-	renderer     agent.UIRenderer
+	renderer     ui.UIRenderer
 	showThoughts bool
 	showTools    bool
 	rawOutput    bool
@@ -22,7 +22,7 @@ type UISubscriber struct {
 }
 
 // NewUISubscriber creates a new UISubscriber.
-func NewUISubscriber(renderer agent.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *UISubscriber {
+func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *UISubscriber {
 	return &UISubscriber{
 		renderer:     renderer,
 		showThoughts: showThoughts,
