@@ -240,7 +240,7 @@ func TestExecuteErrors(t *testing.T) {
 
 		paths, err := persistence.InitializePaths(tmpDir, mode)
 		require.NoError(t, err)
-		
+
 		// Use a JSON that will fail to unmarshal into llm.Content
 		require.NoError(t, os.WriteFile(paths.HistoryPath, []byte("{\"role\": 123}"), 0644))
 
@@ -252,7 +252,7 @@ func TestExecuteErrors(t *testing.T) {
 			Stderr:  io.Discard,
 			SM:      sm,
 		})
-		
+
 		err = cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error loading history")
@@ -271,7 +271,7 @@ func TestExecuteErrors(t *testing.T) {
 			Stderr:  io.Discard,
 			SM:      sm,
 		})
-		
+
 		// Customize ClientFactory to return an error
 		cmd.ClientFactory = func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error) {
 			return nil, fmt.Errorf("forced client error")

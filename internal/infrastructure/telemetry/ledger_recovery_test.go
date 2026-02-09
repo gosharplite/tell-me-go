@@ -103,7 +103,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 
 		ls.RecoverLedger(context.Background(), tempDir)
 
-		// Verification: The ledger should be rewritten with the new record, 
+		// Verification: The ledger should be rewritten with the new record,
 		// ignoring the corrupted one.
 		content, err := os.ReadFile(historyPath)
 		require.NoError(t, err)
