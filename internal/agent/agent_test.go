@@ -175,28 +175,43 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 }
 
 func TestAgent_InternalTools_Registration(t *testing.T) {
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	_ = New(&MockLLMClient{}, nil, reg, sm, false)
+	t.Run("Default - No internal tools", func(t *testing.T) {
+		reg := registry.New()
+		sm := security_impl.NewSecurityManager(nil)
+		_ = New(&MockLLMClient{}, nil, reg, sm, false)
 
-	decls := reg.GetDeclarations()
-	foundSumm := false
-	foundManage := false
-	for _, d := range decls {
-		if d.Name == "summarize_history" {
-			foundSumm = true
+		decls := reg.GetDeclarations()
+		for _, d := range decls {
+			if d.Name == "summarize_history" || d.Name == "manage_history" {
+				t.Errorf("internal tool %s registered by default", d.Name)
+			}
 		}
-		if d.Name == "manage_history" {
-			foundManage = true
-		}
-	}
+	})
 
-	if !foundSumm {
-		t.Error("summarize_history tool not registered")
-	}
-	if !foundManage {
-		t.Error("manage_history tool not registered")
-	}
+	t.Run("Opt-in - With internal tools", func(t *testing.T) {
+		reg := registry.New()
+		sm := security_impl.NewSecurityManager(nil)
+		_ = New(&MockLLMClient{}, nil, reg, sm, false, WithInternalTools())
+
+		decls := reg.GetDeclarations()
+		foundSumm := false
+		foundManage := false
+		for _, d := range decls {
+			if d.Name == "summarize_history" {
+				foundSumm = true
+			}
+			if d.Name == "manage_history" {
+				foundManage = true
+			}
+		}
+
+		if !foundSumm {
+			t.Error("summarize_history tool not registered")
+		}
+		if !foundManage {
+			t.Error("manage_history tool not registered")
+		}
+	})
 }
 
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
@@ -309,7 +324,7 @@ func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, contex
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
 	}
 
-	a := New(&MockLLMClient{}, h, reg, sm, false)
+	a := New(&MockLLMClient{}, h, reg, sm, false, WithInternalTools())
 	return a, h, ctx
 }
 
@@ -353,7 +368,7 @@ func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, context.Co
 	ctx := context.Background()
 
 	mockClient := &MockLLMClient{}
-	a := New(mockClient, h, reg, sm, false)
+	a := New(mockClient, h, reg, sm, false, WithInternalTools())
 	return a, a.ctxManager.History, ctx
 }
 

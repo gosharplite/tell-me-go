@@ -57,7 +57,8 @@ type Agent struct {
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
 
-	config RuntimeConfig
+	config           RuntimeConfig
+	registerInternal bool
 }
 
 // AgentOption defines a functional option for configuring an Agent.
@@ -83,6 +84,13 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 		if a.configWatcher != nil {
 			a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 		}
+	}
+}
+
+// WithInternalTools enables the registration of internal agent tools (e.g., history management).
+func WithInternalTools() AgentOption {
+	return func(a *Agent) {
+		a.registerInternal = true
 	}
 }
 
@@ -138,7 +146,10 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		WithCostTracker(a.tracker),
 	)
 
-	orchestration.RegisterInternal(reg, ctxManager)
+	if a.registerInternal {
+		orchestration.RegisterInternal(reg, ctxManager)
+	}
+
 	a.applyConfig() // Broadcast initial config
 	return a
 }

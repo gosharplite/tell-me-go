@@ -68,6 +68,7 @@ func NewChatCommand(ctx *Context) *ChatCommand {
 			return agent.New(client, hManager, reg, sm, disableStreaming,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
+				agent.WithInternalTools(),
 			)
 		},
 		ClientFactory: func(cfg *config.Config, pricing pricing.PricingData) (*llm.Client, error) {
