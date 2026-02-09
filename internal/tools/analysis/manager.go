@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
@@ -63,14 +64,14 @@ type AnalysisManager struct {
 }
 
 func NewAnalysisManager(idx SymbolIndex, cache *ASTCache, sp security.SecurityProvider) *AnalysisManager {
-	exec := &RealExecutor{}
+	executor := &exec.RealExecutor{}
 	fs := storage.DefaultFileSystem
 
 	m := &AnalysisManager{
 		Complexity: NewComplexityAnalyzer(cache, sp),
-		Dependency: NewDependencyAnalyzer(exec, sp),
-		Sequence:   NewSequenceAnalyzer(exec, sp),
-		Change:     NewChangeAnalyzer(cache, exec),
+		Dependency: NewDependencyAnalyzer(executor, sp),
+		Sequence:   NewSequenceAnalyzer(executor, sp),
+		Change:     NewChangeAnalyzer(cache, executor),
 		Types:      NewTypeManager(idx, cache, sp),
 		DeadCode:   NewDeadCodeAnalyzer(sp),
 

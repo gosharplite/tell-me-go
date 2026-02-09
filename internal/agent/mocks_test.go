@@ -33,17 +33,6 @@ func (m *mockToolRegistry) IsLongRunning(name string) bool {
 	return false
 }
 
-type mockSummarizer struct {
-	summarizeFn func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error)
-}
-
-func (m *mockSummarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-	if m.summarizeFn != nil {
-		return m.summarizeFn(ctx, subset, focus)
-	}
-	return "summary", &llm.Metrics{}, nil
-}
-
 type mockTokenCounter struct {
 	tokens int
 }
