@@ -36,19 +36,4 @@ func RegisterAll(
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm)
 	integrations.RegisterAll(r, sm, client, assetsDir)
-
-	r.Register(&tools.ToolDeclaration{
-		Name:        "generate_mermaid_diagram",
-		Description: "Transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
-		Parameters: &tools.Schema{
-			Type: "OBJECT",
-			Properties: map[string]*tools.Schema{
-				"graph": {
-					Type:        "OBJECT",
-					Description: "A map where keys are package names and values are lists of dependencies.",
-				},
-			},
-			Required: []string{"graph"},
-		},
-	}, generateMermaidDiagram)
 }

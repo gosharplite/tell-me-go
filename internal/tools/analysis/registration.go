@@ -413,4 +413,20 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
 	}, rel.verifyReleaseReadiness, registry.ToolOptions{Serial: true, LongRunning: true})
+
+	// Visualization Tools
+	r.Register(&tools.ToolDeclaration{
+		Name:        "generate_mermaid_diagram",
+		Description: "Transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"graph": {
+					Type:        "OBJECT",
+					Description: "A map where keys are package names and values are lists of dependencies.",
+				},
+			},
+			Required: []string{"graph"},
+		},
+	}, generateMermaidDiagram)
 }

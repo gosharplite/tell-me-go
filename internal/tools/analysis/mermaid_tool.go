@@ -1,13 +1,12 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package tools
+package analysis
 
 import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
 
 // generateMermaidDiagram transforms a dependency map into a Mermaid.js diagram.
@@ -39,5 +38,5 @@ func generateMermaidDiagram(ctx context.Context, args map[string]interface{}) (t
 		return tools.ToolResult{Text: "Error: 'graph' argument must be a map of string to string list"}, nil
 	}
 
-	return tools.ToolResult{Text: analysis.GenerateMermaid(graph)}, nil
+	return tools.ToolResult{Text: GenerateMermaid(graph)}, nil
 }
