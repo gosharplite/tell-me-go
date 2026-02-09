@@ -64,49 +64,12 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 func (c *Client) initSDK() error {
 	ctx := context.Background()
 
-	// 1. Determine Backend and parse Project/Location/BaseURL
-	backend := genai.BackendGeminiAPI
-	var project, location, baseURL string
-
 	c.mu.RLock()
 	apiURL := c.apiURL
 	c.mu.RUnlock()
 
-	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
-		backend = genai.BackendVertexAI
-		parts := strings.Split(apiURL, "/")
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-			}
-			if p == "locations" && i+1 < len(parts) {
-				location = parts[i+1]
-			}
-		}
-		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
-			baseURL = apiURL[:idx+1]
-		}
-	}
-
-	// Support for local E2E mocking
-	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
-		baseURL = mockURL
-	}
-
-	// 2. Prepare Auth Headers
-	authReq := &auth.Request{
-		Headers: make(map[string]string),
-	}
-	c.mu.RLock()
-	authenticator := c.authenticator
-	c.mu.RUnlock()
-	authenticator.Apply(authReq)
-
-	// 3. Initialize SDK Client
-	headers := make(http.Header)
-	for k, v := range authReq.Headers {
-		headers.Set(k, v)
-	}
+	backend, project, location, baseURL := c.determineBackend(apiURL)
+	headers := c.prepareAuthHeader()
 
 	clientConfig := &genai.ClientConfig{
 		Backend:  backend,
@@ -129,6 +92,51 @@ func (c *Client) initSDK() error {
 	c.sdkClient = sdkClient
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string) {
+	backend := genai.BackendGeminiAPI
+	var project, location, baseURL string
+
+	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
+		backend = genai.BackendVertexAI
+		parts := strings.Split(apiURL, "/")
+		for i, p := range parts {
+			if p == "projects" && i+1 < len(parts) {
+				project = parts[i+1]
+			}
+			if p == "locations" && i+1 < len(parts) {
+				location = parts[i+1]
+			}
+		}
+		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
+			baseURL = apiURL[:idx+1]
+		}
+	}
+
+	// Support for local E2E mocking
+	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
+		baseURL = mockURL
+	}
+
+	return backend, project, location, baseURL
+}
+
+func (c *Client) prepareAuthHeader() http.Header {
+	authReq := &auth.Request{
+		Headers: make(map[string]string),
+	}
+	c.mu.RLock()
+	authenticator := c.authenticator
+	c.mu.RUnlock()
+
+	authenticator.Apply(authReq)
+
+	headers := make(http.Header)
+	for k, v := range authReq.Headers {
+		headers.Set(k, v)
+	}
+	return headers
 }
 
 // RefreshAuth invalidates the current token and re-initializes the SDK client.
