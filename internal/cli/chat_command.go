@@ -54,6 +54,17 @@ type cliOptions struct {
 	rawOutput   bool
 }
 
+type sessionDeps struct {
+	paths            *persistence.Paths
+	hManager         *history.Manager
+	client           *llm.Client
+	registry         domaintools.IToolRegistry
+	tracker          domain_pricing.ICostTracker
+	pruned           int
+	pData            domain_pricing.PricingData
+	pricingOverrides map[string]domain_pricing.ModelPricing
+}
+
 // NewChatCommand creates a new Chat Command with default factories.
 func NewChatCommand(ctx *Context) *ChatCommand {
 	return &ChatCommand{
@@ -78,6 +89,46 @@ func NewChatCommand(ctx *Context) *ChatCommand {
 	}
 }
 
+func (c *ChatCommand) prepareSession(ctx context.Context, cfg *config.Config, opts *cliOptions) (*sessionDeps, error) {
+	paths, err := persistence.InitializePaths(c.HomeDir, cfg.Mode)
+	if err != nil {
+		return nil, err
+	}
+
+	pricingOverrides := c.getPricingOverrides(cfg)
+	c.setupSecurity(paths, opts.configPath)
+	if opts.newSession {
+		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
+	}
+
+	hManager, client, registry, tracker, pruned, pData, err := c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
+	if err != nil {
+		return nil, err
+	}
+
+	return &sessionDeps{
+		paths:            paths,
+		hManager:         hManager,
+		client:           client,
+		registry:         registry,
+		tracker:          tracker,
+		pruned:           pruned,
+		pData:            pData,
+		pricingOverrides: pricingOverrides,
+	}, nil
+}
+
+func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions, cfg *config.Config, isTTY bool) {
+	if opts.lastN <= 0 {
+		return
+	}
+	ui.History(c.Stdout, hManager, opts.lastN, ui.RenderOptions{
+		Raw:          opts.rawOutput,
+		ShowThoughts: cfg.ShowThoughts,
+		UseColor:     isTTY && !opts.rawOutput,
+	})
+}
+
 // Execute runs the chat command logic.
 func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	c.SM.SetInputReader(c.Stdin)
@@ -97,43 +148,26 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	paths, err := persistence.InitializePaths(c.HomeDir, cfg.Mode)
+	deps, err := c.prepareSession(ctx, cfg, opts)
 	if err != nil {
 		return err
 	}
 
-	pricingOverrides := c.getPricingOverrides(cfg)
-	c.setupSecurity(paths, opts.configPath)
-	if opts.newSession {
-		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
-	}
-
-	hManager, client, registry, tracker, pruned, pData, err := c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
-	if err != nil {
-		return err
-	}
-
-	if opts.lastN > 0 {
-		ui.History(c.Stdout, hManager, opts.lastN, ui.RenderOptions{
-			Raw:          opts.rawOutput,
-			ShowThoughts: cfg.ShowThoughts,
-			UseColor:     capturer.IsTTY(c.Stdout) && !opts.rawOutput,
-		})
-	}
+	c.renderHistory(deps.hManager, opts, cfg, capturer.IsTTY(c.Stdout))
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
 
-	chatAgent := c.AgentFactory(client, hManager, registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides, tracker)
-	c.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pData, capturer)
+	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.pricingOverrides, deps.tracker)
+	c.applyConfiguration(chatAgent, cfg, opts, deps.paths, deps.pruned, deps.pData, capturer)
 
-	sess := orchestration.NewSession(hManager)
-	sess.PrunedTurns = pruned
+	sess := orchestration.NewSession(deps.hManager)
+	sess.PrunedTurns = deps.pruned
 	if err := chatAgent.Chat(ctx, sess, prompt); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
 
-	return c.finalizeSession(ctx, chatAgent, hManager, *paths, cfg, pricingOverrides)
+	return c.finalizeSession(ctx, chatAgent, deps.hManager, *deps.paths, cfg, deps.pricingOverrides)
 }
 
 func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
