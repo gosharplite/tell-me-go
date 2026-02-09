@@ -101,7 +101,7 @@ func (c *ChatCommand) prepareSession(ctx context.Context, cfg *config.Config, op
 		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	return c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
+	return c.initializeDependencies(ctx, paths, cfg, pricingOverrides)
 }
 
 func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions, cfg *config.Config, isTTY bool) {
@@ -176,7 +176,7 @@ func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag
 	return opts, fs, cfg, nil
 }
 
-func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
+func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, fmt.Errorf("error loading history: %w", err)
@@ -190,13 +190,13 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persiste
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	registry := c.setupRegistry(client, cfg, &paths, pricingOverrides)
+	registry := c.setupRegistry(client, cfg, paths, pricingOverrides)
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
 	return &sessionDeps{
-		paths:            &paths,
+		paths:            paths,
 		hManager:         hManager,
 		client:           client,
 		registry:         registry,
