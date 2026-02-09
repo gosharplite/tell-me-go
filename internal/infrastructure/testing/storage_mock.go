@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package inframock
 
 import (
 	"bytes"
@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// MockFile implements File interface for testing.
+// MockFile implements storage.File interface for testing.
 type MockFile struct {
 	*bytes.Reader
 	name    string
@@ -111,7 +114,7 @@ func (m *MockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, er
 	return nil, os.ErrNotExist
 }
 
-func (m *MockFileSystem) Open(ctx context.Context, name string) (File, error) {
+func (m *MockFileSystem) Open(ctx context.Context, name string) (storage.File, error) {
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -119,7 +122,7 @@ func (m *MockFileSystem) Open(ctx context.Context, name string) (File, error) {
 	return &MockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
 }
 
-func (m *MockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
+func (m *MockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (storage.File, error) {
 	return m.Open(ctx, name)
 }
 
@@ -128,7 +131,7 @@ func (m *MockFileSystem) Remove(ctx context.Context, name string) error {
 	return nil
 }
 
-func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
+func (m *MockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
 	// Simple walk implementation
 	root = filepath.Clean(root)
 
@@ -141,7 +144,7 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 	for p := range m.Files {
 		paths = append(paths, p)
 	}
-	sortStrings(paths) // We need a sort helper or use sort package
+	sort.Strings(paths)
 
 	for _, path := range paths {
 		content := m.Files[path]
@@ -197,16 +200,6 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 		}
 	}
 	return nil
-}
-
-func sortStrings(s []string) {
-	for i := 0; i < len(s); i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
 }
 
 type mockDirEntry struct {
