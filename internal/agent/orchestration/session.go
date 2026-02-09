@@ -19,8 +19,9 @@ type Session struct {
 }
 
 // NewSession creates a new Session state.
-func NewSession(h services.HistoryManager) *Session {
+func NewSession(id string, h services.HistoryManager) *Session {
 	return &Session{
+		ID:        id,
 		History:   h,
 		StartTime: time.Now(),
 	}

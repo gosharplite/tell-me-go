@@ -34,14 +34,14 @@ func (m *integrationMockChatter) Chat(ctx context.Context, s *orchestration.Sess
 	return nil
 }
 func (m *integrationMockChatter) SetLogFile(path string)                               {}
-func (m *integrationMockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
-func (m *integrationMockChatter) SetHardBudgetLimit(limit float64)                     {}
-func (m *integrationMockChatter) SetTieredThreshold(threshold int)                     {}
+func (m *integrationMockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) error { return nil }
+func (m *integrationMockChatter) SetHardBudgetLimit(limit float64)                     error { return nil }
+func (m *integrationMockChatter) SetTieredThreshold(threshold int)                     error { return nil }
 func (m *integrationMockChatter) SetPrunedTurns(n int)                                 {}
 func (m *integrationMockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *integrationMockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *integrationMockChatter) SetMainConfigPath(path string)                        {}
-func (m *integrationMockChatter) SetSystemInstructions(instr string)                   {}
+func (m *integrationMockChatter) SetSystemInstructions(instr string)                   error { return nil }
 func (m *integrationMockChatter) Subscribe(sub func(events.Event))                     {}
 func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 	return &integrationMockCostTracker{}

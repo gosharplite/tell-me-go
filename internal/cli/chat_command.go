@@ -145,9 +145,12 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	}
 
 	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.pricingOverrides, deps.tracker)
-	c.applyConfiguration(chatAgent, cfg, opts, deps.paths, deps.pruned, deps.pData, capturer)
+	if err := c.applyConfiguration(chatAgent, cfg, opts, deps.paths, deps.pruned, deps.pData, capturer); err != nil {
+		return fmt.Errorf("failed to apply configuration: %w", err)
+	}
 
-	sess := orchestration.NewSession(deps.hManager)
+	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
+	sess := orchestration.NewSession(sessionID, deps.hManager)
 	sess.PrunedTurns = deps.pruned
 	if err := chatAgent.Chat(ctx, sess, prompt); err != nil {
 		return fmt.Errorf("error: %w", err)
@@ -264,11 +267,16 @@ func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Conf
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *ChatCommand) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pruned int, pData domain_pricing.PricingData, capturer *ui.Capturer) {
+func (c *ChatCommand) applyConfiguration(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pruned int, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
-	chatAgent.SetLimits(cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns)
-	chatAgent.SetTieredThreshold(cfg.ResolveTieredThreshold(pData))
+	if err := chatAgent.SetLimits(cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
+		return err
+	}
+	if err := chatAgent.SetTieredThreshold(cfg.ResolveTieredThreshold(pData)); err != nil {
+		return err
+	}
 	chatAgent.SetPrunedTurns(pruned)
+	return nil
 }
 
 func (c *ChatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {

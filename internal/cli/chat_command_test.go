@@ -81,14 +81,14 @@ func (m *mockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt
 	return nil
 }
 func (m *mockChatter) SetLogFile(path string)                               {}
-func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) {}
-func (m *mockChatter) SetHardBudgetLimit(limit float64)                     {}
-func (m *mockChatter) SetTieredThreshold(threshold int)                     {}
+func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) error { return nil }
+func (m *mockChatter) SetHardBudgetLimit(limit float64)                     error { return nil }
+func (m *mockChatter) SetTieredThreshold(threshold int)                     error { return nil }
 func (m *mockChatter) SetPrunedTurns(n int)                                 {}
 func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
 func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
 func (m *mockChatter) SetMainConfigPath(path string)                        {}
-func (m *mockChatter) SetSystemInstructions(instr string)                   {}
+func (m *mockChatter) SetSystemInstructions(instr string)                   error { return nil }
 func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
 func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker          { return nil }
 

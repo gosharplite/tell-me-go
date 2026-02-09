@@ -23,11 +23,11 @@ import (
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
 	Chat(ctx context.Context, s *orchestration.Session, prompt string) error
-	SetLimits(toolTurns, historyTokens, historyTurns int)
-	SetHardBudgetLimit(limit float64)
-	SetTieredThreshold(threshold int)
+	SetLimits(toolTurns, historyTokens, historyTurns int) error
+	SetHardBudgetLimit(limit float64) error
+	SetTieredThreshold(threshold int) error
 	SetPrunedTurns(n int)
-	SetSystemInstructions(instr string)
+	SetSystemInstructions(instr string) error
 	Subscribe(sub func(events.Event))
 	GetCostTracker() domain_pricing.ICostTracker
 }
@@ -149,17 +149,15 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		orchestration.RegisterInternal(reg, ctxManager)
 	}
 
-	_ = a.applyConfig(context.Background(), "") // Broadcast initial config
+	if err := a.applyConfig(context.Background(), ""); err != nil {
+		fmt.Printf("Warning: failed to apply initial configuration: %v\n", err)
+	}
 	return a
 }
 
 func (a *Agent) applyConfig(ctx context.Context, sessionID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
-	}
-	// For testing purposes, we simulate a failure for a specific "invalid" ID
-	if sessionID == "invalid-session-id" {
-		return fmt.Errorf("invalid session ID: %s", sessionID)
 	}
 
 	a.mu.Lock()
@@ -199,21 +197,21 @@ func (a *Agent) emit(e events.Event) {
 }
 
 // SetLimits sets the operational limits for the agent.
-func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
+func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-	_ = a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background(), "")
 }
 
-func (a *Agent) SetHardBudgetLimit(limit float64) {
+func (a *Agent) SetHardBudgetLimit(limit float64) error {
 	a.mu.Lock()
 	a.config.HardBudgetLimit = limit
 	a.mu.Unlock()
-	_ = a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background(), "")
 }
 
-func (a *Agent) SetTieredThreshold(threshold int) {
+func (a *Agent) SetTieredThreshold(threshold int) error {
 	a.configWatcher.SetTieredThreshold(threshold)
-	_ = a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background(), "")
 }
 
 // SetPrunedTurns (Legacy support - usually in Session)
@@ -243,14 +241,14 @@ func (a *Agent) GetCostTracker() domain_pricing.ICostTracker {
 }
 
 // SetSystemInstructions updates the system instructions used by the context pipeline.
-func (a *Agent) SetSystemInstructions(instr string) {
+func (a *Agent) SetSystemInstructions(instr string) error {
 	a.mu.Lock()
 	a.config.SystemInstructions = instr
 	if a.gateway != nil {
 		a.gateway.SetSystemInstructions(instr)
 	}
 	a.mu.Unlock()
-	_ = a.applyConfig(context.Background(), "")
+	return a.applyConfig(context.Background(), "")
 }
 
 // WithSystemInstructions sets the initial system instructions.

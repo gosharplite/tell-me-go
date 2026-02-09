@@ -30,7 +30,7 @@ func TestAgent_SetLimits(t *testing.T) {
 
 	a := New(client, h, reg, sm, false)
 
-	a.SetLimits(5, 1000, 10)
+	_ = a.SetLimits(5, 1000, 10)
 
 	tokens, tools, historyTurns := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1000 || tools != 5 || historyTurns != 10 {
@@ -55,7 +55,7 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := orchestration.NewSession(h)
+	sess := orchestration.NewSession("test-chat", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
@@ -120,7 +120,7 @@ func TestAgent_BudgetLimit(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	a.SetHardBudgetLimit(1.50)
+	_ = a.SetHardBudgetLimit(1.50)
 
 	if a.config.HardBudgetLimit != 1.50 {
 		t.Errorf("expected HardBudgetLimit 1.50, got %.2f", a.config.HardBudgetLimit)
@@ -137,7 +137,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	a.SetTieredThreshold(100000)
+	_ = a.SetTieredThreshold(100000)
 
 	if a.ctxManager.Strategy.GetTieredThreshold() != 100000 {
 		t.Errorf("expected TieredThreshold 100000, got %d", a.ctxManager.Strategy.GetTieredThreshold())
@@ -165,7 +165,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := orchestration.NewSession(h)
+	sess := orchestration.NewSession("test-retry", h)
 
 	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
@@ -228,7 +228,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := orchestration.NewSession(h)
+	sess := orchestration.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
@@ -246,7 +246,7 @@ func TestAgent_SystemInstructions_Sync(t *testing.T) {
 	a := New(mockClient, nil, registry.New(), security_impl.NewSecurityManager(nil), false)
 
 	instr := "Act as a pirate"
-	a.SetSystemInstructions(instr)
+	_ = a.SetSystemInstructions(instr)
 
 	if a.config.SystemInstructions != instr {
 		t.Errorf("expected instructions %q, got %q", instr, a.config.SystemInstructions)
@@ -340,10 +340,10 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	_ = h.SetPinned(ctx, 1, true)
 
 	// 3. Set limits to only keep 3 turns
-	a.SetLimits(10, 100000, 3)
+	_ = a.SetLimits(10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
-	err := a.Chat(ctx, &orchestration.Session{History: h}, "next")
+	err := a.Chat(ctx, orchestration.NewSession("test-pin", h), "next")
 	if err != nil {
 		t.Logf("Chat returned error (expected in mock): %v", err)
 	}
@@ -476,7 +476,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	}
 
 	// Test runtime budget update
-	a.SetHardBudgetLimit(2.50)
+	_ = a.SetHardBudgetLimit(2.50)
 	if a.engine.HardBudgetLimit != 2.50 {
 		t.Errorf("expected Engine HardBudgetLimit 2.50, got %.2f", a.engine.HardBudgetLimit)
 	}
@@ -540,7 +540,7 @@ func TestAgent_FunctionalOptionsAndEvents(t *testing.T) {
 			}
 		})
 
-		a.SetLimits(15, 2000, 20)
+		_ = a.SetLimits(15, 2000, 20)
 
 		mu.Lock()
 		defer mu.Unlock()
@@ -597,23 +597,12 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	sess := orchestration.NewSession(h)
-	sess.ID = "invalid-session-id"
-
-	ctx := context.Background()
-	err := a.Chat(ctx, sess, "Hi")
-	if err == nil {
-		t.Fatal("expected error for invalid session id, got nil")
-	}
-	if err.Error() != "invalid session ID: invalid-session-id" {
-		t.Errorf("unexpected error: %v", err)
-	}
+	sess := orchestration.NewSession("valid", h)
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	sess.ID = "valid"
-	err = a.Chat(ctx, sess, "Hi")
+	err := a.Chat(ctx, sess, "Hi")
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
