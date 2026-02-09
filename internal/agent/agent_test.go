@@ -498,96 +498,98 @@ type MockCostTracker struct {
 	domain_pricing.ICostTracker
 }
 
-func TestAgent_FunctionalOptionsAndEvents(t *testing.T) {
+func TestAgent_Option_WithPricing(t *testing.T) {
 	t.Parallel()
 
-	t.Run("WithPricing", func(t *testing.T) {
-		overrides := map[string]domain_pricing.ModelPricing{
-			"test-model": {Miss: 1.0},
-		}
-		client := &MockLLMClient{}
-		reg := registry.New()
-		sm := security_impl.NewSecurityManager(nil)
+	overrides := map[string]domain_pricing.ModelPricing{
+		"test-model": {Miss: 1.0},
+	}
+	client := &MockLLMClient{}
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
 
-		a := New(client, nil, reg, sm, false,
-			WithPricing("test-model", "chat", overrides),
-		)
+	a := New(client, nil, reg, sm, false,
+		WithPricing("test-model", "chat", overrides),
+	)
 
-		if a.config.Model != "test-model" {
-			t.Errorf("expected model test-model, got %s", a.config.Model)
-		}
-		if a.config.Mode != "chat" {
-			t.Errorf("expected mode chat, got %s", a.config.Mode)
-		}
-		if p, ok := a.config.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
-			t.Errorf("pricing overrides not correctly set: %+v", a.config.PricingOverrides)
-		}
-	})
+	if a.config.Model != "test-model" {
+		t.Errorf("expected model test-model, got %s", a.config.Model)
+	}
+	if a.config.Mode != "chat" {
+		t.Errorf("expected mode chat, got %s", a.config.Mode)
+	}
+	if p, ok := a.config.PricingOverrides["test-model"]; !ok || p.Miss != 1.0 {
+		t.Errorf("pricing overrides not correctly set: %+v", a.config.PricingOverrides)
+	}
+}
 
-	t.Run("Subscribe", func(t *testing.T) {
-		client := &MockLLMClient{}
-		reg := registry.New()
-		sm := security_impl.NewSecurityManager(nil)
-		a := New(client, nil, reg, sm, false)
+func TestAgent_Subscribe(t *testing.T) {
+	t.Parallel()
 
-		var eventReceived events.Event
-		var mu sync.Mutex
-		a.Subscribe(func(e events.Event) {
-			mu.Lock()
-			defer mu.Unlock()
-			if _, ok := e.(events.ConfigUpdated); ok {
-				eventReceived = e
-			}
-		})
+	client := &MockLLMClient{}
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+	a := New(client, nil, reg, sm, false)
 
-		_ = a.SetLimits(context.Background(), 15, 2000, 20)
-
+	var eventReceived events.Event
+	var mu sync.Mutex
+	a.Subscribe(func(e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
-		if eventReceived == nil {
-			t.Fatal("ConfigUpdated event was not received")
-		}
-
-		cfgEvent := eventReceived.(events.ConfigUpdated)
-		if cfgEvent.Limits.MaxToolTurns != 15 || cfgEvent.Limits.MaxHistoryTokens != 2000 || cfgEvent.Limits.MaxHistoryTurns != 20 {
-			t.Errorf("unexpected limits in event: %+v", cfgEvent.Limits)
+		if _, ok := e.(events.ConfigUpdated); ok {
+			eventReceived = e
 		}
 	})
 
-	t.Run("WithSessionCostTracker", func(t *testing.T) {
-		tracker := &MockCostTracker{}
-		client := &MockLLMClient{}
-		reg := registry.New()
-		sm := security_impl.NewSecurityManager(nil)
+	_ = a.SetLimits(context.Background(), 15, 2000, 20)
 
-		// 1. Test passing during New (engine is nil when option is applied)
-		a := New(client, nil, reg, sm, false,
-			WithSessionCostTracker(tracker),
-		)
+	mu.Lock()
+	defer mu.Unlock()
+	if eventReceived == nil {
+		t.Fatal("ConfigUpdated event was not received")
+	}
 
-		if a.tracker != tracker {
-			t.Error("a.tracker does not match passed tracker")
-		}
+	cfgEvent := eventReceived.(events.ConfigUpdated)
+	if cfgEvent.Limits.MaxToolTurns != 15 || cfgEvent.Limits.MaxHistoryTokens != 2000 || cfgEvent.Limits.MaxHistoryTurns != 20 {
+		t.Errorf("unexpected limits in event: %+v", cfgEvent.Limits)
+	}
+}
 
-		if a.GetCostTracker() != tracker {
-			t.Error("a.GetCostTracker() does not return the passed tracker")
-		}
+func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
+	t.Parallel()
 
-		if a.engine.GetCostTracker() != tracker {
-			t.Error("engine tracker does not match passed tracker")
-		}
+	tracker := &MockCostTracker{}
+	client := &MockLLMClient{}
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
 
-		// 2. Test applying to existing agent (engine is NOT nil)
-		tracker2 := &MockCostTracker{}
-		WithSessionCostTracker(tracker2)(a)
+	// 1. Test passing during New (engine is nil when option is applied)
+	a := New(client, nil, reg, sm, false,
+		WithSessionCostTracker(tracker),
+	)
 
-		if a.tracker != tracker2 {
-			t.Error("a.tracker does not match updated tracker")
-		}
-		if a.engine.GetCostTracker() != tracker2 {
-			t.Error("engine tracker does not match updated tracker")
-		}
-	})
+	if a.tracker != tracker {
+		t.Error("a.tracker does not match passed tracker")
+	}
+
+	if a.GetCostTracker() != tracker {
+		t.Error("a.GetCostTracker() does not return the passed tracker")
+	}
+
+	if a.engine.GetCostTracker() != tracker {
+		t.Error("engine tracker does not match passed tracker")
+	}
+
+	// 2. Test applying to existing agent (engine is NOT nil)
+	tracker2 := &MockCostTracker{}
+	WithSessionCostTracker(tracker2)(a)
+
+	if a.tracker != tracker2 {
+		t.Error("a.tracker does not match updated tracker")
+	}
+	if a.engine.GetCostTracker() != tracker2 {
+		t.Error("engine tracker does not match updated tracker")
+	}
 }
 
 func TestAgent_Chat_ConfigFailure(t *testing.T) {
