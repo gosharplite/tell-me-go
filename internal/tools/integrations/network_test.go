@@ -374,4 +374,15 @@ func TestSendTeamsMessage_Errors(t *testing.T) {
 			t.Error("Expected error for empty fields")
 		}
 	})
+
+	t.Run("Insecure URL", func(t *testing.T) {
+		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{
+			"message":     "hello",
+			"webhook_url": "http://insecure.com",
+			"reason":      "testing",
+		})
+		if err == nil || !strings.Contains(err.Error(), "must start with https://") {
+			t.Errorf("Expected HTTPS validation error, got: %v", err)
+		}
+	})
 }

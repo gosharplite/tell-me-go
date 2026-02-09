@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -44,6 +45,9 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	if webhookURL == "" || message == "" {
 		return tools.ToolResult{}, fmt.Errorf("webhook_url and message are required")
 	}
+	if !strings.HasPrefix(webhookURL, "https://") {
+		return tools.ToolResult{}, fmt.Errorf("webhook_url must start with https://")
+	}
 
 	// Safety confirmation (unless bypassed)
 	detail := fmt.Sprintf("Reason: %s\n\nMessage:\n%s", params.Reason, message)
@@ -72,7 +76,10 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	req, _ := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewBuffer(body))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := m.client.Do(req)
 	if err != nil {
