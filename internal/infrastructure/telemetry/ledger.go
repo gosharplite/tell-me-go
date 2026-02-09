@@ -226,6 +226,23 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
+	f, err := ls.acquireLedgerLock(historyPath)
+	if err != nil {
+		return
+	}
+	defer ls.releaseLedgerLock(historyPath, f)
+
+	history := ls.readExistingRecords(historyPath)
+	merged := ls.mergeRecords(history, newRecords)
+
+	if bytes, err := json.Marshal(merged); err == nil {
+		if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+			log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
+		}
+	}
+}
+
+func (ls *LedgerStore) acquireLedgerLock(historyPath string) (*os.File, error) {
 	lockPath := historyPath + ".lock"
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil && os.IsExist(err) {
@@ -236,26 +253,36 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 		}
 	}
+	return f, err
+}
 
-	if err != nil {
-		return // Another process is writing or we failed to break the lock
-	}
-	defer func() {
+func (ls *LedgerStore) releaseLedgerLock(historyPath string, f *os.File) {
+	lockPath := historyPath + ".lock"
+	if f != nil {
 		if err := f.Close(); err != nil {
 			log.Printf("Warning: Failed to close lock file %s: %v", lockPath, err)
 		}
-		if err := os.Remove(lockPath); err != nil {
+	}
+	if err := os.Remove(lockPath); err != nil {
+		if !os.IsNotExist(err) {
 			log.Printf("Warning: Failed to remove lock file %s: %v", lockPath, err)
 		}
-	}()
-
-	var history []SessionCostRecord
-	if content, err := os.ReadFile(historyPath); err == nil {
-		if err := json.Unmarshal(content, &history); err != nil {
-			log.Printf("Warning: Failed to parse ledger %s: %v", historyPath, err)
-		}
 	}
+}
 
+func (ls *LedgerStore) readExistingRecords(historyPath string) []SessionCostRecord {
+	var history []SessionCostRecord
+	content, err := os.ReadFile(historyPath)
+	if err != nil {
+		return history
+	}
+	if err := json.Unmarshal(content, &history); err != nil {
+		log.Printf("Warning: Failed to parse ledger %s: %v", historyPath, err)
+	}
+	return history
+}
+
+func (ls *LedgerStore) mergeRecords(history []SessionCostRecord, newRecords []SessionCostRecord) []SessionCostRecord {
 	mergedMap := make(map[string]SessionCostRecord)
 	for _, r := range history {
 		mergedMap[r.Session] = r
@@ -264,17 +291,9 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 		mergedMap[r.Session] = r
 	}
 
-	history = make([]SessionCostRecord, 0, len(mergedMap))
+	merged := make([]SessionCostRecord, 0, len(mergedMap))
 	for _, r := range mergedMap {
-		history = append(history, r)
+		merged = append(merged, r)
 	}
-
-	bytes, err := json.Marshal(history)
-	if err != nil {
-		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
-		return
-	}
-	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
-		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
-	}
+	return merged
 }
