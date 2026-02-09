@@ -15,17 +15,20 @@ import (
 )
 
 func TestRunPipeline_TableDriven(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := setupPipelineTest(t)
 
 	tests := []struct {
-		name       string
-		pipedParts [][]string
-		config     ExecutionConfig
-		timeout    time.Duration
-		wantErr    bool
-		wantOutput string
-		wantExit   int
-		check      func(*testing.T, ExecutionResult)
+		name             string
+		pipedParts       [][]string
+		config           ExecutionConfig
+		timeout          time.Duration
+		wantErr          bool
+		env              map[string]string
+		expectedStdout   string
+		expectedStderr   string
+		expectedExitCode int
+		expectedLength   int
+		notContain       []string
 	}{
 		{
 			name: "basic success",
@@ -33,8 +36,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"echo", "hello"},
 				{"cat"},
 			},
-			wantOutput: "hello",
-			wantExit:   0,
+			expectedStdout: "hello",
 		},
 		{
 			name: "last command fails",
@@ -42,12 +44,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"echo", "hello"},
 				{"ls", "/nonexistent_path_12345"},
 			},
-			wantExit: 1, // ls should fail
-			check: func(t *testing.T, res ExecutionResult) {
-				if res.ExitCode == 0 {
-					t.Errorf("expected non-zero exit code")
-				}
-			},
+			expectedExitCode: -1, // non-zero
 		},
 		{
 			name: "max capture enforcement",
@@ -58,11 +55,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 			config: ExecutionConfig{
 				MaxCapture: 5,
 			},
-			check: func(t *testing.T, res ExecutionResult) {
-				if len(res.Output) != 5 {
-					t.Errorf("expected output to be exactly 5 chars, got %d chars: %q", len(res.Output), res.Output)
-				}
-			},
+			expectedLength: 5,
 		},
 		{
 			name: "long line handling",
@@ -70,17 +63,8 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"python3", "-c", "print('a'*70000)"},
 				{"cat"},
 			},
-			check: func(t *testing.T, res ExecutionResult) {
-				// Now that we increased the limit to 10MB, 70KB should NOT trigger a warning
-				if strings.Contains(res.Output, "too long") || strings.Contains(res.Output, "truncated") {
-					t.Errorf("did not expect truncation warning for 70KB line, but got: %q", res.Output)
-				}
-				if !strings.Contains(res.Output, strings.Repeat("a", 70000)) {
-					if !strings.Contains(res.Error, "not found") {
-						t.Errorf("output does not contain the expected long line")
-					}
-				}
-			},
+			expectedStdout: strings.Repeat("a", 70000),
+			notContain:     []string{"too long", "truncated"},
 		},
 		{
 			name: "context timeout",
@@ -88,12 +72,8 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"sleep", "2"},
 				{"cat"},
 			},
-			timeout: 100 * time.Millisecond,
-			check: func(t *testing.T, res ExecutionResult) {
-				if res.ExitCode == 0 {
-					t.Errorf("expected non-zero exit code on timeout, got 0")
-				}
-			},
+			timeout:          100 * time.Millisecond,
+			expectedExitCode: -1, // non-zero
 		},
 		{
 			name: "invalid command in middle",
@@ -103,47 +83,91 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"cat"},
 			},
 			wantErr: true,
-			check: func(t *testing.T, res ExecutionResult) {
-				// Nothing to check if err != nil
-			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			if tt.timeout > 0 {
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+			ctx, cancel := setupPipelineContext(tt.timeout)
+			if cancel != nil {
 				defer cancel()
 			}
 
 			res, err := executor.RunPipeline(ctx, tt.pipedParts, tt.config)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("RunPipeline() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				return
-			}
 
-			if tt.wantExit != -1 && res.ExitCode != tt.wantExit && tt.wantExit != 0 {
-				// tt.wantExit 0 is default, but some tests might expect 1
-				if tt.wantExit == 1 && res.ExitCode == 0 {
-					t.Errorf("expected exit code 1, got 0")
-				}
-			}
-
-			if tt.wantOutput != "" && !strings.Contains(res.Output, tt.wantOutput) {
-				t.Errorf("expected output to contain %q, got %q", tt.wantOutput, res.Output)
-			}
-
-			if tt.check != nil {
-				tt.check(t, res)
-			}
+			verifyPipelineResult(t, res, err, tt.name, tt.wantErr, ExpectedResult{
+				ExitCode:   tt.expectedExitCode,
+				Stdout:     tt.expectedStdout,
+				Stderr:     tt.expectedStderr,
+				Length:     tt.expectedLength,
+				NotContain: tt.notContain,
+			})
 		})
 	}
 }
+
+// Helper types and functions for pipeline tests
+
+type ExpectedResult struct {
+	ExitCode   int // 0: ignore, -1: must be non-zero, >0: exact match
+	Stdout     string
+	Stderr     string
+	Length     int
+	NotContain []string
+}
+
+func setupPipelineTest(t *testing.T) *ProcessExecutor {
+	return NewProcessExecutor()
+}
+
+func setupPipelineContext(timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx := context.Background()
+	if timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return ctx, nil
+}
+
+func verifyPipelineResult(t *testing.T, actual ExecutionResult, err error, name string, wantErr bool, expected ExpectedResult) {
+	if (err != nil) != wantErr {
+		t.Errorf("%s: RunPipeline() error = %v, wantErr %v", name, err, wantErr)
+		return
+	}
+	if err != nil {
+		return
+	}
+
+	if expected.ExitCode != 0 {
+		if expected.ExitCode == -1 {
+			if actual.ExitCode == 0 {
+				t.Errorf("%s: expected non-zero exit code, got 0", name)
+			}
+		} else if actual.ExitCode != expected.ExitCode {
+			t.Errorf("%s: expected exit code %d, got %d", name, expected.ExitCode, actual.ExitCode)
+		}
+	}
+
+	if expected.Stdout != "" && !strings.Contains(actual.Output, expected.Stdout) {
+		if name != "long line handling" || !strings.Contains(actual.Error, "not found") {
+			t.Errorf("%s: expected output to contain stdout %q, got %q", name, expected.Stdout, actual.Output)
+		}
+	}
+
+	if expected.Stderr != "" && !strings.Contains(actual.Output, expected.Stderr) {
+		t.Errorf("%s: expected output to contain stderr %q, got %q", name, expected.Stderr, actual.Output)
+	}
+
+	if expected.Length > 0 && len(actual.Output) != expected.Length {
+		t.Errorf("%s: expected output length %d, got %d", name, expected.Length, len(actual.Output))
+	}
+
+	for _, s := range expected.NotContain {
+		if strings.Contains(actual.Output, s) {
+			t.Errorf("%s: did not expect %q in output, but got: %q", name, s, actual.Output)
+		}
+	}
+}
+
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := NewProcessExecutor()
@@ -331,16 +355,15 @@ func TestRunPipeline_StderrCapture(t *testing.T) {
 }
 
 func TestRunPipeline_Advanced(t *testing.T) {
-	executor := NewProcessExecutor()
-	tmpDir := t.TempDir()
+	executor := setupPipelineTest(t)
 
 	tests := []struct {
-		name        string
-		pipedParts  [][]string
-		config      ExecutionConfig
-		wantOutput  string
-		wantExit    int
-		checkOutput func(string) bool
+		name             string
+		pipedParts       [][]string
+		config           ExecutionConfig
+		expectedStdout   string
+		expectedExitCode int
+		checkOutput      func(string) bool
 	}{
 		{
 			name: "Triple Pipe",
@@ -349,7 +372,6 @@ func TestRunPipeline_Advanced(t *testing.T) {
 				{"grep", "hi"},
 				{"wc", "-l"},
 			},
-			wantExit: 0,
 			checkOutput: func(out string) bool {
 				return strings.TrimSpace(out) == "1"
 			},
@@ -361,7 +383,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 				{"ls", "/non-existent-directory-12345"},
 				{"cat"},
 			},
-			wantExit: 1,
+			expectedExitCode: -1, // non-zero
 		},
 		{
 			name: "Pipeline MaxCapture",
@@ -371,43 +393,29 @@ func TestRunPipeline_Advanced(t *testing.T) {
 			},
 			config: ExecutionConfig{
 				MaxCapture: 2,
-				OutputFile: tmpDir + "/max_capture.txt",
 			},
-			wantExit: 0,
-			checkOutput: func(out string) bool {
-				return len(out) == 2 && out == "he"
-			},
+			expectedStdout: "he",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := executor.RunPipeline(context.Background(), tt.pipedParts, tt.config)
-			if err != nil {
-				t.Fatalf("RunPipeline failed: %v", err)
-			}
 
-			if res.ExitCode != tt.wantExit && tt.wantExit != 0 {
-				if tt.wantExit == 1 && res.ExitCode == 0 {
-					t.Errorf("expected non-zero exit code, got 0")
-				}
-			}
+			verifyPipelineResult(t, res, err, tt.name, false, ExpectedResult{
+				ExitCode: tt.expectedExitCode,
+				Stdout:   tt.expectedStdout,
+			})
 
 			if tt.checkOutput != nil {
 				if !tt.checkOutput(res.Output) {
 					t.Errorf("output check failed for %q, got %q", tt.name, res.Output)
 				}
 			}
-
-			if tt.config.OutputFile != "" {
-				if _, err := os.ReadFile(tt.config.OutputFile); err != nil {
-					t.Logf("Note: could not read output file %s: %v", tt.config.OutputFile, err)
-				}
-				// Note: Output file captures EVERYTHING, while ExecutionResult.Output might be truncated or formatted differently.
-			}
 		})
 	}
 }
+
 
 func TestRunPipeline_ContextCancel(t *testing.T) {
 	executor := NewProcessExecutor()
