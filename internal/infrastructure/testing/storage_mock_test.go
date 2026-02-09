@@ -60,108 +60,128 @@ func TestMockFileInfo(t *testing.T) {
 	}
 }
 
-func TestMockFileSystem(t *testing.T) {
-	ctx := context.Background()
-	fs := NewMockFileSystem()
-
-	// WriteFile
-	data := []byte("content")
-	err := fs.WriteFile(ctx, "dir/test.txt", data, 0644)
+func assertFileContent(t *testing.T, fs *MockFileSystem, ctx context.Context, path, expected string) {
+	t.Helper()
+	data, err := fs.ReadFile(ctx, path)
 	if err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
+		t.Fatalf("failed to read %s: %v", path, err)
 	}
-
-	// ReadFile
-	got, err := fs.ReadFile(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if string(got) != "content" {
-		t.Errorf("expected content, got %s", string(got))
-	}
-
-	// ReadFile not exist
-	_, err = fs.ReadFile(ctx, "nonexistent")
-	if !os.IsNotExist(err) {
-		t.Errorf("expected IsNotExist error, got %v", err)
-	}
-
-	// ReadDir
-	entries, err := fs.ReadDir(ctx, "dir")
-	if err != nil {
-		t.Fatalf("ReadDir failed: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("expected 1 entry, got %d", len(entries))
-	}
-	if entries[0].Name() != "test.txt" {
-		t.Errorf("expected test.txt, got %s", entries[0].Name())
-	}
-	if entries[0].IsDir() {
-		t.Error("expected test.txt to not be a directory")
-	}
-	// Coverage for mockDirEntry methods
-	_ = entries[0].Type()
-	_, _ = entries[0].Info()
-
-	// MkdirAll
-	err = fs.MkdirAll(ctx, "a/b/c", 0755)
-	if err != nil {
-		t.Errorf("MkdirAll failed: %v", err)
-	}
-
-	// Stat file
-	info, err := fs.Stat(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("Stat failed: %v", err)
-	}
-	if info.Name() != "test.txt" {
-		t.Errorf("expected test.txt, got %s", info.Name())
-	}
-
-	// Stat dir
-	info, err = fs.Stat(ctx, "dir")
-	if err != nil {
-		t.Fatalf("Stat dir failed: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected dir to be a directory")
-	}
-
-	// Stat not exist
-	_, err = fs.Stat(ctx, "none")
-	if !os.IsNotExist(err) {
-		t.Errorf("expected IsNotExist, got %v", err)
-	}
-
-	// Open
-	f, err := fs.Open(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Errorf("Close failed: %v", err)
-	}
-
-	// OpenFile
-	f, err = fs.OpenFile(ctx, "dir/test.txt", os.O_RDONLY, 0)
-	if err != nil {
-		t.Fatalf("OpenFile failed: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Errorf("Close failed: %v", err)
-	}
-
-	// Remove
-	err = fs.Remove(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("Remove failed: %v", err)
-	}
-	_, err = fs.ReadFile(ctx, "dir/test.txt")
-	if !os.IsNotExist(err) {
-		t.Errorf("expected file to be removed")
+	if string(data) != expected {
+		t.Errorf("expected %q at %s, got %q", expected, path, string(data))
 	}
 }
+
+func TestMockFileSystem(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("BasicCRUD", func(t *testing.T) {
+		fs := NewMockFileSystem()
+		path := "dir/test.txt"
+		content := "content"
+
+		// WriteFile
+		if err := fs.WriteFile(ctx, path, []byte(content), 0644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		// ReadFile
+		assertFileContent(t, fs, ctx, path, content)
+
+		// Remove
+		if err := fs.Remove(ctx, path); err != nil {
+			t.Fatalf("Remove failed: %v", err)
+		}
+		_, err := fs.ReadFile(ctx, path)
+		if !os.IsNotExist(err) {
+			t.Errorf("expected IsNotExist error, got %v", err)
+		}
+	})
+
+	t.Run("Directories", func(t *testing.T) {
+		fs := NewMockFileSystem()
+
+		// MkdirAll
+		if err := fs.MkdirAll(ctx, "a/b/c", 0755); err != nil {
+			t.Errorf("MkdirAll failed: %v", err)
+		}
+
+		// Setup for ReadDir and Stat dir
+		_ = fs.WriteFile(ctx, "dir/test.txt", []byte("data"), 0644)
+
+		// ReadDir
+		entries, err := fs.ReadDir(ctx, "dir")
+		if err != nil {
+			t.Fatalf("ReadDir failed: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Errorf("expected 1 entry, got %d", len(entries))
+		}
+		if entries[0].Name() != "test.txt" {
+			t.Errorf("expected test.txt, got %s", entries[0].Name())
+		}
+		if entries[0].IsDir() {
+			t.Error("expected test.txt to not be a directory")
+		}
+		// Coverage for mockDirEntry methods
+		_ = entries[0].Type()
+		_, _ = entries[0].Info()
+
+		// Stat dir
+		info, err := fs.Stat(ctx, "dir")
+		if err != nil {
+			t.Fatalf("Stat dir failed: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("expected dir to be a directory")
+		}
+	})
+
+	t.Run("ErrorHandling", func(t *testing.T) {
+		fs := NewMockFileSystem()
+
+		// ReadFile not exist
+		_, err := fs.ReadFile(ctx, "nonexistent")
+		if !os.IsNotExist(err) {
+			t.Errorf("expected IsNotExist error, got %v", err)
+		}
+
+		// Stat not exist
+		_, err = fs.Stat(ctx, "none")
+		if !os.IsNotExist(err) {
+			t.Errorf("expected IsNotExist, got %v", err)
+		}
+	})
+
+	t.Run("FileOperations", func(t *testing.T) {
+		fs := NewMockFileSystem()
+		path := "dir/test.txt"
+		_ = fs.WriteFile(ctx, path, []byte("data"), 0644)
+
+		// Stat file
+		info, err := fs.Stat(ctx, path)
+		if err != nil {
+			t.Fatalf("Stat failed: %v", err)
+		}
+		if info.Name() != "test.txt" {
+			t.Errorf("expected test.txt, got %s", info.Name())
+		}
+
+		// Open
+		f, err := fs.Open(ctx, path)
+		if err != nil {
+			t.Fatalf("Open failed: %v", err)
+		}
+		_ = f.Close()
+
+		// OpenFile
+		f, err = fs.OpenFile(ctx, path, os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		_ = f.Close()
+	})
+}
+
 
 func TestMockFileSystem_Walk(t *testing.T) {
 	ctx := context.Background()
