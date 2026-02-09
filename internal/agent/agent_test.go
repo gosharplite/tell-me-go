@@ -30,7 +30,7 @@ func TestAgent_SetLimits(t *testing.T) {
 
 	a := New(client, h, reg, sm, false)
 
-	_ = a.SetLimits(5, 1000, 10)
+	_ = a.SetLimits(context.Background(), 5, 1000, 10)
 
 	tokens, tools, historyTurns := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1000 || tools != 5 || historyTurns != 10 {
@@ -120,7 +120,7 @@ func TestAgent_BudgetLimit(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	_ = a.SetHardBudgetLimit(1.50)
+	_ = a.SetHardBudgetLimit(context.Background(), 1.50)
 
 	if a.config.HardBudgetLimit != 1.50 {
 		t.Errorf("expected HardBudgetLimit 1.50, got %.2f", a.config.HardBudgetLimit)
@@ -137,7 +137,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	a := New(client, h, reg, sm, false)
-	_ = a.SetTieredThreshold(100000)
+	_ = a.SetTieredThreshold(context.Background(), 100000)
 
 	if a.ctxManager.Strategy.GetTieredThreshold() != 100000 {
 		t.Errorf("expected TieredThreshold 100000, got %d", a.ctxManager.Strategy.GetTieredThreshold())
@@ -246,7 +246,7 @@ func TestAgent_SystemInstructions_Sync(t *testing.T) {
 	a := New(mockClient, nil, registry.New(), security_impl.NewSecurityManager(nil), false)
 
 	instr := "Act as a pirate"
-	_ = a.SetSystemInstructions(instr)
+	_ = a.SetSystemInstructions(context.Background(), instr)
 
 	if a.config.SystemInstructions != instr {
 		t.Errorf("expected instructions %q, got %q", instr, a.config.SystemInstructions)
@@ -340,7 +340,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	_ = h.SetPinned(ctx, 1, true)
 
 	// 3. Set limits to only keep 3 turns
-	_ = a.SetLimits(10, 100000, 3)
+	_ = a.SetLimits(ctx, 10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
 	err := a.Chat(ctx, orchestration.NewSession("test-pin", h), "next")
@@ -448,7 +448,7 @@ func TestAgent_SetPrunedTurns(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	t.Run("SetPrunedTurns", func(t *testing.T) {
 		a := New(mockClient, nil, reg, sm, false)
-		a.SetPrunedTurns(7)
+		_ = a.SetPrunedTurns(context.Background(), 7)
 
 		if a.ctxManager.Strategy.GetPrunedTurns() != 7 {
 			t.Errorf("expected prunedTurns 7, got %d", a.ctxManager.Strategy.GetPrunedTurns())
@@ -476,7 +476,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	}
 
 	// Test runtime budget update
-	_ = a.SetHardBudgetLimit(2.50)
+	_ = a.SetHardBudgetLimit(context.Background(), 2.50)
 	if a.engine.HardBudgetLimit != 2.50 {
 		t.Errorf("expected Engine HardBudgetLimit 2.50, got %.2f", a.engine.HardBudgetLimit)
 	}
@@ -540,7 +540,7 @@ func TestAgent_FunctionalOptionsAndEvents(t *testing.T) {
 			}
 		})
 
-		_ = a.SetLimits(15, 2000, 20)
+		_ = a.SetLimits(context.Background(), 15, 2000, 20)
 
 		mu.Lock()
 		defer mu.Unlock()

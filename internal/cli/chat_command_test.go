@@ -80,17 +80,17 @@ func (m *mockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt
 	m.capturedPrompt = prompt
 	return nil
 }
-func (m *mockChatter) SetLogFile(path string)                               {}
-func (m *mockChatter) SetLimits(toolTurns, historyTokens, historyTurns int) error { return nil }
-func (m *mockChatter) SetHardBudgetLimit(limit float64)                     error { return nil }
-func (m *mockChatter) SetTieredThreshold(threshold int)                     error { return nil }
-func (m *mockChatter) SetPrunedTurns(n int)                                 {}
-func (m *mockChatter) SetConcurrency(maxConcurrent int, timeoutSeconds int) {}
-func (m *mockChatter) SetPersistentConfigPath(path string)                  {}
-func (m *mockChatter) SetMainConfigPath(path string)                        {}
-func (m *mockChatter) SetSystemInstructions(instr string)                   error { return nil }
-func (m *mockChatter) Subscribe(sub func(events.Event))                     {}
-func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker          { return nil }
+func (m *mockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+	return nil
+}
+func (m *mockChatter) SetHardBudgetLimit(ctx context.Context, limit float64) error { return nil }
+func (m *mockChatter) SetTieredThreshold(ctx context.Context, threshold int) error { return nil }
+func (m *mockChatter) SetPrunedTurns(ctx context.Context, n int) error             { return nil }
+func (m *mockChatter) SetSystemInstructions(ctx context.Context, instr string) error {
+	return nil
+}
+func (m *mockChatter) Subscribe(sub func(events.Event))            {}
+func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
