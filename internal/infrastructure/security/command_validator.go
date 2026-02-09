@@ -267,26 +267,43 @@ func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
 // CheckPathSafety ensures all arguments stay within allowed boundaries.
 func (v *CommandValidator) CheckPathSafety(parts []string) (bool, string) {
 	for i := 1; i < len(parts); i++ {
-		arg := parts[i]
-		if arg == "" || (strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=")) {
-			// Skip empty args and simple flags like -la
-			continue
-		}
-		// Special case for Go's recursive package pattern
-		if arg == "./..." || arg == "..." {
-			continue
-		}
-		// If it's a flag with a path like --config=path
-		if strings.Contains(arg, "=") && strings.HasPrefix(arg, "-") {
-			arg = strings.SplitN(arg, "=", 2)[1]
-		}
-
-		if _, err := v.sm.IsPathSafe(arg); err != nil {
-			// Some args might not be paths, but we try to check them anyway if they look like paths
-			if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
-				fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", ui.ColorRed, err, ui.ColorReset)
-				return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
+		cleaned := cleanPathArgument(parts[i])
+		if cleaned != "" {
+			if safe, reason := v.validateSinglePath(cleaned); !safe {
+				return false, reason
 			}
+		}
+	}
+	return true, ""
+}
+
+func cleanPathArgument(arg string) string {
+	if arg == "" {
+		return ""
+	}
+	// Skip simple flags like -la
+	if strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") {
+		return ""
+	}
+	// Handle the key-value case: if the argument contains `=`, split it and return only the value part.
+	if strings.Contains(arg, "=") {
+		parts := strings.SplitN(arg, "=", 2)
+		return parts[1]
+	}
+	return arg
+}
+
+func (v *CommandValidator) validateSinglePath(arg string) (bool, string) {
+	// Return true if the arg is empty or a special pattern like ./... or ...
+	if arg == "" || arg == "./..." || arg == "..." {
+		return true, ""
+	}
+
+	if _, err := v.sm.IsPathSafe(arg); err != nil {
+		// Some args might not be paths, but we try to check them anyway if they look like paths
+		if strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".." {
+			fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", ui.ColorRed, err, ui.ColorReset)
+			return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 		}
 	}
 	return true, ""
