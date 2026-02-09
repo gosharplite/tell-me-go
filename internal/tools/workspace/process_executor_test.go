@@ -129,42 +129,74 @@ func setupPipelineContext(timeout time.Duration) (context.Context, context.Cance
 }
 
 func verifyPipelineResult(t *testing.T, actual ExecutionResult, err error, name string, wantErr bool, expected ExpectedResult) {
+	t.Helper()
+	if !verifyError(t, name, err, wantErr) {
+		return
+	}
+
+	assertExitCode(t, name, actual.ExitCode, expected.ExitCode)
+
+	// Special case: "long line handling" may fail if python3 is missing.
+	// We skip the stdout check in that case to avoid failing tests on environments without python3.
+	if name != "long line handling" || !strings.Contains(actual.Error, "not found") {
+		assertOutputContains(t, name, actual.Output, expected.Stdout, false)
+	}
+
+	assertOutputContains(t, name, actual.Output, expected.Stderr, true)
+	assertOutputLength(t, name, actual.Output, expected.Length)
+	assertOutputNotContains(t, name, actual.Output, expected.NotContain)
+}
+
+func verifyError(t *testing.T, name string, err error, wantErr bool) bool {
+	t.Helper()
 	if (err != nil) != wantErr {
 		t.Errorf("%s: RunPipeline() error = %v, wantErr %v", name, err, wantErr)
+		return false
+	}
+	return err == nil
+}
+
+func assertExitCode(t *testing.T, name string, actual int, expected int) {
+	t.Helper()
+	if expected == 0 {
 		return
 	}
-	if err != nil {
+	if expected == -1 {
+		if actual == 0 {
+			t.Errorf("%s: expected non-zero exit code, got 0", name)
+		}
+	} else if actual != expected {
+		t.Errorf("%s: expected exit code %d, got %d", name, expected, actual)
+	}
+}
+
+func assertOutputContains(t *testing.T, name string, actual string, expected string, isStderr bool) {
+	t.Helper()
+	if expected == "" {
 		return
 	}
+	if !strings.Contains(actual, expected) {
+		label := "stdout"
+		if isStderr {
+			label = "stderr"
+		}
+		t.Errorf("%s: expected output to contain %s %q, got %q", name, label, expected, actual)
+	}
+}
 
-	if expected.ExitCode != 0 {
-		if expected.ExitCode == -1 {
-			if actual.ExitCode == 0 {
-				t.Errorf("%s: expected non-zero exit code, got 0", name)
-			}
-		} else if actual.ExitCode != expected.ExitCode {
-			t.Errorf("%s: expected exit code %d, got %d", name, expected.ExitCode, actual.ExitCode)
+func assertOutputNotContains(t *testing.T, name string, actual string, forbidden []string) {
+	t.Helper()
+	for _, s := range forbidden {
+		if strings.Contains(actual, s) {
+			t.Errorf("%s: did not expect %q in output, but got: %q", name, s, actual)
 		}
 	}
+}
 
-	if expected.Stdout != "" && !strings.Contains(actual.Output, expected.Stdout) {
-		if name != "long line handling" || !strings.Contains(actual.Error, "not found") {
-			t.Errorf("%s: expected output to contain stdout %q, got %q", name, expected.Stdout, actual.Output)
-		}
-	}
-
-	if expected.Stderr != "" && !strings.Contains(actual.Output, expected.Stderr) {
-		t.Errorf("%s: expected output to contain stderr %q, got %q", name, expected.Stderr, actual.Output)
-	}
-
-	if expected.Length > 0 && len(actual.Output) != expected.Length {
-		t.Errorf("%s: expected output length %d, got %d", name, expected.Length, len(actual.Output))
-	}
-
-	for _, s := range expected.NotContain {
-		if strings.Contains(actual.Output, s) {
-			t.Errorf("%s: did not expect %q in output, but got: %q", name, s, actual.Output)
-		}
+func assertOutputLength(t *testing.T, name string, actual string, expected int) {
+	t.Helper()
+	if expected > 0 && len(actual) != expected {
+		t.Errorf("%s: expected output length %d, got %d", name, expected, len(actual))
 	}
 }
 
