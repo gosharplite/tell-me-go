@@ -132,11 +132,25 @@ func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, 
 	if val, ok := m[key]; ok && isValid(val) {
 		return val, true
 	}
+
+	var bestV T
+	var found bool
+	var maxLen int
+
 	for k, v := range m {
 		if k != "default" && strings.Contains(key, k) && isValid(v) {
-			return v, true
+			if !found || len(k) > maxLen {
+				maxLen = len(k)
+				bestV = v
+				found = true
+			}
 		}
 	}
+
+	if found {
+		return bestV, true
+	}
+
 	var zero T
 	return zero, false
 }
