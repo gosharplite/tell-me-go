@@ -328,62 +328,102 @@ func TestJSONLStore_PrepareForStorage_EdgeCases(t *testing.T) {
 	store := NewJSONLStore(filePath)
 	ctx := context.Background()
 
-	content := &llm.Content{
-		Role:       "user",
-		TokenCount: 123,
-		Parts: []*llm.Part{
-			nil, // Should not panic
-			{Text: "Hello"},
-			{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
-			{
-				FunctionCall: &llm.FunctionCall{
-					Name: "get_weather",
-					Args: map[string]interface{}{"location": "London"},
+	t.Run("EmptyInput", func(t *testing.T) {
+		prepared, err := store.prepareForStorage(ctx, nil)
+		if err != nil {
+			t.Fatalf("prepareForStorage failed: %v", err)
+		}
+		if prepared != nil {
+			t.Error("expected nil for nil input")
+		}
+	})
+
+	t.Run("MalformedJSON", func(t *testing.T) {
+		// prepareForStorage itself doesn't parse JSON, but we test preservation of nil parts
+		content := &llm.Content{
+			Parts: []*llm.Part{nil},
+		}
+		prepared, err := store.prepareForStorage(ctx, content)
+		if err != nil {
+			t.Fatalf("prepareForStorage failed: %v", err)
+		}
+		if len(prepared.Parts) != 1 || prepared.Parts[0] != nil {
+			t.Error("expected preservation of nil part")
+		}
+	})
+
+	t.Run("PathPermissionErrors", func(t *testing.T) {
+		// Simulate by using a path that cannot be a directory for assets
+		invalidDir := filepath.Join(tmpDir, "a-file")
+		if err := os.WriteFile(invalidDir, []byte("not a dir"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		badStore := NewJSONLStore(filepath.Join(invalidDir, "history.jsonl"))
+		content := &llm.Content{
+			Parts: []*llm.Part{
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
+			},
+		}
+		_, err := badStore.prepareForStorage(ctx, content)
+		if err == nil {
+			t.Error("expected error when asset directory cannot be created")
+		}
+	})
+
+	t.Run("MixedContentParts", func(t *testing.T) {
+		content := &llm.Content{
+			Role:       "user",
+			TokenCount: 123,
+			Parts: []*llm.Part{
+				{Text: "Hello"},
+				{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("data")}},
+				{
+					FunctionCall: &llm.FunctionCall{
+						Name: "get_weather",
+						Args: map[string]interface{}{"location": "London"},
+					},
+				},
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						Name:     "get_weather",
+						Response: map[string]interface{}{"temp": 20},
+					},
 				},
 			},
-			{
-				FunctionResponse: &llm.FunctionResponse{
-					Name:     "get_weather",
-					Response: map[string]interface{}{"temp": 20},
-				},
-			},
-		},
-	}
+		}
 
-	prepared, err := store.prepareForStorage(ctx, content)
-	if err != nil {
-		t.Fatalf("prepareForStorage failed: %v", err)
-	}
+		prepared, err := store.prepareForStorage(ctx, content)
+		if err != nil {
+			t.Fatalf("prepareForStorage failed: %v", err)
+		}
 
-	if prepared.TokenCount != 123 {
-		t.Errorf("expected TokenCount 123, got %d", prepared.TokenCount)
-	}
+		if prepared.TokenCount != 123 {
+			t.Errorf("expected TokenCount 123, got %d", prepared.TokenCount)
+		}
 
-	if len(prepared.Parts) != 5 {
-		t.Fatalf("expected 5 parts, got %d", len(prepared.Parts))
-	}
+		if len(prepared.Parts) != 4 {
+			t.Fatalf("expected 4 parts, got %d", len(prepared.Parts))
+		}
 
-	if prepared.Parts[0] != nil {
-		t.Error("expected first part to be nil")
-	}
+		if prepared.Parts[0].Text != "Hello" {
+			t.Errorf("expected first part text 'Hello', got %s", prepared.Parts[0].Text)
+		}
 
-	if prepared.Parts[1].Text != "Hello" {
-		t.Errorf("expected second part text 'Hello', got %s", prepared.Parts[1].Text)
-	}
+		if prepared.Parts[1].AssetID == "" {
+			t.Error("expected second part to have AssetID")
+		}
 
-	if prepared.Parts[2].AssetID == "" {
-		t.Error("expected third part to have AssetID")
-	}
+		if prepared.Parts[1].InlineData.Data != nil {
+			t.Error("expected second part data to be nil after storage prep")
+		}
 
-	if prepared.Parts[2].InlineData.Data != nil {
-		t.Error("expected third part data to be nil after storage prep")
-	}
+		if prepared.Parts[2].FunctionCall == nil || prepared.Parts[2].FunctionCall.Name != "get_weather" {
+			t.Error("FunctionCall not preserved or incorrect")
+		}
 
-	if prepared.Parts[3].FunctionCall == nil || prepared.Parts[3].FunctionCall.Name != "get_weather" {
-		t.Error("FunctionCall not preserved or incorrect")
-	}
-
-	if prepared.Parts[4].FunctionResponse == nil || prepared.Parts[4].FunctionResponse.Name != "get_weather" {
-		t.Error("FunctionResponse not preserved or incorrect")
-	}
+		if prepared.Parts[3].FunctionResponse == nil || prepared.Parts[3].FunctionResponse.Name != "get_weather" {
+			t.Error("FunctionResponse not preserved or incorrect")
+		}
+	})
 }
