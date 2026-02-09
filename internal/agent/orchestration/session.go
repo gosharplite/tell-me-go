@@ -11,6 +11,7 @@ import (
 
 // Session encapsulates the state of a single conversation session.
 type Session struct {
+	ID        string
 	History   services.HistoryManager
 	StartTime time.Time
 	// PrunedTurns tracks how many turns were removed from history during initialization.

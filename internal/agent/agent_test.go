@@ -105,7 +105,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1234 || tools != 42 {
@@ -484,7 +484,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	// Test tracker replacement
 	tracker2 := &MockCostTracker{}
 	a.tracker = tracker2
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 
 	if a.GetCostTracker() != tracker2 {
 		t.Error("GetCostTracker didn't return updated tracker")
@@ -588,4 +588,33 @@ func TestAgent_FunctionalOptionsAndEvents(t *testing.T) {
 			t.Error("engine tracker does not match updated tracker")
 		}
 	})
+}
+
+func TestAgent_Chat_ConfigFailure(t *testing.T) {
+	client := &MockLLMClient{}
+	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+
+	a := New(client, h, reg, sm, false)
+	sess := orchestration.NewSession(h)
+	sess.ID = "invalid-session-id"
+
+	ctx := context.Background()
+	err := a.Chat(ctx, sess, "Hi")
+	if err == nil {
+		t.Fatal("expected error for invalid session id, got nil")
+	}
+	if err.Error() != "invalid session ID: invalid-session-id" {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Test context cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sess.ID = "valid"
+	err = a.Chat(ctx, sess, "Hi")
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
 }

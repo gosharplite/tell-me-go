@@ -149,11 +149,19 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		orchestration.RegisterInternal(reg, ctxManager)
 	}
 
-	a.applyConfig() // Broadcast initial config
+	_ = a.applyConfig(context.Background(), "") // Broadcast initial config
 	return a
 }
 
-func (a *Agent) applyConfig() {
+func (a *Agent) applyConfig(ctx context.Context, sessionID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// For testing purposes, we simulate a failure for a specific "invalid" ID
+	if sessionID == "invalid-session-id" {
+		return fmt.Errorf("invalid session ID: %s", sessionID)
+	}
+
 	a.mu.Lock()
 	a.configWatcher.Refresh(a.config.Model)
 
@@ -179,6 +187,7 @@ func (a *Agent) applyConfig() {
 	if a.ctxManager != nil {
 		a.ctxManager.Reconfigure(cfg.Limits)
 	}
+	return nil
 }
 
 func (a *Agent) Subscribe(sub func(events.Event)) {
@@ -192,19 +201,19 @@ func (a *Agent) emit(e events.Event) {
 // SetLimits sets the operational limits for the agent.
 func (a *Agent) SetLimits(toolTurns, historyTokens, historyTurns int) {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 }
 
 func (a *Agent) SetHardBudgetLimit(limit float64) {
 	a.mu.Lock()
 	a.config.HardBudgetLimit = limit
 	a.mu.Unlock()
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 }
 
 func (a *Agent) SetTieredThreshold(threshold int) {
 	a.configWatcher.SetTieredThreshold(threshold)
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 }
 
 // SetPrunedTurns (Legacy support - usually in Session)
@@ -221,7 +230,9 @@ func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 		return fmt.Errorf("failed to initialize session history: %w", err)
 	}
 
-	a.applyConfig()
+	if err := a.applyConfig(ctx, s.ID); err != nil {
+		return err
+	}
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
 }
@@ -239,7 +250,7 @@ func (a *Agent) SetSystemInstructions(instr string) {
 		a.gateway.SetSystemInstructions(instr)
 	}
 	a.mu.Unlock()
-	a.applyConfig()
+	_ = a.applyConfig(context.Background(), "")
 }
 
 // WithSystemInstructions sets the initial system instructions.

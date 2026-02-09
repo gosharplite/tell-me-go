@@ -58,10 +58,10 @@ func IsFatal(err error) bool {
 	if err == nil {
 		return false
 	}
-	return llm.IsTerminal(err) ||
-		llm.IsAuth(err) ||
-		errors.Is(err, llm.ErrBudgetExceeded) ||
-		errors.Is(err, llm.ErrMaxTurnsReached) ||
-		errors.Is(err, llm.ErrContextLimitExceeded) ||
-		errors.Is(err, ErrLogic)
+	// Check domain classification first
+	if llm.IsTerminal(err) || llm.IsAuth(err) {
+		return true
+	}
+	// Check agent-specific logic violations
+	return errors.Is(err, ErrLogic)
 }
