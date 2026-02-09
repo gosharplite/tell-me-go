@@ -101,21 +101,7 @@ func (c *ChatCommand) prepareSession(ctx context.Context, cfg *config.Config, op
 		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	hManager, client, registry, tracker, pruned, pData, err := c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
-	if err != nil {
-		return nil, err
-	}
-
-	return &sessionDeps{
-		paths:            paths,
-		hManager:         hManager,
-		client:           client,
-		registry:         registry,
-		tracker:          tracker,
-		pruned:           pruned,
-		pData:            pData,
-		pricingOverrides: pricingOverrides,
-	}, nil
+	return c.initializeDependencies(ctx, *paths, cfg, pricingOverrides)
 }
 
 func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions, cfg *config.Config, isTTY bool) {
@@ -190,10 +176,10 @@ func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag
 	return opts, fs, cfg, nil
 }
 
-func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*history.Manager, *llm.Client, domaintools.IToolRegistry, domain_pricing.ICostTracker, int, domain_pricing.PricingData, error) {
+func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
-		return nil, nil, nil, nil, 0, domain_pricing.PricingData{}, fmt.Errorf("error loading history: %w", err)
+		return nil, fmt.Errorf("error loading history: %w", err)
 	}
 	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
 	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
@@ -201,7 +187,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persiste
 
 	client, err := c.ClientFactory(cfg, pricingData)
 	if err != nil {
-		return nil, nil, nil, nil, 0, pricingData, fmt.Errorf("error creating client: %w", err)
+		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
 	registry := c.setupRegistry(client, cfg, &paths, pricingOverrides)
@@ -209,7 +195,16 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths persiste
 	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
-	return hManager, client, registry, tracker, pruned, pricingData, nil
+	return &sessionDeps{
+		paths:            &paths,
+		hManager:         hManager,
+		client:           client,
+		registry:         registry,
+		tracker:          tracker,
+		pruned:           pruned,
+		pData:            pricingData,
+		pricingOverrides: pricingOverrides,
+	}, nil
 }
 
 func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {

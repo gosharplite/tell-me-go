@@ -131,6 +131,18 @@ func (m *MockFileSystem) Remove(ctx context.Context, name string) error {
 	return nil
 }
 
+func (m *MockFileSystem) RemoveAll(ctx context.Context, path string) error {
+	path = filepath.Clean(path)
+	// Handle exact matches and children
+	for p := range m.Files {
+		cleanP := filepath.Clean(p)
+		if cleanP == path || strings.HasPrefix(cleanP, path+string(os.PathSeparator)) {
+			delete(m.Files, p)
+		}
+	}
+	return nil
+}
+
 func (m *MockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
 	// Simple walk implementation
 	root = filepath.Clean(root)

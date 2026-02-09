@@ -260,7 +260,10 @@ func (fc *FunctionCall) Equal(other *FunctionCall) bool {
 	if fc == nil || other == nil {
 		return fc == other
 	}
-	return reflect.DeepEqual(fc, other)
+	if fc.Name != other.Name {
+		return false
+	}
+	return reflect.DeepEqual(fc.Args, other.Args)
 }
 
 // Equal returns true if two FunctionResponse objects are equivalent.
@@ -268,7 +271,10 @@ func (fr *FunctionResponse) Equal(other *FunctionResponse) bool {
 	if fr == nil || other == nil {
 		return fr == other
 	}
-	return reflect.DeepEqual(fr, other)
+	if fr.Name != other.Name {
+		return false
+	}
+	return reflect.DeepEqual(fr.Response, other.Response)
 }
 
 // Equal returns true if two Part objects are logically equivalent.
