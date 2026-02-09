@@ -78,7 +78,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
 				if callCount == 1 {
-					return nil, nil, NewAgentError(ErrTransient, "temporary failure", nil)
+					return nil, nil, NewAgentError(llm.ErrTransient, "temporary failure", nil)
 				}
 				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 			}
@@ -127,7 +127,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 			close(ch)
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(ErrFatal, "auth failed", llm.ErrAuth)
+				return nil, nil, NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 			}
 		},
 	}
@@ -231,7 +231,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(ErrTransient, "always transient", nil)
+				return nil, nil, NewAgentError(llm.ErrTransient, "always transient", nil)
 			}
 		},
 	}

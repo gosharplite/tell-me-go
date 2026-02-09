@@ -65,7 +65,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	sm := &MockSecurityManager{AllowAll: true}
 	a := New(client, h, registry, sm, false)
-	a.SetLimits(10, 100000, 2) // Limit history to 2 turns
+	_ = a.SetLimits(ctx, 10, 100000, 2) // Limit history to 2 turns
 
 	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
 	_ = h.AddEntry(ctx, "user", "U3")
@@ -105,7 +105,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	a := New(mockClient, h, registry, sm, false)
-	sess := orchestration.NewSession(h)
+	sess := orchestration.NewSession("regression-multimodal", h)
 	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)

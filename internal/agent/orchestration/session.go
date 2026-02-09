@@ -11,6 +11,7 @@ import (
 
 // Session encapsulates the state of a single conversation session.
 type Session struct {
+	ID        string
 	History   services.HistoryManager
 	StartTime time.Time
 	// PrunedTurns tracks how many turns were removed from history during initialization.
@@ -18,8 +19,9 @@ type Session struct {
 }
 
 // NewSession creates a new Session state.
-func NewSession(h services.HistoryManager) *Session {
+func NewSession(id string, h services.HistoryManager) *Session {
 	return &Session{
+		ID:        id,
 		History:   h,
 		StartTime: time.Now(),
 	}

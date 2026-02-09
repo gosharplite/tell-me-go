@@ -86,7 +86,8 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	close(blockCh)
 	wg.Wait()
 
-	// 5. Assert result is ErrTransient and contains the correct message
+	// 5. Assert result is llm.ErrTransient and contains the correct message
 	require.Error(t, prepareErr)
+	assert.ErrorIs(t, prepareErr, llm.ErrTransient)
 	assert.Contains(t, prepareErr.Error(), "concurrent history modification detected")
 }

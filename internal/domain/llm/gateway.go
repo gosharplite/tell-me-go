@@ -24,9 +24,12 @@ func IsTransient(err error) bool {
 	return errors.Is(err, ErrTransient)
 }
 
-// IsTerminal returns true if the error is ErrTerminal.
+// IsTerminal returns true if the error is ErrTerminal or other non-retryable domain errors.
 func IsTerminal(err error) bool {
-	return errors.Is(err, ErrTerminal)
+	return errors.Is(err, ErrTerminal) ||
+		errors.Is(err, ErrBudgetExceeded) ||
+		errors.Is(err, ErrMaxTurnsReached) ||
+		errors.Is(err, ErrContextLimitExceeded)
 }
 
 // IsAuth returns true if the error is ErrAuth.

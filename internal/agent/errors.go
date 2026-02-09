@@ -11,9 +11,7 @@ import (
 
 // Category definitions
 var (
-	ErrTransient = errors.New("transient failure") // Should retry
-	ErrFatal     = errors.New("terminal failure")  // Should stop
-	ErrLogic     = errors.New("logic violation")   // Should stop, indicates bug or limit
+	ErrLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 
 // AgentError provides structured error context for the orchestration engine.
@@ -52,8 +50,7 @@ func IsTransient(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Domain-level transient errors (e.g., rate limits) or direct category match
-	return llm.IsTransient(err) || errors.Is(err, ErrTransient)
+	return llm.IsTransient(err)
 }
 
 // IsFatal checks if the error should halt the current turn and session.
@@ -61,11 +58,10 @@ func IsFatal(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Domain-level fatal errors, budget/limit errors, or direct category match
-	return llm.IsTerminal(err) || llm.IsAuth(err) ||
-		errors.Is(err, llm.ErrBudgetExceeded) ||
-		errors.Is(err, llm.ErrMaxTurnsReached) ||
-		errors.Is(err, llm.ErrContextLimitExceeded) ||
-		errors.Is(err, ErrFatal) ||
-		errors.Is(err, ErrLogic)
+	// Check domain classification first
+	if llm.IsTerminal(err) || llm.IsAuth(err) {
+		return true
+	}
+	// Check agent-specific logic violations
+	return errors.Is(err, ErrLogic)
 }
