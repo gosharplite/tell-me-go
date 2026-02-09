@@ -139,7 +139,6 @@ func assertFileExists(t *testing.T, path string) {
 	}
 }
 
-
 func TestIsBinary(t *testing.T) {
 	tests := []struct {
 		name string

@@ -168,4 +168,3 @@ func verifySecurityRegistration(t *testing.T, sm *security.SecurityManager, outp
 		t.Errorf("output directory %s not registered as safe path, got: %v", outputDir, safePaths)
 	}
 }
-

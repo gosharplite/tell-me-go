@@ -200,7 +200,6 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 	}
 }
 
-
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := NewProcessExecutor()
 	var feedback safeBuffer
@@ -447,7 +446,6 @@ func TestRunPipeline_Advanced(t *testing.T) {
 		})
 	}
 }
-
 
 func TestRunPipeline_ContextCancel(t *testing.T) {
 	executor := NewProcessExecutor()

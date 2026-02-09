@@ -52,7 +52,6 @@ func TestArchiveCostPreservation(t *testing.T) {
 	}
 }
 
-
 func setupTestEnvironment(t *testing.T) (binaryPath, tmpHome, configPath string) {
 	t.Helper()
 
@@ -195,5 +194,3 @@ func loadLedger(t *testing.T, path string) []SessionCostRecord {
 func isBackupOf(sessionPath, originalName string) bool {
 	return strings.HasPrefix(sessionPath, "backup/") && filepath.Base(sessionPath) == originalName
 }
-
-
