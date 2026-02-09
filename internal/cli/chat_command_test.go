@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -74,7 +75,7 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(ctx context.Context, s *agent.Session, prompt string) error {
+func (m *mockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
 	m.capturedPrompt = prompt
 	return nil
 }

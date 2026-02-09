@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -24,10 +25,10 @@ import (
 )
 
 type integrationMockChatter struct {
-	ChatFunc func(ctx context.Context, s *agent.Session, prompt string) error
+	ChatFunc func(ctx context.Context, s *orchestration.Session, prompt string) error
 }
 
-func (m *integrationMockChatter) Chat(ctx context.Context, s *agent.Session, prompt string) error {
+func (m *integrationMockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
 	if m.ChatFunc != nil {
 		return m.ChatFunc(ctx, s, prompt)
 	}

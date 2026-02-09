@@ -23,7 +23,7 @@ import (
 
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
-	Chat(ctx context.Context, s *Session, prompt string) error
+	Chat(ctx context.Context, s *orchestration.Session, prompt string) error
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetHardBudgetLimit(limit float64)
 	SetTieredThreshold(threshold int)
@@ -51,7 +51,7 @@ type Agent struct {
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
 	sm            domain_security.ISecurityManager
-	configWatcher *ConfigWatcher
+	configWatcher *orchestration.ConfigWatcher
 	strategy      *orchestration.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
@@ -98,7 +98,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		gateway:       gw,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
@@ -203,7 +203,7 @@ func (a *Agent) SetPrunedTurns(n int) {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
+func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
 	if err := s.History.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},

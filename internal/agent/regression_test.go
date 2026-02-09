@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -104,7 +105,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	a := New(mockClient, h, registry, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)

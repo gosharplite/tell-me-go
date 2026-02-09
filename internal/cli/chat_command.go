@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -126,7 +127,7 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	chatAgent := c.AgentFactory(client, hManager, registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, pricingOverrides, tracker)
 	c.applyConfiguration(chatAgent, cfg, opts, paths, pruned, pData, capturer)
 
-	sess := agent.NewSession(hManager)
+	sess := orchestration.NewSession(hManager)
 	sess.PrunedTurns = pruned
 	if err := chatAgent.Chat(ctx, sess, prompt); err != nil {
 		return fmt.Errorf("error: %w", err)

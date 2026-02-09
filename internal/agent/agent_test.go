@@ -54,7 +54,7 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
@@ -164,7 +164,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
 	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
@@ -212,7 +212,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 
 	a := New(mockClient, h, reg, sm, false)
-	sess := NewSession(h)
+	sess := orchestration.NewSession(h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
@@ -327,7 +327,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	a.SetLimits(10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
-	err := a.Chat(ctx, &Session{History: h}, "next")
+	err := a.Chat(ctx, &orchestration.Session{History: h}, "next")
 	if err != nil {
 		t.Logf("Chat returned error (expected in mock): %v", err)
 	}
