@@ -16,11 +16,29 @@ func NewMermaidFormatter() *MermaidFormatter {
 	return &MermaidFormatter{}
 }
 
+type formatState struct {
+	inLoop bool
+}
+
 // Format transforms a slice of CallFrame into a Mermaid sequence diagram string.
 func (f *MermaidFormatter) Format(frames []CallFrame) string {
 	var b strings.Builder
 	b.WriteString("sequenceDiagram\n")
 
+	f.writeParticipants(&b, frames)
+
+	state := &formatState{}
+	for _, frame := range frames {
+		f.renderFrame(&b, frame, state)
+	}
+
+	if state.inLoop {
+		b.WriteString("    end\n")
+	}
+	return b.String()
+}
+
+func (f *MermaidFormatter) writeParticipants(sb *strings.Builder, frames []CallFrame) {
 	participants := make(map[string]bool)
 	var orderedParticipants []string
 	for _, frame := range frames {
@@ -35,35 +53,30 @@ func (f *MermaidFormatter) Format(frames []CallFrame) string {
 	}
 
 	for _, p := range orderedParticipants {
-		b.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
+		sb.WriteString(fmt.Sprintf("    participant %s as %s\n", sanitize(p), p))
+	}
+}
+
+func (f *MermaidFormatter) renderFrame(sb *strings.Builder, frame CallFrame, state *formatState) {
+	if frame.InLoop && !state.inLoop {
+		sb.WriteString("    loop for each\n")
+		state.inLoop = true
+	} else if !frame.InLoop && state.inLoop {
+		sb.WriteString("    end\n")
+		state.inLoop = false
 	}
 
-	inLoop := false
-	for _, frame := range frames {
-		if frame.InLoop && !inLoop {
-			b.WriteString("    loop for each\n")
-			inLoop = true
-		} else if !frame.InLoop && inLoop {
-			b.WriteString("    end\n")
-			inLoop = false
+	from := sanitize(frame.From)
+	to := sanitize(frame.To)
+
+	if frame.Async {
+		sb.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", from, to, frame.Function))
+	} else {
+		sb.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", from, to, frame.Function))
+		ret := frame.Return
+		if ret == "" {
+			ret = " "
 		}
-
-		from := sanitize(frame.From)
-		to := sanitize(frame.To)
-
-		if frame.Async {
-			b.WriteString(fmt.Sprintf("    %s->>%s: %s (async)\n", from, to, frame.Function))
-		} else {
-			b.WriteString(fmt.Sprintf("    %s->>+%s: %s\n", from, to, frame.Function))
-			ret := frame.Return
-			if ret == "" {
-				ret = " "
-			}
-			b.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", to, from, ret))
-		}
+		sb.WriteString(fmt.Sprintf("    %s-->>-%s: %s\n", to, from, ret))
 	}
-	if inLoop {
-		b.WriteString("    end\n")
-	}
-	return b.String()
 }
