@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSanitizeArgs(t *testing.T) {
@@ -226,4 +228,74 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 			t.Errorf("Expected tool %q not found in registry", expected)
 		}
 	}
+}
+
+func TestExecuteErrors(t *testing.T) {
+	t.Run("HistoryLoadFailure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mode := "test-mode"
+		configPath := filepath.Join(tmpDir, "vertex.yaml")
+		// Use correct YAML keys (MODE is uppercase in struct tag)
+		require.NoError(t, os.WriteFile(configPath, []byte("MODE: "+mode+"\n"), 0644))
+
+		paths, err := persistence.InitializePaths(tmpDir, mode)
+		require.NoError(t, err)
+		
+		// Use a JSON that will fail to unmarshal into llm.Content
+		require.NoError(t, os.WriteFile(paths.HistoryPath, []byte("{\"role\": 123}"), 0644))
+
+		sm := security.NewSecurityManager(strings.NewReader(""))
+		cmd := NewChatCommand(&Context{
+			HomeDir: tmpDir,
+			Stdin:   strings.NewReader("hello"),
+			Stdout:  io.Discard,
+			Stderr:  io.Discard,
+			SM:      sm,
+		})
+		
+		err = cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error loading history")
+	})
+
+	t.Run("AgentCreationFailure", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		configPath := filepath.Join(tmpDir, "vertex.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte("MODE: test-mode\n"), 0644))
+
+		sm := security.NewSecurityManager(strings.NewReader(""))
+		cmd := NewChatCommand(&Context{
+			HomeDir: tmpDir,
+			Stdin:   strings.NewReader("hello"),
+			Stdout:  io.Discard,
+			Stderr:  io.Discard,
+			SM:      sm,
+		})
+		
+		// Customize ClientFactory to return an error
+		cmd.ClientFactory = func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error) {
+			return nil, fmt.Errorf("forced client error")
+		}
+
+		err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "error creating client")
+		require.Contains(t, err.Error(), "forced client error")
+	})
+
+	t.Run("FlagParsing", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		sm := security.NewSecurityManager(strings.NewReader(""))
+		cmd := NewChatCommand(&Context{
+			HomeDir: tmpDir,
+			Stdin:   strings.NewReader("hello"),
+			Stdout:  io.Discard,
+			Stderr:  io.Discard,
+			SM:      sm,
+		})
+
+		// Test unknown flag
+		err := cmd.Execute(context.Background(), []string{"bin", "-unknown-flag"})
+		require.Error(t, err)
+	})
 }
