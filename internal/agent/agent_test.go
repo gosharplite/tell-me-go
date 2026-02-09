@@ -275,40 +275,40 @@ func TestAgent_PinningFlow(t *testing.T) {
 	a, h, ctx := setupPinningFlowTest(t)
 	it := orchestration.NewInternalTools(a.ctxManager)
 
-	// Step 1: Pin turn 0
-	t.Run("Pin turn 0", func(t *testing.T) {
-		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "pin", "index": 0.0})
-		if err != nil {
-			t.Fatalf("ManageHistory failed: %v", err)
-		}
-		if resp.Text != "Turn 0 has been successfully pinned." {
-			t.Errorf("unexpected response: %s", resp.Text)
-		}
+	t.Run("PinTurn", func(t *testing.T) {
+		verifyPinAction(t, it, h, ctx, "pin", 0)
+	})
 
-		contents := h.GetContents()
-		if !contents[0].Pinned || !contents[1].Pinned {
-			t.Error("expected turn 0 to be pinned")
-		}
+	t.Run("UnpinTurn", func(t *testing.T) {
+		verifyPinAction(t, it, h, ctx, "unpin", 0)
+	})
+}
+
+func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h services.HistoryManager, ctx context.Context, action string, index float64) {
+	t.Helper()
+	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index})
+	if err != nil {
+		t.Fatalf("ManageHistory failed: %v", err)
+	}
+
+	expectedMsg := fmt.Sprintf("Turn %d has been successfully %sned.", int(index), action)
+	if resp.Text != expectedMsg {
+		t.Errorf("unexpected response: got %q, want %q", resp.Text, expectedMsg)
+	}
+
+	contents := h.GetContents()
+	isPinned := (action == "pin")
+	idx := int(index)
+
+	if contents[2*idx].Pinned != isPinned || contents[2*idx+1].Pinned != isPinned {
+		t.Errorf("expected turn %d pinned status to be %v", idx, isPinned)
+	}
+
+	if action == "pin" && idx == 0 {
 		if contents[2].Pinned || contents[3].Pinned {
 			t.Error("expected turn 1 to remain unpinned")
 		}
-	})
-
-	// Step 2: Unpin turn 0
-	t.Run("Unpin turn 0", func(t *testing.T) {
-		resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": "unpin", "index": 0.0})
-		if err != nil {
-			t.Fatalf("ManageHistory failed: %v", err)
-		}
-		if resp.Text != "Turn 0 has been successfully unpinned." {
-			t.Errorf("unexpected response: %s", resp.Text)
-		}
-
-		contents := h.GetContents()
-		if contents[0].Pinned || contents[1].Pinned {
-			t.Error("expected turn 0 to be unpinned")
-		}
-	})
+	}
 }
 
 func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
