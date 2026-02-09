@@ -192,13 +192,22 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
+	activeTools, systemInstruction := c.configureTools(ctx, tools, resolver)
+
+	config := &genai.GenerateContentConfig{
+		Tools:             activeTools,
+		SystemInstruction: systemInstruction,
+	}
+
+	c.configureThinking(config)
+
+	return config, c.toSDKHistory(ctx, history, resolver)
+}
+
+func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) ([]*genai.Tool, *genai.Content) {
 	c.mu.RLock()
 	useSearch := c.useSearch
 	instr := c.systemInstruction
-	thinkingLevel := c.thinkingLevel
-	thinkingBudget := c.thinkingBudget
-	maxThinkingBudget := c.maxThinkingBudget
-	model := c.model
 	c.mu.RUnlock()
 
 	// Add Search tool
@@ -210,10 +219,16 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 		})
 	}
 
-	config := &genai.GenerateContentConfig{
-		Tools:             activeTools,
-		SystemInstruction: ToSDKContent(ctx, instr, resolver),
-	}
+	return activeTools, ToSDKContent(ctx, instr, resolver)
+}
+
+func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
+	c.mu.RLock()
+	thinkingLevel := c.thinkingLevel
+	thinkingBudget := c.thinkingBudget
+	maxThinkingBudget := c.maxThinkingBudget
+	model := c.model
+	c.mu.RUnlock()
 
 	// Apply Thinking Config
 	if thinkingLevel != "" || thinkingBudget > 0 {
@@ -236,7 +251,9 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(thinkingLevel)
 		}
 	}
+}
 
+func (c *Client) toSDKHistory(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
 		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
@@ -246,8 +263,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
 		}
 	}
-
-	return config, sdkHistory
+	return sdkHistory
 }
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
