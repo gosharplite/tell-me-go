@@ -442,10 +442,10 @@ func TestHistoryManager_FileCreation(t *testing.T) {
 	}
 }
 
-func TestHistoryManager_SetPinned(t *testing.T) {
+func TestHistoryManager_PinValidTurn(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	historyFile := filepath.Join(tmpDir, "pin.json")
+	historyFile := filepath.Join(tmpDir, "pin_valid.json")
 	m := NewManager(historyFile)
 	ctx := context.Background()
 
@@ -455,38 +455,61 @@ func TestHistoryManager_SetPinned(t *testing.T) {
 	_ = m.AddEntry(ctx, "user", "U2")
 	_ = m.AddEntry(ctx, "model", "M2")
 
-	t.Run("PinValidTurn", func(t *testing.T) {
-		if err := m.SetPinned(ctx, 0, true); err != nil {
-			t.Fatalf("SetPinned(0, true) failed: %v", err)
-		}
+	if err := m.SetPinned(ctx, 0, true); err != nil {
+		t.Fatalf("SetPinned(0, true) failed: %v", err)
+	}
 
-		contents := m.GetContents()
-		if !contents[0].Pinned || !contents[1].Pinned {
-			t.Error("Turn 0 (messages 0 and 1) should be pinned")
-		}
-		if contents[2].Pinned || contents[3].Pinned {
-			t.Error("Turn 1 should not be pinned")
-		}
-	})
+	contents := m.GetContents()
+	if !contents[0].Pinned || !contents[1].Pinned {
+		t.Error("Turn 0 (messages 0 and 1) should be pinned")
+	}
+	if contents[2].Pinned || contents[3].Pinned {
+		t.Error("Turn 1 should not be pinned")
+	}
+}
 
-	t.Run("UnpinTurn", func(t *testing.T) {
-		if err := m.SetPinned(ctx, 0, false); err != nil {
-			t.Fatalf("SetPinned(0, false) failed: %v", err)
-		}
-		contents := m.GetContents()
-		if contents[0].Pinned || contents[1].Pinned {
-			t.Error("Turn 0 should be unpinned")
-		}
-	})
+func TestHistoryManager_UnpinTurn(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "unpin.json")
+	m := NewManager(historyFile)
+	ctx := context.Background()
 
-	t.Run("InvalidIndex", func(t *testing.T) {
-		if err := m.SetPinned(ctx, 2, true); err == nil {
-			t.Error("expected error for invalid turn index")
-		}
-		if err := m.SetPinned(ctx, -1, true); err == nil {
-			t.Error("expected error for negative turn index")
-		}
-	})
+	// Setup: 1 turn pinned
+	_ = m.AddEntry(ctx, "user", "U1")
+	_ = m.AddEntry(ctx, "model", "M1")
+	if err := m.SetPinned(ctx, 0, true); err != nil {
+		t.Fatalf("SetPinned(0, true) failed: %v", err)
+	}
+
+	if err := m.SetPinned(ctx, 0, false); err != nil {
+		t.Fatalf("SetPinned(0, false) failed: %v", err)
+	}
+	contents := m.GetContents()
+	if contents[0].Pinned || contents[1].Pinned {
+		t.Error("Turn 0 should be unpinned")
+	}
+}
+
+func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "invalid_index.json")
+	m := NewManager(historyFile)
+	ctx := context.Background()
+
+	// Setup: 2 turns (4 messages)
+	_ = m.AddEntry(ctx, "user", "U1")
+	_ = m.AddEntry(ctx, "model", "M1")
+	_ = m.AddEntry(ctx, "user", "U2")
+	_ = m.AddEntry(ctx, "model", "M2")
+
+	if err := m.SetPinned(ctx, 2, true); err == nil {
+		t.Error("expected error for invalid turn index (2 when only 2 exist)")
+	}
+	if err := m.SetPinned(ctx, -1, true); err == nil {
+		t.Error("expected error for negative turn index")
+	}
 }
 
 func TestHistoryManager_ClonePersistent(t *testing.T) {
