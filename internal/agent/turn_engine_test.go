@@ -291,7 +291,7 @@ func TestTurnEngine_RecoveryLogic(t *testing.T) {
 			attempts++
 			if attempts < 3 {
 				// Return transient error
-				return nil, nil, &AgentError{Category: ErrTransient, Message: "try again"}
+				return nil, nil, &AgentError{Category: llm.ErrTransient, Message: "try again"}
 			}
 			return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "success"}}}, &llm.Metrics{}, nil
 		}
@@ -426,12 +426,12 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 	}{
 		{
 			name:    "Fatal error",
-			err:     &AgentError{Category: ErrFatal, Message: "fatal"},
+			err:     &AgentError{Category: llm.ErrTerminal, Message: "fatal"},
 			wantErr: "fatal",
 		},
 		{
 			name:    "Context cancelled",
-			err:     &AgentError{Category: ErrTransient, Message: "transient"},
+			err:     &AgentError{Category: llm.ErrTransient, Message: "transient"},
 			cancel:  true,
 			wantErr: "context canceled",
 		},
@@ -1044,7 +1044,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond}
 
 	t.Run("Transient error", func(t *testing.T) {
-		err := &AgentError{Category: ErrTransient, Message: "retry"}
+		err := &AgentError{Category: llm.ErrTransient, Message: "retry"}
 		delay, retry := policy.ShouldRetry(err, 0)
 		if !retry || delay != 10*time.Millisecond {
 			t.Errorf("expected retry with 10ms, got %v, %v", retry, delay)
@@ -1062,7 +1062,7 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 	})
 
 	t.Run("Fatal error", func(t *testing.T) {
-		err := &AgentError{Category: ErrFatal, Message: "fatal"}
+		err := &AgentError{Category: llm.ErrTerminal, Message: "fatal"}
 		_, retry := policy.ShouldRetry(err, 0)
 		if retry {
 			t.Error("expected no retry for fatal error")

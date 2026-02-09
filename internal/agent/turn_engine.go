@@ -338,13 +338,13 @@ func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 
 	if limit > 0 && tracker != nil {
 		if cost := tracker.GetTotalCost(ctx); cost >= limit {
-			return NewAgentError(ErrFatal, fmt.Sprintf("current session cost $%.4f exceeds internal limit $%.4f", cost, limit), llm.ErrBudgetExceeded)
+			return NewAgentError(llm.ErrTerminal, fmt.Sprintf("current session cost $%.4f exceeds internal limit $%.4f", cost, limit), llm.ErrBudgetExceeded)
 		}
 	}
 
 	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
 	if turnIndex > maxTurns {
-		return NewAgentError(ErrFatal, fmt.Sprintf("turn %d exceeds limit %d", turnIndex, maxTurns), llm.ErrMaxTurnsReached)
+		return NewAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", turnIndex, maxTurns), llm.ErrMaxTurnsReached)
 	}
 
 	if e.events != nil {
@@ -469,9 +469,9 @@ type ContextRefiner struct{}
 func (p *ContextRefiner) Process(ctx context.Context, turn *turn) processResult {
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
-		category := ErrFatal
+		category := llm.ErrTerminal
 		if IsTransient(err) {
-			category = ErrTransient
+			category = llm.ErrTransient
 		}
 		return processResult{Error: NewAgentError(category, "context preparation failed", err)}
 	}
@@ -492,9 +492,9 @@ func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
 	}
 
 	if err != nil {
-		category := ErrFatal
+		category := llm.ErrTerminal
 		if IsTransient(err) {
-			category = ErrTransient
+			category = llm.ErrTransient
 		}
 		return processResult{Error: NewAgentError(category, "inference failed", err)}
 	}
@@ -566,9 +566,9 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 
 	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
-		category := ErrFatal
+		category := llm.ErrTerminal
 		if IsTransient(err) {
-			category = ErrTransient
+			category = llm.ErrTransient
 		}
 		return processResult{Error: NewAgentError(category, "tool execution failed", err)}
 	}
@@ -589,9 +589,9 @@ type PersistenceStep struct{}
 func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult {
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
-			category := ErrFatal
+			category := llm.ErrTerminal
 			if IsTransient(err) {
-				category = ErrTransient
+				category = llm.ErrTransient
 			}
 			return processResult{Error: NewAgentError(category, "history error", err)}
 		}
@@ -599,9 +599,9 @@ func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult
 
 	if turn.State.ToolResponse != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
-			category := ErrFatal
+			category := llm.ErrTerminal
 			if IsTransient(err) {
-				category = ErrTransient
+				category = llm.ErrTransient
 			}
 			return processResult{Error: NewAgentError(category, "failed to persist tool results", err)}
 		}

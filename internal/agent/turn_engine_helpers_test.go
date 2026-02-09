@@ -298,7 +298,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		State: &turnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,
-			LastError:    &AgentError{Category: ErrTransient, Message: "err"},
+			LastError:    &AgentError{Category: llm.ErrTransient, Message: "err"},
 			Metadata: &orchestration.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
