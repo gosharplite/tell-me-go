@@ -1,9 +1,0 @@
-FAIL	github.com/gosharplite/tell-me-go/internal/agent [build failed]
-# github.com/gosharplite/tell-me-go/internal/agent [github.com/gosharplite/tell-me-go/internal/agent.test]
-internal/agent/summarize_test.go:160:69: undefined: tools
-ok  	github.com/gosharplite/tell-me-go/internal/agent/agenerrors	(cached)
-ok  	github.com/gosharplite/tell-me-go/internal/agent/context	(cached)
-ok  	github.com/gosharplite/tell-me-go/internal/agent/executor	(cached)
-ok  	github.com/gosharplite/tell-me-go/internal/agent/gateway	(cached)
-ok  	github.com/gosharplite/tell-me-go/internal/agent/ui	(cached)
-FAIL
