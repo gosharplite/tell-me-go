@@ -84,76 +84,139 @@ func TestClone(t *testing.T) {
 			}
 
 			// 3. Mutation independence
-			if len(tt.orig.Parts) > 0 {
-				// Modify slice
-				originalLen := len(tt.orig.Parts)
-				clone.Parts = append(clone.Parts, &Part{Text: "new"})
-				if len(tt.orig.Parts) != originalLen {
-					t.Error("modifying clone.Parts should not affect tt.orig.Parts")
-				}
-
-				// Modify nested map in FunctionCall
-				for _, p := range clone.Parts {
-					if p.FunctionCall != nil {
-						fc := p.FunctionCall
-						if nested, ok := fc.Args["nested"].(map[string]interface{}); ok {
-							nested["key"] = "mutated"
-						}
-						if list, ok := fc.Args["list"].([]interface{}); ok {
-							list[0] = 999
-							if nestedInList, ok := list[2].(map[string]interface{}); ok {
-								nestedInList["a"] = "mutated"
-							}
-						}
-					}
-				}
-
-				// Check original is unchanged
-				for _, p := range tt.orig.Parts {
-					if p.FunctionCall != nil {
-						fc := p.FunctionCall
-						if nested, ok := fc.Args["nested"].(map[string]interface{}); ok {
-							if nested["key"] != "val" {
-								t.Error("modifying nested map in clone affected original")
-							}
-						}
-						if list, ok := fc.Args["list"].([]interface{}); ok {
-							if list[0] != 1 {
-								t.Error("modifying nested slice in clone affected original")
-							}
-							if nestedInList, ok := list[2].(map[string]interface{}); ok {
-								if nestedInList["a"] != "b" {
-									t.Error("modifying nested map in nested slice in clone affected original")
-								}
-							}
-						}
-					}
-				}
-
-				// Modify byte slice
-				for _, p := range clone.Parts {
-					if p.InlineData != nil {
-						p.InlineData.Data[0] = 255
-					}
-					if len(p.ThoughtSignature) > 0 {
-						p.ThoughtSignature[0] = 0
-					}
-				}
-
-				for _, p := range tt.orig.Parts {
-					if p.InlineData != nil {
-						if p.InlineData.Data[0] != 1 {
-							t.Error("modifying byte slice in clone affected original")
-						}
-					}
-					if len(p.ThoughtSignature) > 0 {
-						if p.ThoughtSignature[0] != 's' { // "sig"[0] is 's'
-							t.Error("modifying thought signature in clone affected original")
-						}
-					}
-				}
+			if tt.orig != nil && clone != nil {
+				verifyMutationIndependence(t, tt.orig, clone)
 			}
 		})
+	}
+}
+
+func verifyMutationIndependence(t *testing.T, orig, clone *Content) {
+	t.Helper()
+
+	// Verify Parts slice independence
+	if len(orig.Parts) > 0 {
+		originalLen := len(orig.Parts)
+		clone.Parts = append(clone.Parts, &Part{Text: "new"})
+		if len(orig.Parts) != originalLen {
+			t.Error("modifying clone.Parts affected original")
+		}
+
+		for i := range orig.Parts {
+			verifyPartIndependence(t, orig.Parts[i], clone.Parts[i])
+		}
+	}
+
+	// Verify TransientParts slice independence
+	if len(orig.TransientParts) > 0 {
+		originalLen := len(orig.TransientParts)
+		clone.TransientParts = append(clone.TransientParts, &Part{Text: "new_transient"})
+		if len(orig.TransientParts) != originalLen {
+			t.Error("modifying clone.TransientParts affected original")
+		}
+
+		for i := range orig.TransientParts {
+			verifyPartIndependence(t, orig.TransientParts[i], clone.TransientParts[i])
+		}
+	}
+}
+
+func verifyPartIndependence(t *testing.T, orig, clone *Part) {
+	t.Helper()
+	if orig == clone {
+		t.Fatal("Part pointers are identical")
+	}
+
+	// InlineData byte slice mutation
+	if orig.InlineData != nil && len(orig.InlineData.Data) > 0 {
+		oldVal := orig.InlineData.Data[0]
+		clone.InlineData.Data[0] = ^oldVal
+		if orig.InlineData.Data[0] != oldVal {
+			t.Error("modifying clone.InlineData.Data affected original")
+		}
+		clone.InlineData.Data[0] = oldVal // restore
+	}
+
+	// ThoughtSignature byte slice mutation
+	if len(orig.ThoughtSignature) > 0 {
+		oldVal := orig.ThoughtSignature[0]
+		clone.ThoughtSignature[0] = ^oldVal
+		if orig.ThoughtSignature[0] != oldVal {
+			t.Error("modifying clone.ThoughtSignature affected original")
+		}
+		clone.ThoughtSignature[0] = oldVal // restore
+	}
+
+	// FunctionCall mutation
+	if orig.FunctionCall != nil {
+		verifyFunctionCallIndependence(t, orig.FunctionCall, clone.FunctionCall)
+	}
+
+	// FunctionResponse mutation
+	if orig.FunctionResponse != nil {
+		verifyFunctionResponseIndependence(t, orig.FunctionResponse, clone.FunctionResponse)
+	}
+}
+
+func verifyFunctionCallIndependence(t *testing.T, orig, clone *FunctionCall) {
+	t.Helper()
+	if orig == clone {
+		t.Fatal("FunctionCall pointers are identical")
+	}
+
+	if len(orig.Args) == 0 {
+		return
+	}
+
+	// Verify map insertion independence
+	clone.Args["__independence_test__"] = true
+	if _, exists := orig.Args["__independence_test__"]; exists {
+		t.Error("modifying clone.FunctionCall.Args map affected original (insertion)")
+	}
+	delete(clone.Args, "__independence_test__")
+
+	// Verify deep map/slice independence
+	for k, v := range orig.Args {
+		verifyArgIndependence(t, k, v, clone.Args[k])
+	}
+}
+
+func verifyArgIndependence(t *testing.T, key string, orig, clone interface{}) {
+	t.Helper()
+	switch val := orig.(type) {
+	case map[string]interface{}:
+		cMap := clone.(map[string]interface{})
+		cMap["__nested_test__"] = true
+		if _, exists := val["__nested_test__"]; exists {
+			t.Errorf("modifying nested map in clone.FunctionCall.Args[%s] affected original", key)
+		}
+	case []interface{}:
+		cSlice := clone.([]interface{})
+		if len(val) > 0 {
+			oldItem := val[0]
+			cSlice[0] = "__mutated__"
+			if val[0] != oldItem {
+				t.Errorf("modifying nested slice in clone.FunctionCall.Args[%s] affected original", key)
+			}
+			cSlice[0] = oldItem // restore
+
+			for i := range val {
+				verifyArgIndependence(t, key, val[i], cSlice[i])
+			}
+		}
+	}
+}
+
+func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionResponse) {
+	t.Helper()
+	if orig == clone {
+		t.Fatal("FunctionResponse pointers are identical")
+	}
+	if len(orig.Response) > 0 {
+		clone.Response["__independence_test__"] = true
+		if _, exists := orig.Response["__independence_test__"]; exists {
+			t.Error("modifying clone.FunctionResponse.Response map affected original")
+		}
 	}
 }
 

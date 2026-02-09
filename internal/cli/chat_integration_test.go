@@ -60,36 +60,8 @@ func (m *integrationMockCostTracker) AccumulateAndReturn(mt domain_llm.Metrics) 
 func (m *integrationMockCostTracker) Warmup()                                           {}
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir, cfgPath, historyPath, _ := setupChatIntegrationEnv(t)
 
-	// 1. Setup Files
-	cfgPath := filepath.Join(tmpDir, "vertex.yaml")
-	cfgContent := `
-AIMODEL: test-model
-MODE: test-mode
-AIURL: http://localhost:8080
-MAX_HISTORY_TURNS: 10
-`
-	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-
-	modeDir := filepath.Join(tmpDir, "output", "test-mode")
-	if err := os.MkdirAll(modeDir, 0755); err != nil {
-		t.Fatalf("failed to create mode dir: %v", err)
-	}
-
-	historyPath := filepath.Join(modeDir, "history.json")
-	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
-		t.Fatalf("failed to write history: %v", err)
-	}
-
-	logPath := filepath.Join(modeDir, "tokens.log")
-	if err := os.WriteFile(logPath, []byte("test log"), 0644); err != nil {
-		t.Fatalf("failed to write log: %v", err)
-	}
-
-	// 2. Action
 	var stdout strings.Builder
 	var stderr strings.Builder
 	sm := security.NewSecurityManager(strings.NewReader(""))
@@ -112,19 +84,59 @@ MAX_HISTORY_TURNS: 10
 	ctx := context.Background()
 	args := []string{"chat", "-c", cfgPath, "-new", "hello"}
 
-	err := cmd.Execute(ctx, args)
-	if err != nil {
+	if err := cmd.Execute(ctx, args); err != nil {
 		t.Fatalf("Execute failed: %v\nStderr: %s", err, stderr.String())
 	}
 
-	// 3. Assertions
+	t.Run("Archiving", func(t *testing.T) {
+		verifyArchiving(t, stdout.String(), tmpDir)
+		if _, err := os.Stat(historyPath); err != nil {
+			t.Errorf("new history.json not found: %v", err)
+		}
+	})
 
-	// Verify archiving message in Stdout
-	if !strings.Contains(stdout.String(), "Archiving existing session files") {
-		t.Errorf("expected stdout to contain archiving message, got: %s", stdout.String())
+	t.Run("SecurityRegistration", func(t *testing.T) {
+		verifySecurityRegistration(t, sm, filepath.Join(tmpDir, "output"))
+	})
+}
+
+func setupChatIntegrationEnv(t *testing.T) (tmpDir, cfgPath, historyPath, logPath string) {
+	tmpDir = t.TempDir()
+
+	cfgPath = filepath.Join(tmpDir, "vertex.yaml")
+	cfgContent := `
+AIMODEL: test-model
+MODE: test-mode
+AIURL: http://localhost:8080
+MAX_HISTORY_TURNS: 10
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
 	}
 
-	// Verify archiving on filesystem
+	modeDir := filepath.Join(tmpDir, "output", "test-mode")
+	if err := os.MkdirAll(modeDir, 0755); err != nil {
+		t.Fatalf("failed to create mode dir: %v", err)
+	}
+
+	historyPath = filepath.Join(modeDir, "history.json")
+	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
+		t.Fatalf("failed to write history: %v", err)
+	}
+
+	logPath = filepath.Join(modeDir, "tokens.log")
+	if err := os.WriteFile(logPath, []byte("test log"), 0644); err != nil {
+		t.Fatalf("failed to write log: %v", err)
+	}
+
+	return tmpDir, cfgPath, historyPath, logPath
+}
+
+func verifyArchiving(t *testing.T, stdout string, tmpDir string) {
+	if !strings.Contains(stdout, "Archiving existing session files") {
+		t.Errorf("expected stdout to contain archiving message, got: %s", stdout)
+	}
+
 	backupsDir := filepath.Join(tmpDir, "output", "backups")
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil {
@@ -141,14 +153,9 @@ MAX_HISTORY_TURNS: 10
 			t.Errorf("tokens.log not found in backup: %v", err)
 		}
 	}
+}
 
-	// Verify new history.json was initialized (the original was moved)
-	if _, err := os.Stat(historyPath); err != nil {
-		t.Errorf("new history.json not found: %v", err)
-	}
-
-	// Verify security registration
-	outputDir := filepath.Join(tmpDir, "output")
+func verifySecurityRegistration(t *testing.T, sm *security.SecurityManager, outputDir string) {
 	safePaths := sm.GetSafePaths()
 	found := false
 	for _, p := range safePaths {

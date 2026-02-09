@@ -23,11 +23,14 @@ type fileSearcher struct {
 
 // defPatterns defines regex patterns for detecting definitions in supported languages.
 var defPatterns = []string{
-	`^def\s+\w+`,            // Python function
-	`^class\s+\w+`,          // Python/JS class
-	`^function\s+`,          // JS function
-	`^const\s+\w+\s*=\s*\(`, // JS arrow function
-	`^\w+\(\)\s*\{`,         // Bash function
+	`^def\s+\w+`,              // Python function
+	`^class\s+\w+`,            // Python/JS class
+	`^function\s+`,            // JS function
+	`^const\s+\w+\s*=\s*\(`,   // JS arrow function
+	`^\w+\(\)\s*\{`,           // Bash function
+	`^func\s+`,                // Go function
+	`^type\s+\w+\s+struct`,    // Go struct
+	`^type\s+\w+\s+interface`, // Go interface
 }
 
 func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

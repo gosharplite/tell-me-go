@@ -7,20 +7,26 @@ import (
 	"testing"
 )
 
+type testStruct struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+}
+
+func verifyUnmarshal(t *testing.T, got, want testStruct) {
+	t.Helper()
+	if got.Name != want.Name || got.Value != want.Value {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
 func TestUnmarshalArgs(t *testing.T) {
 	t.Parallel()
-
-	type testStruct struct {
-		Name  string `json:"name"`
-		Value int    `json:"value"`
-	}
 
 	tests := []struct {
 		name    string
 		args    map[string]interface{}
-		target  interface{}
+		want    testStruct
 		wantErr bool
-		verify  func(t *testing.T, target interface{})
 	}{
 		{
 			name: "valid conversion",
@@ -28,48 +34,29 @@ func TestUnmarshalArgs(t *testing.T) {
 				"name":  "test",
 				"value": 123,
 			},
-			target:  &testStruct{},
+			want:    testStruct{Name: "test", Value: 123},
 			wantErr: false,
-			verify: func(t *testing.T, target interface{}) {
-				ts := target.(*testStruct)
-				if ts.Name != "test" || ts.Value != 123 {
-					t.Errorf("unexpected values: %+v", ts)
-				}
-			},
 		},
 		{
 			name: "partial values",
 			args: map[string]interface{}{
 				"name": "test",
 			},
-			target:  &testStruct{},
+			want:    testStruct{Name: "test", Value: 0},
 			wantErr: false,
-			verify: func(t *testing.T, target interface{}) {
-				ts := target.(*testStruct)
-				if ts.Name != "test" || ts.Value != 0 {
-					t.Errorf("unexpected values: %+v", ts)
-				}
-			},
 		},
 		{
 			name: "type mismatch",
 			args: map[string]interface{}{
 				"value": "not-an-int",
 			},
-			target:  &testStruct{},
 			wantErr: true,
 		},
 		{
 			name:    "nil map",
 			args:    nil,
-			target:  &testStruct{},
+			want:    testStruct{Name: "", Value: 0},
 			wantErr: false,
-			verify: func(t *testing.T, target interface{}) {
-				ts := target.(*testStruct)
-				if ts.Name != "" || ts.Value != 0 {
-					t.Errorf("expected zero values, got %+v", ts)
-				}
-			},
 		},
 		{
 			name: "extra fields are ignored",
@@ -77,7 +64,7 @@ func TestUnmarshalArgs(t *testing.T) {
 				"name":  "test",
 				"extra": "ignored",
 			},
-			target:  &testStruct{},
+			want:    testStruct{Name: "test", Value: 0},
 			wantErr: false,
 		},
 		{
@@ -85,20 +72,20 @@ func TestUnmarshalArgs(t *testing.T) {
 			args: map[string]interface{}{
 				"invalid": make(chan int),
 			},
-			target:  &testStruct{},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := UnmarshalArgs(tt.args, tt.target)
+			var target testStruct
+			err := UnmarshalArgs(tt.args, &target)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UnmarshalArgs() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && tt.verify != nil {
-				tt.verify(t, tt.target)
+			if !tt.wantErr {
+				verifyUnmarshal(t, target, tt.want)
 			}
 		})
 	}

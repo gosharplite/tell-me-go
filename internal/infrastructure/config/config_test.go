@@ -150,3 +150,21 @@ func TestResolveThinkingBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestFindBestMatch_Deterministic(t *testing.T) {
+	m := map[string]int{
+		"gpt":   1,
+		"gpt-4": 2,
+	}
+
+	// "gpt-4" should ALWAYS be preferred for "gpt-4o" because it's a longer match.
+	for i := 0; i < 100; i++ {
+		val, ok := findBestMatch(m, "gpt-4o", func(v int) bool { return true })
+		if !ok {
+			t.Fatal("expected match")
+		}
+		if val != 2 {
+			t.Fatalf("iteration %d: expected value 2 (gpt-4), got %d", i, val)
+		}
+	}
+}

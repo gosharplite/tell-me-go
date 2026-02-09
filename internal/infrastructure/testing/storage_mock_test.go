@@ -60,31 +60,70 @@ func TestMockFileInfo(t *testing.T) {
 	}
 }
 
+func assertFileContent(t *testing.T, fs *MockFileSystem, ctx context.Context, path, expected string) {
+	t.Helper()
+	data, err := fs.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", path, err)
+	}
+	if string(data) != expected {
+		t.Errorf("expected %q at %s, got %q", expected, path, string(data))
+	}
+}
+
 func TestMockFileSystem(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("BasicCRUD", func(t *testing.T) {
+		runBasicCRUDTest(t, ctx)
+	})
+
+	t.Run("Directories", func(t *testing.T) {
+		runDirectoriesTest(t, ctx)
+	})
+
+	t.Run("ErrorHandling", func(t *testing.T) {
+		runErrorHandlingTest(t, ctx)
+	})
+
+	t.Run("FileOperations", func(t *testing.T) {
+		runFileOperationsTest(t, ctx)
+	})
+}
+
+func runBasicCRUDTest(t *testing.T, ctx context.Context) {
 	fs := NewMockFileSystem()
+	path := "dir/test.txt"
+	content := "content"
 
 	// WriteFile
-	data := []byte("content")
-	err := fs.WriteFile(ctx, "dir/test.txt", data, 0644)
-	if err != nil {
+	if err := fs.WriteFile(ctx, path, []byte(content), 0644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
 
 	// ReadFile
-	got, err := fs.ReadFile(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if string(got) != "content" {
-		t.Errorf("expected content, got %s", string(got))
-	}
+	assertFileContent(t, fs, ctx, path, content)
 
-	// ReadFile not exist
-	_, err = fs.ReadFile(ctx, "nonexistent")
+	// Remove
+	if err := fs.Remove(ctx, path); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	_, err := fs.ReadFile(ctx, path)
 	if !os.IsNotExist(err) {
 		t.Errorf("expected IsNotExist error, got %v", err)
 	}
+}
+
+func runDirectoriesTest(t *testing.T, ctx context.Context) {
+	fs := NewMockFileSystem()
+
+	// MkdirAll
+	if err := fs.MkdirAll(ctx, "a/b/c", 0755); err != nil {
+		t.Errorf("MkdirAll failed: %v", err)
+	}
+
+	// Setup for ReadDir and Stat dir
+	_ = fs.WriteFile(ctx, "dir/test.txt", []byte("data"), 0644)
 
 	// ReadDir
 	entries, err := fs.ReadDir(ctx, "dir")
@@ -104,28 +143,23 @@ func TestMockFileSystem(t *testing.T) {
 	_ = entries[0].Type()
 	_, _ = entries[0].Info()
 
-	// MkdirAll
-	err = fs.MkdirAll(ctx, "a/b/c", 0755)
-	if err != nil {
-		t.Errorf("MkdirAll failed: %v", err)
-	}
-
-	// Stat file
-	info, err := fs.Stat(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("Stat failed: %v", err)
-	}
-	if info.Name() != "test.txt" {
-		t.Errorf("expected test.txt, got %s", info.Name())
-	}
-
 	// Stat dir
-	info, err = fs.Stat(ctx, "dir")
+	info, err := fs.Stat(ctx, "dir")
 	if err != nil {
 		t.Fatalf("Stat dir failed: %v", err)
 	}
 	if !info.IsDir() {
 		t.Error("expected dir to be a directory")
+	}
+}
+
+func runErrorHandlingTest(t *testing.T, ctx context.Context) {
+	fs := NewMockFileSystem()
+
+	// ReadFile not exist
+	_, err := fs.ReadFile(ctx, "nonexistent")
+	if !os.IsNotExist(err) {
+		t.Errorf("expected IsNotExist error, got %v", err)
 	}
 
 	// Stat not exist
@@ -133,38 +167,56 @@ func TestMockFileSystem(t *testing.T) {
 	if !os.IsNotExist(err) {
 		t.Errorf("expected IsNotExist, got %v", err)
 	}
+}
+
+func runFileOperationsTest(t *testing.T, ctx context.Context) {
+	fs := NewMockFileSystem()
+	path := "dir/test.txt"
+	_ = fs.WriteFile(ctx, path, []byte("data"), 0644)
+
+	// Stat file
+	info, err := fs.Stat(ctx, path)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+	if info.Name() != "test.txt" {
+		t.Errorf("expected test.txt, got %s", info.Name())
+	}
 
 	// Open
-	f, err := fs.Open(ctx, "dir/test.txt")
+	f, err := fs.Open(ctx, path)
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	if err := f.Close(); err != nil {
-		t.Errorf("Close failed: %v", err)
-	}
+	_ = f.Close()
 
 	// OpenFile
-	f, err = fs.OpenFile(ctx, "dir/test.txt", os.O_RDONLY, 0)
+	f, err = fs.OpenFile(ctx, path, os.O_RDONLY, 0)
 	if err != nil {
 		t.Fatalf("OpenFile failed: %v", err)
 	}
-	if err := f.Close(); err != nil {
-		t.Errorf("Close failed: %v", err)
-	}
-
-	// Remove
-	err = fs.Remove(ctx, "dir/test.txt")
-	if err != nil {
-		t.Fatalf("Remove failed: %v", err)
-	}
-	_, err = fs.ReadFile(ctx, "dir/test.txt")
-	if !os.IsNotExist(err) {
-		t.Errorf("expected file to be removed")
-	}
+	_ = f.Close()
 }
 
 func TestMockFileSystem_Walk(t *testing.T) {
 	ctx := context.Background()
+	fs := setupWalkFS(t, ctx)
+
+	t.Run("Basic", func(t *testing.T) {
+		runWalkBasicTest(t, ctx, fs)
+	})
+
+	t.Run("SkipDir", func(t *testing.T) {
+		runWalkSkipDirTest(t, ctx, fs)
+	})
+
+	t.Run("RootDot", func(t *testing.T) {
+		runWalkRootDotTest(t, ctx, fs)
+	})
+}
+
+func setupWalkFS(t *testing.T, ctx context.Context) *MockFileSystem {
+	t.Helper()
 	fs := NewMockFileSystem()
 
 	if err := fs.WriteFile(ctx, "a/b/f1.txt", []byte("1"), 0644); err != nil {
@@ -177,6 +229,10 @@ func TestMockFileSystem_Walk(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	return fs
+}
+
+func runWalkBasicTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
 	visited := make(map[string]bool)
 	err := fs.Walk(ctx, "a", func(path string, info os.FileInfo, err error) error {
 		visited[path] = true
@@ -195,10 +251,11 @@ func TestMockFileSystem_Walk(t *testing.T) {
 	if visited[filepath.Clean("d/f3.txt")] {
 		t.Error("d/f3.txt should not be visited")
 	}
+}
 
-	// Test SkipDir
-	visited = make(map[string]bool)
-	err = fs.Walk(ctx, "a", func(path string, info os.FileInfo, err error) error {
+func runWalkSkipDirTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
+	visited := make(map[string]bool)
+	err := fs.Walk(ctx, "a", func(path string, info os.FileInfo, err error) error {
 		visited[path] = true
 		if path == filepath.Clean("a/b") {
 			return filepath.SkipDir
@@ -214,10 +271,11 @@ func TestMockFileSystem_Walk(t *testing.T) {
 	if !visited[filepath.Clean("a/c/f2.txt")] {
 		t.Error("a/c/f2.txt should have been visited")
 	}
+}
 
-	// Test root = "."
-	visited = make(map[string]bool)
-	err = fs.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
+func runWalkRootDotTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
+	visited := make(map[string]bool)
+	err := fs.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
 		visited[path] = true
 		return nil
 	})

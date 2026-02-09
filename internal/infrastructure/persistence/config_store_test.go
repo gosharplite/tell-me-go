@@ -17,158 +17,175 @@ func TestConfigStore(t *testing.T) {
 	fs := storage.DefaultFileSystem
 
 	t.Run("Set and Get Config", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store := NewConfigStore(fs, configFile)
-
-		_, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "set",
-			"key":    "theme",
-			"value":  "dark",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "get",
-			"key":    "theme",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Text != "dark" {
-			t.Errorf("expected dark, got %s", res.Text)
-		}
+		store, _ := setupConfigStore(t, fs)
+		testConfigSetGet(t, store, ctx)
 	})
 
 	t.Run("Delete Key", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store := NewConfigStore(fs, configFile)
-
-		if _, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "set",
-			"key":    "theme",
-			"value":  "dark",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "delete",
-			"key":    "theme",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_, err = store.ManageConfig(ctx, map[string]interface{}{
-			"action": "get",
-			"key":    "theme",
-		})
-		if err == nil {
-			t.Fatal("expected error for deleted key")
-		}
+		store, _ := setupConfigStore(t, fs)
+		testConfigDelete(t, store, ctx)
 	})
 
 	t.Run("Delete Missing Key", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store := NewConfigStore(fs, configFile)
-
-		// Should not return error, just delete nothing
-		_, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "delete",
-			"key":    "missing",
-		})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
+		store, _ := setupConfigStore(t, fs)
+		testConfigDeleteMissing(t, store, ctx)
 	})
 
 	t.Run("Persistence", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store1 := NewConfigStore(fs, configFile)
-
-		if _, err := store1.ManageConfig(ctx, map[string]interface{}{
-			"action": "set",
-			"key":    "theme",
-			"value":  "dark",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		store2 := NewConfigStore(fs, configFile)
-		err := store2.Load(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store2.ManageConfig(ctx, map[string]interface{}{
-			"action": "get",
-			"key":    "theme",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Text != "dark" {
-			t.Error("config was not persisted")
-		}
+		_, configFile := setupConfigStore(t, fs)
+		testConfigPersistence(t, fs, ctx, configFile)
 	})
 
 	t.Run("List Config", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store := NewConfigStore(fs, configFile)
-
-		if _, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "set",
-			"key":    "k1",
-			"value":  "v1",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "list",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "k1 = v1") {
-			t.Errorf("expected k1 = v1 in list, got %s", res.Text)
-		}
+		store, _ := setupConfigStore(t, fs)
+		testConfigList(t, store, ctx)
 	})
 
 	t.Run("List Empty Config", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		store := NewConfigStore(fs, configFile)
-
-		res, err := store.ManageConfig(ctx, map[string]interface{}{
-			"action": "list",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "Configuration is empty") {
-			t.Errorf("expected empty message, got %s", res.Text)
-		}
+		store, _ := setupConfigStore(t, fs)
+		testConfigListEmpty(t, store, ctx)
 	})
 
 	t.Run("Corrupted JSON", func(t *testing.T) {
-		tempDir := t.TempDir()
-		configFile := filepath.Join(tempDir, "config.json")
-		if err := fs.WriteFile(ctx, configFile, []byte("invalid json"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		store := NewConfigStore(fs, configFile)
-		err := store.Load(ctx)
-		if err == nil {
-			t.Fatal("expected error for corrupted JSON")
-		}
+		_, configFile := setupConfigStore(t, fs)
+		testConfigCorruptedJSON(t, fs, ctx, configFile)
 	})
+}
+
+func setupConfigStore(t *testing.T, fs storage.FileSystem) (*ConfigStore, string) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "config.json")
+	return NewConfigStore(fs, configFile), configFile
+}
+
+func testConfigSetGet(t *testing.T, store *ConfigStore, ctx context.Context) {
+	_, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "set",
+		"key":    "theme",
+		"value":  "dark",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "get",
+		"key":    "theme",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "dark" {
+		t.Errorf("expected dark, got %s", res.Text)
+	}
+}
+
+func testConfigDelete(t *testing.T, store *ConfigStore, ctx context.Context) {
+	if _, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "set",
+		"key":    "theme",
+		"value":  "dark",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "delete",
+		"key":    "theme",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = store.ManageConfig(ctx, map[string]interface{}{
+		"action": "get",
+		"key":    "theme",
+	})
+	if err == nil {
+		t.Fatal("expected error for deleted key")
+	}
+}
+
+func testConfigDeleteMissing(t *testing.T, store *ConfigStore, ctx context.Context) {
+	// Should not return error, just delete nothing
+	_, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "delete",
+		"key":    "missing",
+	})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func testConfigPersistence(t *testing.T, fs storage.FileSystem, ctx context.Context, configFile string) {
+	store1 := NewConfigStore(fs, configFile)
+
+	if _, err := store1.ManageConfig(ctx, map[string]interface{}{
+		"action": "set",
+		"key":    "theme",
+		"value":  "dark",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store2 := NewConfigStore(fs, configFile)
+	err := store2.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store2.ManageConfig(ctx, map[string]interface{}{
+		"action": "get",
+		"key":    "theme",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "dark" {
+		t.Error("config was not persisted")
+	}
+}
+
+func testConfigList(t *testing.T, store *ConfigStore, ctx context.Context) {
+	if _, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "set",
+		"key":    "k1",
+		"value":  "v1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "list",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "k1 = v1") {
+		t.Errorf("expected k1 = v1 in list, got %s", res.Text)
+	}
+}
+
+func testConfigListEmpty(t *testing.T, store *ConfigStore, ctx context.Context) {
+	res, err := store.ManageConfig(ctx, map[string]interface{}{
+		"action": "list",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "Configuration is empty") {
+		t.Errorf("expected empty message, got %s", res.Text)
+	}
+}
+
+func testConfigCorruptedJSON(t *testing.T, fs storage.FileSystem, ctx context.Context, configFile string) {
+	if err := fs.WriteFile(ctx, configFile, []byte("invalid json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewConfigStore(fs, configFile)
+	err := store.Load(ctx)
+	if err == nil {
+		t.Fatal("expected error for corrupted JSON")
+	}
 }

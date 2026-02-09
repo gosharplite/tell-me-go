@@ -178,73 +178,98 @@ func TestASTCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cache := NewASTCache()
-	cache.maxSize = 2
+	t.Run("Get", func(t *testing.T) { testASTCacheGet(t, path) })
+	t.Run("Hit", func(t *testing.T) { testASTCacheHit(t, path) })
+	t.Run("Invalidation", func(t *testing.T) { testASTCacheInvalidation(t, path) })
+	t.Run("NonExistent", func(t *testing.T) { testASTCacheNonExistent(t) })
+	t.Run("SyntaxError", func(t *testing.T) { testASTCacheSyntaxError(t, tmpDir) })
+	t.Run("Eviction", func(t *testing.T) { testASTCacheEviction(t, tmpDir) })
+}
 
-	// Test successful Get
-	f1, fset1, err := cache.Get(path)
+func testASTCacheGet(t *testing.T, path string) {
+	cache := NewASTCache()
+	f, _, err := cache.Get(path)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
-	if f1.Name.Name != "main" {
-		t.Errorf("expected package main, got %s", f1.Name.Name)
+	if f.Name.Name != "main" {
+		t.Errorf("expected package main, got %s", f.Name.Name)
 	}
+}
 
-	// Test Cache Hit
+func testASTCacheHit(t *testing.T, path string) {
+	cache := NewASTCache()
+	f1, fset1, err := cache.Get(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	f2, fset2, err := cache.Get(path)
 	if err != nil {
-		t.Fatalf("Get (cached) failed: %v", err)
+		t.Fatal(err)
 	}
 	if f1 != f2 || fset1 != fset2 {
 		t.Error("expected cache hit to return same objects")
 	}
+}
 
-	// Test Cache Invalidation (Update file)
+func testASTCacheInvalidation(t *testing.T, path string) {
+	cache := NewASTCache()
+	f1, _, err := cache.Get(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	time.Sleep(10 * time.Millisecond) // Ensure modTime changes
 	if err := os.WriteFile(path, []byte("package main\nfunc main() { _ = 1 }\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	f3, _, err := cache.Get(path)
+
+	f2, _, err := cache.Get(path)
 	if err != nil {
-		t.Fatalf("Get (updated) failed: %v", err)
+		t.Fatal(err)
 	}
-	if f1 == f3 {
+	if f1 == f2 {
 		t.Error("expected cache invalidation after file update")
 	}
+}
 
-	// Test Non-existent file
-	_, _, err = cache.Get("non_existent.go")
+func testASTCacheNonExistent(t *testing.T) {
+	cache := NewASTCache()
+	_, _, err := cache.Get("non_existent.go")
 	if err == nil {
 		t.Error("expected error for non-existent file")
 	}
+}
 
-	// Test Invalid Go syntax
+func testASTCacheSyntaxError(t *testing.T, tmpDir string) {
+	cache := NewASTCache()
 	invalidPath := filepath.Join(tmpDir, "invalid.go")
 	if err := os.WriteFile(invalidPath, []byte("package"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = cache.Get(invalidPath)
+	_, _, err := cache.Get(invalidPath)
 	if err == nil {
 		t.Error("expected error for invalid syntax")
 	}
+}
 
-	// Test Eviction
-	if _, _, err := cache.Get(path); err != nil {
-		t.Fatal(err)
+func testASTCacheEviction(t *testing.T, tmpDir string) {
+	cache := NewASTCache()
+	cache.maxSize = 2
+
+	files := []string{
+		filepath.Join(tmpDir, "f1.go"),
+		filepath.Join(tmpDir, "f2.go"),
+		filepath.Join(tmpDir, "f3.go"),
 	}
-	path2 := filepath.Join(tmpDir, "test2.go")
-	if err := os.WriteFile(path2, []byte("package p2"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := cache.Get(path2); err != nil {
-		t.Fatal(err)
-	}
-	path3 := filepath.Join(tmpDir, "test3.go")
-	if err := os.WriteFile(path3, []byte("package p3"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := cache.Get(path3); err != nil {
-		t.Fatal(err)
+
+	for _, f := range files {
+		if err := os.WriteFile(f, []byte("package p"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := cache.Get(f); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if len(cache.files) > 2 {

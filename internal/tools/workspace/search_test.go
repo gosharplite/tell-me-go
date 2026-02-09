@@ -58,58 +58,152 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 }
 
 func TestGrepDefinitions(t *testing.T) {
+	t.Run("Functions", testGrepFunctions)
+	t.Run("Structs", testGrepStructs)
+	t.Run("Interfaces", testGrepInterfaces)
+	t.Run("ComplexPatterns", testGrepComplexPatterns)
+	t.Run("ErrorPaths", testGrepErrorPaths)
+}
+
+func setupGrepTest(t *testing.T, files map[string]string) (storage.FileSystem, string) {
 	tempDir := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(tempDir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return storage.DefaultFileSystem, tempDir
+}
 
-	pyFile := filepath.Join(tempDir, "script.py")
-	if err := os.WriteFile(pyFile, []byte("def my_func():\n    pass\nclass MyClass:\n    pass"), 0644); err != nil {
+type grepResult struct {
+	Line string
+}
+
+type grepExpectedResult struct {
+	Content string
+}
+
+func verifyGrepResults(t *testing.T, results []grepResult, expected []grepExpectedResult) {
+	t.Helper()
+	if len(expected) == 0 {
+		verifyNoResults(t, results)
+		return
+	}
+	for _, exp := range expected {
+		verifyContains(t, results, exp.Content)
+	}
+}
+
+func verifyNoResults(t *testing.T, results []grepResult) {
+	t.Helper()
+	if len(results) != 1 || results[0].Line != "No definitions found." {
+		t.Errorf("expected 'No definitions found.', got %+v", results)
+	}
+}
+
+func verifyContains(t *testing.T, results []grepResult, content string) {
+	t.Helper()
+	for _, res := range results {
+		if strings.Contains(res.Line, content) {
+			return
+		}
+	}
+	t.Errorf("expected content %q not found in results", content)
+}
+
+func toGrepResults(text string) []grepResult {
+	lines := strings.Split(text, "\n")
+	results := make([]grepResult, len(lines))
+	for i, l := range lines {
+		results[i] = grepResult{Line: l}
+	}
+	return results
+}
+
+func testGrepFunctions(t *testing.T) {
+	fs, root := setupGrepTest(t, map[string]string{
+		"script.py": "def my_func():\n    pass",
+		"script.js": "function jsFunc() {}\nconst arrow = () => {}",
+		"main.go":   "func main() {}",
+	})
+	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	if err != nil {
 		t.Fatal(err)
 	}
+	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+		{Content: "def my_func"},
+		{Content: "function jsFunc"},
+		{Content: "const arrow"},
+		{Content: "func main"},
+	})
+}
 
-	jsFile := filepath.Join(tempDir, "script.js")
-	if err := os.WriteFile(jsFile, []byte("function jsFunc() {}\nconst arrow = () => {}"), 0644); err != nil {
+func testGrepStructs(t *testing.T) {
+	fs, root := setupGrepTest(t, map[string]string{
+		"data.go": "type User struct {\n    ID int\n}",
+		"app.py":  "class App:\n    pass",
+	})
+	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	if err != nil {
 		t.Fatal(err)
 	}
+	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+		{Content: "type User struct"},
+		{Content: "class App"},
+	})
+}
 
-	goFile := filepath.Join(tempDir, "main.go")
-	if err := os.WriteFile(goFile, []byte("func main() {}"), 0644); err != nil {
+func testGrepInterfaces(t *testing.T) {
+	fs, root := setupGrepTest(t, map[string]string{
+		"service.go": "type Service interface {\n    Run()\n}",
+	})
+	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
+	res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root})
+	if err != nil {
 		t.Fatal(err)
 	}
+	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+		{Content: "type Service interface"},
+	})
+}
 
-	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
-	ctx := context.Background()
+func testGrepComplexPatterns(t *testing.T) {
+	fs, root := setupGrepTest(t, map[string]string{
+		"script.py": "def my_func():\n    pass\nclass MyClass:\n    pass",
+	})
+	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
 
-	t.Run("grep all definitions", func(t *testing.T) {
-		res, err := s.grepDefinitions(ctx, map[string]interface{}{"path": tempDir})
+	t.Run("with query", func(t *testing.T) {
+		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "my_func"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(res.Text, "def my_func") ||
-			!strings.Contains(res.Text, "class MyClass") ||
-			!strings.Contains(res.Text, "function jsFunc") ||
-			!strings.Contains(res.Text, "const arrow") {
-			t.Errorf("expected definitions not found: %s", res.Text)
+		results := toGrepResults(res.Text)
+		verifyGrepResults(t, results, []grepExpectedResult{{Content: "def my_func"}})
+		for _, r := range results {
+			if strings.Contains(r.Line, "class MyClass") {
+				t.Error("result should not contain class MyClass when querying for my_func")
+			}
 		}
 	})
+}
 
-	t.Run("grep with query", func(t *testing.T) {
-		res, err := s.grepDefinitions(ctx, map[string]interface{}{"path": tempDir, "query": "my_func"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(res.Text, "def my_func") || strings.Contains(res.Text, "jsFunc") {
-			t.Errorf("unexpected results with query: %s", res.Text)
-		}
-	})
+func testGrepErrorPaths(t *testing.T) {
+	fs, root := setupGrepTest(t, map[string]string{})
+	s := &fileSearcher{sm: security.NewSecurityManager(nil), fs: fs}
 
 	t.Run("no results", func(t *testing.T) {
-		res, err := s.grepDefinitions(ctx, map[string]interface{}{"path": tempDir, "query": "nonexistent"})
+		res, err := s.grepDefinitions(context.Background(), map[string]interface{}{"path": root, "query": "nonexistent"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Text != "No definitions found." {
-			t.Errorf("expected 'No definitions found.', got %q", res.Text)
-		}
+		verifyGrepResults(t, toGrepResults(res.Text), nil)
 	})
 }
 

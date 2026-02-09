@@ -247,6 +247,36 @@ func (c *Content) Equal(other *Content) bool {
 	return true
 }
 
+// Equal returns true if two Blob objects are equivalent.
+func (b *Blob) Equal(other *Blob) bool {
+	if b == nil || other == nil {
+		return b == other
+	}
+	return b.MIMEType == other.MIMEType && bytes.Equal(b.Data, other.Data)
+}
+
+// Equal returns true if two FunctionCall objects are equivalent.
+func (fc *FunctionCall) Equal(other *FunctionCall) bool {
+	if fc == nil || other == nil {
+		return fc == other
+	}
+	if fc.Name != other.Name {
+		return false
+	}
+	return reflect.DeepEqual(fc.Args, other.Args)
+}
+
+// Equal returns true if two FunctionResponse objects are equivalent.
+func (fr *FunctionResponse) Equal(other *FunctionResponse) bool {
+	if fr == nil || other == nil {
+		return fr == other
+	}
+	if fr.Name != other.Name {
+		return false
+	}
+	return reflect.DeepEqual(fr.Response, other.Response)
+}
+
 // Equal returns true if two Part objects are logically equivalent.
 func (p *Part) Equal(other *Part) bool {
 	if p == nil || other == nil {
@@ -258,19 +288,11 @@ func (p *Part) Equal(other *Part) bool {
 	if !bytes.Equal(p.ThoughtSignature, other.ThoughtSignature) {
 		return false
 	}
-	if (p.InlineData == nil) != (other.InlineData == nil) {
+	if !p.InlineData.Equal(other.InlineData) {
 		return false
 	}
-	if p.InlineData != nil {
-		if p.InlineData.MIMEType != other.InlineData.MIMEType || !bytes.Equal(p.InlineData.Data, other.InlineData.Data) {
-			return false
-		}
-	}
-	if !reflect.DeepEqual(p.FunctionCall, other.FunctionCall) {
+	if !p.FunctionCall.Equal(other.FunctionCall) {
 		return false
 	}
-	if !reflect.DeepEqual(p.FunctionResponse, other.FunctionResponse) {
-		return false
-	}
-	return true
+	return p.FunctionResponse.Equal(other.FunctionResponse)
 }
