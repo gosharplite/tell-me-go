@@ -33,68 +33,87 @@ func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, err
 	}
 
-	target := params.Target
+	metadata, changedFiles, err := a.getDiffMetadata(ctx, params.Target)
 
-	// 1. Get stats and summary
+	var sb strings.Builder
+	sb.WriteString("Semantic Diff Summary:\n\n")
+	sb.WriteString(metadata)
+
+	if err != nil {
+		return tools.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
+	}
+
+	sb.WriteString("\nLogical Code Changes:\n")
+	fset := token.NewFileSet()
+	for _, relPath := range changedFiles {
+		if a.isGoFile(relPath) {
+			changes, _ := a.analyzeFileChange(ctx, params.Target, relPath, fset)
+			a.renderChanges(&sb, relPath, changes)
+		}
+	}
+
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (a *ChangeAnalyzer) getDiffMetadata(ctx context.Context, target string) (string, []string, error) {
 	statOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--stat", target)
 	summaryOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--summary", target)
 
 	var sb strings.Builder
-	sb.WriteString("Semantic Diff Summary:\n\n")
 	sb.WriteString("File Statistics:\n")
 	sb.WriteString(string(statOut))
 	sb.WriteString("\nChange Summary:\n")
 	sb.WriteString(string(summaryOut))
 
-	// 2. Logical Analysis
-	sb.WriteString("\nLogical Code Changes:\n")
-
-	// Get list of changed .go files
 	filesOut, err := a.Exec.CombinedOutput(ctx, "git", "diff", "--name-only", target)
 	if err != nil {
-		return tools.ToolResult{Text: sb.String() + "\n(Could not perform logical analysis)"}, nil
+		return sb.String(), nil, err
 	}
 
-	changedFiles := strings.Split(strings.TrimSpace(string(filesOut)), "\n")
-	fset := token.NewFileSet()
+	filesRaw := strings.TrimSpace(string(filesOut))
+	if filesRaw == "" {
+		return sb.String(), nil, nil
+	}
+	changedFiles := strings.Split(filesRaw, "\n")
 
-	for _, relPath := range changedFiles {
-		if filepath.Ext(relPath) != ".go" || strings.Contains(relPath, "vendor/") {
-			continue
-		}
+	return sb.String(), changedFiles, nil
+}
 
-		// Get current AST
-		currAST, _, err := a.Cache.Get(relPath)
-		if err != nil {
-			continue // Skip unparsable current files
-		}
-
-		// Get target AST (base)
-		var baseAST *ast.File
-		baseContent, err := a.Exec.Output(ctx, "git", "show", target+":"+relPath)
-		if err == nil {
-			baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
-		}
-
-		var changes []string
-		if baseAST == nil {
-			// Entirely new file
-			for _, d := range currAST.Decls {
-				key := GetDeclKey(d)
-				if key != "unknown" {
-					changes = append(changes, "Added: "+key)
-				}
-			}
-		} else {
-			changes = CompareASTs(baseAST, currAST)
-		}
-		if len(changes) > 0 {
-			sb.WriteString(fmt.Sprintf("\n[%s]\n", relPath))
-			for _, ch := range changes {
-				sb.WriteString(fmt.Sprintf("  - %s\n", ch))
-			}
-		}
+func (a *ChangeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath string, fset *token.FileSet) ([]string, error) {
+	// Get current AST
+	currAST, _, err := a.Cache.Get(relPath)
+	if err != nil {
+		return nil, err
 	}
 
-	return tools.ToolResult{Text: sb.String()}, nil
+	// Get target AST (base)
+	var baseAST *ast.File
+	baseContent, err := a.Exec.Output(ctx, "git", "show", target+":"+relPath)
+	if err == nil {
+		baseAST, _ = parser.ParseFile(fset, relPath, baseContent, parser.ParseComments)
+	}
+
+	var changes []string
+	if baseAST == nil {
+		// Entirely new file
+		for _, d := range currAST.Decls {
+			key := GetDeclKey(d)
+			if key != "unknown" {
+				changes = append(changes, "Added: "+key)
+			}
+		}
+	} else {
+		changes = CompareASTs(baseAST, currAST)
+	}
+	return changes, nil
+}
+
+func (a *ChangeAnalyzer) isGoFile(relPath string) bool {
+	return filepath.Ext(relPath) == ".go" && !strings.Contains(relPath, "vendor/")
+}
+
+func (a *ChangeAnalyzer) renderChanges(sb *strings.Builder, relPath string, changes []string) {
+	if len(changes) > 0 {
+		sb.WriteString(fmt.Sprintf("\n[%s]\n  - %s\n", relPath, strings.Join(changes, "\n  - ")))
+	}
 }
