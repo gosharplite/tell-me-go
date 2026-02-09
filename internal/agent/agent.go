@@ -4,12 +4,12 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"fmt"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/context"
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -23,7 +23,7 @@ import (
 
 // Chatter defines the interface for the AI agent orchestration.
 type Chatter interface {
-	Chat(ctx stdctx.Context, s *Session, prompt string) error
+	Chat(ctx context.Context, s *Session, prompt string) error
 	SetLimits(toolTurns, historyTokens, historyTurns int)
 	SetHardBudgetLimit(limit float64)
 	SetTieredThreshold(threshold int)
@@ -48,11 +48,11 @@ type Agent struct {
 	mu            sync.RWMutex
 	gateway       *ResilientClient
 	engine        *TurnEngine
-	ctxManager    *context.ContextManager
+	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
 	sm            domain_security.ISecurityManager
 	configWatcher *ConfigWatcher
-	strategy      *context.ContextStrategy
+	strategy      *orchestration.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
@@ -91,7 +91,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	bus := &events.SimpleEventBus{}
 	gw := NewResilientClient(client, disableStreaming)
 
-	strategy := context.NewContextStrategy(context.NewHeuristicTokenCounter(reg), bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
 	a := &Agent{
@@ -121,7 +121,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		a.gateway.SetSystemInstructions(a.config.SystemInstructions)
 	}
 
-	factory := &context.PipelineFactory{
+	factory := &orchestration.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
 		Summarizer: llm.NewSummarizer(gw, bus),
@@ -129,7 +129,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		Events:     bus,
 	}
 
-	ctxManager := context.NewContextManager(strategy, hManager, bus, factory)
+	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory)
 	a.ctxManager = ctxManager
 
 	// Initialize engine
@@ -203,7 +203,7 @@ func (a *Agent) SetPrunedTurns(n int) {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx stdctx.Context, s *Session, prompt string) error {
+func (a *Agent) Chat(ctx context.Context, s *Session, prompt string) error {
 	if err := s.History.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},

@@ -4,13 +4,13 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -45,7 +45,7 @@ func TestAgent_Chat(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return &llm.Content{
 				Role:  "model",
 				Parts: []*llm.Part{{Text: "Hello! How can I help you today?"}},
@@ -56,7 +56,7 @@ func TestAgent_Chat(t *testing.T) {
 	a := New(mockClient, h, reg, sm, false)
 	sess := NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
@@ -151,7 +151,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	callCount := 0
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			callCount++
 			if callCount == 1 {
 				return nil, nil, llm.ErrTransient
@@ -166,7 +166,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	a := New(mockClient, h, reg, sm, false)
 	sess := NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
 
 	if callCount != 2 {
@@ -206,7 +206,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 
 	mockClient := &MockLLMClient{
-		SendChatFn: func(ctx stdctx.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+		SendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			return nil, nil, llm.ErrContextLimitExceeded
 		},
 	}
@@ -214,7 +214,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	a := New(mockClient, h, reg, sm, false)
 	sess := NewSession(h)
 
-	ctx := stdctx.Background()
+	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
 
 	if err == nil {
@@ -296,12 +296,12 @@ func TestAgent_PinningFlow(t *testing.T) {
 	})
 }
 
-func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, stdctx.Context) {
+func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	h := history.NewManager(filepath.Join(t.TempDir(), "history_pinning.json"))
-	ctx := stdctx.Background()
+	ctx := context.Background()
 
 	// Add 2 turns
 	for i := 1; i <= 2; i++ {
@@ -345,26 +345,26 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, stdctx.Context) {
+func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(filepath.Join(tmpDir, "pin_prune.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	ctx := stdctx.Background()
+	ctx := context.Background()
 
 	mockClient := &MockLLMClient{}
 	a := New(mockClient, h, reg, sm, false)
 	return a, a.ctxManager.History, ctx
 }
 
-func addTurns(ctx stdctx.Context, h services.HistoryManager, count int) {
+func addTurns(ctx context.Context, h services.HistoryManager, count int) {
 	for i := 0; i < count; i++ {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})
 	}
 }
 
-func verifyPinningResults(t *testing.T, meta *context.Metadata, prepared []*llm.Content) {
+func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared []*llm.Content) {
 	// Look for "u1" (the pinned turn)
 	foundPinned := false
 	for _, c := range prepared {
@@ -395,21 +395,21 @@ func TestAgent_PreciseProfile_Sync(t *testing.T) {
 	a := New(mockClient, h, reg, sm, false)
 	a.events = bus
 
-	counter := &context.HeuristicTokenCounter{}
-	strategy := context.NewContextStrategy(counter, bus)
-	factory := &context.PipelineFactory{
+	counter := &orchestration.HeuristicTokenCounter{}
+	strategy := orchestration.NewContextStrategy(counter, bus)
+	factory := &orchestration.PipelineFactory{
 		Registry:  reg,
 		History:   h,
 		Estimator: strategy,
 		Events:    bus,
-		Profile:   context.ProfilePrecise,
+		Profile:   orchestration.ProfilePrecise,
 	}
-	cm := context.NewContextManager(strategy, h, bus, factory)
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	a.ctxManager = cm
 
 	// Test Prepare under precise profile
-	ctx := stdctx.Background()
-	req := &context.Request{
+	ctx := context.Background()
+	req := &orchestration.Request{
 		Turn:    1,
 		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 	}

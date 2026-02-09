@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -23,21 +23,21 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
 
-	counter := &agentctx.HeuristicTokenCounter{}
-	strategy := agentctx.NewContextStrategy(counter, bus)
+	counter := &orchestration.HeuristicTokenCounter{}
+	strategy := orchestration.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 10, 10)
 
 	gw := &mockLLMGateway{}
 	exec := &mockExecutor{}
 	reg := &limitMockRegistry{}
 
-	factory := &agentctx.PipelineFactory{
+	factory := &orchestration.PipelineFactory{
 		History:   h,
 		Events:    bus,
 		Estimator: strategy,
 	}
 
-	cm := agentctx.NewContextManager(strategy, h, bus, factory)
+	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	// Setup cost tracker with a high rate

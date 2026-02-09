@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -189,7 +189,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	historyFile := filepath.Join(t.TempDir(), "test_safety_history.json")
 
 	mockCounter := &mockTokenCounter{tokens: 950000} // Above 90% of 1M
-	strategy := agentctx.NewContextStrategy(mockCounter, nil)
+	strategy := orchestration.NewContextStrategy(mockCounter, nil)
 	hManager := history.NewManager(historyFile)
 
 	ctx := context.Background()
@@ -199,7 +199,7 @@ func TestSummarizeRange_SafetyCheck(t *testing.T) {
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "3"}}})
 	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "4"}}})
 
-	cm := &agentctx.ContextManager{
+	cm := &orchestration.ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
 		Summarizer: &mockSummarizer{},
@@ -232,14 +232,14 @@ func TestSummarizeRange_Logging(t *testing.T) {
 
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}
-	strategy := agentctx.NewContextStrategy(mockCounter, nil)
+	strategy := orchestration.NewContextStrategy(mockCounter, nil)
 	bus := &events.TestEventBus{}
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}
 	summarizerImpl := llm.NewSummarizer(mockG, bus)
 
-	cm := &agentctx.ContextManager{
+	cm := &orchestration.ContextManager{
 		Strategy:   strategy,
 		History:    hManager,
 		Summarizer: summarizerImpl,

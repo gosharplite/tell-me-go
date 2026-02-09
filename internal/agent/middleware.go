@@ -4,7 +4,7 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,9 +18,9 @@ import (
 // WithStreaming returns a middleware that injects a stream handler into the turn.
 func (e *TurnEngine) WithStreaming() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			if turn.State.Phase == phaseInference && e.events != nil {
-				turn.StreamHandler = func(ctx stdctx.Context, stream <-chan *llm.Content) {
+				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
 					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
@@ -32,7 +32,7 @@ func (e *TurnEngine) WithStreaming() turnMiddleware {
 // WithStatusReporter returns a middleware that publishes turn status events.
 func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 			if e.events == nil || res.Error != nil {
 				return res
@@ -83,7 +83,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 // WithMetrics returns a middleware that publishes usage metrics.
 func (e *TurnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
@@ -109,7 +109,7 @@ func (e *TurnEngine) WithMetrics() turnMiddleware {
 // WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
 func WithLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx stdctx.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
 
 			if turn.State.Phase == phaseInference && res.Error == nil && turn.State.Response != nil {

@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	agentctx "github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -65,9 +65,9 @@ func TestWithStatusReporter(t *testing.T) {
 	mw := e.WithStatusReporter()
 	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
-	cs := agentctx.NewContextStrategy(nil, nil)
+	cs := orchestration.NewContextStrategy(nil, nil)
 	h := history.NewManager("")
-	cm := &agentctx.ContextManager{Strategy: cs, History: h}
+	cm := &orchestration.ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {
 		name       string

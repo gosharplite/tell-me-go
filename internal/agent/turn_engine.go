@@ -4,12 +4,12 @@
 package agent
 
 import (
-	stdctx "context"
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/context"
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
@@ -82,37 +82,37 @@ type turnHook interface {
 
 // turnState carries data between the phases of a turn and tracks the current phase.
 type turnState struct {
-	Phase                turnPhase         `json:"phase"`
-	HasToolCalls         bool              `json:"has_tool_calls"`
-	Metrics              *llm.Metrics      `json:"metrics,omitempty"`
-	Tokens               int               `json:"tokens"`
-	CurrentTurns         int               `json:"current_turns"`
-	Metadata             *context.Metadata `json:"metadata,omitempty"`
-	Response             *llm.Content      `json:"response,omitempty"`
-	ToolResponse         *llm.Content      `json:"tool_response,omitempty"`
-	LastError            error             `json:"-"`
-	RetryCount           int               `json:"retry_count"`
-	ToolCallCount        map[string]int    `json:"-"`
-	RecentResponseHashes []string          `json:"-"`
-	PreparedHistory      []*llm.Content    `json:"-"`
-	TaskCost             float64           `json:"task_cost"`
+	Phase                turnPhase               `json:"phase"`
+	HasToolCalls         bool                    `json:"has_tool_calls"`
+	Metrics              *llm.Metrics            `json:"metrics,omitempty"`
+	Tokens               int                     `json:"tokens"`
+	CurrentTurns         int                     `json:"current_turns"`
+	Metadata             *orchestration.Metadata `json:"metadata,omitempty"`
+	Response             *llm.Content            `json:"response,omitempty"`
+	ToolResponse         *llm.Content            `json:"tool_response,omitempty"`
+	LastError            error                   `json:"-"`
+	RetryCount           int                     `json:"retry_count"`
+	ToolCallCount        map[string]int          `json:"-"`
+	RecentResponseHashes []string                `json:"-"`
+	PreparedHistory      []*llm.Content          `json:"-"`
+	TaskCost             float64                 `json:"task_cost"`
 }
 
 // IToolExecutor defines the interface for tool execution.
 type IToolExecutor interface {
-	Execute(ctx stdctx.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
+	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
 // turnProcessor defines a single stage in the TurnEngine pipeline.
 type turnProcessor interface {
-	Process(ctx stdctx.Context, turn *turn) processResult
+	Process(ctx context.Context, turn *turn) processResult
 }
 
 // turnProcessorFunc is an adapter to allow the use of ordinary functions as turnProcessors.
-type turnProcessorFunc func(stdctx.Context, *turn) processResult
+type turnProcessorFunc func(context.Context, *turn) processResult
 
 // Process calls f(ctx, turn).
-func (f turnProcessorFunc) Process(ctx stdctx.Context, turn *turn) processResult {
+func (f turnProcessorFunc) Process(ctx context.Context, turn *turn) processResult {
 	return f(ctx, turn)
 }
 
@@ -124,7 +124,7 @@ type turn struct {
 	Index        int
 	StartTime    time.Time
 	State        *turnState
-	CtxManager   *context.ContextManager
+	CtxManager   *orchestration.ContextManager
 	Gateway      llm.LLMGateway
 	Executor     IToolExecutor
 	Registry     tools.IToolRegistry
@@ -135,7 +135,7 @@ type turn struct {
 	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
-	StreamHandler func(stdctx.Context, <-chan *llm.Content)
+	StreamHandler func(context.Context, <-chan *llm.Content)
 
 	// Results/Outputs
 	Stop bool
@@ -144,7 +144,7 @@ type turn struct {
 // TurnEngine manages the "Think -> Act -> Observe" cycle using a state machine.
 type TurnEngine struct {
 	mu               sync.RWMutex
-	ctxManager       *context.ContextManager
+	ctxManager       *orchestration.ContextManager
 	gateway          llm.LLMGateway
 	executor         IToolExecutor
 	registry         tools.IToolRegistry
@@ -242,7 +242,7 @@ func (e *TurnEngine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.ICost
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.
-func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *context.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
+func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *TurnEngine {
 	e := &TurnEngine{
 		gateway:     gw,
 		executor:    ex,
@@ -292,7 +292,7 @@ func NewTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *context.ContextManag
 }
 
 // Run executes the multi-turn orchestration loop.
-func (e *TurnEngine) Run(ctx stdctx.Context, startTime time.Time) error {
+func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 	var lastState *turnState
 	sessionToolCallCount := make(map[string]int)
 	for i := 0; ; i++ {
@@ -326,7 +326,7 @@ func (e *TurnEngine) Run(ctx stdctx.Context, startTime time.Time) error {
 	return nil
 }
 
-func (e *TurnEngine) checkLimits(ctx stdctx.Context, turnIndex int) error {
+func (e *TurnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -393,7 +393,7 @@ func (e *TurnEngine) shouldStopRunning(turn *turn) bool {
 	return !turn.State.HasToolCalls || turn.Stop
 }
 
-func (e *TurnEngine) executeTurn(ctx stdctx.Context, turn *turn) error {
+func (e *TurnEngine) executeTurn(ctx context.Context, turn *turn) error {
 	for turn.State.Phase != phaseComplete {
 		res, err := e.executePhase(ctx, turn)
 		if err != nil {
@@ -403,7 +403,7 @@ func (e *TurnEngine) executeTurn(ctx stdctx.Context, turn *turn) error {
 			if turn.State.Response != nil && len(turn.State.Response.Parts) > 0 {
 				if p, ok := e.processors[phasePersisting]; ok {
 					// Use a timeout for emergency persistence to prevent hanging the shutdown sequence.
-					saveCtx, cancel := stdctx.WithTimeout(stdctx.Background(), 2*time.Second)
+					saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 					defer cancel()
 					_ = p.Process(saveCtx, turn)
 				}
@@ -420,7 +420,7 @@ func (e *TurnEngine) executeTurn(ctx stdctx.Context, turn *turn) error {
 	return nil
 }
 
-func (e *TurnEngine) executePhase(ctx stdctx.Context, turn *turn) (processResult, error) {
+func (e *TurnEngine) executePhase(ctx context.Context, turn *turn) (processResult, error) {
 	processor, ok := e.processors[turn.State.Phase]
 	if !ok {
 		return processResult{}, NewAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
@@ -467,7 +467,7 @@ func (e *TurnEngine) notifyTransition(from, to turnPhase, state *turnState) {
 // ContextRefiner prepares the context for the LLM call.
 type ContextRefiner struct{}
 
-func (p *ContextRefiner) Process(ctx stdctx.Context, turn *turn) processResult {
+func (p *ContextRefiner) Process(ctx context.Context, turn *turn) processResult {
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
 		category := ErrFatal
@@ -486,7 +486,7 @@ func (p *ContextRefiner) Process(ctx stdctx.Context, turn *turn) processResult {
 // InferenceStep calls the LLM.
 type InferenceStep struct{}
 
-func (p *InferenceStep) Process(ctx stdctx.Context, turn *turn) processResult {
+func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
 	respContent, metrics, err := p.invokeModel(ctx, turn)
 	if respContent != nil {
 		p.updateState(turn, respContent, metrics)
@@ -503,7 +503,7 @@ func (p *InferenceStep) Process(ctx stdctx.Context, turn *turn) processResult {
 	return p.routeBasedOnContent(respContent)
 }
 
-func (p *InferenceStep) invokeModel(ctx stdctx.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
+func (p *InferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
 	history := turn.State.PreparedHistory
 	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
@@ -558,7 +558,7 @@ func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
 // ExecutionStep executes tools if any.
 type ExecutionStep struct{}
 
-func (p *ExecutionStep) Process(ctx stdctx.Context, turn *turn) processResult {
+func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 	if !turn.State.HasToolCalls {
 		return processResult{NextPhase: phasePersisting}
 	}
@@ -587,7 +587,7 @@ func (p *ExecutionStep) Process(ctx stdctx.Context, turn *turn) processResult {
 // PersistenceStep saves the response and tool results to history.
 type PersistenceStep struct{}
 
-func (p *PersistenceStep) Process(ctx stdctx.Context, turn *turn) processResult {
+func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult {
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := ErrFatal
@@ -616,7 +616,7 @@ type RecoveryStep struct {
 	Policy RetryPolicy
 }
 
-func (p *RecoveryStep) Process(ctx stdctx.Context, turn *turn) processResult {
+func (p *RecoveryStep) Process(ctx context.Context, turn *turn) processResult {
 	err := turn.State.LastError
 	if err == nil {
 		return processResult{NextPhase: phaseComplete}
@@ -637,7 +637,7 @@ func (p *RecoveryStep) handleFailure(err error) processResult {
 	return processResult{NextPhase: phaseComplete, Error: err}
 }
 
-func (p *RecoveryStep) attemptRetry(ctx stdctx.Context, turn *turn, delay time.Duration) processResult {
+func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
 	turn.State.RetryCount++
 
 	// Publish retry notification to the UI/EventBus

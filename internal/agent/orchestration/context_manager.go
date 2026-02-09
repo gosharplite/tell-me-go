@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package context handles the preparation and optimization of history for LLM consumption.
-package context
+package orchestration
 
 import (
 	"context"
