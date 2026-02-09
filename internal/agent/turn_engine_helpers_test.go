@@ -14,10 +14,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // MockGateway implements llm.LLMGateway for testing.
@@ -150,8 +150,8 @@ func (m *mockEngineCostTracker) GetDailyCost(ctx context.Context) float64 {
 	return 0
 }
 
-func (m *mockEngineCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
-	return pricing.UsageStats{}, 0
+func (m *mockEngineCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
+	return domain_pricing.UsageStats{}, 0
 }
 
 func (m *mockEngineCostTracker) Warmup() {}

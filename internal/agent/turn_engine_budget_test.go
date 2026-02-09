@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -41,8 +40,8 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
 	// Setup cost tracker with a high rate
-	pricingData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
 			"test-model": {Miss: 1.0, Comp: 1.0}, // $1 per million tokens
 		},
 	}

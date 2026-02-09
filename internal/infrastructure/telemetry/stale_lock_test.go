@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -124,7 +124,7 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 	}
 
 	// We need a pricing override for "gpt-4-special" to test recalculation
-	m.pricingOverrides = map[string]pricing.ModelPricing{
+	m.pricingOverrides = map[string]domain_pricing.ModelPricing{
 		"gpt-4-special": {
 			Hit:  10.0,
 			Miss: 100.0,

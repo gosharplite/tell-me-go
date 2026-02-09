@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 func TestGetCostSummary_ReportFormat(t *testing.T) {
@@ -27,7 +27,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session1",
 			Model:     "model1",
 			TotalCost: 1.5,
-			Usage: pricing.UsageStats{
+			Usage: domain_pricing.UsageStats{
 				PromptTokens:   1000,
 				CachedTokens:   200,
 				ResponseTokens: 300,
@@ -39,7 +39,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session2",
 			Model:     "model1",
 			TotalCost: 0.5,
-			Usage: pricing.UsageStats{
+			Usage: domain_pricing.UsageStats{
 				PromptTokens:   500,
 				CachedTokens:   0,
 				ResponseTokens: 100,
@@ -51,7 +51,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 			Session:   "session3",
 			Model:     "model1",
 			TotalCost: 2.0,
-			Usage: pricing.UsageStats{
+			Usage: domain_pricing.UsageStats{
 				PromptTokens:   2000,
 				CachedTokens:   500,
 				ResponseTokens: 400,
@@ -125,7 +125,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 			Session:   "session-pst",
 			Model:     "model1",
 			TotalCost: 1.0,
-			Usage: pricing.UsageStats{
+			Usage: domain_pricing.UsageStats{
 				PromptTokens: 1000,
 			},
 		},
@@ -173,7 +173,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 		Session:   "session-utc",
 		Model:     "model1",
 		TotalCost: 1.0,
-		Usage: pricing.UsageStats{
+		Usage: domain_pricing.UsageStats{
 			PromptTokens: 1000,
 		},
 	})
@@ -197,7 +197,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 		Session:   "session-rollover",
 		Model:     "model1",
 		TotalCost: 1.0,
-		Usage: pricing.UsageStats{
+		Usage: domain_pricing.UsageStats{
 			PromptTokens: 1000,
 		},
 	})
@@ -233,10 +233,10 @@ func TestGetCostSummary_Filters(t *testing.T) {
 	ts4 := time.Date(2023, 10, 27, 0, 1, 0, 0, tz)
 
 	history := []SessionCostRecord{
-		{Date: "2023-10-25", Timestamp: ts1, Session: "s1", TotalCost: 0.1, Usage: pricing.UsageStats{PromptTokens: 100}},
-		{Date: "2023-10-25", Timestamp: ts2, Session: "s2", TotalCost: 0.2, Usage: pricing.UsageStats{PromptTokens: 200}},
-		{Date: "2023-10-26", Timestamp: ts3, Session: "s3", TotalCost: 0.3, Usage: pricing.UsageStats{PromptTokens: 300}},
-		{Date: "2023-10-27", Timestamp: ts4, Session: "s4", TotalCost: 0.4, Usage: pricing.UsageStats{PromptTokens: 400}},
+		{Date: "2023-10-25", Timestamp: ts1, Session: "s1", TotalCost: 0.1, Usage: domain_pricing.UsageStats{PromptTokens: 100}},
+		{Date: "2023-10-25", Timestamp: ts2, Session: "s2", TotalCost: 0.2, Usage: domain_pricing.UsageStats{PromptTokens: 200}},
+		{Date: "2023-10-26", Timestamp: ts3, Session: "s3", TotalCost: 0.3, Usage: domain_pricing.UsageStats{PromptTokens: 300}},
+		{Date: "2023-10-27", Timestamp: ts4, Session: "s4", TotalCost: 0.4, Usage: domain_pricing.UsageStats{PromptTokens: 400}},
 	}
 	data, _ := json.Marshal(history)
 	_ = os.WriteFile(historyPath, data, 0644)
@@ -346,19 +346,19 @@ func TestGetCostSummary_MalformedRecords(t *testing.T) {
 			Timestamp: time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC),
 			Session:   "valid",
 			TotalCost: 1.0,
-			Usage:     pricing.UsageStats{PromptTokens: 1000},
+			Usage:     domain_pricing.UsageStats{PromptTokens: 1000},
 		},
 		{
 			Date:      "invalid-date",
 			Session:   "malformed",
 			TotalCost: 2.0,
-			Usage:     pricing.UsageStats{PromptTokens: 2000},
+			Usage:     domain_pricing.UsageStats{PromptTokens: 2000},
 		},
 		{
 			// Missing both Date and Timestamp
 			Session:   "missing",
 			TotalCost: 3.0,
-			Usage:     pricing.UsageStats{PromptTokens: 3000},
+			Usage:     domain_pricing.UsageStats{PromptTokens: 3000},
 		},
 	}
 

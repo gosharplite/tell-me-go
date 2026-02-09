@@ -7,32 +7,32 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 func TestCostCalculator_Calculate(t *testing.T) {
-	pricingData := pricing.PricingData{
+	pricingData := domain_pricing.PricingData{
 		SearchQuery: 0.01,
 	}
-	modelPricing := pricing.ModelPricing{
+	modelPricing := domain_pricing.ModelPricing{
 		Hit:  0.1,
 		Miss: 1.0,
 		Comp: 2.0,
 	}
 
-	calc := &pricing.CostCalculator{
+	calc := &domain_pricing.CostCalculator{
 		Pricing: pricingData,
 		Model:   modelPricing,
 	}
 
 	tests := []struct {
 		name     string
-		stats    pricing.UsageStats
+		stats    domain_pricing.UsageStats
 		wantCost float64
 	}{
 		{
 			name: "Standard usage",
-			stats: pricing.UsageStats{
+			stats: domain_pricing.UsageStats{
 				CachedTokens:   1000000, // $0.1
 				PromptTokens:   2000000, // 1000000 miss * $1.0 = $1.0
 				ResponseTokens: 1000000, // $2.0
@@ -81,7 +81,7 @@ func TestAccumulate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stats := &pricing.UsageStats{}
+			stats := &domain_pricing.UsageStats{}
 			Accumulate(stats, tt.mt)
 
 			if stats.PromptTokens != tt.wantPrompt {

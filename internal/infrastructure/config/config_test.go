@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 func TestLoad(t *testing.T) {

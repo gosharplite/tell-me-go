@@ -12,30 +12,30 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // GetPricing returns the hardcoded fallback pricing data.
-func GetPricing(ctx context.Context, sm domain_security.ISecurityManager, outputDir string) pricing.PricingData {
+func GetPricing(ctx context.Context, sm domain_security.ISecurityManager, outputDir string) domain_pricing.PricingData {
 	return config.DefaultPricing()
 }
 
 // GetModelPricing finds the best pricing match for a model name.
-func GetModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPricing {
+func GetModelPricing(modelName string, pd domain_pricing.PricingData) domain_pricing.ModelPricing {
 	return pd.GetModelPricing(modelName)
 }
 
 // ParseUsage extracts usage statistics and calculates total cost from a log file.
-func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (pricing.UsageStats, float64, string, time.Time, error) {
+func ParseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return pricing.UsageStats{}, 0, "", time.Time{}, err
+		return domain_pricing.UsageStats{}, 0, "", time.Time{}, err
 	}
 	defer f.Close()
 
-	var stats pricing.UsageStats
+	var stats domain_pricing.UsageStats
 	var totalCost float64
 	var detectedModel string
 	var firstTimestamp time.Time
@@ -78,7 +78,7 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 			if mt.Cost > 0 {
 				totalCost += mt.Cost
 			} else {
-				calc := &pricing.CostCalculator{Pricing: pd, Model: p}
+				calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
 				totalCost += calc.Calculate(turnStats).TotalCost
 			}
 			continue
@@ -88,8 +88,8 @@ func ParseUsage(path string, pd pricing.PricingData, defaultModel string) (prici
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
-func Accumulate(stats *pricing.UsageStats, mt llm.Metrics) pricing.UsageStats {
-	turn := pricing.UsageStats{
+func Accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
+	turn := domain_pricing.UsageStats{
 		PromptTokens:   int64(mt.PromptTokens),
 		ResponseTokens: int64(mt.ResponseTokens),
 		CachedTokens:   int64(mt.CachedTokens),

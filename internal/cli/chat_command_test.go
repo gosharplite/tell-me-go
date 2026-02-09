@@ -22,7 +22,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -113,10 +112,10 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 		return mock
 	}
-	cmd.ClientFactory = func(cfg *config.Config, pricingData pricing.PricingData) (*llm.Client, error) {
+	cmd.ClientFactory = func(cfg *config.Config, pricingData domain_pricing.PricingData) (*llm.Client, error) {
 		return nil, nil
 	}
 
@@ -203,7 +202,7 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 		ModeDir: tmpDir,
 		LogPath: filepath.Join(tmpDir, "tokens.log"),
 	}
-	pricingOverrides := make(map[string]pricing.ModelPricing)
+	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 
 	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides)
 

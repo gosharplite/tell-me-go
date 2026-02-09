@@ -37,7 +37,6 @@ The project is organized into the following top-level directories:
         - `internal/infrastructure/history`: Conversation history persistence.
         - `internal/infrastructure/storage`: File system and asset management.
         - `internal/infrastructure/security`: Sandbox, path guardrails, and confirmation gates.
-        - `internal/infrastructure/pricing`: Economic awareness and cost calculation.
         - `internal/infrastructure/telemetry`: Logging, metrics, and event tracking.
         - `internal/infrastructure/registry`: Tool and command registration.
         - `internal/infrastructure/exec`: OS-level command execution.
@@ -83,7 +82,6 @@ tell-me-go/
 │   │   ├── config/       # Configuration
 │   │   ├── history/      # Persistence
 │   │   ├── llm/          # Gemini Adapter
-│   │   ├── pricing/      # Cost Calculation
 │   │   ├── security/     # Security Guardrails
 │   │   ├── storage/      # FS Utilities & Assets
 │   │   ├── telemetry/    # Observability

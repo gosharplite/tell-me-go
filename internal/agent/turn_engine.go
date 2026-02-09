@@ -15,7 +15,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // Clock provides a way to get the current time and handle delays, facilitating deterministic testing.
@@ -156,7 +155,7 @@ type TurnEngine struct {
 	clock            Clock
 	sm               domain_security.ISecurityManager
 	model            string
-	pricingOverrides map[string]pricing.ModelPricing
+	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 }
@@ -215,7 +214,7 @@ func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
 }
 
 // WithConfig sets the security and usage configuration for the engine.
-func WithConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) EngineOption {
+func WithConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) EngineOption {
 	return func(e *TurnEngine) {
 		e.sm = sm
 		e.model = model

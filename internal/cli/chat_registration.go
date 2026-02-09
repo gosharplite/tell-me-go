@@ -6,10 +6,10 @@ package cli
 import (
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )

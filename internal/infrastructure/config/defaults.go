@@ -4,7 +4,7 @@
 package config
 
 import (
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 // DefaultPricing returns the hardcoded fallback pricing data.

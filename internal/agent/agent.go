@@ -18,7 +18,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -38,7 +37,7 @@ type RuntimeConfig struct {
 	Limits             events.Limits
 	Model              string
 	Mode               string
-	PricingOverrides   map[string]pricing.ModelPricing
+	PricingOverrides   map[string]domain_pricing.ModelPricing
 	HardBudgetLimit    float64
 	SystemInstructions string
 }
@@ -65,7 +64,7 @@ type Agent struct {
 type AgentOption func(*Agent)
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]pricing.ModelPricing) AgentOption {
+func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) AgentOption {
 	return func(a *Agent) {
 		a.config.Model = model
 		a.config.Mode = mode

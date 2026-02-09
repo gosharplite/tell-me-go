@@ -20,7 +20,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
@@ -28,10 +27,10 @@ import (
 // SessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
 type SessionCostTracker struct {
 	mu        sync.Mutex
-	stats     pricing.UsageStats
+	stats     domain_pricing.UsageStats
 	totalCost float64
-	pricing   pricing.PricingData
-	model     pricing.ModelPricing
+	pricing   domain_pricing.PricingData
+	model     domain_pricing.ModelPricing
 	modelName string
 	logFile   string
 	mode      string
@@ -40,7 +39,7 @@ type SessionCostTracker struct {
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, mode string, modelName string, model pricing.ModelPricing, pricing pricing.PricingData) *SessionCostTracker {
+func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, mode string, modelName string, model domain_pricing.ModelPricing, pricing domain_pricing.PricingData) *SessionCostTracker {
 	return &SessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
@@ -139,7 +138,7 @@ func (t *SessionCostTracker) getRecordTimestamp(r SessionCostRecord, loc *time.L
 }
 
 // GetStats returns the accumulated usage statistics and total cost.
-func (t *SessionCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
+func (t *SessionCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -182,7 +181,7 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 
 	turnStats := Accumulate(&t.stats, mt)
 
-	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
+	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	t.totalCost += calc.Calculate(turnStats).TotalCost
 }
 
@@ -197,8 +196,8 @@ func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
 	}
 	p := GetModelPricing(mtModel, t.pricing)
 
-	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
-	var dummy pricing.UsageStats
+	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
+	var dummy domain_pricing.UsageStats
 	turnStats := Accumulate(&dummy, mt)
 	return calc.Calculate(turnStats).TotalCost
 }
@@ -214,9 +213,9 @@ func (t *SessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	}
 	p := GetModelPricing(mtModel, t.pricing)
 
-	var dummy pricing.UsageStats
+	var dummy domain_pricing.UsageStats
 	turnStats := Accumulate(&dummy, mt)
-	calc := &pricing.CostCalculator{Pricing: t.pricing, Model: p}
+	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	turnCost := calc.Calculate(turnStats).TotalCost
 
 	Accumulate(&t.stats, mt)
@@ -231,7 +230,7 @@ type metricsManager struct {
 	logFile          string
 	model            string
 	mode             string
-	pricingOverrides map[string]pricing.ModelPricing
+	pricingOverrides map[string]domain_pricing.ModelPricing
 	ledger           *LedgerStore
 }
 
@@ -245,7 +244,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]pricing.ModelPricing) {
+func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -307,7 +306,7 @@ func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, 
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.
-func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]pricing.ModelPricing) error {
+func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model, mode, sessionID string, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logPath,
@@ -333,7 +332,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager,
 	return appendSummaryToLog(logPath, usage, totalCost, model)
 }
 
-func resolveUsageForSummary(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model string, overrides map[string]pricing.ModelPricing) (pricing.UsageStats, float64, error) {
+func resolveUsageForSummary(ctx context.Context, sm domain_security.ISecurityManager, tracker domain_pricing.ICostTracker, logPath, model string, overrides map[string]domain_pricing.ModelPricing) (domain_pricing.UsageStats, float64, error) {
 	if tracker != nil {
 		usage, totalCost := tracker.GetStats(ctx)
 		return usage, totalCost, nil
@@ -347,14 +346,14 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.ISecurityMan
 	usage, totalCost, _, _, err := ParseUsage(logPath, pd, model)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return pricing.UsageStats{}, 0, nil
+			return domain_pricing.UsageStats{}, 0, nil
 		}
-		return pricing.UsageStats{}, 0, fmt.Errorf("failed to parse usage log for summary: %w", err)
+		return domain_pricing.UsageStats{}, 0, fmt.Errorf("failed to parse usage log for summary: %w", err)
 	}
 	return usage, totalCost, nil
 }
 
-func appendSummaryToLog(logPath string, usage pricing.UsageStats, totalCost float64, model string) error {
+func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCost float64, model string) error {
 	if usage.PromptTokens == 0 && usage.ResponseTokens == 0 && usage.SearchQueries == 0 {
 		return nil
 	}
@@ -510,7 +509,7 @@ func (m *metricsManager) getCostSummary(ctx context.Context, args costSummaryArg
 	return m.formatSummaryTable(args, intervalTotals, intervalUsage, keys, location), nil
 }
 
-func (m *metricsManager) getModelPricing(modelName string, pd pricing.PricingData) pricing.ModelPricing {
+func (m *metricsManager) getModelPricing(modelName string, pd domain_pricing.PricingData) domain_pricing.ModelPricing {
 	return pd.GetModelPricing(modelName)
 }
 
@@ -543,7 +542,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 
 	// 2. Delegate financial math to Calculator
 	p := GetModelPricing(detectedModel, pd)
-	calc := &pricing.CostCalculator{Pricing: pd, Model: p}
+	calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
 	breakdown := calc.Calculate(usage)
 	breakdown.TotalCost = totalCost // Use the per-turn accurate total cost
 
@@ -570,7 +569,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	return m.renderReport(pd, breakdown), nil
 }
 
-func (m *metricsManager) renderReport(pricing pricing.PricingData, breakdown pricing.CostBreakdown) string {
+func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakdown domain_pricing.CostBreakdown) string {
 	p := m.getModelPricing(m.model, pricing)
 	stats := breakdown.Stats
 
@@ -676,9 +675,9 @@ func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Locati
 	return startFilter, endFilter, nil
 }
 
-func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]pricing.UsageStats) {
+func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]domain_pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
-	intervalUsage := make(map[string]pricing.UsageStats)
+	intervalUsage := make(map[string]domain_pricing.UsageStats)
 
 	for _, r := range history {
 		ts := m.getRecordTimestamp(r)
@@ -708,7 +707,7 @@ func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, en
 	return intervalTotals, intervalUsage
 }
 
-func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]pricing.UsageStats, []string, *time.Location, error) {
+func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]domain_pricing.UsageStats, []string, *time.Location, error) {
 	location := time.Local
 	if args.Billing {
 		location = time.FixedZone("UTC-8", -8*3600)
@@ -741,7 +740,7 @@ func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSu
 	return intervalTotals, intervalUsage, keys, location, nil
 }
 
-func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals map[string]float64, intervalUsage map[string]pricing.UsageStats, keys []string, location *time.Location) string {
+func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals map[string]float64, intervalUsage map[string]domain_pricing.UsageStats, keys []string, location *time.Location) string {
 	title := "AI Usage Cost Summary (by Date)"
 	if args.Interval == "hour" {
 		title = "AI Usage Cost Summary (by Hour)"

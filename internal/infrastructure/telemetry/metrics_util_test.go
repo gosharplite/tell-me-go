@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 func TestParseUsage_Robustness(t *testing.T) {
-	pricingData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
 			"gpt-4": {Miss: 10.0, Comp: 30.0}, // $10 per 1M input, $30 per 1M output
 		},
 	}
@@ -126,7 +126,7 @@ func TestParseUsage_Robustness(t *testing.T) {
 }
 
 func TestParseUsage_InvalidPath(t *testing.T) {
-	_, _, _, _, err := ParseUsage("non-existent-file.log", pricing.PricingData{}, "gpt-4")
+	_, _, _, _, err := ParseUsage("non-existent-file.log", domain_pricing.PricingData{}, "gpt-4")
 	if err == nil {
 		t.Error("expected error for non-existent file, got nil")
 	}
@@ -139,7 +139,7 @@ func TestParseUsage_EmptyFile(t *testing.T) {
 	}
 	tmpFile.Close()
 
-	stats, totalCost, detectedModel, timestamp, err := ParseUsage(tmpFile.Name(), pricing.PricingData{}, "gpt-4")
+	stats, totalCost, detectedModel, timestamp, err := ParseUsage(tmpFile.Name(), domain_pricing.PricingData{}, "gpt-4")
 	if err != nil {
 		t.Errorf("ParseUsage() unexpected error: %v", err)
 	}
@@ -171,8 +171,8 @@ func TestParseUsage_LargeLine(t *testing.T) {
 		t.Fatalf("failed to write large log file: %v", err)
 	}
 
-	pricingData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
 			"gpt-4": {Miss: 10.0, Comp: 30.0},
 		},
 	}
@@ -203,8 +203,8 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 		t.Fatalf("failed to write very large log file: %v", err)
 	}
 
-	pricingData := pricing.PricingData{
-		Models: map[string]pricing.ModelPricing{
+	pricingData := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
 			"gpt-4": {Miss: 10.0, Comp: 30.0},
 		},
 	}

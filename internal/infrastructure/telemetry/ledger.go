@@ -15,19 +15,19 @@ import (
 	"sync"
 	"time"
 
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // SessionCostRecord represents a single session's financial footprint.
 type SessionCostRecord struct {
-	Date      string             `json:"date"`      // Keep for backward compatibility
-	Timestamp time.Time          `json:"timestamp"` // New source of truth
-	Session   string             `json:"session"`
-	Model     string             `json:"model"`
-	TotalCost float64            `json:"total_cost"`
-	Usage     pricing.UsageStats `json:"usage,omitempty"`
+	Date      string                    `json:"date"`      // Keep for backward compatibility
+	Timestamp time.Time                 `json:"timestamp"` // New source of truth
+	Session   string                    `json:"session"`
+	Model     string                    `json:"model"`
+	TotalCost float64                   `json:"total_cost"`
+	Usage     domain_pricing.UsageStats `json:"usage,omitempty"`
 }
 
 var (
@@ -42,11 +42,11 @@ const ledgerRecoveryTimeout = 10 * time.Minute
 type LedgerStore struct {
 	sm               domain_security.ISecurityManager
 	model            string
-	pricingOverrides map[string]pricing.ModelPricing
+	pricingOverrides map[string]domain_pricing.ModelPricing
 }
 
 // NewLedgerStore creates a new LedgerStore.
-func NewLedgerStore(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]pricing.ModelPricing) *LedgerStore {
+func NewLedgerStore(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) *LedgerStore {
 	return &LedgerStore{
 		sm:               sm,
 		model:            model,
@@ -160,7 +160,7 @@ func (ls *LedgerStore) getSessionID(path, globalDir string) string {
 	return sessionID
 }
 
-func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing pricing.PricingData) (*SessionCostRecord, error) {
+func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing domain_pricing.PricingData) (*SessionCostRecord, error) {
 	sessionID := ls.getSessionID(path, globalDir)
 
 	usage, totalCost, detectedModel, timestamp, err := ParseUsage(path, pricing, ls.model)

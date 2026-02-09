@@ -20,7 +20,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -52,8 +51,8 @@ type integrationMockCostTracker struct{}
 
 func (m *integrationMockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
 func (m *integrationMockCostTracker) GetDailyCost(ctx context.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetStats(ctx context.Context) (pricing.UsageStats, float64) {
-	return pricing.UsageStats{}, 0
+func (m *integrationMockCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
+	return domain_pricing.UsageStats{}, 0
 }
 func (m *integrationMockCostTracker) Accumulate(mt domain_llm.Metrics)                  {}
 func (m *integrationMockCostTracker) CalculateCost(mt domain_llm.Metrics) float64       { return 0 }
@@ -102,10 +101,10 @@ MAX_HISTORY_TURNS: 10
 		Stderr:  &stderr,
 		HomeDir: tmpDir,
 		SM:      sm,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return &integrationMockChatter{}
 		},
-		ClientFactory: func(cfg *config.Config, p pricing.PricingData) (*llm.Client, error) {
+		ClientFactory: func(cfg *config.Config, p domain_pricing.PricingData) (*llm.Client, error) {
 			return &llm.Client{}, nil
 		},
 	}
