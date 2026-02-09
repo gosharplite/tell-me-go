@@ -46,7 +46,7 @@ type RuntimeConfig struct {
 // Agent represents the chat orchestration logic (Stateless Service).
 type Agent struct {
 	mu            sync.RWMutex
-	gateway       *ResilientClient
+	gateway       *llm.ResilientClient
 	engine        *TurnEngine
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
@@ -89,7 +89,7 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 // New creates a new Agent using functional options.
 func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
 	bus := &events.SimpleEventBus{}
-	gw := NewResilientClient(client, disableStreaming)
+	gw := llm.NewResilientClient(client, disableStreaming)
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
