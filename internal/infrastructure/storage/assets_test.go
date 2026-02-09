@@ -11,17 +11,27 @@ import (
 )
 
 func TestAssetStore(t *testing.T) {
-	tmpDir := t.TempDir()
-	store := NewAssetStore(tmpDir)
+	t.Run("SaveAndLoad", testSaveAndLoad)
+	t.Run("Metadata", testMetadata)
+	t.Run("PathSanitization", testPathSanitization)
+	t.Run("MissingAssets", testMissingAssets)
+	t.Run("Context", testContext)
+}
+
+func testSaveAndLoad(t *testing.T) {
+	store := NewAssetStore(t.TempDir())
 	ctx := context.Background()
 
-	t.Run("Put and Get", func(t *testing.T) {
-		data := []byte("hello world")
-		id, err := store.Put(ctx, data)
-		if err != nil {
-			t.Fatalf("Put failed: %v", err)
+	assertContent := func(t *testing.T, got, want []byte) {
+		t.Helper()
+		if !bytes.Equal(got, want) {
+			t.Errorf("got %s, want %s", got, want)
 		}
+	}
 
+	t.Run("Basic", func(t *testing.T) {
+		data := []byte("hello world")
+		id := createTestAsset(t, store, data)
 		if id == "" {
 			t.Fatal("expected non-empty ID")
 		}
@@ -30,13 +40,10 @@ func TestAssetStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get failed: %v", err)
 		}
-
-		if !bytes.Equal(got, data) {
-			t.Errorf("got %s, want %s", got, data)
-		}
+		assertContent(t, got, data)
 	})
 
-	t.Run("Put empty data", func(t *testing.T) {
+	t.Run("EmptyData", func(t *testing.T) {
 		id, err := store.Put(ctx, []byte{})
 		if err != nil {
 			t.Fatalf("Put failed: %v", err)
@@ -46,51 +53,117 @@ func TestAssetStore(t *testing.T) {
 		}
 	})
 
-	t.Run("Get empty ID", func(t *testing.T) {
-		got, err := store.Get(ctx, "")
-		if err != nil {
-			t.Fatalf("Get failed: %v", err)
-		}
-		if got != nil {
-			t.Error("expected nil data")
-		}
-	})
-
-	t.Run("Put existing data", func(t *testing.T) {
+	t.Run("Deduplication", func(t *testing.T) {
 		data := []byte("existing")
-		id1, _ := store.Put(ctx, data)
-		id2, err := store.Put(ctx, data)
-		if err != nil {
-			t.Fatalf("Put failed: %v", err)
-		}
+		id1 := createTestAsset(t, store, data)
+		id2 := createTestAsset(t, store, data)
 		if id1 != id2 {
 			t.Errorf("expected same ID, got %s and %s", id1, id2)
 		}
 	})
+}
 
-	t.Run("GetPath short ID", func(t *testing.T) {
+func testMetadata(t *testing.T) {
+	store := NewAssetStore(t.TempDir())
+	ctx := context.Background()
+	content := []byte("metadata test content")
+	id := createTestAsset(t, store, content)
+
+	path := store.GetPath(id)
+	info, err := store.fs.Stat(ctx, path)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+
+	t.Run("Size", func(t *testing.T) {
+		if info.Size() != int64(len(content)) {
+			t.Errorf("got size %d, want %d", info.Size(), len(content))
+		}
+	})
+
+	t.Run("Timestamp", func(t *testing.T) {
+		if info.ModTime().IsZero() {
+			t.Error("expected non-zero modification time")
+		}
+	})
+}
+
+func testPathSanitization(t *testing.T) {
+	store := NewAssetStore(t.TempDir())
+
+	t.Run("ShortID", func(t *testing.T) {
 		path := store.GetPath("a")
-		expected := filepath.Join(tmpDir, "a")
-		if path != expected {
-			t.Errorf("got %s, want %s", path, expected)
+		if filepath.Base(path) != "a" {
+			t.Errorf("expected filename 'a', got %s", filepath.Base(path))
 		}
 	})
 
-	t.Run("Context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
-		data := []byte("canceled")
-		_, err := store.Put(ctx, data)
-		if err == nil {
-			t.Error("expected error for canceled context, got nil")
-		}
-
-		_, err = store.Get(ctx, "any")
-		if err == nil {
-			t.Error("expected error for canceled context, got nil")
+	t.Run("LongID", func(t *testing.T) {
+		id := "abcdef123456"
+		path := store.GetPath(id)
+		expectedSuffix := filepath.Join("ab", id)
+		// Check that it ends with ab/abcdef123456
+		if !bytes.HasSuffix([]byte(path), []byte(expectedSuffix)) {
+			t.Errorf("expected path to end with %s, got %s", expectedSuffix, path)
 		}
 	})
+}
+
+func testMissingAssets(t *testing.T) {
+	store := NewAssetStore(t.TempDir())
+	ctx := context.Background()
+
+	assertNil := func(t *testing.T, got []byte) {
+		t.Helper()
+		if got != nil {
+			t.Error("expected nil data")
+		}
+	}
+
+	t.Run("EmptyID", func(t *testing.T) {
+		got, err := store.Get(ctx, "")
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+		assertNil(t, got)
+	})
+
+	t.Run("NonExistent", func(t *testing.T) {
+		got, err := store.Get(ctx, "nonexistent")
+		if err == nil {
+			t.Error("expected error for non-existent asset, got nil")
+		}
+		assertNil(t, got)
+	})
+}
+
+func testContext(t *testing.T) {
+	store := NewAssetStore(t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	t.Run("PutCanceled", func(t *testing.T) {
+		_, err := store.Put(ctx, []byte("canceled"))
+		if err == nil {
+			t.Error("expected error for canceled context")
+		}
+	})
+
+	t.Run("GetCanceled", func(t *testing.T) {
+		_, err := store.Get(ctx, "any")
+		if err == nil {
+			t.Error("expected error for canceled context")
+		}
+	})
+}
+
+func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
+	t.Helper()
+	id, err := store.Put(context.Background(), content)
+	if err != nil {
+		t.Fatalf("failed to create test asset: %v", err)
+	}
+	return id
 }
 
 func TestAssetStore_WithFileSystem(t *testing.T) {
