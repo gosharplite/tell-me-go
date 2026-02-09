@@ -85,61 +85,58 @@ func Load(path string) (*Config, error) {
 
 // ResolveThinkingBudget returns the best matching thinking budget for the model.
 func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.PricingData) int {
-	// 1. Check for exact model match in config
-	if mCfg, ok := c.Models[model]; ok && mCfg.MaxThinkingBudget > 0 {
+	// 1. Try Config overrides
+	if mCfg, ok := findBestMatch(c.Models, model, func(m ModelConfig) bool {
+		return m.MaxThinkingBudget > 0
+	}); ok {
 		return mCfg.MaxThinkingBudget
 	}
-	// 2. Check for substring matches in config
-	for k, v := range c.Models {
-		if k != "default" && strings.Contains(model, k) && v.MaxThinkingBudget > 0 {
-			return v.MaxThinkingBudget
-		}
+
+	// 2. Try Pricing defaults
+	if budget, ok := findBestMatch(pricingData.ThinkingBudgets, model, func(int) bool {
+		return true
+	}); ok {
+		return budget
 	}
-	// 3. Fallback to Pricing data
-	if val, ok := pricingData.ThinkingBudgets[model]; ok {
-		return val
-	}
-	for k, v := range pricingData.ThinkingBudgets {
-		if k != "default" && strings.Contains(model, k) {
-			return v
-		}
-	}
-	// 4. Ultimate fallback
+
+	// 3. Ultimate fallback
 	return pricingData.ThinkingBudgets["default"]
 }
 
 // ResolveContextWindow returns the appropriate context window limit.
 func (c *Config) ResolveContextWindow() int {
 	maxTokens := c.MaxHistoryTokens
-	if mCfg, ok := c.Models[c.Model]; ok && mCfg.ContextWindow > 0 {
+	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
+		return m.ContextWindow > 0
+	}); ok {
 		if maxTokens > mCfg.ContextWindow {
 			return mCfg.ContextWindow
 		}
 		return maxTokens
-	}
-
-	// Fallback to substring matching
-	for k, v := range c.Models {
-		if k != "default" && strings.Contains(c.Model, k) && v.ContextWindow > 0 {
-			if maxTokens > v.ContextWindow {
-				return v.ContextWindow
-			}
-			break
-		}
 	}
 	return maxTokens
 }
 
 // ResolveTieredThreshold returns the tiered cost threshold for the model.
 func (c *Config) ResolveTieredThreshold(pData pricing.PricingData) int {
-	if mPricing, ok := pData.Models[c.Model]; ok && mPricing.TieredThreshold > 0 {
+	if mPricing, ok := findBestMatch(pData.Models, c.Model, func(p pricing.ModelPricing) bool {
+		return p.TieredThreshold > 0
+	}); ok {
 		return int(mPricing.TieredThreshold)
 	}
+	return DefaultTieredThreshold
+}
 
-	for k, v := range pData.Models {
-		if k != "default" && strings.Contains(c.Model, k) && v.TieredThreshold > 0 {
-			return int(v.TieredThreshold)
+// findBestMatch encapsulates the priority matching logic: exact match first, then substring match.
+func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, bool) {
+	if val, ok := m[key]; ok && isValid(val) {
+		return val, true
+	}
+	for k, v := range m {
+		if k != "default" && strings.Contains(key, k) && isValid(v) {
+			return v, true
 		}
 	}
-	return DefaultTieredThreshold
+	var zero T
+	return zero, false
 }
