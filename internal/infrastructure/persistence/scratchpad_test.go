@@ -18,112 +18,152 @@ func TestScratchpadStore(t *testing.T) {
 	fs := storage.DefaultFileSystem
 
 	t.Run("Write and Read", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scratchFile := filepath.Join(tempDir, "scratchpad.md")
-		store := NewScratchpadStore(fs, scratchFile)
-
-		content := "Initial thoughts."
-		_, err := store.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "write",
-			"content": content,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store.ManageScratchpad(ctx, map[string]interface{}{
-			"action": "read",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Text != content {
-			t.Errorf("got %q, want %q", res.Text, content)
-		}
+		store, _ := setupScratchpadStore(t, fs)
+		testScratchpadWrite(t, store, ctx)
 	})
 
 	t.Run("Append", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scratchFile := filepath.Join(tempDir, "scratchpad.md")
-		store := NewScratchpadStore(fs, scratchFile)
-
-		if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "write",
-			"content": "Line 1",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := store.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "append",
-			"content": "Line 2",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		expected := "Line 1\nLine 2"
-		if res.Text != expected {
-			t.Errorf("got %q, want %q", res.Text, expected)
-		}
+		store, _ := setupScratchpadStore(t, fs)
+		testScratchpadAppend(t, store, ctx)
 	})
 
 	t.Run("Clear", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scratchFile := filepath.Join(tempDir, "scratchpad.md")
-		store := NewScratchpadStore(fs, scratchFile)
-
-		if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "write",
-			"content": "Something",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Text != "(Scratchpad is empty)" {
-			t.Errorf("expected empty message, got %q", res.Text)
-		}
+		store, _ := setupScratchpadStore(t, fs)
+		testScratchpadClear(t, store, ctx)
 	})
 
 	t.Run("Persistence", func(t *testing.T) {
-		tempDir := t.TempDir()
-		scratchFile := filepath.Join(tempDir, "scratchpad.md")
-		store1 := NewScratchpadStore(fs, scratchFile)
-
-		if _, err := store1.ManageScratchpad(ctx, map[string]interface{}{
-			"action":  "write",
-			"content": "Persist me",
-		}); err != nil {
-			t.Fatal(err)
-		}
-
-		store2 := NewScratchpadStore(fs, scratchFile)
-		err := store2.Load(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		res, err := store2.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Text != "Persist me" {
-			t.Error("scratchpad was not persisted")
-		}
+		_, file := setupScratchpadStore(t, fs)
+		testScratchpadPersistence(t, fs, ctx, file)
 	})
+
+	t.Run("Corrupted JSON", func(t *testing.T) {
+		_, file := setupScratchpadStore(t, fs)
+		testScratchpadCorruptedJSON(t, fs, ctx, file)
+	})
+}
+
+func setupScratchpadStore(t *testing.T, fs storage.FileSystem) (*ScratchpadStore, string) {
+	tempDir := t.TempDir()
+	scratchFile := filepath.Join(tempDir, "scratchpad.md")
+	return NewScratchpadStore(fs, scratchFile), scratchFile
+}
+
+func testScratchpadWrite(t *testing.T, store *ScratchpadStore, ctx context.Context) {
+	content := "Initial thoughts."
+	_, err := store.ManageScratchpad(ctx, map[string]interface{}{
+		"action":  "write",
+		"content": content,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageScratchpad(ctx, map[string]interface{}{
+		"action": "read",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != content {
+		t.Errorf("got %q, want %q", res.Text, content)
+	}
+}
+
+func testScratchpadAppend(t *testing.T, store *ScratchpadStore, ctx context.Context) {
+	if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
+		"action":  "write",
+		"content": "Line 1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := store.ManageScratchpad(ctx, map[string]interface{}{
+		"action":  "append",
+		"content": "Line 2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "Line 1\nLine 2"
+	if res.Text != expected {
+		t.Errorf("got %q, want %q", res.Text, expected)
+	}
+}
+
+func testScratchpadClear(t *testing.T, store *ScratchpadStore, ctx context.Context) {
+	if _, err := store.ManageScratchpad(ctx, map[string]interface{}{
+		"action":  "write",
+		"content": "Something",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "(Scratchpad is empty)" {
+		t.Errorf("expected empty message, got %q", res.Text)
+	}
+}
+
+func testScratchpadPersistence(t *testing.T, fs storage.FileSystem, ctx context.Context, file string) {
+	store1 := NewScratchpadStore(fs, file)
+
+	if _, err := store1.ManageScratchpad(ctx, map[string]interface{}{
+		"action":  "write",
+		"content": "Persist me",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	store2 := NewScratchpadStore(fs, file)
+	err := store2.Load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store2.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "Persist me" {
+		t.Error("scratchpad was not persisted")
+	}
+}
+
+func testScratchpadCorruptedJSON(t *testing.T, fs storage.FileSystem, ctx context.Context, file string) {
+	// Currently scratchpad uses plain text, so "corrupted JSON" test case
+	// ensures that even if the file contains data that looks like corrupted JSON,
+	// it's still handled as plain text correctly.
+	corruptedJSON := `{"key": "incomplete`
+	if err := fs.WriteFile(ctx, file, []byte(corruptedJSON), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewScratchpadStore(fs, file)
+	if err := store.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := store.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != corruptedJSON {
+		t.Errorf("got %q, want %q", res.Text, corruptedJSON)
+	}
 }
 
 func TestScratchpadStore_Concurrency(t *testing.T) {
