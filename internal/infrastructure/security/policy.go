@@ -48,37 +48,13 @@ func (t *PolicyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, fmt.Errorf("invalid path: %w", err)
 	}
 
-	// 1. Confirmation
-	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] Authorization auto-approved.%s\n", ui.ColorGreen, ui.ColorReset)
-		// t.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
-	} else {
-		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting persistent access to:%s %s\n", ui.ColorBoldRed, ui.ColorReset, absPath)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
-		}
-		fmt.Fprintf(os.Stderr, "Authorize this path? (y/N) ")
-
-		char, err := t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Access denied by user (first confirmation)."}, nil
-		}
-
-		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read/write files in this location in future sessions.%s (y/N) ", ui.ColorBoldRed, ui.ColorReset)
-		char, err = t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Access denied by user (double confirmation)."}, nil
-		}
-		// t.sm.logAudit("ACTION", "REGISTER SAFEPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "persistent access to:", absPath, reason, true)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Access denied by user."}, nil
 	}
 
 	// Register and Persist
@@ -111,23 +87,13 @@ func (t *PolicyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{}, fmt.Errorf("invalid path: %w", err)
 	}
 
-	// Confirmation Gate
-	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] Removal of authorization auto-approved.%s\n", ui.ColorGreen, ui.ColorReset)
-		// t.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
-	} else {
-		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to REMOVE authorization for:%s %s\n", ui.ColorBoldYellow, ui.ColorReset, absPath)
-		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
-
-		char, err := t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Removal denied by user."}, nil
-		}
-		// t.sm.logAudit("ACTION", "REMOVE SAFEPATH on "+absPath, "DETAIL", "User manually approved")
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "to REMOVE authorization for:", absPath, "", false)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
 	if err := t.sm.RemoveSafePath(absPath); err != nil {
@@ -179,37 +145,13 @@ func (t *PolicyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 		return tools.ToolResult{}, fmt.Errorf("invalid path: %w", err)
 	}
 
-	// 1. Confirmation
-	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] Read-only authorization auto-approved.%s\n", ui.ColorGreen, ui.ColorReset)
-		// t.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (auto-approved via bypass_confirmation)")
-	} else {
-		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting persistent READ-ONLY access to:%s %s\n", ui.ColorBoldRed, ui.ColorReset, absPath)
-		if reason != "" {
-			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
-		}
-		fmt.Fprintf(os.Stderr, "Authorize this path for reading? (y/N) ")
-
-		char, err := t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Access denied by user (first confirmation)."}, nil
-		}
-
-		// 2. Double Confirmation
-		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] Are you absolutely sure? This allows the AI to read files in this location in future sessions.%s (y/N) ", ui.ColorBoldRed, ui.ColorReset)
-		char, err = t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Access denied by user (double confirmation)."}, nil
-		}
-		// t.sm.logAudit("ACTION", "REGISTER READPATH on "+absPath, "DETAIL", "Reason: "+reason+" (User manually double-confirmed)")
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "persistent READ-ONLY access to:", absPath, reason, true)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Access denied by user."}, nil
 	}
 
 	// Register and Persist
@@ -242,23 +184,13 @@ func (t *PolicyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{}, fmt.Errorf("invalid path: %w", err)
 	}
 
-	// Confirmation Gate
-	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] Removal of read-only authorization auto-approved.%s\n", ui.ColorGreen, ui.ColorReset)
-		// t.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "auto-approved via bypass_confirmation")
-	} else {
-		fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to REMOVE read-only authorization for:%s %s\n", ui.ColorBoldYellow, ui.ColorReset, absPath)
-		fmt.Fprintf(os.Stderr, "Confirm removal? (y/N) ")
-
-		char, err := t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		if char != "y" {
-			return tools.ToolResult{Text: "Removal denied by user."}, nil
-		}
-		// t.sm.logAudit("ACTION", "REMOVE READPATH on "+absPath, "DETAIL", "User manually approved")
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "to REMOVE read-only authorization for:", absPath, "", false)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if !confirmed {
+		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
 	if err := t.sm.RemoveReadOnlyPath(absPath); err != nil {
@@ -294,16 +226,12 @@ func (t *PolicyTool) BypassConfirmation(ctx context.Context, args map[string]int
 		return tools.ToolResult{Text: "Bypass mode is already enabled."}, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting to DISABLE ALL interactive security prompts.%s\n", ui.ColorBoldRed, ui.ColorReset)
-	fmt.Fprintf(os.Stderr, "This allows the AI to execute commands and write files without further confirmation.\n")
-	fmt.Fprintf(os.Stderr, "Enable bypass mode for this run? (y/N) ")
-
-	char, err := t.sm.ReadSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
+	// Confirmation
+	confirmed, err := t.confirmAction(ctx, "to DISABLE ALL interactive security prompts.", "", "This allows the AI to execute commands and write files without further confirmation.", false)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	if char != "y" {
+	if !confirmed {
 		return tools.ToolResult{Text: "Bypass mode denied by user."}, nil
 	}
 
@@ -325,6 +253,79 @@ func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface
 	fmt.Fprintf(os.Stderr, "%s[SECURITY] Interactive security prompts have been RE-ENABLED.%s\n", ui.ColorBoldGreen, ui.ColorReset)
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
+}
+
+func (t *PolicyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
+	lowerTitle := strings.ToLower(title)
+	if t.sm.IsBypassActive() {
+		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved.%s\n", ui.ColorGreen, t.getBypassMsg(lowerTitle), ui.ColorReset)
+		return true, nil
+	}
+
+	mainColor := ui.ColorBoldRed
+	if strings.Contains(lowerTitle, "remove") {
+		mainColor = ui.ColorBoldYellow
+	}
+
+	fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting %s%s %s\n", mainColor, title, ui.ColorReset, path)
+	if reason != "" {
+		if path == "" {
+			fmt.Fprintf(os.Stderr, "%s\n", reason)
+		} else {
+			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "%s", t.getPrompt(lowerTitle))
+	char, err := t.sm.ReadSingleKey(ctx)
+	fmt.Fprintf(os.Stderr, "\n")
+	if err != nil || char != "y" {
+		return false, err
+	}
+
+	if doubleConfirm {
+		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] %s%s (y/N) ", ui.ColorBoldRed, t.getDoubleMsg(lowerTitle), ui.ColorReset)
+		char, err = t.sm.ReadSingleKey(ctx)
+		fmt.Fprintf(os.Stderr, "\n")
+		if err != nil || char != "y" {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func (t *PolicyTool) getBypassMsg(lowerTitle string) string {
+	if strings.Contains(lowerTitle, "remove") {
+		if strings.Contains(lowerTitle, "read-only") {
+			return "Removal of read-only authorization"
+		}
+		return "Removal of authorization"
+	}
+	if strings.Contains(lowerTitle, "read-only") {
+		return "Read-only authorization"
+	}
+	return "Authorization"
+}
+
+func (t *PolicyTool) getPrompt(lowerTitle string) string {
+	if strings.Contains(lowerTitle, "remove") {
+		return "Confirm removal? (y/N) "
+	}
+	if strings.Contains(lowerTitle, "read-only") {
+		return "Authorize this path for reading? (y/N) "
+	}
+	if strings.Contains(lowerTitle, "disable all") {
+		return "Enable bypass mode for this run? (y/N) "
+	}
+	return "Authorize this path? (y/N) "
+}
+
+func (t *PolicyTool) getDoubleMsg(lowerTitle string) string {
+	if strings.Contains(lowerTitle, "read-only") {
+		return "Are you absolutely sure? This allows the AI to read files in this location in future sessions."
+	}
+	return "Are you absolutely sure? This allows the AI to read/write files in this location in future sessions."
 }
 
 // RegisterPolicy adds security policy management tools to the registry.
