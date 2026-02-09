@@ -527,6 +527,7 @@ type WorkerPool struct {
 	mu         sync.RWMutex
 	closed     bool
 	once       sync.Once
+	submitWg   sync.WaitGroup
 }
 
 // NewWorkerPool creates and starts a new worker pool.
@@ -551,16 +552,8 @@ func (p *WorkerPool) start() {
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
-			for {
-				select {
-				case task, ok := <-p.tasks:
-					if !ok {
-						return
-					}
-					task(p.ctx)
-				case <-p.ctx.Done():
-					return
-				}
+			for task := range p.tasks {
+				task(p.ctx)
 			}
 		}()
 	}
@@ -569,11 +562,13 @@ func (p *WorkerPool) start() {
 // Submit adds a task to the pool. Returns true if the task was successfully queued.
 func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-
 	if p.closed {
+		p.mu.RUnlock()
 		return false
 	}
+	p.submitWg.Add(1)
+	p.mu.RUnlock()
+	defer p.submitWg.Done()
 
 	select {
 	case p.tasks <- task:
@@ -591,10 +586,11 @@ func (p *WorkerPool) Shutdown() {
 		p.mu.Lock()
 		p.closed = true
 		close(p.closing)
-		close(p.tasks)
 		p.mu.Unlock()
 
-		p.wg.Wait()
+		p.submitWg.Wait()
+		close(p.tasks)
 		p.cancel()
+		p.wg.Wait()
 	})
 }
