@@ -299,6 +299,14 @@ func TestNewNetworkTool(t *testing.T) {
 	}
 }
 
+func TestNewTeamsManager(t *testing.T) {
+	sm := security.NewSecurityManager(strings.NewReader(""))
+	m := NewTeamsManager(sm, nil)
+	if m.client == nil {
+		t.Error("NewTeamsManager(sm, nil) should have initialized a default client")
+	}
+}
+
 func TestRegister(t *testing.T) {
 	r := registry.New()
 	sm := security.NewSecurityManager(strings.NewReader(""))
@@ -351,7 +359,7 @@ func TestReadExternalDocs_Errors(t *testing.T) {
 
 func TestSendTeamsMessage_Errors(t *testing.T) {
 	sm := security.NewSecurityManager(strings.NewReader(""))
-	m := &teamsManager{sm: sm}
+	m := NewTeamsManager(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
 		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": 123})
@@ -364,6 +372,17 @@ func TestSendTeamsMessage_Errors(t *testing.T) {
 		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{"message": "", "webhook_url": ""})
 		if err == nil {
 			t.Error("Expected error for empty fields")
+		}
+	})
+
+	t.Run("Insecure URL", func(t *testing.T) {
+		_, err := m.sendTeamsMessage(context.Background(), map[string]interface{}{
+			"message":     "hello",
+			"webhook_url": "http://insecure.com",
+			"reason":      "testing",
+		})
+		if err == nil || !strings.Contains(err.Error(), "must start with https://") {
+			t.Errorf("Expected HTTPS validation error, got: %v", err)
 		}
 	})
 }
