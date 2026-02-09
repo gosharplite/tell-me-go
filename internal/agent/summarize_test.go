@@ -25,6 +25,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 	"google.golang.org/genai"
 )
 
@@ -233,7 +234,7 @@ func TestSummarizeRange_Logging(t *testing.T) {
 	tokenCount := 1234
 	mockCounter := &mockTokenCounter{tokens: tokenCount}
 	strategy := orchestration.NewContextStrategy(mockCounter, nil)
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 
 	// Use real summarizer but mock gateway
 	mockG := &mockGateway{}

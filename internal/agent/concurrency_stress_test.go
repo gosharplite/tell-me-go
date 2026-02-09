@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
@@ -100,7 +101,7 @@ func (m *stressMockLLMClient) SetSystemInstructions(instr string) {}
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	sm := security.NewSecurityManager(nil)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 

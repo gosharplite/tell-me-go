@@ -18,6 +18,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 type toolBehavior struct {
@@ -30,7 +31,7 @@ type toolBehavior struct {
 	observe func() // Callback to signal execution
 }
 
-func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *events.TestEventBus, map[string]*toolBehavior) {
+func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTools []string) (*ToolExecutor, *inframock.TestEventBus, map[string]*toolBehavior) {
 	reg := registry.New()
 	behaviors := make(map[string]*toolBehavior)
 	for name, behavior := range toolsMap {
@@ -70,7 +71,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 		sm = &mockSecurityManager{allowAll: true}
 	}
 
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
 	exec.SetStrategy(&MockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
@@ -89,7 +90,7 @@ func verifyErrorResponse(t *testing.T, resp *llm.Content, expectedMsg string) {
 	}
 }
 
-func verifyToolEventError(t *testing.T, bus *events.TestEventBus, expectedErr error) {
+func verifyToolEventError(t *testing.T, bus *inframock.TestEventBus, expectedErr error) {
 	t.Helper()
 	evs := bus.FilterEvents(reflect.TypeOf(events.ToolResultEvent{}))
 	if len(evs) == 0 {
@@ -651,7 +652,7 @@ func TestToolExecutor_EventPublishing(t *testing.T) {
 		return tools.ToolResult{Text: "success"}, nil
 	})
 
-	bus := &events.TestEventBus{}
+	bus := &inframock.TestEventBus{}
 	exec := NewToolExecutor(reg, nil, bus)
 	t.Cleanup(exec.Shutdown)
 
@@ -745,7 +746,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnGet: true, serial: true}
-		bus := &events.TestEventBus{}
+		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
 		exec.SetStrategy(&MockStrategy{})
@@ -765,7 +766,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
 		t.Parallel()
 		reg := &panicRegistry{panicOnGet: true, serial: false}
-		bus := &events.TestEventBus{}
+		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
 		exec.SetStrategy(&MockStrategy{})

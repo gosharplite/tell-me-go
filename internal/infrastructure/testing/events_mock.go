@@ -1,26 +1,28 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package events
+package inframock
 
 import (
 	"reflect"
 	"sync"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
 // TestEventBus is a thread-safe event bus designed for unit tests.
 // It records all published events for assertion.
 type TestEventBus struct {
 	mu     sync.RWMutex
-	events []Event
-	subs   []func(Event)
+	events []events.Event
+	subs   []func(events.Event)
 }
 
 // Publish records the event and notifies subscribers.
-func (b *TestEventBus) Publish(e Event) {
+func (b *TestEventBus) Publish(e events.Event) {
 	b.mu.Lock()
 	b.events = append(b.events, e)
-	subs := make([]func(Event), len(b.subs))
+	subs := make([]func(events.Event), len(b.subs))
 	copy(subs, b.subs)
 	b.mu.Unlock()
 
@@ -30,17 +32,17 @@ func (b *TestEventBus) Publish(e Event) {
 }
 
 // Subscribe adds a new listener.
-func (b *TestEventBus) Subscribe(sub func(Event)) {
+func (b *TestEventBus) Subscribe(sub func(events.Event)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subs = append(b.subs, sub)
 }
 
 // GetEvents returns a copy of all recorded events.
-func (b *TestEventBus) GetEvents() []Event {
+func (b *TestEventBus) GetEvents() []events.Event {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	res := make([]Event, len(b.events))
+	res := make([]events.Event, len(b.events))
 	copy(res, b.events)
 	return res
 }
@@ -65,10 +67,10 @@ func (b *TestEventBus) AssertEventPublished(t reflect.Type) bool {
 }
 
 // FilterEvents returns only events of the specified type.
-func (b *TestEventBus) FilterEvents(t reflect.Type) []Event {
+func (b *TestEventBus) FilterEvents(t reflect.Type) []events.Event {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	var res []Event
+	var res []events.Event
 	for _, e := range b.events {
 		if reflect.TypeOf(e) == t {
 			res = append(res, e)
@@ -79,7 +81,8 @@ func (b *TestEventBus) FilterEvents(t reflect.Type) []Event {
 
 // CountingEventBus records the number of events published and allows waiting for a target count.
 type CountingEventBus struct {
-	SimpleEventBus
+	events.SimpleEventBus
+	mu    sync.RWMutex
 	count int
 	cond  *sync.Cond
 }
@@ -92,7 +95,7 @@ func NewCountingEventBus() *CountingEventBus {
 }
 
 // Publish notifies subscribers and increments the internal counter.
-func (b *CountingEventBus) Publish(e Event) {
+func (b *CountingEventBus) Publish(e events.Event) {
 	b.SimpleEventBus.Publish(e)
 	b.mu.Lock()
 	b.count++

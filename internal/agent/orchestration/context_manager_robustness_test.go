@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
@@ -129,7 +130,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 		_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "model"}}})
 	}
 
-	bus := events.NewCountingEventBus()
+	bus := inframock.NewCountingEventBus()
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
 
 	cm := NewContextManager(strategy, hManager, bus, nil)
