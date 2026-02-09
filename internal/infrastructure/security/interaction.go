@@ -97,55 +97,66 @@ func (h *InteractionHandler) ReadSingleKey(ctx context.Context) (string, error) 
 }
 
 func (h *InteractionHandler) readSingleKey(ctx context.Context) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
-	}
-
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
 	}
 
 	fd := int(os.Stdin.Fd())
-	if term.IsTerminal(fd) {
-		state, err := term.MakeRaw(fd)
-		if err == nil {
-			defer func() { _ = term.Restore(fd, state) }()
-		}
-	} else if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
-		// Likely in a test environment, skip terminal check and just read
-	} else {
-		return "", fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
+	state, err := h.getRawTerminalState(fd)
+	if err != nil {
+		return "", err
+	}
+	if state != nil {
+		defer func() { _ = term.Restore(fd, state) }()
 	}
 
+	b, err := h.readByteAsync(ctx)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(string(b)), nil
+}
+
+func (h *InteractionHandler) getRawTerminalState(fd int) (*term.State, error) {
+	if !term.IsTerminal(fd) {
+		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
+	}
+
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return nil, nil
+	}
+	return state, nil
+}
+
+func (h *InteractionHandler) readByteAsync(ctx context.Context) (byte, error) {
 	type result struct {
 		b   byte
 		err error
 	}
 	resChan := make(chan result, 1)
+
 	go func() {
 		h.readerMu.Lock()
 		defer h.readerMu.Unlock()
 		b, err := h.reader.ReadByte()
-		if err != nil {
-			resChan <- result{0, err}
-		} else {
-			resChan <- result{b, nil}
-		}
+		resChan <- result{b, err}
 	}()
 
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return 0, ctx.Err()
 	case res := <-resChan:
 		if res.err != nil {
-			return "", res.err
+			return 0, res.err
 		}
 		if res.b == 3 { // Ctrl+C (ETX)
-			return "", context.Canceled
+			return 0, context.Canceled
 		}
-		return strings.ToLower(string(res.b)), nil
+		return res.b, nil
 	}
 }
 
