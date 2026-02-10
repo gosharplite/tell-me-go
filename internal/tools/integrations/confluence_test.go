@@ -299,8 +299,13 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 				return false
 			}
 			var payload map[string]interface{}
-			json.NewDecoder(req.Body).Decode(&payload)
-			version := payload["version"].(map[string]interface{})
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				return false
+			}
+			version, ok := payload["version"].(map[string]interface{})
+			if !ok {
+				return false
+			}
 			return version["number"] == float64(6) && payload["title"] == "New Title"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
