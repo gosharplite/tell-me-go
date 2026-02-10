@@ -1,0 +1,349 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package integrations
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+)
+
+type mockConfluenceClient struct {
+	mock.Mock
+}
+
+func (m *mockConfluenceClient) Do(req *http.Request) (*http.Response, error) {
+	args := m.Called(req)
+	return args.Get(0).(*http.Response), args.Error(1)
+}
+
+func TestConfluenceManager_GetAuthHeader(t *testing.T) {
+	m := NewConfluenceManager(nil, nil)
+
+	t.Run("Missing Email", func(t *testing.T) {
+		oldEmail := os.Getenv("ATLASSIAN_EMAIL")
+		os.Setenv("ATLASSIAN_EMAIL", "")
+		defer os.Setenv("ATLASSIAN_EMAIL", oldEmail)
+
+		os.Setenv("ATLASSIAN_TOKEN", "token")
+		_, err := m.getAuthHeader()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+	})
+
+	t.Run("Missing Token", func(t *testing.T) {
+		oldToken := os.Getenv("ATLASSIAN_TOKEN")
+		os.Setenv("ATLASSIAN_TOKEN", "")
+		defer os.Setenv("ATLASSIAN_TOKEN", oldToken)
+
+		os.Setenv("ATLASSIAN_EMAIL", "email")
+		_, err := m.getAuthHeader()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Missing ATLASSIAN_TOKEN")
+	})
+
+	t.Run("Success", func(t *testing.T) {
+		email := "test@example.com"
+		token := "api-token"
+		os.Setenv("ATLASSIAN_EMAIL", email)
+		os.Setenv("ATLASSIAN_TOKEN", token)
+		header, err := m.getAuthHeader()
+		assert.NoError(t, err)
+
+		expectedAuth := base64.StdEncoding.EncodeToString([]byte(email + ":" + token))
+		assert.Equal(t, "Basic "+expectedAuth, header)
+	})
+}
+
+func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
+	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+
+	t.Run("Success", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{
+			"results": [
+				{"id": "1", "title": "Page 1"},
+				{"id": "2", "title": "Page 2"}
+			]
+		}`
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		args := map[string]interface{}{
+			"title":    "Test",
+			"space_id": "SPACE1",
+		}
+
+		result, err := m.confluenceSearch(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Found pages:")
+		assert.Contains(t, result.Text, "Page 1 (ID: 1)")
+		assert.Contains(t, result.Text, "Page 2 (ID: 2)")
+
+		// Verify request details
+		req := mockClient.Calls[0].Arguments.Get(0).(*http.Request)
+		assert.Equal(t, "https://02007.atlassian.net/wiki/api/v2/pages?space-id=SPACE1&title=Test", req.URL.String())
+		assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("test@example.com:api-token")), req.Header.Get("Authorization"))
+	})
+
+	t.Run("No Results", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{"results": []}`
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		result, err := m.confluenceSearch(context.Background(), nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+	})
+
+	t.Run("API Error", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusForbidden,
+			Status:     "403 Forbidden",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		_, err := m.confluenceSearch(context.Background(), nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Confluence API returned status: 403 Forbidden")
+	})
+}
+
+func TestConfluenceManager_ConfluenceRead(t *testing.T) {
+	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+
+	t.Run("Success", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{
+			"title": "Test Page",
+			"body": {
+				"storage": {
+					"value": "<h1>Title</h1><p>Hello <b>World</b></p><ul><li>Item 1</li><li>Item 2</li></ul>"
+				}
+			}
+		}`
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/pages/123") && req.URL.Query().Get("body-format") == "storage"
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id": "123",
+		}
+
+		result, err := m.confluenceRead(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "# Test Page")
+		assert.Contains(t, result.Text, "# Title")
+		assert.Contains(t, result.Text, "Hello World")
+		assert.Contains(t, result.Text, "* Item 1")
+		assert.Contains(t, result.Text, "* Item 2")
+	})
+
+	t.Run("Page Not Found", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id": "404",
+		}
+
+		_, err := m.confluenceRead(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Confluence page not found: 404")
+	})
+
+	t.Run("Unauthorized", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Status:     "401 Unauthorized",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id": "123",
+		}
+
+		_, err := m.confluenceRead(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "authentication failed: 401 Unauthorized")
+	})
+}
+
+func TestConfluenceManager_XhtmlToMarkdown(t *testing.T) {
+	m := NewConfluenceManager(nil, nil)
+	
+	xhtml := `
+		<h1>Heading 1</h1>
+		<p>Paragraph with <br/> a break and <b>bold</b> text.</p>
+		<h2>Heading 2</h2>
+		<ul>
+			<li>List Item 1</li>
+			<li>List Item 2 &amp; more</li>
+		</ul>
+		<div>Div content</div>
+	`
+	
+	expected := "# Heading 1\n\nParagraph with\na break and bold text.\n\n## Heading 2\n\n* List Item 1\n* List Item 2 & more\n\nDiv content"
+	
+	result := m.xhtmlToMarkdown(xhtml)
+	
+	// Normalize spacing for comparison if needed, but the helper should do it.
+	assert.Equal(t, expected, result)
+}
+
+func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
+	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+
+	t.Run("Success", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		input := "y\n"
+		sm := security.NewSecurityManager(strings.NewReader(input))
+		m := NewConfluenceManager(sm, mockClient)
+
+		pageID := "123"
+		
+		// 1. Mock GET version
+		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet && strings.Contains(req.URL.String(), "/pages/123")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
+		}, nil)
+
+		// 2. Mock PUT update
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			if req.Method != http.MethodPut {
+				return false
+			}
+			var payload map[string]interface{}
+			json.NewDecoder(req.Body).Decode(&payload)
+			version := payload["version"].(map[string]interface{})
+			return version["number"] == float64(6) && payload["title"] == "New Title"
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "123"}`)),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id":          pageID,
+			"title":            "New Title",
+			"markdown_content": "# New Content",
+			"update_message":   "testing update",
+		}
+
+		result, err := m.confluenceWrite(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Successfully updated Confluence page 123 to version 6")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Cancelled by user", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		input := "n\n"
+		sm := security.NewSecurityManager(strings.NewReader(input))
+		m := NewConfluenceManager(sm, mockClient)
+
+		// Mock GET version
+		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "some content",
+		}
+
+		result, err := m.confluenceWrite(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Equal(t, "Action cancelled by user.", result.Text)
+	})
+
+	t.Run("Conflict 409", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		input := "y\n"
+		sm := security.NewSecurityManager(strings.NewReader(input))
+		m := NewConfluenceManager(sm, mockClient)
+
+		// Mock GET version
+		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
+		}, nil)
+
+		// Mock PUT conflict
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodPut
+		})).Return(&http.Response{
+			StatusCode: http.StatusConflict,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "some content",
+		}
+
+		result, err := m.confluenceWrite(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Conflict: The page version has changed")
+	})
+}
+
+func TestConfluenceManager_MarkdownToXhtml(t *testing.T) {
+	m := NewConfluenceManager(nil, nil)
+	
+	markdown := "# Header 1\n\nSome text here.\n\n## Header 2\nMore text."
+	expected := "<h1>Header 1</h1><p>Some text here.</p><h2>Header 2</h2><p>More text.</p>"
+	
+	result := m.markdownToXhtml(markdown)
+	assert.Equal(t, expected, result)
+}
