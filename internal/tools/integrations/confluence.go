@@ -23,6 +23,8 @@ import (
 	"strings"
 )
 
+const defaultConfluenceBaseURL = "https://02007.atlassian.net"
+
 var (
 	reH1          = regexp.MustCompile(`(?i)<h1.*?>`)
 	reH2          = regexp.MustCompile(`(?i)<h2.*?>`)
@@ -60,7 +62,8 @@ func NewConfluenceManager(sm *security.SecurityManager, client tools.HTTPClient)
 	}
 	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://02007.atlassian.net" // Default fallback
+		// Use default fallback if environment variable is missing
+		baseURL = defaultConfluenceBaseURL
 	}
 	return &confluenceManager{
 		sm:      sm,
