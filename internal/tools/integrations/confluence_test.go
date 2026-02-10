@@ -453,7 +453,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		m := NewConfluenceManager(sm, mockClient)
 
 		pageID := "123"
-		
+
 		// 1. Mock GET version
 		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -778,7 +778,7 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 func TestConfluenceManager_ConfluenceSearch_ResolveError(t *testing.T) {
 	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 	t.Setenv("ATLASSIAN_TOKEN", "api-token")
-	
+
 	mockClient := new(mockConfluenceClient)
 	m := NewConfluenceManager(nil, mockClient)
 
@@ -1013,12 +1013,11 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		assert.Contains(t, m.markdownToXhtml("###### H6"), "<h6>H6</h6>")
 	})
 
-
 	t.Run("Security Manager Error Write", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
 		t.Setenv("ATLASSIAN_TOKEN", "api-token")
 		mockClient := new(mockConfluenceClient)
-		
+
 		// 1. Mock GET version
 		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -1031,7 +1030,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Triggers context.Canceled in ConfirmAction
 
-		sm := security.NewSecurityManager(strings.NewReader("y\n")) 
+		sm := security.NewSecurityManager(strings.NewReader("y\n"))
 		m := NewConfluenceManager(sm, mockClient)
 
 		args := map[string]interface{}{

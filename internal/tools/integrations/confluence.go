@@ -13,10 +13,10 @@ import (
 	"os"
 	"time"
 
+	"bytes"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"bytes"
 	"html"
 	"io"
 	"regexp"
@@ -27,19 +27,19 @@ import (
 const defaultConfluenceBaseURL = "https://02007.atlassian.net"
 
 var (
-	reH1          = regexp.MustCompile(`(?i)<h1.*?>`)
-	reH2          = regexp.MustCompile(`(?i)<h2.*?>`)
-	reH3          = regexp.MustCompile(`(?i)<h3.*?>`)
-	reH4          = regexp.MustCompile(`(?i)<h4.*?>`)
-	reH5          = regexp.MustCompile(`(?i)<h5.*?>`)
-	reH6          = regexp.MustCompile(`(?i)<h6.*?>`)
-	reCloseHeader = regexp.MustCompile(`(?i)</h[1-6]>`)
-	reLi          = regexp.MustCompile(`(?i)<li.*?>`)
-	reCloseLi     = regexp.MustCompile(`(?i)</li>`)
-	reBr          = regexp.MustCompile(`(?i)<br\s*/?>`)
-	reBlocks      = regexp.MustCompile(`(?i)</?(p|div|tr|td|table|ul|ol).*?>`)
-	reTags        = regexp.MustCompile(`<.*?>`)
-	reMultiSpace  = regexp.MustCompile(` +`)
+	reH1            = regexp.MustCompile(`(?i)<h1.*?>`)
+	reH2            = regexp.MustCompile(`(?i)<h2.*?>`)
+	reH3            = regexp.MustCompile(`(?i)<h3.*?>`)
+	reH4            = regexp.MustCompile(`(?i)<h4.*?>`)
+	reH5            = regexp.MustCompile(`(?i)<h5.*?>`)
+	reH6            = regexp.MustCompile(`(?i)<h6.*?>`)
+	reCloseHeader   = regexp.MustCompile(`(?i)</h[1-6]>`)
+	reLi            = regexp.MustCompile(`(?i)<li.*?>`)
+	reCloseLi       = regexp.MustCompile(`(?i)</li>`)
+	reBr            = regexp.MustCompile(`(?i)<br\s*/?>`)
+	reBlocks        = regexp.MustCompile(`(?i)</?(p|div|tr|td|table|ul|ol).*?>`)
+	reTags          = regexp.MustCompile(`<.*?>`)
+	reMultiSpace    = regexp.MustCompile(` +`)
 	reLeadingSpace  = regexp.MustCompile(`(?m)^ +`)
 	reTrailingSpace = regexp.MustCompile(`(?m) +$`)
 	reMultiNewline  = regexp.MustCompile(`\n\n+`)
@@ -318,7 +318,6 @@ func (m *confluenceManager) getSearchLimit(limit int) (int, string) {
 	}
 	return maxPages, warning
 }
-
 
 func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning string, pagesProcessed int, spaceID, title string) tools.ToolResult {
 	if len(matches) == 0 {
