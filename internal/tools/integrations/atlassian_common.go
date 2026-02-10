@@ -18,7 +18,8 @@ import (
 const defaultAtlassianBaseURL = "https://02007.atlassian.net"
 
 type atlassianProvider struct {
-	baseURL string
+	baseURL   string
+	baseDelay time.Duration
 }
 
 func newAtlassianProvider() *atlassianProvider {
@@ -26,7 +27,10 @@ func newAtlassianProvider() *atlassianProvider {
 	if baseURL == "" {
 		baseURL = defaultAtlassianBaseURL
 	}
-	return &atlassianProvider{baseURL: baseURL}
+	return &atlassianProvider{
+		baseURL:   baseURL,
+		baseDelay: 1 * time.Second,
+	}
 }
 
 func (p *atlassianProvider) getAuthHeader() (string, error) {
@@ -52,7 +56,10 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 	req.Header.Set("Authorization", authHeader)
 
 	var lastResp *http.Response
-	baseDelay := 1 * time.Second
+	baseDelay := p.baseDelay
+	if baseDelay == 0 {
+		baseDelay = 1 * time.Second
+	}
 
 	for i := 0; i <= 3; i++ { // 0 is initial attempt, 1-3 are retries
 		resp, err := client.Do(req)

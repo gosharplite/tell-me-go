@@ -46,6 +46,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 
 	t.Run("Retry on 429 then success", func(t *testing.T) {
 		p := newAtlassianProvider()
+		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -62,28 +63,24 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader("ok")),
 		}, nil).Once()
 
-		// Use a context with a short timeout to speed up the test if it hangs,
-		// but since we are using exponential backoff starting at 1s, it might take a bit.
-		// Actually, I should probably mock the timer if I want it to be fast, but
-		// for a simple unit test, 1s wait is acceptable.
-		
 		start := time.Now()
 		resp, err := p.Do(context.Background(), mockClient, req)
 		duration := time.Since(start)
 
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		assert.True(t, duration >= 1*time.Second, "Should have waited at least 1s")
+		assert.True(t, duration >= 1*time.Microsecond, "Should have waited at least 1us")
 		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Respect Retry-After header", func(t *testing.T) {
 		p := newAtlassianProvider()
+		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
 		headers := make(http.Header)
-		headers.Set("Retry-After", "2")
+		headers.Set("Retry-After", "0")
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusTooManyRequests,
@@ -102,12 +99,13 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		assert.True(t, duration >= 2*time.Second, "Should have respected Retry-After: 2")
+		assert.True(t, duration < 100*time.Millisecond, "Should not have waited long with Retry-After: 0")
 		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Max retries exceeded", func(t *testing.T) {
 		p := newAtlassianProvider()
+		p.baseDelay = 1 * time.Microsecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -120,13 +118,6 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 			}, nil).Once()
 		}
 
-		// To avoid long test time, we might want to skip this or use a shorter base delay,
-		// but the implementation has it hardcoded to 1s.
-		// Let's just do it. Total wait: 1s + 2s + 4s = 7s.
-		if testing.Short() {
-			t.Skip("skipping long retry test")
-		}
-
 		resp, err := p.Do(context.Background(), mockClient, req)
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
@@ -135,6 +126,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 
 	t.Run("Context cancellation", func(t *testing.T) {
 		p := newAtlassianProvider()
+		p.baseDelay = 10 * time.Millisecond
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
@@ -146,7 +138,7 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 			cancel()
 		}()
 

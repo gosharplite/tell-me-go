@@ -69,6 +69,20 @@ func processLogLine(data []byte, state *parseState, pd domain_pricing.PricingDat
 		return nil
 	}
 
+	updateParseState(mt, state, defaultModel)
+
+	mtModel := mt.Model
+	if mtModel == "" {
+		mtModel = defaultModel
+	}
+
+	turnStats := Accumulate(&state.stats, mt)
+	state.totalCost += calculateLineCost(mt, turnStats, pd, mtModel)
+
+	return nil
+}
+
+func updateParseState(mt llm.Metrics, state *parseState, defaultModel string) {
 	if state.firstTimestamp.IsZero() && mt.Timestamp != "" {
 		if t, err := time.Parse(time.RFC3339, mt.Timestamp); err == nil {
 			state.firstTimestamp = t
@@ -82,16 +96,15 @@ func processLogLine(data []byte, state *parseState, pd domain_pricing.PricingDat
 	if state.detectedModel == "" && mtModel != "" {
 		state.detectedModel = mtModel
 	}
+}
 
-	p := GetModelPricing(mtModel, pd)
-	turnStats := Accumulate(&state.stats, mt)
+func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd domain_pricing.PricingData, modelName string) float64 {
 	if mt.Cost > 0 {
-		state.totalCost += mt.Cost
-	} else {
-		calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
-		state.totalCost += calc.Calculate(turnStats).TotalCost
+		return mt.Cost
 	}
-	return nil
+	p := GetModelPricing(modelName, pd)
+	calc := &domain_pricing.CostCalculator{Pricing: pd, Model: p}
+	return calc.Calculate(turnStats).TotalCost
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
