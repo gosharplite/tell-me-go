@@ -69,15 +69,15 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		jsonResponse := `{
 			"results": [
-				{"id": "1", "title": "Page 1"},
-				{"id": "2", "title": "Page 2"}
+				{"id": "1", "title": "Test Page 1"},
+				{"id": "2", "title": "Other Page"}
 			]
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.HasPrefix(req.URL.String(), "https://test.atlassian.net/wiki/api/v2/pages") &&
-				req.URL.Query().Get("title") == "Test" &&
-				req.URL.Query().Get("space-id") == "SPACE1"
+				req.URL.Query().Get("space-id") == "SPACE1" &&
+				req.URL.Query().Get("limit") == "50"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -91,8 +91,8 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Found pages:")
-		assert.Contains(t, result.Text, "Page 1 (ID: 1)")
-		assert.Contains(t, result.Text, "Page 2 (ID: 2)")
+		assert.Contains(t, result.Text, "Test Page 1 (ID: 1)")
+		assert.NotContains(t, result.Text, "Other Page")
 	})
 
 	t.Run("Success Space Only", func(t *testing.T) {
@@ -106,7 +106,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.URL.Query().Get("space-id") == "SPACE1" && req.URL.Query().Get("title") == ""
+			return req.URL.Query().Get("space-id") == "SPACE1"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -125,18 +125,79 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
-		jsonResponse := `{"results": []}`
+		jsonResponse := `{"results": [{"id":"1", "title":"Random"}], "_links": {"next": ""}}`
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		args := map[string]interface{}{"title": "missing"}
+		args := map[string]interface{}{
+			"title":    "missing",
+			"space_id": "SPACE1",
+		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "No pages found")
-		assert.Contains(t, result.Text, "Hint: The V2 API requires an exact title match")
+		assert.Contains(t, result.Text, "Searched the 1 most recently modified pages")
+		assert.Contains(t, result.Text, "found no pages containing 'missing'")
+	})
+
+	t.Run("Success Incremental Discovery", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		// Page 1: No matches, has next link
+		jsonPage1 := `{
+			"results": [
+				{"id": "1", "title": "Random Page"},
+				{"id": "2", "title": "Other Doc"}
+			],
+			"_links": {
+				"next": "/wiki/api/v2/pages?cursor=next-cursor"
+			}
+		}`
+
+		// Page 2: Contains match
+		jsonPage2 := `{
+			"results": [
+				{"id": "3", "title": "[cicd] Azure DevOps"}
+			],
+			"_links": {
+				"next": ""
+			}
+		}`
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return !strings.Contains(req.URL.String(), "cursor=next-cursor")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonPage1)),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "cursor=next-cursor")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonPage2)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"title":    "cicd",
+			"space_id": "SPACE1",
+		}
+
+		result, err := m.confluenceSearch(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "[cicd] Azure DevOps (ID: 3)")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Error Title without Space", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		args := map[string]interface{}{"title": "keyword"}
+		_, err := m.confluenceSearch(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "space_id is required")
 	})
 
 	t.Run("API Error", func(t *testing.T) {
@@ -149,11 +210,68 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader("")),
 		}, nil)
 
-		args := map[string]interface{}{"title": "error"}
+		args := map[string]interface{}{
+			"title":    "error",
+			"space_id": "SPACE1",
+		}
 		_, err := m.confluenceSearch(context.Background(), args)
 		if assert.Error(t, err) {
 			assert.Contains(t, err.Error(), "Confluence API returned status: 403 Forbidden")
 		}
+	})
+
+	t.Run("Success with Limit 100", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		// Page 1: No matches, has next link
+		jsonPage1 := `{"results": [{"id": "1", "title": "Random"}], "_links": {"next": "/next"}}`
+		// Page 2: No matches
+		jsonPage2 := `{"results": [{"id": "2", "title": "Random"}], "_links": {"next": ""}}`
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonPage1)),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonPage2)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"title":    "cicd",
+			"space_id": "SPACE1",
+			"limit":    100,
+		}
+
+		_, err := m.confluenceSearch(context.Background(), args)
+		assert.NoError(t, err)
+		mockClient.AssertNumberOfCalls(t, "Do", 2)
+	})
+
+	t.Run("Capped at 1000", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{"results": [], "_links": {"next": "/next"}}`
+		for i := 0; i < 20; i++ {
+			mockClient.On("Do", mock.Anything).Return(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+			}, nil).Once()
+		}
+
+		args := map[string]interface{}{
+			"title":    "cicd",
+			"space_id": "SPACE1",
+			"limit":    5000,
+		}
+
+		result, err := m.confluenceSearch(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "capped at 1000 pages")
+		mockClient.AssertNumberOfCalls(t, "Do", 20)
 	})
 }
 
@@ -480,10 +598,13 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		args := map[string]interface{}{"title": "nothing"}
+		args := map[string]interface{}{
+			"title":    "nothing",
+			"space_id": "SPACE1",
+		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "No pages found matching the criteria.")
+		assert.Contains(t, result.Text, "found no pages containing 'nothing'")
 	})
 
 	t.Run("Missing Results", func(t *testing.T) {
@@ -497,9 +618,12 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		args := map[string]interface{}{"title": "nothing"}
+		args := map[string]interface{}{
+			"title":    "nothing",
+			"space_id": "SPACE1",
+		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "No pages found matching the criteria.")
+		assert.Contains(t, result.Text, "found no pages containing 'nothing'")
 	})
 }

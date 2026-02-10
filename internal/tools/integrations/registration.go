@@ -146,17 +146,21 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "confluence_search",
-		Description: "Searches for Confluence pages. Note: Title search requires an exact match. If title is omitted, it lists all pages in the specified space ID.",
+		Description: "Performs a discovery-based search for Confluence pages using keywords. space_id is required for keyword searches. If title is omitted, it lists up to 250 recent pages in the space.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
 				"title": {
 					Type:        "STRING",
-					Description: "Filter pages by exact title.",
+					Description: "Filter pages by title keywords (case-insensitive).",
 				},
 				"space_id": {
 					Type:        "STRING",
-					Description: "Filter by space ID.",
+					Description: "The space ID to search in. Required if title is provided.",
+				},
+				"limit": {
+					Type:        "INTEGER",
+					Description: "The maximum number of pages to search (default 250, max 1000).",
 				},
 			},
 		},

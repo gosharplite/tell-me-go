@@ -91,8 +91,18 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	var params struct {
 		Title   string `json:"title"`
 		SpaceID string `json:"space_id"`
+		Limit   int    `json:"limit"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Title != "" && params.SpaceID == "" {
+		return tools.ToolResult{}, fmt.Errorf("space_id is required for fuzzy keyword search")
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -103,63 +113,110 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	}
 
 	q := u.Query()
-	if params.Title != "" {
-		q.Set("title", params.Title)
-	}
 	if params.SpaceID != "" {
 		q.Set("space-id", params.SpaceID)
 	}
+	q.Set("limit", "50")
+	q.Set("sort", "-modified-date")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	nextURL := u.String()
+	var matches []struct {
+		ID    string
+		Title string
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
+	maxPages := params.Limit
+	if maxPages <= 0 {
+		maxPages = 250
+	}
+	warning := ""
+	if maxPages > 1000 {
+		maxPages = 1000
+		warning = "Note: Search depth capped at 1000 pages for safety.\n\n"
 	}
 
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
+	maxIterations := (maxPages + 49) / 50
+	keyword := strings.ToLower(params.Title)
+	pagesProcessed := 0
 
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return tools.ToolResult{}, fmt.Errorf("Confluence API returned status: %s", resp.Status)
-	}
-
-	var responseData struct {
-		Results []struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
-		} `json:"results"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(responseData.Results) == 0 {
-		msg := "No pages found matching the criteria."
-		if params.Title != "" {
-			msg += " Hint: The V2 API requires an exact title match. Try listing the space without a title to find the exact name."
+	for i := 0; i < maxIterations; i++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
 		}
-		return tools.ToolResult{Text: msg}, nil
+		req.Header.Set("Authorization", authHeader)
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := m.client.Do(req)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return tools.ToolResult{}, fmt.Errorf("Confluence API returned status: %s, body: %s", resp.Status, string(body))
+		}
+
+		var responseData struct {
+			Results []struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			} `json:"results"`
+			Links struct {
+				Next string `json:"next"`
+			} `json:"_links"`
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(&responseData)
+		resp.Body.Close()
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		for _, page := range responseData.Results {
+			pagesProcessed++
+			if keyword == "" || strings.Contains(strings.ToLower(page.Title), keyword) {
+				matches = append(matches, struct {
+					ID    string
+					Title string
+				}{ID: page.ID, Title: page.Title})
+			}
+		}
+
+		if responseData.Links.Next == "" {
+			break
+		}
+
+		// Handle absolute vs relative Next link
+		if strings.HasPrefix(responseData.Links.Next, "http") {
+			nextURL = responseData.Links.Next
+		} else {
+			parsedBase, _ := url.Parse(m.baseURL)
+			parsedNext, err := url.Parse(responseData.Links.Next)
+			if err != nil {
+				break
+			}
+			nextURL = parsedBase.ResolveReference(parsedNext).String()
+		}
 	}
 
-	var resultText string
-	resultText = "Found pages:\n"
-	for _, page := range responseData.Results {
-		resultText += fmt.Sprintf("- %s (ID: %s)\n", page.Title, page.ID)
+	if len(matches) == 0 {
+		if params.Title != "" {
+			return tools.ToolResult{Text: fmt.Sprintf("%sSearched the %d most recently modified pages in space '%s' but found no pages containing '%s'. Please try an exact title or a different keyword.", warning, pagesProcessed, params.SpaceID, params.Title)}, nil
+		}
+		return tools.ToolResult{Text: warning + "No pages found matching the criteria."}, nil
 	}
 
-	return tools.ToolResult{Text: resultText}, nil
+	var resultText strings.Builder
+	resultText.WriteString(warning)
+	resultText.WriteString("Found pages:\n")
+	for _, page := range matches {
+		resultText.WriteString(fmt.Sprintf("- %s (ID: %s)\n", page.Title, page.ID))
+	}
+
+	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
 func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
