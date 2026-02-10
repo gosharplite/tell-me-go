@@ -46,7 +46,7 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/rest/api/3/search") && req.URL.Query().Get("jql") == "project = PROJ"
+			return strings.Contains(req.URL.String(), "/rest/api/3/search/jql") && req.URL.Query().Get("jql") == "project = PROJ"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),

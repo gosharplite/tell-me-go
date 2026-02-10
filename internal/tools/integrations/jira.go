@@ -54,7 +54,7 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
 	}
-	u = u.JoinPath("/rest/api/3/search")
+	u = u.JoinPath("/rest/api/3/search/jql")
 	q := u.Query()
 	q.Set("jql", params.JQL)
 
