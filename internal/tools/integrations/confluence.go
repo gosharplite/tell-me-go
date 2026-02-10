@@ -76,11 +76,11 @@ func NewConfluenceManager(sm *security.SecurityManager, client tools.HTTPClient)
 func (m *confluenceManager) getAuthHeader() (string, error) {
 	email := os.Getenv("ATLASSIAN_EMAIL")
 	if email == "" {
-		return "", fmt.Errorf("Missing ATLASSIAN_EMAIL environment variable")
+		return "", fmt.Errorf("missing ATLASSIAN_EMAIL environment variable")
 	}
 	token := os.Getenv("ATLASSIAN_TOKEN")
 	if token == "" {
-		return "", fmt.Errorf("Missing ATLASSIAN_TOKEN environment variable")
+		return "", fmt.Errorf("missing ATLASSIAN_TOKEN environment variable")
 	}
 
 	auth := fmt.Sprintf("%s:%s", email, token)
@@ -99,8 +99,16 @@ func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 		return "", err
 	}
 
-	apiURL := fmt.Sprintf("%s/wiki/api/v2/spaces?keys=%s", m.baseURL, spaceKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	u, err := url.Parse(m.baseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid base url: %w", err)
+	}
+	u = u.JoinPath("/wiki/api/v2/spaces")
+	q := u.Query()
+	q.Set("keys", spaceKey)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +179,7 @@ func (m *confluenceManager) fetchSearchPage(ctx context.Context, url, authHeader
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Confluence API returned status: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("confluence API returned status: %s, body: %s", resp.Status, string(body))
 	}
 
 	var responseData searchResponse
@@ -282,15 +290,15 @@ func (m *confluenceManager) resolveSpaceIDIfNeeded(ctx context.Context, spaceID 
 }
 
 func (m *confluenceManager) prepareSearchURL(spaceID string) (*url.URL, error) {
-	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages", m.baseURL)
-	u, err := url.Parse(apiURL)
+	u, err := url.Parse(m.baseURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse Confluence API URL: %w", err)
+		return nil, fmt.Errorf("invalid base url: %w", err)
 	}
+	u = u.JoinPath("/wiki/api/v2/pages")
 
 	q := u.Query()
 	if spaceID != "" {
-		q["space-id"] = []string{spaceID}
+		q.Set("space-id", spaceID)
 	}
 	q.Set("limit", "50")
 	q.Set("sort", "-modified-date")
@@ -331,8 +339,16 @@ func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning s
 }
 
 func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID, authHeader string) (*http.Response, error) {
-	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages/%s?body-format=storage", m.baseURL, pageID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	u, err := url.Parse(m.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+	u = u.JoinPath("/wiki/api/v2/pages", pageID)
+	q := u.Query()
+	q.Set("body-format", "storage")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -347,7 +363,7 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID, authHe
 
 	if resp.StatusCode == http.StatusNotFound {
 		resp.Body.Close()
-		return nil, fmt.Errorf("Confluence page not found: %s", pageID)
+		return nil, fmt.Errorf("confluence page not found: %s", pageID)
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		resp.Body.Close()
@@ -355,7 +371,7 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID, authHe
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("Confluence API returned status: %s", resp.Status)
+		return nil, fmt.Errorf("confluence API returned status: %s", resp.Status)
 	}
 
 	return resp, nil
@@ -370,7 +386,7 @@ func (m *confluenceManager) readAndValidateBody(respBody io.ReadCloser) ([]byte,
 	}
 
 	if len(body) > maxPageSize {
-		return nil, fmt.Errorf("Confluence page size exceeds the 5MB limit")
+		return nil, fmt.Errorf("confluence page size exceeds the 5MB limit")
 	}
 	return body, nil
 }
@@ -475,8 +491,13 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 }
 
 func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID, authHeader string) (*pageVersionInfo, error) {
-	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages/%s", m.baseURL, pageID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	u, err := url.Parse(m.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+	u = u.JoinPath("/wiki/api/v2/pages", pageID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create version fetch request: %w", err)
 	}
@@ -501,13 +522,18 @@ func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID, a
 }
 
 func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, payload map[string]interface{}, authHeader string) error {
-	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages/%s", m.baseURL, pageID)
+	u, err := url.Parse(m.baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base url: %w", err)
+	}
+	u = u.JoinPath("/wiki/api/v2/pages", pageID)
+
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal update payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, apiURL, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create update request: %w", err)
 	}
@@ -522,7 +548,7 @@ func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusConflict {
-		return fmt.Errorf("Conflict: The page version has changed during the update process. Please retry.")
+		return fmt.Errorf("conflict: page version changed during update; please retry")
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -588,7 +614,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 	}
 
 	if err := m.executeUpdate(ctx, params.PageID, updatePayload, authHeader); err != nil {
-		if strings.Contains(err.Error(), "Conflict:") {
+		if strings.Contains(err.Error(), "conflict:") {
 			return tools.ToolResult{Text: err.Error()}, nil
 		}
 		return tools.ToolResult{}, err

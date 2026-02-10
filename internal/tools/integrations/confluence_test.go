@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "token")
 		_, err := m.getAuthHeader()
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})
 
 	t.Run("Missing Token", func(t *testing.T) {
@@ -43,7 +44,7 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 		t.Setenv("ATLASSIAN_TOKEN", "")
 		_, err := m.getAuthHeader()
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Missing ATLASSIAN_TOKEN")
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_TOKEN")
 	})
 
 	t.Run("Success", func(t *testing.T) {
@@ -243,7 +244,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		}
 		_, err := m.confluenceSearch(context.Background(), args)
 		if assert.Error(t, err) {
-			assert.Contains(t, err.Error(), "Confluence API returned status: 403 Forbidden")
+			assert.Contains(t, err.Error(), "confluence API returned status: 403 Forbidden")
 		}
 	})
 
@@ -355,7 +356,7 @@ func TestConfluenceManager_ConfluenceRead(t *testing.T) {
 
 		_, err := m.confluenceRead(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Confluence page not found: 404")
+		assert.Contains(t, err.Error(), "confluence page not found: 404")
 	})
 
 	t.Run("Unauthorized", func(t *testing.T) {
@@ -552,7 +553,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 
 		result, err := m.confluenceWrite(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "Conflict: The page version has changed")
+		assert.Contains(t, result.Text, "conflict: page version changed")
 	})
 }
 
@@ -610,7 +611,7 @@ func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
 
 	_, err := m.confluenceRead(context.Background(), args)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Confluence page size exceeds the 5MB limit")
+	assert.Contains(t, err.Error(), "confluence page size exceeds the 5MB limit")
 }
 
 func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
@@ -711,7 +712,7 @@ func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
 			name:          "Auth Error",
 			spaceKey:      "AUTH_ERR",
 			mockStatus:    http.StatusOK, // won't be used
-			expectedError: "Missing ATLASSIAN_EMAIL",
+			expectedError: "missing ATLASSIAN_EMAIL",
 		},
 		{
 			name:          "Decode Error",
@@ -913,7 +914,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		m := NewConfluenceManager(nil, nil)
 		_, err := m.confluenceSearch(context.Background(), map[string]interface{}{"space_id": "123"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse")
+		assert.Contains(t, err.Error(), "invalid base url")
 	})
 
 	t.Run("Network Failure Read", func(t *testing.T) {
@@ -937,7 +938,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 
 		_, err := m.confluenceRead(context.Background(), map[string]interface{}{"page_id": "123"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Confluence API returned status: 500")
+		assert.Contains(t, err.Error(), "confluence API returned status: 500")
 	})
 
 	t.Run("Invalid JSON Read", func(t *testing.T) {
@@ -958,7 +959,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		m := NewConfluenceManager(nil, nil)
 		_, err := m.confluenceWrite(context.Background(), map[string]interface{}{"page_id": "123", "markdown_content": "test"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})
 
 	t.Run("Auth Failure resolveSpaceID", func(t *testing.T) {
@@ -966,7 +967,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		m := NewConfluenceManager(nil, nil)
 		_, err := m.resolveSpaceID(context.Background(), "SPACE")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})
 
 	t.Run("fetchSearchPage Error request creation", func(t *testing.T) {
@@ -1152,4 +1153,93 @@ type errorReader struct {
 
 func (r *errorReader) Read(p []byte) (n int, err error) {
 	return 0, r.err
+}
+
+func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	specialID := "123?456&789#abc"
+	specialKey := "SPACE&KEY#ETC"
+
+	t.Run("resolveSpaceID with special characters", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			// Check if the query parameter is correctly escaped
+			q := req.URL.Query()
+			return q.Get("keys") == specialKey
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"results": [{"id": "98765"}]}`)),
+		}, nil)
+
+		id, err := m.resolveSpaceID(context.Background(), specialKey)
+		assert.NoError(t, err)
+		assert.Equal(t, "98765", id)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("fetchPageContent with special characters", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			// Check if the path variable is correctly escaped
+			expectedPath := "/wiki/api/v2/pages/" + url.PathEscape(specialID)
+			return strings.Contains(req.URL.EscapedPath(), expectedPath) && req.URL.Query().Get("body-format") == "storage"
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"title": "Test", "body": {"storage": {"value": "content"}}}`)),
+		}, nil)
+
+		resp, err := m.fetchPageContent(context.Background(), specialID, "auth")
+		assert.NoError(t, err)
+		resp.Body.Close()
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("getCurrentPageVersion with special characters", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			expectedPath := "/wiki/api/v2/pages/" + url.PathEscape(specialID)
+			return strings.Contains(req.URL.EscapedPath(), expectedPath)
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "123", "title": "Test", "version": {"number": 1}}`)),
+		}, nil)
+
+		_, err := m.getCurrentPageVersion(context.Background(), specialID, "auth")
+		assert.NoError(t, err)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("executeUpdate with special characters", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			expectedPath := "/wiki/api/v2/pages/" + url.PathEscape(specialID)
+			return req.Method == http.MethodPut && strings.Contains(req.URL.EscapedPath(), expectedPath)
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "123"}`)),
+		}, nil)
+
+		err := m.executeUpdate(context.Background(), specialID, map[string]interface{}{"title": "New"}, "auth")
+		assert.NoError(t, err)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("prepareSearchURL with special characters", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		u, err := m.prepareSearchURL(specialID)
+		assert.NoError(t, err)
+		assert.Equal(t, specialID, u.Query().Get("space-id"))
+		assert.Contains(t, u.String(), "space-id=123%3F456%26789")
+	})
 }
