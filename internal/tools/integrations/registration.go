@@ -21,6 +21,9 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.
 
 	// Register Teams Tools
 	registerTeams(r, sm, nil)
+
+	// Register Confluence Tools
+	registerConfluence(r, sm, nil)
 }
 
 func registerMedia(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
@@ -136,4 +139,68 @@ func registerTeams(r *registry.Registry, sm *security.SecurityManager, client to
 			Required: []string{"webhook_url", "message", "reason"},
 		},
 	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
+}
+
+func registerConfluence(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+	m := NewConfluenceManager(sm, client)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "confluence_search",
+		Description: "Searches for Confluence pages by title or space ID. Returns a list of page IDs and titles.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"title": {
+					Type:        "STRING",
+					Description: "Filter pages by title.",
+				},
+				"space_id": {
+					Type:        "STRING",
+					Description: "Filter by space ID.",
+				},
+			},
+		},
+	}, m.confluenceSearch)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "confluence_read",
+		Description: "Reads the content of a Confluence page and converts it to clean Markdown. Requires a numeric page_id.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"page_id": {
+					Type:        "STRING",
+					Description: "The numeric ID of the page to fetch.",
+				},
+			},
+			Required: []string{"page_id"},
+		},
+	}, m.confluenceRead)
+
+	r.RegisterWithOptions(&tools.ToolDeclaration{
+		Name:        "confluence_write",
+		Description: "Updates a Confluence page. Handles versioning and Markdown-to-XHTML conversion internally. Triggers security confirmation.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"page_id": {
+					Type:        "STRING",
+					Description: "The ID of the page to update.",
+				},
+				"markdown_content": {
+					Type:        "STRING",
+					Description: "The new body content in Markdown.",
+				},
+				"title": {
+					Type:        "STRING",
+					Description: "New title for the page (optional).",
+				},
+				"update_message": {
+					Type:        "STRING",
+					Description: "Summary for the version history (optional).",
+				},
+			},
+			Required: []string{"page_id", "markdown_content"},
+		},
+	}, m.confluenceWrite, registry.ToolOptions{Serial: true})
 }

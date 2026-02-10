@@ -318,7 +318,11 @@ func TestRegister(t *testing.T) {
 		found[d.Name] = true
 	}
 
-	expected := []string{"read_external_docs", "http_request", "send_teams_message", "create_image", "read_image"}
+	expected := []string{
+		"read_external_docs", "http_request", "send_teams_message",
+		"create_image", "read_image",
+		"confluence_search", "confluence_read", "confluence_write",
+	}
 	for _, name := range expected {
 		if !found[name] {
 			t.Errorf("Tool %s not registered", name)
