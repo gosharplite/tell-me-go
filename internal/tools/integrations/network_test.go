@@ -242,7 +242,7 @@ func TestSendTeamsMessage(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader("Error")),
 			},
 			confirm:    true,
-			wantInText: []string{"Failed to send message to Teams", "500 Internal Server Error"},
+			wantInText: []string{"failed to send message to Teams", "500 Internal Server Error"},
 		},
 	}
 

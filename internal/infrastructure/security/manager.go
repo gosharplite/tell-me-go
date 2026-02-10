@@ -222,6 +222,9 @@ var allowedCommands = map[string]bool{
 	"send_teams_message": true,
 	"read_external_docs": true,
 	"http_request":       true,
+	"confluence_search":  true,
+	"confluence_read":    true,
+	"confluence_write":   true,
 
 	// Session & Management Tools
 	"get_session_info":         true,
