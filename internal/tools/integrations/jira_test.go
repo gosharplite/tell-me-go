@@ -56,7 +56,8 @@ func TestJiraManager_JiraSearchIssues(t *testing.T) {
 		result, err := m.jiraSearchIssues(context.Background(), args)
 
 		assert.NoError(t, err)
-		assert.Contains(t, result.Text, "[PROJ-1] Test Issue (Status: In Progress)")
+		assert.Contains(t, result.Text, "Found 1 issues (showing up to 100):")
+		assert.Contains(t, result.Text, "[PROJ-1] Test Issue (Status: In Progress, Assignee: Unassigned)")
 		mockClient.AssertExpectations(t)
 	})
 

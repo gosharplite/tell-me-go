@@ -217,13 +217,17 @@ func registerJira(r *registry.Registry, sm *security.SecurityManager, client too
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "jira_search_issues",
-		Description: "Searches for Jira issues using JQL (Jira Query Language). Returns issue keys, summaries, and statuses. Example JQL: 'project = PROJ AND status = \"In Progress\"'.",
+		Description: "Searches for Jira issues using JQL (Jira Query Language). Returns issue keys, summaries, statuses, and assignees.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
 				"jql": {
 					Type:        "STRING",
 					Description: "The JQL query string.",
+				},
+				"limit": {
+					Type:        "INTEGER",
+					Description: "Maximum number of issues to return (default 100, max 1000).",
 				},
 			},
 			Required: []string{"jql"},

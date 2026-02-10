@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +39,8 @@ func NewJiraManager(sm *security.SecurityManager, client tools.HTTPClient) *jira
 
 func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
-		JQL string `json:"jql"`
+		JQL   string `json:"jql"`
+		Limit int    `json:"limit"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -55,8 +57,16 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	u = u.JoinPath("/rest/api/3/search/jql")
 	q := u.Query()
 	q.Set("jql", params.JQL)
-	q.Set("maxResults", "50")
-	q.Set("fields", "summary,status")
+
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	q.Set("maxResults", strconv.Itoa(limit))
+	q.Set("fields", "summary,status,assignee")
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -84,6 +94,9 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 				Status  struct {
 					Name string `json:"name"`
 				} `json:"status"`
+				Assignee struct {
+					DisplayName string `json:"displayName"`
+				} `json:"assignee"`
 			} `json:"fields"`
 		} `json:"issues"`
 		Total int `json:"total"`
@@ -98,9 +111,13 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d issues (showing up to 50):\n", responseData.Total))
+	resultText.WriteString(fmt.Sprintf("Found %d issues (showing up to %d):\n", responseData.Total, limit))
 	for _, issue := range responseData.Issues {
-		resultText.WriteString(fmt.Sprintf("- [%s] %s (Status: %s)\n", issue.Key, issue.Fields.Summary, issue.Fields.Status.Name))
+		assignee := issue.Fields.Assignee.DisplayName
+		if assignee == "" {
+			assignee = "Unassigned"
+		}
+		resultText.WriteString(fmt.Sprintf("- [%s] %s (Status: %s, Assignee: %s)\n", issue.Key, issue.Fields.Summary, issue.Fields.Status.Name, assignee))
 	}
 
 	return tools.ToolResult{Text: resultText.String()}, nil
