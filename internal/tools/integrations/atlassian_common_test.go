@@ -1,0 +1,176 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package integrations
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+)
+
+type mockRetryClient struct {
+	mock.Mock
+}
+
+func (m *mockRetryClient) Do(req *http.Request) (*http.Response, error) {
+	args := m.Called(req)
+	return args.Get(0).(*http.Response), args.Error(1)
+}
+
+func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "token")
+
+	t.Run("Success on first attempt", func(t *testing.T) {
+		p := newAtlassianProvider()
+		mockClient := new(mockRetryClient)
+		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+		}, nil).Once()
+
+		resp, err := p.Do(context.Background(), mockClient, req)
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Retry on 429 then success", func(t *testing.T) {
+		p := newAtlassianProvider()
+		mockClient := new(mockRetryClient)
+		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
+
+		// First attempt: 429
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("throttled")),
+		}, nil).Once()
+
+		// Second attempt: 200
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+		}, nil).Once()
+
+		// Use a context with a short timeout to speed up the test if it hangs,
+		// but since we are using exponential backoff starting at 1s, it might take a bit.
+		// Actually, I should probably mock the timer if I want it to be fast, but
+		// for a simple unit test, 1s wait is acceptable.
+		
+		start := time.Now()
+		resp, err := p.Do(context.Background(), mockClient, req)
+		duration := time.Since(start)
+
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.True(t, duration >= 1*time.Second, "Should have waited at least 1s")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Respect Retry-After header", func(t *testing.T) {
+		p := newAtlassianProvider()
+		mockClient := new(mockRetryClient)
+		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
+
+		headers := make(http.Header)
+		headers.Set("Retry-After", "2")
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     headers,
+			Body:       io.NopCloser(strings.NewReader("throttled")),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+		}, nil).Once()
+
+		start := time.Now()
+		resp, err := p.Do(context.Background(), mockClient, req)
+		duration := time.Since(start)
+
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.True(t, duration >= 2*time.Second, "Should have respected Retry-After: 2")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Max retries exceeded", func(t *testing.T) {
+		p := newAtlassianProvider()
+		mockClient := new(mockRetryClient)
+		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
+
+		// 4 attempts (1 initial + 3 retries)
+		for i := 0; i < 4; i++ {
+			mockClient.On("Do", mock.Anything).Return(&http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("throttled")),
+			}, nil).Once()
+		}
+
+		// To avoid long test time, we might want to skip this or use a shorter base delay,
+		// but the implementation has it hardcoded to 1s.
+		// Let's just do it. Total wait: 1s + 2s + 4s = 7s.
+		if testing.Short() {
+			t.Skip("skipping long retry test")
+		}
+
+		resp, err := p.Do(context.Background(), mockClient, req)
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Context cancellation", func(t *testing.T) {
+		p := newAtlassianProvider()
+		mockClient := new(mockRetryClient)
+		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("throttled")),
+		}, nil).Once()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+		}()
+
+		_, err := p.Do(ctx, mockClient, req)
+		assert.Error(t, err)
+		assert.Equal(t, context.Canceled, err)
+	})
+}
+
+func TestAtlassianProvider_GetAuthHeader_Errors(t *testing.T) {
+	t.Run("Missing Email", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "")
+		p := newAtlassianProvider()
+		_, err := p.getAuthHeader()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
+	})
+
+	t.Run("Missing Token", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test")
+		t.Setenv("ATLASSIAN_TOKEN", "")
+		p := newAtlassianProvider()
+		_, err := p.getAuthHeader()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing ATLASSIAN_TOKEN")
+	})
+}

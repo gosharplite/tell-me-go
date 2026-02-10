@@ -48,11 +48,6 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("jql argument is required")
 	}
 
-	authHeader, err := m.provider.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
@@ -68,10 +63,9 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -124,11 +118,6 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("issue_key argument is required")
 	}
 
-	authHeader, err := m.provider.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
@@ -139,10 +128,9 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
