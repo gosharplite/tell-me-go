@@ -146,13 +146,13 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "confluence_search",
-		Description: "Searches for Confluence pages by title or space ID. Returns a list of page IDs and titles.",
+		Description: "Searches for Confluence pages. Note: Title search requires an exact match. If title is omitted, it lists all pages in the specified space ID.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
 				"title": {
 					Type:        "STRING",
-					Description: "Filter pages by title.",
+					Description: "Filter pages by exact title.",
 				},
 				"space_id": {
 					Type:        "STRING",

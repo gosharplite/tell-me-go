@@ -27,6 +27,7 @@ var autoApprovableCommands = map[string]bool{
 	"head": true, "tail": true, "wc": true, "stat": true, "date": true,
 	"whoami": true, "diff": true, "git": true, "go": true,
 	"golangci-lint": true, "staticcheck": true, "govulncheck": true,
+	"confluence_search": true, "confluence_read": true,
 }
 
 // IsSafe checks if a command is safe for auto-approval.

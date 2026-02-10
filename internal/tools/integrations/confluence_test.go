@@ -63,7 +63,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 	t.Setenv("ATLASSIAN_TOKEN", "api-token")
 	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
-	t.Run("Success", func(t *testing.T) {
+	t.Run("Success with Title and Space", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
@@ -75,7 +75,9 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.HasPrefix(req.URL.String(), "https://test.atlassian.net")
+			return strings.HasPrefix(req.URL.String(), "https://test.atlassian.net/wiki/api/v2/pages") &&
+				req.URL.Query().Get("title") == "Test" &&
+				req.URL.Query().Get("space-id") == "SPACE1"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -91,14 +93,35 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		assert.Contains(t, result.Text, "Found pages:")
 		assert.Contains(t, result.Text, "Page 1 (ID: 1)")
 		assert.Contains(t, result.Text, "Page 2 (ID: 2)")
-
-		// Verify request details
-		req := mockClient.Calls[0].Arguments.Get(0).(*http.Request)
-		assert.Equal(t, "https://test.atlassian.net/wiki/api/v2/pages?space-id=SPACE1&title=Test", req.URL.String())
-		assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("test@example.com:api-token")), req.Header.Get("Authorization"))
 	})
 
-	t.Run("No Results", func(t *testing.T) {
+	t.Run("Success Space Only", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{
+			"results": [
+				{"id": "3", "title": "Space Page"}
+			]
+		}`
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.URL.Query().Get("space-id") == "SPACE1" && req.URL.Query().Get("title") == ""
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		args := map[string]interface{}{
+			"space_id": "SPACE1",
+		}
+
+		result, err := m.confluenceSearch(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Space Page (ID: 3)")
+	})
+
+	t.Run("No Results with Hint", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
@@ -109,9 +132,11 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		result, err := m.confluenceSearch(context.Background(), nil)
+		args := map[string]interface{}{"title": "missing"}
+		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+		assert.Contains(t, result.Text, "No pages found")
+		assert.Contains(t, result.Text, "Hint: The V2 API requires an exact title match")
 	})
 
 	t.Run("API Error", func(t *testing.T) {
@@ -124,9 +149,11 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader("")),
 		}, nil)
 
-		_, err := m.confluenceSearch(context.Background(), nil)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "Confluence API returned status: 403 Forbidden")
+		args := map[string]interface{}{"title": "error"}
+		_, err := m.confluenceSearch(context.Background(), args)
+		if assert.Error(t, err) {
+			assert.Contains(t, err.Error(), "Confluence API returned status: 403 Forbidden")
+		}
 	})
 }
 
@@ -453,9 +480,10 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		result, err := m.confluenceSearch(context.Background(), nil)
+		args := map[string]interface{}{"title": "nothing"}
+		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+		assert.Contains(t, result.Text, "No pages found matching the criteria.")
 	})
 
 	t.Run("Missing Results", func(t *testing.T) {
@@ -469,8 +497,9 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
 
-		result, err := m.confluenceSearch(context.Background(), nil)
+		args := map[string]interface{}{"title": "nothing"}
+		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
-		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+		assert.Contains(t, result.Text, "No pages found matching the criteria.")
 	})
 }

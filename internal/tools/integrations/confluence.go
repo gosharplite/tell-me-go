@@ -146,7 +146,11 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	}
 
 	if len(responseData.Results) == 0 {
-		return tools.ToolResult{Text: "No pages found matching the criteria."}, nil
+		msg := "No pages found matching the criteria."
+		if params.Title != "" {
+			msg += " Hint: The V2 API requires an exact title match. Try listing the space without a title to find the exact name."
+		}
+		return tools.ToolResult{Text: msg}, nil
 	}
 
 	var resultText string
