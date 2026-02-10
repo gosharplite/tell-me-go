@@ -183,7 +183,7 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 
 	maxPages := params.Limit
 	if maxPages <= 0 {
-		maxPages = 250
+		maxPages = 1000
 	}
 	warning := ""
 	if maxPages > 1000 {

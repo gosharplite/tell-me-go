@@ -160,7 +160,7 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 				},
 				"limit": {
 					Type:        "INTEGER",
-					Description: "The maximum number of pages to search (default 250, max 1000).",
+					Description: "The maximum number of pages to search (default 1000, max 1000).",
 				},
 			},
 		},
