@@ -23,6 +23,30 @@ import (
 	"strings"
 )
 
+var (
+	reH1          = regexp.MustCompile(`(?i)<h1.*?>`)
+	reH2          = regexp.MustCompile(`(?i)<h2.*?>`)
+	reH3          = regexp.MustCompile(`(?i)<h3.*?>`)
+	reH4          = regexp.MustCompile(`(?i)<h4.*?>`)
+	reH5          = regexp.MustCompile(`(?i)<h5.*?>`)
+	reH6          = regexp.MustCompile(`(?i)<h6.*?>`)
+	reCloseHeader = regexp.MustCompile(`(?i)</h[1-6]>`)
+	reLi          = regexp.MustCompile(`(?i)<li.*?>`)
+	reCloseLi     = regexp.MustCompile(`(?i)</li>`)
+	reBr          = regexp.MustCompile(`(?i)<br\s*/?>`)
+	reBlocks      = regexp.MustCompile(`(?i)</?(p|div|tr|td|table|ul|ol).*?>`)
+	reTags        = regexp.MustCompile(`<.*?>`)
+	reMultiSpace  = regexp.MustCompile(` +`)
+	reLeadingSpace  = regexp.MustCompile(`(?m)^ +`)
+	reTrailingSpace = regexp.MustCompile(`(?m) +$`)
+	reMultiNewline  = regexp.MustCompile(`\n\n+`)
+
+	reBold1   = regexp.MustCompile(`\*\*(.*?)\*\*`)
+	reBold2   = regexp.MustCompile(`__(.*?)__`)
+	reItalic1 = regexp.MustCompile(`\*(.*?)\*`)
+	reItalic2 = regexp.MustCompile(`_(.*?)_`)
+)
+
 type confluenceManager struct {
 	sm      *security.SecurityManager
 	client  tools.HTTPClient
@@ -209,14 +233,6 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 	content = strings.ReplaceAll(content, "\t", " ")
 
 	// 2. Handle headers
-	reH1 := regexp.MustCompile(`(?i)<h1.*?>`)
-	reH2 := regexp.MustCompile(`(?i)<h2.*?>`)
-	reH3 := regexp.MustCompile(`(?i)<h3.*?>`)
-	reH4 := regexp.MustCompile(`(?i)<h4.*?>`)
-	reH5 := regexp.MustCompile(`(?i)<h5.*?>`)
-	reH6 := regexp.MustCompile(`(?i)<h6.*?>`)
-	reCloseHeader := regexp.MustCompile(`(?i)</h[1-6]>`)
-
 	content = reH1.ReplaceAllString(content, "\n\n# ")
 	content = reH2.ReplaceAllString(content, "\n\n## ")
 	content = reH3.ReplaceAllString(content, "\n\n### ")
@@ -226,20 +242,14 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 	content = reCloseHeader.ReplaceAllString(content, "\n\n")
 
 	// 3. Handle lists
-	reLi := regexp.MustCompile(`(?i)<li.*?>`)
-	reCloseLi := regexp.MustCompile(`(?i)</li>`)
 	content = reLi.ReplaceAllString(content, "\n* ")
 	content = reCloseLi.ReplaceAllString(content, "")
 
 	// 4. Handle line breaks and block elements
-	reBr := regexp.MustCompile(`(?i)<br\s*/?>`)
-	reBlocks := regexp.MustCompile(`(?i)</?(p|div|tr|td|table|ul|ol).*?>`)
-
 	content = reBr.ReplaceAllString(content, "\n")
 	content = reBlocks.ReplaceAllString(content, "\n\n")
 
 	// 5. Strip all remaining HTML tags
-	reTags := regexp.MustCompile(`<.*?>`)
 	content = reTags.ReplaceAllString(content, "")
 
 	// 6. Unescape HTML entities
@@ -249,17 +259,13 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 
 	// 7. Clean up whitespace
 	// Multi-space to single space
-	reMultiSpace := regexp.MustCompile(` +`)
 	content = reMultiSpace.ReplaceAllString(content, " ")
 
 	// Remove leading/trailing spaces on each line
-	reLeadingSpace := regexp.MustCompile(`(?m)^ +`)
 	content = reLeadingSpace.ReplaceAllString(content, "")
-	reTrailingSpace := regexp.MustCompile(`(?m) +$`)
 	content = reTrailingSpace.ReplaceAllString(content, "")
 
 	// Fix multiple newlines
-	reMultiNewline := regexp.MustCompile(`\n\n+`)
 	content = reMultiNewline.ReplaceAllString(content, "\n\n")
 
 	return strings.TrimSpace(content)
@@ -381,12 +387,6 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 func (m *confluenceManager) markdownToXhtml(markdown string) string {
 	lines := strings.Split(markdown, "\n")
 	var result strings.Builder
-
-	// Use fixed patterns for bold and italic since Go doesn't support backreferences in regex
-	reBold1 := regexp.MustCompile(`\*\*(.*?)\*\*`)
-	reBold2 := regexp.MustCompile(`__(.*?)__`)
-	reItalic1 := regexp.MustCompile(`\*(.*?)\*`)
-	reItalic2 := regexp.MustCompile(`_(.*?)_`)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
