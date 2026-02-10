@@ -50,24 +50,10 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("jql argument is required")
 	}
 
-	u, err := url.Parse(m.provider.baseURL)
+	u, err := m.prepareSearchURL(params.JQL, params.Limit)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
+		return tools.ToolResult{}, err
 	}
-	u = u.JoinPath("/rest/api/3/search/jql")
-	q := u.Query()
-	q.Set("jql", params.JQL)
-
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-	q.Set("maxResults", strconv.Itoa(limit))
-	q.Set("fields", "summary,status,assignee")
-	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -86,6 +72,36 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
 	}
 
+	resultText, err := m.formatSearchResponse(resp.Body)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	return tools.ToolResult{Text: resultText}, nil
+}
+
+func (m *jiraManager) prepareSearchURL(jql string, limit int) (*url.URL, error) {
+	u, err := url.Parse(m.provider.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base url: %w", err)
+	}
+	u = u.JoinPath("/rest/api/3/search/jql")
+	q := u.Query()
+	q.Set("jql", jql)
+
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	q.Set("maxResults", strconv.Itoa(limit))
+	q.Set("fields", "summary,status,assignee")
+	u.RawQuery = q.Encode()
+	return u, nil
+}
+
+func (m *jiraManager) formatSearchResponse(body io.ReadCloser) (string, error) {
 	var responseData struct {
 		Issues []struct {
 			Key    string `json:"key"`
@@ -102,12 +118,12 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		Total int `json:"total"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.NewDecoder(body).Decode(&responseData); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(responseData.Issues) == 0 {
-		return tools.ToolResult{Text: "No issues found matching the JQL query."}, nil
+		return "No issues found matching the JQL query.", nil
 	}
 
 	totalFound := responseData.Total
@@ -125,7 +141,7 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		resultText.WriteString(fmt.Sprintf("- [%s] %s (Status: %s, Assignee: %s)\n", issue.Key, issue.Fields.Summary, issue.Fields.Status.Name, assignee))
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String(), nil
 }
 
 func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -166,6 +182,15 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
 	}
 
+	resultText, err := m.formatGetIssueResponse(resp.Body)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	return tools.ToolResult{Text: resultText}, nil
+}
+
+func (m *jiraManager) formatGetIssueResponse(body io.ReadCloser) (string, error) {
 	var issueData struct {
 		Key    string `json:"key"`
 		Fields struct {
@@ -183,8 +208,8 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 		} `json:"fields"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&issueData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.NewDecoder(body).Decode(&issueData); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	descriptionText := m.parseADF(issueData.Fields.Description)
@@ -205,7 +230,7 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 		resultText.WriteString(descriptionText)
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String(), nil
 }
 
 // parseADF extracts plain text from Atlassian Document Format (ADF)
@@ -222,30 +247,42 @@ func (m *jiraManager) parseADF(adf interface{}) string {
 func (m *jiraManager) extractTextFromADF(node interface{}, builder *strings.Builder) {
 	switch v := node.(type) {
 	case map[string]interface{}:
-		if nodeType, ok := v["type"].(string); ok {
-			if nodeType == "text" {
-				if text, ok := v["text"].(string); ok {
-					builder.WriteString(text)
-				}
-			}
-			// Handle line breaks or paragraphs if needed for better readability
-			if nodeType == "paragraph" || nodeType == "heading" {
-				if builder.Len() > 0 && !strings.HasSuffix(builder.String(), "\n") {
-					builder.WriteString("\n")
-				}
-			}
-		}
-		if content, ok := v["content"].([]interface{}); ok {
-			for _, child := range content {
-				m.extractTextFromADF(child, builder)
-			}
-			if nodeType, ok := v["type"].(string); ok && (nodeType == "paragraph" || nodeType == "heading") {
-				builder.WriteString("\n")
-			}
-		}
+		m.handleMapNode(v, builder)
 	case []interface{}:
-		for _, item := range v {
-			m.extractTextFromADF(item, builder)
+		m.handleContent(v, builder)
+	}
+}
+
+func (m *jiraManager) handleMapNode(v map[string]interface{}, builder *strings.Builder) {
+	nodeType, _ := v["type"].(string)
+
+	if nodeType == "text" {
+		if text, ok := v["text"].(string); ok {
+			builder.WriteString(text)
 		}
+	}
+
+	isBlock := nodeType == "paragraph" || nodeType == "heading"
+	if isBlock {
+		m.ensureNewline(builder)
+	}
+
+	if content, ok := v["content"].([]interface{}); ok {
+		m.handleContent(content, builder)
+		if isBlock {
+			builder.WriteString("\n")
+		}
+	}
+}
+
+func (m *jiraManager) handleContent(content []interface{}, builder *strings.Builder) {
+	for _, child := range content {
+		m.extractTextFromADF(child, builder)
+	}
+}
+
+func (m *jiraManager) ensureNewline(builder *strings.Builder) {
+	if builder.Len() > 0 && !strings.HasSuffix(builder.String(), "\n") {
+		builder.WriteString("\n")
 	}
 }
