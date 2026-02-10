@@ -20,6 +20,7 @@ import (
 	"html"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -87,6 +88,51 @@ func (m *confluenceManager) getAuthHeader() (string, error) {
 	return fmt.Sprintf("Basic %s", encoded), nil
 }
 
+func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
+	// If it's already numeric, return it
+	if _, err := strconv.Atoi(spaceKey); err == nil {
+		return spaceKey, nil
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return "", err
+	}
+
+	apiURL := fmt.Sprintf("%s/wiki/api/v2/spaces?keys=%s", m.baseURL, spaceKey)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to resolve space key '%s', status: %s", spaceKey, resp.Status)
+	}
+
+	var responseData struct {
+		Results []struct {
+			ID string `json:"id"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		return "", err
+	}
+
+	if len(responseData.Results) == 0 {
+		return "", fmt.Errorf("space key '%s' not found", spaceKey)
+	}
+
+	return responseData.Results[0].ID, nil
+}
+
 func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Title   string `json:"title"`
@@ -106,6 +152,14 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 		return tools.ToolResult{}, err
 	}
 
+	spaceID := params.SpaceID
+	if spaceID != "" {
+		// Resolve Space Key to ID if needed (V2 API requires numeric space-id)
+		if resolved, err := m.resolveSpaceID(ctx, spaceID); err == nil {
+			spaceID = resolved
+		}
+	}
+
 	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages", m.baseURL)
 	u, err := url.Parse(apiURL)
 	if err != nil {
@@ -113,8 +167,9 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	}
 
 	q := u.Query()
-	if params.SpaceID != "" {
-		q.Set("space-id", params.SpaceID)
+	if spaceID != "" {
+		// Pass space-id as a collection/list as required by Confluence V2 API
+		q["space-id"] = []string{spaceID}
 	}
 	q.Set("limit", "50")
 	q.Set("sort", "-modified-date")

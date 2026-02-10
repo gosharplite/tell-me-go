@@ -67,6 +67,16 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
+		// 1. Mock Space Resolution
+		jsonSpace := `{"results": [{"id": "123"}]}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/wiki/api/v2/spaces?keys=SPACE1")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonSpace)),
+		}, nil).Once()
+
+		// 2. Mock Pages Search
 		jsonResponse := `{
 			"results": [
 				{"id": "1", "title": "Test Page 1"},
@@ -76,12 +86,12 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.HasPrefix(req.URL.String(), "https://test.atlassian.net/wiki/api/v2/pages") &&
-				req.URL.Query().Get("space-id") == "SPACE1" &&
+				req.URL.Query().Get("space-id") == "123" &&
 				req.URL.Query().Get("limit") == "50"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		}, nil).Once()
 
 		args := map[string]interface{}{
 			"title":    "Test",
@@ -93,12 +103,23 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		assert.Contains(t, result.Text, "Found pages:")
 		assert.Contains(t, result.Text, "Test Page 1 (ID: 1)")
 		assert.NotContains(t, result.Text, "Other Page")
+		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Success Space Only", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
+		// 1. Mock Space Resolution
+		jsonSpace := `{"results": [{"id": "123"}]}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/wiki/api/v2/spaces?keys=SPACE1")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonSpace)),
+		}, nil).Once()
+
+		// 2. Mock Pages Search
 		jsonResponse := `{
 			"results": [
 				{"id": "3", "title": "Space Page"}
@@ -106,11 +127,11 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.URL.Query().Get("space-id") == "SPACE1"
+			return req.URL.Query().Get("space-id") == "123"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		}, nil).Once()
 
 		args := map[string]interface{}{
 			"space_id": "SPACE1",
@@ -119,12 +140,14 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Space Page (ID: 3)")
+		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("No Results with Hint", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 
+		// 1. Mock Space Resolution (using numeric ID this time to skip resolution)
 		jsonResponse := `{"results": [{"id":"1", "title":"Random"}], "_links": {"next": ""}}`
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
@@ -134,7 +157,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "missing",
-			"space_id": "SPACE1",
+			"space_id": "123", // Numeric, skips resolution
 		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
@@ -145,6 +168,9 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 	t.Run("Success Incremental Discovery", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
+
+		// Numeric space_id to skip resolution for brevity in this test
+		spaceID := "123"
 
 		// Page 1: No matches, has next link
 		jsonPage1 := `{
@@ -183,7 +209,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "cicd",
-			"space_id": "SPACE1",
+			"space_id": spaceID,
 		}
 
 		result, err := m.confluenceSearch(context.Background(), args)
@@ -212,7 +238,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "error",
-			"space_id": "SPACE1",
+			"space_id": "123",
 		}
 		_, err := m.confluenceSearch(context.Background(), args)
 		if assert.Error(t, err) {
@@ -241,7 +267,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "cicd",
-			"space_id": "SPACE1",
+			"space_id": "123",
 			"limit":    100,
 		}
 
@@ -264,7 +290,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "cicd",
-			"space_id": "SPACE1",
+			"space_id": "123",
 			"limit":    5000,
 		}
 
@@ -600,7 +626,7 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "nothing",
-			"space_id": "SPACE1",
+			"space_id": "123",
 		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
@@ -620,7 +646,7 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 
 		args := map[string]interface{}{
 			"title":    "nothing",
-			"space_id": "SPACE1",
+			"space_id": "123",
 		}
 		result, err := m.confluenceSearch(context.Background(), args)
 		assert.NoError(t, err)
