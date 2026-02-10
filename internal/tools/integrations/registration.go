@@ -24,6 +24,9 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.
 
 	// Register Confluence Tools
 	registerConfluence(r, sm, nil)
+
+	// Register Jira Tools
+	registerJira(r, sm, nil)
 }
 
 func registerMedia(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
@@ -207,4 +210,38 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 			Required: []string{"page_id", "markdown_content"},
 		},
 	}, m.confluenceWrite, registry.ToolOptions{Serial: true})
+}
+
+func registerJira(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+	m := NewJiraManager(sm, client)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "jira_search_issues",
+		Description: "Searches for Jira issues using JQL (Jira Query Language). Returns issue keys, summaries, and statuses. Example JQL: 'project = PROJ AND status = \"In Progress\"'.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"jql": {
+					Type:        "STRING",
+					Description: "The JQL query string.",
+				},
+			},
+			Required: []string{"jql"},
+		},
+	}, m.jiraSearchIssues)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "jira_get_issue",
+		Description: "Retrieves full details for a specific Jira issue, including summary, status, priority, assignee, and description.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"issue_key": {
+					Type:        "STRING",
+					Description: "The Jira issue key (e.g., 'PROJ-123').",
+				},
+			},
+			Required: []string{"issue_key"},
+		},
+	}, m.jiraGetIssue)
 }

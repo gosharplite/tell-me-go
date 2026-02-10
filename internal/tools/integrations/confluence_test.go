@@ -34,7 +34,7 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	t.Run("Missing Email", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "")
 		t.Setenv("ATLASSIAN_TOKEN", "token")
-		_, err := m.getAuthHeader()
+		_, err := m.provider.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})
@@ -42,7 +42,7 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	t.Run("Missing Token", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "email")
 		t.Setenv("ATLASSIAN_TOKEN", "")
-		_, err := m.getAuthHeader()
+		_, err := m.provider.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_TOKEN")
 	})
@@ -52,7 +52,7 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 		token := "api-token"
 		t.Setenv("ATLASSIAN_EMAIL", email)
 		t.Setenv("ATLASSIAN_TOKEN", token)
-		header, err := m.getAuthHeader()
+		header, err := m.provider.getAuthHeader()
 		assert.NoError(t, err)
 
 		expectedAuth := base64.StdEncoding.EncodeToString([]byte(email + ":" + token))
