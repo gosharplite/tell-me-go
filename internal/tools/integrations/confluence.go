@@ -5,12 +5,10 @@ package integrations
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"bytes"
@@ -23,8 +21,6 @@ import (
 	"strconv"
 	"strings"
 )
-
-const defaultConfluenceBaseURL = "https://02007.atlassian.net"
 
 var (
 	reH1            = regexp.MustCompile(`(?i)<h1.*?>`)
@@ -51,9 +47,9 @@ var (
 )
 
 type confluenceManager struct {
-	sm      *security.SecurityManager
-	client  tools.HTTPClient
-	baseURL string
+	sm       *security.SecurityManager
+	client   tools.HTTPClient
+	provider *atlassianProvider
 }
 
 // NewConfluenceManager creates a new instance of confluenceManager.
@@ -61,31 +57,11 @@ func NewConfluenceManager(sm *security.SecurityManager, client tools.HTTPClient)
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
-	if baseURL == "" {
-		// Use default fallback if environment variable is missing
-		baseURL = defaultConfluenceBaseURL
-	}
 	return &confluenceManager{
-		sm:      sm,
-		client:  client,
-		baseURL: baseURL,
+		sm:       sm,
+		client:   client,
+		provider: newAtlassianProvider(),
 	}
-}
-
-func (m *confluenceManager) getAuthHeader() (string, error) {
-	email := os.Getenv("ATLASSIAN_EMAIL")
-	if email == "" {
-		return "", fmt.Errorf("missing ATLASSIAN_EMAIL environment variable")
-	}
-	token := os.Getenv("ATLASSIAN_TOKEN")
-	if token == "" {
-		return "", fmt.Errorf("missing ATLASSIAN_TOKEN environment variable")
-	}
-
-	auth := fmt.Sprintf("%s:%s", email, token)
-	encoded := base64.StdEncoding.EncodeToString([]byte(auth))
-	return fmt.Sprintf("Basic %s", encoded), nil
 }
 
 func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string) (string, error) {
@@ -94,12 +70,7 @@ func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 		return spaceKey, nil
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return "", err
-	}
-
-	u, err := url.Parse(m.baseURL)
+	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid base url: %w", err)
 	}
@@ -112,10 +83,9 @@ func (m *confluenceManager) resolveSpaceID(ctx context.Context, spaceKey string)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return "", err
 	}
@@ -163,15 +133,14 @@ type pageVersionInfo struct {
 	} `json:"version"`
 }
 
-func (m *confluenceManager) fetchSearchPage(ctx context.Context, url, authHeader string) (*searchResponse, error) {
+func (m *confluenceManager) fetchSearchPage(ctx context.Context, url string) (*searchResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -241,11 +210,6 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 		return tools.ToolResult{}, fmt.Errorf("space_id is required for fuzzy keyword search")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	spaceID, err := m.resolveSpaceIDIfNeeded(ctx, params.SpaceID)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -263,7 +227,7 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 	pagesProcessed := 0
 
 	for i := 0; i < maxIterations && nextURL != ""; i++ {
-		responseData, err := m.fetchSearchPage(ctx, nextURL, authHeader)
+		responseData, err := m.fetchSearchPage(ctx, nextURL)
 		if err != nil {
 			return tools.ToolResult{}, err
 		}
@@ -272,7 +236,7 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 		matches = append(matches, pageMatches...)
 		pagesProcessed += len(responseData.Results)
 
-		nextURL = m.resolveNextURL(m.baseURL, responseData.Links.Next)
+		nextURL = m.resolveNextURL(m.provider.baseURL, responseData.Links.Next)
 	}
 
 	return m.formatSearchResults(matches, warning, pagesProcessed, params.SpaceID, params.Title), nil
@@ -290,7 +254,7 @@ func (m *confluenceManager) resolveSpaceIDIfNeeded(ctx context.Context, spaceID 
 }
 
 func (m *confluenceManager) prepareSearchURL(spaceID string) (*url.URL, error) {
-	u, err := url.Parse(m.baseURL)
+	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
 	}
@@ -337,8 +301,8 @@ func (m *confluenceManager) formatSearchResults(matches []searchMatch, warning s
 	return tools.ToolResult{Text: resultText.String()}
 }
 
-func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID, authHeader string) (*http.Response, error) {
-	u, err := url.Parse(m.baseURL)
+func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID string) (*http.Response, error) {
+	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
 	}
@@ -352,10 +316,9 @@ func (m *confluenceManager) fetchPageContent(ctx context.Context, pageID, authHe
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -418,12 +381,7 @@ func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("page_id argument is required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	resp, err := m.fetchPageContent(ctx, params.PageID, authHeader)
+	resp, err := m.fetchPageContent(ctx, params.PageID)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -489,8 +447,8 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 	return strings.TrimSpace(content)
 }
 
-func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID, authHeader string) (*pageVersionInfo, error) {
-	u, err := url.Parse(m.baseURL)
+func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID string) (*pageVersionInfo, error) {
+	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base url: %w", err)
 	}
@@ -500,10 +458,9 @@ func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to create version fetch request: %w", err)
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return nil, fmt.Errorf("version fetch request failed: %w", err)
 	}
@@ -520,8 +477,8 @@ func (m *confluenceManager) getCurrentPageVersion(ctx context.Context, pageID, a
 	return &currentData, nil
 }
 
-func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, payload map[string]interface{}, authHeader string) error {
-	u, err := url.Parse(m.baseURL)
+func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, payload map[string]interface{}) error {
+	u, err := url.Parse(m.provider.baseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base url: %w", err)
 	}
@@ -536,11 +493,10 @@ func (m *confluenceManager) executeUpdate(ctx context.Context, pageID string, pa
 	if err != nil {
 		return fmt.Errorf("failed to create update request: %w", err)
 	}
-	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := m.client.Do(req)
+	resp, err := m.provider.Do(ctx, m.client, req)
 	if err != nil {
 		return fmt.Errorf("update request failed: %w", err)
 	}
@@ -572,12 +528,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 		return tools.ToolResult{}, fmt.Errorf("page_id and markdown_content are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	currentData, err := m.getCurrentPageVersion(ctx, params.PageID, authHeader)
+	currentData, err := m.getCurrentPageVersion(ctx, params.PageID)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -612,7 +563,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 		},
 	}
 
-	if err := m.executeUpdate(ctx, params.PageID, updatePayload, authHeader); err != nil {
+	if err := m.executeUpdate(ctx, params.PageID, updatePayload); err != nil {
 		if strings.Contains(err.Error(), "conflict:") {
 			return tools.ToolResult{Text: err.Error()}, nil
 		}

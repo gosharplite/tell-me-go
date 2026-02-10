@@ -27,7 +27,9 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/vertex/tasks.json`, `output/vertex/scratchpad.md`, `output/vertex/config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration (Integrations)**:
-        *   **Confluence**: `confluence_search`, `confluence_read`, `confluence_write` for searching, reading, and updating Confluence pages with automatic Markdown/XHTML conversion.
+        *   **Atlassian Stack (Jira & Confluence)**: Enterprise-grade integration with centralized execution and **exponential back-off** for high reliability.
+            *   **Jira**: `jira_search_issues` and `jira_get_issue` for discovering and retrieving issues. Supports **high-volume discovery** with configurable search limits.
+            *   **Confluence**: `confluence_search`, `confluence_read`, `confluence_write` for searching, reading, and updating Confluence pages with automatic Markdown/XHTML conversion and **search depth control**.
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
         *   **Network**: `http_request`, `read_external_docs`.
     *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.
@@ -47,9 +49,11 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
         *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
     *   **Internal Hard Budget**: Enforces a deterministic USD limit (Safe-by-Design) to halt sessions automatically if costs exceed safety thresholds.
+    *   **Atlassian Reliability**: Centralized execution for Jira and Confluence tools featuring **exponential back-off** and automatic request body recovery for failed network calls.
     *   **Recursion Limit**: Prevents excessive turns using the `MAX_TURNS` configuration.
     *   **Descriptive Error Handling**: Automatically identifies and reports specific API block reasons (e.g., `SAFETY`, `RECITATION`) instead of generic "empty response" errors.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
+    *   **Secure Integrations**: Standardized URL construction and idiomatic error handling across Confluence, Jira, and Teams integrations to prevent injection and data leakage.
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), session-specific data (history and logs) is archived to `output/backups/`, while environment state (safepaths, tasks, and scratchpads) remains persistent.
     *   **Crash Resilience**: Automatically persists history after every turn (user prompt, model response, and tool results). If a system crash occurs during execution, a built-in **Auto-Repair** mechanism fixes the history on next startup to ensure the session remains valid and resumable.

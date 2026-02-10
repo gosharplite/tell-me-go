@@ -29,12 +29,11 @@ func (m *mockConfluenceClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestConfluenceManager_GetAuthHeader(t *testing.T) {
-	m := NewConfluenceManager(nil, nil)
-
 	t.Run("Missing Email", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "")
 		t.Setenv("ATLASSIAN_TOKEN", "token")
-		_, err := m.getAuthHeader()
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.provider.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_EMAIL")
 	})
@@ -42,7 +41,8 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	t.Run("Missing Token", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_EMAIL", "email")
 		t.Setenv("ATLASSIAN_TOKEN", "")
-		_, err := m.getAuthHeader()
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.provider.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_TOKEN")
 	})
@@ -52,7 +52,8 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 		token := "api-token"
 		t.Setenv("ATLASSIAN_EMAIL", email)
 		t.Setenv("ATLASSIAN_TOKEN", token)
-		header, err := m.getAuthHeader()
+		m := NewConfluenceManager(nil, nil)
+		header, err := m.provider.getAuthHeader()
 		assert.NoError(t, err)
 
 		expectedAuth := base64.StdEncoding.EncodeToString([]byte(email + ":" + token))
@@ -972,7 +973,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 
 	t.Run("fetchSearchPage Error request creation", func(t *testing.T) {
 		m := NewConfluenceManager(nil, nil)
-		_, err := m.fetchSearchPage(context.Background(), " ://bad", "auth")
+		_, err := m.fetchSearchPage(context.Background(), " ://bad")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create request")
 	})
@@ -981,7 +982,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("do error"))
-		_, err := m.fetchSearchPage(context.Background(), "https://test.com", "auth")
+		_, err := m.fetchSearchPage(context.Background(), "https://test.com")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
@@ -989,14 +990,14 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 	t.Run("getCurrentPageVersion Error request creation", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", " ://bad")
 		m := NewConfluenceManager(nil, nil)
-		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		_, err := m.getCurrentPageVersion(context.Background(), "123")
 		assert.Error(t, err)
 	})
 
 	t.Run("executeUpdate Error request creation", func(t *testing.T) {
 		t.Setenv("ATLASSIAN_BASE_URL", " ://bad")
 		m := NewConfluenceManager(nil, nil)
-		err := m.executeUpdate(context.Background(), "123", nil, "auth")
+		err := m.executeUpdate(context.Background(), "123", nil)
 		assert.Error(t, err)
 	})
 
@@ -1071,7 +1072,7 @@ func TestConfluenceManager_ExhaustiveErrors_V2(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("error"))
-		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		_, err := m.getCurrentPageVersion(context.Background(), "123")
 		assert.Error(t, err)
 	})
 
@@ -1082,7 +1083,7 @@ func TestConfluenceManager_ExhaustiveErrors_V2(t *testing.T) {
 			StatusCode: 200,
 			Body:       io.NopCloser(strings.NewReader("{ invalid ")),
 		}, nil)
-		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		_, err := m.getCurrentPageVersion(context.Background(), "123")
 		assert.Error(t, err)
 	})
 
@@ -1090,7 +1091,7 @@ func TestConfluenceManager_ExhaustiveErrors_V2(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := NewConfluenceManager(nil, mockClient)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("error"))
-		err := m.executeUpdate(context.Background(), "123", nil, "auth")
+		err := m.executeUpdate(context.Background(), "123", nil)
 		assert.Error(t, err)
 	})
 
@@ -1100,7 +1101,7 @@ func TestConfluenceManager_ExhaustiveErrors_V2(t *testing.T) {
 		payload := map[string]interface{}{
 			"bad": make(chan int),
 		}
-		err := m.executeUpdate(context.Background(), "123", payload, "auth")
+		err := m.executeUpdate(context.Background(), "123", payload)
 		assert.Error(t, err)
 	})
 }
@@ -1119,7 +1120,7 @@ func TestConfluenceManager_ExhaustiveErrors_V3(t *testing.T) {
 
 	t.Run("fetchPageContent_ReqError", func(t *testing.T) {
 		m := NewConfluenceManager(nil, nil)
-		_, err := m.fetchPageContent(context.Background(), " ://bad", "auth")
+		_, err := m.fetchPageContent(context.Background(), " ://bad")
 		assert.Error(t, err)
 	})
 
@@ -1131,7 +1132,7 @@ func TestConfluenceManager_ExhaustiveErrors_V3(t *testing.T) {
 			Status:     "403 Forbidden",
 			Body:       io.NopCloser(strings.NewReader("")),
 		}, nil)
-		_, err := m.fetchPageContent(context.Background(), "123", "auth")
+		_, err := m.fetchPageContent(context.Background(), "123")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "authentication failed")
 	})
@@ -1194,7 +1195,7 @@ func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"title": "Test", "body": {"storage": {"value": "content"}}}`)),
 		}, nil)
 
-		resp, err := m.fetchPageContent(context.Background(), specialID, "auth")
+		resp, err := m.fetchPageContent(context.Background(), specialID)
 		assert.NoError(t, err)
 		resp.Body.Close()
 		mockClient.AssertExpectations(t)
@@ -1212,7 +1213,7 @@ func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"id": "123", "title": "Test", "version": {"number": 1}}`)),
 		}, nil)
 
-		_, err := m.getCurrentPageVersion(context.Background(), specialID, "auth")
+		_, err := m.getCurrentPageVersion(context.Background(), specialID)
 		assert.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
@@ -1229,7 +1230,7 @@ func TestConfluenceManager_SecureURLConstruction(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"id": "123"}`)),
 		}, nil)
 
-		err := m.executeUpdate(context.Background(), specialID, map[string]interface{}{"title": "New"}, "auth")
+		err := m.executeUpdate(context.Background(), specialID, map[string]interface{}{"title": "New"})
 		assert.NoError(t, err)
 		mockClient.AssertExpectations(t)
 	})
