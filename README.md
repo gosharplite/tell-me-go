@@ -27,6 +27,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/vertex/tasks.json`, `output/vertex/scratchpad.md`, `output/vertex/config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration (Integrations)**:
+        *   **Confluence**: `confluence_search`, `confluence_read`, `confluence_write` for searching, reading, and updating Confluence pages with automatic Markdown/XHTML conversion.
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
         *   **Network**: `http_request`, `read_external_docs`.
     *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.
