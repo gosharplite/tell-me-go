@@ -24,8 +24,9 @@ import (
 )
 
 type confluenceManager struct {
-	sm     *security.SecurityManager
-	client tools.HTTPClient
+	sm      *security.SecurityManager
+	client  tools.HTTPClient
+	baseURL string
 }
 
 // NewConfluenceManager creates a new instance of confluenceManager.
@@ -33,9 +34,14 @@ func NewConfluenceManager(sm *security.SecurityManager, client tools.HTTPClient)
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
+	baseURL := os.Getenv("ATLASSIAN_BASE_URL")
+	if baseURL == "" {
+		baseURL = "https://02007.atlassian.net" // Default fallback
+	}
 	return &confluenceManager{
-		sm:     sm,
-		client: client,
+		sm:      sm,
+		client:  client,
+		baseURL: baseURL,
 	}
 }
 
@@ -63,7 +69,7 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 		return tools.ToolResult{}, err
 	}
 
-	apiURL := "https://02007.atlassian.net/wiki/api/v2/pages"
+	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages", m.baseURL)
 	u, err := url.Parse(apiURL)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to parse Confluence API URL: %w", err)
@@ -137,7 +143,7 @@ func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("page_id argument is required")
 	}
 
-	apiURL := fmt.Sprintf("https://02007.atlassian.net/wiki/api/v2/pages/%s?body-format=storage", params.PageID)
+	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages/%s?body-format=storage", m.baseURL, params.PageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
@@ -167,8 +173,16 @@ func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("Confluence API returned status: %s", resp.Status)
 	}
 
-	// Limit reader to 5MB
-	limitReader := io.LimitReader(resp.Body, 5*1024*1024+1)
+	const maxPageSize = 5 * 1024 * 1024
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(maxPageSize)+1))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if len(body) > maxPageSize {
+		return tools.ToolResult{}, fmt.Errorf("Confluence page size exceeds the 5MB limit")
+	}
+
 	var responseData struct {
 		Title string `json:"title"`
 		Body  struct {
@@ -178,7 +192,7 @@ func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]
 		} `json:"body"`
 	}
 
-	if err := json.NewDecoder(limitReader).Decode(&responseData); err != nil {
+	if err := json.Unmarshal(body, &responseData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -230,6 +244,8 @@ func (m *confluenceManager) xhtmlToMarkdown(xhtml string) string {
 
 	// 6. Unescape HTML entities
 	content = html.UnescapeString(content)
+	// Replace &nbsp; (\u00a0) with regular space for test compatibility
+	content = strings.ReplaceAll(content, "\u00a0", " ")
 
 	// 7. Clean up whitespace
 	// Multi-space to single space
@@ -270,7 +286,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 	}
 
 	// 1. Fetch Current Version
-	apiURL := fmt.Sprintf("https://02007.atlassian.net/wiki/api/v2/pages/%s", params.PageID)
+	apiURL := fmt.Sprintf("%s/wiki/api/v2/pages/%s", m.baseURL, params.PageID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to create version fetch request: %w", err)
@@ -365,25 +381,46 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 func (m *confluenceManager) markdownToXhtml(markdown string) string {
 	lines := strings.Split(markdown, "\n")
 	var result strings.Builder
+
+	// Use fixed patterns for bold and italic since Go doesn't support backreferences in regex
+	reBold1 := regexp.MustCompile(`\*\*(.*?)\*\*`)
+	reBold2 := regexp.MustCompile(`__(.*?)__`)
+	reItalic1 := regexp.MustCompile(`\*(.*?)\*`)
+	reItalic2 := regexp.MustCompile(`_(.*?)_`)
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
 		if strings.HasPrefix(line, "# ") {
-			result.WriteString("<h1>" + html.EscapeString(strings.TrimPrefix(line, "# ")) + "</h1>")
+			content := html.EscapeString(strings.TrimPrefix(line, "# "))
+			result.WriteString("<h1>" + content + "</h1>")
 		} else if strings.HasPrefix(line, "## ") {
-			result.WriteString("<h2>" + html.EscapeString(strings.TrimPrefix(line, "## ")) + "</h2>")
+			content := html.EscapeString(strings.TrimPrefix(line, "## "))
+			result.WriteString("<h2>" + content + "</h2>")
 		} else if strings.HasPrefix(line, "### ") {
-			result.WriteString("<h3>" + html.EscapeString(strings.TrimPrefix(line, "### ")) + "</h3>")
+			content := html.EscapeString(strings.TrimPrefix(line, "### "))
+			result.WriteString("<h3>" + content + "</h3>")
 		} else if strings.HasPrefix(line, "#### ") {
-			result.WriteString("<h4>" + html.EscapeString(strings.TrimPrefix(line, "#### ")) + "</h4>")
+			content := html.EscapeString(strings.TrimPrefix(line, "#### "))
+			result.WriteString("<h4>" + content + "</h4>")
 		} else if strings.HasPrefix(line, "##### ") {
-			result.WriteString("<h5>" + html.EscapeString(strings.TrimPrefix(line, "##### ")) + "</h5>")
+			content := html.EscapeString(strings.TrimPrefix(line, "##### "))
+			result.WriteString("<h5>" + content + "</h5>")
 		} else if strings.HasPrefix(line, "###### ") {
-			result.WriteString("<h6>" + html.EscapeString(strings.TrimPrefix(line, "###### ")) + "</h6>")
+			content := html.EscapeString(strings.TrimPrefix(line, "###### "))
+			result.WriteString("<h6>" + content + "</h6>")
 		} else {
-			result.WriteString("<p>" + html.EscapeString(line) + "</p>")
+			// Escape first to avoid escaping generated tags
+			line = html.EscapeString(line)
+			// Apply inline formatting
+			line = reBold1.ReplaceAllString(line, "<b>$1</b>")
+			line = reBold2.ReplaceAllString(line, "<b>$1</b>")
+			line = reItalic1.ReplaceAllString(line, "<i>$1</i>")
+			line = reItalic2.ReplaceAllString(line, "<i>$1</i>")
+			result.WriteString("<p>" + line + "</p>")
 		}
 	}
 	return result.String()

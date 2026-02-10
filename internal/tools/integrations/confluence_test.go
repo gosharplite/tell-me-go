@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -31,22 +30,16 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	m := NewConfluenceManager(nil, nil)
 
 	t.Run("Missing Email", func(t *testing.T) {
-		oldEmail := os.Getenv("ATLASSIAN_EMAIL")
-		os.Setenv("ATLASSIAN_EMAIL", "")
-		defer os.Setenv("ATLASSIAN_EMAIL", oldEmail)
-
-		os.Setenv("ATLASSIAN_TOKEN", "token")
+		t.Setenv("ATLASSIAN_EMAIL", "")
+		t.Setenv("ATLASSIAN_TOKEN", "token")
 		_, err := m.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
 	})
 
 	t.Run("Missing Token", func(t *testing.T) {
-		oldToken := os.Getenv("ATLASSIAN_TOKEN")
-		os.Setenv("ATLASSIAN_TOKEN", "")
-		defer os.Setenv("ATLASSIAN_TOKEN", oldToken)
-
-		os.Setenv("ATLASSIAN_EMAIL", "email")
+		t.Setenv("ATLASSIAN_EMAIL", "email")
+		t.Setenv("ATLASSIAN_TOKEN", "")
 		_, err := m.getAuthHeader()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "Missing ATLASSIAN_TOKEN")
@@ -55,8 +48,8 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		email := "test@example.com"
 		token := "api-token"
-		os.Setenv("ATLASSIAN_EMAIL", email)
-		os.Setenv("ATLASSIAN_TOKEN", token)
+		t.Setenv("ATLASSIAN_EMAIL", email)
+		t.Setenv("ATLASSIAN_TOKEN", token)
 		header, err := m.getAuthHeader()
 		assert.NoError(t, err)
 
@@ -66,8 +59,9 @@ func TestConfluenceManager_GetAuthHeader(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
-	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
@@ -80,7 +74,9 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 			]
 		}`
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.HasPrefix(req.URL.String(), "https://test.atlassian.net")
+		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
 		}, nil)
@@ -98,7 +94,7 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 
 		// Verify request details
 		req := mockClient.Calls[0].Arguments.Get(0).(*http.Request)
-		assert.Equal(t, "https://02007.atlassian.net/wiki/api/v2/pages?space-id=SPACE1&title=Test", req.URL.String())
+		assert.Equal(t, "https://test.atlassian.net/wiki/api/v2/pages?space-id=SPACE1&title=Test", req.URL.String())
 		assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("test@example.com:api-token")), req.Header.Get("Authorization"))
 	})
 
@@ -135,8 +131,9 @@ func TestConfluenceManager_ConfluenceSearch(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceRead(t *testing.T) {
-	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
@@ -152,7 +149,7 @@ func TestConfluenceManager_ConfluenceRead(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pages/123") && req.URL.Query().Get("body-format") == "storage"
+			return strings.Contains(req.URL.String(), "/pages/123") && req.URL.Query().Get("body-format") == "storage" && strings.HasPrefix(req.URL.String(), "https://test.atlassian.net")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -211,29 +208,70 @@ func TestConfluenceManager_ConfluenceRead(t *testing.T) {
 
 func TestConfluenceManager_XhtmlToMarkdown(t *testing.T) {
 	m := NewConfluenceManager(nil, nil)
-	
-	xhtml := `
-		<h1>Heading 1</h1>
-		<p>Paragraph with <br/> a break and <b>bold</b> text.</p>
-		<h2>Heading 2</h2>
-		<ul>
-			<li>List Item 1</li>
-			<li>List Item 2 &amp; more</li>
-		</ul>
-		<div>Div content</div>
-	`
-	
-	expected := "# Heading 1\n\nParagraph with\na break and bold text.\n\n## Heading 2\n\n* List Item 1\n* List Item 2 & more\n\nDiv content"
-	
-	result := m.xhtmlToMarkdown(xhtml)
-	
-	// Normalize spacing for comparison if needed, but the helper should do it.
-	assert.Equal(t, expected, result)
+
+	tests := []struct {
+		name     string
+		xhtml    string
+		expected string
+	}{
+		{
+			name:     "Basic content",
+			xhtml:    "<h1>Title</h1><p>Hello <b>World</b></p>",
+			expected: "# Title\n\nHello World",
+		},
+		{
+			name:     "Nested Elements",
+			xhtml:    "<div><p>Text with <b>bold</b> and <i>italic</i></p></div>",
+			expected: "Text with bold and italic",
+		},
+		{
+			name:     "Attributes",
+			xhtml:    "<h1 id=\"main\" class=\"title\">Header</h1><p style=\"color:red\">Paragraph</p>",
+			expected: "# Header\n\nParagraph",
+		},
+		{
+			name:     "Extra Whitespace",
+			xhtml:    "<h1>  Title  </h1><p>\tHello \n World\t</p>",
+			expected: "# Title\n\nHello World",
+		},
+		{
+			name:     "Entities",
+			xhtml:    "<p>Entities: &nbsp; &lt; &gt; &amp; &quot;</p>",
+			expected: "Entities: < > & \"",
+		},
+		{
+			name:     "Lists and Spacing",
+			xhtml:    "<ul><li>Item 1</li><li>Item 2</li></ul><div>Block</div>",
+			expected: "* Item 1\n* Item 2\n\nBlock",
+		},
+		{
+			name: "Complex Spacing",
+			xhtml: `
+				<h1>Heading 1</h1>
+				<p>Paragraph with <br/> a break and <b>bold</b> text.</p>
+				<h2>Heading 2</h2>
+				<ul>
+					<li>List Item 1</li>
+					<li>List Item 2 &amp; more</li>
+				</ul>
+				<div>Div content</div>
+			`,
+			expected: "# Heading 1\n\nParagraph with\na break and bold text.\n\n## Heading 2\n\n* List Item 1\n* List Item 2 & more\n\nDiv content",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.xhtmlToMarkdown(tt.xhtml)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
-	os.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-	os.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
@@ -246,7 +284,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		// 1. Mock GET version
 		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.Method == http.MethodGet && strings.Contains(req.URL.String(), "/pages/123")
+			return req.Method == http.MethodGet && strings.Contains(req.URL.String(), "/pages/123") && strings.HasPrefix(req.URL.String(), "https://test.atlassian.net")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
@@ -255,6 +293,9 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		// 2. Mock PUT update
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			if req.Method != http.MethodPut {
+				return false
+			}
+			if !strings.HasPrefix(req.URL.String(), "https://test.atlassian.net") {
 				return false
 			}
 			var payload map[string]interface{}
@@ -340,10 +381,91 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 
 func TestConfluenceManager_MarkdownToXhtml(t *testing.T) {
 	m := NewConfluenceManager(nil, nil)
-	
-	markdown := "# Header 1\n\nSome text here.\n\n## Header 2\nMore text."
-	expected := "<h1>Header 1</h1><p>Some text here.</p><h2>Header 2</h2><p>More text.</p>"
-	
-	result := m.markdownToXhtml(markdown)
-	assert.Equal(t, expected, result)
+
+	tests := []struct {
+		name     string
+		markdown string
+		expected string
+	}{
+		{
+			name:     "Basic content",
+			markdown: "# Header 1\n\nSome text here.",
+			expected: "<h1>Header 1</h1><p>Some text here.</p>",
+		},
+		{
+			name:     "Inline formatting",
+			markdown: "Text with **bold**, __bold__, *italic*, and _italic_.",
+			expected: "<p>Text with <b>bold</b>, <b>bold</b>, <i>italic</i>, and <i>italic</i>.</p>",
+		},
+		{
+			name:     "Escaping with inline",
+			markdown: "Text with <script>alert(1)</script> and **bold**.",
+			expected: "<p>Text with &lt;script&gt;alert(1)&lt;/script&gt; and <b>bold</b>.</p>",
+		},
+		{
+			name:     "Headers and paragraphs",
+			markdown: "# H1\n## H2\nPara",
+			expected: "<h1>H1</h1><h2>H2</h2><p>Para</p>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.markdownToXhtml(tt.markdown)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
+	mockClient := new(mockConfluenceClient)
+	m := NewConfluenceManager(nil, mockClient)
+
+	largeBody := strings.Repeat("A", 5*1024*1024+10)
+	mockClient.On("Do", mock.Anything).Return(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(largeBody)),
+	}, nil)
+
+	args := map[string]interface{}{
+		"page_id": "123",
+	}
+
+	_, err := m.confluenceRead(context.Background(), args)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Confluence page size exceeds the 5MB limit")
+}
+
+func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
+	t.Run("Null Results", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{"results": null}`
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		result, err := m.confluenceSearch(context.Background(), nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+	})
+
+	t.Run("Missing Results", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+
+		jsonResponse := `{}`
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil)
+
+		result, err := m.confluenceSearch(context.Background(), nil)
+		assert.NoError(t, err)
+		assert.Equal(t, "No pages found matching the criteria.", result.Text)
+	})
 }
