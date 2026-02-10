@@ -21,6 +21,11 @@ type mockRetryClient struct {
 
 func (m *mockRetryClient) Do(req *http.Request) (*http.Response, error) {
 	args := m.Called(req)
+	// Simulate real http.Client consuming the body after it's been sent
+	if req.Body != nil {
+		_, _ = io.ReadAll(req.Body)
+		_ = req.Body.Close()
+	}
 	return args.Get(0).(*http.Response), args.Error(1)
 }
 
@@ -165,4 +170,54 @@ func TestAtlassianProvider_GetAuthHeader_Errors(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "missing ATLASSIAN_TOKEN")
 	})
+}
+
+func TestAtlassianProvider_Do_RetryWithBody(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "token")
+
+	p := newAtlassianProvider()
+	p.baseDelay = 1 * time.Microsecond
+	mockClient := new(mockRetryClient)
+
+	bodyText := "hello world"
+	req, _ := http.NewRequest(http.MethodPut, "https://test.com", strings.NewReader(bodyText))
+	// Ensure GetBody is populated
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(bodyText)), nil
+	}
+
+	// First attempt: 429
+	mockClient.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		if r.Body == nil {
+			return bodyText == ""
+		}
+		body, _ := io.ReadAll(r.Body)
+		// Restore body for other matchers and the actual implementation
+		r.Body = io.NopCloser(strings.NewReader(string(body)))
+		return string(body) == bodyText
+	})).Return(&http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("throttled")),
+	}, nil).Once()
+
+	// Second attempt: 200 - should still have the body
+	mockClient.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		if r.Body == nil {
+			return bodyText == ""
+		}
+		body, _ := io.ReadAll(r.Body)
+		// Restore body
+		r.Body = io.NopCloser(strings.NewReader(string(body)))
+		return string(body) == bodyText
+	})).Return(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("ok")),
+	}, nil).Once()
+
+	resp, err := p.Do(context.Background(), mockClient, req)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	mockClient.AssertExpectations(t)
 }
