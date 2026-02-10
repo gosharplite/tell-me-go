@@ -225,6 +225,8 @@ var allowedCommands = map[string]bool{
 	"confluence_search":  true,
 	"confluence_read":    true,
 	"confluence_write":   true,
+	"jira_search_issues": true,
+	"jira_get_issue":     true,
 
 	// Session & Management Tools
 	"get_session_info":         true,
