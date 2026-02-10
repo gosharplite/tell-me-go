@@ -54,7 +54,7 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("invalid base url: %w", err)
 	}
-	u = u.JoinPath("/rest/api/3/search/jql")
+	u = u.JoinPath("/rest/api/3/search")
 	q := u.Query()
 	q.Set("jql", params.JQL)
 
@@ -110,8 +110,13 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		return tools.ToolResult{Text: "No issues found matching the JQL query."}, nil
 	}
 
+	totalFound := responseData.Total
+	if totalFound == 0 && len(responseData.Issues) > 0 {
+		totalFound = len(responseData.Issues)
+	}
+
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d issues (showing up to %d):\n", responseData.Total, limit))
+	resultText.WriteString(fmt.Sprintf("Found %d issues (showing %d):\n", totalFound, len(responseData.Issues)))
 	for _, issue := range responseData.Issues {
 		assignee := issue.Fields.Assignee.DisplayName
 		if assignee == "" {
