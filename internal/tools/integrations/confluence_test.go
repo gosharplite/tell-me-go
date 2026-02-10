@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -652,4 +653,503 @@ func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "found no pages containing 'nothing'")
 	})
+}
+
+func TestConfluenceManager_ResolveSpaceID(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	tests := []struct {
+		name          string
+		spaceKey      string
+		mockResp      string
+		mockStatus    int
+		mockErr       error
+		baseURL       string
+		expectedID    string
+		expectedError string
+	}{
+		{
+			name:       "Numeric ID",
+			spaceKey:   "12345",
+			expectedID: "12345",
+		},
+		{
+			name:       "Resolution Success",
+			spaceKey:   "PROJ",
+			mockResp:   `{"results": [{"id": "98765"}]}`,
+			mockStatus: http.StatusOK,
+			expectedID: "98765",
+		},
+		{
+			name:          "Resolution Not Found (Empty Results)",
+			spaceKey:      "MISSING",
+			mockResp:      `{"results": []}`,
+			mockStatus:    http.StatusOK,
+			expectedError: "space key 'MISSING' not found",
+		},
+		{
+			name:          "Resolution Not Found (404)",
+			spaceKey:      "NOTFOUND",
+			mockStatus:    http.StatusNotFound,
+			expectedError: "space key 'NOTFOUND' not found",
+		},
+		{
+			name:          "API Failure (500)",
+			spaceKey:      "ERROR",
+			mockStatus:    http.StatusInternalServerError,
+			expectedError: "failed to resolve space key 'ERROR', status: 500",
+		},
+		{
+			name:          "Network Error",
+			spaceKey:      "NETWORK",
+			mockErr:       fmt.Errorf("network error"),
+			expectedError: "network error",
+		},
+		{
+			name:          "Auth Error",
+			spaceKey:      "AUTH_ERR",
+			mockStatus:    http.StatusOK, // won't be used
+			expectedError: "Missing ATLASSIAN_EMAIL",
+		},
+		{
+			name:          "Decode Error",
+			spaceKey:      "DECODE_ERR",
+			mockResp:      `{invalid json}`,
+			mockStatus:    http.StatusOK,
+			expectedError: "invalid character",
+		},
+		{
+			name:          "Invalid URL",
+			spaceKey:      "INVALID_URL",
+			baseURL:       " ://invalid",
+			expectedError: "parse",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "Auth Error" {
+				t.Setenv("ATLASSIAN_EMAIL", "")
+			} else {
+				t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+			}
+			if tt.baseURL != "" {
+				t.Setenv("ATLASSIAN_BASE_URL", tt.baseURL)
+			} else {
+				t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+			}
+			mockClient := new(mockConfluenceClient)
+			m := NewConfluenceManager(nil, mockClient)
+
+			if tt.spaceKey == "12345" || tt.name == "Auth Error" || tt.name == "Invalid URL" {
+				// No mock needed
+			} else {
+				if tt.mockErr != nil {
+					mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), tt.mockErr)
+				} else {
+					resp := &http.Response{
+						StatusCode: tt.mockStatus,
+						Body:       io.NopCloser(strings.NewReader(tt.mockResp)),
+						Status:     fmt.Sprintf("%d", tt.mockStatus),
+					}
+					mockClient.On("Do", mock.Anything).Return(resp, nil)
+				}
+			}
+
+			id, err := m.resolveSpaceID(context.Background(), tt.spaceKey)
+
+			if tt.expectedError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedID, id)
+			}
+			if tt.spaceKey != "12345" {
+				mockClient.AssertExpectations(t)
+			}
+		})
+	}
+}
+
+func TestConfluenceManager_ConfluenceSearch_ResolveError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	
+	mockClient := new(mockConfluenceClient)
+	m := NewConfluenceManager(nil, mockClient)
+
+	mockClient.On("Do", mock.Anything).Return(&http.Response{
+		StatusCode: http.StatusNotFound,
+		Status:     "404 Not Found",
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil)
+
+	args := map[string]interface{}{
+		"title":    "test",
+		"space_id": "BADSPACE",
+	}
+
+	_, err := m.confluenceSearch(context.Background(), args)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve space ID for 'BADSPACE'")
+}
+
+func TestConfluenceManager_ResolveNextURL(t *testing.T) {
+	m := NewConfluenceManager(nil, nil)
+	baseURL := "https://test.atlassian.net"
+
+	tests := []struct {
+		name     string
+		nextPath string
+		expected string
+	}{
+		{
+			name:     "Empty path",
+			nextPath: "",
+			expected: "",
+		},
+		{
+			name:     "Absolute URL",
+			nextPath: "https://example.com/next",
+			expected: "https://example.com/next",
+		},
+		{
+			name:     "Relative path",
+			nextPath: "/wiki/api/v2/pages?cursor=123",
+			expected: "https://test.atlassian.net/wiki/api/v2/pages?cursor=123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.resolveNextURL(baseURL, tt.nextPath)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestConfluenceManager_ProcessSearchResults(t *testing.T) {
+	m := NewConfluenceManager(nil, nil)
+	results := []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}{
+		{ID: "1", Title: "Design Doc"},
+		{ID: "2", Title: "Implementation Plan"},
+		{ID: "3", Title: "Testing Strategy"},
+	}
+
+	tests := []struct {
+		name     string
+		keyword  string
+		expected []searchMatch
+	}{
+		{
+			name:    "Empty keyword",
+			keyword: "",
+			expected: []searchMatch{
+				{ID: "1", Title: "Design Doc"},
+				{ID: "2", Title: "Implementation Plan"},
+				{ID: "3", Title: "Testing Strategy"},
+			},
+		},
+		{
+			name:    "Exact match case insensitive",
+			keyword: "DESIGN",
+			expected: []searchMatch{
+				{ID: "1", Title: "Design Doc"},
+			},
+		},
+		{
+			name:    "Partial match",
+			keyword: "plan",
+			expected: []searchMatch{
+				{ID: "2", Title: "Implementation Plan"},
+			},
+		},
+		{
+			name:     "No match",
+			keyword:  "meeting",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := m.processSearchResults(results, tt.keyword)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	t.Run("UnmarshalArgs Error Search", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.confluenceSearch(context.Background(), map[string]interface{}{"limit": "invalid"})
+		assert.Error(t, err)
+	})
+
+	t.Run("UnmarshalArgs Error Read", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.confluenceRead(context.Background(), map[string]interface{}{"page_id": 123}) // Should be string
+		assert.Error(t, err)
+	})
+
+	t.Run("UnmarshalArgs Error Write", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.confluenceWrite(context.Background(), map[string]interface{}{"page_id": 123})
+		assert.Error(t, err)
+	})
+
+	t.Run("Malformed Base URL Search", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_BASE_URL", "http://bad\x7furl")
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.confluenceSearch(context.Background(), map[string]interface{}{"space_id": "123"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse")
+	})
+
+	t.Run("Network Failure Read", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("network down"))
+
+		_, err := m.confluenceRead(context.Background(), map[string]interface{}{"page_id": "123"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "request failed: network down")
+	})
+
+	t.Run("HTTP 500 Read", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: 500,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader("error")),
+		}, nil)
+
+		_, err := m.confluenceRead(context.Background(), map[string]interface{}{"page_id": "123"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Confluence API returned status: 500")
+	})
+
+	t.Run("Invalid JSON Read", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader("{ invalid ")),
+		}, nil)
+
+		_, err := m.confluenceRead(context.Background(), map[string]interface{}{"page_id": "123"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("Auth Failure Write", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "")
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.confluenceWrite(context.Background(), map[string]interface{}{"page_id": "123", "markdown_content": "test"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+	})
+
+	t.Run("Auth Failure resolveSpaceID", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "")
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.resolveSpaceID(context.Background(), "SPACE")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Missing ATLASSIAN_EMAIL")
+	})
+
+	t.Run("fetchSearchPage Error request creation", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.fetchSearchPage(context.Background(), " ://bad", "auth")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create request")
+	})
+
+	t.Run("fetchSearchPage Error Do", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("do error"))
+		_, err := m.fetchSearchPage(context.Background(), "https://test.com", "auth")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "request failed")
+	})
+
+	t.Run("getCurrentPageVersion Error request creation", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_BASE_URL", " ://bad")
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("executeUpdate Error request creation", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_BASE_URL", " ://bad")
+		m := NewConfluenceManager(nil, nil)
+		err := m.executeUpdate(context.Background(), "123", nil, "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("truncate test", func(t *testing.T) {
+		assert.Equal(t, "abc", truncate("abc", 5))
+		assert.Equal(t, "abc...", truncate("abcd", 3))
+	})
+
+	t.Run("MarkdownToXhtml H3-H6", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		assert.Contains(t, m.markdownToXhtml("### H3"), "<h3>H3</h3>")
+		assert.Contains(t, m.markdownToXhtml("#### H4"), "<h4>H4</h4>")
+		assert.Contains(t, m.markdownToXhtml("##### H5"), "<h5>H5</h5>")
+		assert.Contains(t, m.markdownToXhtml("###### H6"), "<h6>H6</h6>")
+	})
+
+
+	t.Run("Security Manager Error Write", func(t *testing.T) {
+		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+		t.Setenv("ATLASSIAN_TOKEN", "api-token")
+		mockClient := new(mockConfluenceClient)
+		
+		// 1. Mock GET version
+		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return req.Method == http.MethodGet
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
+		}, nil)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Triggers context.Canceled in ConfirmAction
+
+		sm := security.NewSecurityManager(strings.NewReader("y\n")) 
+		m := NewConfluenceManager(sm, mockClient)
+
+		args := map[string]interface{}{
+			"page_id":          "123",
+			"markdown_content": "some content",
+		}
+
+		_, err := m.confluenceWrite(ctx, args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), context.Canceled.Error())
+	})
+}
+
+func TestConfluenceManager_ExhaustiveErrors_V2(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	t.Run("resolveNextURL_MalformedBase", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		res := m.resolveNextURL(" ://bad", "path")
+		assert.Equal(t, "", res)
+	})
+
+	t.Run("resolveNextURL_MalformedPath", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		res := m.resolveNextURL("https://test.com", " ://bad")
+		assert.Equal(t, "", res)
+	})
+
+	t.Run("formatSearchResults_EmptyTitle", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		res := m.formatSearchResults(nil, "warn", 10, "space", "")
+		assert.Contains(t, res.Text, "No pages found")
+	})
+
+	t.Run("getCurrentPageVersion_DoError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("error"))
+		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("getCurrentPageVersion_DecodeError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader("{ invalid ")),
+		}, nil)
+		_, err := m.getCurrentPageVersion(context.Background(), "123", "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("executeUpdate_DoError", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("error"))
+		err := m.executeUpdate(context.Background(), "123", nil, "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("executeUpdate_MarshalError", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		// Map with non-marshalable key (complex128)
+		payload := map[string]interface{}{
+			"bad": make(chan int),
+		}
+		err := m.executeUpdate(context.Background(), "123", payload, "auth")
+		assert.Error(t, err)
+	})
+}
+
+func TestConfluenceManager_ExhaustiveErrors_V3(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "api-token")
+	t.Setenv("ATLASSIAN_BASE_URL", "https://test.atlassian.net")
+
+	t.Run("resolveSpaceIDIfNeeded_Empty", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		res, err := m.resolveSpaceIDIfNeeded(context.Background(), "")
+		assert.NoError(t, err)
+		assert.Equal(t, "", res)
+	})
+
+	t.Run("fetchPageContent_ReqError", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		_, err := m.fetchPageContent(context.Background(), " ://bad", "auth")
+		assert.Error(t, err)
+	})
+
+	t.Run("fetchPageContent_Forbidden", func(t *testing.T) {
+		mockClient := new(mockConfluenceClient)
+		m := NewConfluenceManager(nil, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: 403,
+			Status:     "403 Forbidden",
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil)
+		_, err := m.fetchPageContent(context.Background(), "123", "auth")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "authentication failed")
+	})
+
+	t.Run("readAndValidateBody_ReadError", func(t *testing.T) {
+		m := NewConfluenceManager(nil, nil)
+		// Custom reader that returns error
+		errReader := &errorReader{err: fmt.Errorf("read error")}
+		_, err := m.readAndValidateBody(io.NopCloser(errReader))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read")
+	})
+}
+
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	return 0, r.err
 }
