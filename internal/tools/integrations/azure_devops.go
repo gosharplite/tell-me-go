@@ -109,6 +109,10 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 		SourceRefName string `json:"sourceRefName"`
 		TargetRefName string `json:"targetRefName"`
 		MergeStatus   string `json:"mergeStatus"`
+		Repository    struct {
+			Id   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"repository"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
@@ -122,7 +126,8 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 	resultText.WriteString(fmt.Sprintf("Created At: %s\n", prData.CreationDate))
 	resultText.WriteString(fmt.Sprintf("Source: %s\n", prData.SourceRefName))
 	resultText.WriteString(fmt.Sprintf("Target: %s\n", prData.TargetRefName))
-	resultText.WriteString(fmt.Sprintf("Merge Status: %s", prData.MergeStatus))
+	resultText.WriteString(fmt.Sprintf("Merge Status: %s\n", prData.MergeStatus))
+	resultText.WriteString(fmt.Sprintf("Repository: %s (%s)", prData.Repository.Name, prData.Repository.Id))
 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
@@ -247,7 +252,7 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, err
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullRequests/%d/changes?api-version=7.1",
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
@@ -272,7 +277,7 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 		case http.StatusForbidden:
 			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
 		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("pull request not found: %d", params.PullRequestId)
+			return tools.ToolResult{}, fmt.Errorf("endpoint or pull request not found (404). URL: %s", requestURL)
 		default:
 			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
 		}
@@ -328,7 +333,7 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 		return tools.ToolResult{}, err
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullRequests/%d/threads?api-version=7.1",
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)

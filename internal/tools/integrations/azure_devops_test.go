@@ -41,7 +41,8 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"creationDate": "2023-10-01T12:00:00Z",
 			"sourceRefName": "refs/heads/feature",
 			"targetRefName": "refs/heads/main",
-			"mergeStatus": "succeeded"
+			"mergeStatus": "succeeded",
+			"repository": {"id": "repo-id", "name": "repo-name"}
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -66,6 +67,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 		assert.Contains(t, result.Text, "Fix bug")
 		assert.Contains(t, result.Text, "active")
 		assert.Contains(t, result.Text, "John Doe")
+		assert.Contains(t, result.Text, "Repository: repo-name (repo-id)")
 		mockClient.AssertExpectations(t)
 	})
 
@@ -261,7 +263,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullRequests/123/changes")
+			return strings.Contains(req.URL.String(), "/pullrequests/123/iterations/1/changes")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -348,7 +350,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 		}`
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullRequests/123/threads")
+			return strings.Contains(req.URL.String(), "/pullrequests/123/threads")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
