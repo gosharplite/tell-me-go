@@ -249,7 +249,7 @@ func (a *Agent) SetPrunedTurns(ctx context.Context, n int) error {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
-	if err := s.History.AddContent(ctx, &domain_llm.Content{
+	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
 	}); err != nil {

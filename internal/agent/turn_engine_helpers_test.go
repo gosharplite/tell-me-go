@@ -76,15 +76,15 @@ func (m *MockExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 type MockStore struct {
 	LoadFunc   func(ctx context.Context) ([]*llm.Content, error)
 	SaveFunc   func(ctx context.Context, contents []*llm.Content) error
-	AppendFunc func(ctx context.Context, content *llm.Content) error
+	AppendFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
 func (m *MockStore) Load(ctx context.Context) ([]*llm.Content, error) { return m.LoadFunc(ctx) }
 func (m *MockStore) Save(ctx context.Context, contents []*llm.Content) error {
 	return m.SaveFunc(ctx, contents)
 }
-func (m *MockStore) Append(ctx context.Context, content *llm.Content) error {
-	return m.AppendFunc(ctx, content)
+func (m *MockStore) Append(ctx context.Context, contents []*llm.Content) error {
+	return m.AppendFunc(ctx, contents)
 }
 
 // MockClock for deterministic tests
@@ -182,7 +182,7 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, content *llm.Content) error { return nil },
+		AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
 		LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
 		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
 	})

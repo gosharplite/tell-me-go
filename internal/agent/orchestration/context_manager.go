@@ -107,10 +107,24 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	return req.History, &req.Metadata, nil
 }
 
-// AddContent appends content to the history in a thread-safe manner.
+// AddContent appends content to the history in a thread-safe manner, validating role alternation.
 func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+
+	contents := cm.History.GetContents()
+	if len(contents) > 0 {
+		last := contents[len(contents)-1]
+		if last.Role == content.Role {
+			// Merge parts to maintain role alternation
+			last.Parts = append(last.Parts, content.Parts...)
+			cm.version++
+			return cm.History.SetContents(ctx, contents)
+		}
+	} else if content.Role != "user" {
+		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
+	}
+
 	cm.version++
 	return cm.History.AddContent(ctx, content)
 }

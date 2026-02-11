@@ -29,7 +29,7 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	}
 
 	// Test Append
-	if err := store.Append(ctx, largeContent); err != nil {
+	if err := store.Append(ctx, []*llm.Content{largeContent}); err != nil {
 		t.Fatalf("Append failed: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestJSONLStore_Append_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := store.Append(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}})
+	err := store.Append(ctx, []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}})
 	if err == nil {
 		t.Error("expected error for cancelled context")
 	}
@@ -262,7 +262,7 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 		Parts:  []*llm.Part{{Text: "Acknowledged"}},
 		Pinned: true,
 	}
-	if err := store.Append(ctx, appendContent); err != nil {
+	if err := store.Append(ctx, []*llm.Content{appendContent}); err != nil {
 		t.Fatalf("Append failed: %v", err)
 	}
 

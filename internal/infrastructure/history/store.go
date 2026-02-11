@@ -17,8 +17,8 @@ import (
 // Store defines the interface for history persistence.
 type Store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
-	Save(ctx context.Context, contents []*llm.Content) error
-	Append(ctx context.Context, content *llm.Content) error
+	Save(ctx context.Context, history []*llm.Content) error
+	Append(ctx context.Context, contents []*llm.Content) error
 }
 
 // JSONLStore implements Store using a JSON Lines file.
@@ -108,8 +108,11 @@ func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
 	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
-// Append appends a single content entry to the history file.
-func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
+// Append appends multiple content entries to the history file.
+func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error {
+	if len(contents) == 0 {
+		return nil
+	}
 	dir := filepath.Dir(s.filePath)
 	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
 		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
@@ -123,24 +126,28 @@ func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
 	}
 	defer f.Close()
 
-	prepared, err := s.prepareForStorage(ctx, content)
-	if err != nil {
-		return err
-	}
-	line, err := json.Marshal(prepared)
-	if err != nil {
-		return err
-	}
-	line = append(line, '\n')
+	for _, content := range contents {
+		prepared, err := s.prepareForStorage(ctx, content)
+		if err != nil {
+			return err
+		}
+		line, err := json.Marshal(prepared)
+		if err != nil {
+			return err
+		}
+		line = append(line, '\n')
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 
-	_, err = f.Write(line)
-	return err
+		if _, err = f.Write(line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // prepareForStorage offloads binary data to AssetStore and returns a clone for JSON marshaling.
