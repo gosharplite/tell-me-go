@@ -27,6 +27,9 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.
 
 	// Register Jira Tools
 	registerJira(r, sm, nil)
+
+	// Register Azure DevOps Tools
+	registerAzureDevOps(r, sm, nil)
 }
 
 func registerMedia(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
@@ -248,4 +251,271 @@ func registerJira(r *registry.Registry, sm *security.SecurityManager, client too
 			Required: []string{"issue_key"},
 		},
 	}, m.jiraGetIssue)
+}
+
+func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+	m := NewAzureDevOpsManager(sm, client)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pull_request",
+		Description: "Retrieves full metadata for a specific Azure DevOps Pull Request, including status, reviewers, and branch details.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"pull_request_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pull request.",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "pull_request_id"},
+		},
+	}, m.adoGetPullRequest)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_list_pull_requests",
+		Description: "Lists pull requests in a specific Azure DevOps repository, with optional status filtering.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"status": {
+					Type:        "STRING",
+					Description: "Filter by status (active, completed, abandoned, all). Default is active.",
+				},
+				"top": {
+					Type:        "INTEGER",
+					Description: "Maximum number of PRs to return (default 50).",
+				},
+			},
+			Required: []string{"organization", "project", "repository"},
+		},
+	}, m.adoListPullRequests)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pr_diff",
+		Description: "Retrieves the file changes (diffs) for a specific Azure DevOps Pull Request.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"pull_request_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pull request.",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "pull_request_id"},
+		},
+	}, m.adoGetPrDiff)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pr_threads",
+		Description: "Retrieves discussion threads and comments for a specific Azure DevOps Pull Request.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"pull_request_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pull request.",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "pull_request_id"},
+		},
+	}, m.adoGetPrThreads)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_file_content",
+		Description: "Retrieves the content of a specific file from an Azure DevOps repository at a given path and version (branch/commit).",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"path": {
+					Type:        "STRING",
+					Description: "The full path to the file in the repository (e.g., '/src/main.go').",
+				},
+				"version": {
+					Type:        "STRING",
+					Description: "The branch name, commit hash, or tag. Default is main.",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "path"},
+		},
+	}, m.adoGetFileContent)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_list_repository_items",
+		Description: "Lists items (files and folders) in a specific directory of an Azure DevOps repository.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"scope_path": {
+					Type:        "STRING",
+					Description: "The directory path to list. Default is / (root).",
+				},
+				"version": {
+					Type:        "STRING",
+					Description: "The branch name, commit hash, or tag. Default is main.",
+				},
+				"recursion_level": {
+					Type:        "STRING",
+					Description: "Recursion level: none (default), oneLevel, or full.",
+				},
+			},
+			Required: []string{"organization", "project", "repository"},
+		},
+	}, m.adoListRepositoryItems)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_list_pipeline_runs",
+		Description: "Lists recent runs (executions) for a specific Azure DevOps pipeline.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The ID of the pipeline definition.",
+				},
+				"top": {
+					Type:        "INTEGER",
+					Description: "Maximum number of runs to return (default 10).",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id"},
+		},
+	}, m.adoListPipelineRuns)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pipeline_run",
+		Description: "Retrieves the detailed status and result of a specific Azure DevOps pipeline run.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The ID of the pipeline definition.",
+				},
+				"run_id": {
+					Type:        "INTEGER",
+					Description: "The ID of the specific execution.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id", "run_id"},
+		},
+	}, m.adoGetPipelineRun)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pipeline_logs",
+		Description: "Fetches the console output/logs of a failed pipeline run for diagnosis.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pipeline_id": {
+					Type:        "INTEGER",
+					Description: "The ID of the pipeline definition.",
+				},
+				"run_id": {
+					Type:        "INTEGER",
+					Description: "The ID of the specific execution.",
+				},
+				"log_id": {
+					Type:        "INTEGER",
+					Description: "The specific log ID. If omitted, the tool lists available logs.",
+				},
+			},
+			Required: []string{"organization", "project", "pipeline_id", "run_id"},
+		},
+	}, m.adoGetPipelineLogs)
 }
