@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -294,5 +295,12 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
 		if a.engine != nil {
 			a.engine.ApplyOptions(WithCostTracker(tracker))
 		}
+	}
+}
+
+// WithTraceLogger enables tracing and logs it to the specified file.
+func WithTraceLogger(logFile string) AgentOption {
+	return func(a *Agent) {
+		telemetry.RegisterTraceSubscriber(a.events, logFile)
 	}
 }

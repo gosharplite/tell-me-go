@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -299,6 +301,9 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 			return err
 		}
 
+		trace := telemetry.NewTurnTrace()
+		ctxWithTrace := telemetry.ContextWithTrace(ctx, trace)
+
 		turn := e.createTurn(i, startTime)
 		if lastState != nil {
 			// Only carry over response hashes to detect text/turn repetition loops
@@ -310,7 +315,18 @@ func (e *TurnEngine) Run(ctx context.Context, startTime time.Time) error {
 
 		e.notifyBeforeTurn(turn)
 
-		err := e.executeTurn(ctx, turn)
+		err := e.executeTurn(ctxWithTrace, turn)
+
+		trace.EndTime = time.Now()
+		trace.FinalStatus = "success"
+		if err != nil {
+			trace.FinalStatus = "error"
+		}
+
+		if e.events != nil {
+			e.events.Publish(events.TraceEvent{Trace: trace})
+		}
+
 		e.notifyAfterTurn(turn, err)
 
 		if err != nil {
@@ -486,7 +502,14 @@ func (p *ContextRefiner) Process(ctx context.Context, turn *turn) processResult 
 type InferenceStep struct{}
 
 func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
+	start := time.Now()
 	respContent, metrics, err := p.invokeModel(ctx, turn)
+	inferenceDuration := time.Since(start)
+
+	if trace := telemetry.TraceFromContext(ctx); trace != nil {
+		trace.InferenceDuration = inferenceDuration
+	}
+
 	if respContent != nil {
 		p.updateState(turn, respContent, metrics)
 	}
@@ -575,6 +598,21 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
+		// Check if any tool triggered the circuit breaker
+		for _, part := range toolResponse.Parts {
+			if part.FunctionResponse != nil {
+				if res, ok := part.FunctionResponse.Response["result"].(string); ok {
+					if strings.Contains(res, "temporarily disabled") && strings.Contains(res, "multiple consecutive failures") {
+						// Inject a safety warning into the history for the LLM
+						_ = turn.CtxManager.AddContent(ctx, &llm.Content{
+							Role:  "user",
+							Parts: []*llm.Part{{Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again."}},
+						})
+						break
+					}
+				}
+			}
+		}
 	}
 
 	if turn.State.Metrics != nil {

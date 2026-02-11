@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -100,4 +101,9 @@ type SummarizationRequired struct {
 	Tokens   int
 	MaxLimit int
 	Reason   string
+}
+
+// TraceEvent carries the TurnTrace for a completed turn.
+type TraceEvent struct {
+	Trace *telemetry.TurnTrace
 }

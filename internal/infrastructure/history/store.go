@@ -113,11 +113,9 @@ func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error 
 	if len(contents) == 0 {
 		return nil
 	}
-	dir := filepath.Dir(s.filePath)
-	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
-		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
-			return fmt.Errorf("failed to create history directory: %w", err)
-		}
+
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
 	}
 
 	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -127,25 +125,43 @@ func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error 
 	defer f.Close()
 
 	for _, content := range contents {
-		prepared, err := s.prepareForStorage(ctx, content)
-		if err != nil {
+		if err := s.appendSingleContent(ctx, f, content); err != nil {
 			return err
 		}
-		line, err := json.Marshal(prepared)
-		if err != nil {
-			return err
-		}
-		line = append(line, '\n')
+	}
+	return nil
+}
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+func (s *JSONLStore) ensureDirectory(ctx context.Context) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
 		}
+	}
+	return nil
+}
 
-		if _, err = f.Write(line); err != nil {
-			return err
-		}
+func (s *JSONLStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
+	prepared, err := s.prepareForStorage(ctx, content)
+	if err != nil {
+		return err
+	}
+
+	line, err := json.Marshal(prepared)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	if _, err = f.Write(line); err != nil {
+		return err
 	}
 	return nil
 }
