@@ -83,7 +83,11 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	var capturedEvents []string
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	bus.Subscribe(func(e events.Event) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -279,7 +283,11 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil }})
@@ -335,7 +343,11 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil }})
@@ -465,7 +477,11 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	var capturedTime time.Time
 	var mu sync.Mutex
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	bus.Subscribe(func(e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
 			mu.Lock()

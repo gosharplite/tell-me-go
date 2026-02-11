@@ -216,7 +216,11 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 
 	// Case 9: Event publishing
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(ctx)
+	defer func() {
+		if err := bus.Shutdown(ctx); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	cm.Events = bus
 	received := false
 	var mu sync.Mutex

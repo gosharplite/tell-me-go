@@ -8,7 +8,11 @@ import (
 
 func TestSimpleEventBus_Race(t *testing.T) {
 	bus := NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	wg := sync.WaitGroup{}
 
 	numGoroutines := 10
