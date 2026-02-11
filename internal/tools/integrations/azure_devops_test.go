@@ -717,19 +717,19 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
 		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
-		// Mock project ID lookup
+		// Mock PR metadata lookup to get project ID
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
 		}, nil).Once()
 
-		// Mock policy evaluations lookup
+		// Mock policy evaluations lookup using the CodeReview artifact ID
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.Contains(req.URL.String(), "/myorg/myproj/_apis/policy/evaluations") &&
-				strings.Contains(req.URL.Query().Get("targetId"), "CodeReview/PullRequestId/project-guid/123") &&
-				req.URL.Query().Get("api-version") == "7.1"
+				req.URL.Query().Get("artifactId") == "vstfs:///CodeReview/CodeReviewId/proj-guid/123" &&
+				req.URL.Query().Get("api-version") == "7.1-preview.1"
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
@@ -738,6 +738,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		args := map[string]interface{}{
 			"organization":    "myorg",
 			"project":         "myproj",
+			"repository":      "myrepo",
 			"pull_request_id": 123,
 		}
 
@@ -753,10 +754,10 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
 		}, nil).Once()
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -769,6 +770,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		args := map[string]interface{}{
 			"organization":    "myorg",
 			"project":         "myproj",
+			"repository":      "myrepo",
 			"pull_request_id": 123,
 		}
 
@@ -782,10 +784,10 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
 		})).Return(&http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
 		}, nil).Once()
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
@@ -796,6 +798,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		args := map[string]interface{}{
 			"organization":    "myorg",
 			"project":         "myproj",
+			"repository":      "myrepo",
 			"pull_request_id": 123,
 		}
 

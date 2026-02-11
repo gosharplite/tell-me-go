@@ -14,7 +14,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -23,10 +22,8 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm           *security.SecurityManager
-	client       tools.HTTPClient
-	projectCache map[string]string
-	cacheMu      sync.RWMutex
+	sm     *security.SecurityManager
+	client tools.HTTPClient
 }
 
 // NewAzureDevOpsManager creates a new instance of azureDevOpsManager.
@@ -35,9 +32,8 @@ func NewAzureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &azureDevOpsManager{
-		sm:           sm,
-		client:       client,
-		projectCache: make(map[string]string),
+		sm:     sm,
+		client: client,
 	}
 }
 
@@ -49,55 +45,6 @@ func (m *azureDevOpsManager) getAuthHeader() (string, error) {
 	auth := fmt.Sprintf(":%s", pat)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 	return fmt.Sprintf("Basic %s", encodedAuth), nil
-}
-
-func (m *azureDevOpsManager) getProjectID(ctx context.Context, org, project string) (string, error) {
-	cacheKey := fmt.Sprintf("%s/%s", org, project)
-	m.cacheMu.RLock()
-	id, ok := m.projectCache[cacheKey]
-	m.cacheMu.RUnlock()
-	if ok {
-		return id, nil
-	}
-
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return "", err
-	}
-
-	u := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects/%s?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("failed to get project metadata: %s, body: %s", resp.Status, string(body))
-	}
-
-	var projectData struct {
-		Id string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&projectData); err != nil {
-		return "", err
-	}
-
-	m.cacheMu.Lock()
-	m.projectCache[cacheKey] = projectData.Id
-	m.cacheMu.Unlock()
-
-	return projectData.Id, nil
 }
 
 func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -153,9 +100,10 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 	}
 
 	var prData struct {
-		Title     string `json:"title"`
-		Status    string `json:"status"`
-		CreatedBy struct {
+		ArtifactId string `json:"artifactId"`
+		Title      string `json:"title"`
+		Status     string `json:"status"`
+		CreatedBy  struct {
 			DisplayName string `json:"displayName"`
 		} `json:"createdBy"`
 		CreationDate  string `json:"creationDate"`
@@ -942,8 +890,17 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		return tools.ToolResult{}, err
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to parse statuses base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("api-version", "7.1")
+	u.RawQuery = q.Encode()
+
+	requestURL := u.String()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
@@ -1039,6 +996,7 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 	var params struct {
 		Organization  string `json:"organization"`
 		Project       string `json:"project"`
+		Repository    string `json:"repository"`
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
@@ -1046,13 +1004,8 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		return tools.ToolResult{}, err
 	}
 
-	if params.Organization == "" || params.Project == "" || params.PullRequestId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and pull_request_id are required")
-	}
-
-	projectID, err := m.getProjectID(ctx, params.Organization, params.Project)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to resolve project GUID: %w", err)
+	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
 	authHeader, err := m.getAuthHeader()
@@ -1060,9 +1013,61 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		return tools.ToolResult{}, err
 	}
 
-	targetId := fmt.Sprintf("vstfs:///CodeReview/PullRequestId/%s/%d", projectID, params.PullRequestId)
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/evaluations?targetId=%s&api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.QueryEscape(targetId))
+	// 1. Fetch Pull Request metadata to get the proper ArtifactID (targetId)
+	prRequestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, prRequestURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create PR metadata request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("PR metadata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return tools.ToolResult{}, fmt.Errorf("failed to fetch PR metadata: %s, body: %s", resp.Status, string(body))
+	}
+
+	var prData struct {
+		Repository struct {
+			Project struct {
+				Id string `json:"id"`
+			} `json:"project"`
+		} `json:"repository"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode PR metadata: %w", err)
+	}
+
+	if prData.Repository.Project.Id == "" {
+		return tools.ToolResult{}, fmt.Errorf("could not find project ID for pull request #%d", params.PullRequestId)
+	}
+
+	targetId := fmt.Sprintf("vstfs:///CodeReview/CodeReviewId/%s/%d",
+		prData.Repository.Project.Id, params.PullRequestId)
+
+	// 2. Use the platform-provided ArtifactId for Policy Evaluation
+	baseURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/evaluations",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project))
+
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to parse policy base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("artifactId", targetId)
+	q.Set("api-version", "7.1-preview.1")
+	u.RawQuery = q.Encode()
+
+	requestURL := u.String()
 
 	policyData, err := m.performPolicyEvaluationRequest(ctx, requestURL, authHeader)
 	if err != nil {

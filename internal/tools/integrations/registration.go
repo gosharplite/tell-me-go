@@ -560,12 +560,16 @@ func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, cli
 					Type:        "STRING",
 					Description: "The project name or ID.",
 				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
 				"pull_request_id": {
 					Type:        "INTEGER",
 					Description: "The numeric ID of the pull request.",
 				},
 			},
-			Required: []string{"organization", "project", "pull_request_id"},
+			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
 	}, m.adoGetPrPolicyEvaluations)
 }
