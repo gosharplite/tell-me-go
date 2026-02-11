@@ -15,7 +15,6 @@ type ICostTracker interface {
 	GetDailyCost(ctx context.Context) float64
 	GetStats(ctx context.Context) (UsageStats, float64)
 	Accumulate(mt llm.Metrics)
-	CalculateCost(mt llm.Metrics) float64
 	AccumulateAndReturn(mt llm.Metrics) float64
 	Warmup()
 }

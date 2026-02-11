@@ -185,23 +185,6 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.totalCost += calc.Calculate(turnStats).TotalCost
 }
 
-// CalculateCost returns the cost of a single metrics entry without accumulating it.
-func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	mtModel := mt.Model
-	if mtModel == "" {
-		mtModel = t.modelName
-	}
-	p := GetModelPricing(mtModel, t.pricing)
-
-	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
-	var dummy domain_pricing.UsageStats
-	turnStats := Accumulate(&dummy, mt)
-	return calc.Calculate(turnStats).TotalCost
-}
-
 // AccumulateAndReturn adds new turn metrics to the running total and returns the cost for this specific turn.
 func (t *SessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	t.mu.Lock()
