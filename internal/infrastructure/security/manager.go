@@ -240,6 +240,7 @@ var allowedCommands = map[string]bool{
 	"ado_get_pipeline_logs":         true,
 	"ado_get_pr_statuses":           true,
 	"ado_get_pr_policy_evaluations": true,
+	"ado_list_branch_policies":      true,
 
 	// Session & Management Tools
 	"get_session_info":         true,

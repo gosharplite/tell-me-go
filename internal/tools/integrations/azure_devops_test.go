@@ -807,3 +807,89 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
 }
+
+func TestAdoListBranchPolicies(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	t.Run("Success", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		// Mock repository lookup
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
+		}, nil).Once()
+
+		// Mock policy configurations lookup
+		policyResponse := `{
+			"value": [
+				{
+					"isEnabled": true,
+					"isBlocking": true,
+					"type": {"displayName": "Build"},
+					"settings": {
+						"scope": [
+							{"repositoryId": "repo-guid", "refName": "refs/heads/main"}
+						],
+						"buildDefinitionId": 19,
+						"queueOnSourceUpdateOnly": true
+					}
+				}
+			]
+		}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(policyResponse)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"repository":   "myrepo",
+			"branch_name":  "main",
+		}
+
+		result, err := m.adoListBranchPolicies(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Branch Policies for main in myrepo")
+		assert.Contains(t, result.Text, "- Type: Build [REQUIRED]")
+		assert.Contains(t, result.Text, "Build Definition ID: 19")
+		assert.Contains(t, result.Text, "Queue On Source Update Only: true")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("No Policies", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"repository":   "myrepo",
+			"branch_name":  "main",
+		}
+
+		result, err := m.adoListBranchPolicies(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "No active policies found")
+	})
+}

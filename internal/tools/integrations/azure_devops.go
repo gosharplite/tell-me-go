@@ -1149,3 +1149,174 @@ func (m *azureDevOpsManager) formatPolicyEvaluations(pullRequestId int, policyDa
 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
+
+func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		Repository   string `json:"repository"`
+		BranchName   string `json:"branch_name"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.BranchName == "" {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and branch_name are required")
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	// 1. Fetch repository metadata to get the repositoryId (GUID)
+	repoURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s?api-version=7.1",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, repoURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create repository request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("repository request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return tools.ToolResult{}, fmt.Errorf("failed to fetch repository metadata: %s, body: %s", resp.Status, string(body))
+	}
+
+	var repoData struct {
+		Id string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode repository metadata: %w", err)
+	}
+	targetRepoId := repoData.Id
+
+	// 2. Fetch all policy configurations for the project
+	policyURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/configurations?api-version=7.1",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project))
+
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, policyURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create policy request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err = m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("policy request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return tools.ToolResult{}, fmt.Errorf("failed to fetch policy configurations: %s, body: %s", resp.Status, string(body))
+	}
+
+	var policyConfigs struct {
+		Value []adoPolicyConfig `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&policyConfigs); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode policy configurations: %w", err)
+	}
+
+	// 3. Filter and Format
+	fullBranchRef := params.BranchName
+	if !strings.HasPrefix(fullBranchRef, "refs/heads/") {
+		fullBranchRef = "refs/heads/" + fullBranchRef
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Branch Policies for %s in %s:\n\n", params.BranchName, params.Repository))
+
+	found := false
+	for _, config := range policyConfigs.Value {
+		if !config.IsEnabled {
+			continue
+		}
+
+		scope, ok := config.Settings["scope"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		matches := false
+		for _, s := range scope {
+			scopeMap, ok := s.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			repoId, _ := scopeMap["repositoryId"].(string)
+			refName, _ := scopeMap["refName"].(string)
+
+			if repoId == targetRepoId && refName == fullBranchRef {
+				matches = true
+				break
+			}
+		}
+
+		if matches {
+			found = true
+			requiredLabel := ""
+			if config.IsBlocking {
+				requiredLabel = " [REQUIRED]"
+			}
+
+			resultText.WriteString(fmt.Sprintf("- Type: %s%s\n", config.Type.DisplayName, requiredLabel))
+			resultText.WriteString("  Status: Enabled\n")
+			resultText.WriteString("  Settings:\n")
+			for k, v := range config.Settings {
+				if k == "scope" {
+					continue
+				}
+				// Format key for better readability (simple approach)
+				formattedKey := formatKey(k)
+				resultText.WriteString(fmt.Sprintf("    %s: %v\n", formattedKey, v))
+			}
+			resultText.WriteString("\n")
+		}
+	}
+
+	if !found {
+		return tools.ToolResult{Text: fmt.Sprintf("No active policies found for branch %s in repository %s.", params.BranchName, params.Repository)}, nil
+	}
+
+	return tools.ToolResult{Text: resultText.String()}, nil
+}
+
+func formatKey(s string) string {
+	if s == "" {
+		return ""
+	}
+	var res strings.Builder
+	for i, r := range s {
+		if i == 0 {
+			if r >= 'a' && r <= 'z' {
+				res.WriteRune(r - 'a' + 'A')
+			} else {
+				res.WriteRune(r)
+			}
+		} else {
+			if r >= 'A' && r <= 'Z' {
+				res.WriteRune(' ')
+			}
+			res.WriteRune(r)
+		}
+	}
+	result := res.String()
+	if strings.HasSuffix(result, " Id") {
+		result = result[:len(result)-2] + "ID"
+	}
+	return result
+}

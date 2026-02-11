@@ -572,4 +572,31 @@ func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, cli
 			Required: []string{"organization", "project", "repository", "pull_request_id"},
 		},
 	}, m.adoGetPrPolicyEvaluations)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_list_branch_policies",
+		Description: "Lists all branch policies (build gates, reviewer requirements, etc.) configured for a specific branch in an Azure DevOps repository.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"branch_name": {
+					Type:        "STRING",
+					Description: "The branch name (e.g., 'main', 'dev/1.54').",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "branch_name"},
+		},
+	}, m.adoListBranchPolicies)
 }
