@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -19,6 +20,14 @@ type MockSecurityProvider struct {
 	IsPathWritableFunc           func(path string) (string, error)
 	ConfirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
 	IsPathSafeFunc               func(path string) (string, error)
+}
+
+func (m *MockSecurityProvider) GetPolicy() *domain.Policy {
+	return domain.DefaultPolicy()
+}
+
+func (m *MockSecurityProvider) GetSafetyService() *domain.SafetyService {
+	return domain.NewSafetyService(domain.DefaultPolicy())
 }
 
 func (m *MockSecurityProvider) IsPathWritable(path string) (string, error) {

@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"context"
+
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 type mockSecurityProvider struct{}
@@ -36,4 +38,12 @@ func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 		return m.CombinedOutputFunc(ctx, name, args...)
 	}
 	return nil, nil
+}
+
+func (s *mockSecurityProvider) GetPolicy() *domain.Policy {
+	return domain.DefaultPolicy()
+}
+
+func (s *mockSecurityProvider) GetSafetyService() *domain.SafetyService {
+	return domain.NewSafetyService(domain.DefaultPolicy())
 }

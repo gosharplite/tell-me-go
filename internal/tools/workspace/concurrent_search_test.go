@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -98,6 +99,14 @@ func (s *mockSP) IsCommandAllowed(command string) bool       { return true }
 func (s *mockSP) LogAudit(label1, val1, label2, val2 string) {}
 func (s *mockSP) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
+}
+
+func (s *mockSP) GetPolicy() *domain.Policy {
+	return domain.DefaultPolicy()
+}
+
+func (s *mockSP) GetSafetyService() *domain.SafetyService {
+	return domain.NewSafetyService(domain.DefaultPolicy())
 }
 
 func setupSearchTest(t *testing.T) (*searchMockFS, *mockSP) {
