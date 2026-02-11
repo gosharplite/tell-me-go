@@ -33,6 +33,7 @@ type SimpleEventBus struct {
 	stop        chan struct{}
 	wg          sync.WaitGroup
 	once        sync.Once
+	closed      bool
 }
 
 type flushEvent struct {
@@ -52,28 +53,8 @@ func NewSimpleEventBus() *SimpleEventBus {
 
 func (b *SimpleEventBus) worker() {
 	defer b.wg.Done()
-	for {
-		select {
-		case e, ok := <-b.queue:
-			if !ok {
-				return
-			}
-			b.dispatch(e)
-		case <-b.stop:
-			// Flush remaining events
-			for {
-				select {
-				case e, ok := <-b.queue:
-					if ok {
-						b.dispatch(e)
-					} else {
-						return
-					}
-				default:
-					return
-				}
-			}
-		}
+	for e := range b.queue {
+		b.dispatch(e)
 	}
 }
 
@@ -99,10 +80,14 @@ func (b *SimpleEventBus) Publish(e Event) {
 		return
 	}
 
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.closed {
+		return
+	}
+
 	select {
 	case b.queue <- e:
-	case <-b.stop:
-		// Bus is shutting down, ignore
 	default:
 		// Buffer full, drop event to avoid blocking the caller
 	}
@@ -121,7 +106,11 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	}
 
 	b.once.Do(func() {
+		b.mu.Lock()
+		b.closed = true
 		close(b.stop)
+		close(b.queue)
+		b.mu.Unlock()
 	})
 
 	done := make(chan struct{})

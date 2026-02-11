@@ -38,3 +38,61 @@ func TestSimpleEventBus_Race(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
+	bus := NewSimpleEventBus()
+	count := 0
+	mu := sync.Mutex{}
+	
+	bus.Subscribe(func(e Event) {
+		mu.Lock()
+		count++
+		mu.Unlock()
+	})
+	
+	numEvents := 50
+	for i := 0; i < numEvents; i++ {
+		bus.Publish(i)
+	}
+	
+	err := bus.Shutdown(context.Background())
+	if err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+	
+	mu.Lock()
+	defer mu.Unlock()
+	if count != numEvents {
+		t.Errorf("Expected %d events, got %d", numEvents, count)
+	}
+}
+
+func TestSimpleEventBus_Flush(t *testing.T) {
+	bus := NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
+	
+	count := 0
+	mu := sync.Mutex{}
+	
+	bus.Subscribe(func(e Event) {
+		mu.Lock()
+		count++
+		mu.Unlock()
+	})
+	
+	numEvents := 50
+	for i := 0; i < numEvents; i++ {
+		bus.Publish(i)
+	}
+	
+	err := bus.Flush(context.Background())
+	if err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+	
+	mu.Lock()
+	defer mu.Unlock()
+	if count != numEvents {
+		t.Errorf("Expected %d events after flush, got %d", numEvents, count)
+	}
+}
