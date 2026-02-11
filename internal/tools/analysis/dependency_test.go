@@ -30,7 +30,7 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 		return nil, nil
 	}
 
-	analyzer := NewDependencyAnalyzer(mockExec, &mockSecurityProvider{})
+	analyzer := newDependencyAnalyzer(mockExec, &mockSecurityProvider{})
 	res, err := analyzer.GetPackageGraph(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)

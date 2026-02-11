@@ -16,41 +16,41 @@ import (
 	"golang.org/x/term"
 )
 
-// InteractionHandler manages terminal locking and user prompts.
-type InteractionHandler struct {
+// interactionHandler manages terminal locking and user prompts.
+type interactionHandler struct {
 	reader     *bufio.Reader
 	readerMu   sync.Mutex
 	terminalMu sync.Mutex
 	auditor    *Auditor
 }
 
-// NewInteractionHandler creates a new InteractionHandler.
-func NewInteractionHandler(r io.Reader, auditor *Auditor) *InteractionHandler {
-	return &InteractionHandler{
+// newInteractionHandler creates a new interactionHandler.
+func newInteractionHandler(r io.Reader, auditor *Auditor) *interactionHandler {
+	return &interactionHandler{
 		reader:  bufio.NewReader(r),
 		auditor: auditor,
 	}
 }
 
 // SetReader updates the input reader.
-func (h *InteractionHandler) SetReader(r io.Reader) {
+func (h *interactionHandler) SetReader(r io.Reader) {
 	h.readerMu.Lock()
 	defer h.readerMu.Unlock()
 	h.reader = bufio.NewReader(r)
 }
 
 // TerminalLock locks the terminal for exclusive access.
-func (h *InteractionHandler) TerminalLock() {
+func (h *interactionHandler) TerminalLock() {
 	h.terminalMu.Lock()
 }
 
 // TerminalUnlock unlocks the terminal.
-func (h *InteractionHandler) TerminalUnlock() {
+func (h *interactionHandler) TerminalUnlock() {
 	h.terminalMu.Unlock()
 }
 
 // ConfirmAction prompts the user for confirmation.
-func (h *InteractionHandler) ConfirmAction(ctx context.Context, action, target, detail string, bypass bool) (bool, error) {
+func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, detail string, bypass bool) (bool, error) {
 	h.TerminalLock()
 	defer h.TerminalUnlock()
 
@@ -92,11 +92,11 @@ func (h *InteractionHandler) ConfirmAction(ctx context.Context, action, target, 
 }
 
 // ReadSingleKey waits for a single key press.
-func (h *InteractionHandler) ReadSingleKey(ctx context.Context) (string, error) {
+func (h *interactionHandler) ReadSingleKey(ctx context.Context) (string, error) {
 	return h.readSingleKey(ctx)
 }
 
-func (h *InteractionHandler) readSingleKey(ctx context.Context) (string, error) {
+func (h *interactionHandler) readSingleKey(ctx context.Context) (string, error) {
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
 	}
@@ -117,7 +117,7 @@ func (h *InteractionHandler) readSingleKey(ctx context.Context) (string, error) 
 	return strings.ToLower(string(b)), nil
 }
 
-func (h *InteractionHandler) getRawTerminalState(fd int) (*term.State, error) {
+func (h *interactionHandler) getRawTerminalState(fd int) (*term.State, error) {
 	if !term.IsTerminal(fd) {
 		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
 			return nil, nil
@@ -132,7 +132,7 @@ func (h *InteractionHandler) getRawTerminalState(fd int) (*term.State, error) {
 	return state, nil
 }
 
-func (h *InteractionHandler) readByteAsync(ctx context.Context) (byte, error) {
+func (h *interactionHandler) readByteAsync(ctx context.Context) (byte, error) {
 	type result struct {
 		b   byte
 		err error
@@ -161,7 +161,7 @@ func (h *InteractionHandler) readByteAsync(ctx context.Context) (byte, error) {
 }
 
 // ReadLine reads a line of input.
-func (h *InteractionHandler) ReadLine(ctx context.Context) (string, error) {
+func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()

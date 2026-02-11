@@ -9,7 +9,7 @@ import (
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
-	m := &InfoManager{}
+	m := &infoManager{}
 
 	modInfo := "module example.com/test\ngo 1.21\n"
 	fileCounts := map[string]int{
@@ -45,7 +45,7 @@ func TestInfoManager_RenderProjectSummary(t *testing.T) {
 
 func TestInfoManager_ExtractGenericSkeleton(t *testing.T) {
 	fs := inframock.NewMockFileSystem()
-	m := &InfoManager{FS: fs}
+	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -100,7 +100,7 @@ function test() {
 
 func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 	fs := inframock.NewMockFileSystem()
-	m := &InfoManager{FS: fs}
+	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	tests := []struct {
@@ -136,7 +136,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 
 func TestInfoManager_CollectFileStats(t *testing.T) {
 	fs := inframock.NewMockFileSystem()
-	m := &InfoManager{FS: fs}
+	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	// Setup mock files
@@ -175,7 +175,7 @@ func TestInfoManager_CollectFileStats(t *testing.T) {
 
 func TestInfoManager_GetProjectSummary(t *testing.T) {
 	fs := inframock.NewMockFileSystem()
-	m := &InfoManager{FS: fs}
+	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	_ = fs.WriteFile(ctx, "go.mod", []byte("module example.com/test\ngo 1.25\n"), 0644)
@@ -196,7 +196,7 @@ func TestInfoManager_GetProjectSummary(t *testing.T) {
 
 func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 	fs := inframock.NewMockFileSystem()
-	m := &InfoManager{FS: fs}
+	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
 	t.Run("empty directory", func(t *testing.T) {

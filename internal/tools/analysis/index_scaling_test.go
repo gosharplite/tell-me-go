@@ -8,7 +8,7 @@ import (
 
 func TestIndexer_Scaling(t *testing.T) {
 	// Use current directory for testing
-	idx, err := NewIndexer(".")
+	idx, err := newIndexer(".")
 	if err != nil {
 		t.Fatalf("failed to create r: %v", err)
 	}
@@ -37,19 +37,19 @@ func TestIndexer_Scaling(t *testing.T) {
 	// 3. Verify consistency
 	foundIndexer := false
 	for _, sym := range symbols {
-		if sym.Name == "Indexer" && sym.Kind == "type" {
+		if sym.Name == "indexer" && sym.Kind == "type" {
 			foundIndexer = true
 			break
 		}
 	}
 
 	if !foundIndexer {
-		t.Errorf("Expected to find 'Indexer' type in symbols, got %d symbols", len(symbols))
+		t.Errorf("Expected to find 'indexer' type in symbols, got %d symbols", len(symbols))
 	}
 }
 
 func TestIndexer_GetUsages_Scaling(t *testing.T) {
-	idx, err := NewIndexer(".")
+	idx, err := newIndexer(".")
 	if err != nil {
 		t.Fatalf("failed to create r: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestIndexer_GetUsages_Scaling(t *testing.T) {
 	}
 
 	start := time.Now()
-	usages, err := idx.GetUsages(ctx, "Indexer", ".")
+	usages, err := idx.GetUsages(ctx, "indexer", ".")
 	duration := time.Since(start)
 
 	if err != nil {
@@ -71,6 +71,6 @@ func TestIndexer_GetUsages_Scaling(t *testing.T) {
 	}
 
 	if len(usages) == 0 {
-		t.Error("Expected to find usages of 'Indexer'")
+		t.Error("Expected to find usages of 'indexer'")
 	}
 }

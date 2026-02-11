@@ -10,7 +10,7 @@ import (
 )
 
 func FuzzValidatePath(f *testing.F) {
-	policy := NewPathPolicy()
+	policy := newPathPolicy()
 	cwd, _ := os.Getwd()
 	temp := os.TempDir()
 

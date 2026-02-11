@@ -51,7 +51,7 @@ func TestMoveDefinition(t *testing.T) {
 				return false, nil
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
@@ -75,7 +75,7 @@ func TestMoveDefinition(t *testing.T) {
 				return "", fmt.Errorf("error")
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
 			"src_file": "src.go",
@@ -108,7 +108,7 @@ func TestMoveDefinition(t *testing.T) {
 		}
 
 		sp := &MockSecurityProvider{}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
@@ -147,7 +147,7 @@ func TestRenameSymbol(t *testing.T) {
 				return false, nil
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"old_name": "Old",
@@ -167,7 +167,7 @@ func TestRenameSymbol(t *testing.T) {
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
 		sp := &MockSecurityProvider{}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"old_name": "Old",

@@ -15,16 +15,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-type PolicyTool struct {
+type policyTool struct {
 	sm *SecurityManager
 }
 
-// NewPolicyTool creates a new PolicyTool.
-func NewPolicyTool(sm *SecurityManager) *PolicyTool {
-	return &PolicyTool{sm: sm}
+// newPolicyTool creates a new policyTool.
+func newPolicyTool(sm *SecurityManager) *policyTool {
+	return &policyTool{sm: sm}
 }
 
-func (t *PolicyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -66,7 +66,7 @@ func (t *PolicyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized and persisted.", absPath)}, nil
 }
 
-func (t *PolicyTool) RemoveSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -107,7 +107,7 @@ func (t *PolicyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from authorized boundaries.", absPath)}, nil
 }
 
-func (t *PolicyTool) ListSafePaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) ListSafePaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	paths := t.sm.GetSafePaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional safe paths are currently registered."}, nil
@@ -121,7 +121,7 @@ func (t *PolicyTool) ListSafePaths(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *PolicyTool) RegisterReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -163,7 +163,7 @@ func (t *PolicyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully authorized for reading and persisted.", absPath)}, nil
 }
 
-func (t *PolicyTool) RemoveReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -204,7 +204,7 @@ func (t *PolicyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 	return tools.ToolResult{Text: fmt.Sprintf("Path '%s' has been successfully removed from read-only authorized boundaries.", absPath)}, nil
 }
 
-func (t *PolicyTool) ListReadPaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	paths := t.sm.GetReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
@@ -218,7 +218,7 @@ func (t *PolicyTool) ListReadPaths(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *PolicyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -243,7 +243,7 @@ func (t *PolicyTool) BypassConfirmation(ctx context.Context, args map[string]int
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
 }
 
-func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -255,7 +255,7 @@ func (t *PolicyTool) RevokeBypass(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
 }
 
-func (t *PolicyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
+func (t *policyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
 	lowerTitle := strings.ToLower(title)
 	if t.sm.IsBypassActive() {
 		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved.%s\n", ui.ColorGreen, t.getBypassMsg(lowerTitle), ui.ColorReset)
@@ -295,7 +295,7 @@ func (t *PolicyTool) confirmAction(ctx context.Context, title, path, reason stri
 	return true, nil
 }
 
-func (t *PolicyTool) getBypassMsg(lowerTitle string) string {
+func (t *policyTool) getBypassMsg(lowerTitle string) string {
 	if strings.Contains(lowerTitle, "remove") {
 		if strings.Contains(lowerTitle, "read-only") {
 			return "Removal of read-only authorization"
@@ -308,7 +308,7 @@ func (t *PolicyTool) getBypassMsg(lowerTitle string) string {
 	return "Authorization"
 }
 
-func (t *PolicyTool) getPrompt(lowerTitle string) string {
+func (t *policyTool) getPrompt(lowerTitle string) string {
 	if strings.Contains(lowerTitle, "remove") {
 		return "Confirm removal? (y/N) "
 	}
@@ -321,7 +321,7 @@ func (t *PolicyTool) getPrompt(lowerTitle string) string {
 	return "Authorize this path? (y/N) "
 }
 
-func (t *PolicyTool) getDoubleMsg(lowerTitle string) string {
+func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 	if strings.Contains(lowerTitle, "read-only") {
 		return "Are you absolutely sure? This allows the AI to read files in this location in future sessions."
 	}
@@ -330,7 +330,7 @@ func (t *PolicyTool) getDoubleMsg(lowerTitle string) string {
 
 // RegisterPolicy adds security policy management tools to the registry.
 func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
-	p := NewPolicyTool(sm)
+	p := newPolicyTool(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_safepath",

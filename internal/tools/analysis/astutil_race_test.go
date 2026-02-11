@@ -10,7 +10,7 @@ import (
 
 func TestASTCache_Concurrency_Race(t *testing.T) {
 	tmpDir := t.TempDir()
-	cache := NewASTCache()
+	cache := newASTCache()
 	numFiles := 10
 	files := make([]string, numFiles)
 	for i := 0; i < numFiles; i++ {

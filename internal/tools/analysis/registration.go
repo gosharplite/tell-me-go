@@ -11,9 +11,9 @@ import (
 
 // Register adds all consolidated analysis tools to the registry.
 func Register(r *registry.Registry, sm *security.SecurityManager) {
-	idx, _ := NewIndexer(".")
-	cache := NewASTCache()
-	m := NewAnalysisManager(idx, cache, sm)
+	idx, _ := newIndexer(".")
+	cache := newASTCache()
+	m := newAnalysisManager(idx, cache, sm)
 
 	// Code Analysis Tools
 	r.RegisterWithOptions(&tools.ToolDeclaration{

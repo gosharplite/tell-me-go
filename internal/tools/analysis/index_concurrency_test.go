@@ -27,7 +27,7 @@ func F2() {}
 		t.Fatal(err)
 	}
 
-	idx, err := NewIndexer(tmpDir)
+	idx, err := newIndexer(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}

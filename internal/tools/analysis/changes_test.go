@@ -41,7 +41,7 @@ func NewFunc() {}
 		},
 	}
 
-	cache := NewASTCache()
+	cache := newASTCache()
 	// We need to change directory to tmpDir so that cache.Get(relPath) finds the file
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -56,7 +56,7 @@ func NewFunc() {}
 		}
 	}()
 
-	analyzer := NewChangeAnalyzer(cache, mockExec)
+	analyzer := newChangeAnalyzer(cache, mockExec)
 	res, err := analyzer.SemanticDiff(context.Background(), map[string]interface{}{"target": "HEAD~1"})
 	if err != nil {
 		t.Fatal(err)

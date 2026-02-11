@@ -12,19 +12,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-type DependencyAnalyzer struct {
+type dependencyAnalyzer struct {
 	Exec CommandExecutor
 	SP   security.SecurityProvider
 }
 
-func NewDependencyAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *DependencyAnalyzer {
-	return &DependencyAnalyzer{
+func newDependencyAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *dependencyAnalyzer {
+	return &dependencyAnalyzer{
 		Exec: exec,
 		SP:   sp,
 	}
 }
 
-func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	func() {
 		a.SP.TerminalLock()
 		defer a.SP.TerminalUnlock()
@@ -66,7 +66,7 @@ func (a *DependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (a *DependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
+func (a *dependencyAnalyzer) buildGraph(ctx context.Context) (map[string][]string, error) {
 	out, err := a.Exec.CombinedOutput(ctx, "go", "list", "-f", "{{.ImportPath}} -> {{.Imports}}", "./...")
 	if err != nil {
 		return nil, fmt.Errorf("listing packages: %w (output: %s)", err, string(out))

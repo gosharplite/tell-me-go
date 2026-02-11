@@ -18,8 +18,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// DeadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
-type DeadCodeAnalyzer struct {
+// deadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
+type deadCodeAnalyzer struct {
 	SP security.SecurityProvider
 }
 
@@ -50,12 +50,12 @@ type scanState struct {
 	externalUses     map[string]int
 }
 
-func NewDeadCodeAnalyzer(sp security.SecurityProvider) *DeadCodeAnalyzer {
-	return &DeadCodeAnalyzer{SP: sp}
+func newDeadCodeAnalyzer(sp security.SecurityProvider) *deadCodeAnalyzer {
+	return &deadCodeAnalyzer{SP: sp}
 }
 
 // FindOrphanedSymbols identifies exported symbols with zero inbound references within the module.
-func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path             string   `json:"path"`
 		ExcludedPackages []string `json:"excluded_packages"`
@@ -97,7 +97,7 @@ func (a *DeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	return a.formatToolResult(findings), nil
 }
 
-func (a *DeadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath string) ([]*packages.Package, string, error) {
+func (a *deadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath string) ([]*packages.Package, string, error) {
 	// Scope Validation: Ensure we are within a Go module.
 	if _, err := a.resolveModuleRoot(resolvedPath); err != nil {
 		return nil, "", err
@@ -138,7 +138,7 @@ func (a *DeadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath str
 	return pkgs, targetModule, nil
 }
 
-func (a *DeadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
+func (a *deadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
 	curr := path
 	for {
 		if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
@@ -153,7 +153,7 @@ func (a *DeadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
 	return "", fmt.Errorf("no go.mod found in %s or any parent", path)
 }
 
-func (a *DeadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
+func (a *deadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
 	for _, pkg := range pkgs {
 		for _, err := range pkg.Errors {
 			if !strings.Contains(err.Msg, "no Go files") { // Ignore empty package warnings
@@ -164,7 +164,7 @@ func (a *DeadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
 	return nil
 }
 
-func (a *DeadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolResult {
+func (a *deadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolResult {
 	if len(findings) == 0 {
 		return tools.ToolResult{Text: "No dead or effectively private code found."}
 	}
@@ -183,7 +183,7 @@ func (a *DeadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolR
 	return tools.ToolResult{Text: sb.String()}
 }
 
-func (a *DeadCodeAnalyzer) buildReport(state *scanState) []OrphanReport {
+func (a *deadCodeAnalyzer) buildReport(state *scanState) []OrphanReport {
 	var findings []OrphanReport
 	for id, meta := range state.declarations {
 		total := state.totalUses[id]
@@ -218,7 +218,7 @@ func (a *DeadCodeAnalyzer) buildReport(state *scanState) []OrphanReport {
 }
 
 // getSymbolIdentity creates a stable string representation for a Go symbol.
-func (a *DeadCodeAnalyzer) getSymbolIdentity(obj types.Object) string {
+func (a *deadCodeAnalyzer) getSymbolIdentity(obj types.Object) string {
 	if obj.Pkg() == nil {
 		return obj.Name()
 	}
@@ -239,7 +239,7 @@ func (a *DeadCodeAnalyzer) getSymbolIdentity(obj types.Object) string {
 	return fmt.Sprintf("%s.%s", pkgPath, obj.Name())
 }
 
-func (a *DeadCodeAnalyzer) shouldExclude(pkgPath string, excluded []string) bool {
+func (a *deadCodeAnalyzer) shouldExclude(pkgPath string, excluded []string) bool {
 	for _, pattern := range excluded {
 		if strings.Contains(pkgPath, pattern) {
 			return true
@@ -275,7 +275,7 @@ func getBasePkgPath(path string) string {
 	return path
 }
 
-func (a *DeadCodeAnalyzer) scanForUsages(state *scanState) {
+func (a *deadCodeAnalyzer) scanForUsages(state *scanState) {
 	for _, pkg := range state.pkgs {
 		if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
 			continue
@@ -299,13 +299,13 @@ func (a *DeadCodeAnalyzer) scanForUsages(state *scanState) {
 	}
 }
 
-func (a *DeadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
+func (a *deadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
 	for _, pkg := range state.pkgs {
 		a.harvestPackageSymbols(pkg, state)
 	}
 }
 
-func (a *DeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *scanState) {
+func (a *deadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *scanState) {
 	// Ensure the package belongs to our module for declaration tracking
 	if pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
 		return
@@ -320,7 +320,7 @@ func (a *DeadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *s
 	}
 }
 
-func (a *DeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanState) {
+func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanState) {
 	if obj == nil || obj.Pkg() == nil {
 		return
 	}
@@ -347,7 +347,7 @@ func (a *DeadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 	}
 }
 
-func (a *DeadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
+func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
@@ -369,7 +369,7 @@ func (a *DeadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) 
 	}
 }
 
-func (a *DeadCodeAnalyzer) mapInterfaceImplementations(state *scanState) {
+func (a *deadCodeAnalyzer) mapInterfaceImplementations(state *scanState) {
 	interfaces := a.collectInterfaces(state)
 
 	for _, pkg := range state.pkgs {
@@ -389,7 +389,7 @@ func (a *DeadCodeAnalyzer) mapInterfaceImplementations(state *scanState) {
 	}
 }
 
-func (a *DeadCodeAnalyzer) collectInterfaces(state *scanState) []*types.Interface {
+func (a *deadCodeAnalyzer) collectInterfaces(state *scanState) []*types.Interface {
 	var interfaces []*types.Interface
 	for _, pkg := range state.pkgs {
 		scope := pkg.Types.Scope()
@@ -405,7 +405,7 @@ func (a *DeadCodeAnalyzer) collectInterfaces(state *scanState) []*types.Interfac
 	return interfaces
 }
 
-func (a *DeadCodeAnalyzer) checkImplementations(named *types.Named, pkg *packages.Package, state *scanState, interfaces []*types.Interface) {
+func (a *deadCodeAnalyzer) checkImplementations(named *types.Named, pkg *packages.Package, state *scanState, interfaces []*types.Interface) {
 	for _, itf := range interfaces {
 		// Check if our named type implements this interface
 		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {

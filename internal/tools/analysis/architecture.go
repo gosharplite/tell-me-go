@@ -30,8 +30,8 @@ type PackageProvider interface {
 	LoadPackages(ctx context.Context) (map[string][]string, error)
 }
 
-// ArchitectureManager validates the project's architectural integrity.
-type ArchitectureManager struct {
+// architectureManager validates the project's architectural integrity.
+type architectureManager struct {
 	SP         security.SecurityProvider
 	ModulePath string
 	once       sync.Once
@@ -40,7 +40,7 @@ type ArchitectureManager struct {
 
 // RealPackageProvider implements PackageProvider using the 'go list' command.
 type RealPackageProvider struct {
-	m *ArchitectureManager
+	m *architectureManager
 }
 
 func (r *RealPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
@@ -132,7 +132,7 @@ type Rule struct {
 	Reason      string
 }
 
-func (m *ArchitectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
 		m.Loader = &RealPackageProvider{m: m}
 	}
@@ -179,11 +179,11 @@ func isLayer(pkgPath, layerName string) bool {
 	return false
 }
 
-func (m *ArchitectureManager) isCmd(pkgPath string) bool {
+func (m *architectureManager) isCmd(pkgPath string) bool {
 	return strings.Contains(pkgPath, "/cmd/") || strings.HasSuffix(pkgPath, "/cmd")
 }
 
-func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
+func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
 	rules := []Rule{
 		{
 			SourceLayer: LayerDomain,
@@ -230,7 +230,7 @@ func (m *ArchitectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	return violations
 }
 
-func (m *ArchitectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []Rule) []violation {
+func (m *architectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []Rule) []violation {
 	var violations []violation
 	shortPkg := m.shorten(pkg)
 
@@ -262,7 +262,7 @@ func (m *ArchitectureManager) checkSinglePackageViolations(pkg string, imports [
 	return violations
 }
 
-func (m *ArchitectureManager) checkGeneralCmdImport(pkg string, imports []string, existing []violation) []violation {
+func (m *architectureManager) checkGeneralCmdImport(pkg string, imports []string, existing []violation) []violation {
 	if !strings.Contains(pkg, "internal/") {
 		return nil
 	}
@@ -295,7 +295,7 @@ func isAlreadyReported(v violation, list []violation) bool {
 	return false
 }
 
-func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
+func (m *architectureManager) checkCircularDependencies(pkgs map[string][]string) []violation {
 	var violations []violation
 
 	visited := make(map[string]bool)
@@ -351,7 +351,7 @@ func (m *ArchitectureManager) checkCircularDependencies(pkgs map[string][]string
 	return violations
 }
 
-func (m *ArchitectureManager) shorten(pkg string) string {
+func (m *architectureManager) shorten(pkg string) string {
 	if m.ModulePath != "" {
 		return strings.TrimPrefix(strings.TrimPrefix(pkg, m.ModulePath), "/")
 	}
@@ -366,7 +366,7 @@ func (m *ArchitectureManager) shorten(pkg string) string {
 	return pkg
 }
 
-func (m *ArchitectureManager) shortenList(pkgs []string) []string {
+func (m *architectureManager) shortenList(pkgs []string) []string {
 	res := make([]string, len(pkgs))
 	for i, p := range pkgs {
 		res[i] = m.shorten(p)
@@ -374,7 +374,7 @@ func (m *ArchitectureManager) shortenList(pkgs []string) []string {
 	return res
 }
 
-func (m *ArchitectureManager) formatReport(violations []violation) string {
+func (m *architectureManager) formatReport(violations []violation) string {
 	var sb strings.Builder
 	sb.WriteString("### Architectural Integrity Report: ❌ FAILED\n\n")
 	sb.WriteString("| Package | Violation | Target | Reason |\n")

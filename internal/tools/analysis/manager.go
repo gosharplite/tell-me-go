@@ -42,8 +42,8 @@ type IDeadCodeAnalyzer interface {
 	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-// AnalysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
-type AnalysisManager struct {
+// analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
+type analysisManager struct {
 	Complexity IComplexityAnalyzer
 	Dependency IDependencyAnalyzer
 	Sequence   ISequenceAnalyzer
@@ -52,79 +52,79 @@ type AnalysisManager struct {
 	DeadCode   IDeadCodeAnalyzer
 
 	// Refactoring
-	Refactor *RefactorManager
+	Refactor *refactorManager
 
 	// Information & Search
-	Info   *InfoManager
-	Search *SearchManager
+	Info   *infoManager
+	Search *searchManager
 
 	// Project Health & Architecture
-	Health *HealthManager
-	Arch   *ArchitectureManager
+	Health *healthManager
+	Arch   *architectureManager
 }
 
-func NewAnalysisManager(idx SymbolIndex, cache *ASTCache, sp security.SecurityProvider) *AnalysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider) *analysisManager {
 	executor := &exec.RealExecutor{}
 	fs := storage.DefaultFileSystem
 
-	m := &AnalysisManager{
-		Complexity: NewComplexityAnalyzer(cache, sp),
-		Dependency: NewDependencyAnalyzer(executor, sp),
-		Sequence:   NewSequenceAnalyzer(executor, sp),
-		Change:     NewChangeAnalyzer(cache, executor),
-		Types:      NewTypeManager(idx, cache, sp),
-		DeadCode:   NewDeadCodeAnalyzer(sp),
+	m := &analysisManager{
+		Complexity: newComplexityAnalyzer(cache, sp),
+		Dependency: newDependencyAnalyzer(executor, sp),
+		Sequence:   newSequenceAnalyzer(executor, sp),
+		Change:     newChangeAnalyzer(cache, executor),
+		Types:      newTypeManager(idx, cache, sp),
+		DeadCode:   newDeadCodeAnalyzer(sp),
 
-		Refactor: NewRefactorManager(sp),
-		Info:     &InfoManager{SP: sp, Cache: cache, FS: fs},
-		Search:   &SearchManager{SP: sp, FS: fs},
-		Arch:     &ArchitectureManager{SP: sp},
+		Refactor: newRefactorManager(sp),
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs},
+		Search:   &searchManager{SP: sp, FS: fs},
+		Arch:     &architectureManager{SP: sp},
 	}
 
 	m.Arch.Loader = &RealPackageProvider{m: m.Arch}
-	m.Health = &HealthManager{SP: sp, Ana: m}
+	m.Health = &healthManager{SP: sp, Ana: m}
 
 	return m
 }
 
 // Delegated methods for registration
 
-func (m *AnalysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.DeadCode.FindOrphanedSymbols(ctx, args)
 }
 
-func (m *AnalysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) AnalyzeComplexity(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Complexity.Analyze(ctx, args)
 }
 
-func (m *AnalysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Dependency.GetPackageGraph(ctx, args)
 }
 
-func (m *AnalysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Sequence.AnalyzeSequenceFlow(ctx, args)
 }
 
-func (m *AnalysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Change.SemanticDiff(ctx, args)
 }
 
-func (m *AnalysisManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.ListImplementations(ctx, args)
 }
 
-func (m *AnalysisManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) FindUsages(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.FindUsages(ctx, args)
 }
 
-func (m *AnalysisManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.ListSymbols(ctx, args)
 }
 
-func (m *AnalysisManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.GetTypeInfo(ctx, args)
 }
 
-func (m *AnalysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.FindDefinitions(ctx, args)
 }

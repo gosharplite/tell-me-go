@@ -21,7 +21,7 @@ func (m *mockPackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 
 func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	mockSP := &mockSecurityProvider{}
-	m := &ArchitectureManager{
+	m := &architectureManager{
 		SP:         mockSP,
 		ModulePath: "github.com/gosharplite/tell-me-go",
 	}
@@ -75,7 +75,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 }
 
 func TestArchitectureManager_FormatReport(t *testing.T) {
-	m := &ArchitectureManager{
+	m := &architectureManager{
 		ModulePath: "github.com/gosharplite/tell-me-go",
 	}
 
@@ -157,7 +157,7 @@ func TestArchitectureManager_IsLayer(t *testing.T) {
 }
 
 func TestArchitectureManager_Shorten(t *testing.T) {
-	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	tests := []struct {
 		pkg  string
 		want string
@@ -177,7 +177,7 @@ func TestArchitectureManager_Shorten(t *testing.T) {
 }
 
 func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
-	m := &ArchitectureManager{ModulePath: "github.com/org/repo"}
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
 	pkgs := map[string][]string{
 		"github.com/org/repo/internal/domain": {
 			"github.com/org/repo/internal/agent", // Violation
