@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -306,7 +309,7 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 	resultText.WriteString(fmt.Sprintf("Total files changed: %d\n\n", len(changeData.ChangeEntries)))
 
 	for _, entry := range changeData.ChangeEntries {
-		changeType := strings.Title(entry.ChangeType)
+		changeType := cases.Title(language.English).String(entry.ChangeType)
 		resultText.WriteString(fmt.Sprintf("- [%s] %s\n", changeType, entry.Item.Path))
 	}
 
@@ -890,10 +893,19 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		return tools.ToolResult{}, err
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId))
+	statusData, err := m.fetchPrStatuses(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId, authHeader)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse statuses base URL: %w", err)
+		return tools.ToolResult{}, err
+	}
+
+	return tools.ToolResult{Text: m.formatPrStatuses(params.PullRequestId, statusData)}, nil
+}
+
+func (m *azureDevOpsManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int, authHeader string) (adoStatusResponse, error) {
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
+		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
+	if err != nil {
+		return adoStatusResponse{}, fmt.Errorf("failed to parse statuses base URL: %w", err)
 	}
 
 	q := u.Query()
@@ -904,7 +916,7 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+		return adoStatusResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Authorization", authHeader)
@@ -912,7 +924,7 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return adoStatusResponse{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -920,38 +932,33 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		body, _ := io.ReadAll(resp.Body)
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+			return adoStatusResponse{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
 		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
+			return adoStatusResponse{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
 		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("pull request or repository not found: %d. URL: %s", params.PullRequestId, requestURL)
+			return adoStatusResponse{}, fmt.Errorf("pull request or repository not found: %d. URL: %s", prID, requestURL)
 		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+			return adoStatusResponse{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
 		}
 	}
 
 	var statusData adoStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&statusData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+		return adoStatusResponse{}, fmt.Errorf("failed to decode response: %w", err)
 	}
+	return statusData, nil
+}
 
+func (m *azureDevOpsManager) formatPrStatuses(pullRequestId int, statusData adoStatusResponse) string {
 	if len(statusData.Value) == 0 {
-		return tools.ToolResult{Text: "No statuses found for this pull request."}, nil
+		return "No statuses found for this pull request."
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Statuses:\n\n", params.PullRequestId))
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d Statuses:\n\n", pullRequestId))
 
 	for _, item := range statusData.Value {
-		stateEmoji := "⚪"
-		switch strings.ToLower(item.State) {
-		case "succeeded":
-			stateEmoji = "✅"
-		case "failed", "error":
-			stateEmoji = "❌"
-		case "pending":
-			stateEmoji = "⏳"
-		}
+		stateEmoji := getStatusEmoji(item.State)
 
 		contextName := item.Context.Name
 		if item.Context.Genre != "" {
@@ -968,7 +975,20 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		resultText.WriteString("\n")
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
+}
+
+func getStatusEmoji(state string) string {
+	switch strings.ToLower(state) {
+	case "succeeded":
+		return "✅"
+	case "failed", "error":
+		return "❌"
+	case "pending":
+		return "⏳"
+	default:
+		return "⚪"
+	}
 }
 
 type adoPolicyResponse struct {
@@ -1171,128 +1191,145 @@ func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map
 		return tools.ToolResult{}, err
 	}
 
-	// 1. Fetch repository metadata to get the repositoryId (GUID)
+	targetRepoId, err := m.fetchRepositoryId(ctx, params.Organization, params.Project, params.Repository, authHeader)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	policyConfigs, err := m.fetchPolicyConfigurations(ctx, params.Organization, params.Project, authHeader)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	return tools.ToolResult{Text: m.formatBranchPolicies(params.BranchName, params.Repository, policyConfigs, targetRepoId)}, nil
+}
+
+func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project, repo, authHeader string) (string, error) {
 	repoURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository))
+		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, repoURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create repository request: %w", err)
+		return "", fmt.Errorf("failed to create repository request: %w", err)
 	}
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("repository request failed: %w", err)
+		return "", fmt.Errorf("repository request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("failed to fetch repository metadata: %s, body: %s", resp.Status, string(body))
+		return "", fmt.Errorf("failed to fetch repository metadata: %s, body: %s", resp.Status, string(body))
 	}
 
 	var repoData struct {
 		Id string `json:"id"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode repository metadata: %w", err)
+		return "", fmt.Errorf("failed to decode repository metadata: %w", err)
 	}
-	targetRepoId := repoData.Id
+	return repoData.Id, nil
+}
 
-	// 2. Fetch all policy configurations for the project
+func (m *azureDevOpsManager) fetchPolicyConfigurations(ctx context.Context, org, project, authHeader string) ([]adoPolicyConfig, error) {
 	policyURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/configurations?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project))
+		url.PathEscape(org), url.PathEscape(project))
 
-	req, err = http.NewRequestWithContext(ctx, http.MethodGet, policyURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, policyURL, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create policy request: %w", err)
+		return nil, fmt.Errorf("failed to create policy request: %w", err)
 	}
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err = m.client.Do(req)
+	resp, err := m.client.Do(req)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("policy request failed: %w", err)
+		return nil, fmt.Errorf("policy request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("failed to fetch policy configurations: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("failed to fetch policy configurations: %s, body: %s", resp.Status, string(body))
 	}
 
 	var policyConfigs struct {
 		Value []adoPolicyConfig `json:"value"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&policyConfigs); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode policy configurations: %w", err)
+		return nil, fmt.Errorf("failed to decode policy configurations: %w", err)
 	}
+	return policyConfigs.Value, nil
+}
 
-	// 3. Filter and Format
-	fullBranchRef := params.BranchName
+func (m *azureDevOpsManager) formatBranchPolicies(branchName, repositoryName string, policyConfigs []adoPolicyConfig, targetRepoId string) string {
+	fullBranchRef := branchName
 	if !strings.HasPrefix(fullBranchRef, "refs/heads/") {
 		fullBranchRef = "refs/heads/" + fullBranchRef
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Branch Policies for %s in %s:\n\n", params.BranchName, params.Repository))
+	resultText.WriteString(fmt.Sprintf("Branch Policies for %s in %s:\n\n", branchName, repositoryName))
 
 	found := false
-	for _, config := range policyConfigs.Value {
+	for _, config := range policyConfigs {
 		if !config.IsEnabled {
 			continue
 		}
 
-		scope, ok := config.Settings["scope"].([]interface{})
+		if !m.policyMatchesBranch(config, targetRepoId, fullBranchRef) {
+			continue
+		}
+
+		found = true
+		requiredLabel := ""
+		if config.IsBlocking {
+			requiredLabel = " [REQUIRED]"
+		}
+
+		resultText.WriteString(fmt.Sprintf("- Type: %s%s\n", config.Type.DisplayName, requiredLabel))
+		resultText.WriteString("  Status: Enabled\n")
+		resultText.WriteString("  Settings:\n")
+		for k, v := range config.Settings {
+			if k == "scope" {
+				continue
+			}
+			resultText.WriteString(fmt.Sprintf("    %s: %v\n", formatKey(k), v))
+		}
+		resultText.WriteString("\n")
+	}
+
+	if !found {
+		return fmt.Sprintf("No active policies found for branch %s in repository %s.", branchName, repositoryName)
+	}
+
+	return resultText.String()
+}
+
+func (m *azureDevOpsManager) policyMatchesBranch(config adoPolicyConfig, targetRepoId, fullBranchRef string) bool {
+	scope, ok := config.Settings["scope"].([]interface{})
+	if !ok {
+		return false
+	}
+
+	for _, s := range scope {
+		scopeMap, ok := s.(map[string]interface{})
 		if !ok {
 			continue
 		}
 
-		matches := false
-		for _, s := range scope {
-			scopeMap, ok := s.(map[string]interface{})
-			if !ok {
-				continue
-			}
+		repoId, _ := scopeMap["repositoryId"].(string)
+		refName, _ := scopeMap["refName"].(string)
 
-			repoId, _ := scopeMap["repositoryId"].(string)
-			refName, _ := scopeMap["refName"].(string)
-
-			if repoId == targetRepoId && refName == fullBranchRef {
-				matches = true
-				break
-			}
-		}
-
-		if matches {
-			found = true
-			requiredLabel := ""
-			if config.IsBlocking {
-				requiredLabel = " [REQUIRED]"
-			}
-
-			resultText.WriteString(fmt.Sprintf("- Type: %s%s\n", config.Type.DisplayName, requiredLabel))
-			resultText.WriteString("  Status: Enabled\n")
-			resultText.WriteString("  Settings:\n")
-			for k, v := range config.Settings {
-				if k == "scope" {
-					continue
-				}
-				// Format key for better readability (simple approach)
-				formattedKey := formatKey(k)
-				resultText.WriteString(fmt.Sprintf("    %s: %v\n", formattedKey, v))
-			}
-			resultText.WriteString("\n")
+		if repoId == targetRepoId && refName == fullBranchRef {
+			return true
 		}
 	}
-
-	if !found {
-		return tools.ToolResult{Text: fmt.Sprintf("No active policies found for branch %s in repository %s.", params.BranchName, params.Repository)}, nil
-	}
-
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return false
 }
 
 func formatKey(s string) string {

@@ -6,11 +6,13 @@ package integrations
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1022,4 +1024,738 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "build not found")
 	})
+}
+
+func TestAdoTools_DetailedErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	commonArgs := map[string]interface{}{
+		"organization": "myorg",
+		"project":      "myproj",
+		"repository":   "myrepo",
+	}
+
+	tests := []struct {
+		name           string
+		toolFunc       func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+		args           map[string]interface{}
+		httpStatus     int
+		respBody       string
+		doErr          error
+		expectedErrMsg string
+		setupPAT       string
+	}{
+		{
+			name: "adoGetPrDiff - Unmarshal Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"pull_request_id": "invalid"}, // should be int
+			expectedErrMsg: "json: cannot unmarshal string into Go struct field",
+		},
+		{
+			name: "adoGetPrDiff - Missing Params",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o"},
+			expectedErrMsg: "required",
+		},
+		{
+			name: "adoGetPrDiff - Request Failure",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			doErr:          fmt.Errorf("network error"),
+			expectedErrMsg: "request failed",
+		},
+		{
+			name: "adoGetPrDiff - 401 Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetPrDiff - 403 Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "forbidden",
+		},
+		{
+			name: "adoGetPrDiff - 404 Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "not found",
+		},
+		{
+			name: "adoGetPrDiff - 500 Internal Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrDiff(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusInternalServerError,
+			respBody:       "internal error",
+			expectedErrMsg: "returned status: 500",
+		},
+		{
+			name: "adoGetTaskLog - Unmarshal Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetTaskLog(ctx, args)
+			},
+			args:           map[string]interface{}{"build_id": "invalid"},
+			expectedErrMsg: "json: cannot unmarshal string into Go struct field",
+		},
+		{
+			name: "adoGetTaskLog - Missing Params",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetTaskLog(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o"},
+			expectedErrMsg: "required",
+		},
+		{
+			name: "adoGetTaskLog - 404 Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetTaskLog(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "not found",
+		},
+		{
+			name: "adoGetBuildTimeline - Missing Params",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildTimeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o"},
+			expectedErrMsg: "required",
+		},
+		{
+			name: "adoGetBuildTimeline - 401 Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildTimeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetPrPolicyEvaluations - PR Metadata Failure",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrPolicyEvaluations(ctx, args)
+			},
+			args: map[string]interface{}{
+				"organization":    "myorg",
+				"project":         "myproj",
+				"repository":      "myrepo",
+				"pull_request_id": 123,
+			},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "failed to fetch PR metadata",
+		},
+		{
+			name: "adoListPullRequests - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListPullRequests(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoListPullRequests - Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListPullRequests(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "forbidden",
+		},
+		{
+			name: "adoListPullRequests - Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListPullRequests(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "repository not found",
+		},
+		{
+			name: "adoGetPrThreads - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrThreads(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetPrThreads - Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrThreads(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "forbidden",
+		},
+		{
+			name: "adoGetPrThreads - Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrThreads(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "pull request not found",
+		},
+		{
+			name: "adoListRepositoryItems - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListRepositoryItems(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoListRepositoryItems - Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListRepositoryItems(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "forbidden",
+		},
+		{
+			name: "adoListRepositoryItems - Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListRepositoryItems(ctx, args)
+			},
+			args:           commonArgs,
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "repository or path not found",
+		},
+		{
+			name: "adoListPipelineRuns - 500 Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoListPipelineRuns(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "status: 500",
+		},
+		{
+			name: "adoGetPipelineRun - 500 Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPipelineRun(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "status: 500",
+		},
+		{
+			name: "adoGetBuildChanges - 500 Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildChanges(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "status: 500",
+		},
+		{
+			name: "adoGetBuildChanges - 401 Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildChanges(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetPrStatuses - 401 Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrStatuses(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetPrStatuses - 403 Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrStatuses(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "forbidden",
+		},
+		{
+			name: "adoGetPrPolicyEvaluations - 403 Forbidden",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrPolicyEvaluations(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
+			httpStatus:     http.StatusForbidden,
+			expectedErrMsg: "Forbidden",
+		},
+		{
+			name: "adoGetPrPolicyEvaluations - PR Metadata Decode Failure",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPrPolicyEvaluations(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
+			httpStatus:     http.StatusOK,
+			respBody:       `{invalid}`,
+			expectedErrMsg: "failed to decode PR metadata",
+		},
+		{
+			name: "adoGetFileContent - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetFileContent(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetFileContent - Default Error",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetFileContent(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"},
+			httpStatus:     http.StatusInternalServerError,
+			expectedErrMsg: "returned status: 500",
+		},
+		{
+			name: "adoGetPipelineLogs - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetPipelineLogs(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "returned status: 401", // adoGetPipelineLogs uses different error handling
+		},
+		{
+			name: "adoGetBuildTimeline - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildTimeline(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetTaskLog - Unauthorized",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetTaskLog(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1, "log_id": 1},
+			httpStatus:     http.StatusUnauthorized,
+			expectedErrMsg: "unauthorized",
+		},
+		{
+			name: "adoGetBuildChanges - Not Found",
+			toolFunc: func(m *azureDevOpsManager, ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+				return m.adoGetBuildChanges(ctx, args)
+			},
+			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
+			httpStatus:     http.StatusNotFound,
+			expectedErrMsg: "build not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupPAT != "" {
+				t.Setenv("AZURE_PAT_ALL", tt.setupPAT)
+			} else {
+				t.Setenv("AZURE_PAT_ALL", "test-pat")
+			}
+
+			mockClient := new(mockAzureDevOpsClient)
+			m := NewAzureDevOpsManager(sm, mockClient)
+
+			if tt.doErr != nil {
+				mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), tt.doErr)
+			} else if tt.respBody != "" || tt.httpStatus != 0 {
+				resp := &http.Response{
+					StatusCode: tt.httpStatus,
+					Body:       io.NopCloser(strings.NewReader(tt.respBody)),
+					Status:     fmt.Sprintf("%d %s", tt.httpStatus, http.StatusText(tt.httpStatus)),
+				}
+				mockClient.On("Do", mock.Anything).Return(resp, nil)
+			}
+
+			_, err := tt.toolFunc(m, context.Background(), tt.args)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedErrMsg)
+		})
+	}
+
+	t.Run("adoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+
+		// First call succeeds
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/pullrequests/123")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
+		}, nil).Once()
+
+		// Second call fails
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/policy/evaluations")
+		})).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("internal error")),
+			Status:     "500 Internal Server Error",
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"repository":      "myrepo",
+			"pull_request_id": 123,
+		}
+
+		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "azure DevOps API returned status: 500")
+	})
+
+	t.Run("adoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+
+		// First call succeeds
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
+		}, nil).Once()
+
+		// Second call fails
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
+		})).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("internal error")),
+			Status:     "500 Internal Server Error",
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"repository":   "myrepo",
+			"branch_name":  "main",
+		}
+
+		_, err := m.adoListBranchPolicies(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch policy configurations")
+	})
+}
+
+func TestAdoTools_AuthError(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "")
+	sm := security.NewSecurityManager(nil)
+	m := NewAzureDevOpsManager(sm, nil)
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"organization": "o",
+		"project":      "p",
+		"repository":   "r",
+	}
+
+	_, err := m.adoListPullRequests(ctx, args)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing AZURE_PAT_ALL")
+}
+
+func TestGetStatusEmoji(t *testing.T) {
+	tests := []struct {
+		state    string
+		expected string
+	}{
+		{"succeeded", "✅"},
+		{"failed", "❌"},
+		{"error", "❌"},
+		{"pending", "⏳"},
+		{"unknown", "⚪"},
+		{"", "⚪"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			assert.Equal(t, tt.expected, getStatusEmoji(tt.state))
+		})
+	}
+}
+
+func TestPolicyMatchesBranch_MissingScope(t *testing.T) {
+	m := &azureDevOpsManager{}
+	config := adoPolicyConfig{
+		Settings: map[string]interface{}{},
+	}
+	assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+
+	config.Settings["scope"] = "not a slice"
+	assert.False(t, m.policyMatchesBranch(config, "repo", "ref"))
+}
+
+func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("List Path - Request Failure", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
+		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "request failed")
+	})
+
+	t.Run("List Path - Non-200 Status", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("err")),
+			Status:     "500 Internal Error",
+		}, nil).Once()
+		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
+	})
+
+	t.Run("List Path - Empty Logs", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
+		}, nil).Once()
+		result, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
+		assert.NoError(t, err)
+		assert.Equal(t, "No logs found for this run.", result.Text)
+	})
+
+	t.Run("Content Path - Request Failure", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
+		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "request failed")
+	})
+}
+
+func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("fetchPrStatuses - 404", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
+		}, nil).Once()
+		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "pull request or repository not found")
+	})
+
+	t.Run("fetchPrStatuses - 500", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("err")),
+			Status:     "500 Internal Error",
+		}, nil).Once()
+		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
+	})
+}
+
+func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("fetchRepositoryId - 404", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
+		}, nil).Once()
+		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to fetch repository metadata")
+	})
+
+	t.Run("fetchRepositoryId - Decode Error", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{invalid}`)),
+		}, nil).Once()
+		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode repository metadata")
+	})
+}
+
+func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("401", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "401 Unauthorized",
+		}, nil).Once()
+		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url", "auth")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unauthorized (401)")
+	})
+
+	t.Run("404", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
+		}, nil).Once()
+		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url", "auth")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "policy not found (404)")
+	})
+}
+
+func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	mockClient.On("Do", mock.Anything).Return(&http.Response{
+		StatusCode: http.StatusTeapot,
+		Body:       io.NopCloser(strings.NewReader("teapot")),
+		Status:     "418 I'm a teapot",
+	}, nil).Once()
+	_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "returned status: 418")
+}
+
+func TestAdoListPipelineRuns_Empty(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	mockClient.On("Do", mock.Anything).Return(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
+	}, nil).Once()
+	result, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
+	assert.NoError(t, err)
+	assert.Equal(t, "No pipeline runs found.", result.Text)
+}
+
+func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("404", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
+		}, nil).Once()
+		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "build not found")
+	})
+
+	t.Run("Default", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(sm, mockClient)
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "500 Internal Error",
+		}, nil).Once()
+		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "returned status: 500")
+	})
+}
+
+func TestAdoGetBuildChanges_Empty(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	mockClient.On("Do", mock.Anything).Return(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
+	}, nil).Once()
+	result, err := m.adoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
+	assert.NoError(t, err)
+	assert.Equal(t, "[]", result.Text)
+}
+
+func TestAdoTools_MissingParams(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+	m := NewAzureDevOpsManager(sm, nil)
+	ctx := context.Background()
+
+	t.Run("adoGetFileContent", func(t *testing.T) {
+		_, err := m.adoGetFileContent(ctx, map[string]interface{}{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+
+	t.Run("adoGetBuildChanges", func(t *testing.T) {
+		_, err := m.adoGetBuildChanges(ctx, map[string]interface{}{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+
+	t.Run("adoGetPrStatuses", func(t *testing.T) {
+		_, err := m.adoGetPrStatuses(ctx, map[string]interface{}{})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "required")
+	})
+}
+
+func TestAdoGetPullRequest_UnmarshalError(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	m := NewAzureDevOpsManager(nil, nil)
+	_, err := m.adoGetPullRequest(context.Background(), map[string]interface{}{"pull_request_id": "invalid"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unmarshal")
 }
