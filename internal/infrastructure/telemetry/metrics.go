@@ -16,9 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
@@ -183,23 +185,6 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 
 	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	t.totalCost += calc.Calculate(turnStats).TotalCost
-}
-
-// CalculateCost returns the cost of a single metrics entry without accumulating it.
-func (t *SessionCostTracker) CalculateCost(mt llm.Metrics) float64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	mtModel := mt.Model
-	if mtModel == "" {
-		mtModel = t.modelName
-	}
-	p := GetModelPricing(mtModel, t.pricing)
-
-	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
-	var dummy domain_pricing.UsageStats
-	turnStats := Accumulate(&dummy, mt)
-	return calc.Calculate(turnStats).TotalCost
 }
 
 // AccumulateAndReturn adds new turn metrics to the running total and returns the cost for this specific turn.
@@ -795,4 +780,41 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 // This ID is used as the unique key in global_costs.json to identify and update session records.
 func generateSessionID(mode, logFile string) string {
 	return filepath.ToSlash(filepath.Join(mode, filepath.Base(logFile)))
+}
+
+// LogTrace writes a TurnTrace to a trace log file.
+func LogTrace(logFile string, trace *domain_telemetry.TurnTrace) {
+	if logFile == "" || trace == nil {
+		return
+	}
+
+	traceFile := strings.TrimSuffix(logFile, filepath.Ext(logFile)) + ".trace.jsonl"
+	data, err := json.Marshal(trace)
+	if err != nil {
+		log.Printf("Warning: Failed to marshal TurnTrace: %v", err)
+		return
+	}
+
+	f, err := os.OpenFile(traceFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		log.Printf("Warning: Failed to write to trace file %s: %v", traceFile, err)
+	}
+}
+
+// RegisterTraceSubscriber subscribes a listener to TraceEvents.
+func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(func(e events.Event) {
+		if te, ok := e.(events.TraceEvent); ok {
+			LogTrace(logFile, te.Trace)
+		}
+	})
 }

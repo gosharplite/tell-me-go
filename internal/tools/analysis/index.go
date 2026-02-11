@@ -37,7 +37,7 @@ type TypeName struct {
 }
 
 // SymbolIndex provides methods to query symbols and their relationships in a Go workspace.
-type SymbolIndex interface {
+type symbolIndex interface {
 	// Lookup returns the locations where the given symbol is defined.
 	Lookup(ctx context.Context, symbol string) ([]Location, error)
 	// FindImplementors returns the types that implement the given interface.
@@ -51,7 +51,7 @@ type SymbolIndex interface {
 }
 
 // Indexer implements SymbolIndex using go/packages and go/types.
-type Indexer struct {
+type indexer struct {
 	dir  string
 	fset *token.FileSet
 	mu   sync.RWMutex
@@ -65,8 +65,8 @@ type Indexer struct {
 
 const refreshTTL = 5 * time.Second
 
-func NewIndexer(dir string) (*Indexer, error) {
-	return &Indexer{
+func newIndexer(dir string) (*indexer, error) {
+	return &indexer{
 		dir:           dir,
 		fset:          token.NewFileSet(),
 		symbolsByPath: make(map[string][]SymbolLocation),
@@ -74,7 +74,7 @@ func NewIndexer(dir string) (*Indexer, error) {
 	}, nil
 }
 
-func (idx *Indexer) Refresh(ctx context.Context) error {
+func (idx *indexer) Refresh(ctx context.Context) error {
 	if !idx.needsRefresh() {
 		return nil
 	}
@@ -107,7 +107,7 @@ func (idx *Indexer) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (idx *Indexer) toLocation(pos token.Pos) Location {
+func (idx *indexer) toLocation(pos token.Pos) Location {
 	p := idx.fset.Position(pos)
 	abs, _ := filepath.Abs(p.Filename)
 	return Location{
@@ -117,7 +117,7 @@ func (idx *Indexer) toLocation(pos token.Pos) Location {
 	}
 }
 
-func (idx *Indexer) Lookup(ctx context.Context, symbol string) ([]Location, error) {
+func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]Location, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -131,7 +131,7 @@ func (idx *Indexer) Lookup(ctx context.Context, symbol string) ([]Location, erro
 	return locations, nil
 }
 
-func (idx *Indexer) FindImplementors(ctx context.Context, interfaceName string) ([]TypeName, error) {
+func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) ([]TypeName, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -174,7 +174,7 @@ func (idx *Indexer) FindImplementors(ctx context.Context, interfaceName string) 
 	return implementors, nil
 }
 
-func (idx *Indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]SymbolLocation, error) {
+func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]SymbolLocation, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -205,7 +205,7 @@ func (idx *Indexer) SearchSymbols(ctx context.Context, path string, query string
 	return results, nil
 }
 
-func (idx *Indexer) GetUsages(ctx context.Context, symbol string, path string) ([]Location, error) {
+func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]Location, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -334,13 +334,13 @@ func (h *harvester) toLocation(pos token.Pos) Location {
 	}
 }
 
-func (idx *Indexer) needsRefresh() bool {
+func (idx *indexer) needsRefresh() bool {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return time.Since(idx.lastRefresh) > refreshTTL
 }
 
-func (idx *Indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*packages.Package, error) {
+func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*packages.Package, error) {
 	cfg := &packages.Config{
 		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
 		Dir:     idx.dir,
@@ -350,7 +350,7 @@ func (idx *Indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*p
 	return packages.Load(cfg, "./...")
 }
 
-func (idx *Indexer) updateState(pkgs []*packages.Package, h *harvester, fset *token.FileSet) {
+func (idx *indexer) updateState(pkgs []*packages.Package, h *harvester, fset *token.FileSet) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	idx.pkgs = pkgs

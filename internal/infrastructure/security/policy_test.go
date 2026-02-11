@@ -18,7 +18,7 @@ func TestPolicyTool(t *testing.T) {
 	sm := NewSecurityManager(nil)
 	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
 
-	p := NewPolicyTool(sm)
+	p := newPolicyTool(sm)
 	ctx := context.Background()
 
 	t.Run("Register Safe Path", func(t *testing.T) {

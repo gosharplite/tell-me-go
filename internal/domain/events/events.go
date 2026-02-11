@@ -5,10 +5,12 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -19,15 +21,49 @@ type Event interface{}
 type EventBus interface {
 	Publish(e Event)
 	Subscribe(sub func(Event))
+	Shutdown(ctx context.Context) error
+	Flush(ctx context.Context) error
 }
 
-// SimpleEventBus is a basic implementation of EventBus.
+// SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
 	mu          sync.RWMutex
 	subscribers []func(Event)
+	queue       chan Event
+	stop        chan struct{}
+	wg          sync.WaitGroup
+	once        sync.Once
+	closed      bool
 }
 
-func (b *SimpleEventBus) Publish(e Event) {
+type flushEvent struct {
+	done chan struct{}
+}
+
+// NewSimpleEventBus creates and initializes a new SimpleEventBus.
+func NewSimpleEventBus() *SimpleEventBus {
+	b := &SimpleEventBus{
+		queue: make(chan Event, 100),
+		stop:  make(chan struct{}),
+	}
+	b.wg.Add(1)
+	go b.worker()
+	return b
+}
+
+func (b *SimpleEventBus) worker() {
+	defer b.wg.Done()
+	for e := range b.queue {
+		b.dispatch(e)
+	}
+}
+
+func (b *SimpleEventBus) dispatch(e Event) {
+	if fe, ok := e.(flushEvent); ok {
+		close(fe.done)
+		return
+	}
+
 	b.mu.RLock()
 	subs := make([]func(Event), len(b.subscribers))
 	copy(subs, b.subscribers)
@@ -38,10 +74,80 @@ func (b *SimpleEventBus) Publish(e Event) {
 	}
 }
 
+func (b *SimpleEventBus) Publish(e Event) {
+	if b.queue == nil {
+		b.dispatch(e)
+		return
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.closed {
+		return
+	}
+
+	select {
+	case b.queue <- e:
+	default:
+		// Buffer full, drop event to avoid blocking the caller
+	}
+}
+
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subscribers = append(b.subscribers, sub)
+}
+
+// Shutdown gracefully stops the event bus, flushing pending events.
+func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
+	if b.queue == nil {
+		return nil
+	}
+
+	b.once.Do(func() {
+		b.mu.Lock()
+		b.closed = true
+		close(b.stop)
+		close(b.queue)
+		b.mu.Unlock()
+	})
+
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Flush waits for all currently queued events to be dispatched.
+func (b *SimpleEventBus) Flush(ctx context.Context) error {
+	if b.queue == nil {
+		return nil
+	}
+
+	done := make(chan struct{})
+	select {
+	case b.queue <- flushEvent{done: done}:
+	case <-b.stop:
+		return fmt.Errorf("event bus is closed")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // StatusUpdate signals a change in the agent's internal state or progress.
@@ -100,4 +206,9 @@ type SummarizationRequired struct {
 	Tokens   int
 	MaxLimit int
 	Reason   string
+}
+
+// TraceEvent carries the TurnTrace for a completed turn.
+type TraceEvent struct {
+	Trace *telemetry.TurnTrace
 }

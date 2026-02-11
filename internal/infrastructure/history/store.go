@@ -17,8 +17,8 @@ import (
 // Store defines the interface for history persistence.
 type Store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
-	Save(ctx context.Context, contents []*llm.Content) error
-	Append(ctx context.Context, content *llm.Content) error
+	Save(ctx context.Context, history []*llm.Content) error
+	Append(ctx context.Context, contents []*llm.Content) error
 }
 
 // JSONLStore implements Store using a JSON Lines file.
@@ -108,13 +108,14 @@ func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
 	return s.fs.WriteFile(ctx, s.filePath, data, 0644)
 }
 
-// Append appends a single content entry to the history file.
-func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
-	dir := filepath.Dir(s.filePath)
-	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
-		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
-			return fmt.Errorf("failed to create history directory: %w", err)
-		}
+// Append appends multiple content entries to the history file.
+func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error {
+	if len(contents) == 0 {
+		return nil
+	}
+
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
 	}
 
 	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -123,10 +124,30 @@ func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
 	}
 	defer f.Close()
 
+	for _, content := range contents {
+		if err := s.appendSingleContent(ctx, f, content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *JSONLStore) ensureDirectory(ctx context.Context) error {
+	dir := filepath.Dir(s.filePath)
+	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
+		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
+			return fmt.Errorf("failed to create history directory: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *JSONLStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
 	prepared, err := s.prepareForStorage(ctx, content)
 	if err != nil {
 		return err
 	}
+
 	line, err := json.Marshal(prepared)
 	if err != nil {
 		return err
@@ -139,8 +160,10 @@ func (s *JSONLStore) Append(ctx context.Context, content *llm.Content) error {
 	default:
 	}
 
-	_, err = f.Write(line)
-	return err
+	if _, err = f.Write(line); err != nil {
+		return err
+	}
+	return nil
 }
 
 // prepareForStorage offloads binary data to AssetStore and returns a clone for JSON marshaling.

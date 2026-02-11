@@ -19,7 +19,7 @@ func TestIndexer_Refresh_ContextCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, _ := NewIndexer(tmpDir)
+	idx, _ := newIndexer(tmpDir)
 
 	// Use a context that cancels very quickly
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)

@@ -69,7 +69,7 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 	return nil
 }
 
-func (t *historyPruner) Priority() int { return 1 }
+func (t *historyPruner) Priority() int { return 10 }
 
 // CompositePruningPolicy aggregates multiple policies using OR logic.
 type CompositePruningPolicy struct {

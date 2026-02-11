@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -214,12 +215,20 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	assert.Error(t, err)
 
 	// Case 9: Event publishing
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	defer func() {
+		if err := bus.Shutdown(ctx); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	}()
 	cm.Events = bus
 	received := false
+	var mu sync.Mutex
 	bus.Subscribe(func(e events.Event) {
 		if _, ok := e.(events.SystemMessageEvent); ok {
+			mu.Lock()
 			received = true
+			mu.Unlock()
 		}
 	})
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
@@ -227,7 +236,10 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 	}
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.NoError(t, err)
+	_ = bus.Flush(ctx)
+	mu.Lock()
 	assert.True(t, received)
+	mu.Unlock()
 
 	// Case 10: finalizeSummarization fails
 	history.setContentsErr = fmt.Errorf("persist fail")

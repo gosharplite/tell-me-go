@@ -10,7 +10,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func setupAnalysisManager(t *testing.T) (*AnalysisManager, string) {
+func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
@@ -19,11 +19,11 @@ func setupAnalysisManager(t *testing.T) (*AnalysisManager, string) {
 		t.Fatal(err)
 	}
 
-	idx, _ := NewIndexer(tmpDir)
-	cache := NewASTCache()
+	idx, _ := newIndexer(tmpDir)
+	cache := newASTCache()
 	sp := &mockSecurityProvider{}
 
-	m := NewAnalysisManager(idx, cache, sp)
+	m := newAnalysisManager(idx, cache, sp)
 	return m, tmpDir
 }
 
@@ -37,12 +37,12 @@ func assertDelegationSuccess(t *testing.T, res tools.ToolResult, err error, expe
 	}
 }
 
-func testMetricsDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context, tmpDir string) {
+func testMetricsDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
 	res, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": tmpDir})
 	assertDelegationSuccess(t, res, err, "F - Complexity: 1", "AnalyzeComplexity")
 }
 
-func testSymbolDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context, tmpDir string) {
+func testSymbolDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
 	res, err := mgr.ListSymbols(ctx, map[string]interface{}{"path": tmpDir})
 	assertDelegationSuccess(t, res, err, "func F()", "ListSymbols")
 
@@ -50,12 +50,12 @@ func testSymbolDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Contex
 	assertDelegationSuccess(t, res, err, "F (Function)", "FindOrphanedSymbols")
 }
 
-func testTypeInfoDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context) {
+func testTypeInfoDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
 	res, err := mgr.GetTypeInfo(ctx, map[string]interface{}{"typename": "NonExistent"})
 	assertDelegationSuccess(t, res, err, "Type not found.", "GetTypeInfo")
 }
 
-func testSearchDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context, tmpDir string) {
+func testSearchDelegation(t *testing.T, mgr *analysisManager, ctx context.Context, tmpDir string) {
 	res, err := mgr.FindUsages(ctx, map[string]interface{}{"path": tmpDir, "query": "F"})
 	assertDelegationSuccess(t, res, err, "test.go", "FindUsages")
 
@@ -63,14 +63,14 @@ func testSearchDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Contex
 	assertDelegationSuccess(t, res, err, "func F()", "FindDefinitions")
 }
 
-func testDependencyDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context) {
+func testDependencyDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
 	// These don't have strong assertions in the original test, just checking they don't crash
 	_, _ = mgr.SemanticDiff(ctx, map[string]interface{}{"target": "HEAD"})
 	_, _ = mgr.ListImplementations(ctx, map[string]interface{}{"interface_name": "I"})
 	_, _ = mgr.GetPackageGraph(ctx, nil)
 }
 
-func testErrorDelegation(t *testing.T, mgr *AnalysisManager, ctx context.Context) {
+func testErrorDelegation(t *testing.T, mgr *analysisManager, ctx context.Context) {
 	// Passing an invalid type to path should trigger an error in UnmarshalArgs
 	_, err := mgr.AnalyzeComplexity(ctx, map[string]interface{}{"path": 123})
 	if err == nil {

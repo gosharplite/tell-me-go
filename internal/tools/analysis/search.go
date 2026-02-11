@@ -16,14 +16,14 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
-type SearchManager struct {
+type searchManager struct {
 	SP security.SecurityProvider
 	FS storage.FileSystem
 }
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 
-func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
@@ -55,7 +55,7 @@ func (m *SearchManager) ListTodos(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: out}, nil
 }
 
-func (m *SearchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Query string `json:"query"`
 		Path  string `json:"path"`

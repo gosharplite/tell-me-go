@@ -94,7 +94,7 @@ func LoopFunc() {}
 		},
 	}
 
-	analyzer := NewSequenceAnalyzer(mockExec, &mockSecurityProvider{})
+	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{})
 	analyzer.Provider = &mockPackageLoader{
 		pkgs: []*packages.Package{pkgA, pkgB},
 	}
@@ -149,7 +149,7 @@ func LoopFunc() {}`
 }
 
 func TestSequenceAnalyzer_Helpers(t *testing.T) {
-	a := &SequenceAnalyzer{}
+	a := &sequenceAnalyzer{}
 	t.Run("exprToString", func(t *testing.T) {
 		tests := []struct {
 			expr ast.Expr

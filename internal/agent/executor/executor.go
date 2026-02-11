@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -34,6 +36,7 @@ type ToolExecutor struct {
 	toolTimeout        time.Duration
 	pool               *WorkerPool
 	strategy           ResultStrategy
+	failures           *failureTracker
 }
 
 // NewToolExecutor creates a new ToolExecutor.
@@ -46,9 +49,41 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		toolTimeout:        30 * time.Second,
 		pool:               NewWorkerPool(5),
 		strategy:           &MarkdownStrategy{},
+		failures:           newFailureTracker(3), // Default threshold of 3
 	}
 
 	return e
+}
+
+type failureTracker struct {
+	mu        sync.RWMutex
+	failures  map[string]int
+	threshold int
+}
+
+func newFailureTracker(threshold int) *failureTracker {
+	return &failureTracker{
+		failures:  make(map[string]int),
+		threshold: threshold,
+	}
+}
+
+func (f *failureTracker) recordFailure(toolName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failures[toolName]++
+}
+
+func (f *failureTracker) recordSuccess(toolName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failures[toolName] = 0
+}
+
+func (f *failureTracker) isOpen(toolName string) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.failures[toolName] >= f.threshold
 }
 
 // SetStrategy sets the result formatting strategy.
@@ -146,6 +181,21 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	results, err := collector.Wait(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Notify about circuit breaker events
+	for _, tr := range results {
+		if errors.Is(tr.Error, domaintools.ErrToolCircuitOpen) {
+			e.mu.RLock()
+			bus := e.events
+			e.mu.RUnlock()
+			if bus != nil {
+				bus.Publish(events.SystemMessageEvent{
+					Message: tr.Text,
+					Level:   "warn",
+				})
+			}
+		}
 	}
 
 	return e.assembleResponse(calls, results), nil
@@ -320,19 +370,77 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	startTime := time.Now()
+	trace := telemetry.TraceFromContext(parentCtx)
+
+	// Check Circuit Breaker
+	if e.failures.isOpen(call.Name) {
+		tr := domaintools.ToolResult{
+			Text:  fmt.Sprintf("Error: Tool %q is temporarily disabled due to multiple consecutive failures.", call.Name),
+			Error: domaintools.ErrToolCircuitOpen,
+		}
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  call.Name,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    "circuit_open",
+			Error:     tr.Text,
+		})
+		return tr
+	}
+
 	// 1. Resolve
 	tool, err := e.resolveTool(call)
 	if err != nil {
-		return e.errorToToolResult(err)
+		tr := e.errorToToolResult(err)
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  call.Name,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    "error",
+			Error:     err.Error(),
+		})
+		return tr
 	}
 
 	// 2. Authorize
 	if err := e.authorizeTool(tool, call); err != nil {
-		return e.errorToToolResult(err)
+		tr := e.errorToToolResult(err)
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  call.Name,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    "error",
+			Error:     err.Error(),
+		})
+		return tr
 	}
 
 	// 3. Execute (with recovery/timeout)
 	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
+
+	status := "success"
+	var errStr string
+	if err != nil || result.Error != nil {
+		status = "error"
+		if err != nil {
+			errStr = err.Error()
+		} else {
+			errStr = result.Error.Error()
+		}
+		e.failures.recordFailure(call.Name)
+	} else {
+		e.failures.recordSuccess(call.Name)
+	}
+
+	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+		ToolName:  call.Name,
+		StartTime: startTime,
+		Duration:  time.Since(startTime),
+		Status:    status,
+		Error:     errStr,
+	})
+
 	if err != nil {
 		msg := fmt.Sprintf("Error: %v", err)
 		return domaintools.ToolResult{

@@ -13,19 +13,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
-type ChangeAnalyzer struct {
-	Cache *ASTCache
+type changeAnalyzer struct {
+	Cache *astCache
 	Exec  CommandExecutor
 }
 
-func NewChangeAnalyzer(cache *ASTCache, exec CommandExecutor) *ChangeAnalyzer {
-	return &ChangeAnalyzer{
+func newChangeAnalyzer(cache *astCache, exec CommandExecutor) *changeAnalyzer {
+	return &changeAnalyzer{
 		Cache: cache,
 		Exec:  exec,
 	}
 }
 
-func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *changeAnalyzer) SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Target string `json:"target"`
 	}
@@ -55,7 +55,7 @@ func (a *ChangeAnalyzer) SemanticDiff(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (a *ChangeAnalyzer) getDiffMetadata(ctx context.Context, target string) (string, []string, error) {
+func (a *changeAnalyzer) getDiffMetadata(ctx context.Context, target string) (string, []string, error) {
 	statOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--stat", target)
 	summaryOut, _ := a.Exec.CombinedOutput(ctx, "git", "diff", "--summary", target)
 
@@ -79,7 +79,7 @@ func (a *ChangeAnalyzer) getDiffMetadata(ctx context.Context, target string) (st
 	return sb.String(), changedFiles, nil
 }
 
-func (a *ChangeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath string, fset *token.FileSet) ([]string, error) {
+func (a *changeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath string, fset *token.FileSet) ([]string, error) {
 	// Get current AST
 	currAST, _, err := a.Cache.Get(relPath)
 	if err != nil {
@@ -108,11 +108,11 @@ func (a *ChangeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath 
 	return changes, nil
 }
 
-func (a *ChangeAnalyzer) isGoFile(relPath string) bool {
+func (a *changeAnalyzer) isGoFile(relPath string) bool {
 	return filepath.Ext(relPath) == ".go" && !strings.Contains(relPath, "vendor/")
 }
 
-func (a *ChangeAnalyzer) renderChanges(sb *strings.Builder, relPath string, changes []string) {
+func (a *changeAnalyzer) renderChanges(sb *strings.Builder, relPath string, changes []string) {
 	if len(changes) > 0 {
 		sb.WriteString(fmt.Sprintf("\n[%s]\n  - %s\n", relPath, strings.Join(changes, "\n  - ")))
 	}

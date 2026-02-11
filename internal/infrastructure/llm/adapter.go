@@ -10,8 +10,8 @@ import (
 	"google.golang.org/genai"
 )
 
-// ToSDKContent converts internal Content to genai.Content.
-func ToSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolver) *genai.Content {
+// toSDKContent converts internal Content to genai.Content.
+func toSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolver) *genai.Content {
 	if c == nil {
 		return nil
 	}
@@ -19,16 +19,16 @@ func ToSDKContent(ctx context.Context, c *llm.Content, resolver llm.AssetResolve
 		Role: c.Role,
 	}
 	for _, p := range c.Parts {
-		res.Parts = append(res.Parts, ToSDKPart(ctx, p, resolver))
+		res.Parts = append(res.Parts, toSDKPart(ctx, p, resolver))
 	}
 	for _, p := range c.TransientParts {
-		res.Parts = append(res.Parts, ToSDKPart(ctx, p, resolver))
+		res.Parts = append(res.Parts, toSDKPart(ctx, p, resolver))
 	}
 	return res
 }
 
-// ToSDKPart converts internal Part to genai.Part.
-func ToSDKPart(ctx context.Context, p *llm.Part, resolver llm.AssetResolver) *genai.Part {
+// toSDKPart converts internal Part to genai.Part.
+func toSDKPart(ctx context.Context, p *llm.Part, resolver llm.AssetResolver) *genai.Part {
 	if p == nil {
 		return nil
 	}
@@ -99,8 +99,8 @@ func hydrateAsset(ctx context.Context, p *llm.Part, res *genai.Part, resolver ll
 	res.InlineData.Data = data
 }
 
-// FromSDKContent converts genai.Content to internal Content.
-func FromSDKContent(c *genai.Content) *llm.Content {
+// fromSDKContent converts genai.Content to internal Content.
+func fromSDKContent(c *genai.Content) *llm.Content {
 	if c == nil {
 		return nil
 	}
@@ -108,13 +108,13 @@ func FromSDKContent(c *genai.Content) *llm.Content {
 		Role: c.Role,
 	}
 	for _, p := range c.Parts {
-		res.Parts = append(res.Parts, FromSDKPart(p))
+		res.Parts = append(res.Parts, fromSDKPart(p))
 	}
 	return res
 }
 
-// FromSDKPart converts genai.Part to internal Part.
-func FromSDKPart(p *genai.Part) *llm.Part {
+// fromSDKPart converts genai.Part to internal Part.
+func fromSDKPart(p *genai.Part) *llm.Part {
 	if p == nil {
 		return nil
 	}

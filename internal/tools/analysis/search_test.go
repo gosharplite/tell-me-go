@@ -17,7 +17,7 @@ import (
 func TestListTodos(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	fs := inframock.NewMockFileSystem()
-	m := &SearchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
 	tempDir := "/tmp/test"
@@ -80,7 +80,7 @@ func TestListTodos(t *testing.T) {
 func TestSearchUsagesGlobally(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	fs := inframock.NewMockFileSystem()
-	m := &SearchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
 	tempDir := "/tmp/usages"
@@ -130,7 +130,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 func TestSearchManager_Errors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	fs := inframock.NewMockFileSystem()
-	m := &SearchManager{SP: sm, FS: fs}
+	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
 	// Setup for success case

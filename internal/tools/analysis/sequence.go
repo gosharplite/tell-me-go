@@ -18,7 +18,7 @@ import (
 )
 
 // SequenceAnalyzer performs static analysis to trace function call flows.
-type SequenceAnalyzer struct {
+type sequenceAnalyzer struct {
 	SP        security.SecurityProvider
 	Exec      CommandExecutor
 	Provider  IGoPackageProvider
@@ -31,9 +31,9 @@ type SequenceAnalyzer struct {
 	cacheTTL time.Duration
 }
 
-// NewSequenceAnalyzer creates a new SequenceAnalyzer with default dependencies.
-func NewSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *SequenceAnalyzer {
-	return &SequenceAnalyzer{
+// newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
+func newSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
+	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,
 		Provider:  &RealGoPackageProvider{},
@@ -43,7 +43,7 @@ func NewSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *Se
 }
 
 // AnalyzeSequenceFlow is the entry point for the analyze_sequence_flow tool.
-func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (a *sequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	startSymbol, _ := args["start_symbol"].(string)
 	maxDepth, ok := args["max_depth"].(float64)
 	if !ok {
@@ -62,7 +62,7 @@ func (a *SequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[str
 	return tools.ToolResult{Text: a.Formatter.Format(frames)}, nil
 }
 
-func (a *SequenceAnalyzer) loadPackages(ctx context.Context) error {
+func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 	a.pkgMu.RLock()
 	if a.pkgs != nil && time.Since(a.lastLoad) < a.cacheTTL {
 		a.pkgMu.RUnlock()
@@ -95,7 +95,7 @@ func (a *SequenceAnalyzer) loadPackages(ctx context.Context) error {
 	return nil
 }
 
-func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
+func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
 	if err := a.loadPackages(ctx); err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (a *SequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 	return frames, nil
 }
 
-func (a *SequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]CallFrame, visited map[string]bool, allPkgs []*packages.Package, modName string) {
+func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]CallFrame, visited map[string]bool, allPkgs []*packages.Package, modName string) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
@@ -155,7 +155,7 @@ type sequenceVisitor struct {
 	frames   *[]CallFrame
 	visited  map[string]bool
 	allPkgs  []*packages.Package
-	analyzer *SequenceAnalyzer
+	analyzer *sequenceAnalyzer
 	inLoop   int
 	inGo     bool
 }
@@ -231,7 +231,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 	v.tryRecurse(targetPkgPath, targetFunc, v.depth, v.maxDepth)
 }
 
-func (a *SequenceAnalyzer) getTypePkgPath(t types.Type) string {
+func (a *sequenceAnalyzer) getTypePkgPath(t types.Type) string {
 	if t == nil {
 		return ""
 	}
@@ -246,7 +246,7 @@ func (a *SequenceAnalyzer) getTypePkgPath(t types.Type) string {
 	return ""
 }
 
-func (a *SequenceAnalyzer) getTypeName(t types.Type) string {
+func (a *sequenceAnalyzer) getTypeName(t types.Type) string {
 	if t == nil {
 		return "Unknown"
 	}
@@ -259,7 +259,7 @@ func (a *SequenceAnalyzer) getTypeName(t types.Type) string {
 	return t.String()
 }
 
-func (a *SequenceAnalyzer) shortenPkg(pkgPath string) string {
+func (a *sequenceAnalyzer) shortenPkg(pkgPath string) string {
 	// Try to find the last part of the package path
 	parts := strings.Split(pkgPath, "/")
 	if len(parts) > 0 {
@@ -268,7 +268,7 @@ func (a *SequenceAnalyzer) shortenPkg(pkgPath string) string {
 	return pkgPath
 }
 
-func (a *SequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {
+func (a *sequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
 	}
@@ -276,7 +276,7 @@ func (a *SequenceAnalyzer) getReceiverTypeName(recv *ast.FieldList) string {
 	return a.exprToString(t)
 }
 
-func (a *SequenceAnalyzer) exprToString(expr ast.Expr) string {
+func (a *sequenceAnalyzer) exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.Name
@@ -291,7 +291,7 @@ func (a *SequenceAnalyzer) exprToString(expr ast.Expr) string {
 	}
 }
 
-func (a *SequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
+func (a *sequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.Package) (*packages.Package, string) {
 	var startPkg *packages.Package
 	var remaining string
 	for _, p := range allPkgs {
@@ -319,7 +319,7 @@ func (a *SequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.P
 	return startPkg, remaining
 }
 
-func (a *SequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining string) (*ast.FuncDecl, error) {
+func (a *sequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining string) (*ast.FuncDecl, error) {
 	funcName := remaining
 	if dot := strings.LastIndex(funcName, "."); dot != -1 {
 		funcName = funcName[dot+1:]

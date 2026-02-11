@@ -56,8 +56,6 @@ type UIRenderer interface {
 	LogToolResult(name string, result tools.ToolResult, showTools bool)
 	LogSystemMessage(msg string, level string)
 	SetUseColor(use bool)
-	RenderStatus(ctx context.Context, status events.TurnStatus)
-	RenderEvent(ctx context.Context, event events.Event)
 }
 
 // StdUIRenderer implements UIRenderer using standard output/error and Glamour.
@@ -102,17 +100,6 @@ func NewStdUIRenderer(locker TerminalLocker) *StdUIRenderer {
 		r.LogSystemMessage(fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
 	}
 	return r
-}
-
-// RenderStatus implements services.Renderer.
-func (r *StdUIRenderer) RenderStatus(ctx context.Context, status events.TurnStatus) {
-	r.LogTurnStatus(status)
-}
-
-// RenderEvent implements services.Renderer.
-func (r *StdUIRenderer) RenderEvent(ctx context.Context, event events.Event) {
-	// For now, this is a placeholder to satisfy the interface.
-	// Future refactoring could move UISubscriber logic here.
 }
 
 // SetUseColor enables or disables ANSI color output.

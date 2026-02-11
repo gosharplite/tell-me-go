@@ -5,55 +5,58 @@ package persistence
 
 import (
 	"context"
-	"encoding/json"
-	"path/filepath"
-	"strings"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-func TestStateManager_GetSessionInfo(t *testing.T) {
-	tempDir := t.TempDir()
-	fs := storage.DefaultFileSystem
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
+func verifyStateInitialization(t *testing.T, state *SessionState) {
+	t.Helper()
+	if state.Tasks == nil || state.Config == nil || state.Scratchpad == nil {
+		t.Error("expected all services to be initialized")
+	}
+}
 
-	m := &stateManager{
-		sm:         sm,
-		tasks:      NewTaskStore(fs, filepath.Join(tempDir, "tasks.json")),
-		config:     NewConfigStore(fs, filepath.Join(tempDir, "config.json")),
-		scratchpad: NewScratchpadStore(fs, filepath.Join(tempDir, "scratchpad.md")),
+func TestNewSessionState_FileStorage(t *testing.T) {
+	tempDir := t.TempDir()
+	ctx := context.Background()
+
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
 	}
 
+	verifyStateInitialization(t, state)
+
+	if state.Info.Env["STORAGE_TYPE"] != "file" {
+		t.Errorf("expected STORAGE_TYPE to be file, got %s", state.Info.Env["STORAGE_TYPE"])
+	}
+
+	if state.Info.Paths["config_dir"] != tempDir {
+		t.Errorf("expected config_dir to be %s, got %s", tempDir, state.Info.Paths["config_dir"])
+	}
+}
+
+func TestNewSessionState_MemoryStorage(t *testing.T) {
+	tempDir := t.TempDir()
 	ctx := context.Background()
-	m.initSessionInfo(tempDir)
 
-	t.Run("Get Session Info", func(t *testing.T) {
-		if _, err := m.config.ManageConfig(ctx, map[string]interface{}{
-			"action": "set",
-			"key":    "test_key",
-			"value":  "test_val",
-		}); err != nil {
-			t.Fatal(err)
-		}
+	t.Setenv("STORAGE_TYPE", "memory")
+	state, err := NewSessionState(ctx, tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		res, err := m.getSessionInfo(ctx, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+	verifyStateInitialization(t, state)
 
-		var info SessionInfo
-		if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
-			t.Fatal(err)
-		}
+	if state.Info.Env["STORAGE_TYPE"] != "memory" {
+		t.Errorf("expected STORAGE_TYPE to be memory, got %s", state.Info.Env["STORAGE_TYPE"])
+	}
 
-		if info.Config["test_key"] != "test_val" {
-			t.Errorf("expected test_val in session info, got %v", info.Config["test_key"])
-		}
-		if !strings.Contains(info.Paths["config_dir"], tempDir) {
-			t.Errorf("expected config_dir to contain %s, got %s", tempDir, info.Paths["config_dir"])
-		}
-	})
+	// Should work without actual files
+	if err := state.Config.Set(ctx, "mem_key", "mem_val"); err != nil {
+		t.Fatal(err)
+	}
+	val, _ := state.Config.Get("mem_key")
+	if val != "mem_val" {
+		t.Errorf("expected mem_val, got %s", val)
+	}
 }

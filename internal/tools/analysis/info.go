@@ -21,9 +21,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-type InfoManager struct {
+type infoManager struct {
 	SP    security.SecurityProvider
-	Cache *ASTCache
+	Cache *astCache
 	FS    storage.FileSystem
 }
 
@@ -35,7 +35,7 @@ var genericSkeletonPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^package\s+`),
 }
 
-func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GetProjectSummary(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	modInfo := m.resolveModuleInfo(ctx)
 	fileCounts, packages, totalLOC, err := m.collectFileStats(ctx)
 	if err != nil {
@@ -45,7 +45,7 @@ func (m *InfoManager) GetProjectSummary(ctx context.Context, args map[string]int
 	return tools.ToolResult{Text: summary}, nil
 }
 
-func (m *InfoManager) resolveModuleInfo(ctx context.Context) string {
+func (m *infoManager) resolveModuleInfo(ctx context.Context) string {
 	var sb strings.Builder
 	if content, err := m.FS.ReadFile(ctx, "go.mod"); err == nil {
 		lines := strings.Split(string(content), "\n")
@@ -58,7 +58,7 @@ func (m *InfoManager) resolveModuleInfo(ctx context.Context) string {
 	return sb.String()
 }
 
-func (m *InfoManager) collectFileStats(ctx context.Context) (map[string]int, map[string]bool, int, error) {
+func (m *infoManager) collectFileStats(ctx context.Context) (map[string]int, map[string]bool, int, error) {
 	fileCounts := make(map[string]int)
 	packages := make(map[string]bool)
 	totalLOC := 0
@@ -96,7 +96,7 @@ func (m *InfoManager) collectFileStats(ctx context.Context) (map[string]int, map
 	return fileCounts, packages, totalLOC, err
 }
 
-func (m *InfoManager) renderProjectSummary(modInfo string, fileCounts map[string]int, packages map[string]bool, totalLOC int) string {
+func (m *infoManager) renderProjectSummary(modInfo string, fileCounts map[string]int, packages map[string]bool, totalLOC int) string {
 	var sb strings.Builder
 	sb.WriteString("Project Summary:\n")
 	sb.WriteString(modInfo)
@@ -125,7 +125,7 @@ func (m *InfoManager) renderProjectSummary(modInfo string, fileCounts map[string
 	return sb.String()
 }
 
-func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol string `json:"symbol"`
 	}
@@ -149,7 +149,7 @@ func (m *InfoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	return tools.ToolResult{Text: string(out)}, nil
 }
 
-func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Filepath string `json:"filepath"`
 	}
@@ -173,7 +173,7 @@ func (m *InfoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 	return m.extractGenericSkeleton(ctx, path)
 }
 
-func (m *InfoManager) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {
+func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (tools.ToolResult, error) {
 	content, err := m.FS.ReadFile(ctx, path)
 	if err != nil {
 		return tools.ToolResult{}, err

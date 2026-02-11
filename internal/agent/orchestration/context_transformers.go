@@ -130,10 +130,76 @@ func isToolCall(msg *llm.Content) bool {
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		for _, p := range msg.Parts {
-			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil || p.AssetID != "" || p.Thought || len(p.ThoughtSignature) > 0 {
+			if !p.IsEmpty() {
 				return false
 			}
 		}
 	}
 	return true
 }
+
+// historyRepairer ensures the history is valid for the API after a crash or interruption.
+type historyRepairer struct{}
+
+func (t *historyRepairer) Transform(ctx context.Context, req *services.ContextRequest) error {
+	if len(req.History) == 0 {
+		return nil
+	}
+
+	last := req.History[len(req.History)-1]
+	if last.Role != "model" {
+		return nil
+	}
+
+	var responses []*llm.Part
+	for _, p := range last.Parts {
+		if p.FunctionCall != nil {
+			responses = append(responses, &llm.Part{
+				FunctionResponse: &llm.FunctionResponse{
+					Name:     p.FunctionCall.Name,
+					Response: map[string]interface{}{"result": "Error: System rebooted or session interrupted during tool execution. Results lost."},
+				},
+			})
+		}
+	}
+
+	if len(responses) > 0 {
+		req.History = append(req.History, &llm.Content{
+			Role:  "user",
+			Parts: responses,
+		})
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *historyRepairer) Priority() int { return 0 }
+
+// contentCleaner ensures no empty parts are sent to the API, preventing 400 errors.
+type contentCleaner struct{}
+
+func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextRequest) error {
+	modified := false
+	for _, content := range req.History {
+		var cleanParts []*llm.Part
+		for _, p := range content.Parts {
+			if p.IsEmpty() {
+				continue
+			}
+			cleanParts = append(cleanParts, p)
+		}
+		if len(cleanParts) == 0 {
+			cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
+		}
+		if len(cleanParts) != len(content.Parts) {
+			content.Parts = cleanParts
+			modified = true
+		}
+	}
+	if modified {
+		req.PersistHistory = true
+	}
+	return nil
+}
+
+func (t *contentCleaner) Priority() int { return 5 }

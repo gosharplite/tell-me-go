@@ -15,8 +15,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// PathPolicy manages allowed boundaries and validates paths.
-type PathPolicy struct {
+// pathPolicy manages allowed boundaries and validates paths.
+type pathPolicy struct {
 	safePaths         []string
 	safePathsMu       sync.RWMutex
 	safePathsFile     string
@@ -25,15 +25,15 @@ type PathPolicy struct {
 	readOnlyPathsFile string
 }
 
-// NewPathPolicy creates a new PathPolicy.
-func NewPathPolicy() *PathPolicy {
-	return &PathPolicy{}
+// newPathPolicy creates a new pathPolicy.
+func newPathPolicy() *pathPolicy {
+	return &pathPolicy{}
 }
 
 type pathRule func(absPath string, writable bool) (bool, error)
 
 // checkDefaultBoundaries checks if the path is within the Current Working Directory (CWD) or the system Temp directory.
-func (p *PathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error) {
+func (p *pathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error) {
 	cwd, err := os.Getwd()
 	if err == nil {
 		if ok, _ := p.checkBoundary(absPath, cwd); ok {
@@ -48,7 +48,7 @@ func (p *PathPolicy) checkDefaultBoundaries(absPath string, _ bool) (bool, error
 }
 
 // checkSafePaths checks against the safePaths slice, including the prevention of direct access to the safePathsFile.
-func (p *PathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
+func (p *pathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 	p.safePathsMu.RLock()
 	defer p.safePathsMu.RUnlock()
 
@@ -67,7 +67,7 @@ func (p *PathPolicy) checkSafePaths(absPath string, _ bool) (bool, error) {
 }
 
 // checkReadOnlyPaths if writable is false, checks against the readOnlyPaths slice, including the prevention of direct access to the readOnlyPathsFile.
-func (p *PathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, error) {
+func (p *pathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, error) {
 	if writable {
 		return false, nil
 	}
@@ -92,19 +92,23 @@ func (p *PathPolicy) checkReadOnlyPaths(absPath string, writable bool) (bool, er
 // ValidatePath checks if a path is allowed.
 // If writable=true, it checks CWD, Temp, and SafePaths.
 // If writable=false, it ALSO checks ReadOnlyPaths.
-func (p *PathPolicy) ValidatePath(path string, writable bool) (string, error) {
+func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	if path == "" {
 		return "", nil
 	}
 
 	// 1. Hardened Sanitation
-	path = filepath.Clean(path)
+	cleanedPath := filepath.Clean(path)
 
-	absPath, err := filepath.Abs(path)
+	absPath, err := filepath.Abs(cleanedPath)
 	if err != nil {
 		return "", fmt.Errorf("invalid path: %w", err)
 	}
 	absPath = p.resolveSymlinks(absPath)
+
+	if err := p.isSystemDirectory(absPath); err != nil {
+		return "", err
+	}
 
 	rules := []pathRule{
 		p.checkDefaultBoundaries,
@@ -129,8 +133,22 @@ func (p *PathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	return "", fmt.Errorf("security violation: path '%s' is not in a %s boundary", path, mode)
 }
 
+func (p *pathPolicy) isSystemDirectory(absPath string) error {
+	// Simple check for sensitive system directories on Unix
+	sensitive := []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/root", "/boot", "/dev", "/proc", "/sys"}
+	for _, s := range sensitive {
+		if absPath == s || strings.HasPrefix(absPath, s+"/") {
+			// Special exception for /tmp handled by checkDefaultBoundaries
+			if !strings.HasPrefix(absPath, "/tmp") {
+				return fmt.Errorf("security violation: access to system directory '%s' is forbidden", s)
+			}
+		}
+	}
+	return nil
+}
+
 // RegisterPath adds a path to the allowed boundaries.
-func (p *PathPolicy) RegisterPath(path string, writable bool) {
+func (p *pathPolicy) RegisterPath(path string, writable bool) {
 	if path == "" {
 		return
 	}
@@ -161,7 +179,7 @@ func (p *PathPolicy) RegisterPath(path string, writable bool) {
 }
 
 // RemovePath removes a path from the allowed boundaries.
-func (p *PathPolicy) RemovePath(path string, writable bool) error {
+func (p *pathPolicy) RemovePath(path string, writable bool) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
@@ -203,7 +221,7 @@ func (p *PathPolicy) RemovePath(path string, writable bool) error {
 }
 
 // GetPaths returns a copy of the registered paths.
-func (p *PathPolicy) GetPaths(writable bool) []string {
+func (p *pathPolicy) GetPaths(writable bool) []string {
 	var mu *sync.RWMutex
 	var paths []string
 
@@ -224,7 +242,7 @@ func (p *PathPolicy) GetPaths(writable bool) []string {
 }
 
 // SetConfigFile sets the persistence file for paths.
-func (p *PathPolicy) SetConfigFile(path string, writable bool) {
+func (p *pathPolicy) SetConfigFile(path string, writable bool) {
 	if writable {
 		p.safePathsMu.Lock()
 		p.safePathsFile = path
@@ -237,7 +255,7 @@ func (p *PathPolicy) SetConfigFile(path string, writable bool) {
 }
 
 // LoadPaths reads paths from the config file.
-func (p *PathPolicy) LoadPaths(writable bool) error {
+func (p *pathPolicy) LoadPaths(writable bool) error {
 	var file string
 	if writable {
 		p.safePathsMu.RLock()
@@ -274,7 +292,7 @@ func (p *PathPolicy) LoadPaths(writable bool) error {
 }
 
 // SavePaths writes paths to the config file.
-func (p *PathPolicy) SavePaths(ctx context.Context, writable bool) error {
+func (p *pathPolicy) SavePaths(ctx context.Context, writable bool) error {
 	var file string
 	var paths []string
 
@@ -304,7 +322,7 @@ func (p *PathPolicy) SavePaths(ctx context.Context, writable bool) error {
 	return storage.AtomicWrite(ctx, file, data, 0644)
 }
 
-func (p *PathPolicy) checkBoundary(target, boundary string) (bool, error) {
+func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	absBoundary, err := filepath.Abs(boundary)
 	if err != nil {
 		return false, err
@@ -315,7 +333,7 @@ func (p *PathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	return err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel), nil
 }
 
-func (p *PathPolicy) resolveSymlinks(path string) string {
+func (p *pathPolicy) resolveSymlinks(path string) string {
 	if realPath, err := filepath.EvalSymlinks(path); err == nil {
 		return realPath
 	}

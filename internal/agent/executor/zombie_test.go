@@ -25,7 +25,12 @@ func TestToolExecutor_ZombieToolMonitoring(t *testing.T) {
 		return tools.ToolResult{Text: "I am a zombie"}, nil
 	})
 
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	t.Cleanup(func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	})
 	var mu sync.Mutex
 	var receivedEvents []events.SystemMessageEvent
 
@@ -82,7 +87,12 @@ func TestToolExecutor_ZombieToolPanicMonitoring(t *testing.T) {
 		panic("boom")
 	})
 
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	t.Cleanup(func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	})
 	var mu sync.Mutex
 	var receivedEvents []events.SystemMessageEvent
 

@@ -9,15 +9,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type RefactorManager struct {
+type refactorManager struct {
 	SP security.SecurityProvider
 }
 
-func NewRefactorManager(sp security.SecurityProvider) *RefactorManager {
-	return &RefactorManager{SP: sp}
+func newRefactorManager(sp security.SecurityProvider) *refactorManager {
+	return &refactorManager{SP: sp}
 }
 
-func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Symbol  string `json:"symbol"`
 		SrcFile string `json:"src_file"`
@@ -76,7 +76,7 @@ func (m *RefactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	return tools.ToolResult{Text: fmt.Sprintf("Successfully moved %s from %s to %s", plan.Symbol, plan.SrcFile, plan.DstFile)}, nil
 }
 
-func (m *RefactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	// For now, keeping the old implementation logic but structured within the new manager
 	// In a real implementation this would also use Transactions and Transforms
 	var params struct {

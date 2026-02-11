@@ -14,10 +14,10 @@ import (
 func TestHealthManager_GetCodeHealth(t *testing.T) {
 	t.Setenv("SKIP_HEALTH_EXECUTION", "true")
 	sm := security.NewSecurityManager(nil)
-	idx, _ := NewIndexer(".")
-	cache := NewASTCache()
-	ana := NewAnalysisManager(idx, cache, sm)
-	hea := &HealthManager{SP: sm, Ana: ana}
+	idx, _ := newIndexer(".")
+	cache := newASTCache()
+	ana := newAnalysisManager(idx, cache, sm)
+	hea := &healthManager{SP: sm, Ana: ana}
 
 	ctx := context.Background()
 	res, err := hea.GetCodeHealth(ctx, nil)
@@ -36,10 +36,10 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	t.Setenv("SKIP_HEALTH_EXECUTION", "true")
 	sm := security.NewSecurityManager(nil)
-	idx, _ := NewIndexer(".")
-	cache := NewASTCache()
-	ana := NewAnalysisManager(idx, cache, sm)
-	hea := &HealthManager{SP: sm, Ana: ana}
+	idx, _ := newIndexer(".")
+	cache := newASTCache()
+	ana := newAnalysisManager(idx, cache, sm)
+	hea := &healthManager{SP: sm, Ana: ana}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -55,7 +55,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 }
 
 func TestHealthManager_GenerateRecommendation(t *testing.T) {
-	hea := &HealthManager{}
+	hea := &healthManager{}
 
 	tests := []struct {
 		name string

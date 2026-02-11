@@ -16,12 +16,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type HealthManager struct {
+type healthManager struct {
 	SP  security.SecurityProvider
-	Ana *AnalysisManager
+	Ana *analysisManager
 }
 
-func (m *HealthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	select {
 	case <-ctx.Done():
 		return tools.ToolResult{Text: "Operation cancelled: " + ctx.Err().Error()}, nil
@@ -66,7 +66,7 @@ func (m *HealthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (m *HealthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
+func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
 	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
 		return "PASS", "Skipped (test mode)", "80.0%", "Mocked"
 	}
@@ -132,7 +132,7 @@ func (m *HealthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 	return
 }
 
-func (m *HealthManager) runLint(ctx context.Context) (string, string) {
+func (m *healthManager) runLint(ctx context.Context) (string, string) {
 	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
 		return "CLEAN", "Skipped (test mode)"
 	}
@@ -168,7 +168,7 @@ func (m *HealthManager) runLint(ctx context.Context) (string, string) {
 	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", linter)
 }
 
-func (m *HealthManager) checkComplexity(ctx context.Context) (string, string, []string) {
+func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []string) {
 	// Complexity check is internal and doesn't need TerminalLock unless it uses a tool
 	complexities, err := m.Ana.Complexity.GatherComplexities(ctx, ".")
 	if err != nil {
@@ -194,7 +194,7 @@ func (m *HealthManager) checkComplexity(ctx context.Context) (string, string, []
 	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
 }
 
-func (m *HealthManager) checkSecurity(ctx context.Context) (string, string) {
+func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
 	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
 		return "CLEAN", "Skipped (test mode)"
 	}
@@ -217,7 +217,7 @@ func (m *HealthManager) checkSecurity(ctx context.Context) (string, string) {
 	return "VULNS", "Vulnerabilities detected."
 }
 
-func (m *HealthManager) generateRecommendation(test, cov, lint, comp, sec string) string {
+func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec string) string {
 	var recs []string
 	if test == "FAIL" {
 		recs = append(recs, "Fix failing tests immediately.")
@@ -247,7 +247,7 @@ func (m *HealthManager) generateRecommendation(test, cov, lint, comp, sec string
 	return strings.Join(recs, " ")
 }
 
-func (m *HealthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "./..."

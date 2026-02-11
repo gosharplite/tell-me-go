@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -51,6 +52,9 @@ type Chatter interface {
 
 	// GetCostTracker returns the session cost tracker.
 	GetCostTracker() domain_pricing.ICostTracker
+
+	// Shutdown gracefully stops the agent and its components.
+	Shutdown(ctx context.Context) error
 }
 
 // RuntimeConfig consolidates all agent configuration parameters.
@@ -116,7 +120,7 @@ func WithInternalTools() AgentOption {
 
 // New creates a new Agent using functional options.
 func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 	gw := llm.NewResilientClient(client, disableStreaming)
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
@@ -249,7 +253,7 @@ func (a *Agent) SetPrunedTurns(ctx context.Context, n int) error {
 
 // Chat runs the multi-turn orchestration loop.
 func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
-	if err := s.History.AddContent(ctx, &domain_llm.Content{
+	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
 	}); err != nil {
@@ -280,6 +284,13 @@ func (a *Agent) SetSystemInstructions(ctx context.Context, instr string) error {
 	return a.applyConfig(ctx)
 }
 
+// WithEventBus sets a custom event bus for the agent.
+func WithEventBus(bus events.EventBus) AgentOption {
+	return func(a *Agent) {
+		a.events = bus
+	}
+}
+
 // WithSystemInstructions sets the initial system instructions.
 func WithSystemInstructions(instr string) AgentOption {
 	return func(a *Agent) {
@@ -295,4 +306,26 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
 			a.engine.ApplyOptions(WithCostTracker(tracker))
 		}
 	}
+}
+
+// WithTraceLogger enables tracing and logs it to the specified file.
+func WithTraceLogger(logFile string) AgentOption {
+	return func(a *Agent) {
+		telemetry.RegisterTraceSubscriber(a.events, logFile)
+	}
+}
+
+// Shutdown gracefully stops the agent and its components.
+func (a *Agent) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.executor != nil {
+		a.executor.Shutdown()
+	}
+
+	if a.events != nil {
+		return a.events.Shutdown(ctx)
+	}
+	return nil
 }

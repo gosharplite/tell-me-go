@@ -42,6 +42,8 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 	}
 
 	transformers := []services.ContextTransformer{
+		&historyRepairer{},
+		&contentCleaner{},
 		&historyPruner{
 			Policy: &CompositePruningPolicy{
 				Policies: []services.PruningPolicy{

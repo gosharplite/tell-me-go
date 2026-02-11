@@ -104,7 +104,9 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		assert.True(t, duration < 100*time.Millisecond, "Should not have waited long with Retry-After: 0")
+		// Increased threshold to 500ms to account for race detector overhead
+		// while still ensuring no significant blocking occurred.
+		assert.Less(t, duration, 500*time.Millisecond, "Should not have waited long with Retry-After: 0")
 		mockClient.AssertExpectations(t)
 	})
 

@@ -26,21 +26,21 @@ type cachedFile struct {
 	modTime time.Time
 }
 
-type ASTCache struct {
+type astCache struct {
 	mu      sync.RWMutex
 	files   map[string]cachedFile
 	sf      singleflight.Group
 	maxSize int
 }
 
-func NewASTCache() *ASTCache {
-	return &ASTCache{
+func newASTCache() *astCache {
+	return &astCache{
 		files:   make(map[string]cachedFile),
 		maxSize: 1000,
 	}
 }
 
-func (c *ASTCache) Get(path string) (*ast.File, *token.FileSet, error) {
+func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
 	// 1. Fast path: Check cache with RLock
 	c.mu.RLock()
 	entry, ok := c.files[path]
@@ -286,7 +286,7 @@ func FindTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 }
 
 // GetFileSkeletonGo extracts exported types and function signatures from a Go file.
-func (c *ASTCache) GetFileSkeletonGo(filePath string) (string, error) {
+func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
 	f, fset, err := c.Get(filePath)
 	if err != nil {
 		return "", err

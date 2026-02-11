@@ -10,7 +10,7 @@ import (
 )
 
 func FuzzValidatePath(f *testing.F) {
-	policy := NewPathPolicy()
+	policy := newPathPolicy()
 	cwd, _ := os.Getwd()
 	temp := os.TempDir()
 
@@ -56,51 +56,47 @@ func FuzzValidatePath(f *testing.F) {
 			return
 		}
 
-		if path == "" {
-			if validated != "" {
-				t.Errorf("ValidatePath(\"\") returned %q, want \"\"", validated)
-			}
-			return
-		}
-
-		// Success criteria:
-		// 1. The path must be absolute
-		if !filepath.IsAbs(validated) {
-			t.Errorf("ValidatePath returned non-absolute path: %q", validated)
-		}
-
-		// 2. The path must be cleaned (no .. or . components)
-		if validated != filepath.Clean(validated) {
-			t.Errorf("ValidatePath returned uncleaned path: %q", validated)
-		}
-
-		// 3. The path must be within one of the authorized boundaries
-		absValidated := validated
-
-		inCWD, _ := policy.checkBoundary(absValidated, cwd)
-		inTemp, _ := policy.checkBoundary(absValidated, temp)
-
-		inSafe := false
-		for _, sp := range policy.GetPaths(true) {
-			if ok, _ := policy.checkBoundary(absValidated, sp); ok {
-				inSafe = true
-				break
-			}
-		}
-
-		inReadOnly := false
-		if !writable {
-			for _, rop := range policy.GetPaths(false) {
-				if ok, _ := policy.checkBoundary(absValidated, rop); ok {
-					inReadOnly = true
-					break
-				}
-			}
-		}
-
-		if !inCWD && !inTemp && !inSafe && !inReadOnly {
-			t.Errorf("SECURITY VIOLATION: Path %q (validated as %q, writable=%v) is outside all allowed boundaries.\nCWD: %s\nTemp: %s\nSafe: %v\nReadOnly: %v",
-				path, validated, writable, cwd, temp, policy.GetPaths(true), policy.GetPaths(false))
-		}
+		verifyPathBoundaries(t, policy, path, validated, writable, cwd, temp)
 	})
+}
+
+func verifyPathBoundaries(t *testing.T, policy *pathPolicy, originalPath, validatedPath string, writable bool, cwd, temp string) {
+	t.Helper()
+
+	if originalPath == "" {
+		if validatedPath != "" {
+			t.Errorf("ValidatePath(\"\") returned %q, want \"\"", validatedPath)
+		}
+		return
+	}
+
+	// 1. The path must be absolute
+	if !filepath.IsAbs(validatedPath) {
+		t.Errorf("ValidatePath returned non-absolute path: %q", validatedPath)
+	}
+
+	// 2. The path must be cleaned (no .. or . components)
+	if validatedPath != filepath.Clean(validatedPath) {
+		t.Errorf("ValidatePath returned uncleaned path: %q", validatedPath)
+	}
+
+	// 3. The path must be within one of the authorized boundaries
+	allowed := []string{cwd, temp}
+	allowed = append(allowed, policy.GetPaths(true)...)
+	if !writable {
+		allowed = append(allowed, policy.GetPaths(false)...)
+	}
+
+	inBoundary := false
+	for _, b := range allowed {
+		if ok, _ := policy.checkBoundary(validatedPath, b); ok {
+			inBoundary = true
+			break
+		}
+	}
+
+	if !inBoundary {
+		t.Errorf("SECURITY VIOLATION: Path %q (validated as %q, writable=%v) is outside all allowed boundaries.\nCWD: %s\nTemp: %s\nSafe: %v\nReadOnly: %v",
+			originalPath, validatedPath, writable, cwd, temp, policy.GetPaths(true), policy.GetPaths(false))
+	}
 }

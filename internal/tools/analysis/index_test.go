@@ -34,7 +34,7 @@ type MyAlias = int
 		t.Fatal(err)
 	}
 
-	idx, err := NewIndexer(tmpDir)
+	idx, err := newIndexer(tmpDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func (s S) M() {}
 `
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
-	idx, _ := NewIndexer(tmpDir)
+	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
 	_ = idx.Refresh(ctx)
 
@@ -123,7 +123,7 @@ type T struct{}
 `
 	_ = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
 
-	idx, _ := NewIndexer(tmpDir)
+	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
 	_ = idx.Refresh(ctx)
 
@@ -146,7 +146,7 @@ func TestIndexer_ErrorPersistence(t *testing.T) {
 	// Valid file
 	_ = os.WriteFile(filepath.Join(tmpDir, "valid.go"), []byte("package test\nfunc F() {}"), 0644)
 
-	idx, _ := NewIndexer(tmpDir)
+	idx, _ := newIndexer(tmpDir)
 	ctx := context.Background()
 	_ = idx.Refresh(ctx)
 

@@ -187,7 +187,7 @@ func TestASTCache(t *testing.T) {
 }
 
 func testASTCacheGet(t *testing.T, path string) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	f, _, err := cache.Get(path)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
@@ -198,7 +198,7 @@ func testASTCacheGet(t *testing.T, path string) {
 }
 
 func testASTCacheHit(t *testing.T, path string) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	f1, fset1, err := cache.Get(path)
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func testASTCacheHit(t *testing.T, path string) {
 }
 
 func testASTCacheInvalidation(t *testing.T, path string) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	f1, _, err := cache.Get(path)
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +234,7 @@ func testASTCacheInvalidation(t *testing.T, path string) {
 }
 
 func testASTCacheNonExistent(t *testing.T) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	_, _, err := cache.Get("non_existent.go")
 	if err == nil {
 		t.Error("expected error for non-existent file")
@@ -242,7 +242,7 @@ func testASTCacheNonExistent(t *testing.T) {
 }
 
 func testASTCacheSyntaxError(t *testing.T, tmpDir string) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	invalidPath := filepath.Join(tmpDir, "invalid.go")
 	if err := os.WriteFile(invalidPath, []byte("package"), 0644); err != nil {
 		t.Fatal(err)
@@ -254,7 +254,7 @@ func testASTCacheSyntaxError(t *testing.T, tmpDir string) {
 }
 
 func testASTCacheEviction(t *testing.T, tmpDir string) {
-	cache := NewASTCache()
+	cache := newASTCache()
 	cache.maxSize = 2
 
 	files := []string{
@@ -309,7 +309,7 @@ func unexportedFunc() {}
 		t.Fatal(err)
 	}
 
-	cache := NewASTCache()
+	cache := newASTCache()
 	skeleton, err := cache.GetFileSkeletonGo(path)
 	if err != nil {
 		t.Fatalf("GetFileSkeletonGo failed: %v", err)

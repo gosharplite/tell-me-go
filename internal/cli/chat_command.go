@@ -42,7 +42,7 @@ type ChatCommand struct {
 	HomeDir string
 	SM      *internal_security.SecurityManager
 
-	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
+	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error)
 }
 
@@ -60,7 +60,6 @@ type sessionDeps struct {
 	client           *llm.Client
 	registry         domaintools.IToolRegistry
 	tracker          domain_pricing.ICostTracker
-	pruned           int
 	pData            domain_pricing.PricingData
 	pricingOverrides map[string]domain_pricing.ModelPricing
 }
@@ -74,11 +73,12 @@ func NewChatCommand(ctx *Context) *ChatCommand {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return agent.New(client, hManager, reg, sm, disableStreaming,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
+				agent.WithTraceLogger(logPath),
 			)
 		},
 		ClientFactory: func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error) {
@@ -144,14 +144,13 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.pricingOverrides, deps.tracker)
-	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pruned, deps.pData, capturer); err != nil {
+	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
 	sess := orchestration.NewSession(sessionID, deps.hManager)
-	sess.PrunedTurns = deps.pruned
 	if err := chatAgent.Chat(ctx, sess, prompt); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
@@ -184,7 +183,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 	if err := hManager.Load(ctx); err != nil {
 		return nil, fmt.Errorf("error loading history: %w", err)
 	}
-	pruned, _ := hManager.Prune(ctx, cfg.MaxHistoryTurns)
+
 	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
 	hManager.Snapshot()
 
@@ -204,7 +203,6 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 		client:           client,
 		registry:         registry,
 		tracker:          tracker,
-		pruned:           pruned,
 		pData:            pricingData,
 		pricingOverrides: pricingOverrides,
 	}, nil
@@ -267,15 +265,12 @@ func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Conf
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *ChatCommand) applyConfiguration(ctx context.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pruned int, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
+func (c *ChatCommand) applyConfiguration(ctx context.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err
 	}
-	if err := chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData)); err != nil {
-		return err
-	}
-	return chatAgent.SetPrunedTurns(ctx, pruned)
+	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
 func (c *ChatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {

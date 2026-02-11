@@ -52,6 +52,7 @@ func (m *integrationMockChatter) Subscribe(sub func(events.Event)) {}
 func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 	return &integrationMockCostTracker{}
 }
+func (m *integrationMockChatter) Shutdown(ctx context.Context) error { return nil }
 
 type integrationMockCostTracker struct{}
 
@@ -79,7 +80,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Stderr:  &stderr,
 		HomeDir: tmpDir,
 		SM:      sm,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return &integrationMockChatter{}
 		},
 		ClientFactory: func(cfg *config.Config, p domain_pricing.PricingData) (*llm.Client, error) {

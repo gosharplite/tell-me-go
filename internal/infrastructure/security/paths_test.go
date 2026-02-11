@@ -11,7 +11,7 @@ import (
 )
 
 func TestPathPolicy_ValidatePath(t *testing.T) {
-	p := NewPathPolicy()
+	p := newPathPolicy()
 	cwd, _ := os.Getwd()
 	tempDir := os.TempDir()
 
@@ -80,7 +80,7 @@ func TestPathPolicy_ValidatePath(t *testing.T) {
 }
 
 func TestPathPolicy_Persistence(t *testing.T) {
-	p := NewPathPolicy()
+	p := newPathPolicy()
 	tmpFile := filepath.Join(t.TempDir(), "paths.json")
 	p.SetConfigFile(tmpFile, true)
 
@@ -89,7 +89,7 @@ func TestPathPolicy_Persistence(t *testing.T) {
 		t.Fatalf("SavePaths failed: %v", err)
 	}
 
-	p2 := NewPathPolicy()
+	p2 := newPathPolicy()
 	p2.SetConfigFile(tmpFile, true)
 	if err := p2.LoadPaths(true); err != nil {
 		t.Fatalf("LoadPaths failed: %v", err)
@@ -121,7 +121,7 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 		t.Skip("symlinks not supported on this platform")
 	}
 
-	p := NewPathPolicy()
+	p := newPathPolicy()
 	p.RegisterPath(linkDir, true)
 
 	// Target is in the real directory

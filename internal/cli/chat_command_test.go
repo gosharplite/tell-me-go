@@ -91,6 +91,7 @@ func (m *mockChatter) SetSystemInstructions(ctx context.Context, instr string) e
 }
 func (m *mockChatter) Subscribe(sub func(events.Event))            {}
 func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
+func (m *mockChatter) Shutdown(ctx context.Context) error          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -114,7 +115,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 		return mock
 	}
 	cmd.ClientFactory = func(cfg *config.Config, pricingData domain_pricing.PricingData) (*llm.Client, error) {

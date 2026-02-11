@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -19,6 +20,14 @@ type MockSecurityProvider struct {
 	IsPathWritableFunc           func(path string) (string, error)
 	ConfirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
 	IsPathSafeFunc               func(path string) (string, error)
+}
+
+func (m *MockSecurityProvider) GetPolicy() *domain.Policy {
+	return domain.DefaultPolicy()
+}
+
+func (m *MockSecurityProvider) GetSafetyService() *domain.SafetyService {
+	return domain.NewSafetyService(domain.DefaultPolicy())
 }
 
 func (m *MockSecurityProvider) IsPathWritable(path string) (string, error) {
@@ -51,7 +60,7 @@ func TestMoveDefinition(t *testing.T) {
 				return false, nil
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
@@ -75,7 +84,7 @@ func TestMoveDefinition(t *testing.T) {
 				return "", fmt.Errorf("error")
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
 			"src_file": "src.go",
@@ -108,7 +117,7 @@ func TestMoveDefinition(t *testing.T) {
 		}
 
 		sp := &MockSecurityProvider{}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"symbol":   "MyFunc",
@@ -147,7 +156,7 @@ func TestRenameSymbol(t *testing.T) {
 				return false, nil
 			},
 		}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"old_name": "Old",
@@ -167,7 +176,7 @@ func TestRenameSymbol(t *testing.T) {
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
 		sp := &MockSecurityProvider{}
-		mgr := NewRefactorManager(sp)
+		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
 			"old_name": "Old",

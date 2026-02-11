@@ -10,14 +10,17 @@ import (
 	"strings"
 	"sync"
 
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.
 type SecurityManager struct {
-	Policy      *PathPolicy
-	Interaction *InteractionHandler
-	Auditor     AuditLogger
+	policy       *pathPolicy
+	interaction  *interactionHandler
+	Auditor      AuditLogger
+	domainPolicy *domain.Policy
+	safety       *domain.SafetyService
 
 	bypassFile   string
 	bypassActive bool
@@ -27,26 +30,40 @@ type SecurityManager struct {
 // NewSecurityManager creates a new SecurityManager.
 func NewSecurityManager(input io.Reader) *SecurityManager {
 	auditor := NewAuditor()
+	policy := domain.DefaultPolicy()
 	return &SecurityManager{
-		Policy:      NewPathPolicy(),
-		Interaction: NewInteractionHandler(input, auditor),
-		Auditor:     auditor,
+		policy:       newPathPolicy(),
+		interaction:  newInteractionHandler(input, auditor),
+		Auditor:      auditor,
+		domainPolicy: policy,
+		safety:       domain.NewSafetyService(policy),
 	}
+}
+
+// GetPolicy returns the domain security policy.
+func (sm *SecurityManager) GetPolicy() *domain.Policy {
+	return sm.domainPolicy
+}
+
+// SetPolicy sets the domain security policy.
+func (sm *SecurityManager) SetPolicy(p *domain.Policy) {
+	sm.domainPolicy = p
+	sm.safety = domain.NewSafetyService(p)
 }
 
 // IsPathSafe checks if a path is safe.
 func (sm *SecurityManager) IsPathSafe(path string) (string, error) {
-	return sm.Policy.ValidatePath(path, false)
+	return sm.policy.ValidatePath(path, false)
 }
 
 // IsPathWritable checks if a path is writable.
 func (sm *SecurityManager) IsPathWritable(path string) (string, error) {
-	return sm.Policy.ValidatePath(path, true)
+	return sm.policy.ValidatePath(path, true)
 }
 
 // ConfirmDestructiveAction prompts the user for confirmation.
 func (sm *SecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return sm.Interaction.ConfirmAction(ctx, action, target, detail, sm.IsBypassActive())
+	return sm.interaction.ConfirmAction(ctx, action, target, detail, sm.IsBypassActive())
 }
 
 // Authorize prompts the user for authorization of a specific command or action.
@@ -57,7 +74,7 @@ func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason 
 	if isSafe {
 		return true, nil
 	}
-	return sm.Interaction.ConfirmAction(ctx, "Execute "+label, detail, reason, false)
+	return sm.interaction.ConfirmAction(ctx, "Execute "+label, detail, reason, false)
 }
 
 // LogAudit writes an audit entry.
@@ -116,197 +133,49 @@ func (sm *SecurityManager) SetBypassActive(active bool) {
 	sm.bypassActive = active
 }
 
-var allowedCommands = map[string]bool{
-	// Shell commands (for execute_command/pipe_commands)
-	"go":            true,
-	"git":           true,
-	"ls":            true,
-	"grep":          true,
-	"cat":           true,
-	"diff":          true,
-	"whoami":        true,
-	"stat":          true,
-	"find":          true,
-	"sh":            true,
-	"make":          true,
-	"npm":           true,
-	"node":          true,
-	"cargo":         true,
-	"pytest":        true,
-	"python":        true,
-	"python3":       true,
-	"pwd":           true,
-	"echo":          true,
-	"head":          true,
-	"tail":          true,
-	"wc":            true,
-	"date":          true,
-	"golangci-lint": true,
-	"staticcheck":   true,
-	"govulncheck":   true,
-	"cp":            true,
-	"mv":            true,
-	"rm":            true,
-	"mkdir":         true,
-	"touch":         true,
-	"chmod":         true,
-	"chown":         true,
-	"tar":           true,
-	"zip":           true,
-	"unzip":         true,
-	"curl":          true,
-	"wget":          true,
-
-	// Filesystem Tools
-	"list_files":        true,
-	"get_tree":          true,
-	"read_file":         true,
-	"search_files":      true,
-	"replace_text":      true,
-	"find_file":         true,
-	"write_file":        true,
-	"append_text":       true,
-	"get_file_diff":     true,
-	"undo_file_change":  true,
-	"register_safepath": true,
-	"list_safepaths":    true,
-	"remove_safepath":   true,
-	"register_readpath": true,
-	"list_readpaths":    true,
-	"remove_readpath":   true,
-
-	// Code Analysis Tools
-	"get_definitions":          true,
-	"get_file_skeleton":        true,
-	"verify_architecture":      true,
-	"get_code_health":          true,
-	"find_usages":              true,
-	"find_definitions":         true,
-	"list_symbols":             true,
-	"list_implementations":     true,
-	"get_type_info":            true,
-	"get_project_summary":      true,
-	"search_usages_globally":   true,
-	"get_semantic_diff":        true,
-	"rename_symbol":            true,
-	"list_todos":               true,
-	"go_doc":                   true,
-	"get_complexity_metrics":   true,
-	"get_package_graph":        true,
-	"analyze_sequence_flow":    true,
-	"get_detailed_coverage":    true,
-	"dead_code_graph":          true,
-	"generate_mermaid_diagram": true,
-	"move_definition":          true,
-	"check_vulnerabilities":    true,
-	"run_linter":               true,
-
-	// Development Tools
-	"execute_command": true,
-	"pipe_commands":   true,
-	"run_tests":       true,
-	"go_tidy":         true,
-	"get_coverage":    true,
-	"run_benchmark":   true,
-
-	// Git Tools
-	"get_git_status":    true,
-	"get_git_diff":      true,
-	"get_git_log":       true,
-	"get_git_show":      true,
-	"get_git_blame":     true,
-	"git_commit":        true,
-	"git_create_branch": true,
-
-	// Communication & External Tools
-	"send_teams_message": true,
-	"read_external_docs": true,
-	"http_request":       true,
-	"confluence_search":  true,
-	"confluence_read":    true,
-	"confluence_write":   true,
-	"jira_search_issues": true,
-	"jira_get_issue":     true,
-
-	// Azure DevOps Tools
-	"ado_get_pull_request":          true,
-	"ado_list_pull_requests":        true,
-	"ado_get_pr_diff":               true,
-	"ado_get_pr_threads":            true,
-	"ado_get_file_content":          true,
-	"ado_list_repository_items":     true,
-	"ado_list_pipeline_runs":        true,
-	"ado_get_pipeline_run":          true,
-	"ado_get_pipeline_logs":         true,
-	"ado_get_pr_statuses":           true,
-	"ado_get_pr_policy_evaluations": true,
-	"ado_list_branch_policies":      true,
-	"ado_get_build_timeline":        true,
-	"ado_get_task_log":              true,
-	"ado_get_build_changes":         true,
-
-	// Session & Management Tools
-	"get_session_info":         true,
-	"manage_scratchpad":        true,
-	"manage_config":            true,
-	"manage_tasks":             true,
-	"ask_user":                 true,
-	"bypass_confirmation":      true,
-	"revoke_bypass":            true,
-	"estimate_cost":            true,
-	"get_cost_summary":         true,
-	"verify_release_readiness": true,
-	"summarize_history":        true,
-	"manage_history":           true,
-
-	// Media Tools
-	"create_image": true,
-	"read_image":   true,
-}
-
 // IsCommandAllowed checks if a base command is allowed for execution.
 func (sm *SecurityManager) IsCommandAllowed(command string) bool {
-	return allowedCommands[command]
+	return sm.domainPolicy.IsCommandAllowed(command)
 }
 
 // TerminalLock locks the terminal.
 func (sm *SecurityManager) TerminalLock() {
-	sm.Interaction.TerminalLock()
+	sm.interaction.TerminalLock()
 }
 
 // TerminalUnlock unlocks the terminal.
 func (sm *SecurityManager) TerminalUnlock() {
-	sm.Interaction.TerminalUnlock()
+	sm.interaction.TerminalUnlock()
 }
 
 // ReadSingleKey reads a single key.
 func (sm *SecurityManager) ReadSingleKey(ctx context.Context) (string, error) {
-	return sm.Interaction.ReadSingleKey(ctx)
+	return sm.interaction.ReadSingleKey(ctx)
 }
 
 // ReadLine reads a line.
 func (sm *SecurityManager) ReadLine(ctx context.Context) (string, error) {
-	return sm.Interaction.ReadLine(ctx)
+	return sm.interaction.ReadLine(ctx)
 }
 
 // SetInputReader sets the input reader.
 func (sm *SecurityManager) SetInputReader(r io.Reader) {
-	sm.Interaction.SetReader(r)
+	sm.interaction.SetReader(r)
 }
 
 // RegisterSafePath registers a safe path.
 func (sm *SecurityManager) RegisterSafePath(path string) {
-	sm.Policy.RegisterPath(path, true)
+	sm.policy.RegisterPath(path, true)
 }
 
 // SaveSafePaths saves safe paths.
 func (sm *SecurityManager) SaveSafePaths(ctx context.Context) error {
-	return sm.Policy.SavePaths(ctx, true)
+	return sm.policy.SavePaths(ctx, true)
 }
 
 // RemoveSafePath removes a safe path.
 func (sm *SecurityManager) RemoveSafePath(path string) error {
-	return sm.Policy.RemovePath(path, true)
+	return sm.policy.RemovePath(path, true)
 }
 
 // SetCommandsLogFile sets the commands log file.
@@ -316,45 +185,50 @@ func (sm *SecurityManager) SetCommandsLogFile(path string) {
 
 // SetSafePathsFile sets the safe paths file.
 func (sm *SecurityManager) SetSafePathsFile(path string) {
-	sm.Policy.SetConfigFile(path, true)
+	sm.policy.SetConfigFile(path, true)
 }
 
 // SetReadOnlyPathsFile sets the read-only paths file.
 func (sm *SecurityManager) SetReadOnlyPathsFile(path string) {
-	sm.Policy.SetConfigFile(path, false)
+	sm.policy.SetConfigFile(path, false)
 }
 
 // LoadSafePaths loads safe paths.
 func (sm *SecurityManager) LoadSafePaths() error {
-	return sm.Policy.LoadPaths(true)
+	return sm.policy.LoadPaths(true)
 }
 
 // LoadReadOnlyPaths loads read-only paths.
 func (sm *SecurityManager) LoadReadOnlyPaths() error {
-	return sm.Policy.LoadPaths(false)
+	return sm.policy.LoadPaths(false)
 }
 
 // SaveReadOnlyPaths saves read-only paths.
 func (sm *SecurityManager) SaveReadOnlyPaths(ctx context.Context) error {
-	return sm.Policy.SavePaths(ctx, false)
+	return sm.policy.SavePaths(ctx, false)
 }
 
 // RegisterReadOnlyPath registers a read-only path.
 func (sm *SecurityManager) RegisterReadOnlyPath(path string) {
-	sm.Policy.RegisterPath(path, false)
+	sm.policy.RegisterPath(path, false)
 }
 
 // GetSafePaths returns safe paths.
 func (sm *SecurityManager) GetSafePaths() []string {
-	return sm.Policy.GetPaths(true)
+	return sm.policy.GetPaths(true)
 }
 
 // GetReadOnlyPaths returns read-only paths.
 func (sm *SecurityManager) GetReadOnlyPaths() []string {
-	return sm.Policy.GetPaths(false)
+	return sm.policy.GetPaths(false)
 }
 
 // RemoveReadOnlyPath removes a read-only path.
 func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
-	return sm.Policy.RemovePath(path, false)
+	return sm.policy.RemovePath(path, false)
+}
+
+// GetSafetyService returns the domain safety service.
+func (sm *SecurityManager) GetSafetyService() *domain.SafetyService {
+	return sm.safety
 }

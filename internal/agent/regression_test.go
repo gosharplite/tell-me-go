@@ -13,74 +13,74 @@ import (
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
-	// This test verifies that the history manager and API client don't crash
-	// when a message has no parts.
+	// This test verifies that the orchestration pipeline prunes empty parts
+	// to prevent API errors.
 
 	tmpFile := t.TempDir() + "/history.json"
 	h := history.NewManager(tmpFile)
 	ctx := context.Background()
 
-	// Manually add a content with no parts (which previously caused 400 error)
+	// Manually add a content with no parts
 	_ = h.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{},
 	})
 
-	if err := h.Save(ctx); err != nil {
-		t.Fatalf("Save failed: %v", err)
+	registry := internaltools.New()
+	client := &MockLLMClient{}
+	sm := &MockSecurityManager{AllowAll: true}
+	a := New(client, h, registry, sm, false)
+
+	// Prepare should trigger the contentCleaner transformer
+	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	// Reload and verify placeholder
-	h2 := history.NewManager(tmpFile)
-	_ = h2.Load(ctx)
-	if len(h2.Contents[0].Parts) == 0 {
-		t.Error("History manager failed to inject placeholder for empty parts")
-	} else if h2.Contents[0].Parts[0].Text != "[empty response]" {
-		t.Errorf("Expected placeholder text, got: %s", h2.Contents[0].Parts[0].Text)
+	// Verify history was cleaned and persisted
+	contents := h.GetContents()
+	if len(contents) == 0 {
+		t.Fatal("History is empty")
+	}
+	if len(contents[0].Parts) == 0 {
+		t.Error("Pipeline failed to inject placeholder for empty parts")
+	} else if contents[0].Parts[0].Text != "[empty response]" {
+		t.Errorf("Expected placeholder text, got: %s", contents[0].Parts[0].Text)
 	}
 }
 
 func TestAgent_InLoopPruning(t *testing.T) {
 	// Test that the agent prunes history when it reaches the limit
-	// during a chat session.
+	// via the orchestration pipeline.
 
 	h := history.NewManager(t.TempDir() + "/history.json")
 	registry := internaltools.New()
 	ctx := context.Background()
 
-	// Setup: Max 2 turns (4 messages)
-	// We start with 4 messages (2 turns)
+	// Setup: 2 turns (4 messages)
 	for i := 1; i <= 2; i++ {
-		_ = h.AddEntry(ctx, "user", fmt.Sprintf("U%d", i))
-		_ = h.AddEntry(ctx, "model", fmt.Sprintf("M%d", i))
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("U%d", i)}}})
+		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("M%d", i)}}})
 	}
 
-	// Client returns a simple response
-	client := &llm.Client{} // Using real client type but we won't call real API
-
+	client := &MockLLMClient{}
 	sm := &MockSecurityManager{AllowAll: true}
 	a := New(client, h, registry, sm, false)
-	_ = a.SetLimits(ctx, 10, 100000, 2) // Limit history to 2 turns
+	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
-	// Adding another user message makes it 5 messages (exceeding 2 turns * 2 = 4)
-	_ = h.AddEntry(ctx, "user", "U3")
-
-	// We simulate the Chat call's internal pruning logic
-	contents := h.GetContents()
-	if len(contents) > 2*2 { // Limit is 2 turns
-		pruned, _ := h.Prune(ctx, 2)
-		if pruned == 0 {
-			t.Error("Expected history to be pruned")
-		}
+	// Prepare should trigger the pruning pipeline
+	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	if err != nil {
+		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	if len(h.GetContents()) > 2 {
-		t.Errorf("History not pruned correctly, got %d messages", len(h.GetContents()))
+	contents := h.GetContents()
+	if len(contents) > 2 {
+		t.Errorf("History not pruned correctly, got %d messages, expected <= 2 (1 turn)", len(contents))
 	}
 }
 
