@@ -43,23 +43,23 @@ func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 	bus := NewSimpleEventBus()
 	count := 0
 	mu := sync.Mutex{}
-	
+
 	bus.Subscribe(func(e Event) {
 		mu.Lock()
 		count++
 		mu.Unlock()
 	})
-	
+
 	numEvents := 50
 	for i := 0; i < numEvents; i++ {
 		bus.Publish(i)
 	}
-	
+
 	err := bus.Shutdown(context.Background())
 	if err != nil {
 		t.Fatalf("Shutdown failed: %v", err)
 	}
-	
+
 	mu.Lock()
 	defer mu.Unlock()
 	if count != numEvents {
@@ -74,26 +74,26 @@ func TestSimpleEventBus_Flush(t *testing.T) {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
 	})
-	
+
 	count := 0
 	mu := sync.Mutex{}
-	
+
 	bus.Subscribe(func(e Event) {
 		mu.Lock()
 		count++
 		mu.Unlock()
 	})
-	
+
 	numEvents := 50
 	for i := 0; i < numEvents; i++ {
 		bus.Publish(i)
 	}
-	
+
 	err := bus.Flush(context.Background())
 	if err != nil {
 		t.Fatalf("Flush failed: %v", err)
 	}
-	
+
 	mu.Lock()
 	defer mu.Unlock()
 	if count != numEvents {

@@ -50,8 +50,8 @@ func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
 }
 
 var (
-	ErrNotImplemented   = fmt.Errorf("not implemented")
-	ErrToolCircuitOpen  = fmt.Errorf("tool circuit breaker is open")
+	ErrNotImplemented  = fmt.Errorf("not implemented")
+	ErrToolCircuitOpen = fmt.Errorf("tool circuit breaker is open")
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.

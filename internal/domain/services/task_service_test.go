@@ -172,7 +172,7 @@ func TestTaskService_ClearTasks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("setup failed: %v", err)
 		}
-		
+
 		repo.writeErr = errors.New("write error")
 		err = s.ClearTasks(ctx)
 		if err == nil {

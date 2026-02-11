@@ -235,11 +235,12 @@ func (e *TurnEngine) ApplyOptions(opts ...EngineOption) {
 
 // Reconfigure propagates configuration changes to the engine.
 func (e *TurnEngine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.ICostTracker) {
-	e.ApplyOptions(
-		WithConfig(e.sm, cfg.Model, cfg.PricingOverrides),
-		WithHardBudget(cfg.HardBudgetLimit),
-		WithCostTracker(tracker),
-	)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.model = cfg.Model
+	e.pricingOverrides = cfg.PricingOverrides
+	e.HardBudgetLimit = cfg.HardBudgetLimit
+	e.costTracker = tracker
 }
 
 // NewTurnEngine creates a new TurnEngine with a default pipeline.

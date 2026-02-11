@@ -91,7 +91,7 @@ func (m *mockChatter) SetSystemInstructions(ctx context.Context, instr string) e
 }
 func (m *mockChatter) Subscribe(sub func(events.Event))            {}
 func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
-func (m *mockChatter) Shutdown(ctx context.Context) error           { return nil }
+func (m *mockChatter) Shutdown(ctx context.Context) error          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
