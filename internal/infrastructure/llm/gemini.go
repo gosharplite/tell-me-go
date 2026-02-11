@@ -7,6 +7,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"os"
 	"strings"
@@ -95,23 +96,13 @@ func (c *Client) initSDK() error {
 }
 
 func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string, string) {
-	backend := genai.BackendGeminiAPI
+	var backend genai.Backend
 	var project, location, baseURL string
 
 	if strings.Contains(apiURL, "aiplatform.googleapis.com") {
-		backend = genai.BackendVertexAI
-		parts := strings.Split(apiURL, "/")
-		for i, p := range parts {
-			if p == "projects" && i+1 < len(parts) {
-				project = parts[i+1]
-			}
-			if p == "locations" && i+1 < len(parts) {
-				location = parts[i+1]
-			}
-		}
-		if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
-			baseURL = apiURL[:idx+1]
-		}
+		backend, project, location, baseURL = c.parseVertexAI(apiURL)
+	} else {
+		backend = genai.BackendGeminiAPI
 	}
 
 	// Support for local E2E mocking
@@ -120,6 +111,27 @@ func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string,
 	}
 
 	return backend, project, location, baseURL
+}
+
+func (c *Client) parseVertexAI(apiURL string) (genai.Backend, string, string, string) {
+	parts := strings.Split(apiURL, "/")
+	project := findInParts(parts, "projects")
+	location := findInParts(parts, "locations")
+
+	baseURL := ""
+	if idx := strings.Index(apiURL, "/v1/"); idx != -1 {
+		baseURL = apiURL[:idx+1]
+	}
+	return genai.BackendVertexAI, project, location, baseURL
+}
+
+func findInParts(parts []string, key string) string {
+	for i, p := range parts {
+		if p == key && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 func (c *Client) prepareAuthHeader() http.Header {
@@ -162,33 +174,59 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, tools []*
 	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
-		return nil, nil, err // Return raw error for retry detection
+		return nil, nil, c.classifyError(err)
 	}
 
-	metrics := GetMetrics(resp, duration)
+	return c.processResponse(resp, duration)
+}
 
-	if len(resp.Candidates) == 0 {
-		if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
-			return nil, metrics, fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
-		}
-		return nil, metrics, fmt.Errorf("empty response from api")
+func (c *Client) processResponse(resp *genai.GenerateContentResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+	metrics := c.parseMetrics(resp, duration)
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, metrics, err
 	}
 
 	candidate := resp.Candidates[0]
-	// If the candidate is blocked or stopped for reasons other than natural completion,
-	// and there is no content, provide a descriptive error.
-	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
-		if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
-			msg := string(candidate.FinishReason)
-			if candidate.FinishMessage != "" {
-				msg = fmt.Sprintf("%s - %s", msg, candidate.FinishMessage)
-			}
-			return nil, metrics, fmt.Errorf("empty response (Finish Reason: %s)", msg)
-		}
-		return nil, metrics, fmt.Errorf("empty response from api")
+	return c.fromSDKContent(candidate.Content), metrics, nil
+}
+
+func (c *Client) checkResponse(resp *genai.GenerateContentResponse) error {
+	if len(resp.Candidates) == 0 {
+		return c.handleNoCandidates(resp)
 	}
 
-	return FromSDKContent(candidate.Content), metrics, nil
+	candidate := resp.Candidates[0]
+	if isContentEmpty(candidate.Content) {
+		return c.handleEmptyContent(candidate)
+	}
+	return nil
+}
+
+func isContentEmpty(c *genai.Content) bool {
+	return c == nil || len(c.Parts) == 0
+}
+
+func (c *Client) handleEmptyContent(candidate *genai.Candidate) error {
+	if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
+		return c.formatFinishError(candidate, "empty response")
+	}
+	return fmt.Errorf("empty response from api")
+}
+
+func (c *Client) formatFinishError(candidate *genai.Candidate, prefix string) error {
+	msg := string(candidate.FinishReason)
+	if candidate.FinishMessage != "" {
+		msg = fmt.Sprintf("%s - %s", msg, candidate.FinishMessage)
+	}
+	return fmt.Errorf("%s (Finish Reason: %s)", prefix, msg)
+}
+
+func (c *Client) handleNoCandidates(resp *genai.GenerateContentResponse) error {
+	if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
+		return fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
+	}
+	return fmt.Errorf("empty response from api")
 }
 
 func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*genai.GenerateContentConfig, []*genai.Content) {
@@ -201,7 +239,7 @@ func (c *Client) prepareRequest(ctx context.Context, history []*llm.Content, too
 
 	c.configureThinking(config)
 
-	return config, c.toSDKHistory(ctx, history, resolver)
+	return config, c.toSDKContent(ctx, history, resolver)
 }
 
 func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) ([]*genai.Tool, *genai.Content) {
@@ -224,36 +262,37 @@ func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclarat
 
 func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
 	c.mu.RLock()
-	thinkingLevel := c.thinkingLevel
-	thinkingBudget := c.thinkingBudget
-	maxThinkingBudget := c.maxThinkingBudget
+	level := c.thinkingLevel
+	budget := c.thinkingBudget
+	maxBudget := c.maxThinkingBudget
 	model := c.model
 	c.mu.RUnlock()
 
-	// Apply Thinking Config
-	if thinkingLevel != "" || thinkingBudget > 0 {
-		config.ThinkingConfig = &genai.ThinkingConfig{
-			IncludeThoughts: true,
-		}
+	if level == "" && budget <= 0 {
+		return
+	}
 
-		actualBudget := thinkingBudget
-		if actualBudget > 0 {
-			maxBudget := maxThinkingBudget
-			if maxBudget > 0 && actualBudget > maxBudget {
-				fmt.Fprintf(os.Stderr, "%s[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.%s\n", ui.ColorYellow, actualBudget, model, maxBudget, maxBudget, ui.ColorReset)
-				actualBudget = maxBudget
-			}
-		}
+	config.ThinkingConfig = &genai.ThinkingConfig{
+		IncludeThoughts: true,
+	}
 
-		if actualBudget > 0 {
-			config.ThinkingConfig.ThinkingBudget = genai.Ptr(int32(actualBudget))
-		} else if thinkingLevel != "" {
-			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(thinkingLevel)
-		}
+	if budget > 0 {
+		c.applyThinkingBudget(config.ThinkingConfig, budget, maxBudget, model)
+	} else if level != "" {
+		config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(level)
 	}
 }
 
-func (c *Client) toSDKHistory(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
+func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBudget int, model string) {
+	actualBudget := budget
+	if maxBudget > 0 && actualBudget > maxBudget {
+		fmt.Fprintf(os.Stderr, "%s[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.%s\n", ui.ColorYellow, actualBudget, model, maxBudget, maxBudget, ui.ColorReset)
+		actualBudget = maxBudget
+	}
+	config.ThinkingBudget = genai.Ptr(int32(actualBudget))
+}
+
+func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
 		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
@@ -264,6 +303,29 @@ func (c *Client) toSDKHistory(ctx context.Context, history []*llm.Content, resol
 		}
 	}
 	return sdkHistory
+}
+
+func (c *Client) fromSDKContent(content *genai.Content) *llm.Content {
+	return FromSDKContent(content)
+}
+
+func (c *Client) hydrateParts(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*genai.Part, error) {
+	sdkParts := make([]*genai.Part, len(parts))
+	for i, p := range parts {
+		sdkParts[i] = ToSDKPart(ctx, p, resolver)
+	}
+	return sdkParts, nil
+}
+
+func (c *Client) parseMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {
+	return GetMetrics(resp, duration)
+}
+
+func (c *Client) classifyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return err
 }
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
@@ -278,35 +340,49 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools [
 	startTime := time.Now()
 	iter := sdkClient.Models.GenerateContentStream(ctx, model, sdkHistory, config)
 
+	return c.processStream(iter, startTime, callback)
+}
+
+func (c *Client) processStream(iter iter.Seq2[*genai.GenerateContentResponse, error], startTime time.Time, callback func(*llm.Content)) (*llm.Metrics, error) {
 	var lastMetrics *llm.Metrics
 
 	for resp, err := range iter {
 		if err != nil {
-			return lastMetrics, err
+			return lastMetrics, c.classifyError(err)
 		}
 
 		duration := time.Since(startTime).Seconds()
-		lastMetrics = GetMetrics(resp, duration)
+		lastMetrics = c.parseMetrics(resp, duration)
 
-		if len(resp.Candidates) > 0 {
-			candidate := resp.Candidates[0]
-			if candidate.Content != nil {
-				callback(FromSDKContent(candidate.Content))
-			}
-
-			if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
-				msg := string(candidate.FinishReason)
-				if candidate.FinishMessage != "" {
-					msg = fmt.Sprintf("%s - %s", msg, candidate.FinishMessage)
-				}
-				return lastMetrics, fmt.Errorf("stream interrupted (Finish Reason: %s)", msg)
-			}
-		} else if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
-			return lastMetrics, fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
+		if err := c.processStreamChunk(resp, callback); err != nil {
+			return lastMetrics, err
 		}
 	}
 
 	return lastMetrics, nil
+}
+
+func (c *Client) processStreamChunk(resp *genai.GenerateContentResponse, callback func(*llm.Content)) error {
+	if len(resp.Candidates) == 0 {
+		return c.handleSafetyBlock(resp)
+	}
+
+	candidate := resp.Candidates[0]
+	if candidate.Content != nil {
+		callback(c.fromSDKContent(candidate.Content))
+	}
+
+	if candidate.FinishReason != "" && candidate.FinishReason != genai.FinishReasonStop {
+		return c.formatFinishError(candidate, "stream interrupted")
+	}
+	return nil
+}
+
+func (c *Client) handleSafetyBlock(resp *genai.GenerateContentResponse) error {
+	if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != "" {
+		return fmt.Errorf("blocked by safety filters (Prompt Block Reason: %s)", resp.PromptFeedback.BlockReason)
+	}
+	return nil
 }
 
 func toSDKTool(declarations []*tools.ToolDeclaration) []*genai.Tool {
