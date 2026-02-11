@@ -112,7 +112,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 		_, err := m.adoGetPullRequest(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "pull request not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("Missing Parameters", func(t *testing.T) {
@@ -464,6 +464,7 @@ func TestAdoGetFileContent(t *testing.T) {
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
 		}, nil)
 
 		args := map[string]interface{}{
@@ -475,7 +476,7 @@ func TestAdoGetFileContent(t *testing.T) {
 
 		_, err := m.adoGetFileContent(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "file not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -674,6 +675,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
 		}, nil).Once()
 
 		args := map[string]interface{}{
@@ -685,7 +687,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 
 		_, err := m.adoGetPrStatuses(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "pull request or repository not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -929,15 +931,21 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/build/builds/123/timeline")
+		})).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
 		}, nil).Once()
 
-		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
+		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
 		_, err := m.adoGetBuildTimeline(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "build not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -970,6 +978,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
 		}, nil).Once()
 
 		args := map[string]interface{}{
@@ -980,7 +989,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 		}
 		_, err := m.adoGetTaskLog(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "log or build not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -1017,12 +1026,13 @@ func TestAdoGetBuildChanges(t *testing.T) {
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
+			Status:     "404 Not Found",
 		}, nil).Once()
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
 		_, err := m.adoGetBuildChanges(context.Background(), args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "build not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -1096,7 +1106,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusNotFound,
-			expectedErrMsg: "not found",
+			expectedErrMsg: "resource not found",
 		},
 		{
 			name: "adoGetPrDiff - 500 Internal Error",
@@ -1162,7 +1172,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 				"pull_request_id": 123,
 			},
 			httpStatus:     http.StatusInternalServerError,
-			expectedErrMsg: "failed to fetch PR metadata",
+			expectedErrMsg: "returned status: 500",
 		},
 		{
 			name: "adoListPullRequests - Unauthorized",
@@ -1189,7 +1199,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusNotFound,
-			expectedErrMsg: "repository not found",
+			expectedErrMsg: "resource not found",
 		},
 		{
 			name: "adoGetPrThreads - Unauthorized",
@@ -1216,7 +1226,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123},
 			httpStatus:     http.StatusNotFound,
-			expectedErrMsg: "pull request not found",
+			expectedErrMsg: "resource not found",
 		},
 		{
 			name: "adoListRepositoryItems - Unauthorized",
@@ -1243,7 +1253,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           commonArgs,
 			httpStatus:     http.StatusNotFound,
-			expectedErrMsg: "repository or path not found",
+			expectedErrMsg: "resource not found",
 		},
 		{
 			name: "adoListPipelineRuns - 500 Error",
@@ -1306,7 +1316,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1},
 			httpStatus:     http.StatusForbidden,
-			expectedErrMsg: "Forbidden",
+			expectedErrMsg: "forbidden",
 		},
 		{
 			name: "adoGetPrPolicyEvaluations - PR Metadata Decode Failure",
@@ -1343,7 +1353,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1},
 			httpStatus:     http.StatusUnauthorized,
-			expectedErrMsg: "returned status: 401", // adoGetPipelineLogs uses different error handling
+			expectedErrMsg: "unauthorized",
 		},
 		{
 			name: "adoGetBuildTimeline - Unauthorized",
@@ -1370,7 +1380,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			},
 			args:           map[string]interface{}{"organization": "o", "project": "p", "build_id": 1},
 			httpStatus:     http.StatusNotFound,
-			expectedErrMsg: "build not found",
+			expectedErrMsg: "resource not found",
 		},
 	}
 
@@ -1578,7 +1588,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 		}, nil).Once()
 		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "pull request or repository not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("fetchPrStatuses - 500", func(t *testing.T) {
@@ -1609,7 +1619,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 		}, nil).Once()
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to fetch repository metadata")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("fetchRepositoryId - Decode Error", func(t *testing.T) {
@@ -1637,9 +1647,9 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader("")),
 			Status:     "401 Unauthorized",
 		}, nil).Once()
-		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url", "auth")
+		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unauthorized (401)")
+		assert.Contains(t, err.Error(), "unauthorized")
 	})
 
 	t.Run("404", func(t *testing.T) {
@@ -1650,9 +1660,9 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader("")),
 			Status:     "404 Not Found",
 		}, nil).Once()
-		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url", "auth")
+		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "policy not found (404)")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 }
 
@@ -1697,7 +1707,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 		}, nil).Once()
 		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "build not found")
+		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("Default", func(t *testing.T) {

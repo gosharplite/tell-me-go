@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/text/cases"
@@ -25,8 +26,11 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm     *security.SecurityManager
-	client tools.HTTPClient
+	sm         *security.SecurityManager
+	client     tools.HTTPClient
+	authHeader string
+	authErr    error
+	authOnce   sync.Once
 }
 
 // NewAzureDevOpsManager creates a new instance of azureDevOpsManager.
@@ -41,13 +45,65 @@ func NewAzureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient
 }
 
 func (m *azureDevOpsManager) getAuthHeader() (string, error) {
-	pat := os.Getenv("AZURE_PAT_ALL")
-	if pat == "" {
-		return "", fmt.Errorf("missing AZURE_PAT_ALL environment variable")
+	m.authOnce.Do(func() {
+		pat := os.Getenv("AZURE_PAT_ALL")
+		if pat == "" {
+			m.authErr = fmt.Errorf("missing AZURE_PAT_ALL environment variable")
+			return
+		}
+		auth := fmt.Sprintf(":%s", pat)
+		encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
+		m.authHeader = fmt.Sprintf("Basic %s", encodedAuth)
+	})
+	return m.authHeader, m.authErr
+}
+
+func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, requestURL string, body io.Reader, headers map[string]string) (*http.Response, error) {
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return nil, err
 	}
-	auth := fmt.Sprintf(":%s", pat)
-	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
-	return fmt.Sprintf("Basic %s", encodedAuth), nil
+
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+
+	hasAccept := false
+	for k, v := range headers {
+		req.Header.Set(k, v)
+		if strings.EqualFold(k, "Accept") {
+			hasAccept = true
+		}
+	}
+
+	if !hasAccept {
+		req.Header.Set("Accept", "application/json")
+	}
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		respBody, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return nil, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("forbidden: you don't have permission to access this resource")
+		case http.StatusNotFound:
+			return nil, fmt.Errorf("resource not found (404): %s", requestURL)
+		default:
+			return nil, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(respBody))
+		}
+	}
+
+	return resp, nil
 }
 
 func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -66,41 +122,14 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("pull request not found: %d", params.PullRequestId)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var prData struct {
 		ArtifactId string `json:"artifactId"`
@@ -160,11 +189,6 @@ func (m *azureDevOpsManager) adoListPullRequests(ctx context.Context, args map[s
 		params.Top = 50
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
 	if err != nil {
@@ -177,33 +201,11 @@ func (m *azureDevOpsManager) adoListPullRequests(ctx context.Context, args map[s
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to list pull requests")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("repository not found: %s", params.Repository)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var responseData struct {
 		Value []struct {
@@ -251,41 +253,14 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("endpoint or pull request not found (404). URL: %s", requestURL)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var changeData struct {
 		ChangeEntries []struct {
@@ -332,41 +307,14 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("pull request not found: %d", params.PullRequestId)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var threadData struct {
 		Value []struct {
@@ -447,11 +395,6 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 		params.Version = "main"
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
 	if err != nil {
@@ -465,32 +408,11 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this file")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("file not found: %s at version %s", params.Path, params.Version)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -528,11 +450,6 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 		params.RecursionLevel = "none"
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
 	if err != nil {
@@ -546,33 +463,11 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this repository")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("repository or path not found: %s", params.ScopePath)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var responseData struct {
 		Value []struct {
@@ -627,11 +522,6 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		params.Top = 10
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId))
 	if err != nil {
@@ -643,24 +533,11 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-	}
 
 	var responseData struct {
 		Value []struct {
@@ -706,32 +583,14 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 		return tools.ToolResult{}, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-	}
 
 	var runData struct {
 		Id      int    `json:"id"`
@@ -774,33 +633,16 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 		return tools.ToolResult{}, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	if params.LogId == 0 {
 		// List logs first
 		u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
 			url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
 		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to create list logs request: %w", err)
-		}
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Accept", "application/json")
-
-		resp, err := m.client.Do(req)
-		if err != nil {
-			return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+			return tools.ToolResult{}, err
 		}
 		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
 
 		var logsData struct {
 			Value []struct {
@@ -830,22 +672,11 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId, params.LogId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create log content request: %w", err)
-	}
-	req.Header.Set("Authorization", authHeader)
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-	}
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -888,12 +719,7 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	statusData, err := m.fetchPrStatuses(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId, authHeader)
+	statusData, err := m.fetchPrStatuses(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -901,7 +727,7 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 	return tools.ToolResult{Text: m.formatPrStatuses(params.PullRequestId, statusData)}, nil
 }
 
-func (m *azureDevOpsManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int, authHeader string) (adoStatusResponse, error) {
+func (m *azureDevOpsManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int) (adoStatusResponse, error) {
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
 		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
 	if err != nil {
@@ -912,35 +738,11 @@ func (m *azureDevOpsManager) fetchPrStatuses(ctx context.Context, org, project, 
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
 
-	requestURL := u.String()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return adoStatusResponse{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return adoStatusResponse{}, fmt.Errorf("request failed: %w", err)
+		return adoStatusResponse{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return adoStatusResponse{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return adoStatusResponse{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
-		case http.StatusNotFound:
-			return adoStatusResponse{}, fmt.Errorf("pull request or repository not found: %d. URL: %s", prID, requestURL)
-		default:
-			return adoStatusResponse{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var statusData adoStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&statusData); err != nil {
@@ -1028,32 +830,15 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	// 1. Fetch Pull Request metadata to get the proper ArtifactID (targetId)
 	prRequestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, prRequestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create PR metadata request: %w", err)
-	}
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("PR metadata request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return tools.ToolResult{}, fmt.Errorf("failed to fetch PR metadata: %s, body: %s", resp.Status, string(body))
-	}
 
 	var prData struct {
 		Repository struct {
@@ -1087,9 +872,7 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 	q.Set("api-version", "7.1-preview.1")
 	u.RawQuery = q.Encode()
 
-	requestURL := u.String()
-
-	policyData, err := m.performPolicyEvaluationRequest(ctx, requestURL, authHeader)
+	policyData, err := m.performPolicyEvaluationRequest(ctx, u.String())
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -1097,34 +880,12 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
 }
 
-func (m *azureDevOpsManager) performPolicyEvaluationRequest(ctx context.Context, requestURL, authHeader string) (adoPolicyResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+func (m *azureDevOpsManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return adoPolicyResponse{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return adoPolicyResponse{}, fmt.Errorf("request failed: %w", err)
+		return adoPolicyResponse{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return adoPolicyResponse{}, fmt.Errorf("unauthorized (401): check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return adoPolicyResponse{}, fmt.Errorf("forbidden (403): you don't have permission to access this pull request policy")
-		case http.StatusNotFound:
-			return adoPolicyResponse{}, fmt.Errorf("policy not found (404) at %s", requestURL)
-		default:
-			return adoPolicyResponse{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var policyData adoPolicyResponse
 	if err := json.NewDecoder(resp.Body).Decode(&policyData); err != nil {
@@ -1186,17 +947,12 @@ func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and branch_name are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
+	targetRepoId, err := m.fetchRepositoryId(ctx, params.Organization, params.Project, params.Repository)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 
-	targetRepoId, err := m.fetchRepositoryId(ctx, params.Organization, params.Project, params.Repository, authHeader)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	policyConfigs, err := m.fetchPolicyConfigurations(ctx, params.Organization, params.Project, authHeader)
+	policyConfigs, err := m.fetchPolicyConfigurations(ctx, params.Organization, params.Project)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -1204,27 +960,15 @@ func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map
 	return tools.ToolResult{Text: m.formatBranchPolicies(params.BranchName, params.Repository, policyConfigs, targetRepoId)}, nil
 }
 
-func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project, repo, authHeader string) (string, error) {
+func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project, repo string) (string, error) {
 	repoURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s?api-version=7.1",
 		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, repoURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, repoURL, nil, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create repository request: %w", err)
-	}
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("repository request failed: %w", err)
+		return "", fmt.Errorf("failed to fetch repository metadata: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("failed to fetch repository metadata: %s, body: %s", resp.Status, string(body))
-	}
 
 	var repoData struct {
 		Id string `json:"id"`
@@ -1235,27 +979,15 @@ func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project
 	return repoData.Id, nil
 }
 
-func (m *azureDevOpsManager) fetchPolicyConfigurations(ctx context.Context, org, project, authHeader string) ([]adoPolicyConfig, error) {
+func (m *azureDevOpsManager) fetchPolicyConfigurations(ctx context.Context, org, project string) ([]adoPolicyConfig, error) {
 	policyURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/configurations?api-version=7.1",
 		url.PathEscape(org), url.PathEscape(project))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, policyURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, policyURL, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create policy request: %w", err)
-	}
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("policy request failed: %w", err)
+		return nil, fmt.Errorf("failed to fetch policy configurations: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to fetch policy configurations: %s, body: %s", resp.Status, string(body))
-	}
 
 	var policyConfigs struct {
 		Value []adoPolicyConfig `json:"value"`
@@ -1373,39 +1105,14 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("build not found: %d", params.BuildId)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var timelineData struct {
 		Records []interface{} `json:"records"`
@@ -1439,38 +1146,14 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("organization, project, build_id, and log_id are required")
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("log or build not found. build_id: %d, log_id: %d", params.BuildId, params.LogId)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -1500,11 +1183,6 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 		params.Top = 50
 	}
 
-	authHeader, err := m.getAuthHeader()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/changes",
 		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
 	if err != nil {
@@ -1516,31 +1194,11 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 	q.Set("api-version", "7.0")
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusNotFound:
-			return tools.ToolResult{}, fmt.Errorf("build not found: %d", params.BuildId)
-		default:
-			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
-		}
-	}
 
 	var responseData struct {
 		Value []interface{} `json:"value"`
