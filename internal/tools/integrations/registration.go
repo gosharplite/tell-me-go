@@ -599,4 +599,81 @@ func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, cli
 			Required: []string{"organization", "project", "repository", "branch_name"},
 		},
 	}, m.adoListBranchPolicies)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_build_timeline",
+		Description: "Retrieves the build timeline, providing the state, result, and log metadata for every task in the build.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"build_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the build (not the pipeline ID).",
+				},
+			},
+			Required: []string{"organization", "project", "build_id"},
+		},
+	}, m.adoGetBuildTimeline)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_task_log",
+		Description: "Retrieves the raw console output/logs for a specific build task.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"build_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the build.",
+				},
+				"log_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the specific log record (retrieved from the build timeline).",
+				},
+			},
+			Required: []string{"organization", "project", "build_id", "log_id"},
+		},
+	}, m.adoGetTaskLog)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_build_changes",
+		Description: "Retrieves the list of commits/changes included in a specific build.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"build_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the build.",
+				},
+				"top": {
+					Type:        "INTEGER",
+					Description: "Maximum number of changes to return (default 50).",
+				},
+			},
+			Required: []string{"organization", "project", "build_id"},
+		},
+	}, m.adoGetBuildChanges)
 }

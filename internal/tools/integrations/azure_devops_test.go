@@ -893,3 +893,133 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		assert.Contains(t, result.Text, "No active policies found")
 	})
 }
+
+func TestAdoGetBuildTimeline(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+	t.Run("Success", func(t *testing.T) {
+		jsonResponse := `{
+			"records": [
+				{
+					"id": "1",
+					"name": "Task 1",
+					"state": "completed",
+					"result": "succeeded",
+					"log": {"id": 10}
+				}
+			]
+		}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/build/builds/123/timeline")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil).Once()
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
+		result, err := m.adoGetBuildTimeline(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, `"name": "Task 1"`)
+		assert.Contains(t, result.Text, `"log": {`)
+		assert.Contains(t, result.Text, `"id": 10`)
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil).Once()
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
+		_, err := m.adoGetBuildTimeline(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "build not found")
+	})
+}
+
+func TestAdoGetTaskLog(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+	t.Run("Success", func(t *testing.T) {
+		logContent := "Successfully completed task"
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/build/builds/123/logs/10")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(logContent)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"build_id":     123,
+			"log_id":       10,
+		}
+		result, err := m.adoGetTaskLog(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Equal(t, logContent, result.Text)
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization": "o",
+			"project":      "p",
+			"build_id":     123,
+			"log_id":       99,
+		}
+		_, err := m.adoGetTaskLog(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log or build not found")
+	})
+}
+
+func TestAdoGetBuildChanges(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+	t.Run("Success", func(t *testing.T) {
+		jsonResponse := `{
+			"value": [
+				{
+					"id": "abc123",
+					"message": "feat: add something",
+					"author": {"displayName": "Developer"}
+				}
+			]
+		}`
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/build/builds/123/changes") && req.URL.Query().Get("$top") == "10"
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil).Once()
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
+		result, err := m.adoGetBuildChanges(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, `"id": "abc123"`)
+		assert.Contains(t, result.Text, `"message": "feat: add something"`)
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil).Once()
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
+		_, err := m.adoGetBuildChanges(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "build not found")
+	})
+}

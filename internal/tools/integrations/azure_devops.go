@@ -1320,3 +1320,203 @@ func formatKey(s string) string {
 	}
 	return result
 }
+
+func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		BuildId      int    `json:"build_id"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+		case http.StatusNotFound:
+			return tools.ToolResult{}, fmt.Errorf("build not found: %d", params.BuildId)
+		default:
+			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+		}
+	}
+
+	var timelineData struct {
+		Records []interface{} `json:"records"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&timelineData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(timelineData.Records, "", "  ")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal timeline records: %w", err)
+	}
+
+	return tools.ToolResult{Text: string(output)}, nil
+}
+
+func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		BuildId      int    `json:"build_id"`
+		LogId        int    `json:"log_id"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.BuildId == 0 || params.LogId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, build_id, and log_id are required")
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+		case http.StatusNotFound:
+			return tools.ToolResult{}, fmt.Errorf("log or build not found. build_id: %d, log_id: %d", params.BuildId, params.LogId)
+		default:
+			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+		}
+	}
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to read log content: %w", err)
+	}
+
+	return tools.ToolResult{Text: string(content)}, nil
+}
+
+func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+		BuildId      int    `json:"build_id"`
+		Top          int    `json:"top"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.BuildId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
+	}
+
+	if params.Top <= 0 {
+		params.Top = 50
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/changes",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("$top", strconv.Itoa(params.Top))
+	q.Set("api-version", "7.0")
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+		case http.StatusNotFound:
+			return tools.ToolResult{}, fmt.Errorf("build not found: %d", params.BuildId)
+		default:
+			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+		}
+	}
+
+	var responseData struct {
+		Value []interface{} `json:"value"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	output, err := json.MarshalIndent(responseData.Value, "", "  ")
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to marshal build changes: %w", err)
+	}
+
+	return tools.ToolResult{Text: string(output)}, nil
+}

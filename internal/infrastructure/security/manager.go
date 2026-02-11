@@ -241,6 +241,9 @@ var allowedCommands = map[string]bool{
 	"ado_get_pr_statuses":           true,
 	"ado_get_pr_policy_evaluations": true,
 	"ado_list_branch_policies":      true,
+	"ado_get_build_timeline":        true,
+	"ado_get_task_log":              true,
+	"ado_get_build_changes":         true,
 
 	// Session & Management Tools
 	"get_session_info":         true,
