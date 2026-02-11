@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -22,8 +23,10 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm     *security.SecurityManager
-	client tools.HTTPClient
+	sm           *security.SecurityManager
+	client       tools.HTTPClient
+	projectCache map[string]string
+	cacheMu      sync.RWMutex
 }
 
 // NewAzureDevOpsManager creates a new instance of azureDevOpsManager.
@@ -32,8 +35,9 @@ func NewAzureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &azureDevOpsManager{
-		sm:     sm,
-		client: client,
+		sm:           sm,
+		client:       client,
+		projectCache: make(map[string]string),
 	}
 }
 
@@ -45,6 +49,55 @@ func (m *azureDevOpsManager) getAuthHeader() (string, error) {
 	auth := fmt.Sprintf(":%s", pat)
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 	return fmt.Sprintf("Basic %s", encodedAuth), nil
+}
+
+func (m *azureDevOpsManager) getProjectID(ctx context.Context, org, project string) (string, error) {
+	cacheKey := fmt.Sprintf("%s/%s", org, project)
+	m.cacheMu.RLock()
+	id, ok := m.projectCache[cacheKey]
+	m.cacheMu.RUnlock()
+	if ok {
+		return id, nil
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return "", err
+	}
+
+	u := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects/%s?api-version=7.1",
+		url.PathEscape(org), url.PathEscape(project))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get project metadata: %s, body: %s", resp.Status, string(body))
+	}
+
+	var projectData struct {
+		Id string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&projectData); err != nil {
+		return "", err
+	}
+
+	m.cacheMu.Lock()
+	m.projectCache[cacheKey] = projectData.Id
+	m.cacheMu.Unlock()
+
+	return projectData.Id, nil
 }
 
 func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -849,4 +902,245 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	}
 
 	return tools.ToolResult{Text: string(content)}, nil
+}
+
+type adoStatusResponse struct {
+	Value []adoStatusItem `json:"value"`
+}
+
+type adoStatusItem struct {
+	State       string     `json:"state"` // succeeded, failed, pending, error
+	Description string     `json:"description"`
+	Context     adoContext `json:"context"`
+	TargetUrl   string     `json:"targetUrl"`
+	CreatedDate string     `json:"creationDate"`
+}
+
+type adoContext struct {
+	Name  string `json:"name"`
+	Genre string `json:"genre"`
+}
+
+func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization  string `json:"organization"`
+		Project       string `json:"project"`
+		Repository    string `json:"repository"`
+		PullRequestId int    `json:"pull_request_id"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.Repository == "" || params.PullRequestId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses?api-version=7.1",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return tools.ToolResult{}, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+		case http.StatusForbidden:
+			return tools.ToolResult{}, fmt.Errorf("forbidden: you don't have permission to access this pull request")
+		case http.StatusNotFound:
+			return tools.ToolResult{}, fmt.Errorf("pull request or repository not found: %d. URL: %s", params.PullRequestId, requestURL)
+		default:
+			return tools.ToolResult{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+		}
+	}
+
+	var statusData adoStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&statusData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(statusData.Value) == 0 {
+		return tools.ToolResult{Text: "No statuses found for this pull request."}, nil
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d Statuses:\n\n", params.PullRequestId))
+
+	for _, item := range statusData.Value {
+		stateEmoji := "⚪"
+		switch strings.ToLower(item.State) {
+		case "succeeded":
+			stateEmoji = "✅"
+		case "failed", "error":
+			stateEmoji = "❌"
+		case "pending":
+			stateEmoji = "⏳"
+		}
+
+		contextName := item.Context.Name
+		if item.Context.Genre != "" {
+			contextName = fmt.Sprintf("%s/%s", item.Context.Genre, item.Context.Name)
+		}
+
+		resultText.WriteString(fmt.Sprintf("%s **%s**: %s\n", stateEmoji, contextName, item.State))
+		if item.Description != "" {
+			resultText.WriteString(fmt.Sprintf("   Description: %s\n", item.Description))
+		}
+		if item.TargetUrl != "" {
+			resultText.WriteString(fmt.Sprintf("   Details: %s\n", item.TargetUrl))
+		}
+		resultText.WriteString("\n")
+	}
+
+	return tools.ToolResult{Text: resultText.String()}, nil
+}
+
+type adoPolicyResponse struct {
+	Value []adoPolicyEvaluation `json:"value"`
+}
+
+type adoPolicyEvaluation struct {
+	Status        string          `json:"status"` // approved, broken, rejected, queued, running
+	Configuration adoPolicyConfig `json:"configuration"`
+}
+
+type adoPolicyConfig struct {
+	IsEnabled  bool                   `json:"isEnabled"`
+	IsBlocking bool                   `json:"isBlocking"`
+	Type       adoPolicyType          `json:"type"`
+	Settings   map[string]interface{} `json:"settings"`
+}
+
+type adoPolicyType struct {
+	DisplayName string `json:"displayName"`
+	Id          string `json:"id"`
+}
+
+func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization  string `json:"organization"`
+		Project       string `json:"project"`
+		PullRequestId int    `json:"pull_request_id"`
+	}
+
+	if err := registry.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" || params.PullRequestId == 0 {
+		return tools.ToolResult{}, fmt.Errorf("organization, project, and pull_request_id are required")
+	}
+
+	projectID, err := m.getProjectID(ctx, params.Organization, params.Project)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to resolve project GUID: %w", err)
+	}
+
+	authHeader, err := m.getAuthHeader()
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	targetId := fmt.Sprintf("vstfs:///CodeReview/PullRequestId/%s/%d", projectID, params.PullRequestId)
+	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/evaluations?targetId=%s&api-version=7.1",
+		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.QueryEscape(targetId))
+
+	policyData, err := m.performPolicyEvaluationRequest(ctx, requestURL, authHeader)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
+}
+
+func (m *azureDevOpsManager) performPolicyEvaluationRequest(ctx context.Context, requestURL, authHeader string) (adoPolicyResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return adoPolicyResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return adoPolicyResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		switch resp.StatusCode {
+		case http.StatusUnauthorized:
+			return adoPolicyResponse{}, fmt.Errorf("unauthorized (401): check your AZURE_PAT_ALL")
+		case http.StatusForbidden:
+			return adoPolicyResponse{}, fmt.Errorf("forbidden (403): you don't have permission to access this pull request policy")
+		case http.StatusNotFound:
+			return adoPolicyResponse{}, fmt.Errorf("policy not found (404) at %s", requestURL)
+		default:
+			return adoPolicyResponse{}, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(body))
+		}
+	}
+
+	var policyData adoPolicyResponse
+	if err := json.NewDecoder(resp.Body).Decode(&policyData); err != nil {
+		return adoPolicyResponse{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return policyData, nil
+}
+
+func (m *azureDevOpsManager) formatPolicyEvaluations(pullRequestId int, policyData adoPolicyResponse) (tools.ToolResult, error) {
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d Policy Evaluations:\n\n", pullRequestId))
+
+	found := false
+	for _, evaluation := range policyData.Value {
+		if !evaluation.Configuration.IsEnabled {
+			continue
+		}
+		found = true
+
+		statusEmoji := "⚪"
+		switch strings.ToLower(evaluation.Status) {
+		case "approved":
+			statusEmoji = "✅"
+		case "broken", "rejected":
+			statusEmoji = "❌"
+		case "queued", "running":
+			statusEmoji = "⏳"
+		}
+
+		requiredLabel := ""
+		if evaluation.Configuration.IsBlocking {
+			requiredLabel = " [REQUIRED]"
+		}
+
+		resultText.WriteString(fmt.Sprintf("%s **%s**%s: %s\n",
+			statusEmoji, evaluation.Configuration.Type.DisplayName, requiredLabel, evaluation.Status))
+	}
+
+	if !found {
+		return tools.ToolResult{Text: "No active policies found for this pull request."}, nil
+	}
+
+	return tools.ToolResult{Text: resultText.String()}, nil
 }

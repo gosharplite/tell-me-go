@@ -619,3 +619,188 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 		assert.Equal(t, logContent, result.Text)
 	})
 }
+
+func TestAdoGetPrStatuses(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	mockClient := new(mockAzureDevOpsClient)
+	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+	t.Run("Success", func(t *testing.T) {
+		jsonResponse := `{
+			"value": [
+				{
+					"state": "succeeded",
+					"description": "Build passed",
+					"context": {"name": "CI", "genre": "Build"},
+					"targetUrl": "http://ci/build/1",
+					"creationDate": "2023-10-01T12:00:00Z"
+				},
+				{
+					"state": "failed",
+					"description": "Linter failed",
+					"context": {"name": "Linter", "genre": "Style"},
+					"targetUrl": "http://ci/linter/1",
+					"creationDate": "2023-10-01T12:05:00Z"
+				}
+			]
+		}`
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/pullrequests/123/statuses")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"repository":      "myrepo",
+			"pull_request_id": 123,
+		}
+
+		result, err := m.adoGetPrStatuses(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Pull Request #123 Statuses")
+		assert.Contains(t, result.Text, "✅ **Build/CI**: succeeded")
+		assert.Contains(t, result.Text, "❌ **Style/Linter**: failed")
+		assert.Contains(t, result.Text, "Details: http://ci/linter/1")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Not Found", func(t *testing.T) {
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"repository":      "myrepo",
+			"pull_request_id": 999,
+		}
+
+		_, err := m.adoGetPrStatuses(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "pull request or repository not found")
+	})
+}
+
+func TestAdoGetPrPolicyEvaluations(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+
+	jsonResponse := `{
+		"value": [
+			{
+				"status": "broken",
+				"configuration": {
+					"isEnabled": true,
+					"isBlocking": true,
+					"type": {"displayName": "Build Validation", "id": "1"},
+					"settings": {}
+				}
+			},
+			{
+				"status": "approved",
+				"configuration": {
+					"isEnabled": true,
+					"isBlocking": false,
+					"type": {"displayName": "Minimum number of reviewers", "id": "2"},
+					"settings": {}
+				}
+			}
+		]
+	}`
+
+	t.Run("Success", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		// Mock project ID lookup
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+		}, nil).Once()
+
+		// Mock policy evaluations lookup
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/myorg/myproj/_apis/policy/evaluations") &&
+				strings.Contains(req.URL.Query().Get("targetId"), "CodeReview/PullRequestId/project-guid/123") &&
+				req.URL.Query().Get("api-version") == "7.1"
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"pull_request_id": 123,
+		}
+
+		result, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Pull Request #123 Policy Evaluations")
+		assert.Contains(t, result.Text, "❌ **Build Validation** [REQUIRED]: broken")
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/policy/evaluations")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"pull_request_id": 123,
+		}
+
+		result, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Equal(t, "No active policies found for this pull request.", result.Text)
+	})
+
+	t.Run("Error", func(t *testing.T) {
+		mockClient := new(mockAzureDevOpsClient)
+		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+
+		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+			return strings.Contains(req.URL.String(), "/_apis/projects/myproj")
+		})).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id": "project-guid"}`)),
+		}, nil).Once()
+
+		mockClient.On("Do", mock.Anything).Return(&http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil).Once()
+
+		args := map[string]interface{}{
+			"organization":    "myorg",
+			"project":         "myproj",
+			"pull_request_id": 123,
+		}
+
+		_, err := m.adoGetPrPolicyEvaluations(context.Background(), args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unauthorized")
+	})
+}

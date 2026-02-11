@@ -518,4 +518,54 @@ func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, cli
 			Required: []string{"organization", "project", "pipeline_id", "run_id"},
 		},
 	}, m.adoGetPipelineLogs)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pr_statuses",
+		Description: "Retrieves the real-time status of all automated checks (builds, tests, quality gates) for a specific Azure DevOps Pull Request.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "The repository name or ID.",
+				},
+				"pull_request_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pull request.",
+				},
+			},
+			Required: []string{"organization", "project", "repository", "pull_request_id"},
+		},
+	}, m.adoGetPrStatuses)
+
+	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_get_pr_policy_evaluations",
+		Description: "Retrieves the real-time status of all automated policy evaluations (build gates, reviewer requirements) for a specific Azure DevOps Pull Request.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+				"pull_request_id": {
+					Type:        "INTEGER",
+					Description: "The numeric ID of the pull request.",
+				},
+			},
+			Required: []string{"organization", "project", "pull_request_id"},
+		},
+	}, m.adoGetPrPolicyEvaluations)
 }
