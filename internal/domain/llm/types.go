@@ -296,3 +296,17 @@ func (p *Part) Equal(other *Part) bool {
 	}
 	return p.FunctionResponse.Equal(other.FunctionResponse)
 }
+
+// IsEmpty returns true if the part contains no meaningful content for the LLM.
+func (p *Part) IsEmpty() bool {
+	if p == nil {
+		return true
+	}
+	return p.Text == "" &&
+		p.InlineData == nil &&
+		p.FunctionCall == nil &&
+		p.FunctionResponse == nil &&
+		p.AssetID == "" &&
+		!p.Thought &&
+		len(p.ThoughtSignature) == 0
+}

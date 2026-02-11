@@ -257,7 +257,7 @@ func (c *Client) configureTools(ctx context.Context, tools []*tools.ToolDeclarat
 		})
 	}
 
-	return activeTools, ToSDKContent(ctx, instr, resolver)
+	return activeTools, toSDKContent(ctx, instr, resolver)
 }
 
 func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
@@ -295,7 +295,7 @@ func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBu
 func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
 	sdkHistory := make([]*genai.Content, len(history))
 	for i, h := range history {
-		sdkHistory[i] = ToSDKContent(ctx, h, resolver)
+		sdkHistory[i] = toSDKContent(ctx, h, resolver)
 		// Defensive check: Ensure all content objects have at least one part for the SDK.
 		// NOTE: ContextManager should have already filtered out truly empty turns.
 		if len(sdkHistory[i].Parts) == 0 {
@@ -306,15 +306,7 @@ func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resol
 }
 
 func (c *Client) fromSDKContent(content *genai.Content) *llm.Content {
-	return FromSDKContent(content)
-}
-
-func (c *Client) hydrateParts(ctx context.Context, parts []*llm.Part, resolver llm.AssetResolver) ([]*genai.Part, error) {
-	sdkParts := make([]*genai.Part, len(parts))
-	for i, p := range parts {
-		sdkParts[i] = ToSDKPart(ctx, p, resolver)
-	}
-	return sdkParts, nil
+	return fromSDKContent(content)
 }
 
 func (c *Client) parseMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {

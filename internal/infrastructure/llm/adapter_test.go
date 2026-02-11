@@ -28,7 +28,7 @@ func TestPart_Conversion(t *testing.T) {
 		ThoughtSignature: signature,
 	}
 
-	internalPart := FromSDKPart(sdkPart)
+	internalPart := fromSDKPart(sdkPart)
 
 	if internalPart.Text != sdkPart.Text {
 		t.Errorf("expected text %s, got %s", sdkPart.Text, internalPart.Text)
@@ -40,7 +40,7 @@ func TestPart_Conversion(t *testing.T) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
 	}
 
-	backToSDK := ToSDKPart(context.Background(), internalPart, nil)
+	backToSDK := toSDKPart(context.Background(), internalPart, nil)
 	if !reflect.DeepEqual(backToSDK, sdkPart) {
 		t.Errorf("roundtrip failed: expected %+v, got %+v", sdkPart, backToSDK)
 	}
@@ -65,7 +65,7 @@ func TestPart_ToSDK_LazyHydration(t *testing.T) {
 		},
 	}
 
-	sdkPart := ToSDKPart(context.Background(), p, resolver)
+	sdkPart := toSDKPart(context.Background(), p, resolver)
 
 	if sdkPart.InlineData == nil {
 		t.Fatal("expected InlineData to be populated")
@@ -95,7 +95,7 @@ func TestContent_ToSDK(t *testing.T) {
 		},
 	}
 
-	sdkContent := ToSDKContent(context.Background(), content, nil)
+	sdkContent := toSDKContent(context.Background(), content, nil)
 	if sdkContent.Role != content.Role {
 		t.Errorf("expected role %s, got %s", content.Role, sdkContent.Role)
 	}
@@ -115,12 +115,12 @@ func TestPart_FunctionConversion(t *testing.T) {
 		},
 	}
 
-	internalPart := FromSDKPart(sdkPart)
+	internalPart := fromSDKPart(sdkPart)
 	if internalPart.FunctionCall.Name != "test_tool" {
 		t.Errorf("expected test_tool, got %s", internalPart.FunctionCall.Name)
 	}
 
-	backToSDK := ToSDKPart(context.Background(), internalPart, nil)
+	backToSDK := toSDKPart(context.Background(), internalPart, nil)
 	if backToSDK.FunctionCall.Name != "test_tool" {
 		t.Errorf("roundtrip failed for function call")
 	}
@@ -131,28 +131,28 @@ func TestPart_FunctionConversion(t *testing.T) {
 			Response: map[string]interface{}{"result": "ok"},
 		},
 	}
-	internalPartResp := FromSDKPart(sdkPartResp)
+	internalPartResp := fromSDKPart(sdkPartResp)
 	if internalPartResp.FunctionResponse.Name != "test_tool" {
 		t.Errorf("expected test_tool, got %s", internalPartResp.FunctionResponse.Name)
 	}
 
-	backToSDKResp := ToSDKPart(context.Background(), internalPartResp, nil)
+	backToSDKResp := toSDKPart(context.Background(), internalPartResp, nil)
 	if backToSDKResp.FunctionResponse.Name != "test_tool" {
 		t.Errorf("roundtrip failed for function response")
 	}
 }
 
 func TestContent_Conversion_Nil(t *testing.T) {
-	if ToSDKContent(context.Background(), nil, nil) != nil {
+	if toSDKContent(context.Background(), nil, nil) != nil {
 		t.Error("ToSDKContent(nil) should be nil")
 	}
-	if FromSDKContent(nil) != nil {
+	if fromSDKContent(nil) != nil {
 		t.Error("FromSDKContent(nil) should be nil")
 	}
-	if ToSDKPart(context.Background(), nil, nil) != nil {
+	if toSDKPart(context.Background(), nil, nil) != nil {
 		t.Error("ToSDKPart(nil) should be nil")
 	}
-	if FromSDKPart(nil) != nil {
+	if fromSDKPart(nil) != nil {
 		t.Error("FromSDKPart(nil) should be nil")
 	}
 }
@@ -168,7 +168,7 @@ func TestContent_TransientParts(t *testing.T) {
 		},
 	}
 
-	sdkContent := ToSDKContent(context.Background(), content, nil)
+	sdkContent := toSDKContent(context.Background(), content, nil)
 	if len(sdkContent.Parts) != 2 {
 		t.Fatalf("expected 2 parts (1 regular + 1 transient), got %d", len(sdkContent.Parts))
 	}
@@ -190,7 +190,7 @@ func TestPart_ToSDK_LazyHydration_NoInlineData(t *testing.T) {
 		},
 	}
 
-	sdkPart := ToSDKPart(context.Background(), p, resolver)
+	sdkPart := toSDKPart(context.Background(), p, resolver)
 	if sdkPart.InlineData == nil || !reflect.DeepEqual(sdkPart.InlineData.Data, assetData) {
 		t.Error("failed to hydrate without pre-existing InlineData")
 	}

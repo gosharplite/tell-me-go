@@ -106,11 +106,6 @@ func (p *pathPolicy) ValidatePath(path string, writable bool) (string, error) {
 	}
 	absPath = p.resolveSymlinks(absPath)
 
-	// Check for symlink risks or system directories if needed
-	if p.isSymlinkRisk(absPath) {
-		// Just a marker for now, we already resolve symlinks
-	}
-
 	if err := p.isSystemDirectory(absPath); err != nil {
 		return "", err
 	}
@@ -145,9 +140,7 @@ func (p *pathPolicy) isSystemDirectory(absPath string) error {
 		if absPath == s || strings.HasPrefix(absPath, s+"/") {
 			// Special exception for /tmp handled by checkDefaultBoundaries
 			if !strings.HasPrefix(absPath, "/tmp") {
-				// We don't block it completely here, but we could. 
-				// For now, let's just leave it as a placeholder for where such logic would go.
-				// Actually, the instructions suggest extracting such checks.
+				return fmt.Errorf("security violation: access to system directory '%s' is forbidden", s)
 			}
 		}
 	}
@@ -349,16 +342,4 @@ func (p *pathPolicy) resolveSymlinks(path string) string {
 		return filepath.Join(realDir, filepath.Base(path))
 	}
 	return path
-}
-
-func (p *pathPolicy) isRelativePath(path string) bool {
-	return !filepath.IsAbs(path)
-}
-
-func (p *pathPolicy) isSymlinkRisk(absPath string) bool {
-	resolved, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return false
-	}
-	return resolved != absPath
 }

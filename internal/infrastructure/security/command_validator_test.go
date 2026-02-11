@@ -10,7 +10,7 @@ import (
 
 func TestCommandValidator(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	sm.RegisterReadOnlyPath("/etc")
+	sm.RegisterReadOnlyPath("/opt/test")
 	v := NewCommandValidator(sm)
 
 	tests := []struct {
@@ -21,8 +21,8 @@ func TestCommandValidator(t *testing.T) {
 		{"rm -rf /", false},
 		{"ls; rm -rf /", false},
 		{"ls | grep foo", false},
-		{"cat /etc/passwd", true},
-		{"cat /etc/shadow", true},
+		{"cat /opt/test/passwd", true},
+		{"cat /opt/test/shadow", true},
 		{"git status", true},
 		{"git push", false},
 	}

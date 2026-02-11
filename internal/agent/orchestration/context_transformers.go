@@ -130,7 +130,7 @@ func isToolCall(msg *llm.Content) bool {
 func isTurnEmpty(turn []*llm.Content) bool {
 	for _, msg := range turn {
 		for _, p := range msg.Parts {
-			if p.Text != "" || p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil || p.AssetID != "" || p.Thought || len(p.ThoughtSignature) > 0 {
+			if !p.IsEmpty() {
 				return false
 			}
 		}
@@ -183,8 +183,7 @@ func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextReq
 	for _, content := range req.History {
 		var cleanParts []*llm.Part
 		for _, p := range content.Parts {
-			// Filter out empty parts that don't contribute to the LLM context
-			if p.Text == "" && p.InlineData == nil && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought && len(p.ThoughtSignature) == 0 {
+			if p.IsEmpty() {
 				continue
 			}
 			cleanParts = append(cleanParts, p)
