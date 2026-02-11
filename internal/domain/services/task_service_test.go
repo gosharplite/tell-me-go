@@ -18,43 +18,55 @@ func (m *mockTaskRepo) WriteAll(ctx context.Context, tasks []Task) error {
 	return nil
 }
 
-func TestTaskService(t *testing.T) {
-	ctx := context.Background()
+func setupTaskService(t *testing.T) (*TaskService, *mockTaskRepo) {
+	t.Helper()
 	repo := &mockTaskRepo{}
 	s := NewTaskService(repo)
+	return s, repo
+}
 
-	t.Run("Add Task", func(t *testing.T) {
-		task, err := s.AddTask(ctx, "Test task")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if task.ID != 1 || task.Content != "Test task" {
-			t.Errorf("unexpected task: %+v", task)
-		}
-		if len(repo.tasks) != 1 {
-			t.Error("task not saved to repo")
-		}
-	})
+func TestTaskService_Add(t *testing.T) {
+	ctx := context.Background()
+	s, repo := setupTaskService(t)
 
-	t.Run("Update Task", func(t *testing.T) {
-		_, err := s.UpdateTask(ctx, 1, "Updated task", "completed")
-		if err != nil {
-			t.Fatal(err)
-		}
-		tasks := s.ListTasks("")
-		if len(tasks) != 1 || tasks[0].Content != "Updated task" || tasks[0].Status != "completed" {
-			t.Errorf("unexpected task: %+v", tasks[0])
-		}
-	})
+	task, err := s.AddTask(ctx, "Test task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ID != 1 || task.Content != "Test task" {
+		t.Errorf("unexpected task: %+v", task)
+	}
+	if len(repo.tasks) != 1 {
+		t.Error("task not saved to repo")
+	}
+}
 
-	t.Run("Delete Task", func(t *testing.T) {
-		if err := s.DeleteTask(ctx, 1); err != nil {
-			t.Fatal(err)
-		}
-		if len(s.ListTasks("")) != 0 {
-			t.Error("task not deleted")
-		}
-	})
+func TestTaskService_Update(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	_, _ = s.AddTask(ctx, "Initial task")
+
+	_, err := s.UpdateTask(ctx, 1, "Updated task", "completed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := s.ListTasks("")
+	if len(tasks) != 1 || tasks[0].Content != "Updated task" || tasks[0].Status != "completed" {
+		t.Errorf("unexpected task: %+v", tasks[0])
+	}
+}
+
+func TestTaskService_Delete(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTaskService(t)
+	_, _ = s.AddTask(ctx, "To be deleted")
+
+	if err := s.DeleteTask(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.ListTasks("")) != 0 {
+		t.Error("task not deleted")
+	}
 }
 
 func TestTaskService_Concurrency(t *testing.T) {

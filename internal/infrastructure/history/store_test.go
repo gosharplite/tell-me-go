@@ -380,6 +380,37 @@ func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 	}
 }
 
+func verifyPreparedContent(t *testing.T, prepared *llm.Content) {
+	t.Helper()
+	if prepared.TokenCount != 123 {
+		t.Errorf("expected TokenCount 123, got %d", prepared.TokenCount)
+	}
+
+	if len(prepared.Parts) != 4 {
+		t.Fatalf("expected 4 parts, got %d", len(prepared.Parts))
+	}
+
+	if prepared.Parts[0].Text != "Hello" {
+		t.Errorf("expected first part text 'Hello', got %s", prepared.Parts[0].Text)
+	}
+
+	if prepared.Parts[1].AssetID == "" {
+		t.Error("expected second part to have AssetID")
+	}
+
+	if prepared.Parts[1].InlineData.Data != nil {
+		t.Error("expected second part data to be nil after storage prep")
+	}
+
+	if prepared.Parts[2].FunctionCall == nil || prepared.Parts[2].FunctionCall.Name != "get_weather" {
+		t.Error("FunctionCall not preserved or incorrect")
+	}
+
+	if prepared.Parts[3].FunctionResponse == nil || prepared.Parts[3].FunctionResponse.Name != "get_weather" {
+		t.Error("FunctionResponse not preserved or incorrect")
+	}
+}
+
 func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -413,31 +444,5 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 		t.Fatalf("prepareForStorage failed: %v", err)
 	}
 
-	if prepared.TokenCount != 123 {
-		t.Errorf("expected TokenCount 123, got %d", prepared.TokenCount)
-	}
-
-	if len(prepared.Parts) != 4 {
-		t.Fatalf("expected 4 parts, got %d", len(prepared.Parts))
-	}
-
-	if prepared.Parts[0].Text != "Hello" {
-		t.Errorf("expected first part text 'Hello', got %s", prepared.Parts[0].Text)
-	}
-
-	if prepared.Parts[1].AssetID == "" {
-		t.Error("expected second part to have AssetID")
-	}
-
-	if prepared.Parts[1].InlineData.Data != nil {
-		t.Error("expected second part data to be nil after storage prep")
-	}
-
-	if prepared.Parts[2].FunctionCall == nil || prepared.Parts[2].FunctionCall.Name != "get_weather" {
-		t.Error("FunctionCall not preserved or incorrect")
-	}
-
-	if prepared.Parts[3].FunctionResponse == nil || prepared.Parts[3].FunctionResponse.Name != "get_weather" {
-		t.Error("FunctionResponse not preserved or incorrect")
-	}
+	verifyPreparedContent(t, prepared)
 }
