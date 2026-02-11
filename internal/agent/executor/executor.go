@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sort"
@@ -184,7 +185,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	// Notify about circuit breaker events
 	for _, tr := range results {
-		if tr.Error != nil && (tr.Error == domaintools.ErrToolCircuitOpen || strings.Contains(tr.Error.Error(), domaintools.ErrToolCircuitOpen.Error())) {
+		if errors.Is(tr.Error, domaintools.ErrToolCircuitOpen) {
 			e.mu.RLock()
 			bus := e.events
 			e.mu.RUnlock()

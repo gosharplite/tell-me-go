@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,7 @@ type ToolExecutionTrace struct {
 
 // TurnTrace records the lifecycle of a single agent turn.
 type TurnTrace struct {
+	mu                sync.Mutex           `json:"-"`
 	StartTime         time.Time            `json:"start_time"`
 	EndTime           time.Time            `json:"end_time"`
 	InferenceDuration time.Duration        `json:"inference_duration"`
@@ -56,5 +58,7 @@ func (t *TurnTrace) RecordToolExecution(trace ToolExecutionTrace) {
 	if t == nil {
 		return
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.ToolExecutions = append(t.ToolExecutions, trace)
 }
