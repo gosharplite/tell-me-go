@@ -30,6 +30,10 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
         *   **Atlassian Stack (Jira & Confluence)**: Enterprise-grade integration with centralized execution and **exponential back-off** for high reliability.
             *   **Jira**: `jira_search_issues` and `jira_get_issue` for discovering and retrieving issues. Supports **high-volume discovery** with configurable search limits.
             *   **Confluence**: `confluence_search`, `confluence_read`, `confluence_write` for searching, reading, and updating Confluence pages with automatic Markdown/XHTML conversion and **search depth control**.
+        *   **Azure DevOps (ADO)**: Comprehensive integration for managing Pull Requests, Pipelines, and Repository items.
+            *   **Pull Requests**: `ado_list_pull_requests`, `ado_get_pull_request`, `ado_get_pr_diff`, `ado_get_pr_threads`, `ado_get_pr_statuses`, `ado_get_pr_policy_evaluations`.
+            *   **Pipelines & Builds**: `ado_list_pipeline_runs`, `ado_get_pipeline_run`, `ado_get_pipeline_logs`, `ado_get_build_timeline`, `ado_get_task_log`, `ado_get_build_changes`.
+            *   **Repositories & Branching**: `ado_list_repository_items`, `ado_get_file_content`, `ado_list_branch_policies`.
         *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
         *   **Network**: `http_request`, `read_external_docs`.
     *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.

@@ -28,6 +28,8 @@ var autoApprovableCommands = map[string]bool{
 	"whoami": true, "diff": true, "git": true, "go": true,
 	"golangci-lint": true, "staticcheck": true, "govulncheck": true,
 	"confluence_search": true, "confluence_read": true,
+	"ado_list_branch_policies": true, "ado_get_build_timeline": true,
+	"ado_get_task_log": true, "ado_get_build_changes": true,
 }
 
 // IsSafe checks if a command is safe for auto-approval.

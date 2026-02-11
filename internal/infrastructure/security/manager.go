@@ -228,6 +228,23 @@ var allowedCommands = map[string]bool{
 	"jira_search_issues": true,
 	"jira_get_issue":     true,
 
+	// Azure DevOps Tools
+	"ado_get_pull_request":          true,
+	"ado_list_pull_requests":        true,
+	"ado_get_pr_diff":               true,
+	"ado_get_pr_threads":            true,
+	"ado_get_file_content":          true,
+	"ado_list_repository_items":     true,
+	"ado_list_pipeline_runs":        true,
+	"ado_get_pipeline_run":          true,
+	"ado_get_pipeline_logs":         true,
+	"ado_get_pr_statuses":           true,
+	"ado_get_pr_policy_evaluations": true,
+	"ado_list_branch_policies":      true,
+	"ado_get_build_timeline":        true,
+	"ado_get_task_log":              true,
+	"ado_get_build_changes":         true,
+
 	// Session & Management Tools
 	"get_session_info":         true,
 	"manage_scratchpad":        true,
