@@ -8,11 +8,11 @@ import (
 
 func TestSimpleEventBus_Race(t *testing.T) {
 	bus := NewSimpleEventBus()
-	defer func() {
+	t.Cleanup(func() {
 		if err := bus.Shutdown(context.Background()); err != nil {
 			t.Errorf("failed to shutdown event bus: %v", err)
 		}
-	}()
+	})
 	wg := sync.WaitGroup{}
 
 	numGoroutines := 10
@@ -69,7 +69,11 @@ func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 
 func TestSimpleEventBus_Flush(t *testing.T) {
 	bus := NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	t.Cleanup(func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Errorf("failed to shutdown event bus: %v", err)
+		}
+	})
 	
 	count := 0
 	mu := sync.Mutex{}
