@@ -589,36 +589,47 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 
 	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
-		category := llm.ErrTerminal
-		if IsTransient(err) {
-			category = llm.ErrTransient
-		}
-		return processResult{Error: NewAgentError(category, "tool execution failed", err)}
+		return processResult{Error: p.handleToolExecutionError(err)}
 	}
 
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
-		// Check if any tool triggered the circuit breaker
-		for _, part := range toolResponse.Parts {
-			if part.FunctionResponse != nil {
-				if res, ok := part.FunctionResponse.Response["result"].(string); ok {
-					if strings.Contains(res, "temporarily disabled") && strings.Contains(res, "multiple consecutive failures") {
-						// Inject a safety warning into the history for the LLM
-						_ = turn.CtxManager.AddContent(ctx, &llm.Content{
-							Role:  "user",
-							Parts: []*llm.Part{{Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again."}},
-						})
-						break
-					}
-				}
-			}
-		}
+		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
 	}
 
 	if turn.State.Metrics != nil {
 		turn.State.Metrics.ToolDuration = turn.Clock.Now().Sub(toolStart).Seconds()
 	}
 	return processResult{NextPhase: phasePersisting}
+}
+
+func (p *ExecutionStep) handleToolExecutionError(err error) error {
+	category := llm.ErrTerminal
+	if IsTransient(err) {
+		category = llm.ErrTransient
+	}
+	return NewAgentError(category, "tool execution failed", err)
+}
+
+func (p *ExecutionStep) injectCircuitBreakerWarning(ctx context.Context, turn *turn, toolResponse *llm.Content) {
+	if toolResponse == nil {
+		return
+	}
+	// Check if any tool triggered the circuit breaker
+	for _, part := range toolResponse.Parts {
+		if part.FunctionResponse != nil {
+			if res, ok := part.FunctionResponse.Response["result"].(string); ok {
+				if strings.Contains(res, "temporarily disabled") && strings.Contains(res, "multiple consecutive failures") {
+					// Inject a safety warning into the history for the LLM
+					_ = turn.CtxManager.AddContent(ctx, &llm.Content{
+						Role:  "user",
+						Parts: []*llm.Part{{Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again."}},
+					})
+					break
+				}
+			}
+		}
+	}
 }
 
 // PersistenceStep saves the response and tool results to history.

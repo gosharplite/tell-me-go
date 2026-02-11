@@ -34,39 +34,10 @@ func NewSessionState(ctx context.Context, configDir string) (*SessionState, erro
 		storageType = "file"
 	}
 
-	var taskStore services.ListStore[services.Task]
-	var configStore services.KVStore
-	var scratchStore services.KVStore
-	var scratchPath string
-	var tasksPath string
-	var configPath string
+	taskStore, configStore, scratchStore, paths := initRepositories(configDir, storageType)
 
-	if storageType == "memory" {
-		taskStore = NewMemoryListStore[services.Task]()
-		configStore = NewMemoryKVStore()
-		scratchStore = NewMemoryKVStore()
-	} else {
-		fs := storage.DefaultFileSystem
-		tasksPath = filepath.Join(configDir, "tasks.json")
-		configPath = filepath.Join(configDir, "config.json")
-		scratchPath = filepath.Join(configDir, "scratchpad.md")
-
-		taskStore = NewTaskRepository(fs, tasksPath)
-		configStore = NewConfigRepository(fs, configPath)
-		scratchStore = NewScratchpadRepository(fs, scratchPath)
-	}
-
-	tasks := services.NewTaskService(taskStore)
-	config := services.NewConfigService(configStore)
-	scratch := services.NewScratchpadService(scratchStore)
-
-	if err := tasks.Initialize(ctx); err != nil {
-		return nil, err
-	}
-	if err := config.Initialize(ctx); err != nil {
-		return nil, err
-	}
-	if err := scratch.Initialize(ctx); err != nil {
+	tasks, config, scratch, err := initServices(ctx, taskStore, configStore, scratchStore)
+	if err != nil {
 		return nil, err
 	}
 
@@ -82,13 +53,47 @@ func NewSessionState(ctx context.Context, configDir string) (*SessionState, erro
 			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
 			"STORAGE_TYPE": storageType,
 		},
-		Paths: map[string]string{
-			"config_dir":   configDir,
-			"scratch_file": scratchPath,
-			"tasks_file":   tasksPath,
-			"config_file":  configPath,
-		},
+		Paths: paths,
 	}
 
 	return state, nil
+}
+
+func initRepositories(configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, map[string]string) {
+	paths := map[string]string{"config_dir": configDir}
+
+	if storageType == "memory" {
+		return NewMemoryListStore[services.Task](), NewMemoryKVStore(), NewMemoryKVStore(), paths
+	}
+
+	fs := storage.DefaultFileSystem
+	tasksPath := filepath.Join(configDir, "tasks.json")
+	configPath := filepath.Join(configDir, "config.json")
+	scratchPath := filepath.Join(configDir, "scratchpad.md")
+
+	paths["tasks_file"] = tasksPath
+	paths["config_file"] = configPath
+	paths["scratch_file"] = scratchPath
+
+	return NewTaskRepository(fs, tasksPath),
+		NewConfigRepository(fs, configPath),
+		NewScratchpadRepository(fs, scratchPath),
+		paths
+}
+
+func initServices(ctx context.Context, taskStore services.ListStore[services.Task], configStore, scratchStore services.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
+	tasks := services.NewTaskService(taskStore)
+	config := services.NewConfigService(configStore)
+	scratch := services.NewScratchpadService(scratchStore)
+
+	if err := tasks.Initialize(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := config.Initialize(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := scratch.Initialize(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+	return tasks, config, scratch, nil
 }

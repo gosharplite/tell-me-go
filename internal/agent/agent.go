@@ -52,6 +52,9 @@ type Chatter interface {
 
 	// GetCostTracker returns the session cost tracker.
 	GetCostTracker() domain_pricing.ICostTracker
+
+	// Shutdown gracefully stops the agent and its components.
+	Shutdown(ctx context.Context) error
 }
 
 // RuntimeConfig consolidates all agent configuration parameters.
@@ -117,7 +120,7 @@ func WithInternalTools() AgentOption {
 
 // New creates a new Agent using functional options.
 func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 	gw := llm.NewResilientClient(client, disableStreaming)
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
@@ -281,6 +284,13 @@ func (a *Agent) SetSystemInstructions(ctx context.Context, instr string) error {
 	return a.applyConfig(ctx)
 }
 
+// WithEventBus sets a custom event bus for the agent.
+func WithEventBus(bus events.EventBus) AgentOption {
+	return func(a *Agent) {
+		a.events = bus
+	}
+}
+
 // WithSystemInstructions sets the initial system instructions.
 func WithSystemInstructions(instr string) AgentOption {
 	return func(a *Agent) {
@@ -303,4 +313,19 @@ func WithTraceLogger(logFile string) AgentOption {
 	return func(a *Agent) {
 		telemetry.RegisterTraceSubscriber(a.events, logFile)
 	}
+}
+
+// Shutdown gracefully stops the agent and its components.
+func (a *Agent) Shutdown(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.executor != nil {
+		a.executor.Shutdown()
+	}
+
+	if a.events != nil {
+		return a.events.Shutdown(ctx)
+	}
+	return nil
 }

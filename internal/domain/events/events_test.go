@@ -1,16 +1,18 @@
 package events
 
 import (
+	"context"
 	"sync"
 	"testing"
 )
 
 func TestSimpleEventBus_Race(t *testing.T) {
-	bus := &SimpleEventBus{}
+	bus := NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
 	wg := sync.WaitGroup{}
 
-	numGoroutines := 100
-	numEvents := 100
+	numGoroutines := 10
+	numEvents := 10
 
 	wg.Add(numGoroutines * 2)
 

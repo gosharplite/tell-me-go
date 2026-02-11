@@ -4,6 +4,7 @@
 package inframock
 
 import (
+	"context"
 	"reflect"
 	"sync"
 
@@ -36,6 +37,16 @@ func (b *TestEventBus) Subscribe(sub func(events.Event)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.subs = append(b.subs, sub)
+}
+
+// Shutdown is a no-op for TestEventBus.
+func (b *TestEventBus) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+// Flush is a no-op for TestEventBus as it is synchronous.
+func (b *TestEventBus) Flush(ctx context.Context) error {
+	return nil
 }
 
 // GetEvents returns a copy of all recorded events.

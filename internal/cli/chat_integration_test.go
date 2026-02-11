@@ -52,6 +52,7 @@ func (m *integrationMockChatter) Subscribe(sub func(events.Event)) {}
 func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 	return &integrationMockCostTracker{}
 }
+func (m *integrationMockChatter) Shutdown(ctx context.Context) error { return nil }
 
 type integrationMockCostTracker struct{}
 

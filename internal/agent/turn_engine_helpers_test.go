@@ -178,7 +178,8 @@ type testTurnEnv struct {
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
 	reg := &MockRegistry{}
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{
@@ -204,12 +205,13 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 // costCapturer captures usage metrics and turn status events for assertions.
 type costCapturer struct {
 	mu           sync.Mutex
+	bus          events.EventBus
 	turnCosts    []float64
 	lastTaskCost float64
 }
 
 func newCostCapturer(bus events.EventBus) *costCapturer {
-	c := &costCapturer{}
+	c := &costCapturer{bus: bus}
 	bus.Subscribe(func(ev events.Event) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -234,6 +236,7 @@ func (c *costCapturer) reset() {
 
 func (c *costCapturer) assertTaskCost(t *testing.T, expected float64) {
 	t.Helper()
+	_ = c.bus.Flush(context.Background())
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if fmt.Sprintf("%.6f", c.lastTaskCost) != fmt.Sprintf("%.6f", expected) {
@@ -243,6 +246,7 @@ func (c *costCapturer) assertTaskCost(t *testing.T, expected float64) {
 
 func (c *costCapturer) assertTurnCosts(t *testing.T, expected []float64) {
 	t.Helper()
+	_ = c.bus.Flush(context.Background())
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.turnCosts) != len(expected) {

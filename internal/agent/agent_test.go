@@ -31,6 +31,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	a := New(client, h, reg, sm, false)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
+	_ = a.events.Flush(context.Background())
 
 	tokens, tools, historyTurns := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1000 || tools != 5 || historyTurns != 10 {
@@ -79,6 +80,7 @@ func TestAgent_Options(t *testing.T) {
 		WithLimits(3, 500, 5),
 		WithSystemInstructions("Be helpful"),
 	)
+	_ = a.events.Flush(context.Background())
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 500 || tools != 3 {
@@ -106,6 +108,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 
 	// Refresh should trigger update
 	_ = a.applyConfig(context.Background())
+	_ = a.events.Flush(context.Background())
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 1234 || tools != 42 {
@@ -138,6 +141,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 
 	a := New(client, h, reg, sm, false)
 	_ = a.SetTieredThreshold(context.Background(), 100000)
+	_ = a.events.Flush(context.Background())
 
 	if a.ctxManager.Strategy.GetTieredThreshold() != 100000 {
 		t.Errorf("expected TieredThreshold 100000, got %d", a.ctxManager.Strategy.GetTieredThreshold())
@@ -542,6 +546,8 @@ func TestAgent_Subscribe(t *testing.T) {
 	})
 
 	_ = a.SetLimits(context.Background(), 15, 2000, 20)
+
+	_ = a.events.Flush(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()

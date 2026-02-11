@@ -1182,6 +1182,10 @@ func (m *mockTransformerEventBus) Publish(event events.Event) {
 
 func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}
 
+func (m *mockTransformerEventBus) Shutdown(ctx context.Context) error { return nil }
+
+func (m *mockTransformerEventBus) Flush(ctx context.Context) error { return nil }
+
 func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}

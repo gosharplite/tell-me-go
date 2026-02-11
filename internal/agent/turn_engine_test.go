@@ -81,8 +81,12 @@ func TestTurnEngine_Run_TurnLimit(t *testing.T) {
 
 func TestTurnEngine_Run_EventSequence(t *testing.T) {
 	var capturedEvents []string
-	bus := &events.SimpleEventBus{}
+	var mu sync.Mutex
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
 	bus.Subscribe(func(e events.Event) {
+		mu.Lock()
+		defer mu.Unlock()
 		switch e.(type) {
 		case events.TurnStarted:
 			capturedEvents = append(capturedEvents, "TurnStarted")
@@ -124,7 +128,11 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
+	_ = bus.Flush(context.Background())
+
 	expected := []string{"TurnStarted", "TurnStatusEvent", "ResponseStreamEvent", "TurnStatusEvent", "UsageMetricsEvent"}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(capturedEvents) != len(expected) {
 		t.Errorf("expected events %v, got %v", expected, capturedEvents)
 	}
@@ -270,7 +278,8 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil }})
@@ -308,6 +317,8 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
+	_ = bus.Flush(context.Background())
+
 	if attempts != 3 {
 		t.Errorf("expected 3 attempts, got %d", attempts)
 	}
@@ -323,7 +334,8 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	t.Parallel()
 	mockGw := &MockGateway{}
 	reg := &MockRegistry{}
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil)
 	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	hManager.SetStore(&MockStore{AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil }})
@@ -366,6 +378,8 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
+
+	_ = bus.Flush(context.Background())
 
 	if attempts != 2 {
 		t.Errorf("expected 2 attempts, got %d", attempts)
@@ -449,10 +463,14 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	mockClock := &MockClock{CurrentTime: fixedTime}
 
 	var capturedTime time.Time
-	bus := &events.SimpleEventBus{}
+	var mu sync.Mutex
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
 	bus.Subscribe(func(e events.Event) {
 		if st, ok := e.(events.TurnStatusEvent); ok {
+			mu.Lock()
 			capturedTime = st.Status.Timestamp
+			mu.Unlock()
 		}
 	})
 
@@ -477,6 +495,10 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
+	_ = bus.Flush(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
 	if !capturedTime.Equal(fixedTime) {
 		t.Errorf("expected time %v, got %v", fixedTime, capturedTime)
 	}

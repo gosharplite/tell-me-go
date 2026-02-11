@@ -45,6 +45,16 @@ func (m *mockEventBus) Subscribe(sub func(events.Event)) {
 	m.Called(sub)
 }
 
+func (m *mockEventBus) Shutdown(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *mockEventBus) Flush(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func TestSummarizer_Summarize(t *testing.T) {
 	ctx := context.Background()
 	subset := []*llm.Content{
