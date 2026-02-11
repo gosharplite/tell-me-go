@@ -12,8 +12,8 @@ type mockTaskRepo struct {
 	tasks []Task
 }
 
-func (m *mockTaskRepo) LoadTasks(ctx context.Context) ([]Task, error) { return m.tasks, nil }
-func (m *mockTaskRepo) SaveTasks(ctx context.Context, tasks []Task) error {
+func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]Task, error) { return m.tasks, nil }
+func (m *mockTaskRepo) WriteAll(ctx context.Context, tasks []Task) error {
 	m.tasks = tasks
 	return nil
 }

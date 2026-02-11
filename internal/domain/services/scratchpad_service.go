@@ -8,23 +8,25 @@ import (
 	"sync"
 )
 
+const scratchpadKey = "content"
+
 // ScratchpadService handles the logic for managing the scratchpad.
 type ScratchpadService struct {
 	mu         sync.RWMutex
-	repo       ScratchpadRepository
+	store      KVStore
 	scratchpad string
 }
 
 // NewScratchpadService creates a new ScratchpadService.
-func NewScratchpadService(repo ScratchpadRepository) *ScratchpadService {
+func NewScratchpadService(store KVStore) *ScratchpadService {
 	return &ScratchpadService{
-		repo: repo,
+		store: store,
 	}
 }
 
 // Initialize loads the scratchpad from the repository.
 func (s *ScratchpadService) Initialize(ctx context.Context) error {
-	content, err := s.repo.LoadScratchpad(ctx)
+	content, err := s.store.Get(ctx, scratchpadKey)
 	if err != nil {
 		return err
 	}
@@ -46,7 +48,7 @@ func (s *ScratchpadService) Write(ctx context.Context, content string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.repo.SaveScratchpad(ctx, content); err != nil {
+	if err := s.store.Set(ctx, scratchpadKey, content); err != nil {
 		return err
 	}
 
@@ -65,7 +67,7 @@ func (s *ScratchpadService) Append(ctx context.Context, content string) error {
 	}
 	nextState += content
 
-	if err := s.repo.SaveScratchpad(ctx, nextState); err != nil {
+	if err := s.store.Set(ctx, scratchpadKey, nextState); err != nil {
 		return err
 	}
 
@@ -78,7 +80,7 @@ func (s *ScratchpadService) Clear(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.repo.SaveScratchpad(ctx, ""); err != nil {
+	if err := s.store.Delete(ctx, scratchpadKey); err != nil {
 		return err
 	}
 

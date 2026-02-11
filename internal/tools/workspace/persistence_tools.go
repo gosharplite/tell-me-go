@@ -125,7 +125,6 @@ func (t *PersistenceTools) Register(r *registry.Registry) {
 	}, t.ManageTasks, registry.ToolOptions{Serial: true})
 }
 
-
 // ManageTasks handles the manage_tasks tool.
 func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {

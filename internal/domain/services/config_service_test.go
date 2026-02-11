@@ -12,10 +12,22 @@ type mockConfigRepo struct {
 	config map[string]string
 }
 
-func (m *mockConfigRepo) LoadConfig(ctx context.Context) (map[string]string, error) { return m.config, nil }
-func (m *mockConfigRepo) SaveConfig(ctx context.Context, config map[string]string) error {
-	m.config = config
+func (m *mockConfigRepo) Get(ctx context.Context, key string) (string, error) {
+	return m.config[key], nil
+}
+
+func (m *mockConfigRepo) Set(ctx context.Context, key, val string) error {
+	m.config[key] = val
 	return nil
+}
+
+func (m *mockConfigRepo) Delete(ctx context.Context, key string) error {
+	delete(m.config, key)
+	return nil
+}
+
+func (m *mockConfigRepo) GetAll(ctx context.Context) (map[string]string, error) {
+	return m.config, nil
 }
 
 func TestConfigService(t *testing.T) {

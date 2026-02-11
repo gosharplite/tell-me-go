@@ -145,8 +145,8 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 
 type mockStore struct{}
 
-func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)         { return nil, nil }
-func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error  { return nil }
+func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)          { return nil, nil }
+func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error   { return nil }
 func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {

@@ -17,7 +17,7 @@ type Policy struct {
 func DefaultPolicy() *Policy {
 	return &Policy{
 		AllowedCommands: map[string]bool{
-            // ...
+			// ...
 			// Shell commands
 			"go":            true,
 			"git":           true,

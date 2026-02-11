@@ -46,4 +46,3 @@ func RegisterAll(
 	developer.Register(r, sm)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }
-

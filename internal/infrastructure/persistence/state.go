@@ -29,15 +29,36 @@ type SessionInfo struct {
 
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string) (*SessionState, error) {
-	fs := storage.DefaultFileSystem
+	storageType := os.Getenv("STORAGE_TYPE")
+	if storageType == "" {
+		storageType = "file"
+	}
 
-	taskRepo := NewTaskRepository(fs, filepath.Join(configDir, "tasks.json"))
-	configRepo := NewConfigRepository(fs, filepath.Join(configDir, "config.json"))
-	scratchRepo := NewScratchpadRepository(fs, filepath.Join(configDir, "scratchpad.md"))
+	var taskStore services.ListStore[services.Task]
+	var configStore services.KVStore
+	var scratchStore services.KVStore
+	var scratchPath string
+	var tasksPath string
+	var configPath string
 
-	tasks := services.NewTaskService(taskRepo)
-	config := services.NewConfigService(configRepo)
-	scratch := services.NewScratchpadService(scratchRepo)
+	if storageType == "memory" {
+		taskStore = NewMemoryListStore[services.Task]()
+		configStore = NewMemoryKVStore()
+		scratchStore = NewMemoryKVStore()
+	} else {
+		fs := storage.DefaultFileSystem
+		tasksPath = filepath.Join(configDir, "tasks.json")
+		configPath = filepath.Join(configDir, "config.json")
+		scratchPath = filepath.Join(configDir, "scratchpad.md")
+
+		taskStore = NewTaskRepository(fs, tasksPath)
+		configStore = NewConfigRepository(fs, configPath)
+		scratchStore = NewScratchpadRepository(fs, scratchPath)
+	}
+
+	tasks := services.NewTaskService(taskStore)
+	config := services.NewConfigService(configStore)
+	scratch := services.NewScratchpadService(scratchStore)
 
 	if err := tasks.Initialize(ctx); err != nil {
 		return nil, err
@@ -59,12 +80,13 @@ func NewSessionState(ctx context.Context, configDir string) (*SessionState, erro
 		Config: config.GetAll(),
 		Env: map[string]string{
 			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
+			"STORAGE_TYPE": storageType,
 		},
 		Paths: map[string]string{
 			"config_dir":   configDir,
-			"scratch_file": scratchRepo.filePath,
-			"tasks_file":   taskRepo.filePath,
-			"config_file":  configRepo.filePath,
+			"scratch_file": scratchPath,
+			"tasks_file":   tasksPath,
+			"config_file":  configPath,
 		},
 	}
 

@@ -14,6 +14,7 @@ import (
 )
 
 // TaskRepository manages a list of tasks with persistence.
+// It implements services.ListStore[services.Task].
 type TaskRepository struct {
 	mu       sync.RWMutex
 	filePath string
@@ -28,8 +29,8 @@ func NewTaskRepository(fs storage.FileSystem, filePath string) *TaskRepository {
 	}
 }
 
-// LoadTasks loads tasks from disk.
-func (r *TaskRepository) LoadTasks(ctx context.Context) ([]services.Task, error) {
+// ReadAll loads tasks from disk.
+func (r *TaskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -50,8 +51,8 @@ func (r *TaskRepository) LoadTasks(ctx context.Context) ([]services.Task, error)
 	return loaded, nil
 }
 
-// SaveTasks saves tasks to disk.
-func (r *TaskRepository) SaveTasks(ctx context.Context, tasks []services.Task) error {
+// WriteAll saves tasks to disk.
+func (r *TaskRepository) WriteAll(ctx context.Context, tasks []services.Task) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

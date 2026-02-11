@@ -12,10 +12,29 @@ type mockScratchRepo struct {
 	content string
 }
 
-func (m *mockScratchRepo) LoadScratchpad(ctx context.Context) (string, error) { return m.content, nil }
-func (m *mockScratchRepo) SaveScratchpad(ctx context.Context, content string) error {
-	m.content = content
+func (m *mockScratchRepo) Get(ctx context.Context, key string) (string, error) {
+	if key == "content" {
+		return m.content, nil
+	}
+	return "", nil
+}
+
+func (m *mockScratchRepo) Set(ctx context.Context, key, val string) error {
+	if key == "content" {
+		m.content = val
+	}
 	return nil
+}
+
+func (m *mockScratchRepo) Delete(ctx context.Context, key string) error {
+	if key == "content" {
+		m.content = ""
+	}
+	return nil
+}
+
+func (m *mockScratchRepo) GetAll(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"content": m.content}, nil
 }
 
 func TestScratchpadService(t *testing.T) {

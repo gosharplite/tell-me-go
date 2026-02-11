@@ -20,11 +20,11 @@ func TestScratchpadRepository(t *testing.T) {
 
 	t.Run("Save and Load Scratchpad", func(t *testing.T) {
 		content := "Hello, world!"
-		if err := repo.SaveScratchpad(ctx, content); err != nil {
+		if err := repo.Set(ctx, "content", content); err != nil {
 			t.Fatal(err)
 		}
 
-		loaded, err := repo.LoadScratchpad(ctx)
+		loaded, err := repo.Get(ctx, "content")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func TestScratchpadRepository(t *testing.T) {
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
 		repo2 := NewScratchpadRepository(fs, filepath.Join(tempDir, "none.md"))
-		loaded, err := repo2.LoadScratchpad(ctx)
+		loaded, err := repo2.Get(ctx, "content")
 		if err != nil {
 			t.Fatal(err)
 		}

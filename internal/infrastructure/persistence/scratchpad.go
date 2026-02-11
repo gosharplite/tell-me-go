@@ -11,6 +11,8 @@ import (
 )
 
 // ScratchpadRepository manages a persistent scratchpad.
+// It implements services.KVStore but is specialized for a single "content" key
+// to maintain compatibility with raw text storage.
 type ScratchpadRepository struct {
 	mu       sync.RWMutex
 	filePath string
@@ -25,10 +27,14 @@ func NewScratchpadRepository(fs storage.FileSystem, filePath string) *Scratchpad
 	}
 }
 
-// LoadScratchpad loads the scratchpad from disk.
-func (r *ScratchpadRepository) LoadScratchpad(ctx context.Context) (string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// Get retrieves the value for a key. Only "content" is supported for raw text storage.
+func (r *ScratchpadRepository) Get(ctx context.Context, key string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if key != "content" {
+		return "", nil
+	}
 
 	if _, err := r.fs.Stat(ctx, r.filePath); err != nil {
 		return "", nil
@@ -42,11 +48,32 @@ func (r *ScratchpadRepository) LoadScratchpad(ctx context.Context) (string, erro
 	return string(data), nil
 }
 
-// SaveScratchpad saves the scratchpad to disk.
-func (r *ScratchpadRepository) SaveScratchpad(ctx context.Context, content string) error {
+// Set saves the value for a key. Only "content" is supported.
+func (r *ScratchpadRepository) Set(ctx context.Context, key, val string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	data := []byte(content)
+	if key != "content" {
+		return nil // Ignore other keys for now or return error? Let's stay compatible.
+	}
+
+	data := []byte(val)
 	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
+}
+
+// Delete clears the scratchpad.
+func (r *ScratchpadRepository) Delete(ctx context.Context, key string) error {
+	if key != "content" {
+		return nil
+	}
+	return r.Set(ctx, key, "")
+}
+
+// GetAll returns all keys.
+func (r *ScratchpadRepository) GetAll(ctx context.Context) (map[string]string, error) {
+	val, err := r.Get(ctx, "content")
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"content": val}, nil
 }

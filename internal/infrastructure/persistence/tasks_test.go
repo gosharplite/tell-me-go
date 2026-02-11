@@ -25,11 +25,11 @@ func TestTaskRepository(t *testing.T) {
 			{ID: 2, Content: "Task 2", Status: "completed"},
 		}
 
-		if err := repo.SaveTasks(ctx, tasks); err != nil {
+		if err := repo.WriteAll(ctx, tasks); err != nil {
 			t.Fatal(err)
 		}
 
-		loaded, err := repo.LoadTasks(ctx)
+		loaded, err := repo.ReadAll(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestTaskRepository(t *testing.T) {
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
 		repo2 := NewTaskRepository(fs, filepath.Join(tempDir, "non-existent.json"))
-		loaded, err := repo2.LoadTasks(ctx)
+		loaded, err := repo2.ReadAll(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,7 +59,7 @@ func TestTaskRepository(t *testing.T) {
 			t.Fatal(err)
 		}
 		repo3 := NewTaskRepository(fs, corruptedFile)
-		_, err := repo3.LoadTasks(ctx)
+		_, err := repo3.ReadAll(ctx)
 		if err == nil {
 			t.Fatal("expected error for corrupted JSON")
 		}

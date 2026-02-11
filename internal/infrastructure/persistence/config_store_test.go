@@ -19,12 +19,11 @@ func TestConfigRepository(t *testing.T) {
 	repo := NewConfigRepository(fs, file)
 
 	t.Run("Save and Load Config", func(t *testing.T) {
-		config := map[string]string{"key": "val"}
-		if err := repo.SaveConfig(ctx, config); err != nil {
+		if err := repo.Set(ctx, "key", "val"); err != nil {
 			t.Fatal(err)
 		}
 
-		loaded, err := repo.LoadConfig(ctx)
+		loaded, err := repo.GetAll(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,12 +34,28 @@ func TestConfigRepository(t *testing.T) {
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
 		repo2 := NewConfigRepository(fs, filepath.Join(tempDir, "none.json"))
-		loaded, err := repo2.LoadConfig(ctx)
+		loaded, err := repo2.GetAll(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(loaded) != 0 {
 			t.Error("expected empty map for non-existent file")
+		}
+	})
+
+	t.Run("Get and Delete", func(t *testing.T) {
+		_ = repo.Set(ctx, "k2", "v2")
+		val, _ := repo.Get(ctx, "k2")
+		if val != "v2" {
+			t.Errorf("expected v2, got %s", val)
+		}
+
+		if err := repo.Delete(ctx, "k2"); err != nil {
+			t.Fatal(err)
+		}
+		val, _ = repo.Get(ctx, "k2")
+		if val != "" {
+			t.Error("expected empty string after delete")
 		}
 	})
 }

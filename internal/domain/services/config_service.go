@@ -12,21 +12,21 @@ import (
 // ConfigService handles the logic for managing configuration.
 type ConfigService struct {
 	mu     sync.RWMutex
-	repo   ConfigRepository
+	store  KVStore
 	config map[string]string
 }
 
 // NewConfigService creates a new ConfigService.
-func NewConfigService(repo ConfigRepository) *ConfigService {
+func NewConfigService(store KVStore) *ConfigService {
 	return &ConfigService{
-		repo:   repo,
+		store:  store,
 		config: make(map[string]string),
 	}
 }
 
 // Initialize loads the configuration from the repository.
 func (s *ConfigService) Initialize(ctx context.Context) error {
-	config, err := s.repo.LoadConfig(ctx)
+	config, err := s.store.GetAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -46,12 +46,12 @@ func (s *ConfigService) Set(ctx context.Context, key, val string) error {
 	defer s.mu.Unlock()
 
 	// Update local state first to prepare for save
-	original := s.config[key]
+	original, existed := s.config[key]
 	s.config[key] = val
 
-	if err := s.repo.SaveConfig(ctx, s.config); err != nil {
+	if err := s.store.Set(ctx, key, val); err != nil {
 		// Rollback on failure
-		if original == "" {
+		if !existed {
 			delete(s.config, key)
 		} else {
 			s.config[key] = original
@@ -93,7 +93,7 @@ func (s *ConfigService) Delete(ctx context.Context, key string) error {
 
 	delete(s.config, key)
 
-	if err := s.repo.SaveConfig(ctx, s.config); err != nil {
+	if err := s.store.Delete(ctx, key); err != nil {
 		// Rollback
 		s.config[key] = val
 		return err

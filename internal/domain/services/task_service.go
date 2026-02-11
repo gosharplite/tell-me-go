@@ -14,15 +14,15 @@ import (
 // TaskService handles the logic for managing tasks.
 type TaskService struct {
 	mu     sync.RWMutex
-	repo   TaskRepository
+	store  ListStore[Task]
 	tasks  map[float64]Task
 	nextID float64
 }
 
 // NewTaskService creates a new TaskService.
-func NewTaskService(repo TaskRepository) *TaskService {
+func NewTaskService(store ListStore[Task]) *TaskService {
 	return &TaskService{
-		repo:   repo,
+		store:  store,
 		tasks:  make(map[float64]Task),
 		nextID: 1,
 	}
@@ -30,7 +30,7 @@ func NewTaskService(repo TaskRepository) *TaskService {
 
 // Initialize loads tasks from the repository.
 func (s *TaskService) Initialize(ctx context.Context) error {
-	tasks, err := s.repo.LoadTasks(ctx)
+	tasks, err := s.store.ReadAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (s *TaskService) AddTask(ctx context.Context, content string) (Task, error)
 	}
 	nextTasks = append(nextTasks, t)
 
-	if err := s.repo.SaveTasks(ctx, nextTasks); err != nil {
+	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
 		return Task{}, err
 	}
 
@@ -105,7 +105,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, statu
 		}
 	}
 
-	if err := s.repo.SaveTasks(ctx, nextTasks); err != nil {
+	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
 		return Task{}, err
 	}
 
@@ -130,7 +130,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
 		}
 	}
 
-	if err := s.repo.SaveTasks(ctx, nextTasks); err != nil {
+	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
 		return err
 	}
 
@@ -163,7 +163,7 @@ func (s *TaskService) ClearTasks(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.repo.SaveTasks(ctx, []Task{}); err != nil {
+	if err := s.store.WriteAll(ctx, []Task{}); err != nil {
 		return err
 	}
 
