@@ -87,7 +87,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityPr
 	}
 
 	m.Arch.Loader = &realpackageProvider{m: m.Arch}
-	m.Health = &healthManager{SP: sp, Ana: m}
+	m.Health = &healthManager{SP: sp, Ana: m, Exec: executor}
 
 	return m
 }
