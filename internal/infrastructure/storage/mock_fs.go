@@ -14,49 +14,49 @@ import (
 	"time"
 )
 
-// MockFile implements File interface for testing.
-type MockFile struct {
+// mockFile implements File interface for testing.
+type mockFile struct {
 	*bytes.Reader
 	name    string
 	content []byte
 	closed  bool
 }
 
-func (f *MockFile) Write(p []byte) (n int, err error) {
+func (f *mockFile) Write(p []byte) (n int, err error) {
 	return 0, fmt.Errorf("read-only mock file")
 }
 
-func (f *MockFile) Close() error {
+func (f *mockFile) Close() error {
 	f.closed = true
 	return nil
 }
 
-// MockFileInfo implements os.FileInfo for testing.
-type MockFileInfo struct {
+// mockFileInfo implements os.FileInfo for testing.
+type mockFileInfo struct {
 	name string
 	size int64
 	dir  bool
 }
 
-func (m *MockFileInfo) Name() string       { return m.name }
-func (m *MockFileInfo) Size() int64        { return m.size }
-func (m *MockFileInfo) Mode() os.FileMode  { return 0 }
-func (m *MockFileInfo) ModTime() time.Time { return time.Now() }
-func (m *MockFileInfo) IsDir() bool        { return m.dir }
-func (m *MockFileInfo) Sys() interface{}   { return nil }
+func (m *mockFileInfo) Name() string       { return m.name }
+func (m *mockFileInfo) Size() int64        { return m.size }
+func (m *mockFileInfo) Mode() os.FileMode  { return 0 }
+func (m *mockFileInfo) ModTime() time.Time { return time.Now() }
+func (m *mockFileInfo) IsDir() bool        { return m.dir }
+func (m *mockFileInfo) Sys() interface{}   { return nil }
 
-// MockFileSystem is a simple in-memory filesystem for testing.
-type MockFileSystem struct {
+// mockFileSystem is a simple in-memory filesystem for testing.
+type mockFileSystem struct {
 	Files map[string][]byte
 }
 
-func NewMockFileSystem() *MockFileSystem {
-	return &MockFileSystem{
+func NewMockFileSystem() *mockFileSystem {
+	return &mockFileSystem{
 		Files: make(map[string][]byte),
 	}
 }
 
-func (m *MockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+func (m *mockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
 	var entries []os.DirEntry
 	prefix := name
 	if !strings.HasSuffix(prefix, "/") {
@@ -77,7 +77,7 @@ func (m *MockFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntr
 	return entries, nil
 }
 
-func (m *MockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
+func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -85,19 +85,19 @@ func (m *MockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, err
 	return content, nil
 }
 
-func (m *MockFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+func (m *mockFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
 	m.Files[name] = data
 	return nil
 }
 
-func (m *MockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return nil
 }
 
-func (m *MockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+func (m *mockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	content, ok := m.Files[name]
 	if ok {
-		return &MockFileInfo{name: filepath.Base(name), size: int64(len(content)), dir: false}, nil
+		return &mockFileInfo{name: filepath.Base(name), size: int64(len(content)), dir: false}, nil
 	}
 	// Check if it's a directory
 	prefix := name
@@ -106,30 +106,30 @@ func (m *MockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, er
 	}
 	for path := range m.Files {
 		if strings.HasPrefix(path, prefix) {
-			return &MockFileInfo{name: filepath.Base(name), size: 0, dir: true}, nil
+			return &mockFileInfo{name: filepath.Base(name), size: 0, dir: true}, nil
 		}
 	}
 	return nil, os.ErrNotExist
 }
 
-func (m *MockFileSystem) Open(ctx context.Context, name string) (File, error) {
+func (m *mockFileSystem) Open(ctx context.Context, name string) (File, error) {
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
 	}
-	return &MockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
+	return &mockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
 }
 
-func (m *MockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
+func (m *mockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 	return m.Open(ctx, name)
 }
 
-func (m *MockFileSystem) remove(ctx context.Context, name string) error {
+func (m *mockFileSystem) remove(ctx context.Context, name string) error {
 	delete(m.Files, name)
 	return nil
 }
 
-func (m *MockFileSystem) removeAll(ctx context.Context, path string) error {
+func (m *mockFileSystem) removeAll(ctx context.Context, path string) error {
 	path = filepath.Clean(path)
 	// Handle exact matches and children
 	for p := range m.Files {
@@ -141,7 +141,7 @@ func (m *MockFileSystem) removeAll(ctx context.Context, path string) error {
 	return nil
 }
 
-func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
+func (m *mockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
 	// Simple walk implementation
 	root = filepath.Clean(root)
 
@@ -169,7 +169,7 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) err
 				continue
 			}
 
-			info := &MockFileInfo{name: filepath.Base(cleanPath), size: int64(len(content)), dir: false}
+			info := &mockFileInfo{name: filepath.Base(cleanPath), size: int64(len(content)), dir: false}
 			if err := fn(cleanPath, info, nil); err != nil {
 				if err == filepath.SkipDir {
 					continue
@@ -188,7 +188,7 @@ func isUnderRoot(path, root string) bool {
 	return strings.HasPrefix(path, root)
 }
 
-func (m *MockFileSystem) notifyParents(path string, dirsNotified, skippedDirs map[string]bool, fn WalkFunc) (bool, error) {
+func (m *mockFileSystem) notifyParents(path string, dirsNotified, skippedDirs map[string]bool, fn WalkFunc) (bool, error) {
 	parts := strings.Split(path, string(os.PathSeparator))
 	current := ""
 	for i := 0; i < len(parts)-1; i++ {
@@ -204,7 +204,7 @@ func (m *MockFileSystem) notifyParents(path string, dirsNotified, skippedDirs ma
 
 		if !dirsNotified[current] {
 			dirsNotified[current] = true
-			info := &MockFileInfo{name: filepath.Base(current), size: 0, dir: true}
+			info := &mockFileInfo{name: filepath.Base(current), size: 0, dir: true}
 			if err := fn(current, info, nil); err == filepath.SkipDir {
 				skippedDirs[current] = true
 				return true, nil

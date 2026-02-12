@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func assertFileContent(t *testing.T, fs *MockFileSystem, ctx context.Context, path, expected string) {
+func assertFileContent(t *testing.T, fs *mockFileSystem, ctx context.Context, path, expected string) {
 	t.Helper()
 	got, err := fs.ReadFile(ctx, path)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestMockFileSystem_Walk(t *testing.T) {
 	})
 }
 
-func setupWalkFS(t *testing.T, ctx context.Context) *MockFileSystem {
+func setupWalkFS(t *testing.T, ctx context.Context) *mockFileSystem {
 	fs := NewMockFileSystem()
 	_ = fs.WriteFile(ctx, "root/a.txt", []byte("a"), 0644)
 	_ = fs.WriteFile(ctx, "root/sub/b.txt", []byte("b"), 0644)
@@ -116,7 +116,7 @@ func setupWalkFS(t *testing.T, ctx context.Context) *MockFileSystem {
 	return fs
 }
 
-func runWalkBasicTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
+func runWalkBasicTest(t *testing.T, ctx context.Context, fs *mockFileSystem) {
 	var seen []string
 	err := fs.Walk(ctx, "root", func(path string, info os.FileInfo, err error) error {
 		seen = append(seen, path)
@@ -132,7 +132,7 @@ func runWalkBasicTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
 	}
 }
 
-func runWalkSkipDirTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
+func runWalkSkipDirTest(t *testing.T, ctx context.Context, fs *mockFileSystem) {
 	var seen []string
 	err := fs.Walk(ctx, "root", func(path string, info os.FileInfo, err error) error {
 		seen = append(seen, path)
@@ -152,7 +152,7 @@ func runWalkSkipDirTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
 	}
 }
 
-func runWalkRootDotTest(t *testing.T, ctx context.Context, fs *MockFileSystem) {
+func runWalkRootDotTest(t *testing.T, ctx context.Context, fs *mockFileSystem) {
 	var seen []string
 	err := fs.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
 		seen = append(seen, path)
