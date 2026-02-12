@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
@@ -19,8 +20,6 @@ func TestParseUsage_Robustness(t *testing.T) {
 			"gpt-4": {Miss: 10.0, Comp: 30.0}, // $10 per 1M input, $30 per 1M output
 		},
 	}
-
-	const epsilon = 1e-9
 
 	tests := []struct {
 		name             string
@@ -91,37 +90,48 @@ func TestParseUsage_Robustness(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile, err := os.Create(filepath.Join(t.TempDir(), "test-usage.log"))
-			if err != nil {
-				t.Fatalf("failed to create temp file: %v", err)
-			}
-
-			if _, err := tmpFile.WriteString(tt.content); err != nil {
-				t.Fatalf("failed to write to temp file: %v", err)
-			}
-			tmpFile.Close()
-
-			stats, totalCost, detectedModel, timestamp, err := ParseUsage(tmpFile.Name(), pricingData, "gpt-4")
+			path := createTempLogFile(t, tt.content)
+			stats, totalCost, model, timestamp, err := ParseUsage(path, pricingData, "gpt-4")
 			if err != nil {
 				t.Errorf("ParseUsage() unexpected error: %v", err)
 			}
 
-			if math.Abs(totalCost-tt.expectedCost) > epsilon {
-				t.Errorf("totalCost = %v, want %v", totalCost, tt.expectedCost)
-			}
-			if tt.expectedPrompt > 0 && stats.PromptTokens != tt.expectedPrompt {
-				t.Errorf("PromptTokens = %v, want %v", stats.PromptTokens, tt.expectedPrompt)
-			}
-			if tt.expectedResponse > 0 && stats.ResponseTokens != tt.expectedResponse {
-				t.Errorf("ResponseTokens = %v, want %v", stats.ResponseTokens, tt.expectedResponse)
-			}
-			if tt.expectedModel != "" && detectedModel != tt.expectedModel {
-				t.Errorf("detectedModel = %q, want %q", detectedModel, tt.expectedModel)
-			}
-			if tt.expectedTime && timestamp.IsZero() {
-				t.Error("expected non-zero timestamp, got zero")
-			}
+			assertParseResults(t, totalCost, tt.expectedCost, stats, tt.expectedPrompt, tt.expectedResponse, model, tt.expectedModel, timestamp, tt.expectedTime)
 		})
+	}
+}
+
+func createTempLogFile(t *testing.T, content string) string {
+	t.Helper()
+	tmpFile, err := os.Create(filepath.Join(t.TempDir(), "test-usage.log"))
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		t.Fatalf("failed to write to temp file: %v", err)
+	}
+	return tmpFile.Name()
+}
+
+func assertParseResults(t *testing.T, cost, wantCost float64, stats domain_pricing.UsageStats, wantPrompt, wantResp int64, model, wantModel string, timestamp time.Time, wantTime bool) {
+	t.Helper()
+	const epsilon = 1e-9
+	if math.Abs(cost-wantCost) > epsilon {
+		t.Errorf("totalCost = %v, want %v", cost, wantCost)
+	}
+	if wantPrompt > 0 && stats.PromptTokens != wantPrompt {
+		t.Errorf("PromptTokens = %v, want %v", stats.PromptTokens, wantPrompt)
+	}
+	if wantResp > 0 && stats.ResponseTokens != wantResp {
+		t.Errorf("ResponseTokens = %v, want %v", stats.ResponseTokens, wantResp)
+	}
+	if wantModel != "" && model != wantModel {
+		t.Errorf("detectedModel = %q, want %q", model, wantModel)
+	}
+	if wantTime && timestamp.IsZero() {
+		t.Error("expected non-zero timestamp, got zero")
 	}
 }
 
@@ -133,43 +143,20 @@ func TestParseUsage_InvalidPath(t *testing.T) {
 }
 
 func TestParseUsage_EmptyFile(t *testing.T) {
-	tmpFile, err := os.Create(filepath.Join(t.TempDir(), "empty.log"))
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	tmpFile.Close()
-
-	stats, totalCost, detectedModel, timestamp, err := ParseUsage(tmpFile.Name(), domain_pricing.PricingData{}, "gpt-4")
+	path := createTempLogFile(t, "")
+	stats, totalCost, model, timestamp, err := ParseUsage(path, domain_pricing.PricingData{}, "gpt-4")
 	if err != nil {
 		t.Errorf("ParseUsage() unexpected error: %v", err)
 	}
 
-	if totalCost != 0 {
-		t.Errorf("totalCost = %v, want 0", totalCost)
-	}
-	if !timestamp.IsZero() {
-		t.Errorf("timestamp = %v, want zero", timestamp)
-	}
-	if detectedModel != "" {
-		t.Errorf("detectedModel = %q, want empty", detectedModel)
-	}
-	if stats.PromptTokens != 0 {
-		t.Errorf("stats.PromptTokens = %d, want 0", stats.PromptTokens)
-	}
+	assertParseResults(t, totalCost, 0, stats, 0, 0, model, "", timestamp, false)
 }
 
 func TestParseUsage_LargeLine(t *testing.T) {
-	tempDir := t.TempDir()
-	logFile := filepath.Join(tempDir, "large.log")
-
 	// Create a log entry larger than the default 64KB limit (e.g., 70KB)
 	largeField := strings.Repeat("a", 70*1024)
 	content := `{"model":"gpt-4", "prompt_tokens":100, "thinking_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
-
-	err := os.WriteFile(logFile, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("failed to write large log file: %v", err)
-	}
+	path := createTempLogFile(t, content)
 
 	pricingData := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
@@ -177,7 +164,7 @@ func TestParseUsage_LargeLine(t *testing.T) {
 		},
 	}
 
-	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "gpt-4")
+	stats, totalCost, _, _, err := ParseUsage(path, pricingData, "gpt-4")
 	if err != nil {
 		t.Fatalf("ParseUsage failed on large line: %v", err)
 	}
@@ -191,17 +178,10 @@ func TestParseUsage_LargeLine(t *testing.T) {
 }
 
 func TestParseUsage_VeryLargeLine(t *testing.T) {
-	tempDir := t.TempDir()
-	logFile := filepath.Join(tempDir, "very_large.log")
-
 	// Create a log entry larger than the previous 1MB limit (e.g., 2MB)
 	largeField := strings.Repeat("a", 2*1024*1024)
 	content := `{"model":"gpt-4", "prompt_tokens":100, "large_data":"` + largeField + `", "cost":0.5}` + "\n"
-
-	err := os.WriteFile(logFile, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("failed to write very large log file: %v", err)
-	}
+	path := createTempLogFile(t, content)
 
 	pricingData := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
@@ -209,7 +189,7 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 		},
 	}
 
-	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "gpt-4")
+	stats, totalCost, _, _, err := ParseUsage(path, pricingData, "gpt-4")
 	if err != nil {
 		t.Fatalf("ParseUsage failed on very large line: %v", err)
 	}
