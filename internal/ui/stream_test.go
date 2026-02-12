@@ -12,11 +12,9 @@ import (
 )
 
 func TestStreamResponse(t *testing.T) {
-	locker := &mockLocker{}
-	renderer := NewStdUIRenderer(locker)
-
 	var stdout, stderr bytes.Buffer
-	renderer.SetWriters(&stdout, &stderr)
+	locker := &mockLocker{}
+	renderer := NewRenderer(locker, &stdout, &stderr)
 
 	t.Run("Normal Streaming", func(t *testing.T) {
 		stdout.Reset()

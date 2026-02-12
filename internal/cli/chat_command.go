@@ -267,8 +267,7 @@ func (c *chatCommand) handleNewSession(ctx stdctx.Context, paths *persistence.Pa
 }
 
 func (c *chatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
-	renderer := ui.NewStdUIRenderer(c.SM)
-	renderer.SetWriters(c.Stdout, c.Stderr)
+	renderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
 	useColor := capturer.IsTTY(c.Stdout) && !opts.rawOutput
 	renderer.SetUseColor(useColor)
 	subscriber := newUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, useColor, logPath)

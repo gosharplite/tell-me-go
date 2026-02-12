@@ -17,11 +17,9 @@ import (
 )
 
 func TestUIRendererGolden(t *testing.T) {
-	locker := &mockLocker{}
-	renderer := NewStdUIRenderer(locker)
-
 	var stdout, stderr bytes.Buffer
-	renderer.SetWriters(&stdout, &stderr)
+	locker := &mockLocker{}
+	renderer := NewRenderer(locker, &stdout, &stderr)
 
 	fixedTime, _ := time.Parse("15:04:05", "12:00:00")
 

@@ -86,7 +86,7 @@ func (c *Capturer) Prompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw 
 		return "", fmt.Errorf("empty prompt")
 	}
 
-	c.PrintFeedback(c.Stderr, !raw, colorGreen,
+	c.printFeedback(c.Stderr, !raw, colorGreen,
 		fmt.Sprintf("[%s] Input captured. Processing...", time.Now().Format("15:04:05")))
 
 	return prompt, nil
@@ -114,7 +114,7 @@ func (c *Capturer) captureFromPipe(ctx context.Context, initialPrompt string) (s
 }
 
 func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
-	c.PrintFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
+	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
 	readChan := make(chan []byte, 1)
 	go func() {
@@ -130,9 +130,9 @@ func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 	}
 }
 
-// PrintFeedback displays a message with optional color.
+// printFeedback displays a message with optional color.
 // It DOES NOT perform terminal locking to avoid deadlocks when called from security components.
-func (c *Capturer) PrintFeedback(w io.Writer, useColor bool, color, msg string) {
+func (c *Capturer) printFeedback(w io.Writer, useColor bool, color, msg string) {
 	if useColor && c.IsTTY(w) {
 		fmt.Fprintf(w, "%s%s%s\n", color, msg, colorReset)
 	} else {
@@ -154,7 +154,7 @@ func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
 
 // Warn displays a warning message.
 func (c *Capturer) Warn(message string) {
-	c.PrintFeedback(c.Stderr, true, colorYellow, message)
+	c.printFeedback(c.Stderr, true, colorYellow, message)
 }
 
 // ReadSingleKey waits for a single key press from Stdin.

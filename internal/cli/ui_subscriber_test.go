@@ -17,8 +17,6 @@ import (
 type mockUIRenderer struct {
 	mu                     sync.Mutex
 	wg                     sync.WaitGroup
-	renderResponseCalled   bool
-	lastRenderContent      *llm.Content
 	streamResponseCalled   bool
 	logUsageCalled         bool
 	lastMetrics            *llm.Metrics
@@ -34,13 +32,6 @@ type mockUIRenderer struct {
 	lastSystemLevel        string
 	receivedContent        []*llm.Content
 	skipConsumer           bool
-}
-
-func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.renderResponseCalled = true
-	m.lastRenderContent = respContent
 }
 
 func (m *mockUIRenderer) StreamResponse(ctx stdctx.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
