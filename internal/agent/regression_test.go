@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -33,7 +34,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	registry := internaltools.New()
 	client := &MockLLMClient{}
 	sm := &MockSecurityManager{AllowAll: true}
-	a := New(client, h, registry, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(client, h, registry, sm, false, bus)
 
 	// Prepare should trigger the contentCleaner transformer
 	_, _, err := a.ctxManager.Prepare(ctx, 1)
@@ -69,7 +71,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 
 	client := &MockLLMClient{}
 	sm := &MockSecurityManager{AllowAll: true}
-	a := New(client, h, registry, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(client, h, registry, sm, false, bus)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
@@ -104,7 +107,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()
 
-	a := New(mockClient, h, registry, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, h, registry, sm, false, bus)
 	sess := orchestration.NewSession("regression-multimodal", h)
 	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {

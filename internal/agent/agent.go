@@ -119,8 +119,7 @@ func WithInternalTools() AgentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, options ...AgentOption) *Agent {
-	bus := events.NewSimpleEventBus()
+func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, options ...AgentOption) *Agent {
 	gw := llm.NewResilientClient(client, disableStreaming)
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)

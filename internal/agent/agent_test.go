@@ -27,8 +27,9 @@ func TestAgent_SetLimits(t *testing.T) {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false)
+	a := New(client, h, reg, sm, false, bus)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
 	_ = a.events.Flush(context.Background())
@@ -55,7 +56,8 @@ func TestAgent_Chat(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, h, reg, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, h, reg, sm, false, bus)
 	sess := orchestration.NewSession("test-chat", h)
 
 	ctx := context.Background()
@@ -75,8 +77,9 @@ func TestAgent_Options(t *testing.T) {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false,
+	a := New(client, h, reg, sm, false, bus,
 		WithLimits(3, 500, 5),
 		WithSystemInstructions("Be helpful"),
 	)
@@ -102,8 +105,9 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	h := history.NewManager(filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false)
+	a := New(client, h, reg, sm, false, bus)
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -121,8 +125,9 @@ func TestAgent_BudgetLimit(t *testing.T) {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false)
+	a := New(client, h, reg, sm, false, bus)
 	_ = a.SetHardBudgetLimit(context.Background(), 1.50)
 
 	if a.config.HardBudgetLimit != 1.50 {
@@ -138,8 +143,9 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false)
+	a := New(client, h, reg, sm, false, bus)
 	_ = a.SetTieredThreshold(context.Background(), 100000)
 	_ = a.events.Flush(context.Background())
 
@@ -168,7 +174,8 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, h, reg, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, h, reg, sm, false, bus)
 	sess := orchestration.NewSession("test-retry", h)
 
 	ctx := context.Background()
@@ -183,7 +190,8 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 	t.Run("Default - No internal tools", func(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
-		_ = New(&MockLLMClient{}, nil, reg, sm, false)
+		bus := events.NewSimpleEventBus()
+		_ = New(&MockLLMClient{}, nil, reg, sm, false, bus)
 
 		decls := reg.GetDeclarations()
 		for _, d := range decls {
@@ -196,7 +204,8 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 	t.Run("Opt-in - With internal tools", func(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
-		_ = New(&MockLLMClient{}, nil, reg, sm, false, WithInternalTools())
+		bus := events.NewSimpleEventBus()
+		_ = New(&MockLLMClient{}, nil, reg, sm, false, bus, WithInternalTools())
 
 		decls := reg.GetDeclarations()
 		foundSumm := false
@@ -231,7 +240,8 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 		},
 	}
 
-	a := New(mockClient, h, reg, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, h, reg, sm, false, bus)
 	sess := orchestration.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
@@ -247,7 +257,8 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 
 func TestAgent_SystemInstructions_Sync(t *testing.T) {
 	mockClient := &MockLLMClient{}
-	a := New(mockClient, nil, registry.New(), security_impl.NewSecurityManager(nil), false)
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, nil, registry.New(), security_impl.NewSecurityManager(nil), false, bus)
 
 	instr := "Act as a pirate"
 	_ = a.SetSystemInstructions(context.Background(), instr)
@@ -263,7 +274,8 @@ func TestAgent_SystemInstructions_Sync(t *testing.T) {
 
 func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	reg := registry.New()
-	a := New(&MockLLMClient{}, nil, reg, security_impl.NewSecurityManager(nil), false)
+	bus := events.NewSimpleEventBus()
+	a := New(&MockLLMClient{}, nil, reg, security_impl.NewSecurityManager(nil), false, bus)
 
 	// Build pipeline
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
@@ -329,7 +341,8 @@ func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, contex
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("r%d", i)}}})
 	}
 
-	a := New(&MockLLMClient{}, h, reg, sm, false, WithInternalTools())
+	bus := events.NewSimpleEventBus()
+	a := New(&MockLLMClient{}, h, reg, sm, false, bus, WithInternalTools())
 	return a, h, ctx
 }
 
@@ -373,7 +386,8 @@ func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, context.Co
 	ctx := context.Background()
 
 	mockClient := &MockLLMClient{}
-	a := New(mockClient, h, reg, sm, false, WithInternalTools())
+	bus := events.NewSimpleEventBus()
+	a := New(mockClient, h, reg, sm, false, bus, WithInternalTools())
 	return a, a.ctxManager.History, ctx
 }
 
@@ -412,8 +426,7 @@ func TestAgent_PreciseProfile_Sync(t *testing.T) {
 	mockClient := &MockLLMClient{}
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 
-	a := New(mockClient, h, reg, sm, false)
-	a.events = bus
+	a := New(mockClient, h, reg, sm, false, bus)
 
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
@@ -451,7 +464,8 @@ func TestAgent_SetPrunedTurns(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	t.Run("SetPrunedTurns", func(t *testing.T) {
-		a := New(mockClient, nil, reg, sm, false)
+		bus := events.NewSimpleEventBus()
+		a := New(mockClient, nil, reg, sm, false, bus)
 		_ = a.SetPrunedTurns(context.Background(), 7)
 
 		if a.ctxManager.Strategy.GetPrunedTurns() != 7 {
@@ -468,7 +482,8 @@ func TestAgent_Reconfiguration(t *testing.T) {
 
 	// Test initial injection via option
 	tracker1 := &MockCostTracker{}
-	a := New(client, h, reg, sm, false,
+	bus := events.NewSimpleEventBus()
+	a := New(client, h, reg, sm, false, bus,
 		WithSessionCostTracker(tracker1),
 	)
 
@@ -511,8 +526,9 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	client := &MockLLMClient{}
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, nil, reg, sm, false,
+	a := New(client, nil, reg, sm, false, bus,
 		WithPricing("test-model", "chat", overrides),
 	)
 
@@ -533,7 +549,8 @@ func TestAgent_Subscribe(t *testing.T) {
 	client := &MockLLMClient{}
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	a := New(client, nil, reg, sm, false)
+	bus := events.NewSimpleEventBus()
+	a := New(client, nil, reg, sm, false, bus)
 
 	var eventReceived events.Event
 	var mu sync.Mutex
@@ -568,9 +585,10 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	client := &MockLLMClient{}
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
 	// 1. Test passing during New (engine is nil when option is applied)
-	a := New(client, nil, reg, sm, false,
+	a := New(client, nil, reg, sm, false, bus,
 		WithSessionCostTracker(tracker),
 	)
 
@@ -603,8 +621,9 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, false)
+	a := New(client, h, reg, sm, false, bus)
 	sess := orchestration.NewSession("test-config-application", h)
 
 	// Test context cancellation

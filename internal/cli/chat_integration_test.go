@@ -80,10 +80,10 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Stderr:  &stderr,
 		HomeDir: tmpDir,
 		SM:      sm,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
 			return &integrationMockChatter{}
 		},
-		ClientFactory: func(cfg *config.Config, p domain_pricing.PricingData) (*llm.Client, error) {
+		ClientFactory: func(cfg *config.Config, p domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
 			return &llm.Client{}, nil
 		},
 	}

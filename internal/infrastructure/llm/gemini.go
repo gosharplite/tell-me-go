@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 	"google.golang.org/genai"
 )
 
@@ -34,10 +34,11 @@ type Client struct {
 	useSearch         bool
 	systemInstruction *llm.Content
 	backend           genai.Backend
+	eventBus          events.EventBus
 }
 
 // NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool) (*Client, error) {
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, eventBus events.EventBus) (*Client, error) {
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
@@ -46,6 +47,7 @@ func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingB
 		thinkingLevel:     thinkingLevel,
 		maxThinkingBudget: maxThinkingBudget,
 		useSearch:         useSearch,
+		eventBus:          eventBus,
 	}
 
 	if systemInstruction != "" {
@@ -286,7 +288,10 @@ func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
 func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBudget int, model string) {
 	actualBudget := budget
 	if maxBudget > 0 && actualBudget > maxBudget {
-		fmt.Fprintf(os.Stderr, "%s[System] Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.%s\n", ui.ColorYellow, actualBudget, model, maxBudget, maxBudget, ui.ColorReset)
+		c.eventBus.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
+			Level:   "warning",
+		})
 		actualBudget = maxBudget
 	}
 	config.ThinkingBudget = genai.Ptr(int32(actualBudget))

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -42,8 +43,8 @@ type ChatCommand struct {
 	HomeDir string
 	SM      *internal_security.SecurityManager
 
-	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error)
+	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error)
 }
 
 type cliOptions struct {
@@ -62,6 +63,7 @@ type sessionDeps struct {
 	tracker          domain_pricing.ICostTracker
 	pData            domain_pricing.PricingData
 	pricingOverrides map[string]domain_pricing.ModelPricing
+	bus              events.EventBus
 }
 
 // NewChatCommand creates a new Chat Command with default factories.
@@ -73,18 +75,18 @@ func NewChatCommand(ctx *Context) *ChatCommand {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
-			return agent.New(client, hManager, reg, sm, disableStreaming,
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming, bus,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
 				agent.WithTraceLogger(logPath),
 			)
 		},
-		ClientFactory: func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
-			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
+			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 		},
 	}
 }
@@ -138,13 +140,14 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer deps.bus.Shutdown(ctx)
 
 	c.renderHistory(deps.hManager, opts, cfg, capturer.IsTTY(c.Stdout))
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
 
-	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, deps.bus, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
 	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
@@ -184,10 +187,12 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 		return nil, fmt.Errorf("error loading history: %w", err)
 	}
 
+	bus := events.NewSimpleEventBus()
+
 	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
 	hManager.Snapshot()
 
-	client, err := c.ClientFactory(cfg, pricingData)
+	client, err := c.ClientFactory(cfg, pricingData, bus)
 	if err != nil {
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
@@ -205,6 +210,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 		tracker:          tracker,
 		pData:            pricingData,
 		pricingOverrides: pricingOverrides,
+		bus:              bus,
 	}, nil
 }
 
