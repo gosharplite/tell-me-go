@@ -50,7 +50,7 @@ func (b *TestEventBus) Flush(ctx context.Context) error {
 }
 
 // GetEvents returns a copy of all recorded events.
-func (b *TestEventBus) GetEvents() []events.Event {
+func (b *TestEventBus) getEvents() []events.Event {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	res := make([]events.Event, len(b.events))
@@ -59,7 +59,7 @@ func (b *TestEventBus) GetEvents() []events.Event {
 }
 
 // Clear removes all recorded events.
-func (b *TestEventBus) Clear() {
+func (b *TestEventBus) clear() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.events = nil
@@ -91,7 +91,7 @@ func (b *TestEventBus) FilterEvents(t reflect.Type) []events.Event {
 }
 
 // CountingEventBus records the number of events published and allows waiting for a target count.
-type CountingEventBus struct {
+type countingEventBus struct {
 	events.SimpleEventBus
 	mu    sync.RWMutex
 	count int
@@ -99,14 +99,14 @@ type CountingEventBus struct {
 }
 
 // NewCountingEventBus creates a new CountingEventBus.
-func NewCountingEventBus() *CountingEventBus {
-	cb := &CountingEventBus{}
+func NewCountingEventBus() *countingEventBus {
+	cb := &countingEventBus{}
 	cb.cond = sync.NewCond(&cb.mu)
 	return cb
 }
 
 // Publish notifies subscribers and increments the internal counter.
-func (b *CountingEventBus) Publish(e events.Event) {
+func (b *countingEventBus) Publish(e events.Event) {
 	b.SimpleEventBus.Publish(e)
 	b.mu.Lock()
 	b.count++
@@ -115,7 +115,7 @@ func (b *CountingEventBus) Publish(e events.Event) {
 }
 
 // GetCount returns the current number of published events.
-func (b *CountingEventBus) GetCount() int {
+func (b *countingEventBus) GetCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.count

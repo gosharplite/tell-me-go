@@ -20,13 +20,13 @@ import (
 type devManager struct {
 	sm             security.SecurityProvider
 	validator      *security.CommandValidator
-	executor       Executor
+	executor       executor
 	stderr         io.Writer
 	createTempFile func(dir, pattern string) (*os.File, error)
 }
 
 // Executor defines the interface for command execution to allow mocking in tests.
-type Executor interface {
+type executor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	LookPath(file string) (string, error)
 }

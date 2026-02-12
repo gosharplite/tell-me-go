@@ -189,7 +189,7 @@ func calculateComplexity(fd *ast.FuncDecl) int {
 	return complexity
 }
 
-func CompareASTs(base, curr *ast.File) []string {
+func compareASTs(base, curr *ast.File) []string {
 	var changes []string
 
 	baseDecls := map[string]ast.Decl{}

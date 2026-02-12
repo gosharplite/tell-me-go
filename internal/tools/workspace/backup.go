@@ -16,8 +16,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// FileSnapshot represents a single file state in history.
-type FileSnapshot struct {
+// fileSnapshot represents a single file state in history.
+type fileSnapshot struct {
 	Timestamp time.Time `json:"timestamp"`
 	Path      string    `json:"path"`
 	Content   []byte    `json:"content"`
@@ -27,7 +27,7 @@ type FileSnapshot struct {
 // backupManager handles the snapshotting and restoration of files.
 type backupManager struct {
 	mu        sync.Mutex
-	backups   []FileSnapshot
+	backups   []fileSnapshot
 	maxStored int
 	sm        *security.SecurityManager
 }
@@ -59,7 +59,7 @@ func (b *backupManager) Snapshot(path string, action string) {
 		content = nil
 	}
 
-	snap := FileSnapshot{
+	snap := fileSnapshot{
 		Timestamp: time.Now(),
 		Path:      absPath,
 		Content:   content,

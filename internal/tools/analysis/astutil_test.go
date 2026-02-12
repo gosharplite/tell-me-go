@@ -150,7 +150,7 @@ const C = 3
 	base, _ := parser.ParseFile(fset, "base.go", baseCode, 0)
 	curr, _ := parser.ParseFile(fset, "curr.go", currCode, 0)
 
-	changes := CompareASTs(base, curr)
+	changes := compareASTs(base, curr)
 	changeMap := make(map[string]bool)
 	for _, c := range changes {
 		changeMap[c] = true

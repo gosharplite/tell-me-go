@@ -150,7 +150,7 @@ func runAppWithNewSession(t *testing.T, binaryPath, configPath string) {
 	_ = cmd.Run()
 }
 
-type SessionCostRecord struct {
+type sessionCostRecord struct {
 	Session   string  `json:"session"`
 	TotalCost float64 `json:"total_cost"`
 }
@@ -178,13 +178,13 @@ func verifyCostLedger(t *testing.T, ledgerPath string, originalSession string, o
 	}
 }
 
-func loadLedger(t *testing.T, path string) []SessionCostRecord {
+func loadLedger(t *testing.T, path string) []sessionCostRecord {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("Failed to read ledger: %v", err)
 	}
-	var history []SessionCostRecord
+	var history []sessionCostRecord
 	if err := json.Unmarshal(data, &history); err != nil {
 		t.Fatalf("Failed to parse ledger: %v", err)
 	}

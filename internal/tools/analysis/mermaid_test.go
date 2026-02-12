@@ -16,7 +16,7 @@ func TestGenerateMermaid(t *testing.T) {
 		"internal/infra":  {"internal/domain"},
 	}
 
-	result := GenerateMermaid(graph)
+	result := generateMermaid(graph)
 
 	expectedNodes := []string{
 		"cmd_app",
@@ -71,7 +71,7 @@ func TestGenerateMermaidWithCycles(t *testing.T) {
 		"pkg/c": {"pkg/a"},
 	}
 
-	result := GenerateMermaid(graph)
+	result := generateMermaid(graph)
 
 	if !strings.Contains(result, "-->|cycle|") {
 		t.Error("Expected result to contain cycle label")

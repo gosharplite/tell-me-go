@@ -20,7 +20,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 	tests := []struct {
 		name             string
 		pipedParts       [][]string
-		config           ExecutionConfig
+		config           executionConfig
 		timeout          time.Duration
 		wantErr          bool
 		env              map[string]string
@@ -52,7 +52,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 				{"echo", "1234567890"},
 				{"cat"},
 			},
-			config: ExecutionConfig{
+			config: executionConfig{
 				MaxCapture: 5,
 			},
 			expectedLength: 5,
@@ -95,7 +95,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 
 			res, err := executor.RunPipeline(ctx, tt.pipedParts, tt.config)
 
-			verifyPipelineResult(t, res, err, tt.name, tt.wantErr, ExpectedResult{
+			verifyPipelineResult(t, res, err, tt.name, tt.wantErr, expectedResult{
 				ExitCode:   tt.expectedExitCode,
 				Stdout:     tt.expectedStdout,
 				Stderr:     tt.expectedStderr,
@@ -108,7 +108,7 @@ func TestRunPipeline_TableDriven(t *testing.T) {
 
 // Helper types and functions for pipeline tests
 
-type ExpectedResult struct {
+type expectedResult struct {
 	ExitCode   int // 0: ignore, -1: must be non-zero, >0: exact match
 	Stdout     string
 	Stderr     string
@@ -128,7 +128,7 @@ func setupPipelineContext(timeout time.Duration) (context.Context, context.Cance
 	return ctx, nil
 }
 
-func verifyPipelineResult(t *testing.T, actual ExecutionResult, err error, name string, wantErr bool, expected ExpectedResult) {
+func verifyPipelineResult(t *testing.T, actual executionResult, err error, name string, wantErr bool, expected expectedResult) {
 	t.Helper()
 	if !verifyError(t, name, err, wantErr) {
 		return
@@ -203,7 +203,7 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
 	executor := newprocessExecutor()
 	var feedback safeBuffer
-	config := ExecutionConfig{
+	config := executionConfig{
 		Feedback: &feedback,
 	}
 	pipedParts := [][]string{
@@ -231,7 +231,7 @@ func (b *safeBuffer) Write(p []byte) (n int, err error) {
 
 func TestRunCommand_Basic(t *testing.T) {
 	executor := newprocessExecutor()
-	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello world"}, ExecutionConfig{})
+	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello world"}, executionConfig{})
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRunCommand_Basic(t *testing.T) {
 
 func TestRunCommand_MaxCapture(t *testing.T) {
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		MaxCapture: 5,
 	}
 	res, err := executor.RunCommand(context.Background(), []string{"echo", "1234567890"}, config)
@@ -265,7 +265,7 @@ func TestRunCommand_OutputFile(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: tmpFile,
 	}
 	_, err := executor.RunCommand(context.Background(), []string{"echo", "file content"}, config)
@@ -288,14 +288,14 @@ func TestRunCommand_Append(t *testing.T) {
 
 	executor := newprocessExecutor()
 
-	config1 := ExecutionConfig{
+	config1 := executionConfig{
 		OutputFile: tmpFile,
 	}
 	if _, err := executor.RunCommand(context.Background(), []string{"echo", "line 1"}, config1); err != nil {
 		t.Fatalf("First RunCommand failed: %v", err)
 	}
 
-	config2 := ExecutionConfig{
+	config2 := executionConfig{
 		OutputFile: tmpFile,
 		Append:     true,
 	}
@@ -317,7 +317,7 @@ func TestRunPipeline_Basic(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/output.txt"
 
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputFile,
 	}
 
@@ -350,7 +350,7 @@ func TestRunPipeline_StderrCapture(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/stderr_output.txt"
 
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputFile,
 	}
 
@@ -391,7 +391,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 	tests := []struct {
 		name             string
 		pipedParts       [][]string
-		config           ExecutionConfig
+		config           executionConfig
 		expectedStdout   string
 		expectedExitCode int
 		checkOutput      func(string) bool
@@ -422,7 +422,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 				{"echo", "hello"},
 				{"cat"},
 			},
-			config: ExecutionConfig{
+			config: executionConfig{
 				MaxCapture: 2,
 			},
 			expectedStdout: "he",
@@ -433,7 +433,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := executor.RunPipeline(context.Background(), tt.pipedParts, tt.config)
 
-			verifyPipelineResult(t, res, err, tt.name, false, ExpectedResult{
+			verifyPipelineResult(t, res, err, tt.name, false, expectedResult{
 				ExitCode: tt.expectedExitCode,
 				Stdout:   tt.expectedStdout,
 			})
@@ -453,7 +453,7 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 	defer cancel()
 
 	pipedParts := [][]string{{"sleep", "10"}, {"cat"}}
-	res, err := executor.RunPipeline(ctx, pipedParts, ExecutionConfig{})
+	res, err := executor.RunPipeline(ctx, pipedParts, executionConfig{})
 
 	if err != nil && !strings.Contains(err.Error(), "context") {
 		t.Logf("Note: RunPipeline returned non-context error: %v", err)
@@ -473,7 +473,7 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 
 	var feedback safeBuffer
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
 	}
@@ -501,7 +501,7 @@ func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
 		{"sh", "-c", "echo err1 >&2; cat"},
 	}
 
-	res, err := executor.RunPipeline(context.Background(), pipedParts, ExecutionConfig{})
+	res, err := executor.RunPipeline(context.Background(), pipedParts, executionConfig{})
 	if err != nil {
 		t.Fatalf("RunPipeline failed: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 
 	var feedback safeBuffer
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
 	}
@@ -559,7 +559,7 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 
 	var feedback safeBuffer
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
 	}
@@ -590,7 +590,7 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	res, err := executor.RunCommand(ctx, cmd, ExecutionConfig{})
+	res, err := executor.RunCommand(ctx, cmd, executionConfig{})
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
 	}
@@ -605,7 +605,7 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 
 func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		MaxCapture: 15, // Large enough for some formatting but less than both combined
 	}
 	// Total 20 bytes (10 out, 10 err)
@@ -635,7 +635,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 	executor := newprocessExecutor()
 
 	// Test RunCommand prefix
-	resCmd, _ := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo err >&2"}, ExecutionConfig{})
+	resCmd, _ := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo err >&2"}, executionConfig{})
 	if !strings.Contains(resCmd.Output, "[stderr] err") {
 		t.Errorf("RunCommand stderr prefix mismatch, got %q", resCmd.Output)
 	}
@@ -645,7 +645,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 		{"sh", "-c", "echo err >&2"},
 		{"cat"},
 	}
-	resPipe, _ := executor.RunPipeline(context.Background(), pipedParts, ExecutionConfig{})
+	resPipe, _ := executor.RunPipeline(context.Background(), pipedParts, executionConfig{})
 	// New expected format: [stderr:0] err
 	if !strings.Contains(resPipe.Output, "[stderr:0] err") {
 		t.Errorf("RunPipeline stderr prefix mismatch, got %q", resPipe.Output)
@@ -654,7 +654,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 
 func TestRunCommand_SharedMaxCapture(t *testing.T) {
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		MaxCapture: 15,
 	}
 	// Total 20 bytes raw + prefixes
@@ -682,7 +682,7 @@ func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
 
 	var feedback safeBuffer
 	executor := newprocessExecutor()
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
 	}
@@ -741,7 +741,7 @@ for i in $(seq 1 %d); do
 done
 `, lineCount)
 
-	config := ExecutionConfig{
+	config := executionConfig{
 		OutputFile: tmpFile,
 	}
 
@@ -805,7 +805,7 @@ func TestOpenOutputFile_Security(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := ExecutionConfig{
+			config := executionConfig{
 				OutputFile: tt.path,
 			}
 			f, err := executor.openOutputFile(config)
@@ -839,7 +839,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := ExecutionConfig{
+			config := executionConfig{
 				OutputFile: tt.path,
 			}
 			f, err := executor.openOutputFile(config)

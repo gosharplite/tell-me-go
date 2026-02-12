@@ -23,8 +23,8 @@ func TestDependencyAnalyzer_GetPackageGraph(t *testing.T) {
 	verifyPackageGraphResults(t, res.Text, module)
 }
 
-func setupDependencyMock(moduleName, graphOutput string) *MockExecutor {
-	return &MockExecutor{
+func setupDependencyMock(moduleName, graphOutput string) *mockExecutor {
+	return &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			if name == "go" && len(args) >= 2 && args[0] == "list" && args[1] == "-m" {
 				return []byte(moduleName), nil

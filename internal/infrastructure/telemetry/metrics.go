@@ -181,7 +181,7 @@ func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 	}
 	p := GetModelPricing(mtModel, t.pricing)
 
-	turnStats := Accumulate(&t.stats, mt)
+	turnStats := accumulate(&t.stats, mt)
 
 	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	t.totalCost += calc.Calculate(turnStats).TotalCost
@@ -199,11 +199,11 @@ func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	p := GetModelPricing(mtModel, t.pricing)
 
 	var dummy domain_pricing.UsageStats
-	turnStats := Accumulate(&dummy, mt)
+	turnStats := accumulate(&dummy, mt)
 	calc := &domain_pricing.CostCalculator{Pricing: t.pricing, Model: p}
 	turnCost := calc.Calculate(turnStats).TotalCost
 
-	Accumulate(&t.stats, mt)
+	accumulate(&t.stats, mt)
 	t.totalCost += turnCost
 
 	return turnCost

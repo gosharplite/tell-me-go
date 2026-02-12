@@ -41,7 +41,7 @@ func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	}
 
 	if format == "mermaid" {
-		return tools.ToolResult{Text: GenerateMermaid(graph)}, nil
+		return tools.ToolResult{Text: generateMermaid(graph)}, nil
 	}
 
 	var sb strings.Builder

@@ -73,8 +73,8 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
 
 	// 3. Execute
-	res, err := t.runWithFeedback(ctx, "Executing", func() (ExecutionResult, error) {
-		return t.executor.RunCommand(ctx, parts, ExecutionConfig{
+	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
+		return t.executor.RunCommand(ctx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
@@ -128,8 +128,8 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (ExecutionResult, error) {
-		return t.executor.RunPipeline(ctx, pipedParts, ExecutionConfig{
+	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
+		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
@@ -202,7 +202,7 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 	return t.sm.GetInteractor().Confirm(ctx, sb.String())
 }
 
-func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
+func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
 	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
 	t.sm.Warn("------------------------------------------------------------")
 	res, err := runFn()
@@ -210,7 +210,7 @@ func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 	return res, err
 }
 
-func (t *shellTool) formatResult(res ExecutionResult, isPipeline bool) string {
+func (t *shellTool) formatResult(res executionResult, isPipeline bool) string {
 	output := res.Output
 	if res.Truncated {
 		output += "\n... (truncated)"

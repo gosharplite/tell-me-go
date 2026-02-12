@@ -76,8 +76,8 @@ func runStressWorker(t *testing.T, executor *processExecutor, workerID int, resu
 	results <- nil
 }
 
-func executeStressCommand(executor *processExecutor, outputFile string) (ExecutionResult, error) {
-	config := ExecutionConfig{
+func executeStressCommand(executor *processExecutor, outputFile string) (executionResult, error) {
+	config := executionConfig{
 		MaxCapture: stressMaxCapture,
 		OutputFile: outputFile,
 	}
@@ -92,7 +92,7 @@ wait
 	return executor.RunCommand(context.Background(), []string{"sh", "-c", cmdStr}, config)
 }
 
-func verifyResultIntegrity(res ExecutionResult) error {
+func verifyResultIntegrity(res executionResult) error {
 	if !res.Truncated {
 		return fmt.Errorf("expected result to be truncated")
 	}
@@ -165,7 +165,7 @@ func TestProcessExecutor_UTF8Boundary(t *testing.T) {
 
 	// "世界" is 6 bytes (3+3)
 	// If we set MaxCapture to 4, it should only contain "世" (3 bytes)
-	config := ExecutionConfig{
+	config := executionConfig{
 		MaxCapture: 4,
 	}
 

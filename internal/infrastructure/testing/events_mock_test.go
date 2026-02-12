@@ -17,8 +17,8 @@ func TestTestEventBus(t *testing.T) {
 	bus.Publish(MyEvent{ID: 1})
 	bus.Publish(OtherEvent{})
 
-	if len(bus.GetEvents()) != 2 {
-		t.Errorf("Expected 2 events, got %d", len(bus.GetEvents()))
+	if len(bus.getEvents()) != 2 {
+		t.Errorf("Expected 2 events, got %d", len(bus.getEvents()))
 	}
 
 	if !bus.AssertEventPublished(reflect.TypeOf(MyEvent{})) {
@@ -34,8 +34,8 @@ func TestTestEventBus(t *testing.T) {
 		t.Errorf("FilterEvents failed: %v", filtered)
 	}
 
-	bus.Clear()
-	if len(bus.GetEvents()) != 0 {
+	bus.clear()
+	if len(bus.getEvents()) != 0 {
 		t.Error("Clear failed")
 	}
 }

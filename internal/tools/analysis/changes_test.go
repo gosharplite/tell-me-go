@@ -21,7 +21,7 @@ func NewFunc() {}
 		t.Fatal(err)
 	}
 
-	mockExec := &MockExecutor{
+	mockExec := &mockExecutor{
 		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			switch args[0] {
 			case "diff":

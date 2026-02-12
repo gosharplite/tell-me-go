@@ -76,7 +76,7 @@ func processLogLine(data []byte, state *parseState, pd domain_pricing.PricingDat
 		mtModel = defaultModel
 	}
 
-	turnStats := Accumulate(&state.stats, mt)
+	turnStats := accumulate(&state.stats, mt)
 	state.totalCost += calculateLineCost(mt, turnStats, pd, mtModel)
 
 	return nil
@@ -108,7 +108,7 @@ func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd d
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
-func Accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
+func accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
 	turn := domain_pricing.UsageStats{
 		PromptTokens:   int64(mt.PromptTokens),
 		ResponseTokens: int64(mt.ResponseTokens),

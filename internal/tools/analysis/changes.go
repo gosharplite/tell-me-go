@@ -103,7 +103,7 @@ func (a *changeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath 
 			}
 		}
 	} else {
-		changes = CompareASTs(baseAST, currAST)
+		changes = compareASTs(baseAST, currAST)
 	}
 	return changes, nil
 }
