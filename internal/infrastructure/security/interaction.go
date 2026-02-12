@@ -16,12 +16,12 @@ import (
 // interactionHandler manages terminal locking and user prompts via a UserInteractor.
 type interactionHandler struct {
 	terminalMu sync.Mutex
-	auditor    *Auditor
+	auditor    AuditLogger
 	interactor domain.UserInteractor
 }
 
 // newInteractionHandler creates a new interactionHandler.
-func newInteractionHandler(interactor domain.UserInteractor, auditor *Auditor) *interactionHandler {
+func newInteractionHandler(interactor domain.UserInteractor, auditor AuditLogger) *interactionHandler {
 	return &interactionHandler{
 		auditor:    auditor,
 		interactor: interactor,
