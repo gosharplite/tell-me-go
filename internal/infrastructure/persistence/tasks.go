@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"sort"
 	"sync"
 
@@ -34,18 +35,24 @@ func (r *TaskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, err := r.fs.Stat(ctx, r.filePath); err != nil {
-		return nil, nil // File doesn't exist yet, which is fine
+	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
+		return nil, nil
 	}
 
-	data, err := r.fs.ReadFile(ctx, r.filePath)
+	f, err := r.fs.Open(ctx, r.filePath)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
 	var loaded []services.Task
-	if err := json.Unmarshal(data, &loaded); err != nil {
-		return nil, err
+	decoder := json.NewDecoder(f)
+	for decoder.More() {
+		var t services.Task
+		if err := decoder.Decode(&t); err != nil {
+			return nil, err
+		}
+		loaded = append(loaded, t)
 	}
 
 	return loaded, nil
@@ -61,9 +68,35 @@ func (r *TaskRepository) WriteAll(ctx context.Context, tasks []services.Task) er
 		return tasks[i].ID < tasks[j].ID
 	})
 
-	data, err := json.MarshalIndent(tasks, "", "  ")
+	var data []byte
+	for _, t := range tasks {
+		line, err := json.Marshal(t)
+		if err != nil {
+			return err
+		}
+		data = append(data, line...)
+		data = append(data, '\n')
+	}
+	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
+}
+
+// Append appends a single task to disk.
+func (r *TaskRepository) Append(ctx context.Context, task services.Task) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	f, err := r.fs.OpenFile(ctx, r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
+	defer f.Close()
+
+	line, err := json.Marshal(task)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+
+	_, err = f.Write(line)
+	return err
 }

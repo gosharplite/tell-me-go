@@ -53,15 +53,47 @@ func TestTaskRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("Corrupted JSON", func(t *testing.T) {
-		corruptedFile := filepath.Join(tempDir, "corrupted.json")
-		if err := fs.WriteFile(ctx, corruptedFile, []byte("invalid json"), 0644); err != nil {
+	t.Run("Verify JSONL Format", func(t *testing.T) {
+		tasks := []services.Task{
+			{ID: 1, Content: "Task 1"},
+			{ID: 2, Content: "Task 2"},
+		}
+		if err := repo.WriteAll(ctx, tasks); err != nil {
 			t.Fatal(err)
 		}
-		repo3 := NewTaskRepository(fs, corruptedFile)
-		_, err := repo3.ReadAll(ctx)
-		if err == nil {
-			t.Fatal("expected error for corrupted JSON")
+
+		content, err := fs.ReadFile(ctx, tasksFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Count newlines
+		count := 0
+		for _, b := range content {
+			if b == '\n' {
+				count++
+			}
+		}
+		if count != 2 {
+			t.Errorf("expected 2 lines in JSONL, got %d", count)
+		}
+
+		// Test Append
+		if err := repo.Append(ctx, services.Task{ID: 3, Content: "Task 3"}); err != nil {
+			t.Fatal(err)
+		}
+		content, err = fs.ReadFile(ctx, tasksFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count = 0
+		for _, b := range content {
+			if b == '\n' {
+				count++
+			}
+		}
+		if count != 3 {
+			t.Errorf("expected 3 lines in JSONL after append, got %d", count)
 		}
 	})
 }

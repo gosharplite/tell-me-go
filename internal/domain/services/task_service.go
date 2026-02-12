@@ -62,14 +62,7 @@ func (s *TaskService) AddTask(ctx context.Context, content string) (Task, error)
 		CreatedAt: time.Now(),
 	}
 
-	// Prepare next state for repository
-	nextTasks := make([]Task, 0, len(s.tasks)+1)
-	for _, task := range s.tasks {
-		nextTasks = append(nextTasks, task)
-	}
-	nextTasks = append(nextTasks, t)
-
-	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
+	if err := s.store.Append(ctx, t); err != nil {
 		return Task{}, err
 	}
 

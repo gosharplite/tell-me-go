@@ -75,3 +75,10 @@ func (s *MemoryListStore[T]) WriteAll(ctx context.Context, items []T) error {
 	copy(s.data, items)
 	return nil
 }
+
+func (s *MemoryListStore[T]) Append(ctx context.Context, item T) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data = append(s.data, item)
+	return nil
+}

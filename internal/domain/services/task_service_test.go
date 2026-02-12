@@ -24,6 +24,14 @@ func (m *mockTaskRepo) WriteAll(ctx context.Context, tasks []Task) error {
 	return nil
 }
 
+func (m *mockTaskRepo) Append(ctx context.Context, task Task) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	m.tasks = append(m.tasks, task)
+	return nil
+}
+
 func setupTaskService(t *testing.T) (*TaskService, *mockTaskRepo) {
 	t.Helper()
 	repo := &mockTaskRepo{}
