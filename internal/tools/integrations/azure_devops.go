@@ -291,6 +291,20 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
+type adoThreadResponse struct {
+	Value []struct {
+		Comments []struct {
+			Author struct {
+				DisplayName string `json:"displayName"`
+			} `json:"author"`
+			Content       string `json:"content"`
+			PublishedDate string `json:"publishedDate"`
+			CommentType   string `json:"commentType"`
+		} `json:"comments"`
+		IsDeleted bool `json:"isDeleted"`
+	} `json:"value"`
+}
+
 func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
@@ -316,26 +330,17 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 	}
 	defer resp.Body.Close()
 
-	var threadData struct {
-		Value []struct {
-			Comments []struct {
-				Author struct {
-					DisplayName string `json:"displayName"`
-				} `json:"author"`
-				Content       string `json:"content"`
-				PublishedDate string `json:"publishedDate"`
-				CommentType   string `json:"commentType"`
-			} `json:"comments"`
-			IsDeleted bool `json:"isDeleted"`
-		} `json:"value"`
-	}
-
+	var threadData adoThreadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&threadData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return tools.ToolResult{Text: m.formatPrThreads(params.PullRequestId, threadData)}, nil
+}
+
+func (m *azureDevOpsManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", params.PullRequestId))
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", pullRequestId))
 
 	threadCount := 0
 	for _, thread := range threadData.Value {
@@ -368,10 +373,10 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 	}
 
 	if threadCount == 0 {
-		return tools.ToolResult{Text: "No discussion threads found in this pull request."}, nil
+		return "No discussion threads found in this pull request."
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
