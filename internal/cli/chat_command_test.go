@@ -28,7 +28,7 @@ import (
 )
 
 func TestSanitizeArgs(t *testing.T) {
-	cmd := &ChatCommand{}
+	cmd := &chatCommand{}
 	tests := []struct {
 		name     string
 		args     []string
@@ -102,7 +102,7 @@ func TestRunCapturePrompt(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	sm := security.NewSecurityManager(nil)
-	cmd := NewChatCommand(&Context{
+	cmd := NewchatCommand(&Context{
 		Version: "test",
 		Stdin:   os.Stdin,
 		Stdout:  &out,
@@ -140,7 +140,7 @@ func TestRunEmptyPromptError(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	cmd := &ChatCommand{
+	cmd := &chatCommand{
 		HomeDir: tmpDir,
 		Stdin:   bytes.NewReader(nil),
 		Stderr:  io.Discard,
@@ -170,7 +170,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	}()
 
 	sm := security.NewSecurityManager(nil)
-	cmd := &ChatCommand{
+	cmd := &chatCommand{
 		HomeDir: tmpDir,
 		Stdin:   strings.NewReader("\n"),
 		Stderr:  io.Discard,
@@ -193,7 +193,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
-	cmd := &ChatCommand{
+	cmd := &chatCommand{
 		HomeDir: tmpDir,
 		SM:      sm,
 	}
@@ -252,7 +252,7 @@ func TestExecuteErrors(t *testing.T) {
 		require.NoError(t, os.WriteFile(paths.HistoryPath, []byte("{\"role\": 123}"), 0644))
 
 		sm := security.NewSecurityManager(nil)
-		cmd := NewChatCommand(&Context{
+		cmd := NewchatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,
@@ -271,7 +271,7 @@ func TestExecuteErrors(t *testing.T) {
 		require.NoError(t, os.WriteFile(configPath, []byte("MODE: test-mode\n"), 0644))
 
 		sm := security.NewSecurityManager(nil)
-		cmd := NewChatCommand(&Context{
+		cmd := NewchatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,
@@ -293,7 +293,7 @@ func TestExecuteErrors(t *testing.T) {
 	t.Run("FlagParsing", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
-		cmd := NewChatCommand(&Context{
+		cmd := NewchatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,

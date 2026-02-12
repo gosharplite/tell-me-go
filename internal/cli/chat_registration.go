@@ -15,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]pricing.ModelPricing, bus events.EventBus) *registry.Registry {
+func (c *chatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]pricing.ModelPricing, bus events.EventBus) *registry.Registry {
 	reg := registry.New()
 
 	tools.RegisterAll(

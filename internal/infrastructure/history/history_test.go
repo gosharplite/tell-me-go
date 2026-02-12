@@ -129,7 +129,7 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 		t.Error("GetResolver() should not be nil for JSONLStore")
 	}
 
-	fs := &storage.OSFileSystem{}
+	fs := storage.DefaultFileSystem
 	m.WithFileSystem(fs)
 	// Verify it reached the store
 	if s, ok := m.store.(*jsonlStore); ok {

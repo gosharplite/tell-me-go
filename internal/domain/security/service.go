@@ -22,7 +22,7 @@ func (s *SafetyService) IsCommandSafe(cmd string) (bool, string) {
 	if !s.policy.IsCommandAllowed(cmd) {
 		return false, "command not allowed by policy"
 	}
-	if !s.policy.IsAutoApprovable(cmd) {
+	if !s.policy.isAutoApprovable(cmd) {
 		return false, "command requires manual confirmation"
 	}
 	return true, ""

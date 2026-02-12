@@ -26,8 +26,8 @@ type auditor struct {
 	interactor domain.UserInteractor
 }
 
-// NewAuditor creates a new auditor.
-func NewAuditor() *auditor {
+// newAuditor creates a new auditor.
+func newAuditor() *auditor {
 	return &auditor{}
 }
 

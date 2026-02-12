@@ -27,18 +27,18 @@ type FileSystem interface {
 	Stat(ctx context.Context, name string) (os.FileInfo, error)
 	Open(ctx context.Context, name string) (File, error)
 	OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error)
-	Remove(ctx context.Context, name string) error
-	RemoveAll(ctx context.Context, path string) error
+	remove(ctx context.Context, name string) error
+	removeAll(ctx context.Context, path string) error
 	Walk(ctx context.Context, root string, fn WalkFunc) error
 }
 
 // WalkFunc is the signature for the walk function.
 type WalkFunc func(path string, info os.FileInfo, err error) error
 
-// OSFileSystem implements FileSystem using the standard os package.
-type OSFileSystem struct{}
+// osFileSystem implements FileSystem using the standard os package.
+type osFileSystem struct{}
 
-func (f *OSFileSystem) checkDone(ctx context.Context) error {
+func (f *osFileSystem) checkDone(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -47,67 +47,67 @@ func (f *OSFileSystem) checkDone(ctx context.Context) error {
 	}
 }
 
-func (f *OSFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
+func (f *osFileSystem) ReadDir(ctx context.Context, name string) ([]os.DirEntry, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.ReadDir(name)
 }
 
-func (f *OSFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
+func (f *osFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.ReadFile(name)
 }
 
-func (f *OSFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+func (f *osFileSystem) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
 	return AtomicWrite(ctx, name, data, perm)
 }
 
-func (f *OSFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+func (f *osFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
 	return os.MkdirAll(path, perm)
 }
 
-func (f *OSFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+func (f *osFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.Stat(name)
 }
 
-func (f *OSFileSystem) Open(ctx context.Context, name string) (File, error) {
+func (f *osFileSystem) Open(ctx context.Context, name string) (File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.Open(name)
 }
 
-func (f *OSFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
+func (f *osFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.OpenFile(name, flag, perm)
 }
 
-func (f *OSFileSystem) Remove(ctx context.Context, name string) error {
+func (f *osFileSystem) remove(ctx context.Context, name string) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
 	return os.Remove(name)
 }
 
-func (f *OSFileSystem) RemoveAll(ctx context.Context, path string) error {
+func (f *osFileSystem) removeAll(ctx context.Context, path string) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err
 	}
 	return os.RemoveAll(path)
 }
 
-func (f *OSFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
+func (f *osFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err := f.checkDone(ctx); err != nil {
 			return err
@@ -117,7 +117,7 @@ func (f *OSFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error
 }
 
 // DefaultFileSystem is the global OS-based filesystem implementation.
-var DefaultFileSystem FileSystem = &OSFileSystem{}
+var DefaultFileSystem FileSystem = &osFileSystem{}
 
 // IsBinary detects if a byte slice contains binary data (NUL bytes).
 func IsBinary(data []byte) bool {

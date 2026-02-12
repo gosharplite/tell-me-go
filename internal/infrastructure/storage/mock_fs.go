@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package inframock
+package storage
 
 import (
 	"bytes"
@@ -12,11 +12,9 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// MockFile implements storage.File interface for testing.
+// MockFile implements File interface for testing.
 type MockFile struct {
 	*bytes.Reader
 	name    string
@@ -114,7 +112,7 @@ func (m *MockFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, er
 	return nil, os.ErrNotExist
 }
 
-func (m *MockFileSystem) Open(ctx context.Context, name string) (storage.File, error) {
+func (m *MockFileSystem) Open(ctx context.Context, name string) (File, error) {
 	content, ok := m.Files[name]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -122,16 +120,16 @@ func (m *MockFileSystem) Open(ctx context.Context, name string) (storage.File, e
 	return &MockFile{Reader: bytes.NewReader(content), name: name, content: content}, nil
 }
 
-func (m *MockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (storage.File, error) {
+func (m *MockFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
 	return m.Open(ctx, name)
 }
 
-func (m *MockFileSystem) Remove(ctx context.Context, name string) error {
+func (m *MockFileSystem) remove(ctx context.Context, name string) error {
 	delete(m.Files, name)
 	return nil
 }
 
-func (m *MockFileSystem) RemoveAll(ctx context.Context, path string) error {
+func (m *MockFileSystem) removeAll(ctx context.Context, path string) error {
 	path = filepath.Clean(path)
 	// Handle exact matches and children
 	for p := range m.Files {
@@ -143,7 +141,7 @@ func (m *MockFileSystem) RemoveAll(ctx context.Context, path string) error {
 	return nil
 }
 
-func (m *MockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
+func (m *MockFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
 	// Simple walk implementation
 	root = filepath.Clean(root)
 
@@ -190,7 +188,7 @@ func isUnderRoot(path, root string) bool {
 	return strings.HasPrefix(path, root)
 }
 
-func (m *MockFileSystem) notifyParents(path string, dirsNotified, skippedDirs map[string]bool, fn storage.WalkFunc) (bool, error) {
+func (m *MockFileSystem) notifyParents(path string, dirsNotified, skippedDirs map[string]bool, fn WalkFunc) (bool, error) {
 	parts := strings.Split(path, string(os.PathSeparator))
 	current := ""
 	for i := 0; i < len(parts)-1; i++ {

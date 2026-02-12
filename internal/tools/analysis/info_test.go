@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
@@ -44,7 +45,7 @@ func TestInfoManager_RenderProjectSummary(t *testing.T) {
 }
 
 func TestInfoManager_ExtractGenericSkeleton(t *testing.T) {
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
@@ -99,7 +100,7 @@ function test() {
 }
 
 func TestInfoManager_ResolveModuleInfo(t *testing.T) {
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
@@ -135,7 +136,7 @@ func TestInfoManager_ResolveModuleInfo(t *testing.T) {
 }
 
 func TestInfoManager_CollectFileStats(t *testing.T) {
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
@@ -174,7 +175,7 @@ func TestInfoManager_CollectFileStats(t *testing.T) {
 }
 
 func TestInfoManager_GetProjectSummary(t *testing.T) {
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 
@@ -195,7 +196,7 @@ func TestInfoManager_GetProjectSummary(t *testing.T) {
 }
 
 func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &infoManager{FS: fs}
 	ctx := context.Background()
 

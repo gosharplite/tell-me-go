@@ -29,13 +29,13 @@ func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
 func (m *mockAuditor) SetLogFile(path string)                        {}
 func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
 
-// SpyInteractor captures calls to UserInteractor methods.
-type SpyInteractor struct {
+// spyInteractor captures calls to UserInteractor methods.
+type spyInteractor struct {
 	MockInteractor
 	ConfirmCalls []string
 }
 
-func (s *SpyInteractor) Confirm(ctx context.Context, message string) (bool, error) {
+func (s *spyInteractor) Confirm(ctx context.Context, message string) (bool, error) {
 	s.ConfirmCalls = append(s.ConfirmCalls, message)
 	return s.MockInteractor.Confirm(ctx, message)
 }
@@ -116,7 +116,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			spy := &SpyInteractor{}
+			spy := &spyInteractor{}
 			spy.Answer = tt.interactorAns
 			spy.Err = tt.interactorErr
 			auditor := &mockAuditor{}
@@ -182,7 +182,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 }
 
 func TestInteractionHandler_ReadMethods(t *testing.T) {
-	spy := &SpyInteractor{}
+	spy := &spyInteractor{}
 	spy.Answer = "hello"
 	handler := newInteractionHandler(spy, nil)
 
@@ -205,13 +205,13 @@ func TestInteractionHandler_ReadMethods(t *testing.T) {
 }
 
 func TestInteractionHandler_SetInteractor(t *testing.T) {
-	spy1 := &SpyInteractor{}
+	spy1 := &spyInteractor{}
 	handler := newInteractionHandler(spy1, nil)
 	if handler.interactor != spy1 {
 		t.Error("Initial interactor mismatch")
 	}
 
-	spy2 := &SpyInteractor{}
+	spy2 := &spyInteractor{}
 	handler.SetInteractor(spy2)
 	if handler.interactor != spy2 {
 		t.Error("SetInteractor failed")

@@ -31,7 +31,7 @@ func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
 	if interactor == nil {
 		interactor = &noOpInteractor{}
 	}
-	auditor := NewAuditor()
+	auditor := newAuditor()
 	auditor.SetInteractor(interactor)
 	policy := domain.DefaultPolicy()
 	return &SecurityManager{
@@ -177,13 +177,13 @@ func (sm *SecurityManager) RegisterSafePath(path string) {
 	sm.policy.RegisterPath(path, true)
 }
 
-// SaveSafePaths saves safe paths.
-func (sm *SecurityManager) SaveSafePaths(ctx context.Context) error {
+// saveSafePaths saves safe paths.
+func (sm *SecurityManager) saveSafePaths(ctx context.Context) error {
 	return sm.policy.SavePaths(ctx, true)
 }
 
-// RemoveSafePath removes a safe path.
-func (sm *SecurityManager) RemoveSafePath(path string) error {
+// removeSafePath removes a safe path.
+func (sm *SecurityManager) removeSafePath(path string) error {
 	return sm.policy.RemovePath(path, true)
 }
 
@@ -212,8 +212,8 @@ func (sm *SecurityManager) LoadReadOnlyPaths() error {
 	return sm.policy.LoadPaths(false)
 }
 
-// SaveReadOnlyPaths saves read-only paths.
-func (sm *SecurityManager) SaveReadOnlyPaths(ctx context.Context) error {
+// saveReadOnlyPaths saves read-only paths.
+func (sm *SecurityManager) saveReadOnlyPaths(ctx context.Context) error {
 	return sm.policy.SavePaths(ctx, false)
 }
 
@@ -227,13 +227,13 @@ func (sm *SecurityManager) GetSafePaths() []string {
 	return sm.policy.GetPaths(true)
 }
 
-// GetReadOnlyPaths returns read-only paths.
-func (sm *SecurityManager) GetReadOnlyPaths() []string {
+// getReadOnlyPaths returns read-only paths.
+func (sm *SecurityManager) getReadOnlyPaths() []string {
 	return sm.policy.GetPaths(false)
 }
 
-// RemoveReadOnlyPath removes a read-only path.
-func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
+// removeReadOnlyPath removes a read-only path.
+func (sm *SecurityManager) removeReadOnlyPath(path string) error {
 	return sm.policy.RemovePath(path, false)
 }
 

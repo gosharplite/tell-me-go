@@ -11,12 +11,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestListTodos(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
@@ -79,7 +79,7 @@ func TestListTodos(t *testing.T) {
 
 func TestSearchUsagesGlobally(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
@@ -129,7 +129,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 
 func TestSearchManager_Errors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	fs := inframock.NewMockFileSystem()
+	fs := storage.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 

@@ -193,7 +193,7 @@ func (p *Policy) IsCommandAllowed(cmd string) bool {
 	return p.AllowedCommands[cmd]
 }
 
-// IsAutoApprovable checks if a command is auto-approvable.
-func (p *Policy) IsAutoApprovable(cmd string) bool {
+// isAutoApprovable checks if a command is auto-approvable.
+func (p *Policy) isAutoApprovable(cmd string) bool {
 	return p.AutoApprovableCommands[cmd]
 }

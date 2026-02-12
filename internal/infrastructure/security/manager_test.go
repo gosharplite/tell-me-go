@@ -108,11 +108,11 @@ func TestSecurityManager_PathManagement(t *testing.T) {
 	if !contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Expected /tmp/safe in safe paths")
 	}
-	if !contains(sm.GetReadOnlyPaths(), "/tmp/readonly") {
+	if !contains(sm.getReadOnlyPaths(), "/tmp/readonly") {
 		t.Error("Expected /tmp/readonly in read-only paths")
 	}
 
-	_ = sm.RemoveSafePath("/tmp/safe")
+	_ = sm.removeSafePath("/tmp/safe")
 	if contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Did not expect /tmp/safe in safe paths after removal")
 	}
@@ -160,13 +160,13 @@ func TestSecurityManager_Misc(t *testing.T) {
 	// Read/Write paths
 	sm.SetSafePathsFile(filepath.Join(tmpDir, "safe.json"))
 	sm.SetReadOnlyPathsFile(filepath.Join(tmpDir, "readonly.json"))
-	_ = sm.SaveSafePaths(context.Background())
-	_ = sm.SaveReadOnlyPaths(context.Background())
+	_ = sm.saveSafePaths(context.Background())
+	_ = sm.saveReadOnlyPaths(context.Background())
 	_ = sm.LoadSafePaths()
 	_ = sm.LoadReadOnlyPaths()
 	
 	sm.RegisterReadOnlyPath("/tmp/ro")
-	_ = sm.RemoveReadOnlyPath("/tmp/ro")
+	_ = sm.removeReadOnlyPath("/tmp/ro")
 
 	// Interactor methods
 	if sm.GetInteractor() == nil {

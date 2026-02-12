@@ -30,7 +30,7 @@ func TestVersionCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-			cmd := &VersionCommand{
+			cmd := &versionCommand{
 				Version: tt.version,
 				Stdout:  &out,
 			}
@@ -59,9 +59,9 @@ func TestVersionCommandFactory(t *testing.T) {
 	}
 
 	cmd := factory(ctx)
-	vCmd, ok := cmd.(*VersionCommand)
+	vCmd, ok := cmd.(*versionCommand)
 	if !ok {
-		t.Fatalf("factory did not return *VersionCommand, got %T", cmd)
+		t.Fatalf("factory did not return *versionCommand, got %T", cmd)
 	}
 
 	if vCmd.Version != ctx.Version {

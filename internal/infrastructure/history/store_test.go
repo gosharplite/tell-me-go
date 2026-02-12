@@ -167,7 +167,7 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 func TestJSONLStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
-	fs := &storage.OSFileSystem{}
+	fs := storage.DefaultFileSystem
 	store := newJSONLStore(filePath).WithFileSystem(fs)
 
 	if store.fs != fs {

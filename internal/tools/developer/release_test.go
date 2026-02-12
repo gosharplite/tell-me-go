@@ -10,57 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
-
-type mockFileSystem struct {
-	storage.FileSystem
-	files map[string][]byte
-}
-
-func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
-	if data, ok := m.files[name]; ok {
-		return data, nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (m *mockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
-	for path, data := range m.files {
-		fullPath := path
-		if root != "." && !filepath.IsAbs(path) {
-			fullPath = filepath.Join(root, path)
-		}
-		// Mock walk: respect root if it's not "."
-		if root != "." {
-			rel, err := filepath.Rel(root, fullPath)
-			if err != nil || strings.HasPrefix(rel, "..") {
-				continue
-			}
-		}
-		info := &mockFileInfo{name: fullPath, size: int64(len(data))}
-		if err := fn(fullPath, info, nil); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-type mockFileInfo struct {
-	os.FileInfo
-	name string
-	size int64
-}
-
-func (m *mockFileInfo) Name() string       { return m.name }
-func (m *mockFileInfo) Size() int64        { return m.size }
-func (m *mockFileInfo) Mode() os.FileMode  { return 0 }
-func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
-func (m *mockFileInfo) IsDir() bool        { return false }
-func (m *mockFileInfo) Sys() interface{}   { return nil }
 
 type mockCommandExecutor struct {
 	runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -85,12 +38,11 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
 
-	fs := &mockFileSystem{
-		files: map[string][]byte{
-			filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
-			filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
-			"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
-		},
+	fs := storage.NewMockFileSystem()
+	fs.Files = map[string][]byte{
+		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
+		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
+		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
 	}
 
 	executor := &mockCommandExecutor{}
@@ -156,7 +108,8 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := &mockFileSystem{files: tt.files()}
+			fs := storage.NewMockFileSystem()
+			fs.Files = tt.files()
 			executor := &mockCommandExecutor{
 				runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 					if tt.exitCode != 0 {

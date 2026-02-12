@@ -11,8 +11,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-// UISubscriber translates domain events into UI updates.
-type UISubscriber struct {
+// uiSubscriber translates domain events into UI updates.
+type uiSubscriber struct {
 	renderer     ui.UIRenderer
 	showThoughts bool
 	showTools    bool
@@ -21,9 +21,9 @@ type UISubscriber struct {
 	logFile      string
 }
 
-// NewUISubscriber creates a new UISubscriber.
-func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *UISubscriber {
-	return &UISubscriber{
+// newUISubscriber creates a new uiSubscriber.
+func newUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiSubscriber {
+	return &uiSubscriber{
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
@@ -34,7 +34,7 @@ func NewUISubscriber(renderer ui.UIRenderer, showThoughts, showTools, rawOutput,
 }
 
 // HandleEvent processes a domain event and updates the UI.
-func (s *UISubscriber) HandleEvent(e events.Event) {
+func (s *uiSubscriber) HandleEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		s.handleTurnStatusEvent(ev)
@@ -53,39 +53,39 @@ func (s *UISubscriber) HandleEvent(e events.Event) {
 	}
 }
 
-func (s *UISubscriber) handleTurnStatusEvent(ev events.TurnStatusEvent) {
+func (s *uiSubscriber) handleTurnStatusEvent(ev events.TurnStatusEvent) {
 	s.renderer.LogTurnStatus(ev.Status)
 }
 
-func (s *UISubscriber) handleTokenEvent(ev events.ResponseStreamEvent) {
+func (s *uiSubscriber) handleTokenEvent(ev events.ResponseStreamEvent) {
 	ctx := s.ensureContext(ev.Context, "ResponseStreamEvent")
 	uiCh, uiFinalize := s.renderer.StreamResponse(ctx, s.showThoughts, s.rawOutput)
 	s.relayStream(ctx, ev.Stream, uiCh)
 	_ = uiFinalize()
 }
 
-func (s *UISubscriber) handleFinalCostEvent(ev events.UsageMetricsEvent) {
+func (s *uiSubscriber) handleFinalCostEvent(ev events.UsageMetricsEvent) {
 	ctx := s.ensureContext(ev.Context, "UsageMetricsEvent")
 	s.renderer.LogUsage(ctx, ev.Metrics, s.logFile, ev.StartTime)
 }
 
-func (s *UISubscriber) handleToolCallEvent(ev events.ToolCallEvent) {
+func (s *uiSubscriber) handleToolCallEvent(ev events.ToolCallEvent) {
 	s.renderer.LogToolCall(ev.Calls, ev.Turn, ev.MaxTurns, s.showTools)
 }
 
-func (s *UISubscriber) handleToolResponseEvent(ev events.ToolResultEvent) {
+func (s *uiSubscriber) handleToolResponseEvent(ev events.ToolResultEvent) {
 	s.renderer.LogToolResult(ev.Name, ev.Result, s.showTools)
 }
 
-func (s *UISubscriber) handleSystemMessageEvent(ev events.SystemMessageEvent) {
+func (s *uiSubscriber) handleSystemMessageEvent(ev events.SystemMessageEvent) {
 	s.renderer.LogSystemMessage(ev.Message, ev.Level)
 }
 
-func (s *UISubscriber) handleStatusUpdate(ev events.StatusUpdate) {
+func (s *uiSubscriber) handleStatusUpdate(ev events.StatusUpdate) {
 	s.renderer.LogSystemMessage(ev.Message, ev.Level)
 }
 
-func (s *UISubscriber) ensureContext(ctx context.Context, name string) context.Context {
+func (s *uiSubscriber) ensureContext(ctx context.Context, name string) context.Context {
 	if ctx == nil {
 		s.renderer.LogSystemMessage(name+" missing context", "warn")
 		return context.Background()
@@ -93,7 +93,7 @@ func (s *UISubscriber) ensureContext(ctx context.Context, name string) context.C
 	return ctx
 }
 
-func (s *UISubscriber) relayStream(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) {
+func (s *uiSubscriber) relayStream(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) {
 	for {
 		if !s.relayNext(ctx, stream, uiCh) {
 			return
@@ -101,7 +101,7 @@ func (s *UISubscriber) relayStream(ctx context.Context, stream <-chan *llm.Conte
 	}
 }
 
-func (s *UISubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) bool {
+func (s *uiSubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -113,7 +113,7 @@ func (s *UISubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content
 	}
 }
 
-func (s *UISubscriber) sendToUI(ctx context.Context, uiCh chan<- *llm.Content, c *llm.Content) bool {
+func (s *uiSubscriber) sendToUI(ctx context.Context, uiCh chan<- *llm.Content, c *llm.Content) bool {
 	select {
 	case uiCh <- c:
 		return true

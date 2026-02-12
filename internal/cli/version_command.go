@@ -9,15 +9,15 @@ import (
 	"io"
 )
 
-// VersionCommand implements the version command.
-type VersionCommand struct {
+// versionCommand implements the version command.
+type versionCommand struct {
 	Version string
 	Stdout  io.Writer
 }
 
 func init() {
 	Register("version", func(ctx *Context) Command {
-		return &VersionCommand{
+		return &versionCommand{
 			Version: ctx.Version,
 			Stdout:  ctx.Stdout,
 		}
@@ -25,7 +25,7 @@ func init() {
 }
 
 // Execute prints the version information.
-func (c *VersionCommand) Execute(ctx context.Context, args []string) error {
+func (c *versionCommand) Execute(ctx context.Context, args []string) error {
 	fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
 	return nil
 }

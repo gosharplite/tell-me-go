@@ -13,7 +13,7 @@ import (
 func TestAuditor_LogAudit(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "audit.log")
-	a := NewAuditor()
+	a := newAuditor()
 	a.SetLogFile(logFile)
 
 	a.LogAudit("Action", "Test", "Detail", "Something")
@@ -33,7 +33,7 @@ func TestAuditor_LogAudit(t *testing.T) {
 }
 
 func TestAuditor_NoLogFile(t *testing.T) {
-	a := NewAuditor()
+	a := newAuditor()
 	// Should not panic or fail when logFile is empty
 	a.LogAudit("Action", "Test", "Detail", "Something")
 }

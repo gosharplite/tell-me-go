@@ -57,7 +57,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterSafePath(absPath)
-	if err := t.sm.SaveSafePaths(ctx); err != nil {
+	if err := t.sm.saveSafePaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
 	}
 
@@ -94,11 +94,11 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
-	if err := t.sm.RemoveSafePath(absPath); err != nil {
+	if err := t.sm.removeSafePath(absPath); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.SaveSafePaths(ctx); err != nil {
+	if err := t.sm.saveSafePaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -154,7 +154,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterReadOnlyPath(absPath)
-	if err := t.sm.SaveReadOnlyPaths(ctx); err != nil {
+	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
 	}
 
@@ -191,11 +191,11 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
-	if err := t.sm.RemoveReadOnlyPath(absPath); err != nil {
+	if err := t.sm.removeReadOnlyPath(absPath); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.SaveReadOnlyPaths(ctx); err != nil {
+	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -203,7 +203,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 }
 
 func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	paths := t.sm.GetReadOnlyPaths()
+	paths := t.sm.getReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
 	}

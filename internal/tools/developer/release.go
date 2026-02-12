@@ -22,22 +22,22 @@ type releaseManager struct {
 	executor tools.CommandExecutor
 }
 
-type ReadinessCheck interface {
+type readinessCheck interface {
 	Name() string
-	Run(ctx context.Context) CheckResult
+	Run(ctx context.Context) checkResult
 }
 
-type CheckResult struct {
+type checkResult struct {
 	OK      bool
 	Message string
 }
 
 func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[string]interface{}) (tools.ToolResult, error) {
-	pipeline := []ReadinessCheck{
-		&SecretScanner{sm: m.sm, fs: m.fs},
-		&DependencyChecker{fs: m.fs},
-		&BuildChecker{executor: m.executor},
-		&TestRunner{executor: m.executor},
+	pipeline := []readinessCheck{
+		&secretScanner{sm: m.sm, fs: m.fs},
+		&dependencyChecker{fs: m.fs},
+		&buildChecker{executor: m.executor},
+		&testRunner{executor: m.executor},
 	}
 
 	var report strings.Builder
@@ -65,14 +65,14 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	return tools.ToolResult{Text: report.String()}, nil
 }
 
-// SecretScanner implementation
-type SecretScanner struct {
+// secretScanner implementation
+type secretScanner struct {
 	sm *security.SecurityManager
 	fs storage.FileSystem
 }
 
-func (s *SecretScanner) Name() string { return "Security Scan" }
-func (s *SecretScanner) Run(ctx context.Context) CheckResult {
+func (s *secretScanner) Name() string { return "Security Scan" }
+func (s *secretScanner) Run(ctx context.Context) checkResult {
 	secretPatterns := []string{
 		fmt.Sprintf("AI_%s", "URL"),
 	}
@@ -87,7 +87,7 @@ func (s *SecretScanner) Run(ctx context.Context) CheckResult {
 
 	root, err := s.sm.IsPathSafe(".")
 	if err != nil {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Security error: %v", err)}
+		return checkResult{OK: false, Message: fmt.Sprintf("Security error: %v", err)}
 	}
 
 	err = s.fs.Walk(ctx, root, func(path string, info os.FileInfo, err error) error {
@@ -106,16 +106,16 @@ func (s *SecretScanner) Run(ctx context.Context) CheckResult {
 	})
 
 	if err != nil {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Scan interrupted: %v", err)}
+		return checkResult{OK: false, Message: fmt.Sprintf("Scan interrupted: %v", err)}
 	}
 
 	if secretsFound {
-		return CheckResult{OK: false, Message: strings.Join(findings, "\n- [FAIL] ")}
+		return checkResult{OK: false, Message: strings.Join(findings, "\n- [FAIL] ")}
 	}
-	return CheckResult{OK: true, Message: "No common secrets detected."}
+	return checkResult{OK: true, Message: "No common secrets detected."}
 }
 
-func (s *SecretScanner) scanContent(content []byte, path string, findings *[]string, secretsFound *bool, patterns []*regexp.Regexp) {
+func (s *secretScanner) scanContent(content []byte, path string, findings *[]string, secretsFound *bool, patterns []*regexp.Regexp) {
 	for _, re := range patterns {
 		if re.Match(content) {
 			*findings = append(*findings, fmt.Sprintf("Potential secret in %s: pattern `%s`", path, re.String()))
@@ -124,7 +124,7 @@ func (s *SecretScanner) scanContent(content []byte, path string, findings *[]str
 	}
 }
 
-func (s *SecretScanner) isIgnored(path string) bool {
+func (s *secretScanner) isIgnored(path string) bool {
 	return strings.Contains(path, ".git") ||
 		strings.Contains(path, "vendor/") ||
 		strings.Contains(path, "node_modules") ||
@@ -134,54 +134,54 @@ func (s *SecretScanner) isIgnored(path string) bool {
 		strings.HasSuffix(path, ".golden")
 }
 
-// DependencyChecker implementation
-type DependencyChecker struct {
+// dependencyChecker implementation
+type dependencyChecker struct {
 	fs storage.FileSystem
 }
 
-func (c *DependencyChecker) Name() string { return "Dependency Check" }
-func (c *DependencyChecker) Run(ctx context.Context) CheckResult {
+func (c *dependencyChecker) Name() string { return "Dependency Check" }
+func (c *dependencyChecker) Run(ctx context.Context) checkResult {
 	modContent, err := c.fs.ReadFile(ctx, "go.mod")
 	if err != nil {
-		return CheckResult{OK: false, Message: "Could not read go.mod"}
+		return checkResult{OK: false, Message: "Could not read go.mod"}
 	}
 
 	if strings.Contains(string(modContent), "replace ") {
-		return CheckResult{OK: false, Message: "go.mod contains 'replace' directives."}
+		return checkResult{OK: false, Message: "go.mod contains 'replace' directives."}
 	}
-	return CheckResult{OK: true, Message: "No local 'replace' directives found."}
+	return checkResult{OK: true, Message: "No local 'replace' directives found."}
 }
 
-// BuildChecker implementation
-type BuildChecker struct {
+// buildChecker implementation
+type buildChecker struct {
 	executor tools.CommandExecutor
 }
 
-func (c *BuildChecker) Name() string { return "Clean Room Build Simulation" }
-func (c *BuildChecker) Run(ctx context.Context) CheckResult {
+func (c *buildChecker) Name() string { return "Clean Room Build Simulation" }
+func (c *buildChecker) Run(ctx context.Context) checkResult {
 	tmpDir, err := os.MkdirTemp("", "release-build-*")
 	if err != nil {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Failed to create temp dir: %v", err)}
+		return checkResult{OK: false, Message: fmt.Sprintf("Failed to create temp dir: %v", err)}
 	}
 	defer os.RemoveAll(tmpDir)
 
 	out, err := c.executor.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
 	if err != nil {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Clean build failed: %v\nOutput: %s", err, string(out))}
+		return checkResult{OK: false, Message: fmt.Sprintf("Clean build failed: %v\nOutput: %s", err, string(out))}
 	}
-	return CheckResult{OK: true, Message: "Application compiles successfully from source."}
+	return checkResult{OK: true, Message: "Application compiles successfully from source."}
 }
 
-// TestRunner implementation
-type TestRunner struct {
+// testRunner implementation
+type testRunner struct {
 	executor tools.CommandExecutor
 }
 
-func (c *TestRunner) Name() string { return "Test Suite Verification" }
-func (c *TestRunner) Run(ctx context.Context) CheckResult {
+func (c *testRunner) Name() string { return "Test Suite Verification" }
+func (c *testRunner) Run(ctx context.Context) checkResult {
 	out, err := c.executor.CombinedOutput(ctx, "go", "test", "-race", "./...")
 	if err != nil {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed: %v\nOutput: %s", err, string(out))}
+		return checkResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed: %v\nOutput: %s", err, string(out))}
 	}
-	return CheckResult{OK: true, Message: "All tests passed (including race detector)."}
+	return checkResult{OK: true, Message: "All tests passed (including race detector)."}
 }
