@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -85,6 +86,10 @@ func TestAgent_Options(t *testing.T) {
 		WithSystemInstructions("Be helpful"),
 	)
 	_ = a.events.Flush(context.Background())
+
+	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
+		t.Errorf("WithLimits did not update a.config.Limits: %+v", a.config.Limits)
+	}
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 500 || tools != 3 {
@@ -670,5 +675,39 @@ func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
+	}
+}
+
+func TestAgent_Options_WithEventBus(t *testing.T) {
+	t.Parallel()
+	bus := events.NewSimpleEventBus()
+	a := New(&MockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, nil, WithEventBus(bus))
+
+	if a.events != bus {
+		t.Error("WithEventBus did not set the event bus")
+	}
+}
+
+func TestAgent_Options_TraceLogger(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "agent.log")
+	expectedTraceFile := filepath.Join(tmpDir, "agent.trace.jsonl")
+	bus := events.NewSimpleEventBus()
+	
+	// Initialize with TraceLogger
+	a := New(&MockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, bus, WithTraceLogger(logFile))
+
+	// Emit TraceEvent to trigger the logger
+	a.emit(events.TraceEvent{
+		Trace: &domain_telemetry.TurnTrace{
+			StartTime: time.Now(),
+		},
+	})
+	
+	// Shutdown to flush any buffers
+	_ = a.Shutdown(context.Background())
+
+	if _, err := os.Stat(expectedTraceFile); os.IsNotExist(err) {
+		t.Errorf("Trace log file was not created at %s", expectedTraceFile)
 	}
 }
