@@ -80,7 +80,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityPr
 		DeadCode:   newDeadCodeAnalyzer(sp),
 
 		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus},
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},
 		Search:   &searchManager{SP: sp, FS: fs},
 		Arch:     &architectureManager{SP: sp},
 		Events:   bus,

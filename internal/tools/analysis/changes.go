@@ -15,10 +15,10 @@ import (
 
 type changeAnalyzer struct {
 	Cache *astCache
-	Exec  CommandExecutor
+	Exec  tools.CommandExecutor
 }
 
-func newChangeAnalyzer(cache *astCache, exec CommandExecutor) *changeAnalyzer {
+func newChangeAnalyzer(cache *astCache, exec tools.CommandExecutor) *changeAnalyzer {
 	return &changeAnalyzer{
 		Cache: cache,
 		Exec:  exec,

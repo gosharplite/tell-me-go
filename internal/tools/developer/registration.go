@@ -8,11 +8,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager) {
+func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
 	dev := newDevManager(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -77,11 +76,11 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 		Description: "Runs 'govulncheck'.",
 	}, dev.checkVulnerabilities, registry.ToolOptions{LongRunning: true})
 
-	// Release Management
+		// Release Management
 	rel := &releaseManager{
 		sm:       sm,
 		fs:       storage.DefaultFileSystem,
-		executor: workspace.NewProcessExecutor(),
+		executor: exec,
 	}
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",

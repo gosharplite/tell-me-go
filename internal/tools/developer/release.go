@@ -14,13 +14,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type releaseManager struct {
 	sm       *security.SecurityManager
 	fs       storage.FileSystem
-	executor workspace.CommandExecutor
+	executor tools.CommandExecutor
 }
 
 type ReadinessCheck interface {
@@ -155,7 +154,7 @@ func (c *DependencyChecker) Run(ctx context.Context) CheckResult {
 
 // BuildChecker implementation
 type BuildChecker struct {
-	executor workspace.CommandExecutor
+	executor tools.CommandExecutor
 }
 
 func (c *BuildChecker) Name() string { return "Clean Room Build Simulation" }
@@ -166,23 +165,23 @@ func (c *BuildChecker) Run(ctx context.Context) CheckResult {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	res, err := c.executor.RunCommand(ctx, []string{"go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go"}, workspace.ExecutionConfig{})
-	if err != nil || res.ExitCode != 0 {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Clean build failed (Exit %d):\n%s", res.ExitCode, res.Output)}
+	out, err := c.executor.CombinedOutput(ctx, "go", "build", "-o", filepath.Join(tmpDir, "tell-me-go"), "./cmd/tell-me-go")
+	if err != nil {
+		return CheckResult{OK: false, Message: fmt.Sprintf("Clean build failed: %v\nOutput: %s", err, string(out))}
 	}
 	return CheckResult{OK: true, Message: "Application compiles successfully from source."}
 }
 
 // TestRunner implementation
 type TestRunner struct {
-	executor workspace.CommandExecutor
+	executor tools.CommandExecutor
 }
 
 func (c *TestRunner) Name() string { return "Test Suite Verification" }
 func (c *TestRunner) Run(ctx context.Context) CheckResult {
-	res, err := c.executor.RunCommand(ctx, []string{"go", "test", "-race", "./..."}, workspace.ExecutionConfig{})
-	if err != nil || res.ExitCode != 0 {
-		return CheckResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed (Exit %d):\n%s", res.ExitCode, res.Output)}
+	out, err := c.executor.CombinedOutput(ctx, "go", "test", "-race", "./...")
+	if err != nil {
+		return CheckResult{OK: false, Message: fmt.Sprintf("Unit/Integration tests failed: %v\nOutput: %s", err, string(out))}
 	}
 	return CheckResult{OK: true, Message: "All tests passed (including race detector)."}
 }

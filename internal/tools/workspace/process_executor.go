@@ -33,12 +33,6 @@ type ExecutionResult struct {
 	Truncated bool
 }
 
-// CommandExecutor defines the interface for running commands.
-type CommandExecutor interface {
-	RunCommand(ctx context.Context, parts []string, config ExecutionConfig) (ExecutionResult, error)
-	RunPipeline(ctx context.Context, pipedParts [][]string, config ExecutionConfig) (ExecutionResult, error)
-}
-
 // ProcessExecutor handles running external commands and pipelines.
 type ProcessExecutor struct{}
 
@@ -529,4 +523,28 @@ func truncateToValidUTF8(s string, maxBytes int) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// Output runs the command and returns its standard output.
+func (e *ProcessExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	res, err := e.RunCommand(ctx, append([]string{name}, args...), ExecutionConfig{})
+	if err != nil {
+		return []byte(res.Output), err
+	}
+	if res.ExitCode != 0 {
+		return []byte(res.Output), fmt.Errorf("exit status %d", res.ExitCode)
+	}
+	return []byte(res.Output), nil
+}
+
+// CombinedOutput runs the command and returns its combined standard output and standard error.
+func (e *ProcessExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	res, err := e.RunCommand(ctx, append([]string{name}, args...), ExecutionConfig{})
+	if err != nil {
+		return []byte(res.Output), err
+	}
+	if res.ExitCode != 0 {
+		return []byte(res.Output), fmt.Errorf("exit status %d", res.ExitCode)
+	}
+	return []byte(res.Output), nil
 }

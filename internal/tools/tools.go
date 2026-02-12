@@ -38,13 +38,14 @@ func RegisterAll(
 	ctx := context.Background()
 	state, _ := persistence.NewSessionState(ctx, outputDir)
 
-	workspace.Register(r, sm, &exec.RealExecutor{})
+	executor := &exec.RealExecutor{}
+	workspace.Register(r, sm, executor)
 	if state != nil {
 		workspace.NewPersistenceTools(state).Register(r)
 	}
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm, bus)
-	developer.Register(r, sm)
+	developer.Register(r, sm, executor)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }

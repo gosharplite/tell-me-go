@@ -5,6 +5,7 @@ package developer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type mockFileSystem struct {
@@ -63,15 +63,21 @@ func (m *mockFileInfo) IsDir() bool        { return false }
 func (m *mockFileInfo) Sys() interface{}   { return nil }
 
 type mockCommandExecutor struct {
-	workspace.CommandExecutor
-	runFunc func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error)
+	runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-func (m *mockCommandExecutor) RunCommand(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
+func (m *mockCommandExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if m.runFunc != nil {
-		return m.runFunc(ctx, parts, config)
+		return m.runFunc(ctx, name, args...)
 	}
-	return workspace.ExecutionResult{ExitCode: 0}, nil
+	return []byte(""), nil
+}
+
+func (m *mockCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, name, args...)
+	}
+	return []byte(""), nil
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
@@ -152,9 +158,11 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := &mockFileSystem{files: tt.files()}
 			executor := &mockCommandExecutor{
-				runFunc: func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
-					// Build and Test are the two commands executed
-					return workspace.ExecutionResult{ExitCode: tt.exitCode, Output: "failed"}, nil
+				runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+					if tt.exitCode != 0 {
+						return []byte("failed"), fmt.Errorf("exit status %d", tt.exitCode)
+					}
+					return []byte("success"), nil
 				},
 			}
 

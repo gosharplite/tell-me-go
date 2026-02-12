@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestInfoManager_RenderProjectSummary(t *testing.T) {
@@ -231,4 +231,33 @@ func TestInfoManager_CollectFileStats_EdgeCases(t *testing.T) {
 			t.Errorf("expected 0 packages, got %d", len(packages))
 		}
 	})
+}
+
+func TestInfoManager_GoDoc(t *testing.T) {
+	exec := &inframock.MockExecutor{
+		OutputBytes: []byte("GoDoc output"),
+	}
+	m := &infoManager{Exec: exec}
+	ctx := context.Background()
+
+	args := map[string]interface{}{
+		"symbol": "fmt.Println",
+	}
+
+	res, err := m.GoDoc(ctx, args)
+	if err != nil {
+		t.Fatalf("GoDoc failed: %v", err)
+	}
+
+	if res.Text != "GoDoc output" {
+		t.Errorf("expected 'GoDoc output', got %q", res.Text)
+	}
+
+	if exec.CommandName != "go" {
+		t.Errorf("expected command 'go', got %q", exec.CommandName)
+	}
+
+	if len(exec.CommandArgs) < 2 || exec.CommandArgs[0] != "doc" || exec.CommandArgs[1] != "fmt.Println" {
+		t.Errorf("unexpected command args: %v", exec.CommandArgs)
+	}
 }

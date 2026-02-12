@@ -20,7 +20,7 @@ import (
 // SequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
 	SP        security.SecurityProvider
-	Exec      CommandExecutor
+	Exec      tools.CommandExecutor
 	Provider  IGoPackageProvider
 	Formatter *MermaidFormatter
 
@@ -32,7 +32,7 @@ type sequenceAnalyzer struct {
 }
 
 // newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
-func newSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
+func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,

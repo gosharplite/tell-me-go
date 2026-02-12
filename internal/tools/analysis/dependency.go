@@ -12,12 +12,12 @@ import (
 )
 
 type dependencyAnalyzer struct {
-	Exec   CommandExecutor
+	Exec   tools.CommandExecutor
 	SP     security.SecurityProvider
 	Events events.EventBus
 }
 
-func newDependencyAnalyzer(exec CommandExecutor, sp security.SecurityProvider, bus events.EventBus) *dependencyAnalyzer {
+func newDependencyAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider, bus events.EventBus) *dependencyAnalyzer {
 	return &dependencyAnalyzer{
 		Exec:   exec,
 		SP:     sp,
