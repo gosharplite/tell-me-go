@@ -28,3 +28,16 @@ The "Economic Awareness" milestone implements cost monitoring and loop detection
 ## Implementation Standards
 - **Safe-by-Design**: Budget limits are internal-only by default (disabled at 0.0) to maintain a clean UI, but can be set via API.
 - **Deterministic**: Loop detection uses cryptographic hashes (SHA-256) to ensure consistent detection across environments.
+
+### 4. Ledger Resilience & Auto-Recovery
+- **Self-Healing Ledger**: If `global_costs.json` is missing or corrupted, the system automatically triggers a background recovery process.
+- **Recovery Logic**: The agent scans session logs and backups in the `output/` directory to reconstruct the historical expenditure ledger.
+- **Concurrency Safety**: File-based locking (with stale lock protection) ensures multiple sessions can safely update the global ledger simultaneously.
+
+### 5. Price Cliff Monitoring (The 128k Barrier)
+- **Tiered Pricing Aware**: Vertex AI bills sessions > 128k tokens at a 2x rate.
+- **Pre-flight Check**: The system calculates the estimated payload (History + System Instruction + Search Grounding) before every turn.
+- **Visual Cues**: The UI provides "Traffic-Light" status indicators:
+    - **Yellow**: Approaching 128k tokens.
+    - **Red**: Exceeding 128k (Triggering high-tier pricing).
+- **Safe-by-Design Limits**: Default `MAX_HISTORY_TOKENS` is set to 120k to provide a safety buffer for model output and reasoning tokens.
