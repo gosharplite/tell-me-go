@@ -19,6 +19,5 @@ type SecurityProvider interface {
 	IsCommandAllowed(command string) bool
 	LogAudit(label1, val1, label2, val2 string)
 	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
-	GetPolicy() *domain.Policy
 	GetSafetyService() *domain.SafetyService
 }

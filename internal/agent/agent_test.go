@@ -82,18 +82,18 @@ func TestAgent_Options(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, h, reg, sm, false, bus,
-		WithLimits(3, 500, 5),
-		WithSystemInstructions("Be helpful"),
+		withLimits(3, 500, 5),
+		withSystemInstructions("Be helpful"),
 	)
 	_ = a.events.Flush(context.Background())
 
 	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
-		t.Errorf("WithLimits did not update a.config.Limits: %+v", a.config.Limits)
+		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
 	}
 
 	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
 	if tokens != 500 || tools != 3 {
-		t.Errorf("WithLimits failed: got tokens=%d, tools=%d", tokens, tools)
+		t.Errorf("withLimits failed: got tokens=%d, tools=%d", tokens, tools)
 	}
 }
 
@@ -334,7 +334,7 @@ func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h services.H
 	}
 }
 
-func setupPinningFlowTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
+func setupPinningFlowTest(t *testing.T) (*agent, services.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
@@ -384,7 +384,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*Agent, services.HistoryManager, context.Context) {
+func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(filepath.Join(tmpDir, "pin_prune.json"))
 	reg := registry.New()
@@ -671,7 +671,7 @@ func TestAgent_Shutdown(t *testing.T) {
 }
 
 func TestAgent_Shutdown_NilDeps(t *testing.T) {
-	a := &Agent{}
+	a := &agent{}
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
@@ -681,10 +681,10 @@ func TestAgent_Shutdown_NilDeps(t *testing.T) {
 func TestAgent_Options_WithEventBus(t *testing.T) {
 	t.Parallel()
 	bus := events.NewSimpleEventBus()
-	a := New(&MockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, nil, WithEventBus(bus))
+	a := New(&MockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, nil, withEventBus(bus))
 
 	if a.events != bus {
-		t.Error("WithEventBus did not set the event bus")
+		t.Error("withEventBus did not set the event bus")
 	}
 }
 

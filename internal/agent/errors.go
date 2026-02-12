@@ -14,31 +14,31 @@ var (
 	ErrLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 
-// AgentError provides structured error context for the orchestration engine.
-type AgentError struct {
+// agentError provides structured error context for the orchestration engine.
+type agentError struct {
 	Category error
 	Message  string
 	Err      error
 }
 
-func (e *AgentError) Error() string {
+func (e *agentError) Error() string {
 	if e.Err != nil {
 		return e.Message + ": " + e.Err.Error()
 	}
 	return e.Message
 }
 
-func (e *AgentError) Unwrap() error {
+func (e *agentError) Unwrap() error {
 	return e.Err
 }
 
-func (e *AgentError) Is(target error) bool {
+func (e *agentError) Is(target error) bool {
 	return e.Category == target || errors.Is(e.Category, target)
 }
 
-// NewAgentError is a helper for creating categorized errors.
-func NewAgentError(category error, message string, err error) error {
-	return &AgentError{
+// newAgentError is a helper for creating categorized errors.
+func newAgentError(category error, message string, err error) error {
+	return &agentError{
 		Category: category,
 		Message:  message,
 		Err:      err,

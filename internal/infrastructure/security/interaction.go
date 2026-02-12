@@ -16,12 +16,12 @@ import (
 // interactionHandler manages terminal locking and user prompts via a UserInteractor.
 type interactionHandler struct {
 	terminalMu sync.Mutex
-	auditor    AuditLogger
+	auditor    auditLogger
 	interactor domain.UserInteractor
 }
 
 // newInteractionHandler creates a new interactionHandler.
-func newInteractionHandler(interactor domain.UserInteractor, auditor AuditLogger) *interactionHandler {
+func newInteractionHandler(interactor domain.UserInteractor, auditor auditLogger) *interactionHandler {
 	return &interactionHandler{
 		auditor:    auditor,
 		interactor: interactor,
@@ -153,23 +153,23 @@ func (m *MockInteractor) ReadLine(ctx context.Context) (string, error) {
 	return m.Answer, nil
 }
 
-// NoOpInteractor is a dummy interactor that does nothing and denies all confirmations.
-type NoOpInteractor struct{}
+// noOpInteractor is a dummy interactor that does nothing and denies all confirmations.
+type noOpInteractor struct{}
 
 // Confirm always returns false.
-func (i *NoOpInteractor) Confirm(ctx context.Context, message string) (bool, error) {
+func (i *noOpInteractor) Confirm(ctx context.Context, message string) (bool, error) {
 	return false, nil
 }
 
 // Warn does nothing.
-func (i *NoOpInteractor) Warn(message string) {}
+func (i *noOpInteractor) Warn(message string) {}
 
 // ReadSingleKey returns an empty string.
-func (i *NoOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {
+func (i *noOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 	return "", nil
 }
 
 // ReadLine returns an empty string.
-func (i *NoOpInteractor) ReadLine(ctx context.Context) (string, error) {
+func (i *noOpInteractor) ReadLine(ctx context.Context) (string, error) {
 	return "", nil
 }

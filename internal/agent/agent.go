@@ -68,10 +68,10 @@ type RuntimeConfig struct {
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
-type Agent struct {
+type agent struct {
 	mu            sync.RWMutex
 	gateway       *llm.ResilientClient
-	engine        *TurnEngine
+	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
 	sm            domain_security.ISecurityManager
@@ -85,21 +85,21 @@ type Agent struct {
 	registerInternal bool
 }
 
-// AgentOption defines a functional option for configuring an Agent.
-type AgentOption func(*Agent)
+// agentOption defines a functional option for configuring an Agent.
+type agentOption func(*agent)
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) AgentOption {
-	return func(a *Agent) {
+func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) agentOption {
+	return func(a *agent) {
 		a.config.Model = model
 		a.config.Mode = mode
 		a.config.PricingOverrides = overrides
 	}
 }
 
-// WithLimits sets the initial operational limits.
-func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
-	return func(a *Agent) {
+// withLimits sets the initial operational limits.
+func withLimits(toolTurns, historyTokens, historyTurns int) agentOption {
+	return func(a *agent) {
 		a.config.Limits = events.Limits{
 			MaxHistoryTokens: historyTokens,
 			MaxToolTurns:     toolTurns,
@@ -112,20 +112,20 @@ func WithLimits(toolTurns, historyTokens, historyTurns int) AgentOption {
 }
 
 // WithInternalTools enables the registration of internal agent tools (e.g., history management).
-func WithInternalTools() AgentOption {
-	return func(a *Agent) {
+func WithInternalTools() agentOption {
+	return func(a *agent) {
 		a.registerInternal = true
 	}
 }
 
 // New creates a new Agent using functional options.
-func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, options ...AgentOption) *Agent {
+func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, options ...agentOption) *agent {
 	gw := llm.NewResilientClient(client, disableStreaming)
 
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
-	a := &Agent{
+	a := &agent{
 		gateway:       gw,
 		registry:      reg,
 		sm:            sm,
@@ -164,8 +164,8 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = NewTurnEngine(gw, exec, ctxManager, reg, bus,
-		WithConfig(a.sm, a.config.Model, a.config.PricingOverrides),
+	a.engine = newTurnEngine(gw, exec, ctxManager, reg, bus,
+		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
 		WithCostTracker(a.tracker),
 	)
 
@@ -179,7 +179,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	return a
 }
 
-func (a *Agent) applyConfig(ctx context.Context) error {
+func (a *agent) applyConfig(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -212,24 +212,24 @@ func (a *Agent) applyConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) Subscribe(sub func(events.Event)) {
+func (a *agent) Subscribe(sub func(events.Event)) {
 	a.events.Subscribe(sub)
 }
 
-func (a *Agent) emit(e events.Event) {
+func (a *agent) emit(e events.Event) {
 	a.events.Publish(e)
 }
 
 // SetLimits sets the operational limits for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
 	a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
 	return a.applyConfig(ctx)
 }
 
 // SetHardBudgetLimit sets the hard budget limit for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetHardBudgetLimit(ctx context.Context, limit float64) error {
+func (a *agent) SetHardBudgetLimit(ctx context.Context, limit float64) error {
 	a.mu.Lock()
 	a.config.HardBudgetLimit = limit
 	a.mu.Unlock()
@@ -238,20 +238,20 @@ func (a *Agent) SetHardBudgetLimit(ctx context.Context, limit float64) error {
 
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.SetTieredThreshold(threshold)
 	return a.applyConfig(ctx)
 }
 
 // SetPrunedTurns updates the number of turns to prune from history.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetPrunedTurns(ctx context.Context, n int) error {
+func (a *agent) SetPrunedTurns(ctx context.Context, n int) error {
 	a.strategy.SetPrunedTurns(n)
 	return a.applyConfig(ctx)
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
+func (a *agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},
@@ -267,13 +267,13 @@ func (a *Agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 }
 
 // GetCostTracker returns the session cost tracker used by the agent's engine.
-func (a *Agent) GetCostTracker() domain_pricing.ICostTracker {
+func (a *agent) GetCostTracker() domain_pricing.ICostTracker {
 	return a.engine.GetCostTracker()
 }
 
 // SetSystemInstructions updates the system instructions used by the context pipeline.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *Agent) SetSystemInstructions(ctx context.Context, instr string) error {
+func (a *agent) SetSystemInstructions(ctx context.Context, instr string) error {
 	a.mu.Lock()
 	a.config.SystemInstructions = instr
 	if a.gateway != nil {
@@ -283,23 +283,23 @@ func (a *Agent) SetSystemInstructions(ctx context.Context, instr string) error {
 	return a.applyConfig(ctx)
 }
 
-// WithEventBus sets a custom event bus for the agent.
-func WithEventBus(bus events.EventBus) AgentOption {
-	return func(a *Agent) {
+// withEventBus sets a custom event bus for the agent.
+func withEventBus(bus events.EventBus) agentOption {
+	return func(a *agent) {
 		a.events = bus
 	}
 }
 
-// WithSystemInstructions sets the initial system instructions.
-func WithSystemInstructions(instr string) AgentOption {
-	return func(a *Agent) {
+// withSystemInstructions sets the initial system instructions.
+func withSystemInstructions(instr string) agentOption {
+	return func(a *agent) {
 		a.config.SystemInstructions = instr
 	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
-	return func(a *Agent) {
+func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
+	return func(a *agent) {
 		a.tracker = tracker
 		if a.engine != nil {
 			a.engine.ApplyOptions(WithCostTracker(tracker))
@@ -308,14 +308,14 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) AgentOption {
 }
 
 // WithTraceLogger enables tracing and logs it to the specified file.
-func WithTraceLogger(logFile string) AgentOption {
-	return func(a *Agent) {
+func WithTraceLogger(logFile string) agentOption {
+	return func(a *agent) {
 		telemetry.RegisterTraceSubscriber(a.events, logFile)
 	}
 }
 
 // Shutdown gracefully stops the agent and its components.
-func (a *Agent) Shutdown(ctx context.Context) error {
+func (a *agent) Shutdown(ctx context.Context) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

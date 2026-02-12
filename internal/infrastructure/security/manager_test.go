@@ -29,7 +29,7 @@ func TestSecurityManager_Bypass(t *testing.T) {
 	}
 
 	// Save
-	sm.SaveBypassState(context.Background())
+	sm.saveBypassState(context.Background())
 	data, err := os.ReadFile(bypassFile)
 	if err != nil {
 		t.Fatalf("Failed to read bypass file: %v", err)
@@ -130,12 +130,12 @@ func contains(slice []string, val string) bool {
 func TestSecurityManager_Misc(t *testing.T) {
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
 	
-	// GetPolicy / SetPolicy
-	p := sm.GetPolicy()
+	// getPolicy / setPolicy
+	p := sm.getPolicy()
 	if p == nil {
-		t.Error("GetPolicy returned nil")
+		t.Error("getPolicy returned nil")
 	}
-	sm.SetPolicy(p)
+	sm.setPolicy(p)
 
 	// IsPathWritable
 	_, _ = sm.IsPathWritable("/tmp/test")
@@ -176,6 +176,6 @@ func TestSecurityManager_Misc(t *testing.T) {
 	sm.TerminalLock()
 	sm.TerminalUnlock()
 	
-	_, _ = sm.ReadSingleKey(context.Background())
+	_, _ = sm.readSingleKey(context.Background())
 	_, _ = sm.ReadLine(context.Background())
 }

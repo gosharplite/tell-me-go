@@ -235,7 +235,7 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 
 	t.sm.SetBypassActive(true)
 
-	t.sm.SaveBypassState(ctx)
+	t.sm.saveBypassState(ctx)
 	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.")
 	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
@@ -247,7 +247,7 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 
 	t.sm.SetBypassActive(false)
 
-	t.sm.SaveBypassState(ctx)
+	t.sm.saveBypassState(ctx)
 	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil

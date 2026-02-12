@@ -13,8 +13,8 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-// MockAuditor implements AuditLogger for testing.
-type MockAuditor struct {
+// mockAuditor implements auditLogger for testing.
+type mockAuditor struct {
 	Logs []auditEntry
 }
 
@@ -22,12 +22,12 @@ type auditEntry struct {
 	Label1, Val1, Label2, Val2 string
 }
 
-func (m *MockAuditor) LogAudit(label1, val1, label2, val2 string) {
+func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
 	m.Logs = append(m.Logs, auditEntry{label1, val1, label2, val2})
 }
 
-func (m *MockAuditor) SetLogFile(path string)                        {}
-func (m *MockAuditor) SetInteractor(interactor domain.UserInteractor) {}
+func (m *mockAuditor) SetLogFile(path string)                        {}
+func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
 
 // SpyInteractor captures calls to UserInteractor methods.
 type SpyInteractor struct {
@@ -119,7 +119,7 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			spy := &SpyInteractor{}
 			spy.Answer = tt.interactorAns
 			spy.Err = tt.interactorErr
-			auditor := &MockAuditor{}
+			auditor := &mockAuditor{}
 			handler := newInteractionHandler(spy, auditor)
 
 			ctx := context.Background()
@@ -219,24 +219,24 @@ func TestInteractionHandler_SetInteractor(t *testing.T) {
 }
 
 func TestNoOpInteractor(t *testing.T) {
-	ni := &NoOpInteractor{}
+	ni := &noOpInteractor{}
 	ctx := context.Background()
 
 	conf, err := ni.Confirm(ctx, "test")
 	if err != nil || conf != false {
-		t.Errorf("NoOpInteractor.Confirm failed: %v, %v", err, conf)
+		t.Errorf("noOpInteractor.Confirm failed: %v, %v", err, conf)
 	}
 
 	ni.Warn("test")
 
 	key, err := ni.ReadSingleKey(ctx)
 	if err != nil || key != "" {
-		t.Errorf("NoOpInteractor.ReadSingleKey failed: %v, %v", err, key)
+		t.Errorf("noOpInteractor.ReadSingleKey failed: %v, %v", err, key)
 	}
 
 	line, err := ni.ReadLine(ctx)
 	if err != nil || line != "" {
-		t.Errorf("NoOpInteractor.ReadLine failed: %v, %v", err, line)
+		t.Errorf("noOpInteractor.ReadLine failed: %v, %v", err, line)
 	}
 }
 
@@ -273,7 +273,7 @@ func TestMockInteractor_EdgeCases(t *testing.T) {
 }
 
 func TestInteractionHandler_TerminalLocking(t *testing.T) {
-	handler := newInteractionHandler(&NoOpInteractor{}, nil)
+	handler := newInteractionHandler(&noOpInteractor{}, nil)
 	// Just verify they don't panic and can be called
 	handler.TerminalLock()
 	handler.TerminalUnlock()

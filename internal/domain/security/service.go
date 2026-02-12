@@ -28,41 +28,6 @@ func (s *SafetyService) IsCommandSafe(cmd string) (bool, string) {
 	return true, ""
 }
 
-// IsDestructive checks if a command is potentially destructive.
-func (s *SafetyService) IsDestructive(cmd string, parts []string) bool {
-	destructive := map[string]bool{
-		"rm":    true,
-		"mv":    true,
-		"chmod": true,
-		"chown": true,
-	}
-
-	if destructive[cmd] {
-		return true
-	}
-
-	// Specialized checks
-	if cmd == "git" && len(parts) > 1 {
-		sub := parts[1] // Simplification for now
-		destructiveGit := map[string]bool{
-			"reset":  true,
-			"clean":  true,
-			"push":   true,
-			"commit": true,
-		}
-		if destructiveGit[sub] {
-			return true
-		}
-	}
-
-	return false
-}
-
-// RequiresConfirmation determines if a command requires user confirmation.
-func (s *SafetyService) RequiresConfirmation(cmd string) bool {
-	return !s.policy.IsAutoApprovable(cmd)
-}
-
 // HasForbiddenOperators checks for forbidden shell operators in the command parts.
 func (s *SafetyService) HasForbiddenOperators(parts []string) (bool, string) {
 	operators := map[string]string{

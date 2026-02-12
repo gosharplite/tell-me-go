@@ -17,7 +17,7 @@ import (
 type SecurityManager struct {
 	policy       *pathPolicy
 	interaction  *interactionHandler
-	Auditor      AuditLogger
+	auditor      auditLogger
 	domainPolicy *domain.Policy
 	safety       *domain.SafetyService
 
@@ -29,7 +29,7 @@ type SecurityManager struct {
 // NewSecurityManager creates a new SecurityManager.
 func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
 	if interactor == nil {
-		interactor = &NoOpInteractor{}
+		interactor = &noOpInteractor{}
 	}
 	auditor := NewAuditor()
 	auditor.SetInteractor(interactor)
@@ -37,19 +37,19 @@ func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
 	return &SecurityManager{
 		policy:       newPathPolicy(),
 		interaction:  newInteractionHandler(interactor, auditor),
-		Auditor:      auditor,
+		auditor:      auditor,
 		domainPolicy: policy,
 		safety:       domain.NewSafetyService(policy),
 	}
 }
 
-// GetPolicy returns the domain security policy.
-func (sm *SecurityManager) GetPolicy() *domain.Policy {
+// getPolicy returns the domain security policy.
+func (sm *SecurityManager) getPolicy() *domain.Policy {
 	return sm.domainPolicy
 }
 
-// SetPolicy sets the domain security policy.
-func (sm *SecurityManager) SetPolicy(p *domain.Policy) {
+// setPolicy sets the domain security policy.
+func (sm *SecurityManager) setPolicy(p *domain.Policy) {
 	sm.domainPolicy = p
 	sm.safety = domain.NewSafetyService(p)
 }
@@ -82,7 +82,7 @@ func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason 
 
 // LogAudit writes an audit entry.
 func (sm *SecurityManager) LogAudit(label1, val1, label2, val2 string) {
-	sm.Auditor.LogAudit(label1, val1, label2, val2)
+	sm.auditor.LogAudit(label1, val1, label2, val2)
 }
 
 // Warn prints a security warning.
@@ -93,7 +93,7 @@ func (sm *SecurityManager) Warn(message string) {
 // SetInteractor updates the user interactor.
 func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
 	sm.interaction.SetInteractor(interactor)
-	sm.Auditor.SetInteractor(interactor)
+	sm.auditor.SetInteractor(interactor)
 }
 
 // SetBypassFile sets the file where persistent bypass state is stored.
@@ -123,8 +123,8 @@ func (sm *SecurityManager) IsBypassActive() bool {
 	return sm.bypassActive
 }
 
-// SaveBypassState writes the persistent bypass state to disk.
-func (sm *SecurityManager) SaveBypassState(ctx context.Context) {
+// saveBypassState writes the persistent bypass state to disk.
+func (sm *SecurityManager) saveBypassState(ctx context.Context) {
 	sm.bypassMu.RLock()
 	file := sm.bypassFile
 	active := sm.bypassActive
@@ -162,8 +162,8 @@ func (sm *SecurityManager) TerminalUnlock() {
 	sm.interaction.TerminalUnlock()
 }
 
-// ReadSingleKey reads a single key.
-func (sm *SecurityManager) ReadSingleKey(ctx context.Context) (string, error) {
+// readSingleKey reads a single key.
+func (sm *SecurityManager) readSingleKey(ctx context.Context) (string, error) {
 	return sm.interaction.ReadSingleKey(ctx)
 }
 
@@ -189,7 +189,7 @@ func (sm *SecurityManager) RemoveSafePath(path string) error {
 
 // SetCommandsLogFile sets the commands log file.
 func (sm *SecurityManager) SetCommandsLogFile(path string) {
-	sm.Auditor.SetLogFile(path)
+	sm.auditor.SetLogFile(path)
 }
 
 // SetSafePathsFile sets the safe paths file.

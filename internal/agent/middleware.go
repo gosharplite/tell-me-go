@@ -16,7 +16,7 @@ import (
 )
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
-func (e *TurnEngine) WithStreaming() turnMiddleware {
+func (e *turnEngine) WithStreaming() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			if turn.State.Phase == phaseInference && e.events != nil {
@@ -30,7 +30,7 @@ func (e *TurnEngine) WithStreaming() turnMiddleware {
 }
 
 // WithStatusReporter returns a middleware that publishes turn status events.
-func (e *TurnEngine) WithStatusReporter() turnMiddleware {
+func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
@@ -81,7 +81,7 @@ func (e *TurnEngine) WithStatusReporter() turnMiddleware {
 }
 
 // WithMetrics returns a middleware that publishes usage metrics.
-func (e *TurnEngine) WithMetrics() turnMiddleware {
+func (e *turnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
@@ -122,7 +122,7 @@ func WithLoopDetector() turnMiddleware {
 					if currentHash == prevHash {
 						return processResult{
 							Stop:  true,
-							Error: NewAgentError(ErrLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
+							Error: newAgentError(ErrLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
 						}
 					}
 				}
@@ -141,7 +141,7 @@ func WithLoopDetector() turnMiddleware {
 						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
 							return processResult{
 								Stop:  true,
-								Error: NewAgentError(ErrLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
+								Error: newAgentError(ErrLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
 							}
 						}
 					}

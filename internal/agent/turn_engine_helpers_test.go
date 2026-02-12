@@ -272,7 +272,7 @@ func closedChan(content *llm.Content) <-chan *llm.Content {
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
 	case phaseRefining:
-		return &ContextRefiner{}
+		return &contextRefiner{}
 	case phaseInference:
 		return &InferenceStep{}
 	case phaseExecuting:
@@ -302,7 +302,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		State: &turnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,
-			LastError:    &AgentError{Category: llm.ErrTransient, Message: "err"},
+			LastError:    &agentError{Category: llm.ErrTransient, Message: "err"},
 			Metadata: &orchestration.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},

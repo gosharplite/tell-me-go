@@ -42,7 +42,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*TurnEngine, *orchestration.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
 	bus := &events.SimpleEventBus{}
 	reg := &mockToolRegistry{}
 
@@ -58,7 +58,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, t
 
 	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
 
-	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithRetryPolicy(policy), WithHook(tracker))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, WithRetryPolicy(policy), WithHook(tracker))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -78,7 +78,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
 				if callCount == 1 {
-					return nil, nil, NewAgentError(llm.ErrTransient, "temporary failure", nil)
+					return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
 				}
 				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 			}
@@ -127,7 +127,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 			close(ch)
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
+				return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 			}
 		},
 	}
@@ -192,7 +192,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, NewAgentError(ErrLogic, "tool not found", ErrLogic)
+			return nil, newAgentError(ErrLogic, "tool not found", ErrLogic)
 		},
 	}
 
@@ -231,7 +231,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(llm.ErrTransient, "always transient", nil)
+				return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
 			}
 		},
 	}

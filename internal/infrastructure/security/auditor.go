@@ -12,41 +12,41 @@ import (
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-// AuditLogger defines the interface for security logging.
-type AuditLogger interface {
+// auditLogger defines the interface for security logging.
+type auditLogger interface {
 	LogAudit(label1, val1, label2, val2 string)
 	SetLogFile(path string)
 	SetInteractor(interactor domain.UserInteractor)
 }
 
-// Auditor handles security logging.
-type Auditor struct {
+// auditor handles security logging.
+type auditor struct {
 	logFile    string
 	mu         sync.Mutex
 	interactor domain.UserInteractor
 }
 
-// NewAuditor creates a new Auditor.
-func NewAuditor() *Auditor {
-	return &Auditor{}
+// NewAuditor creates a new auditor.
+func NewAuditor() *auditor {
+	return &auditor{}
 }
 
 // SetInteractor sets the user interactor for warnings.
-func (a *Auditor) SetInteractor(interactor domain.UserInteractor) {
+func (a *auditor) SetInteractor(interactor domain.UserInteractor) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.interactor = interactor
 }
 
 // SetLogFile sets the path for logging executed commands.
-func (a *Auditor) SetLogFile(path string) {
+func (a *auditor) SetLogFile(path string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.logFile = path
 }
 
 // LogAudit writes a two-line audit entry to the commands log file.
-func (a *Auditor) LogAudit(label1, val1, label2, val2 string) {
+func (a *auditor) LogAudit(label1, val1, label2, val2 string) {
 	a.mu.Lock()
 	interactor := a.interactor
 	logFile := a.logFile

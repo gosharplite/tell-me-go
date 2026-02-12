@@ -33,7 +33,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
-	engine := NewTurnEngine(gw, exec, cm, reg, bus)
+	engine := newTurnEngine(gw, exec, cm, reg, bus)
 	ctx := context.Background()
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
@@ -90,7 +90,7 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	cm := orchestration.NewContextManager(strategy, h, bus, factory)
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 10, MaxHistoryTurns: 10})
 
-	engine := NewTurnEngine(gw, exec, cm, reg, bus)
+	engine := newTurnEngine(gw, exec, cm, reg, bus)
 	ctx := context.Background()
 
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "initial"}}})
