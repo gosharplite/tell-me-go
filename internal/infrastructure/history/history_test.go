@@ -22,11 +22,11 @@ func TestHistoryManager_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Test AddEntry - Note: Dumb manager does not validate role alternation
-	if err := m.AddEntry(ctx, "user", "Hello"); err != nil {
+	if err := m.addEntry(ctx, "user", "Hello"); err != nil {
 		t.Errorf("failed to add user entry: %v", err)
 	}
 
-	if err := m.AddEntry(ctx, "model", "Hi there"); err != nil {
+	if err := m.addEntry(ctx, "model", "Hi there"); err != nil {
 		t.Errorf("failed to add model entry: %v", err)
 	}
 
@@ -95,10 +95,10 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	m := NewManager(historyFile)
 	ctx := context.Background()
 
-	_ = m.AddEntry(ctx, "user", "Initial")
+	_ = m.addEntry(ctx, "user", "Initial")
 	m.Snapshot()
 
-	_ = m.AddEntry(ctx, "model", "Response")
+	_ = m.addEntry(ctx, "model", "Response")
 	if len(m.GetContents()) != 2 {
 		t.Errorf("expected 2 entries, got %d", len(m.GetContents()))
 	}
@@ -121,8 +121,8 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "interfaces.json")
 	m := NewManager(historyFile)
 
-	if m.GetPath() != historyFile {
-		t.Errorf("GetPath() = %s, want %s", m.GetPath(), historyFile)
+	if m.getPath() != historyFile {
+		t.Errorf("getPath() = %s, want %s", m.getPath(), historyFile)
 	}
 
 	if m.GetResolver() == nil {
@@ -130,7 +130,7 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 	}
 
 	fs := storage.DefaultFileSystem
-	m.WithFileSystem(fs)
+	m.withFileSystem(fs)
 	// Verify it reached the store
 	if s, ok := m.store.(*jsonlStore); ok {
 		if s.fs != fs {
@@ -165,7 +165,7 @@ func TestHistoryManager_FileCreation(t *testing.T) {
 	ctx := context.Background()
 
 	// Add an entry to trigger a save
-	err := h.AddEntry(ctx, "user", "test message")
+	err := h.addEntry(ctx, "user", "test message")
 	if err != nil {
 		t.Fatalf("AddEntry failed: %v", err)
 	}
@@ -184,10 +184,10 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup: 2 turns (4 messages)
-	_ = m.AddEntry(ctx, "user", "U1")
-	_ = m.AddEntry(ctx, "model", "M1")
-	_ = m.AddEntry(ctx, "user", "U2")
-	_ = m.AddEntry(ctx, "model", "M2")
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
+	_ = m.addEntry(ctx, "user", "U2")
+	_ = m.addEntry(ctx, "model", "M2")
 
 	if err := m.SetPinned(ctx, 0, true); err != nil {
 		t.Fatalf("SetPinned(0, true) failed: %v", err)
@@ -210,8 +210,8 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup: 1 turn pinned
-	_ = m.AddEntry(ctx, "user", "U1")
-	_ = m.AddEntry(ctx, "model", "M1")
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
 	if err := m.SetPinned(ctx, 0, true); err != nil {
 		t.Fatalf("SetPinned(0, true) failed: %v", err)
 	}

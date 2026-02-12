@@ -38,8 +38,8 @@ func newJSONLStore(filePath string) *jsonlStore {
 	}
 }
 
-// WithFileSystem sets the filesystem implementation.
-func (s *jsonlStore) WithFileSystem(fs storage.FileSystem) *jsonlStore {
+// withFileSystem sets the filesystem implementation.
+func (s *jsonlStore) withFileSystem(fs storage.FileSystem) *jsonlStore {
 	s.fs = fs
 	s.assetStore.WithFileSystem(fs)
 	return s

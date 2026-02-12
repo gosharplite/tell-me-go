@@ -56,15 +56,15 @@ func TestResilientClient_WrapError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := client.WrapError(tt.err)
+			got := client.wrapError(tt.err)
 			if tt.expected == nil {
 				if got != nil {
-					t.Errorf("WrapError() = %v, want nil", got)
+					t.Errorf("wrapError() = %v, want nil", got)
 				}
 				return
 			}
 			if !errors.Is(got, tt.expected) {
-				t.Errorf("WrapError() = %v, want error containing %v", got, tt.expected)
+				t.Errorf("wrapError() = %v, want error containing %v", got, tt.expected)
 			}
 		})
 	}

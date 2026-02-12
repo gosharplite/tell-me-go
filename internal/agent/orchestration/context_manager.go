@@ -89,7 +89,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	// We execute the pipeline. Since some transformers might modify history
 	// and want it persisted (Pruner, Gatekeeper), but others only want it
 	// for the API (warningInjector), we handle persistence carefully through the pipeline.
-	err := pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
 		cm.mu.Lock()
 		defer cm.mu.Unlock()
 
@@ -136,8 +136,8 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 	cm.Pipeline = p
 }
 
-// RegisterToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
-func (cm *ContextManager) RegisterToolRegistry(reg tools.IToolRegistry) {
+// registerToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
+func (cm *ContextManager) registerToolRegistry(reg tools.IToolRegistry) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 

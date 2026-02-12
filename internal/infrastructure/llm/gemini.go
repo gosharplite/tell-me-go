@@ -315,7 +315,7 @@ func (c *Client) fromSDKContent(content *genai.Content) *llm.Content {
 }
 
 func (c *Client) parseMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {
-	return GetMetrics(resp, duration)
+	return getMetrics(resp, duration)
 }
 
 func (c *Client) classifyError(err error) error {

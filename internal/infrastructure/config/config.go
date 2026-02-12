@@ -29,11 +29,11 @@ type Config struct {
 	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
 	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
-	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
+	Models             map[string]modelConfig `yaml:"MODELS"` // Model-specific overrides
 }
 
-// ModelConfig defines capabilities and limits for a specific model.
-type ModelConfig struct {
+// modelConfig defines capabilities and limits for a specific model.
+type modelConfig struct {
 	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`
 	ContextWindow     int                  `yaml:"CONTEXT_WINDOW"`
 	Pricing           pricing.ModelPricing `yaml:"PRICING"`
@@ -52,8 +52,8 @@ func Load(path string) (*Config, error) {
 	cfg.MaxToolTurns = DefaultMaxToolTurns
 	cfg.MaxHistoryTurns = DefaultMaxHistoryTurns
 	cfg.MaxHistoryTokens = DefaultMaxHistoryTokens
-	cfg.MaxConcurrentTools = DefaultMaxConcurrentTools
-	cfg.ToolTimeoutSeconds = DefaultToolTimeoutSeconds
+	cfg.MaxConcurrentTools = defaultMaxConcurrentTools
+	cfg.ToolTimeoutSeconds = defaultToolTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
 
@@ -86,7 +86,7 @@ func Load(path string) (*Config, error) {
 // ResolveThinkingBudget returns the best matching thinking budget for the model.
 func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.PricingData) int {
 	// 1. Try Config overrides
-	if mCfg, ok := findBestMatch(c.Models, model, func(m ModelConfig) bool {
+	if mCfg, ok := findBestMatch(c.Models, model, func(m modelConfig) bool {
 		return m.MaxThinkingBudget > 0
 	}); ok {
 		return mCfg.MaxThinkingBudget
@@ -106,7 +106,7 @@ func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.Pricing
 // ResolveContextWindow returns the appropriate context window limit.
 func (c *Config) ResolveContextWindow() int {
 	maxTokens := c.MaxHistoryTokens
-	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
+	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m modelConfig) bool {
 		return m.ContextWindow > 0
 	}); ok {
 		if maxTokens > mCfg.ContextWindow {

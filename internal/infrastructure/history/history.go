@@ -39,12 +39,12 @@ func (m *Manager) setStore(s store) {
 	m.store = s
 }
 
-// WithFileSystem sets the filesystem implementation for the default store.
-func (m *Manager) WithFileSystem(fs storage.FileSystem) *Manager {
+// withFileSystem sets the filesystem implementation for the default store.
+func (m *Manager) withFileSystem(fs storage.FileSystem) *Manager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.store.(*jsonlStore); ok {
-		s.WithFileSystem(fs)
+		s.withFileSystem(fs)
 	}
 	return m
 }
@@ -114,8 +114,8 @@ func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
 	return cloned
 }
 
-// GetPath returns the file path of the history file.
-func (m *Manager) GetPath() string {
+// getPath returns the file path of the history file.
+func (m *Manager) getPath() string {
 	return m.FilePath
 }
 
@@ -166,8 +166,8 @@ func (m *Manager) Rollback(ctx context.Context) {
 	}
 }
 
-// AddEntry appends a new text message to the history.
-func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
+// addEntry appends a new text message to the history.
+func (m *Manager) addEntry(ctx context.Context, role, text string) error {
 	return m.AddContent(ctx, &llm.Content{
 		Role:  role,
 		Parts: []*llm.Part{{Text: text}},

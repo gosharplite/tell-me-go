@@ -45,9 +45,9 @@ func (p *ContextPipeline) execute(ctx context.Context, req *request) error {
 	return nil
 }
 
-// ExecuteWithPersistence runs the pipeline and calls a persist function
+// executeWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
-func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
 	for _, t := range canonical {

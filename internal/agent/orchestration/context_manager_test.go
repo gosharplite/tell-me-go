@@ -46,7 +46,7 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 
 	// Case 1: cm.Pipeline is nil. (Assert no panic)
 	assert.NotPanics(t, func() {
-		cm.RegisterToolRegistry(&mockToolRegistry{})
+		cm.registerToolRegistry(&mockToolRegistry{})
 	})
 
 	// Case 2: cm.Pipeline contains a toolDeclarationGenerator.
@@ -54,14 +54,14 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 	p := NewContextPipeline(tg)
 	cm.SetPipeline(p)
 	reg := &mockToolRegistry{}
-	cm.RegisterToolRegistry(reg)
+	cm.registerToolRegistry(reg)
 	assert.Equal(t, reg, tg.Registry)
 
 	// Case 3: cm.Pipeline contains other transformers but no toolDeclarationGenerator.
 	p2 := NewContextPipeline(&emptyTurnFilter{})
 	cm.SetPipeline(p2)
 	assert.NotPanics(t, func() {
-		cm.RegisterToolRegistry(reg)
+		cm.registerToolRegistry(reg)
 	})
 }
 

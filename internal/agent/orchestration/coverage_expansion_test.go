@@ -80,7 +80,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewContextPipeline(tt.pipeline...)
-			err := p.ExecuteWithPersistence(context.Background(), tt.req, tt.persistFn)
+			err := p.executeWithPersistence(context.Background(), tt.req, tt.persistFn)
 			if tt.expectedErr != nil {
 				assert.ErrorIs(t, err, tt.expectedErr)
 			} else {

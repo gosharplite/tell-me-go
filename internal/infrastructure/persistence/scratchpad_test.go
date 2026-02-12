@@ -16,7 +16,7 @@ func TestScratchpadRepository(t *testing.T) {
 	fs := storage.DefaultFileSystem
 	tempDir := t.TempDir()
 	file := filepath.Join(tempDir, "scratchpad.md")
-	repo := NewScratchpadRepository(fs, file)
+	repo := newScratchpadRepository(fs, file)
 
 	t.Run("Save and Load Scratchpad", func(t *testing.T) {
 		content := "Hello, world!"
@@ -34,7 +34,7 @@ func TestScratchpadRepository(t *testing.T) {
 	})
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
-		repo2 := NewScratchpadRepository(fs, filepath.Join(tempDir, "none.md"))
+		repo2 := newScratchpadRepository(fs, filepath.Join(tempDir, "none.md"))
 		loaded, err := repo2.Get(ctx, "content")
 		if err != nil {
 			t.Fatal(err)

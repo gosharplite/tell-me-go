@@ -62,9 +62,9 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		_ = os.WriteFile(cachePath, []byte("cached-token"), 0600)
 		defer os.Remove(cachePath)
 
-		token, err := auth.GetToken()
+		token, err := auth.getToken()
 		if err != nil {
-			t.Fatalf("GetToken failed: %v", err)
+			t.Fatalf("getToken failed: %v", err)
 		}
 		if token != "cached-token" {
 			t.Errorf("got %s, want cached-token", token)
@@ -81,9 +81,9 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		_ = os.Remove(cachePath) // ensure no cache
 		defer os.Remove(cachePath)
 
-		token, err := auth.GetToken()
+		token, err := auth.getToken()
 		if err != nil {
-			t.Fatalf("GetToken failed: %v", err)
+			t.Fatalf("getToken failed: %v", err)
 		}
 		if token != "gcloud-token" {
 			t.Errorf("got %s, want gcloud-token", token)

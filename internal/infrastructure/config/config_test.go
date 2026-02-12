@@ -121,7 +121,7 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 
 func TestResolveThinkingBudget(t *testing.T) {
 	cfg := &Config{
-		Models: map[string]ModelConfig{
+		Models: map[string]modelConfig{
 			"gemini-2.0-flash": {MaxThinkingBudget: 1000},
 			"pro":              {MaxThinkingBudget: 5000},
 		},

@@ -96,7 +96,7 @@ func TestCleanupOldBackups(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	err = CleanupOldBackups(*paths, 30)
+	err = cleanupOldBackups(*paths, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 }
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
-	err := CleanupOldBackups(Paths{}, 0)
+	err := cleanupOldBackups(Paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestCleanupOldBackups_NoRetention(t *testing.T) {
 func TestCleanupOldBackups_NoDir(t *testing.T) {
 	tmp := t.TempDir()
 	paths := Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
-	err := CleanupOldBackups(paths, 30)
+	err := cleanupOldBackups(paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)
 	}

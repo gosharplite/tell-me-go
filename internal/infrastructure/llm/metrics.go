@@ -8,8 +8,8 @@ import (
 	"google.golang.org/genai"
 )
 
-// GetMetrics extracts metrics from a GenAI response.
-func GetMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {
+// getMetrics extracts metrics from a GenAI response.
+func getMetrics(resp *genai.GenerateContentResponse, duration float64) *llm.Metrics {
 	m := &llm.Metrics{
 		Duration: duration,
 	}

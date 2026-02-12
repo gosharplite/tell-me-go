@@ -13,19 +13,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
-// Summarizer implements the services.Summarizer interface using an LLM gateway.
-type Summarizer struct {
+// summarizer implements the services.Summarizer interface using an LLM gateway.
+type summarizer struct {
 	gateway llm.LLMGateway
 	events  events.EventBus
 }
 
 // NewSummarizer creates a new summarization service.
 func NewSummarizer(g llm.LLMGateway, bus events.EventBus) services.Summarizer {
-	return &Summarizer{gateway: g, events: bus}
+	return &summarizer{gateway: g, events: bus}
 }
 
 // Summarize uses the LLM to compress a subset of history.
-func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+func (s *summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 	startTime := time.Now()
 
 	summarizerInput := s.prepareSummarizerInput(subset, focus)
@@ -55,7 +55,7 @@ func (s *Summarizer) Summarize(ctx context.Context, subset []*llm.Content, focus
 }
 
 // prepareSummarizerInput transforms history to text-only to avoid INVALID_ARGUMENT and appends the summarization prompt.
-func (s *Summarizer) prepareSummarizerInput(subset []*llm.Content, focus string) []*llm.Content {
+func (s *summarizer) prepareSummarizerInput(subset []*llm.Content, focus string) []*llm.Content {
 	input := make([]*llm.Content, len(subset))
 	for i, c := range subset {
 		input[i] = &llm.Content{Role: c.Role}
@@ -64,7 +64,7 @@ func (s *Summarizer) prepareSummarizerInput(subset []*llm.Content, focus string)
 		}
 	}
 
-	prompt := SummarizationPrompt
+	prompt := summarizationPrompt
 	if focus != "" {
 		prompt += fmt.Sprintf("\nFocus: %s", focus)
 	}
@@ -77,7 +77,7 @@ func (s *Summarizer) prepareSummarizerInput(subset []*llm.Content, focus string)
 }
 
 // transformPartToText converts a single part into its text representation within a content object.
-func (s *Summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
+func (s *summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
 	if p.Text != "" {
 		content.Parts = append(content.Parts, &llm.Part{Text: p.Text})
 	}
@@ -100,7 +100,7 @@ func (s *Summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
 }
 
 // emitSummarizationMetrics publishes usage metrics to the event bus.
-func (s *Summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
+func (s *summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
 	if s.events != nil && metrics != nil {
 		metrics.IsSummary = true
 		s.events.Publish(events.UsageMetricsEvent{
@@ -112,15 +112,15 @@ func (s *Summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.
 }
 
 // validateSummarizationResponse ensures the LLM returned valid, non-empty content.
-func (s *Summarizer) validateSummarizationResponse(respContent *llm.Content) (string, error) {
+func (s *summarizer) validateSummarizationResponse(respContent *llm.Content) (string, error) {
 	if respContent == nil || len(respContent.Parts) == 0 || respContent.Parts[0].Text == "" {
 		return "", fmt.Errorf("summarization returned empty content")
 	}
 	return respContent.Parts[0].Text, nil
 }
 
-// SummarizationPrompt is the system instruction for history compression.
-const SummarizationPrompt = `You are a conversation compressor. Summarize the provided history into a concise but comprehensive state summary.
+// summarizationPrompt is the system instruction for history compression.
+const summarizationPrompt = `You are a conversation compressor. Summarize the provided history into a concise but comprehensive state summary.
 Preserve:
 1. Current architecture decisions and project structure.
 2. Modified files and their high-level changes.

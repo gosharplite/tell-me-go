@@ -168,10 +168,10 @@ func TestJSONLStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
 	fs := storage.DefaultFileSystem
-	store := newJSONLStore(filePath).WithFileSystem(fs)
+	store := newJSONLStore(filePath).withFileSystem(fs)
 
 	if store.fs != fs {
-		t.Error("WithFileSystem failed to set filesystem on jsonlStore")
+		t.Error("withFileSystem failed to set filesystem on jsonlStore")
 	}
 }
 
