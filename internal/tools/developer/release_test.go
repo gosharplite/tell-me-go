@@ -72,6 +72,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		name       string
 		files      func() map[string][]byte
 		exitCode   int
+		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
 		wantSubstr string
 	}{
 		{
@@ -104,19 +105,41 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			exitCode:   1,
 			wantSubstr: "Clean build failed",
 		},
+		{
+			name: "Linter failure",
+			files: func() map[string][]byte {
+				return map[string][]byte{
+					"go.mod": []byte("module test"),
+				}
+			},
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "golangci-lint" {
+					return []byte("lint error: style"), fmt.Errorf("exit status 1")
+				}
+				return []byte("success"), nil
+			},
+			wantSubstr: "golangci-lint found issues",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := storage.NewMockFileSystem()
 			fs.Files = tt.files()
-			executor := &mockCommandExecutor{
-				runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			runFunc := tt.runFunc
+			if runFunc == nil {
+				runFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 					if tt.exitCode != 0 {
-						return []byte("failed"), fmt.Errorf("exit status %d", tt.exitCode)
+						// Build or Test fail
+						if name == "go" && (args[0] == "build" || args[0] == "test") {
+							return []byte("failed"), fmt.Errorf("exit status %d", tt.exitCode)
+						}
 					}
 					return []byte("success"), nil
-				},
+				}
+			}
+			executor := &mockCommandExecutor{
+				runFunc: runFunc,
 			}
 
 			m := &releaseManager{
