@@ -95,7 +95,6 @@ func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
 	return h.interactor.ReadLine(ctx)
 }
 
-
 // MockInteractor is a test helper that implements UserInteractor.
 type MockInteractor struct {
 	Answer string

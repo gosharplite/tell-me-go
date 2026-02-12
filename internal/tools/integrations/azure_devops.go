@@ -427,6 +427,14 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 	return tools.ToolResult{Text: string(content)}, nil
 }
 
+type adoRepositoryItemsResponse struct {
+	Value []struct {
+		Path     string `json:"path"`
+		IsFolder bool   `json:"isFolder"`
+	} `json:"value"`
+	Count int `json:"count"`
+}
+
 func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
@@ -474,27 +482,24 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	}
 	defer resp.Body.Close()
 
-	var responseData struct {
-		Value []struct {
-			Path     string `json:"path"`
-			IsFolder bool   `json:"isFolder"`
-		} `json:"value"`
-		Count int `json:"count"`
-	}
-
+	var responseData adoRepositoryItemsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
+}
+
+func (m *azureDevOpsManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
-		return tools.ToolResult{Text: "No items found."}, nil
+		return tools.ToolResult{Text: "No items found."}
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Items in %s (%s):\n\n", params.ScopePath, params.Version))
+	resultText.WriteString(fmt.Sprintf("Items in %s (%s):\n\n", scopePath, version))
 	for _, item := range responseData.Value {
 		// Skip the scope path itself if it's the first element
-		if item.Path == params.ScopePath && len(responseData.Value) > 1 {
+		if item.Path == scopePath && len(responseData.Value) > 1 {
 			continue
 		}
 		prefix := "[FILE]"
@@ -504,7 +509,7 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 		resultText.WriteString(fmt.Sprintf("- %s %s\n", prefix, item.Path))
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return tools.ToolResult{Text: resultText.String()}
 }
 
 func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

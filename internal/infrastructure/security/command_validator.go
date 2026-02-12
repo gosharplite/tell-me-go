@@ -29,7 +29,6 @@ func NewCommandValidator(sm SecurityProvider, interactor domain.UserInteractor) 
 	return &CommandValidator{sm: sm, safety: safety, interactor: interactor}
 }
 
-
 // IsSafe checks if a command is safe for auto-approval.
 // Returns (isSafe, reason if unsafe).
 func (v *CommandValidator) IsSafe(command string) (bool, string) {

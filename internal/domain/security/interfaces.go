@@ -22,4 +22,3 @@ type UserInteractor interface {
 	ReadSingleKey(ctx context.Context) (string, error)
 	ReadLine(ctx context.Context) (string, error)
 }
-

@@ -139,44 +139,64 @@ func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 
 	switch params.Action {
 	case "add":
-		task, err := t.tasks.AddTask(ctx, params.Content)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+		return t.addTask(ctx, params.Content)
 	case "update":
-		if _, err := t.tasks.UpdateTask(ctx, params.TaskID, params.Content, params.Status); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", params.TaskID)}, nil
+		return t.updateTask(ctx, params.TaskID, params.Content, params.Status)
 	case "delete":
-		if err := t.tasks.DeleteTask(ctx, params.TaskID); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", params.TaskID)}, nil
+		return t.deleteTask(ctx, params.TaskID)
 	case "list":
-		tasks := t.tasks.ListTasks(params.Status)
-		if len(tasks) == 0 {
-			return tools.ToolResult{Text: "No tasks found."}, nil
-		}
-		var sb strings.Builder
-		sb.WriteString("Tasks:\n")
-		for _, task := range tasks {
-			icon := "[ ]"
-			if task.Status == "completed" {
-				icon = "[x]"
-			}
-			sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status))
-		}
-		return tools.ToolResult{Text: sb.String()}, nil
+		return t.listTasks(params.Status)
 	case "clear":
-		if err := t.tasks.ClearTasks(ctx); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "All tasks cleared."}, nil
+		return t.clearTasks(ctx)
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
+}
+
+func (t *PersistenceTools) addTask(ctx context.Context, content string) (tools.ToolResult, error) {
+	task, err := t.tasks.AddTask(ctx, content)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+}
+
+func (t *PersistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
+	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", id)}, nil
+}
+
+func (t *PersistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
+	if err := t.tasks.DeleteTask(ctx, id); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
+}
+
+func (t *PersistenceTools) listTasks(status string) (tools.ToolResult, error) {
+	tasks := t.tasks.ListTasks(status)
+	if len(tasks) == 0 {
+		return tools.ToolResult{Text: "No tasks found."}, nil
+	}
+	var sb strings.Builder
+	sb.WriteString("Tasks:\n")
+	for _, task := range tasks {
+		icon := "[ ]"
+		if task.Status == "completed" {
+			icon = "[x]"
+		}
+		sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status))
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (t *PersistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
+	if err := t.tasks.ClearTasks(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "All tasks cleared."}, nil
 }
 
 // ManageScratchpad handles the manage_scratchpad tool.

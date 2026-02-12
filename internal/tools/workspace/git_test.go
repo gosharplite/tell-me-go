@@ -330,4 +330,3 @@ func TestGitConfirmError(t *testing.T) {
 		t.Error("expected error from ConfirmDestructiveAction, got nil")
 	}
 }
-

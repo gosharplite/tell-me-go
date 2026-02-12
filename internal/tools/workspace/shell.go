@@ -30,7 +30,6 @@ func NewShellTool(sm *security.SecurityManager) *ShellTool {
 	}
 }
 
-
 func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()

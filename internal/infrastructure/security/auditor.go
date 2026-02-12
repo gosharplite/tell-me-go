@@ -69,4 +69,3 @@ func (a *Auditor) LogAudit(label1, val1, label2, val2 string) {
 	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label1, val1)
 	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label2, val2)
 }
-
