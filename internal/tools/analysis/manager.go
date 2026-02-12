@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -61,24 +62,28 @@ type analysisManager struct {
 	// Project Health & Architecture
 	Health *healthManager
 	Arch   *architectureManager
+
+	// EventBus for progress reporting
+	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider, bus events.EventBus) *analysisManager {
 	executor := &exec.RealExecutor{}
 	fs := storage.DefaultFileSystem
 
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
-		Dependency: newDependencyAnalyzer(executor, sp),
+		Dependency: newDependencyAnalyzer(executor, sp, bus),
 		Sequence:   newSequenceAnalyzer(executor, sp),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
 		DeadCode:   newDeadCodeAnalyzer(sp),
 
 		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs},
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus},
 		Search:   &searchManager{SP: sp, FS: fs},
 		Arch:     &architectureManager{SP: sp},
+		Events:   bus,
 	}
 
 	m.Arch.Loader = &RealPackageProvider{m: m.Arch}

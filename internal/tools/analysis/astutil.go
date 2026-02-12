@@ -117,9 +117,12 @@ func ExprToString(expr ast.Expr) string {
 		return "..." + ExprToString(t.Elt)
 	case *ast.FuncType:
 		return "func(...)"
-	default:
-		return fmt.Sprintf("%T", t)
 	}
+	return handleComplexExpr(expr)
+}
+
+func handleComplexExpr(expr ast.Expr) string {
+	return fmt.Sprintf("%T", expr)
 }
 
 func writeFields(sb *strings.Builder, fields *ast.FieldList, showNames bool) {
@@ -200,6 +203,16 @@ func CompareASTs(base, curr *ast.File) []string {
 	}
 
 	// Find Added and Modified
+	changes = append(changes, findAddedAndModified(baseDecls, currDecls)...)
+
+	// Find Deleted
+	changes = append(changes, findDeleted(baseDecls, currDecls)...)
+
+	return changes
+}
+
+func findAddedAndModified(baseDecls, currDecls map[string]ast.Decl) []string {
+	var changes []string
 	var keys []string
 	for k := range currDecls {
 		keys = append(keys, k)
@@ -216,8 +229,11 @@ func CompareASTs(base, curr *ast.File) []string {
 			}
 		}
 	}
+	return changes
+}
 
-	// Find Deleted
+func findDeleted(baseDecls, currDecls map[string]ast.Decl) []string {
+	var changes []string
 	var baseKeys []string
 	for k := range baseDecls {
 		baseKeys = append(baseKeys, k)
@@ -229,31 +245,39 @@ func CompareASTs(base, curr *ast.File) []string {
 			changes = append(changes, "Deleted: "+k)
 		}
 	}
-
 	return changes
 }
 
 func GetDeclKey(decl ast.Decl) string {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
-		name := d.Name.Name
-		if d.Recv != nil && len(d.Recv.List) > 0 {
-			recv := ExprToString(d.Recv.List[0].Type)
-			return fmt.Sprintf("func (%s) %s", recv, name)
-		}
-		return "func " + name
+		return handleFuncDeclKey(d)
 	case *ast.GenDecl:
-		if d.Tok == token.TYPE && len(d.Specs) > 0 {
-			if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
-				return "type " + ts.Name.Name
-			}
+		return handleGenDeclKey(d)
+	}
+	return "unknown"
+}
+
+func handleFuncDeclKey(d *ast.FuncDecl) string {
+	name := d.Name.Name
+	if d.Recv != nil && len(d.Recv.List) > 0 {
+		recv := ExprToString(d.Recv.List[0].Type)
+		return fmt.Sprintf("func (%s) %s", recv, name)
+	}
+	return "func " + name
+}
+
+func handleGenDeclKey(d *ast.GenDecl) string {
+	if d.Tok == token.TYPE && len(d.Specs) > 0 {
+		if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
+			return "type " + ts.Name.Name
 		}
-		if d.Tok == token.CONST && len(d.Specs) > 0 {
-			return "const block"
-		}
-		if d.Tok == token.VAR && len(d.Specs) > 0 {
-			return "var block"
-		}
+	}
+	if d.Tok == token.CONST && len(d.Specs) > 0 {
+		return "const block"
+	}
+	if d.Tok == token.VAR && len(d.Specs) > 0 {
+		return "var block"
 	}
 	return "unknown"
 }
@@ -296,43 +320,58 @@ func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
 	sb.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
 
 	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.GenDecl:
-			if d.Tok == token.TYPE {
-				for _, spec := range d.Specs {
-					ts := spec.(*ast.TypeSpec)
-					if ts.Name.IsExported() {
-						// Create a copy of GenDecl for formatting
-						newGD := &ast.GenDecl{
-							Doc:    d.Doc,
-							TokPos: d.TokPos,
-							Tok:    d.Tok,
-							Lparen: d.Lparen,
-							Specs:  []ast.Spec{ts},
-							Rparen: d.Rparen,
-						}
-						if err := format.Node(&sb, fset, newGD); err == nil {
-							sb.WriteString("\n\n")
-						}
-					}
-				}
-			}
-		case *ast.FuncDecl:
-			if d.Name.IsExported() {
-				// Create a copy of FuncDecl for formatting
-				newFD := &ast.FuncDecl{
-					Doc:  d.Doc,
-					Recv: d.Recv,
-					Name: d.Name,
-					Type: d.Type,
-					Body: nil, // Remove body
-				}
-				if err := format.Node(&sb, fset, newFD); err == nil {
-					sb.WriteString("\n\n")
-				}
-			}
-		}
+		c.writeSkeletonDecl(&sb, fset, decl)
 	}
 
 	return strings.TrimSpace(sb.String()), nil
+}
+
+func (c *astCache) writeSkeletonDecl(sb *strings.Builder, fset *token.FileSet, decl ast.Decl) {
+	switch d := decl.(type) {
+	case *ast.GenDecl:
+		c.writeGenDeclSkeleton(sb, fset, d)
+	case *ast.FuncDecl:
+		c.writeFuncDeclSkeleton(sb, fset, d)
+	}
+}
+
+func (c *astCache) writeGenDeclSkeleton(sb *strings.Builder, fset *token.FileSet, d *ast.GenDecl) {
+	if d.Tok != token.TYPE {
+		return
+	}
+	for _, spec := range d.Specs {
+		ts, ok := spec.(*ast.TypeSpec)
+		if !ok || !ts.Name.IsExported() {
+			continue
+		}
+		// Create a copy of GenDecl for formatting
+		newGD := &ast.GenDecl{
+			Doc:    d.Doc,
+			TokPos: d.TokPos,
+			Tok:    d.Tok,
+			Lparen: d.Lparen,
+			Specs:  []ast.Spec{ts},
+			Rparen: d.Rparen,
+		}
+		if err := format.Node(sb, fset, newGD); err == nil {
+			sb.WriteString("\n\n")
+		}
+	}
+}
+
+func (c *astCache) writeFuncDeclSkeleton(sb *strings.Builder, fset *token.FileSet, d *ast.FuncDecl) {
+	if !d.Name.IsExported() {
+		return
+	}
+	// Create a copy of FuncDecl for formatting
+	newFD := &ast.FuncDecl{
+		Doc:  d.Doc,
+		Recv: d.Recv,
+		Name: d.Name,
+		Type: d.Type,
+		Body: nil, // Remove body
+	}
+	if err := format.Node(sb, fset, newFD); err == nil {
+		sb.WriteString("\n\n")
+	}
 }

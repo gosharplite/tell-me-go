@@ -197,7 +197,7 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	registry := c.setupRegistry(client, cfg, paths, pricingOverrides)
+	registry := c.setupRegistry(client, cfg, paths, pricingOverrides, bus)
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()

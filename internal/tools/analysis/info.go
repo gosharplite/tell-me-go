@@ -14,17 +14,18 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type infoManager struct {
-	SP    security.SecurityProvider
-	Cache *astCache
-	FS    storage.FileSystem
+	SP     security.SecurityProvider
+	Cache  *astCache
+	FS     storage.FileSystem
+	Events events.EventBus
 }
 
 var genericSkeletonPatterns = []*regexp.Regexp{
@@ -134,11 +135,12 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	symbol := params.Symbol
-	func() {
-		m.SP.TerminalLock()
-		defer m.SP.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go doc %s%s\n", ui.ColorCyan, symbol, ui.ColorReset)
-	}()
+	if m.Events != nil {
+		m.Events.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
+			Level:   "info",
+		})
+	}
 
 	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
 	out, err := cmd.CombinedOutput()
