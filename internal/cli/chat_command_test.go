@@ -101,7 +101,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(nil)
 	cmd := NewChatCommand(&Context{
 		Version: "test",
 		Stdin:   os.Stdin,
@@ -139,7 +139,7 @@ func TestRunEmptyPromptError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(nil)
 	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		Stdin:   bytes.NewReader(nil),
@@ -169,7 +169,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 		}
 	}()
 
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(nil)
 	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		Stdin:   strings.NewReader("\n"),
@@ -192,7 +192,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 
 func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	tmpDir := t.TempDir()
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(nil)
 	cmd := &ChatCommand{
 		HomeDir: tmpDir,
 		SM:      sm,
@@ -245,7 +245,7 @@ func TestExecuteErrors(t *testing.T) {
 		// Use a JSON that will fail to unmarshal into llm.Content
 		require.NoError(t, os.WriteFile(paths.HistoryPath, []byte("{\"role\": 123}"), 0644))
 
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		cmd := NewChatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
@@ -264,7 +264,7 @@ func TestExecuteErrors(t *testing.T) {
 		configPath := filepath.Join(tmpDir, "vertex.yaml")
 		require.NoError(t, os.WriteFile(configPath, []byte("MODE: test-mode\n"), 0644))
 
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		cmd := NewChatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
@@ -286,7 +286,7 @@ func TestExecuteErrors(t *testing.T) {
 
 	t.Run("FlagParsing", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		cmd := NewChatCommand(&Context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),

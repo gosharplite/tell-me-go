@@ -70,7 +70,7 @@ func TestRecordCost_BreaksStaleLock(t *testing.T) {
 	_ = os.Chtimes(lockPath, oldTime, oldTime)
 
 	m := &metricsManager{
-		sm: security.NewSecurityManager(os.Stdin),
+		sm: security.NewSecurityManager(nil),
 	}
 
 	record := SessionCostRecord{
@@ -117,7 +117,7 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 	data, _ := json.Marshal(metrics)
 	_ = os.WriteFile(logPath, append(data, '\n'), 0644)
 
-	sm := security.NewSecurityManager(os.Stdin)
+	sm := security.NewSecurityManager(nil)
 	m := &metricsManager{
 		sm:    sm,
 		model: "default-model", // This is the current session model

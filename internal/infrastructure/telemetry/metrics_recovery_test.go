@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 		_ = os.WriteFile(path, []byte("{}"), 0644)
 	}
 
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
 		sm:     sm,
@@ -58,7 +57,7 @@ func TestRecordCost_UsesContext(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
 		sm:    sm,
@@ -98,7 +97,7 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	_ = os.MkdirAll(filepath.Dir(logPath), 0755)
 	_ = os.WriteFile(logPath, []byte("{}"), 0644)
 
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
 	m := &metricsManager{
 		sm:     sm,
@@ -225,7 +224,7 @@ invalid json line
 			tempDir := t.TempDir()
 			tt.setup(t, tempDir)
 
-			sm := security.NewSecurityManager(strings.NewReader(""))
+			sm := security.NewSecurityManager(nil)
 			sm.RegisterSafePath(tempDir)
 			ls := NewLedgerStore(sm, "test-model", nil)
 

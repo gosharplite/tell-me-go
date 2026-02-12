@@ -119,8 +119,8 @@ func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions,
 
 // Execute runs the chat command logic.
 func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
-	c.SM.SetInputReader(c.Stdin)
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	c.SM.SetInteractor(capturer)
 
 	opts, fs, cfg, err := c.initializeConfiguration(args)
 	if err != nil {

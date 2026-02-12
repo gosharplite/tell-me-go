@@ -7,13 +7,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type InteractionTool struct {
@@ -40,9 +38,9 @@ func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, fmt.Errorf("question argument is required")
 	}
 
-	// Tell-me style: Question in magenta, followed by "Answer > " prompt
-	fmt.Fprintf(os.Stderr, "%s[AI Question] %s%s\n", ui.ColorMagenta, question, ui.ColorReset)
-	fmt.Fprintf(os.Stderr, "Answer > ")
+	// Tell-me style: Question, followed by "Answer > " prompt
+	t.sm.Warn(fmt.Sprintf("[AI Question] %s", question))
+	t.sm.Warn("Answer > ")
 
 	s, err := t.sm.ReadLine(ctx)
 	if err != nil {

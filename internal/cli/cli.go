@@ -34,7 +34,7 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *A
 		homeDir = "."
 	}
 
-	sm := security.NewSecurityManager(stdin)
+	sm := security.NewSecurityManager(nil)
 
 	return &App{
 		Version: version,

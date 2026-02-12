@@ -450,7 +450,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		input := "y\n"
-		sm := security.NewSecurityManager(strings.NewReader(input))
+		sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
 		m := NewConfluenceManager(sm, mockClient)
 
 		pageID := "123"
@@ -502,7 +502,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 	t.Run("Cancelled by user", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		input := "n\n"
-		sm := security.NewSecurityManager(strings.NewReader(input))
+		sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
 		m := NewConfluenceManager(sm, mockClient)
 
 		// Mock GET version
@@ -527,7 +527,7 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 	t.Run("Conflict 409", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		input := "y\n"
-		sm := security.NewSecurityManager(strings.NewReader(input))
+		sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
 		m := NewConfluenceManager(sm, mockClient)
 
 		// Mock GET version
@@ -1031,7 +1031,7 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Triggers context.Canceled in ConfirmAction
 
-		sm := security.NewSecurityManager(strings.NewReader("y\n"))
+		sm := security.NewSecurityManager(&security.MockInteractor{Answer: "y"})
 		m := NewConfluenceManager(sm, mockClient)
 
 		args := map[string]interface{}{

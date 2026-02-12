@@ -14,7 +14,7 @@ import (
 func TestSecurityManager_Bypass(t *testing.T) {
 	tmpDir := t.TempDir()
 	bypassFile := filepath.Join(tmpDir, "bypass")
-	sm := NewSecurityManager(strings.NewReader("y\n"))
+	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
 	sm.SetBypassFile(bypassFile)
 
 	// Default
@@ -86,14 +86,14 @@ func TestSecurityManager_Authorize(t *testing.T) {
 
 	// 3. Authorize with user interaction (Yes)
 	sm.SetBypassActive(false)
-	sm.SetInputReader(strings.NewReader("y\n"))
+	sm.SetInteractor(&MockInteractor{Answer: "y"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	if err != nil || !ok {
 		t.Errorf("Authorize(user=y) = %v, %v; want true, nil", ok, err)
 	}
 
 	// 4. Authorize with user interaction (No)
-	sm.SetInputReader(strings.NewReader("n\n"))
+	sm.SetInteractor(&MockInteractor{Answer: "n"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	if err != nil || ok {
 		t.Errorf("Authorize(user=n) = %v, %v; want false, nil", ok, err)

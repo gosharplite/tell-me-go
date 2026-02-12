@@ -40,7 +40,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 		require.NoError(t, os.WriteFile(logB, []byte(contentB), 0644))
 
 		// 4. Initialize a metricsManager pointing to one of these logs.
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)
 
 		m := &metricsManager{
@@ -91,7 +91,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 		historyPath := filepath.Join(tempDir, "global_costs.json")
 		require.NoError(t, os.WriteFile(historyPath, []byte("{broken}"), 0644))
 
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)
 		ls := NewLedgerStore(sm, "test-model", nil)
 
@@ -114,7 +114,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 
 	t.Run("UnreadableLogFile", func(t *testing.T) {
 		tempDir := t.TempDir()
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)
 		ls := NewLedgerStore(sm, "test-model", nil)
 
@@ -147,7 +147,7 @@ func TestLedgerRecoveryIntegration(t *testing.T) {
 		// But ParseUsage also returns error if it can't open the file (covered by UnreadableLogFile).
 		// Let's try to make it skip invalid lines and still work for valid ones.
 		tempDir := t.TempDir()
-		sm := security.NewSecurityManager(strings.NewReader(""))
+		sm := security.NewSecurityManager(nil)
 		sm.RegisterSafePath(tempDir)
 		ls := NewLedgerStore(sm, "test-model", nil)
 

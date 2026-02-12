@@ -4,7 +4,6 @@
 package developer
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -36,13 +35,14 @@ func (m *mockDevExecutor) LookPath(file string) (string, error) {
 
 func setupDevManager(t *testing.T) (*devManager, *mockDevExecutor, *security.SecurityManager) {
 	t.Helper()
-	sm := security.NewSecurityManager(nil)
+	interactor := &security.MockInteractor{}
+	sm := security.NewSecurityManager(interactor)
 	sm.SetBypassActive(true)
 	sm.RegisterSafePath(".")
 	executor := &mockDevExecutor{}
 	m := &devManager{
 		sm:             sm,
-		validator:      security.NewCommandValidator(sm),
+		validator:      security.NewCommandValidator(sm, interactor),
 		executor:       executor,
 		stderr:         io.Discard,
 		createTempFile: os.CreateTemp,
@@ -325,9 +325,7 @@ func TestRunBenchmark_Error(t *testing.T) {
 }
 
 func TestRunTests(t *testing.T) {
-	var stderr bytes.Buffer
-	m, executor, _ := setupDevManager(t)
-	m.stderr = &stderr
+	m, executor, sm := setupDevManager(t)
 	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return []byte("PASS"), nil
 	}
@@ -340,8 +338,16 @@ func TestRunTests(t *testing.T) {
 		t.Errorf("expected PASS in result, got %q", res.Text)
 	}
 
-	if !strings.Contains(stderr.String(), "[Tool Action] Running Tests") {
-		t.Errorf("expected tool action log, got %q", stderr.String())
+	interactor := sm.GetInteractor().(*security.MockInteractor)
+	found := false
+	for _, w := range interactor.Warns {
+		if strings.Contains(w, "[Tool Action] Running Tests") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected tool action log in warns, got %v", interactor.Warns)
 	}
 }
 

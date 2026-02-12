@@ -24,7 +24,7 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestHttpRequest(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 
 	tests := []struct {
 		name       string
@@ -113,7 +113,7 @@ func TestHttpRequest(t *testing.T) {
 }
 
 func TestReadExternalDocs(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 
 	tests := []struct {
 		name       string
@@ -252,7 +252,7 @@ func TestSendTeamsMessage(t *testing.T) {
 			if tt.confirm {
 				input = "y\n"
 			}
-			sm := security.NewSecurityManager(strings.NewReader(input))
+			sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
 
 			mock := &mockHTTPClient{
 				DoFunc: func(req *http.Request) (*http.Response, error) {
@@ -292,7 +292,7 @@ func TestSendTeamsMessage(t *testing.T) {
 }
 
 func TestNewNetworkTool(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	tool := NewNetworkTool(sm, nil)
 	if tool.client == nil {
 		t.Error("NewNetworkTool(sm, nil) should have initialized a default client")
@@ -300,7 +300,7 @@ func TestNewNetworkTool(t *testing.T) {
 }
 
 func TestNewTeamsManager(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	m := NewTeamsManager(sm, nil)
 	if m.client == nil {
 		t.Error("NewTeamsManager(sm, nil) should have initialized a default client")
@@ -309,7 +309,7 @@ func TestNewTeamsManager(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	r := registry.New()
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	RegisterAll(r, sm, nil, "")
 
 	decls := r.GetDeclarations()
@@ -331,7 +331,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestHttpRequest_Errors(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	tool := NewNetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
@@ -343,7 +343,7 @@ func TestHttpRequest_Errors(t *testing.T) {
 }
 
 func TestReadExternalDocs_Errors(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	tool := NewNetworkTool(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {
@@ -362,7 +362,7 @@ func TestReadExternalDocs_Errors(t *testing.T) {
 }
 
 func TestSendTeamsMessage_Errors(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	m := NewTeamsManager(sm, nil)
 
 	t.Run("Invalid Args", func(t *testing.T) {

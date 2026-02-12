@@ -71,7 +71,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 	var stdout strings.Builder
 	var stderr strings.Builder
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 
 	cmd := &ChatCommand{
 		Version: "1.0.0",

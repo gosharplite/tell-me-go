@@ -5,30 +5,30 @@ package security
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/google/shlex"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // CommandValidator handles command validation and security checks.
 type CommandValidator struct {
-	sm     SecurityProvider
-	safety *domain.SafetyService
+	sm         SecurityProvider
+	safety     *domain.SafetyService
+	interactor domain.UserInteractor
 }
 
 // NewCommandValidator creates a new CommandValidator.
-func NewCommandValidator(sm SecurityProvider) *CommandValidator {
+func NewCommandValidator(sm SecurityProvider, interactor domain.UserInteractor) *CommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
 		safety = sm.GetSafetyService()
 	} else {
 		safety = domain.NewSafetyService(domain.DefaultPolicy())
 	}
-	return &CommandValidator{sm: sm, safety: safety}
+	return &CommandValidator{sm: sm, safety: safety, interactor: interactor}
 }
+
 
 // IsSafe checks if a command is safe for auto-approval.
 // Returns (isSafe, reason if unsafe).
@@ -266,7 +266,9 @@ func (v *CommandValidator) validateSinglePath(arg string) (bool, string) {
 
 	if _, err := v.sm.IsPathSafe(arg); err != nil {
 		if v.looksLikePath(arg) {
-			fmt.Fprintf(os.Stderr, "%s[Safety] %v%s\n", ui.ColorRed, err, ui.ColorReset)
+			if v.interactor != nil {
+				v.interactor.Warn(fmt.Sprintf("[Safety] %v", err))
+			}
 			return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type NetworkTool struct {
@@ -46,11 +44,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	url := params.URL
 	bodyStr := params.Body
 
-	func() {
-		t.sm.TerminalLock()
-		defer t.sm.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] HTTP %s %s%s\n", ui.ColorCyan, method, url, ui.ColorReset)
-	}()
+	t.sm.Warn(fmt.Sprintf("[Tool Action] HTTP %s %s", method, url))
 
 	var reqBody io.Reader
 	if bodyStr != "" {

@@ -5,7 +5,6 @@ package security
 
 import (
 	"context"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -28,12 +27,16 @@ type SecurityManager struct {
 }
 
 // NewSecurityManager creates a new SecurityManager.
-func NewSecurityManager(input io.Reader) *SecurityManager {
+func NewSecurityManager(interactor domain.UserInteractor) *SecurityManager {
+	if interactor == nil {
+		interactor = &NoOpInteractor{}
+	}
 	auditor := NewAuditor()
+	auditor.SetInteractor(interactor)
 	policy := domain.DefaultPolicy()
 	return &SecurityManager{
 		policy:       newPathPolicy(),
-		interaction:  newInteractionHandler(input, auditor),
+		interaction:  newInteractionHandler(interactor, auditor),
 		Auditor:      auditor,
 		domainPolicy: policy,
 		safety:       domain.NewSafetyService(policy),
@@ -80,6 +83,17 @@ func (sm *SecurityManager) Authorize(ctx context.Context, label, detail, reason 
 // LogAudit writes an audit entry.
 func (sm *SecurityManager) LogAudit(label1, val1, label2, val2 string) {
 	sm.Auditor.LogAudit(label1, val1, label2, val2)
+}
+
+// Warn prints a security warning.
+func (sm *SecurityManager) Warn(message string) {
+	sm.interaction.interactor.Warn(message)
+}
+
+// SetInteractor updates the user interactor.
+func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
+	sm.interaction.SetInteractor(interactor)
+	sm.Auditor.SetInteractor(interactor)
 }
 
 // SetBypassFile sets the file where persistent bypass state is stored.
@@ -158,11 +172,6 @@ func (sm *SecurityManager) ReadLine(ctx context.Context) (string, error) {
 	return sm.interaction.ReadLine(ctx)
 }
 
-// SetInputReader sets the input reader.
-func (sm *SecurityManager) SetInputReader(r io.Reader) {
-	sm.interaction.SetReader(r)
-}
-
 // RegisterSafePath registers a safe path.
 func (sm *SecurityManager) RegisterSafePath(path string) {
 	sm.policy.RegisterPath(path, true)
@@ -231,4 +240,9 @@ func (sm *SecurityManager) RemoveReadOnlyPath(path string) error {
 // GetSafetyService returns the domain safety service.
 func (sm *SecurityManager) GetSafetyService() *domain.SafetyService {
 	return sm.safety
+}
+
+// GetInteractor returns the user interactor.
+func (sm *SecurityManager) GetInteractor() domain.UserInteractor {
+	return sm.interaction.interactor
 }

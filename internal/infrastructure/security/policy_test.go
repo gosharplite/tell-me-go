@@ -5,17 +5,13 @@ package security
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestPolicyTool(t *testing.T) {
-	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
-	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
-
 	tempDir := t.TempDir()
-	sm := NewSecurityManager(nil)
+	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
 	sm.SetSafePathsFile(filepath.Join(tempDir, "safepaths.json"))
 
 	p := newPolicyTool(sm)

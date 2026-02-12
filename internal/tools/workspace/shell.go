@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type ShellTool struct {
@@ -25,11 +24,12 @@ type ShellTool struct {
 func NewShellTool(sm *security.SecurityManager) *ShellTool {
 	return &ShellTool{
 		sm:        sm,
-		validator: security.NewCommandValidator(sm),
+		validator: security.NewCommandValidator(sm, sm.GetInteractor()),
 		executor:  NewProcessExecutor(),
 		maxOutput: 50000,
 	}
 }
+
 
 func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
@@ -178,40 +178,36 @@ func (t *ShellTool) handleAuthResult(approved bool, err error, label string) (to
 
 func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved (bypass_confirmation enabled).%s\n", ui.ColorGreen, label, ui.ColorReset)
+		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved (bypass_confirmation enabled).", label))
 		return true, nil
 	}
 	if isSafe {
-		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Safe %s detected.%s\n", ui.ColorGreen, strings.ToLower(label), ui.ColorReset)
+		t.sm.Warn(fmt.Sprintf("[Auto-Approved] Safe %s detected.", strings.ToLower(label)))
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "%sExecute %s: %s%s\n", ui.ColorCyan, label, ui.ColorReset, detail)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Execute %s: %s\n", label, detail))
 	if reason != "" {
-		fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
+		sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
 	}
 	if outputFile != "" {
 		redir := ">"
 		if append {
 			redir = ">>"
 		}
-		fmt.Fprintf(os.Stderr, "%sRedirect: %s %s%s\n", ui.ColorBlue, redir, outputFile, ui.ColorReset)
+		sb.WriteString(fmt.Sprintf("Redirect: %s %s\n", redir, outputFile))
 	}
-	fmt.Fprintf(os.Stderr, "⚠️  Execute this %s? (y/N) ", strings.ToLower(label))
+	sb.WriteString(fmt.Sprintf("⚠️  Execute this %s? (y/N) ", strings.ToLower(label)))
 
-	char, err := t.sm.ReadSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil {
-		return false, err
-	}
-	return char == "y", nil
+	return t.sm.GetInteractor().Confirm(ctx, sb.String())
 }
 
 func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
-	fmt.Fprintf(os.Stderr, "%s%s... (Output shown below)%s\n", ui.ColorGray, msg, ui.ColorReset)
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
+	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
+	t.sm.Warn("------------------------------------------------------------")
 	res, err := runFn()
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
+	t.sm.Warn("------------------------------------------------------------")
 	return res, err
 }
 

@@ -11,7 +11,7 @@ import (
 func TestCommandValidator(t *testing.T) {
 	sm := NewSecurityManager(nil)
 	sm.RegisterReadOnlyPath("/opt/test")
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {
 		cmd     string
@@ -36,7 +36,7 @@ func TestCommandValidator(t *testing.T) {
 }
 
 func TestCommandValidator_ValidateStructure(t *testing.T) {
-	v := NewCommandValidator(nil)
+	v := NewCommandValidator(nil, nil)
 
 	tests := []struct {
 		cmd     string
@@ -77,7 +77,7 @@ func TestCommandValidator_ValidateStructure(t *testing.T) {
 
 func TestCommandValidator_Go(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {
 		cmd     string
@@ -104,7 +104,7 @@ func TestCommandValidator_Go(t *testing.T) {
 
 func TestCommandValidator_Git(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {
 		cmd     string
@@ -141,7 +141,7 @@ func TestCommandValidator_Git(t *testing.T) {
 func TestCommandValidator_PathSafety(t *testing.T) {
 	sm := NewSecurityManager(nil)
 	sm.RegisterSafePath("/safe")
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {
 		cmd     string
@@ -165,7 +165,7 @@ func TestCommandValidator_PathSafety(t *testing.T) {
 }
 
 func TestCommandValidator_SplitError(t *testing.T) {
-	v := NewCommandValidator(nil)
+	v := NewCommandValidator(nil, nil)
 	_, err := v.Split("ls 'unclosed quote")
 	if err == nil {
 		t.Error("expected error for unclosed quote")
@@ -182,7 +182,7 @@ func TestCommandValidator_SplitError(t *testing.T) {
 
 func TestCommandValidator_EmptyCommand(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 	allowed, reason := v.IsSafe("")
 	if allowed {
 		t.Error("expected IsSafe to return false for empty command")
@@ -194,7 +194,7 @@ func TestCommandValidator_EmptyCommand(t *testing.T) {
 
 func TestCommandValidator_UnsafeChars(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	unsafe := []string{
 		"ls\n",
@@ -213,7 +213,7 @@ func TestCommandValidator_UnsafeChars(t *testing.T) {
 
 func TestCommandValidator_GranularAuthorization(t *testing.T) {
 	sm := NewSecurityManager(nil)
-	v := NewCommandValidator(sm)
+	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {
 		cmd     string
