@@ -52,8 +52,8 @@ func (c *Capturer) IsTTY(v any) bool {
 	return false
 }
 
-// Prompt captures the initial prompt from command line arguments or standard input.
-func (c *Capturer) Prompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+// CapturePrompt captures the initial prompt from command line arguments or standard input.
+func (c *Capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
 
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
@@ -142,7 +142,16 @@ func (c *Capturer) printFeedback(w io.Writer, useColor bool, color, msg string) 
 
 // Confirm prompts the user for confirmation.
 func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
-	fmt.Fprint(c.Stderr, message)
+	color := ""
+	if strings.HasPrefix(message, "[SECURITY]") || strings.HasPrefix(message, "[CONFIRMATION REQUIRED]") {
+		color = colorRed
+	}
+
+	if color != "" && c.IsTTY(c.Stderr) {
+		fmt.Fprintf(c.Stderr, "%s%s%s", color, message, colorReset)
+	} else {
+		fmt.Fprint(c.Stderr, message)
+	}
 
 	char, err := c.ReadSingleKey(ctx)
 	fmt.Fprintf(c.Stderr, "\n")
@@ -154,7 +163,20 @@ func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
 
 // Warn displays a warning message.
 func (c *Capturer) Warn(message string) {
-	c.printFeedback(c.Stderr, true, colorYellow, message)
+	color := colorYellow
+	if strings.HasPrefix(message, "[SECURITY]") {
+		color = colorRed
+	}
+	c.printFeedback(c.Stderr, true, color, message)
+}
+
+// Prompt displays an inline message without a newline.
+func (c *Capturer) Prompt(message string) {
+	if c.IsTTY(c.Stderr) {
+		fmt.Fprintf(c.Stderr, "%s%s%s", colorYellow, message, colorReset)
+	} else {
+		fmt.Fprint(c.Stderr, message)
+	}
 }
 
 // ReadSingleKey waits for a single key press from Stdin.

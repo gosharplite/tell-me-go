@@ -40,7 +40,7 @@ func (t *interactionTool) AskUser(ctx context.Context, args map[string]interface
 
 	// Tell-me style: Question, followed by "Answer > " prompt
 	t.sm.Warn(fmt.Sprintf("[AI Question] %s", question))
-	t.sm.Warn("Answer > ")
+	t.sm.Prompt("Answer > ")
 
 	s, err := t.sm.ReadLine(ctx)
 	if err != nil {

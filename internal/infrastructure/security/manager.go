@@ -90,6 +90,11 @@ func (sm *SecurityManager) Warn(message string) {
 	sm.interaction.interactor.Warn(message)
 }
 
+// Prompt prints an inline prompt.
+func (sm *SecurityManager) Prompt(message string) {
+	sm.interaction.interactor.Prompt(message)
+}
+
 // SetInteractor updates the user interactor.
 func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
 	sm.interaction.SetInteractor(interactor)

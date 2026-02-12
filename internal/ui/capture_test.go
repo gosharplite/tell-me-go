@@ -23,7 +23,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 	cancel()
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.Prompt(ctx, fs, 0, false)
+	_, err := capturer.CapturePrompt(ctx, fs, 0, false)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
@@ -39,7 +39,7 @@ func TestPrompt_Pipe(t *testing.T) {
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 
-	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestPrompt_Args(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestPrompt_Empty(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	_, err := capturer.Prompt(context.Background(), fs, 0, false)
+	_, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
@@ -96,7 +96,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 	}
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestPrompt_Combined(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, err := capturer.Prompt(context.Background(), fs, 0, false)
+	prompt, err := capturer.CapturePrompt(context.Background(), fs, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,5 +207,85 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 	_, err := capturer.captureFromTTY(ctx, false)
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestWarn_SemanticStyling(t *testing.T) {
+	var stderr bytes.Buffer
+	capturer := &Capturer{
+		Stderr: &stderr,
+	}
+
+	tests := []struct {
+		name     string
+		message  string
+		expected string
+	}{
+		{
+			name:     "Security warning",
+			message:  "[SECURITY] High risk",
+			expected: "[SECURITY] High risk\n",
+		},
+		{
+			name:     "Normal warning",
+			message:  "Regular warning",
+			expected: "Regular warning\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stderr.Reset()
+			capturer.Warn(tt.message)
+			if stderr.String() != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, stderr.String())
+			}
+		})
+	}
+}
+
+func TestConfirm_SemanticStyling(t *testing.T) {
+	os.Setenv("TELL_ME_MOCK_ANSWER", "y")
+	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
+
+	var stderr bytes.Buffer
+	capturer := &Capturer{
+		Stdin:  strings.NewReader(""),
+		Stderr: &stderr,
+	}
+
+	tests := []struct {
+		name     string
+		message  string
+		expected string
+	}{
+		{
+			name:     "Security confirmation",
+			message:  "[SECURITY] Proceed?",
+			expected: "[SECURITY] Proceed?\n",
+		},
+		{
+			name:     "Required confirmation",
+			message:  "[CONFIRMATION REQUIRED] Are you sure?",
+			expected: "[CONFIRMATION REQUIRED] Are you sure?\n",
+		},
+		{
+			name:     "Normal confirmation",
+			message:  "Continue?",
+			expected: "Continue?\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stderr.Reset()
+			_, err := capturer.Confirm(context.Background(), tt.message)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if stderr.String() != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, stderr.String())
+			}
+		})
 	}
 }

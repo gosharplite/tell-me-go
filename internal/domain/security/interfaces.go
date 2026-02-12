@@ -13,12 +13,14 @@ type ISecurityManager interface {
 	TerminalUnlock()
 	IsBypassActive() bool
 	IsCommandAllowed(command string) bool
+	Prompt(message string)
 }
 
 // UserInteractor defines the interface for user interactions (confirmations, warnings).
 type UserInteractor interface {
 	Confirm(ctx context.Context, message string) (bool, error)
 	Warn(message string)
+	Prompt(message string)
 	ReadSingleKey(ctx context.Context) (string, error)
 	ReadLine(ctx context.Context) (string, error)
 }

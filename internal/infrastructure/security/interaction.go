@@ -121,6 +121,11 @@ func (m *MockInteractor) Warn(message string) {
 	m.Warns = append(m.Warns, message)
 }
 
+// Prompt captures the prompt message as a warning.
+func (m *MockInteractor) Prompt(message string) {
+	m.Warns = append(m.Warns, message)
+}
+
 // ReadSingleKey returns the first character of the mocked answer.
 func (m *MockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 	select {
@@ -163,6 +168,9 @@ func (i *noOpInteractor) Confirm(ctx context.Context, message string) (bool, err
 
 // Warn does nothing.
 func (i *noOpInteractor) Warn(message string) {}
+
+// Prompt does nothing.
+func (i *noOpInteractor) Prompt(message string) {}
 
 // ReadSingleKey returns an empty string.
 func (i *noOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {
