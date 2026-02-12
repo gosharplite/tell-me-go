@@ -194,7 +194,6 @@ func (c *chatCommand) initializeDependencies(ctx stdctx.Context, paths *persiste
 	bus := events.NewSimpleEventBus()
 
 	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
-	hManager.Snapshot()
 
 	client, err := c.ClientFactory(cfg, pricingData, bus)
 	if err != nil {

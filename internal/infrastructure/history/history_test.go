@@ -96,7 +96,7 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "Initial")
-	m.Snapshot()
+	m.snapshot()
 
 	_ = m.addEntry(ctx, "model", "Response")
 	if len(m.GetContents()) != 2 {

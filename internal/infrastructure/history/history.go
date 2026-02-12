@@ -146,8 +146,8 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	return m.store.Save(ctx, m.Contents)
 }
 
-// Snapshot takes a backup of the current state for potential rollback.
-func (m *Manager) Snapshot() {
+// snapshot takes a backup of the current state for potential rollback.
+func (m *Manager) snapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.backup = make([]*llm.Content, len(m.Contents))

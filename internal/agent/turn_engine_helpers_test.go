@@ -58,23 +58,6 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
-func (m *mockHistoryManager) Snapshot() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.Backup = make([]*llm.Content, len(m.Contents))
-	for i, c := range m.Contents {
-		m.Backup[i] = llm.CloneContent(c)
-	}
-}
-
-func (m *mockHistoryManager) Rollback(ctx context.Context) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.Backup != nil {
-		m.Contents = m.Backup
-	}
-}
-
 func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
 	if m.AddContentFunc != nil {
 		return m.AddContentFunc(ctx, content)

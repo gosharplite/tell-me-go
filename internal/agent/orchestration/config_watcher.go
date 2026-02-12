@@ -177,25 +177,11 @@ func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	}
 }
 
-func (cw *ConfigWatcher) setTieredThreshold(threshold int) {
-	cw.mu.Lock()
-	defer cw.mu.Unlock()
-	if threshold > 0 {
-		cw.tieredThreshold = threshold
-	}
-}
-
 // GetLimits returns the current cached limits.
-func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns int) {
+func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold int) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
-	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns
-}
-
-func (cw *ConfigWatcher) GetTieredThreshold() int {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
-	return cw.tieredThreshold
+	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
 }
 
 func (cw *ConfigWatcher) getContextWindow() int {

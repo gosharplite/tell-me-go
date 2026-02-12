@@ -187,11 +187,11 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	a.mu.Lock()
 	a.configWatcher.Refresh(a.config.Model)
 
-	tokens, toolTurns, histTurns := a.configWatcher.GetLimits()
+	tokens, toolTurns, histTurns, threshold := a.configWatcher.GetLimits()
 	a.config.Limits.MaxHistoryTokens = tokens
 	a.config.Limits.MaxToolTurns = toolTurns
 	a.config.Limits.MaxHistoryTurns = histTurns
-	a.config.Limits.TieredThreshold = a.configWatcher.GetTieredThreshold()
+	a.config.Limits.TieredThreshold = threshold
 
 	if a.strategy != nil {
 		a.configWatcher.SyncToStrategy(a.strategy)

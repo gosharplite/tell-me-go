@@ -19,7 +19,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	cw.SetPaths("", sessionPath)
 
 	// 1. Initial defaults
-	tokens, _, _ := cw.GetLimits()
+	tokens, _, _, _ := cw.GetLimits()
 	if tokens != 100 {
 		t.Errorf("expected 100 tokens, got %d", tokens)
 	}
@@ -30,7 +30,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	}
 
 	cw.Refresh("default")
-	tokens, _, _ = cw.GetLimits()
+	tokens, _, _, _ = cw.GetLimits()
 	if tokens != 200 {
 		t.Errorf("expected 200 tokens after refresh, got %d", tokens)
 	}
@@ -42,7 +42,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	}
 
 	cw.Refresh("default")
-	tokens, _, _ = cw.GetLimits()
+	tokens, _, _, _ = cw.GetLimits()
 	if tokens != 300 {
 		t.Errorf("expected 300 tokens after second refresh, got %d", tokens)
 	}
@@ -62,7 +62,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 
 	// Should not panic and should keep old values
 	cw.Refresh("default")
-	tokens, _, _ := cw.GetLimits()
+	tokens, _, _, _ := cw.GetLimits()
 	if tokens != 100 {
 		t.Errorf("expected 100 tokens to be preserved, got %d", tokens)
 	}
@@ -75,7 +75,7 @@ func TestConfigWatcher_MissingFile(t *testing.T) {
 
 	// Should not panic
 	cw.Refresh("default")
-	tokens, _, _ := cw.GetLimits()
+	tokens, _, _, _ := cw.GetLimits()
 	if tokens != 100 {
 		t.Errorf("expected 100 tokens, got %d", tokens)
 	}
@@ -113,7 +113,7 @@ MAX_TURNS: 5
 	}
 
 	cw.Refresh("default")
-	tokens, toolTurns, _ := cw.GetLimits()
+	tokens, toolTurns, _, _ := cw.GetLimits()
 
 	if tokens != 500 {
 		t.Errorf("expected 500 tokens from YAML, got %d", tokens)
@@ -176,7 +176,7 @@ MAX_TURNS: 5
 	}
 
 	cw.Refresh("model-a")
-	tokens, toolTurns, _ := cw.GetLimits()
+	tokens, toolTurns, _, _ := cw.GetLimits()
 	if tokens != 999 {
 		t.Errorf("expected 999 tokens (session override), got %d", tokens)
 	}
@@ -198,7 +198,7 @@ MAX_TURNS: 5
 	cw.Refresh("model-a")
 
 	// Verify initial state
-	tokens, toolTurns, _ := cw.GetLimits()
+	tokens, toolTurns, _, _ := cw.GetLimits()
 	if tokens != 500 || toolTurns != 5 {
 		t.Fatalf("setup failed: expected (500, 5), got (%d, %d)", tokens, toolTurns)
 	}
@@ -208,7 +208,7 @@ MAX_TURNS: 5
 	cw.Refresh("model-a")
 
 	// Assert old values persist
-	tokens, toolTurns, _ = cw.GetLimits()
+	tokens, toolTurns, _, _ = cw.GetLimits()
 	if tokens != 500 {
 		t.Errorf("expected 500 tokens to persist after YAML deletion, got %d", tokens)
 	}
