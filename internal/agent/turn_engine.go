@@ -172,8 +172,8 @@ func withMiddleware(m ...turnMiddleware) engineOption {
 	}
 }
 
-// WithProcessor registers or overrides a processor for a specific phase.
-func WithProcessor(phase turnPhase, p turnProcessor) engineOption {
+// withProcessor registers or overrides a processor for a specific phase.
+func withProcessor(phase turnPhase, p turnProcessor) engineOption {
 	return func(e *turnEngine) {
 		e.processors[phase] = p
 	}

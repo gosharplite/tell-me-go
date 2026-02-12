@@ -75,7 +75,7 @@ func setupTestExecutor(t *testing.T, toolsMap map[string]toolBehavior, allowedTo
 
 	bus := &inframock.TestEventBus{}
 	exec := NewToolExecutor(reg, sm, bus)
-	exec.SetStrategy(&MockStrategy{}) // Use simple strategy for easier verification
+	exec.setStrategy(&mockStrategy{}) // Use simple strategy for easier verification
 	t.Cleanup(exec.Shutdown)
 
 	return exec, bus, behaviors
@@ -584,7 +584,7 @@ func TestResultCollector(t *testing.T) {
 
 func TestToolExecutor_AssembleResponse_Binary(t *testing.T) {
 	t.Parallel()
-	e := &ToolExecutor{strategy: &MockStrategy{}}
+	e := &ToolExecutor{strategy: &mockStrategy{}}
 
 	t.Run("Single Tool with Binary", func(t *testing.T) {
 		calls := []*llm.FunctionCall{{Name: "get_image"}}
@@ -682,14 +682,14 @@ func TestToolExecutor_Strategies(t *testing.T) {
 	reg := registry.New()
 	e := NewToolExecutor(reg, nil, nil)
 	t.Cleanup(e.Shutdown)
-	e.SetStrategy(&MarkdownStrategy{})
-	e.SetStrategy(&JSONStrategy{})
+	e.setStrategy(&markdownStrategy{})
+	e.setStrategy(&jsonStrategy{})
 
 	calls := []*llm.FunctionCall{{Name: "test"}}
 	results := []tools.ToolResult{{Text: "res"}}
 	content := e.assembleResponse(calls, results)
 	if len(content.Parts) == 0 {
-		t.Error("JSONStrategy produced no parts")
+		t.Error("jsonStrategy produced no parts")
 	}
 }
 
@@ -706,9 +706,9 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.allowedCommands[command]
 }
 
-type MockStrategy struct{}
+type mockStrategy struct{}
 
-func (s *MockStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+func (s *mockStrategy) Format(name string, result tools.ToolResult) *llm.Part {
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
 			Name:     name,
@@ -751,7 +751,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
-		exec.SetStrategy(&MockStrategy{})
+		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},
@@ -771,7 +771,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
-		exec.SetStrategy(&MockStrategy{})
+		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
 			{FunctionCall: &llm.FunctionCall{Name: "any"}},

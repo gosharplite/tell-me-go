@@ -9,13 +9,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// ResultStrategy defines how tool outputs are transformed back into LLM messages.
-type ResultStrategy = services.ResultStrategy
+// resultStrategy defines how tool outputs are transformed back into LLM messages.
+type resultStrategy = services.ResultStrategy
 
-// MarkdownStrategy formats tool results as markdown-friendly text.
-type MarkdownStrategy struct{}
+// markdownStrategy formats tool results as markdown-friendly text.
+type markdownStrategy struct{}
 
-func (s *MarkdownStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+func (s *markdownStrategy) Format(name string, result tools.ToolResult) *llm.Part {
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
 			Name:     name,
@@ -24,11 +24,11 @@ func (s *MarkdownStrategy) Format(name string, result tools.ToolResult) *llm.Par
 	}
 }
 
-// JSONStrategy formats tool results as raw JSON.
-type JSONStrategy struct{}
+// jsonStrategy formats tool results as raw JSON.
+type jsonStrategy struct{}
 
-func (s *JSONStrategy) Format(name string, result tools.ToolResult) *llm.Part {
-	// For now it's similar to MarkdownStrategy but could differ in the future
+func (s *jsonStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+	// For now it's similar to markdownStrategy but could differ in the future
 	// (e.g. returning structured data instead of just a 'result' string field).
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{

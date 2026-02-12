@@ -37,7 +37,7 @@ type ToolExecutor struct {
 	maxConcurrentTools int
 	toolTimeout        time.Duration
 	pool               *concurrency.WorkerPool
-	strategy           ResultStrategy
+	strategy           resultStrategy
 	failures           *failureTracker
 }
 
@@ -50,7 +50,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
 		pool:               concurrency.NewWorkerPool(5),
-		strategy:           &MarkdownStrategy{},
+		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
 	}
 
@@ -88,8 +88,8 @@ func (f *failureTracker) isOpen(toolName string) bool {
 	return f.failures[toolName] >= f.threshold
 }
 
-// SetStrategy sets the result formatting strategy.
-func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
+// setStrategy sets the result formatting strategy.
+func (e *ToolExecutor) setStrategy(s resultStrategy) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.strategy = s
