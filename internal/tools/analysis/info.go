@@ -99,9 +99,16 @@ func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) sto
 
 		if ext == ".go" {
 			stats.packages[filepath.Dir(path)] = true
-			// TODO: In a future iteration, integrate m.Cache (astCache) to get LOC
-			// without redundant disk reads/parsing if the file is already cached.
-			if count, err := m.countLines(ctx, path); err == nil {
+			// Try cache first to avoid redundant disk I/O
+			var count int
+			var ok bool
+			if m.Cache != nil {
+				count, ok = m.Cache.GetCachedLineCount(path, info)
+			}
+
+			if ok {
+				stats.totalLOC += count
+			} else if count, err := m.countLines(ctx, path); err == nil {
 				stats.totalLOC += count
 			}
 		}

@@ -331,3 +331,47 @@ func TestGetDeclKey_Unknown(t *testing.T) {
 		t.Errorf("getDeclKey(BadDecl) = %s, want unknown", got)
 	}
 }
+
+func TestGetCachedLineCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "lines.go")
+	content := "package main\n\nfunc main() {\n\t// comment\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := newASTCache()
+	info, _ := os.Stat(path)
+
+	// 1. Initially not in cache
+	count, ok := cache.GetCachedLineCount(path, info)
+	if ok {
+		t.Errorf("expected not in cache, but got count %d", count)
+	}
+
+	// 2. Parse and cache
+	_, _, err := cache.Get(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Now it should be in cache
+	count, ok = cache.GetCachedLineCount(path, info)
+	if !ok {
+		t.Error("expected to be in cache")
+	}
+	if count != 5 {
+		t.Errorf("expected 5 lines, got %d", count)
+	}
+
+	// 4. Invalidation check
+	time.Sleep(10 * time.Millisecond)
+	if err := os.WriteFile(path, []byte(content+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	newInfo, _ := os.Stat(path)
+	count, ok = cache.GetCachedLineCount(path, newInfo)
+	if ok {
+		t.Error("expected cache invalidation")
+	}
+}

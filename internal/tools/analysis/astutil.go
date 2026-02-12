@@ -21,9 +21,10 @@ import (
 
 // Global AST Cache to improve performance of AST-based tools
 type cachedFile struct {
-	file    *ast.File
-	fset    *token.FileSet
-	modTime time.Time
+	file      *ast.File
+	fset      *token.FileSet
+	modTime   time.Time
+	lineCount int
 }
 
 type astCache struct {
@@ -38,6 +39,21 @@ func newASTCache() *astCache {
 		files:   make(map[string]cachedFile),
 		maxSize: 1000,
 	}
+}
+
+func (cf cachedFile) isValid(info os.FileInfo) bool {
+	return cf.modTime.Equal(info.ModTime())
+}
+
+func (c *astCache) GetCachedLineCount(path string, info os.FileInfo) (int, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, ok := c.files[path]
+	if ok && entry.isValid(info) {
+		return entry.lineCount, true
+	}
+	return 0, false
 }
 
 func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
@@ -82,9 +98,15 @@ func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
 		}
 
 		newEntry := cachedFile{
-			file:    f,
-			fset:    fset,
-			modTime: info.ModTime(),
+			file:      f,
+			fset:      fset,
+			modTime:   info.ModTime(),
+			lineCount: 0,
+		}
+		if fset != nil && f != nil {
+			if tf := fset.File(f.Pos()); tf != nil {
+				newEntry.lineCount = tf.LineCount()
+			}
 		}
 		c.files[path] = newEntry
 
