@@ -22,10 +22,6 @@ type MockSecurityProvider struct {
 	IsPathSafeFunc               func(path string) (string, error)
 }
 
-func (m *MockSecurityProvider) GetPolicy() *domain.Policy {
-	return domain.DefaultPolicy()
-}
-
 func (m *MockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())
 }

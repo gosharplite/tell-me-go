@@ -54,7 +54,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	tx := NewTransaction()
+	tx := newTransaction()
 	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -65,9 +65,9 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, err
 	}
 
-	tx.Add(NewMoveTransform(plan))
-	tx.Add(NewImportCleanupTransform(plan.SrcFile))
-	tx.Add(NewImportCleanupTransform(plan.DstFile))
+	tx.Add(newMoveTransform(plan))
+	tx.Add(newImportCleanupTransform(plan.SrcFile))
+	tx.Add(newImportCleanupTransform(plan.DstFile))
 
 	if err := tx.Commit(ctx); err != nil {
 		return tools.ToolResult{}, err

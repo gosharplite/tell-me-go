@@ -33,8 +33,8 @@ func TestExprToString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ExprToString(tt.expr); got != tt.want {
-				t.Errorf("ExprToString() = %v, want %v", got, tt.want)
+			if got := exprToString(tt.expr); got != tt.want {
+				t.Errorf("exprToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -56,7 +56,7 @@ func F4(a ...int) {}
 	signatures := make(map[string]string)
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			signatures[fd.Name.Name] = GetFuncSignature(fd)
+			signatures[fd.Name.Name] = getFuncSignature(fd)
 		}
 	}
 
@@ -72,7 +72,7 @@ func F4(a ...int) {}
 
 	for _, tt := range tests {
 		if got := signatures[tt.name]; got != tt.want {
-			t.Errorf("GetFuncSignature(%s) = %q, want %q", tt.name, got, tt.want)
+			t.Errorf("getFuncSignature(%s) = %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }
@@ -112,7 +112,7 @@ func C4(ch chan int) {
 	complexities := make(map[string]int)
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			complexities[fd.Name.Name] = CalculateComplexity(fd)
+			complexities[fd.Name.Name] = calculateComplexity(fd)
 		}
 	}
 
@@ -128,7 +128,7 @@ func C4(ch chan int) {
 
 	for _, tt := range tests {
 		if got := complexities[tt.name]; got != tt.want {
-			t.Errorf("CalculateComplexity(%s) = %d, want %d", tt.name, got, tt.want)
+			t.Errorf("calculateComplexity(%s) = %d, want %d", tt.name, got, tt.want)
 		}
 	}
 }
@@ -285,12 +285,12 @@ type T2 struct{}
 `
 	f, _ := parser.ParseFile(fset, "t.go", code, 0)
 
-	ts, _ := FindTypeSpec(f, "T1")
+	ts, _ := findTypeSpec(f, "T1")
 	if ts == nil || ts.Name.Name != "T1" {
 		t.Error("failed to find T1")
 	}
 
-	ts, _ = FindTypeSpec(f, "NonExistent")
+	ts, _ = findTypeSpec(f, "NonExistent")
 	if ts != nil {
 		t.Error("should not have found NonExistent")
 	}
@@ -327,7 +327,7 @@ func unexportedFunc() {}
 }
 
 func TestGetDeclKey_Unknown(t *testing.T) {
-	if got := GetDeclKey(&ast.BadDecl{}); got != "unknown" {
-		t.Errorf("GetDeclKey(BadDecl) = %s, want unknown", got)
+	if got := getDeclKey(&ast.BadDecl{}); got != "unknown" {
+		t.Errorf("getDeclKey(BadDecl) = %s, want unknown", got)
 	}
 }

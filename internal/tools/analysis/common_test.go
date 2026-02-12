@@ -40,10 +40,6 @@ func (m *MockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 	return nil, nil
 }
 
-func (s *mockSecurityProvider) GetPolicy() *domain.Policy {
-	return domain.DefaultPolicy()
-}
-
 func (s *mockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())
 }

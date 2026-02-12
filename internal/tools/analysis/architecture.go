@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	LayerDomain   = "domain"
-	LayerAgent    = "agent"
-	LayerTools    = "tools"
-	LayerStorage  = "infrastructure/storage"
-	LayerSecurity = "infrastructure/security"
+	layerDomain   = "domain"
+	layerAgent    = "agent"
+	layerTools    = "tools"
+	layerStorage  = "infrastructure/storage"
+	layerSecurity = "infrastructure/security"
 )
 
 // PackageProvider defines the interface for loading package information.
@@ -186,28 +186,28 @@ func (m *architectureManager) isCmd(pkgPath string) bool {
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
 	rules := []Rule{
 		{
-			SourceLayer: LayerDomain,
-			Forbidden:   []string{LayerAgent, LayerTools, LayerStorage, LayerSecurity},
+			SourceLayer: layerDomain,
+			Forbidden:   []string{layerAgent, layerTools, layerStorage, layerSecurity},
 			Reason:      "Domain must not depend on other internal layers.",
 		},
 		{
-			SourceLayer: LayerAgent,
-			Forbidden:   []string{LayerTools, LayerStorage, "cmd"},
+			SourceLayer: layerAgent,
+			Forbidden:   []string{layerTools, layerStorage, "cmd"},
 			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerTools,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerTools,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerStorage,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerStorage,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerSecurity,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerSecurity,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 	}

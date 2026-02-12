@@ -20,16 +20,16 @@ type typeManager struct {
 	SP      security.SecurityProvider
 }
 
-type TypeDefinition struct {
+type typeDefinition struct {
 	Name     string
 	Doc      string
 	Kind     string // "struct", "interface", "alias"
-	Fields   []FieldInfo
+	Fields   []fieldInfo
 	Methods  []string // Used for interface methods and receiver methods
 	Location string
 }
 
-type FieldInfo struct {
+type fieldInfo struct {
 	Names string
 	Type  string
 	Tag   string
@@ -73,7 +73,7 @@ func (m *typeManager) GetTypeInfo(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	ts, gd := FindTypeSpec(f, typename)
+	ts, gd := findTypeSpec(f, typename)
 	if ts == nil {
 		return tools.ToolResult{Text: "Type not found."}, nil
 	}
@@ -213,8 +213,8 @@ func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]inter
 	return m.wrapResults(results, "No definitions found."), nil
 }
 
-func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc Location) TypeDefinition {
-	def := TypeDefinition{
+func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc Location) typeDefinition {
+	def := typeDefinition{
 		Name:     ts.Name.Name,
 		Location: fmt.Sprintf("%s:%d", loc.Path, loc.Line),
 	}
@@ -235,11 +235,11 @@ func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc L
 	return def
 }
 
-func (m *typeManager) parseFields(list *ast.FieldList) []FieldInfo {
+func (m *typeManager) parseFields(list *ast.FieldList) []fieldInfo {
 	if list == nil {
 		return nil
 	}
-	var fields []FieldInfo
+	var fields []fieldInfo
 	for _, field := range list.List {
 		names := []string{}
 		for _, n := range field.Names {
@@ -249,9 +249,9 @@ func (m *typeManager) parseFields(list *ast.FieldList) []FieldInfo {
 		if field.Tag != nil {
 			tag = field.Tag.Value
 		}
-		fields = append(fields, FieldInfo{
+		fields = append(fields, fieldInfo{
 			Names: strings.Join(names, ", "),
-			Type:  ExprToString(field.Type),
+			Type:  exprToString(field.Type),
 			Tag:   tag,
 		})
 	}
@@ -283,9 +283,9 @@ func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 		}
 		for _, d := range ff.Decls {
 			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
-				recvType := ExprToString(fd.Recv.List[0].Type)
+				recvType := exprToString(fd.Recv.List[0].Type)
 				if strings.TrimPrefix(recvType, "*") == typeName {
-					methods = append(methods, GetFuncSignature(fd))
+					methods = append(methods, getFuncSignature(fd))
 				}
 			}
 		}
@@ -294,7 +294,7 @@ func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 	return methods, err
 }
 
-func (m *typeManager) renderTypeInfo(def TypeDefinition, receivers []string) string {
+func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.Location))
 	if def.Kind != "" {
@@ -370,7 +370,7 @@ func (m *typeManager) formatSymbol(name, kind string, decl ast.Decl) string {
 		return "type " + name
 	case "func":
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			return GetFuncSignature(fd)
+			return getFuncSignature(fd)
 		}
 	case "var":
 		return "var " + name

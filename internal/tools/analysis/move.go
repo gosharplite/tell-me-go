@@ -17,15 +17,15 @@ func (p *MovePlan) Description() string {
 	return fmt.Sprintf("Move %s from %s to %s", p.Symbol, p.SrcFile, p.DstFile)
 }
 
-type MoveTransform struct {
+type moveTransform struct {
 	Plan *MovePlan
 }
 
-func NewMoveTransform(plan *MovePlan) *MoveTransform {
-	return &MoveTransform{Plan: plan}
+func newMoveTransform(plan *MovePlan) *moveTransform {
+	return &moveTransform{Plan: plan}
 }
 
-func (t *MoveTransform) Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+func (t *moveTransform) Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
 	srcFile, ok := files[t.Plan.SrcFile]
 	if !ok {
 		return fmt.Errorf("source file %s not loaded", t.Plan.SrcFile)
@@ -59,7 +59,7 @@ func (t *MoveTransform) Apply(ctx context.Context, fset *token.FileSet, files ma
 	return nil
 }
 
-func (t *MoveTransform) matchSymbol(decl ast.Decl) bool {
+func (t *moveTransform) matchSymbol(decl ast.Decl) bool {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		return d.Name.Name == t.Plan.Symbol

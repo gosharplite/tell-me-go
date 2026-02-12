@@ -86,10 +86,10 @@ func (a *complexityAnalyzer) analyzeFile(filePath string) []FuncComplexity {
 	var fileComplexities []FuncComplexity
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			complexity := CalculateComplexity(fd)
+			complexity := calculateComplexity(fd)
 			funcName := fd.Name.Name
 			if fd.Recv != nil {
-				recvType := ExprToString(fd.Recv.List[0].Type)
+				recvType := exprToString(fd.Recv.List[0].Type)
 				funcName = fmt.Sprintf("(%s).%s", recvType, funcName)
 			}
 			fileComplexities = append(fileComplexities, FuncComplexity{

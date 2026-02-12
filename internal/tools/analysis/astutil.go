@@ -99,22 +99,22 @@ func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
 	return cf.file, cf.fset, nil
 }
 
-func ExprToString(expr ast.Expr) string {
+func exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.SelectorExpr:
-		return ExprToString(t.X) + "." + t.Sel.Name
+		return exprToString(t.X) + "." + t.Sel.Name
 	case *ast.StarExpr:
-		return "*" + ExprToString(t.X)
+		return "*" + exprToString(t.X)
 	case *ast.ArrayType:
-		return "[]" + ExprToString(t.Elt)
+		return "[]" + exprToString(t.Elt)
 	case *ast.MapType:
-		return "map[" + ExprToString(t.Key) + "]" + ExprToString(t.Value)
+		return "map[" + exprToString(t.Key) + "]" + exprToString(t.Value)
 	case *ast.InterfaceType:
 		return "interface{}"
 	case *ast.Ellipsis:
-		return "..." + ExprToString(t.Elt)
+		return "..." + exprToString(t.Elt)
 	case *ast.FuncType:
 		return "func(...)"
 	}
@@ -139,7 +139,7 @@ func writeFields(sb *strings.Builder, fields *ast.FieldList, showNames bool) {
 			}
 			sb.WriteString(" ")
 		}
-		sb.WriteString(ExprToString(field.Type))
+		sb.WriteString(exprToString(field.Type))
 	}
 }
 
@@ -153,7 +153,7 @@ func writeResults(sb *strings.Builder, results *ast.FieldList) {
 	}
 }
 
-func GetFuncSignature(f *ast.FuncDecl) string {
+func getFuncSignature(f *ast.FuncDecl) string {
 	var sb strings.Builder
 	sb.WriteString("func ")
 	if f.Recv != nil {
@@ -173,7 +173,7 @@ func GetFuncSignature(f *ast.FuncDecl) string {
 	return sb.String()
 }
 
-func CalculateComplexity(fd *ast.FuncDecl) int {
+func calculateComplexity(fd *ast.FuncDecl) int {
 	complexity := 1
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch t := n.(type) {
@@ -194,12 +194,12 @@ func CompareASTs(base, curr *ast.File) []string {
 
 	baseDecls := map[string]ast.Decl{}
 	for _, d := range base.Decls {
-		baseDecls[GetDeclKey(d)] = d
+		baseDecls[getDeclKey(d)] = d
 	}
 
 	currDecls := map[string]ast.Decl{}
 	for _, d := range curr.Decls {
-		currDecls[GetDeclKey(d)] = d
+		currDecls[getDeclKey(d)] = d
 	}
 
 	// Find Added and Modified
@@ -248,7 +248,7 @@ func findDeleted(baseDecls, currDecls map[string]ast.Decl) []string {
 	return changes
 }
 
-func GetDeclKey(decl ast.Decl) string {
+func getDeclKey(decl ast.Decl) string {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
 		return handleFuncDeclKey(d)
@@ -261,7 +261,7 @@ func GetDeclKey(decl ast.Decl) string {
 func handleFuncDeclKey(d *ast.FuncDecl) string {
 	name := d.Name.Name
 	if d.Recv != nil && len(d.Recv.List) > 0 {
-		recv := ExprToString(d.Recv.List[0].Type)
+		recv := exprToString(d.Recv.List[0].Type)
 		return fmt.Sprintf("func (%s) %s", recv, name)
 	}
 	return "func " + name
@@ -295,8 +295,8 @@ func isDeclEqual(a, b ast.Decl) bool {
 	return bufA.String() == bufB.String()
 }
 
-// FindTypeSpec searches for a type specification by name in an AST file.
-func FindTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
+// findTypeSpec searches for a type specification by name in an AST file.
+func findTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 	for _, decl := range f.Decls {
 		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
 			for _, spec := range gd.Specs {

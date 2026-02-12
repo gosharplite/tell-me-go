@@ -97,7 +97,7 @@ func (a *changeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath 
 	if baseAST == nil {
 		// Entirely new file
 		for _, d := range currAST.Decls {
-			key := GetDeclKey(d)
+			key := getDeclKey(d)
 			if key != "unknown" {
 				changes = append(changes, "Added: "+key)
 			}

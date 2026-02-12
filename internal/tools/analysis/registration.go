@@ -40,7 +40,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager, bus events.Eve
 			},
 			Required: []string{"path"},
 		},
-	}, m.Health.GetDetailedCoverage, registry.ToolOptions{LongRunning: true})
+	}, m.Health.getDetailedCoverage, registry.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",

@@ -15,8 +15,8 @@ import (
 	"strings"
 )
 
-// UncoveredBlock represents a block of code with zero coverage.
-type UncoveredBlock struct {
+// uncoveredBlock represents a block of code with zero coverage.
+type uncoveredBlock struct {
 	File     string `json:"file"`
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
@@ -29,7 +29,7 @@ type UncoveredBlock struct {
 // classificationRule defines a rule for categorizing uncovered code blocks.
 type classificationRule struct {
 	category string
-	match    func(b *UncoveredBlock) bool
+	match    func(b *uncoveredBlock) bool
 }
 
 var (
@@ -39,20 +39,20 @@ var (
 	classificationRules = []classificationRule{
 		{
 			category: "ERROR_HANDLING",
-			match:    func(b *UncoveredBlock) bool { return b.isErrorHandling() },
+			match:    func(b *uncoveredBlock) bool { return b.isErrorHandling() },
 		},
 		{
 			category: "BUSINESS_LOGIC",
-			match:    func(b *UncoveredBlock) bool { return b.isBusinessLogic() },
+			match:    func(b *uncoveredBlock) bool { return b.isBusinessLogic() },
 		},
 		{
 			category: "ADAPTER",
-			match:    func(b *UncoveredBlock) bool { return b.isAdapter() },
+			match:    func(b *uncoveredBlock) bool { return b.isAdapter() },
 		},
 	}
 )
 
-func (b *UncoveredBlock) isErrorHandling() bool {
+func (b *uncoveredBlock) isErrorHandling() bool {
 	lowerCode := strings.ToLower(b.Code)
 	return strings.Contains(lowerCode, "if err != nil") ||
 		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
@@ -60,7 +60,7 @@ func (b *UncoveredBlock) isErrorHandling() bool {
 		strings.Contains(lowerCode, "errors.new")
 }
 
-func (b *UncoveredBlock) isBusinessLogic() bool {
+func (b *uncoveredBlock) isBusinessLogic() bool {
 	for _, p := range businessLogicPaths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
@@ -69,7 +69,7 @@ func (b *UncoveredBlock) isBusinessLogic() bool {
 	return false
 }
 
-func (b *UncoveredBlock) isAdapter() bool {
+func (b *uncoveredBlock) isAdapter() bool {
 	for _, p := range adapterPaths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
@@ -79,7 +79,7 @@ func (b *UncoveredBlock) isAdapter() bool {
 }
 
 // Classify categorizes the block and assigns a priority based on heuristics.
-func (b *UncoveredBlock) Classify() {
+func (b *uncoveredBlock) Classify() {
 	// Categorize by content and path using rule registry
 	b.Category = "OTHER"
 	for _, rule := range classificationRules {
@@ -160,7 +160,7 @@ func parseLineNum(part string) (int, bool) {
 	return val, err == nil
 }
 
-func parsePathAndRange(pathAndRange string, modulePrefix string) (*UncoveredBlock, bool) {
+func parsePathAndRange(pathAndRange string, modulePrefix string) (*uncoveredBlock, bool) {
 	colonIdx := strings.LastIndex(pathAndRange, ":")
 	if colonIdx == -1 {
 		return nil, false
@@ -183,14 +183,14 @@ func parsePathAndRange(pathAndRange string, modulePrefix string) (*UncoveredBloc
 		return nil, false
 	}
 
-	return &UncoveredBlock{
+	return &uncoveredBlock{
 		File:  file,
 		Start: startLine,
 		End:   endLine,
 	}, true
 }
 
-func parseCoverageLine(line string, modulePrefix string) (*UncoveredBlock, bool) {
+func parseCoverageLine(line string, modulePrefix string) (*uncoveredBlock, bool) {
 	if line == "" || strings.HasPrefix(line, "mode:") {
 		return nil, false
 	}
@@ -219,9 +219,9 @@ func parseCoverageLine(line string, modulePrefix string) (*UncoveredBlock, bool)
 	return block, true
 }
 
-// ParseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
-func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, error) {
-	var blocks []UncoveredBlock
+// parseCoverageProfile parses a go coverage profile and returns blocks with zero coverage.
+func parseCoverageProfile(r io.Reader, run commandRunner) ([]uncoveredBlock, error) {
+	var blocks []uncoveredBlock
 	scanner := bufio.NewScanner(r)
 	modulePrefix := getModuleName(run)
 
@@ -239,8 +239,8 @@ func ParseCoverageProfile(r io.Reader, run commandRunner) ([]UncoveredBlock, err
 	return blocks, scanner.Err()
 }
 
-// GetDetailedCoverage executes the coverage test and parses the profile.
-func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBlock, error) {
+// getDetailedCoverage executes the coverage test and parses the profile.
+func getDetailedCoverage(packagePath string, run commandRunner) ([]uncoveredBlock, error) {
 	f, err := os.CreateTemp("", "coverage-*.out")
 	if err != nil {
 		return nil, err
@@ -267,7 +267,7 @@ func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBloc
 	}
 	defer cf.Close()
 
-	blocks, err := ParseCoverageProfile(cf, run)
+	blocks, err := parseCoverageProfile(cf, run)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func GetDetailedCoverage(packagePath string, run commandRunner) ([]UncoveredBloc
 
 // GetDetailedCoverageReport generates a formatted report optimized for LLM consumption.
 func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, error) {
-	blocks, err := GetDetailedCoverage(packagePath, run)
+	blocks, err := getDetailedCoverage(packagePath, run)
 	if err != nil {
 		return "", err
 	}
@@ -320,7 +320,7 @@ func GetDetailedCoverageReport(packagePath string, run commandRunner) (string, e
 	return sb.String(), nil
 }
 
-func aggregateCoverageStats(blocks []UncoveredBlock) (high []UncoveredBlock, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
+func aggregateCoverageStats(blocks []uncoveredBlock) (high []uncoveredBlock, medium []uncoveredBlock, lowCount int, catStats map[string]int) {
 	catStats = make(map[string]int)
 	for _, b := range blocks {
 		catStats[b.Category]++
@@ -336,7 +336,7 @@ func aggregateCoverageStats(blocks []UncoveredBlock) (high []UncoveredBlock, med
 	return
 }
 
-func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []UncoveredBlock, lowCount int, catStats map[string]int) {
+func renderReportSummary(sb *strings.Builder, packagePath string, total int, high, medium []uncoveredBlock, lowCount int, catStats map[string]int) {
 	sb.WriteString(fmt.Sprintf("Detailed Coverage Report for %s\n", packagePath))
 	sb.WriteString(strings.Repeat("-", len(packagePath)+29) + "\n")
 	sb.WriteString("Summary:\n")
@@ -357,7 +357,7 @@ func renderReportSummary(sb *strings.Builder, packagePath string, total int, hig
 	}
 }
 
-func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock, maxItems int) {
+func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock, maxItems int) {
 	if len(blocks) == 0 {
 		return
 	}
@@ -380,7 +380,7 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []UncoveredBlock,
 
 // GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
 func GetDetailedCoverageJSON(packagePath string, minPriority string, run commandRunner) (string, error) {
-	blocks, err := GetDetailedCoverage(packagePath, run)
+	blocks, err := getDetailedCoverage(packagePath, run)
 	if err != nil {
 		return "", err
 	}
@@ -392,7 +392,7 @@ func GetDetailedCoverageJSON(packagePath string, minPriority string, run command
 	}
 
 	minP := priorityMap[minPriority]
-	var filtered []UncoveredBlock
+	var filtered []uncoveredBlock
 	for _, b := range blocks {
 		if priorityMap[b.Priority] >= minP {
 			filtered = append(filtered, b)

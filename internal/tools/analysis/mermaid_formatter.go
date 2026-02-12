@@ -8,20 +8,20 @@ import (
 	"strings"
 )
 
-// MermaidFormatter handles the conversion of call frames to Mermaid.js sequence diagrams.
-type MermaidFormatter struct{}
+// mermaidFormatter handles the conversion of call frames to Mermaid.js sequence diagrams.
+type mermaidFormatter struct{}
 
-// NewMermaidFormatter creates a new MermaidFormatter.
-func NewMermaidFormatter() *MermaidFormatter {
-	return &MermaidFormatter{}
+// newMermaidFormatter creates a new mermaidFormatter.
+func newMermaidFormatter() *mermaidFormatter {
+	return &mermaidFormatter{}
 }
 
 type formatState struct {
 	inLoop bool
 }
 
-// Format transforms a slice of CallFrame into a Mermaid sequence diagram string.
-func (f *MermaidFormatter) Format(frames []CallFrame) string {
+// Format transforms a slice of callFrame into a Mermaid sequence diagram string.
+func (f *mermaidFormatter) Format(frames []callFrame) string {
 	var b strings.Builder
 	b.WriteString("sequenceDiagram\n")
 
@@ -38,7 +38,7 @@ func (f *MermaidFormatter) Format(frames []CallFrame) string {
 	return b.String()
 }
 
-func (f *MermaidFormatter) writeParticipants(sb *strings.Builder, frames []CallFrame) {
+func (f *mermaidFormatter) writeParticipants(sb *strings.Builder, frames []callFrame) {
 	participants := make(map[string]bool)
 	var orderedParticipants []string
 	for _, frame := range frames {
@@ -57,7 +57,7 @@ func (f *MermaidFormatter) writeParticipants(sb *strings.Builder, frames []CallF
 	}
 }
 
-func (f *MermaidFormatter) renderFrame(sb *strings.Builder, frame CallFrame, state *formatState) {
+func (f *mermaidFormatter) renderFrame(sb *strings.Builder, frame callFrame, state *formatState) {
 	if frame.InLoop && !state.inLoop {
 		sb.WriteString("    loop for each\n")
 		state.inLoop = true

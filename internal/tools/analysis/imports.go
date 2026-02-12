@@ -11,15 +11,15 @@ import (
 	"golang.org/x/tools/imports"
 )
 
-type ImportCleanupTransform struct {
+type importCleanupTransform struct {
 	Path string
 }
 
-func NewImportCleanupTransform(path string) *ImportCleanupTransform {
-	return &ImportCleanupTransform{Path: path}
+func newImportCleanupTransform(path string) *importCleanupTransform {
+	return &importCleanupTransform{Path: path}
 }
 
-func (t *ImportCleanupTransform) Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
+func (t *importCleanupTransform) Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error {
 	file, ok := files[t.Path]
 	if !ok {
 		// If it's not loaded, we don't need to clean it up in this transaction

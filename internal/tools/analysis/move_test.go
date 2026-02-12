@@ -66,11 +66,11 @@ func Hello() {}`,
 				SrcFile: "src.go",
 				DstFile: "dst.go",
 			}
-			tr := NewMoveTransform(plan)
+			tr := newMoveTransform(plan)
 
 			err = tr.Apply(context.Background(), fset, files)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("MoveTransform.Apply() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("moveTransform.Apply() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 

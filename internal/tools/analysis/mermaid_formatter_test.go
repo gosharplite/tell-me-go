@@ -9,23 +9,23 @@ import (
 )
 
 func TestMermaidFormatter_Format(t *testing.T) {
-	formatter := NewMermaidFormatter()
+	formatter := newMermaidFormatter()
 
 	tests := []struct {
 		name     string
-		frames   []CallFrame
+		frames   []callFrame
 		contains []string
 	}{
 		{
 			name:   "Empty frames",
-			frames: []CallFrame{},
+			frames: []callFrame{},
 			contains: []string{
 				"sequenceDiagram",
 			},
 		},
 		{
 			name: "Happy path",
-			frames: []CallFrame{
+			frames: []callFrame{
 				{
 					From:     "pkg_a",
 					To:       "pkg_b",
@@ -43,7 +43,7 @@ func TestMermaidFormatter_Format(t *testing.T) {
 		},
 		{
 			name: "Single frame no return",
-			frames: []CallFrame{
+			frames: []callFrame{
 				{
 					From:     "pkg_a",
 					To:       "pkg_b",
@@ -57,7 +57,7 @@ func TestMermaidFormatter_Format(t *testing.T) {
 		},
 		{
 			name: "Recursive call",
-			frames: []CallFrame{
+			frames: []callFrame{
 				{
 					From:     "pkg_a",
 					To:       "pkg_a",
@@ -72,7 +72,7 @@ func TestMermaidFormatter_Format(t *testing.T) {
 		},
 		{
 			name: "Async and Loop",
-			frames: []CallFrame{
+			frames: []callFrame{
 				{
 					From:     "pkg_a",
 					To:       "pkg_b",
@@ -89,7 +89,7 @@ func TestMermaidFormatter_Format(t *testing.T) {
 		},
 		{
 			name: "Complex scenario",
-			frames: []CallFrame{
+			frames: []callFrame{
 				{
 					From:     "pkg_a",
 					To:       "pkg_b",

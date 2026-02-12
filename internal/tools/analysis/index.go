@@ -304,10 +304,10 @@ func (h *harvester) handleTypeSpec(s *ast.TypeSpec) {
 
 func (h *harvester) handleFuncDecl(d *ast.FuncDecl) {
 	kind := "func"
-	sig := GetFuncSignature(d)
+	sig := getFuncSignature(d)
 	var recv string
 	if d.Recv != nil && len(d.Recv.List) > 0 {
-		recv = ExprToString(d.Recv.List[0].Type)
+		recv = exprToString(d.Recv.List[0].Type)
 	}
 	loc := h.toLocation(d.Name.Pos())
 	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{

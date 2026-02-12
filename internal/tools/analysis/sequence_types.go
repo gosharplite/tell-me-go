@@ -9,8 +9,8 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// CallFrame represents a single step in a sequence diagram.
-type CallFrame struct {
+// callFrame represents a single step in a sequence diagram.
+type callFrame struct {
 	From     string
 	To       string
 	Function string
