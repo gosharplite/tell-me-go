@@ -370,7 +370,7 @@ func TestGetCachedLineCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	newInfo, _ := os.Stat(path)
-	count, ok = cache.GetCachedLineCount(path, newInfo)
+	_, ok = cache.GetCachedLineCount(path, newInfo)
 	if ok {
 		t.Error("expected cache invalidation")
 	}
