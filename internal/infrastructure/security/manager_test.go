@@ -129,7 +129,7 @@ func contains(slice []string, val string) bool {
 
 func TestSecurityManager_Misc(t *testing.T) {
 	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
-	
+
 	// getPolicy / setPolicy
 	p := sm.getPolicy()
 	if p == nil {
@@ -151,7 +151,7 @@ func TestSecurityManager_Misc(t *testing.T) {
 	logFile := filepath.Join(tmpDir, "commands.log")
 	sm.SetCommandsLogFile(logFile)
 	sm.LogAudit("ACTION", "test", "DETAIL", "detail")
-	
+
 	data, _ := os.ReadFile(logFile)
 	if !strings.Contains(string(data), "ACTION: test") {
 		t.Error("Audit log content mismatch")
@@ -164,7 +164,7 @@ func TestSecurityManager_Misc(t *testing.T) {
 	_ = sm.saveReadOnlyPaths(context.Background())
 	_ = sm.LoadSafePaths()
 	_ = sm.LoadReadOnlyPaths()
-	
+
 	sm.RegisterReadOnlyPath("/tmp/ro")
 	_ = sm.removeReadOnlyPath("/tmp/ro")
 
@@ -172,10 +172,10 @@ func TestSecurityManager_Misc(t *testing.T) {
 	if sm.GetInteractor() == nil {
 		t.Error("GetInteractor returned nil")
 	}
-	
+
 	sm.TerminalLock()
 	sm.TerminalUnlock()
-	
+
 	_, _ = sm.readSingleKey(context.Background())
 	_, _ = sm.ReadLine(context.Background())
 }

@@ -16,8 +16,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -622,7 +622,7 @@ func TestAgent_Shutdown(t *testing.T) {
 		t.Fatalf("Expected graceful shutdown, got error: %v", err)
 	}
 
-	// 5. Verify that calling shutdown on an already shut down agent 
+	// 5. Verify that calling shutdown on an already shut down agent
 	// (or its components) behaves predictably
 	err = a.Shutdown(ctx)
 	if err != nil {
@@ -643,7 +643,7 @@ func TestAgent_Options_TraceLogger(t *testing.T) {
 	logFile := filepath.Join(tmpDir, "agent.log")
 	expectedTraceFile := filepath.Join(tmpDir, "agent.trace.jsonl")
 	bus := events.NewSimpleEventBus()
-	
+
 	// Initialize with TraceLogger
 	a := New(&mockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, bus, WithTraceLogger(logFile))
 
@@ -653,7 +653,7 @@ func TestAgent_Options_TraceLogger(t *testing.T) {
 			StartTime: time.Now(),
 		},
 	})
-	
+
 	// Shutdown to flush any buffers
 	_ = a.Shutdown(context.Background())
 

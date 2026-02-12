@@ -84,8 +84,8 @@ type mockSecurityManager struct {
 }
 
 func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
-func (m *mockSecurityManager) TerminalLock()                         {}
-func (m *mockSecurityManager) TerminalUnlock()                       {}
+func (m *mockSecurityManager) TerminalLock()                          {}
+func (m *mockSecurityManager) TerminalUnlock()                        {}
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }

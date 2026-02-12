@@ -76,7 +76,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.Com
 		Description: "Runs 'govulncheck'.",
 	}, dev.checkVulnerabilities, registry.ToolOptions{LongRunning: true})
 
-		// Release Management
+	// Release Management
 	rel := &releaseManager{
 		sm:       sm,
 		fs:       storage.DefaultFileSystem,

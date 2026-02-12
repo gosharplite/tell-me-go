@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/stretchr/testify/assert"
 )
 
 // mockAuditor implements auditLogger for testing.
@@ -27,7 +27,7 @@ func (m *mockAuditor) LogAudit(label1, val1, label2, val2 string) {
 	m.Logs = append(m.Logs, auditEntry{label1, val1, label2, val2})
 }
 
-func (m *mockAuditor) SetLogFile(path string)                        {}
+func (m *mockAuditor) SetLogFile(path string)                         {}
 func (m *mockAuditor) SetInteractor(interactor domain.UserInteractor) {}
 
 // spyInteractor captures calls to UserInteractor methods.
@@ -86,11 +86,11 @@ func TestInteractionHandler_ConfirmAction(t *testing.T) {
 			},
 		},
 		{
-			name:   "Bypass Active",
-			action: "delete",
-			target: "file.txt",
-			detail: "User wants to delete the file.",
-			bypass: true,
+			name:       "Bypass Active",
+			action:     "delete",
+			target:     "file.txt",
+			detail:     "User wants to delete the file.",
+			bypass:     true,
 			wantResult: true,
 			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
 				assert.Empty(t, spy.ConfirmCalls)

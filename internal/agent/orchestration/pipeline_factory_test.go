@@ -26,7 +26,7 @@ func TestPipelineFactory_PreciseProfile(t *testing.T) {
 		Turn:    1,
 		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 	}
-	
+
 	limits := events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000}
 	pipeline := factory.BuildStandardPipeline(limits)
 
