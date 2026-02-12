@@ -140,7 +140,11 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer deps.bus.Shutdown(ctx)
+	defer func() {
+		if err := deps.bus.Shutdown(ctx); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Failed to shutdown event bus: %v\n", err)
+		}
+	}()
 
 	c.renderHistory(deps.hManager, opts, cfg, capturer.IsTTY(c.Stdout))
 	if prompt == "" && opts.lastN > 0 {

@@ -162,43 +162,12 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkF
 		content := m.Files[path]
 		cleanPath := filepath.Clean(path)
 
-		// Check if it's within the root
-		isUnderRoot := false
-		if root == "." {
-			isUnderRoot = true
-		} else if strings.HasPrefix(cleanPath, root) {
-			isUnderRoot = true
-		}
-
-		if isUnderRoot {
-			// Notify directories leading to this file
-			parts := strings.Split(cleanPath, string(os.PathSeparator))
-			current := ""
-			skipThisFile := false
-			for i := 0; i < len(parts)-1; i++ {
-				if current == "" {
-					current = parts[i]
-				} else {
-					current = filepath.Join(current, parts[i])
-				}
-
-				if skippedDirs[current] {
-					skipThisFile = true
-					break
-				}
-
-				if !dirsNotified[current] {
-					dirsNotified[current] = true
-					info := &MockFileInfo{name: filepath.Base(current), size: 0, dir: true}
-					if err := fn(current, info, nil); err == filepath.SkipDir {
-						skippedDirs[current] = true
-						skipThisFile = true
-						break
-					}
-				}
+		if isUnderRoot(cleanPath, root) {
+			skip, err := m.notifyParents(cleanPath, dirsNotified, skippedDirs, fn)
+			if err != nil {
+				return err
 			}
-
-			if skipThisFile {
+			if skip {
 				continue
 			}
 
@@ -212,6 +181,39 @@ func (m *MockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkF
 		}
 	}
 	return nil
+}
+
+func isUnderRoot(path, root string) bool {
+	if root == "." {
+		return true
+	}
+	return strings.HasPrefix(path, root)
+}
+
+func (m *MockFileSystem) notifyParents(path string, dirsNotified, skippedDirs map[string]bool, fn storage.WalkFunc) (bool, error) {
+	parts := strings.Split(path, string(os.PathSeparator))
+	current := ""
+	for i := 0; i < len(parts)-1; i++ {
+		if current == "" {
+			current = parts[i]
+		} else {
+			current = filepath.Join(current, parts[i])
+		}
+
+		if skippedDirs[current] {
+			return true, nil
+		}
+
+		if !dirsNotified[current] {
+			dirsNotified[current] = true
+			info := &MockFileInfo{name: filepath.Base(current), size: 0, dir: true}
+			if err := fn(current, info, nil); err == filepath.SkipDir {
+				skippedDirs[current] = true
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 type mockDirEntry struct {

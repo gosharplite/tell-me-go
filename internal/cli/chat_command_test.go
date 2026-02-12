@@ -208,7 +208,11 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	defer func() {
+		if err := bus.Shutdown(context.Background()); err != nil {
+			t.Logf("Warning: Failed to shutdown event bus: %v", err)
+		}
+	}()
 	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
 
 	declarations := reg.GetDeclarations()
