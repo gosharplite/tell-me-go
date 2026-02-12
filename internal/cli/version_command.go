@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"fmt"
 	"io"
 )
@@ -16,7 +16,7 @@ type versionCommand struct {
 }
 
 func init() {
-	Register("version", func(ctx *Context) Command {
+	register("version", func(ctx *context) command {
 		return &versionCommand{
 			Version: ctx.Version,
 			Stdout:  ctx.Stdout,
@@ -25,7 +25,7 @@ func init() {
 }
 
 // Execute prints the version information.
-func (c *versionCommand) Execute(ctx context.Context, args []string) error {
+func (c *versionCommand) Execute(ctx stdctx.Context, args []string) error {
 	fmt.Fprintf(c.Stdout, "tell-me-go version %s\n", c.Version)
 	return nil
 }

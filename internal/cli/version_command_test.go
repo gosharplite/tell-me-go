@@ -5,7 +5,7 @@ package cli
 
 import (
 	"bytes"
-	"context"
+	stdctx "context"
 	"testing"
 )
 
@@ -35,7 +35,7 @@ func TestVersionCommand_Execute(t *testing.T) {
 				Stdout:  &out,
 			}
 
-			err := cmd.Execute(context.Background(), nil)
+			err := cmd.Execute(stdctx.Background(), nil)
 			if err != nil {
 				t.Fatalf("Execute() unexpected error: %v", err)
 			}
@@ -48,12 +48,12 @@ func TestVersionCommand_Execute(t *testing.T) {
 }
 
 func TestVersionCommandFactory(t *testing.T) {
-	factory, err := Get("version")
+	factory, err := get("version")
 	if err != nil {
-		t.Fatalf("Get(\"version\") error = %v", err)
+		t.Fatalf("get(\"version\") error = %v", err)
 	}
 
-	ctx := &Context{
+	ctx := &context{
 		Version: "1.2.3-test",
 		Stdout:  &bytes.Buffer{},
 	}

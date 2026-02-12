@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"flag"
 	"fmt"
 	"io"
@@ -29,8 +29,8 @@ import (
 )
 
 func init() {
-	Register("chat", func(ctx *Context) Command {
-		return NewchatCommand(ctx)
+	register("chat", func(ctx *context) command {
+		return newChatCommand(ctx)
 	})
 }
 
@@ -66,8 +66,8 @@ type sessionDeps struct {
 	bus              events.EventBus
 }
 
-// NewchatCommand creates a new Chat Command with default factories.
-func NewchatCommand(ctx *Context) *chatCommand {
+// newChatCommand creates a new Chat Command with default factories.
+func newChatCommand(ctx *context) *chatCommand {
 	return &chatCommand{
 		Version: ctx.Version,
 		Stdin:   ctx.Stdin,
@@ -91,7 +91,7 @@ func NewchatCommand(ctx *Context) *chatCommand {
 	}
 }
 
-func (c *chatCommand) prepareSession(ctx context.Context, cfg *config.Config, opts *cliOptions) (*sessionDeps, error) {
+func (c *chatCommand) prepareSession(ctx stdctx.Context, cfg *config.Config, opts *cliOptions) (*sessionDeps, error) {
 	paths, err := persistence.InitializePaths(c.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (c *chatCommand) renderHistory(hManager *history.Manager, opts *cliOptions,
 }
 
 // Execute runs the chat command logic.
-func (c *chatCommand) Execute(ctx context.Context, args []string) error {
+func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
 	c.SM.SetInteractor(capturer)
 
@@ -185,7 +185,7 @@ func (c *chatCommand) initializeConfiguration(args []string) (*cliOptions, *flag
 	return opts, fs, cfg, nil
 }
 
-func (c *chatCommand) initializeDependencies(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
+func (c *chatCommand) initializeDependencies(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, fmt.Errorf("error loading history: %w", err)
@@ -218,7 +218,7 @@ func (c *chatCommand) initializeDependencies(ctx context.Context, paths *persist
 	}, nil
 }
 
-func (c *chatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func (c *chatCommand) finalizeSession(ctx stdctx.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
@@ -254,7 +254,7 @@ func (c *chatCommand) setupSecurity(paths *persistence.Paths, configPath string)
 	c.SM.RegisterReadOnlyPath(configPath)
 }
 
-func (c *chatCommand) handleNewSession(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {
+func (c *chatCommand) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -275,7 +275,7 @@ func (c *chatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Conf
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *chatCommand) applyConfiguration(ctx context.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
+func (c *chatCommand) applyConfiguration(ctx stdctx.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err

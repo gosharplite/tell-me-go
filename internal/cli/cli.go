@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"errors"
 	"fmt"
 	"io"
@@ -47,7 +47,7 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *a
 }
 
 // Run executes the application logic.
-func (a *app) Run(ctx context.Context, args []string) error {
+func (a *app) Run(ctx stdctx.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
@@ -60,12 +60,12 @@ func (a *app) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	factory, err := Get(cmdName)
+	factory, err := get(cmdName)
 	if err != nil {
 		return err
 	}
 
-	cmdCtx := &Context{
+	cmdCtx := &context{
 		Version: a.Version,
 		Stdin:   a.Stdin,
 		Stdout:  a.Stdout,
@@ -77,7 +77,7 @@ func (a *app) Run(ctx context.Context, args []string) error {
 	cmd := factory(cmdCtx)
 
 	if err := cmd.Execute(ctx, args); err != nil {
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, stdctx.Canceled) {
 			fmt.Fprintln(a.Stderr)
 			return nil
 		}

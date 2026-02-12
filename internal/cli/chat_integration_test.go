@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,41 +24,41 @@ import (
 )
 
 type integrationMockChatter struct {
-	ChatFunc func(ctx context.Context, s *orchestration.Session, prompt string) error
+	ChatFunc func(ctx stdctx.Context, s *orchestration.Session, prompt string) error
 }
 
-func (m *integrationMockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
+func (m *integrationMockChatter) Chat(ctx stdctx.Context, s *orchestration.Session, prompt string) error {
 	if m.ChatFunc != nil {
 		return m.ChatFunc(ctx, s, prompt)
 	}
 	return nil
 }
-func (m *integrationMockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (m *integrationMockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, historyTurns int) error {
 	return nil
 }
-func (m *integrationMockChatter) SetHardBudgetLimit(ctx context.Context, limit float64) error {
+func (m *integrationMockChatter) SetHardBudgetLimit(ctx stdctx.Context, limit float64) error {
 	return nil
 }
-func (m *integrationMockChatter) SetTieredThreshold(ctx context.Context, threshold int) error {
+func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error {
 	return nil
 }
-func (m *integrationMockChatter) SetPrunedTurns(ctx context.Context, n int) error {
+func (m *integrationMockChatter) SetPrunedTurns(ctx stdctx.Context, n int) error {
 	return nil
 }
-func (m *integrationMockChatter) SetSystemInstructions(ctx context.Context, instr string) error {
+func (m *integrationMockChatter) SetSystemInstructions(ctx stdctx.Context, instr string) error {
 	return nil
 }
 func (m *integrationMockChatter) Subscribe(sub func(events.Event)) {}
 func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
 	return &integrationMockCostTracker{}
 }
-func (m *integrationMockChatter) Shutdown(ctx context.Context) error { return nil }
+func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error { return nil }
 
 type integrationMockCostTracker struct{}
 
-func (m *integrationMockCostTracker) GetTotalCost(ctx context.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetDailyCost(ctx context.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
+func (m *integrationMockCostTracker) GetTotalCost(ctx stdctx.Context) float64 { return 0 }
+func (m *integrationMockCostTracker) GetDailyCost(ctx stdctx.Context) float64 { return 0 }
+func (m *integrationMockCostTracker) GetStats(ctx stdctx.Context) (domain_pricing.UsageStats, float64) {
 	return domain_pricing.UsageStats{}, 0
 }
 func (m *integrationMockCostTracker) Accumulate(mt domain_llm.Metrics)                  {}
@@ -88,7 +88,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := stdctx.Background()
 	args := []string{"chat", "-c", cfgPath, "-new", "hello"}
 
 	if err := cmd.Execute(ctx, args); err != nil {

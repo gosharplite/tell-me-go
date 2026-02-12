@@ -5,7 +5,7 @@ package cli
 
 import (
 	"bytes"
-	"context"
+	stdctx "context"
 	"fmt"
 	"io"
 	"os"
@@ -76,22 +76,22 @@ type mockChatter struct {
 	capturedPrompt string
 }
 
-func (m *mockChatter) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
+func (m *mockChatter) Chat(ctx stdctx.Context, s *orchestration.Session, prompt string) error {
 	m.capturedPrompt = prompt
 	return nil
 }
-func (m *mockChatter) SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error {
+func (m *mockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, historyTurns int) error {
 	return nil
 }
-func (m *mockChatter) SetHardBudgetLimit(ctx context.Context, limit float64) error { return nil }
-func (m *mockChatter) SetTieredThreshold(ctx context.Context, threshold int) error { return nil }
-func (m *mockChatter) SetPrunedTurns(ctx context.Context, n int) error             { return nil }
-func (m *mockChatter) SetSystemInstructions(ctx context.Context, instr string) error {
+func (m *mockChatter) SetHardBudgetLimit(ctx stdctx.Context, limit float64) error { return nil }
+func (m *mockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error { return nil }
+func (m *mockChatter) SetPrunedTurns(ctx stdctx.Context, n int) error             { return nil }
+func (m *mockChatter) SetSystemInstructions(ctx stdctx.Context, instr string) error {
 	return nil
 }
 func (m *mockChatter) Subscribe(sub func(events.Event))            {}
 func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
-func (m *mockChatter) Shutdown(ctx context.Context) error          { return nil }
+func (m *mockChatter) Shutdown(ctx stdctx.Context) error          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -102,7 +102,7 @@ func TestRunCapturePrompt(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	sm := security.NewSecurityManager(nil)
-	cmd := NewchatCommand(&Context{
+	cmd := newChatCommand(&context{
 		Version: "test",
 		Stdin:   os.Stdin,
 		Stdout:  &out,
@@ -122,7 +122,7 @@ func TestRunCapturePrompt(t *testing.T) {
 		return nil, nil
 	}
 
-	err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello world"})
+	err := cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath, "hello world"})
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestRunEmptyPromptError(t *testing.T) {
 		SM:      sm,
 	}
 
-	err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath})
+	err := cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath})
 	if err == nil {
 		t.Error("expected error for empty prompt, got nil")
 	}
@@ -183,7 +183,7 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_ = cmd.Execute(context.Background(), []string{"bin", "-c", configPath})
+	_ = cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath})
 
 	if _, err := os.Stat("output"); !os.IsNotExist(err) {
 		t.Errorf("output directory should not have been created on empty prompt")
@@ -209,7 +209,7 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	defer func() {
-		if err := bus.Shutdown(context.Background()); err != nil {
+		if err := bus.Shutdown(stdctx.Background()); err != nil {
 			t.Logf("Warning: Failed to shutdown event bus: %v", err)
 		}
 	}()
@@ -252,7 +252,7 @@ func TestExecuteErrors(t *testing.T) {
 		require.NoError(t, os.WriteFile(paths.HistoryPath, []byte("{\"role\": 123}"), 0644))
 
 		sm := security.NewSecurityManager(nil)
-		cmd := NewchatCommand(&Context{
+		cmd := newChatCommand(&context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,
@@ -260,7 +260,7 @@ func TestExecuteErrors(t *testing.T) {
 			SM:      sm,
 		})
 
-		err = cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello"})
+		err = cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath, "hello"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error loading history")
 	})
@@ -271,7 +271,7 @@ func TestExecuteErrors(t *testing.T) {
 		require.NoError(t, os.WriteFile(configPath, []byte("MODE: test-mode\n"), 0644))
 
 		sm := security.NewSecurityManager(nil)
-		cmd := NewchatCommand(&Context{
+		cmd := newChatCommand(&context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,
@@ -284,7 +284,7 @@ func TestExecuteErrors(t *testing.T) {
 			return nil, fmt.Errorf("forced client error")
 		}
 
-		err := cmd.Execute(context.Background(), []string{"bin", "-c", configPath, "hello"})
+		err := cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath, "hello"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "error creating client")
 		require.Contains(t, err.Error(), "forced client error")
@@ -293,7 +293,7 @@ func TestExecuteErrors(t *testing.T) {
 	t.Run("FlagParsing", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		sm := security.NewSecurityManager(nil)
-		cmd := NewchatCommand(&Context{
+		cmd := newChatCommand(&context{
 			HomeDir: tmpDir,
 			Stdin:   strings.NewReader("hello"),
 			Stdout:  io.Discard,
@@ -302,7 +302,7 @@ func TestExecuteErrors(t *testing.T) {
 		})
 
 		// Test unknown flag
-		err := cmd.Execute(context.Background(), []string{"bin", "-unknown-flag"})
+		err := cmd.Execute(stdctx.Background(), []string{"bin", "-unknown-flag"})
 		require.Error(t, err)
 	})
 }

@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -85,15 +85,15 @@ func (s *uiSubscriber) handleStatusUpdate(ev events.StatusUpdate) {
 	s.renderer.LogSystemMessage(ev.Message, ev.Level)
 }
 
-func (s *uiSubscriber) ensureContext(ctx context.Context, name string) context.Context {
+func (s *uiSubscriber) ensureContext(ctx stdctx.Context, name string) stdctx.Context {
 	if ctx == nil {
 		s.renderer.LogSystemMessage(name+" missing context", "warn")
-		return context.Background()
+		return stdctx.Background()
 	}
 	return ctx
 }
 
-func (s *uiSubscriber) relayStream(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) {
+func (s *uiSubscriber) relayStream(ctx stdctx.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) {
 	for {
 		if !s.relayNext(ctx, stream, uiCh) {
 			return
@@ -101,7 +101,7 @@ func (s *uiSubscriber) relayStream(ctx context.Context, stream <-chan *llm.Conte
 	}
 }
 
-func (s *uiSubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) bool {
+func (s *uiSubscriber) relayNext(ctx stdctx.Context, stream <-chan *llm.Content, uiCh chan<- *llm.Content) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -113,7 +113,7 @@ func (s *uiSubscriber) relayNext(ctx context.Context, stream <-chan *llm.Content
 	}
 }
 
-func (s *uiSubscriber) sendToUI(ctx context.Context, uiCh chan<- *llm.Content, c *llm.Content) bool {
+func (s *uiSubscriber) sendToUI(ctx stdctx.Context, uiCh chan<- *llm.Content, c *llm.Content) bool {
 	select {
 	case uiCh <- c:
 		return true
