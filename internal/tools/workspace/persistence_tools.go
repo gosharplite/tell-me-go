@@ -211,29 +211,45 @@ func (t *PersistenceTools) ManageScratchpad(ctx context.Context, args map[string
 
 	switch params.Action {
 	case "read":
-		content := t.scratchpad.Read()
-		if content == "" {
-			return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
-		}
-		return tools.ToolResult{Text: content}, nil
+		return t.readScratchpad()
 	case "write":
-		if err := t.scratchpad.Write(ctx, params.Content); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Scratchpad updated."}, nil
+		return t.writeScratchpad(ctx, params.Content)
 	case "append":
-		if err := t.scratchpad.Append(ctx, params.Content); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
+		return t.appendScratchpad(ctx, params.Content)
 	case "clear":
-		if err := t.scratchpad.Clear(ctx); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Scratchpad cleared."}, nil
+		return t.clearScratchpad(ctx)
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
+}
+
+func (t *PersistenceTools) readScratchpad() (tools.ToolResult, error) {
+	content := t.scratchpad.Read()
+	if content == "" {
+		return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
+	}
+	return tools.ToolResult{Text: content}, nil
+}
+
+func (t *PersistenceTools) writeScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+	if err := t.scratchpad.Write(ctx, content); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Scratchpad updated."}, nil
+}
+
+func (t *PersistenceTools) appendScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+	if err := t.scratchpad.Append(ctx, content); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
+}
+
+func (t *PersistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResult, error) {
+	if err := t.scratchpad.Clear(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Scratchpad cleared."}, nil
 }
 
 // ManageConfig handles the manage_config tool.
@@ -249,32 +265,48 @@ func (t *PersistenceTools) ManageConfig(ctx context.Context, args map[string]int
 
 	switch params.Action {
 	case "set":
-		if err := t.config.Set(ctx, params.Key, params.Value); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", params.Key, params.Value)}, nil
+		return t.setConfig(ctx, params.Key, params.Value)
 	case "get":
-		val, err := t.config.Get(params.Key)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: val}, nil
+		return t.getConfig(params.Key)
 	case "delete":
-		if err := t.config.Delete(ctx, params.Key); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", params.Key)}, nil
+		return t.deleteConfig(ctx, params.Key)
 	case "list":
-		config := t.config.GetAll()
-		if len(config) == 0 {
-			return tools.ToolResult{Text: "Configuration is empty."}, nil
-		}
-		var sb strings.Builder
-		for k, v := range config {
-			sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
-		}
-		return tools.ToolResult{Text: sb.String()}, nil
+		return t.listConfig()
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
+}
+
+func (t *PersistenceTools) setConfig(ctx context.Context, key, value string) (tools.ToolResult, error) {
+	if err := t.config.Set(ctx, key, value); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, value)}, nil
+}
+
+func (t *PersistenceTools) getConfig(key string) (tools.ToolResult, error) {
+	val, err := t.config.Get(key)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: val}, nil
+}
+
+func (t *PersistenceTools) deleteConfig(ctx context.Context, key string) (tools.ToolResult, error) {
+	if err := t.config.Delete(ctx, key); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil
+}
+
+func (t *PersistenceTools) listConfig() (tools.ToolResult, error) {
+	config := t.config.GetAll()
+	if len(config) == 0 {
+		return tools.ToolResult{Text: "Configuration is empty."}, nil
+	}
+	var sb strings.Builder
+	for k, v := range config {
+		sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
 }

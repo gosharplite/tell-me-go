@@ -58,19 +58,12 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 	req.Header.Set("Authorization", authHeader)
 
 	var lastResp *http.Response
-	baseDelay := p.baseDelay
-	if baseDelay == 0 {
-		baseDelay = 1 * time.Second
-	}
 
 	for i := 0; i <= 3; i++ { // 0 is initial attempt, 1-3 are retries
-		// Reset body for retries
-		if i > 0 && req.GetBody != nil {
-			newBody, err := req.GetBody()
-			if err != nil {
-				return nil, fmt.Errorf("failed to reset request body: %w", err)
+		if i > 0 {
+			if err := p.resetRequestBody(req); err != nil {
+				return nil, err
 			}
-			req.Body = newBody
 		}
 
 		resp, err := client.Do(req)
@@ -82,29 +75,46 @@ func (p *atlassianProvider) Do(ctx context.Context, client tools.HTTPClient, req
 			return resp, nil
 		}
 
-		// Handle 429
 		lastResp = resp
 		if i == 3 {
-			break // Max retries reached
+			break
 		}
 
-		// Determine wait time
-		wait := baseDelay * (1 << uint(i)) // Exponential: 1s, 2s, 4s
-		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-			if seconds, err := strconv.Atoi(retryAfter); err == nil {
-				wait = time.Duration(seconds) * time.Second
-			}
-		}
-
-		resp.Body.Close() // Close body of throttled request before waiting
+		wait := p.getWaitTime(resp, i)
+		resp.Body.Close()
 
 		select {
 		case <-time.After(wait):
-			// Continue to next attempt
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
 
 	return lastResp, nil
+}
+
+func (p *atlassianProvider) getWaitTime(resp *http.Response, retryCount int) time.Duration {
+	baseDelay := p.baseDelay
+	if baseDelay == 0 {
+		baseDelay = 1 * time.Second
+	}
+
+	wait := baseDelay * (1 << uint(retryCount))
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		if seconds, err := strconv.Atoi(retryAfter); err == nil {
+			wait = time.Duration(seconds) * time.Second
+		}
+	}
+	return wait
+}
+
+func (p *atlassianProvider) resetRequestBody(req *http.Request) error {
+	if req.GetBody != nil {
+		newBody, err := req.GetBody()
+		if err != nil {
+			return fmt.Errorf("failed to reset request body: %w", err)
+		}
+		req.Body = newBody
+	}
+	return nil
 }

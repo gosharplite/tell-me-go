@@ -644,43 +644,49 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	}
 
 	if params.LogId == 0 {
-		// List logs first
-		u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-			url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
-
-		resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		defer resp.Body.Close()
-
-		var logsData struct {
-			Value []struct {
-				Id   int    `json:"id"`
-				Url  string `json:"url"`
-				Line int    `json:"lineCount"`
-			} `json:"value"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to decode logs list: %w", err)
-		}
-
-		if len(logsData.Value) == 0 {
-			return tools.ToolResult{Text: "No logs found for this run."}, nil
-		}
-
-		var resultText strings.Builder
-		resultText.WriteString(fmt.Sprintf("Logs for Pipeline Run #%d:\n\n", params.RunId))
-		for _, log := range logsData.Value {
-			resultText.WriteString(fmt.Sprintf("- Log ID: %d (%d lines)\n", log.Id, log.Line))
-		}
-		resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
-		return tools.ToolResult{Text: resultText.String()}, nil
+		return m.listPipelineLogs(ctx, params.Organization, params.Project, params.PipelineId, params.RunId)
 	}
 
-	// Fetch specific log content
+	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId)
+}
+
+func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
+	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
+		url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	defer resp.Body.Close()
+
+	var logsData struct {
+		Value []struct {
+			Id   int    `json:"id"`
+			Url  string `json:"url"`
+			Line int    `json:"lineCount"`
+		} `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode logs list: %w", err)
+	}
+
+	if len(logsData.Value) == 0 {
+		return tools.ToolResult{Text: "No logs found for this run."}, nil
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Logs for Pipeline Run #%d:\n\n", runId))
+	for _, log := range logsData.Value {
+		resultText.WriteString(fmt.Sprintf("- Log ID: %d (%d lines)\n", log.Id, log.Line))
+	}
+	resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
+	return tools.ToolResult{Text: resultText.String()}, nil
+}
+
+func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId, params.LogId)
+		url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
