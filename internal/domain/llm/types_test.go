@@ -71,7 +71,7 @@ func TestClone(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clone := tt.orig.Clone()
+			clone := tt.orig.clone()
 
 			// 1. Pointer inequality
 			if tt.orig != nil && clone == tt.orig {
@@ -222,27 +222,27 @@ func verifyFunctionResponseIndependence(t *testing.T, orig, clone *FunctionRespo
 
 func TestNilClones(t *testing.T) {
 	var c *Content
-	if c.Clone() != nil {
+	if c.clone() != nil {
 		t.Error("cloning nil Content should return nil")
 	}
 
 	var p *Part
-	if p.Clone() != nil {
+	if p.clone() != nil {
 		t.Error("cloning nil Part should return nil")
 	}
 
 	var b *Blob
-	if b.Clone() != nil {
+	if b.clone() != nil {
 		t.Error("cloning nil Blob should return nil")
 	}
 
 	var fc *FunctionCall
-	if fc.Clone() != nil {
+	if fc.clone() != nil {
 		t.Error("cloning nil FunctionCall should return nil")
 	}
 
 	var fr *FunctionResponse
-	if fr.Clone() != nil {
+	if fr.clone() != nil {
 		t.Error("cloning nil FunctionResponse should return nil")
 	}
 }
@@ -294,8 +294,8 @@ func TestContentEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.c1.Equal(tt.c2); got != tt.expected {
-				t.Errorf("Content.Equal() = %v, want %v", got, tt.expected)
+			if got := tt.c1.equal(tt.c2); got != tt.expected {
+				t.Errorf("Content.equal() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
@@ -432,8 +432,8 @@ func TestPartEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.p1.Equal(tt.p2); got != tt.expected {
-				t.Errorf("Part.Equal() = %v, want %v", got, tt.expected)
+			if got := tt.p1.equal(tt.p2); got != tt.expected {
+				t.Errorf("Part.equal() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

@@ -14,23 +14,23 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type ShellTool struct {
+type shellTool struct {
 	sm        *security.SecurityManager
 	validator *security.CommandValidator
-	executor  *ProcessExecutor
+	executor  *processExecutor
 	maxOutput int
 }
 
-func NewShellTool(sm *security.SecurityManager) *ShellTool {
-	return &ShellTool{
+func newshellTool(sm *security.SecurityManager) *shellTool {
+	return &shellTool{
 		sm:        sm,
 		validator: security.NewCommandValidator(sm, sm.GetInteractor()),
-		executor:  NewProcessExecutor(),
+		executor:  newprocessExecutor(),
 		maxOutput: 50000,
 	}
 }
 
-func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -89,7 +89,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
 }
 
-func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -144,7 +144,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: t.formatResult(res, true)}, nil
 }
 
-func (t *ShellTool) isPipelineSafe(commands []string) bool {
+func (t *shellTool) isPipelineSafe(commands []string) bool {
 	for _, cmd := range commands {
 		if safe, _ := t.validator.IsSafe(cmd); !safe {
 			return false
@@ -153,7 +153,7 @@ func (t *ShellTool) isPipelineSafe(commands []string) bool {
 	return true
 }
 
-func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
+func (t *shellTool) splitPipeline(commands []string) ([][]string, error) {
 	pipedParts := make([][]string, len(commands))
 	for i, cmdStr := range commands {
 		parts, err := t.validator.Split(cmdStr)
@@ -168,14 +168,14 @@ func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
 	return pipedParts, nil
 }
 
-func (t *ShellTool) handleAuthResult(approved bool, err error, label string) (tools.ToolResult, error) {
+func (t *shellTool) handleAuthResult(approved bool, err error, label string) (tools.ToolResult, error) {
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	return t.deniedResult(label), nil
 }
 
-func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
+func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
 	if t.sm.IsBypassActive() {
 		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved (bypass_confirmation enabled).", label))
 		return true, nil
@@ -202,7 +202,7 @@ func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string,
 	return t.sm.GetInteractor().Confirm(ctx, sb.String())
 }
 
-func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
+func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
 	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
 	t.sm.Warn("------------------------------------------------------------")
 	res, err := runFn()
@@ -210,7 +210,7 @@ func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func(
 	return res, err
 }
 
-func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
+func (t *shellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	output := res.Output
 	if res.Truncated {
 		output += "\n... (truncated)"
@@ -221,7 +221,7 @@ func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	return fmt.Sprintf("Exit Code: %d\nOutput:\n%s", res.ExitCode, output)
 }
 
-func (t *ShellTool) resolveOutputFile(path string) (string, error) {
+func (t *shellTool) resolveOutputFile(path string) (string, error) {
 	// Hardened sanitation: trim whitespace and remove null bytes
 	path = strings.TrimSpace(path)
 	path = strings.ReplaceAll(path, "\x00", "")
@@ -232,6 +232,6 @@ func (t *ShellTool) resolveOutputFile(path string) (string, error) {
 	return t.sm.IsPathWritable(path)
 }
 
-func (t *ShellTool) deniedResult(label string) tools.ToolResult {
+func (t *shellTool) deniedResult(label string) tools.ToolResult {
 	return tools.ToolResult{Text: fmt.Sprintf("User denied execution of %s.", label)}
 }

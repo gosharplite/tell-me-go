@@ -13,7 +13,7 @@ import (
 
 func TestInteractionTool(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	it := NewInteractionTool(sm)
+	it := newinteractionTool(sm)
 	ctx := context.Background()
 
 	t.Run("Ask User", func(t *testing.T) {

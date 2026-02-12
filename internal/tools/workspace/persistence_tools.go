@@ -15,17 +15,17 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
-// PersistenceTools provides tool wrappers for persistence services.
-type PersistenceTools struct {
+// persistenceTools provides tool wrappers for persistence services.
+type persistenceTools struct {
 	tasks      *services.TaskService
 	scratchpad *services.ScratchpadService
 	config     *services.ConfigService
 	state      *persistence.SessionState
 }
 
-// NewPersistenceTools creates a new PersistenceTools instance.
-func NewPersistenceTools(state *persistence.SessionState) *PersistenceTools {
-	return &PersistenceTools{
+// newpersistenceTools creates a new persistenceTools instance.
+func newpersistenceTools(state *persistence.SessionState) *persistenceTools {
+	return &persistenceTools{
 		tasks:      state.Tasks,
 		scratchpad: state.Scratchpad,
 		config:     state.Config,
@@ -34,7 +34,7 @@ func NewPersistenceTools(state *persistence.SessionState) *PersistenceTools {
 }
 
 // GetSessionInfo handles the get_session_info tool.
-func (t *PersistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	// Refresh config in session info
 	t.state.Info.Config = t.config.GetAll()
 
@@ -46,7 +46,7 @@ func (t *PersistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 }
 
 // Register adds persistence tools to the registry.
-func (t *PersistenceTools) Register(r *registry.Registry) {
+func (t *persistenceTools) Register(r *registry.Registry) {
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
@@ -126,7 +126,7 @@ func (t *PersistenceTools) Register(r *registry.Registry) {
 }
 
 // ManageTasks handles the manage_tasks tool.
-func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action  string  `json:"action"`
 		Content string  `json:"content"`
@@ -153,7 +153,7 @@ func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 	}
 }
 
-func (t *PersistenceTools) addTask(ctx context.Context, content string) (tools.ToolResult, error) {
+func (t *persistenceTools) addTask(ctx context.Context, content string) (tools.ToolResult, error) {
 	task, err := t.tasks.AddTask(ctx, content)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -161,21 +161,21 @@ func (t *PersistenceTools) addTask(ctx context.Context, content string) (tools.T
 	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
 }
 
-func (t *PersistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
+func (t *persistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
 	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", id)}, nil
 }
 
-func (t *PersistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
+func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
 	if err := t.tasks.DeleteTask(ctx, id); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
 }
 
-func (t *PersistenceTools) listTasks(status string) (tools.ToolResult, error) {
+func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
 	tasks := t.tasks.ListTasks(status)
 	if len(tasks) == 0 {
 		return tools.ToolResult{Text: "No tasks found."}, nil
@@ -192,7 +192,7 @@ func (t *PersistenceTools) listTasks(status string) (tools.ToolResult, error) {
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *PersistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
+func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
 	if err := t.tasks.ClearTasks(ctx); err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -200,7 +200,7 @@ func (t *PersistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, er
 }
 
 // ManageScratchpad handles the manage_scratchpad tool.
-func (t *PersistenceTools) ManageScratchpad(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageScratchpad(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action  string `json:"action"`
 		Content string `json:"content"`
@@ -223,7 +223,7 @@ func (t *PersistenceTools) ManageScratchpad(ctx context.Context, args map[string
 	}
 }
 
-func (t *PersistenceTools) readScratchpad() (tools.ToolResult, error) {
+func (t *persistenceTools) readScratchpad() (tools.ToolResult, error) {
 	content := t.scratchpad.Read()
 	if content == "" {
 		return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
@@ -231,21 +231,21 @@ func (t *PersistenceTools) readScratchpad() (tools.ToolResult, error) {
 	return tools.ToolResult{Text: content}, nil
 }
 
-func (t *PersistenceTools) writeScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+func (t *persistenceTools) writeScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
 	if err := t.scratchpad.Write(ctx, content); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "Scratchpad updated."}, nil
 }
 
-func (t *PersistenceTools) appendScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+func (t *persistenceTools) appendScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
 	if err := t.scratchpad.Append(ctx, content); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
 }
 
-func (t *PersistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResult, error) {
+func (t *persistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResult, error) {
 	if err := t.scratchpad.Clear(ctx); err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -253,7 +253,7 @@ func (t *PersistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResul
 }
 
 // ManageConfig handles the manage_config tool.
-func (t *PersistenceTools) ManageConfig(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageConfig(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action string `json:"action"`
 		Key    string `json:"key"`
@@ -277,14 +277,14 @@ func (t *PersistenceTools) ManageConfig(ctx context.Context, args map[string]int
 	}
 }
 
-func (t *PersistenceTools) setConfig(ctx context.Context, key, value string) (tools.ToolResult, error) {
+func (t *persistenceTools) setConfig(ctx context.Context, key, value string) (tools.ToolResult, error) {
 	if err := t.config.Set(ctx, key, value); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, value)}, nil
 }
 
-func (t *PersistenceTools) getConfig(key string) (tools.ToolResult, error) {
+func (t *persistenceTools) getConfig(key string) (tools.ToolResult, error) {
 	val, err := t.config.Get(key)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -292,14 +292,14 @@ func (t *PersistenceTools) getConfig(key string) (tools.ToolResult, error) {
 	return tools.ToolResult{Text: val}, nil
 }
 
-func (t *PersistenceTools) deleteConfig(ctx context.Context, key string) (tools.ToolResult, error) {
+func (t *persistenceTools) deleteConfig(ctx context.Context, key string) (tools.ToolResult, error) {
 	if err := t.config.Delete(ctx, key); err != nil {
 		return tools.ToolResult{}, err
 	}
 	return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil
 }
 
-func (t *PersistenceTools) listConfig() (tools.ToolResult, error) {
+func (t *persistenceTools) listConfig() (tools.ToolResult, error) {
 	config := t.config.GetAll()
 	if len(config) == 0 {
 		return tools.ToolResult{Text: "Configuration is empty."}, nil

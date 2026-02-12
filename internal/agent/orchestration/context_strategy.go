@@ -230,8 +230,8 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string 
 	return ""
 }
 
-// GetCloggedWarning returns a warning message for when summarization fails to reduce context.
-func (cs *ContextStrategy) GetCloggedWarning() string {
+// getCloggedWarning returns a warning message for when summarization fails to reduce context.
+func (cs *ContextStrategy) getCloggedWarning() string {
 	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to the 'manage_scratchpad' immediately to avoid a session crash.]"
 }
 

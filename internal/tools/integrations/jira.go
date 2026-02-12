@@ -25,8 +25,8 @@ type jiraManager struct {
 	provider *atlassianProvider
 }
 
-// NewJiraManager creates a new instance of jiraManager.
-func NewJiraManager(sm *security.SecurityManager, client tools.HTTPClient) *jiraManager {
+// newjiraManager creates a new instance of jiraManager.
+func newjiraManager(sm *security.SecurityManager, client tools.HTTPClient) *jiraManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

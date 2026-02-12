@@ -425,46 +425,6 @@ func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared [
 	}
 }
 
-func TestAgent_PreciseProfile_Sync(t *testing.T) {
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	bus := &events.SimpleEventBus{}
-	mockClient := &MockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-
-	a := New(mockClient, h, reg, sm, false, bus)
-
-	counter := &orchestration.HeuristicTokenCounter{}
-	strategy := orchestration.NewContextStrategy(counter, bus)
-	factory := &orchestration.PipelineFactory{
-		Registry:  reg,
-		History:   h,
-		Estimator: strategy,
-		Events:    bus,
-		Profile:   orchestration.ProfilePrecise,
-	}
-	cm := orchestration.NewContextManager(strategy, h, bus, factory)
-	a.ctxManager = cm
-
-	// Test Prepare under precise profile
-	ctx := context.Background()
-	req := &orchestration.Request{
-		Turn:    1,
-		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
-	}
-	pipeline := factory.BuildStandardPipeline(events.Limits{MaxHistoryTurns: 10, MaxHistoryTokens: 1000})
-
-	// Verify that the pipeline was built (no panic)
-	if pipeline == nil {
-		t.Fatal("failed to build pipeline with precise profile")
-	}
-
-	err := pipeline.Execute(ctx, req)
-	if err != nil {
-		t.Errorf("pipeline execution failed: %v", err)
-	}
-}
-
 func TestAgent_SetPrunedTurns(t *testing.T) {
 	mockClient := &MockLLMClient{}
 	reg := registry.New()

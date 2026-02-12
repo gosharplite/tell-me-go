@@ -64,7 +64,7 @@ func (t *transientMerger) Transform(ctx context.Context, req *services.ContextRe
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
-			cloned := msg.Clone()
+			cloned := llm.CloneContent(msg)
 			cloned.Parts = append(cloned.Parts, cloned.TransientParts...)
 			req.History[i] = cloned
 		}

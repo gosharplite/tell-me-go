@@ -169,7 +169,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-		history.contents[0] = history.contents[0].Clone()
+		history.contents[0] = llm.CloneContent(history.contents[0])
 		history.contents[0].Parts[0].Text = "changed"
 		return "late summary", nil, nil
 	}

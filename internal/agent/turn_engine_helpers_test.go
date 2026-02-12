@@ -88,7 +88,7 @@ func (m *MockHistoryManager) GetContents() []*llm.Content {
 	defer m.mu.RUnlock()
 	res := make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		res[i] = c.Clone()
+		res[i] = llm.CloneContent(c)
 	}
 	return res
 }
@@ -108,7 +108,7 @@ func (m *MockHistoryManager) Snapshot() {
 	defer m.mu.Unlock()
 	m.Backup = make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		m.Backup[i] = c.Clone()
+		m.Backup[i] = llm.CloneContent(c)
 	}
 }
 
@@ -126,7 +126,7 @@ func (m *MockHistoryManager) AddContent(ctx context.Context, content *llm.Conten
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Contents = append(m.Contents, content.Clone())
+	m.Contents = append(m.Contents, llm.CloneContent(content))
 	return nil
 }
 

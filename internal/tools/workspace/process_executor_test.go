@@ -116,8 +116,8 @@ type ExpectedResult struct {
 	NotContain []string
 }
 
-func setupPipelineTest(t *testing.T) *ProcessExecutor {
-	return NewProcessExecutor()
+func setupPipelineTest(t *testing.T) *processExecutor {
+	return newprocessExecutor()
 }
 
 func setupPipelineContext(timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -201,7 +201,7 @@ func assertOutputLength(t *testing.T, name string, actual string, expected int) 
 }
 
 func TestRunPipeline_FeedbackRace(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	var feedback safeBuffer
 	config := ExecutionConfig{
 		Feedback: &feedback,
@@ -230,7 +230,7 @@ func (b *safeBuffer) Write(p []byte) (n int, err error) {
 }
 
 func TestRunCommand_Basic(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	res, err := executor.RunCommand(context.Background(), []string{"echo", "hello world"}, ExecutionConfig{})
 	if err != nil {
 		t.Fatalf("RunCommand failed: %v", err)
@@ -244,7 +244,7 @@ func TestRunCommand_Basic(t *testing.T) {
 }
 
 func TestRunCommand_MaxCapture(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		MaxCapture: 5,
 	}
@@ -264,7 +264,7 @@ func TestRunCommand_OutputFile(t *testing.T) {
 	tmpFile := "test_output.txt"
 	defer os.Remove(tmpFile)
 
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		OutputFile: tmpFile,
 	}
@@ -286,7 +286,7 @@ func TestRunCommand_Append(t *testing.T) {
 	tmpFile := "test_append.txt"
 	defer os.Remove(tmpFile)
 
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	config1 := ExecutionConfig{
 		OutputFile: tmpFile,
@@ -313,7 +313,7 @@ func TestRunCommand_Append(t *testing.T) {
 }
 
 func TestRunPipeline_Basic(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/output.txt"
 
@@ -346,7 +346,7 @@ func TestRunPipeline_Basic(t *testing.T) {
 }
 
 func TestRunPipeline_StderrCapture(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	tmpDir := t.TempDir()
 	outputFile := tmpDir + "/stderr_output.txt"
 
@@ -448,7 +448,7 @@ func TestRunPipeline_Advanced(t *testing.T) {
 }
 
 func TestRunPipeline_ContextCancel(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
@@ -472,7 +472,7 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 	}
 
 	var feedback safeBuffer
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
@@ -495,7 +495,7 @@ func TestRunCommand_FileWriteError(t *testing.T) {
 }
 
 func TestRunPipeline_MultiCommandPrefix(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	pipedParts := [][]string{
 		{"sh", "-c", "echo err0 >&2; echo out0"},
 		{"sh", "-c", "echo err1 >&2; cat"},
@@ -527,7 +527,7 @@ func TestRunPipeline_FileWriteError(t *testing.T) {
 	}
 
 	var feedback safeBuffer
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
@@ -558,7 +558,7 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 	}
 
 	var feedback safeBuffer
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
@@ -578,7 +578,7 @@ func TestRunCommand_WriteFailureSuppression(t *testing.T) {
 }
 
 func TestRunCommand_DeadlockPrevention(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	// This command writes more than the typical pipe buffer (64KB) to stderr,
 	// then writes to stdout. With sequential reading (stdout then stderr),
 	// it would deadlock because the process blocks on stderr write while
@@ -604,7 +604,7 @@ func TestRunCommand_DeadlockPrevention(t *testing.T) {
 }
 
 func TestRunPipeline_SharedMaxCapture(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		MaxCapture: 15, // Large enough for some formatting but less than both combined
 	}
@@ -632,7 +632,7 @@ func TestRunPipeline_SharedMaxCapture(t *testing.T) {
 }
 
 func TestStderrPrefixConsistency(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	// Test RunCommand prefix
 	resCmd, _ := executor.RunCommand(context.Background(), []string{"sh", "-c", "echo err >&2"}, ExecutionConfig{})
@@ -653,7 +653,7 @@ func TestStderrPrefixConsistency(t *testing.T) {
 }
 
 func TestRunCommand_SharedMaxCapture(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		MaxCapture: 15,
 	}
@@ -681,7 +681,7 @@ func TestRunPipeline_WriteFailureSuppression(t *testing.T) {
 	}
 
 	var feedback safeBuffer
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	config := ExecutionConfig{
 		OutputFile: outputPath,
 		Feedback:   &feedback,
@@ -731,7 +731,7 @@ func TestTruncateToValidUTF8(t *testing.T) {
 
 func TestProcessExecutor_AtomicWrites(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "atomic_test.txt")
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	lineCount := 100
 	cmdStr := fmt.Sprintf(`
@@ -774,7 +774,7 @@ done
 }
 
 func TestOpenOutputFile_Security(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	// Run in a temporary directory to avoid polluting the project and to have a controlled environment
 	tmpDir := t.TempDir()
@@ -825,7 +825,7 @@ func TestOpenOutputFile_Security(t *testing.T) {
 }
 
 func TestOpenOutputFile_Sanitization(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	tests := []struct {
 		name     string

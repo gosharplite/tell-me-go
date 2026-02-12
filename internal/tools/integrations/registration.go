@@ -16,7 +16,7 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.
 	registerMedia(r, sm, client, assetsDir)
 
 	// Register Network Tools
-	net := NewNetworkTool(sm, nil)
+	net := newnetworkTool(sm, nil)
 	registerNetwork(r, net)
 
 	// Register Teams Tools
@@ -74,7 +74,7 @@ func registerMedia(r *registry.Registry, sm *security.SecurityManager, client ll
 	}, m.readImage)
 }
 
-func registerNetwork(r *registry.Registry, net *NetworkTool) {
+func registerNetwork(r *registry.Registry, net *networkTool) {
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
@@ -122,7 +122,7 @@ func registerNetwork(r *registry.Registry, net *NetworkTool) {
 }
 
 func registerTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	m := NewTeamsManager(sm, client)
+	m := newteamsManager(sm, client)
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "send_teams_message",
 		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
@@ -148,7 +148,7 @@ func registerTeams(r *registry.Registry, sm *security.SecurityManager, client to
 }
 
 func registerConfluence(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	m := NewConfluenceManager(sm, client)
+	m := newconfluenceManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "confluence_search",
@@ -216,7 +216,7 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 }
 
 func registerJira(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	m := NewJiraManager(sm, client)
+	m := newjiraManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "jira_search_issues",
@@ -254,7 +254,7 @@ func registerJira(r *registry.Registry, sm *security.SecurityManager, client too
 }
 
 func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
-	m := NewAzureDevOpsManager(sm, client)
+	m := newazureDevOpsManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_get_pull_request",

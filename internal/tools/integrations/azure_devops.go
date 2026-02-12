@@ -33,8 +33,8 @@ type azureDevOpsManager struct {
 	authOnce   sync.Once
 }
 
-// NewAzureDevOpsManager creates a new instance of azureDevOpsManager.
-func NewAzureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+// newazureDevOpsManager creates a new instance of azureDevOpsManager.
+func newazureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

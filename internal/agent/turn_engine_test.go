@@ -157,7 +157,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 							return errors.New("append failed")
 						}
 						h.mu.Lock()
-						h.Contents = append(h.Contents, content.Clone())
+						h.Contents = append(h.Contents, llm.CloneContent(content))
 						h.mu.Unlock()
 						return nil
 					}
@@ -1028,9 +1028,9 @@ func TestTurnEngine_EmergencyCheckpointOnCancellation(t *testing.T) {
 
 	persistedContents := []*llm.Content{}
 	hManager.AddContentFunc = func(ctx context.Context, content *llm.Content) error {
-		persistedContents = append(persistedContents, content.Clone())
+		persistedContents = append(persistedContents, llm.CloneContent(content))
 		hManager.mu.Lock()
-		hManager.Contents = append(hManager.Contents, content.Clone())
+		hManager.Contents = append(hManager.Contents, llm.CloneContent(content))
 		hManager.mu.Unlock()
 		return nil
 	}

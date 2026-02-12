@@ -34,7 +34,7 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &SlidingWindowPolicy{MaxTurns: tt.maxTurns}
+			p := &slidingWindowPolicy{MaxTurns: tt.maxTurns}
 			turns := make([][]*llm.Content, tt.historyLen)
 			keep := make([]bool, tt.historyLen)
 
@@ -53,7 +53,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 
 	t.Run("Pruning occurred", func(t *testing.T) {
 		pruner := &historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
+			Policy: &slidingWindowPolicy{MaxTurns: 1}, // Max 1 turn (2 msgs)
 		}
 
 		req := &Request{
@@ -88,7 +88,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 
 	t.Run("No pruning", func(t *testing.T) {
 		pruner := &historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 10},
+			Policy: &slidingWindowPolicy{MaxTurns: 10},
 		}
 		req := &Request{
 			History: []*llm.Content{{Role: "user"}},
@@ -105,7 +105,7 @@ func TestHistoryPruner_Transform(t *testing.T) {
 
 func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 	t.Parallel()
-	p := &ImportanceRankPolicy{}
+	p := &importanceRankPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
 		{{Role: "user", Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "test"}}}}},
@@ -130,7 +130,7 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 
 func TestPinningPolicy_MarkTurns(t *testing.T) {
 	t.Parallel()
-	p := &PinningPolicy{}
+	p := &pinningPolicy{}
 	history := [][]*llm.Content{
 		{{Role: "user", Parts: []*llm.Part{{Text: "Normal"}}}},
 		{{Role: "user", Parts: []*llm.Part{{Text: "Pinned"}}, Pinned: true}},
@@ -154,10 +154,10 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	t.Parallel()
-	p := &CompositePruningPolicy{
+	p := &compositePruningPolicy{
 		Policies: []services.PruningPolicy{
-			&SlidingWindowPolicy{MaxTurns: 1},
-			&PinningPolicy{},
+			&slidingWindowPolicy{MaxTurns: 1},
+			&pinningPolicy{},
 		},
 	}
 	history := [][]*llm.Content{
@@ -679,7 +679,7 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 }
 
 func TestImportanceRankPolicy_MixedContent(t *testing.T) {
-	p := &ImportanceRankPolicy{}
+	p := &importanceRankPolicy{}
 	history := [][]*llm.Content{
 		{
 			{Role: "user", Parts: []*llm.Part{{Text: "Text and call"}, {FunctionCall: &llm.FunctionCall{Name: "test"}}}},
@@ -750,7 +750,7 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 func TestHistoryPruner_Unbalanced(t *testing.T) {
 	ctx := context.Background()
 	pruner := &historyPruner{
-		Policy: &SlidingWindowPolicy{MaxTurns: 1},
+		Policy: &slidingWindowPolicy{MaxTurns: 1},
 	}
 
 	req := &Request{
@@ -1280,7 +1280,7 @@ func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
 	strategy.SetLimits(maxTokens, 10, 20)
 
 	pipeline := NewContextPipeline(
-		&historyPruner{Policy: &SlidingWindowPolicy{MaxTurns: 10}},
+		&historyPruner{Policy: &slidingWindowPolicy{MaxTurns: 10}},
 		&tokenGatekeeper{
 			MaxTokens: maxTokens,
 			Estimator: strategy,

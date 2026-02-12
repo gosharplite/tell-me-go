@@ -37,7 +37,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
 		&historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 20},
+			Policy: &slidingWindowPolicy{MaxTurns: 20},
 		},
 		&tokenGatekeeper{
 			MaxTokens:  1000,
@@ -138,7 +138,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	// Configure pipeline with a pruner that will prune history
 	cm.Pipeline = NewContextPipeline(
 		&historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
+			Policy: &slidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
 			Events: bus,
 		},
 	)

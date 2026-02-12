@@ -17,19 +17,19 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type NetworkTool struct {
+type networkTool struct {
 	sm     *security.SecurityManager
 	client tools.HTTPClient
 }
 
-func NewNetworkTool(sm *security.SecurityManager, client tools.HTTPClient) *NetworkTool {
+func newnetworkTool(sm *security.SecurityManager, client tools.HTTPClient) *networkTool {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	return &NetworkTool{sm: sm, client: client}
+	return &networkTool{sm: sm, client: client}
 }
 
-func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Method  string            `json:"method"`
 		URL     string            `json:"url"`
@@ -90,7 +90,7 @@ func (t *NetworkTool) HttpRequest(ctx context.Context, args map[string]interface
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func (t *NetworkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		URL string `json:"url"`
 	}

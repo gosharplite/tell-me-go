@@ -173,7 +173,7 @@ func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 	}
 
 	// Use the existing deep clone implementation
-	clone := c.Clone()
+	clone := llm.CloneContent(c)
 
 	for _, p := range clone.Parts {
 		if p == nil || p.InlineData == nil || len(p.InlineData.Data) == 0 {

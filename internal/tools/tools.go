@@ -41,7 +41,7 @@ func RegisterAll(
 	executor := &exec.RealExecutor{}
 	workspace.Register(r, sm, executor)
 	if state != nil {
-		workspace.NewPersistenceTools(state).Register(r)
+		workspace.RegisterPersistence(r, state)
 	}
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)

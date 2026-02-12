@@ -46,7 +46,7 @@ func (t *toolDeclarationGenerator) Transform(ctx context.Context, req *services.
 	// 2. Clone the first message to avoid "History Pollution" in long-term memory.
 	// We replace the pointer in the current request's history slice.
 	firstMsg := req.History[0]
-	cloned := firstMsg.Clone()
+	cloned := llm.CloneContent(firstMsg)
 
 	// 3. Append the tool schemas to TransientParts
 	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{Text: injection})

@@ -14,15 +14,15 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type InteractionTool struct {
+type interactionTool struct {
 	sm *security.SecurityManager
 }
 
-func NewInteractionTool(sm *security.SecurityManager) *InteractionTool {
-	return &InteractionTool{sm: sm}
+func newinteractionTool(sm *security.SecurityManager) *interactionTool {
+	return &interactionTool{sm: sm}
 }
 
-func (t *InteractionTool) AskUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *interactionTool) AskUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 

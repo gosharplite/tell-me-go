@@ -187,7 +187,7 @@ func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
 }
 
 func TestCompositePruningPolicy_Name_Coverage(t *testing.T) {
-	p := &CompositePruningPolicy{}
+	p := &compositePruningPolicy{}
 	assert.Equal(t, "Composite", p.Name())
 }
 

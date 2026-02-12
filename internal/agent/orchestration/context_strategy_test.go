@@ -15,7 +15,7 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
+func TestHeuristicTokenCounter_estimateValueSize(t *testing.T) {
 	htc := &HeuristicTokenCounter{}
 	tests := []struct {
 		name  string
@@ -43,8 +43,8 @@ func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := htc.EstimateValueSize(tt.input); got != tt.want {
-				t.Errorf("EstimateValueSize() = %v, want %v", got, tt.want)
+			if got := htc.estimateValueSize(tt.input); got != tt.want {
+				t.Errorf("estimateValueSize() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -230,7 +230,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	})
 
 	t.Run("Clogged Warning", func(t *testing.T) {
-		w := cs.GetCloggedWarning()
+		w := cs.getCloggedWarning()
 		if !contains(w, "CRITICAL") || !contains(w, "summarization failed") {
 			t.Errorf("expected clogged warning, got %q", w)
 		}

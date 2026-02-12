@@ -87,7 +87,7 @@ func (m *Manager) GetContents() []*llm.Content {
 	defer m.mu.RUnlock()
 	contents := make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		contents[i] = c.Clone()
+		contents[i] = llm.CloneContent(c)
 	}
 	return contents
 }
@@ -107,7 +107,7 @@ func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) erro
 }
 
 func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
-	cloned := c.Clone()
+	cloned := llm.CloneContent(c)
 	if cloned != nil {
 		cloned.TransientParts = nil
 	}
@@ -152,7 +152,7 @@ func (m *Manager) Snapshot() {
 	defer m.mu.Unlock()
 	m.backup = make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		m.backup[i] = c.Clone()
+		m.backup[i] = llm.CloneContent(c)
 	}
 }
 

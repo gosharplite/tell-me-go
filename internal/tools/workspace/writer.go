@@ -18,7 +18,7 @@ import (
 
 type fileWriter struct {
 	sm *security.SecurityManager
-	bm *BackupManager
+	bm *backupManager
 	fs storage.FileSystem
 }
 

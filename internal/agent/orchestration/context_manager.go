@@ -71,7 +71,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	contents := cm.History.GetContents()
 	history := make([]*llm.Content, len(contents))
 	for i, c := range contents {
-		history[i] = c.Clone() // Deep clone each element for thread safety
+		history[i] = llm.CloneContent(c) // Deep clone each element for thread safety
 	}
 	pipeline := cm.Pipeline
 	cm.mu.Unlock()
@@ -250,7 +250,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	// Deep clone the subset to ensure mutation safety during the slow LLM call
 	subset = make([]*llm.Content, endIdx)
 	for i := 0; i < endIdx; i++ {
-		subset[i] = contents[i].Clone()
+		subset[i] = llm.CloneContent(contents[i])
 	}
 
 	tokens = cm.Strategy.EstimateTokens(subset)
@@ -274,7 +274,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
-		if !currentContents[i].Equal(subset[i]) {
+		if !llm.EqualContent(currentContents[i], subset[i]) {
 			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}
 	}
