@@ -207,7 +207,9 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	}
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 
-	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides)
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
+	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
 
 	declarations := reg.GetDeclarations()
 

@@ -142,7 +142,7 @@ func (c *Capturer) PrintFeedback(w io.Writer, useColor bool, color, msg string) 
 
 // Confirm prompts the user for confirmation.
 func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
-	fmt.Fprintf(c.Stderr, message)
+	fmt.Fprint(c.Stderr, message)
 
 	char, err := c.ReadSingleKey(ctx)
 	fmt.Fprintf(c.Stderr, "\n")
