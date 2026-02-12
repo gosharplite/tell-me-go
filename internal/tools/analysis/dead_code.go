@@ -7,8 +7,6 @@ import (
 	"context"
 	"fmt"
 	"go/types"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -75,7 +73,16 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
-	pkgs, targetModule, err := a.validateAndLoad(ctx, resolvedPath)
+	if err := a.idx.Refresh(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	pkgs := a.idx.Packages()
+	if len(pkgs) == 0 {
+		return tools.ToolResult{Text: "No packages found."}, nil
+	}
+
+	targetModule, err := a.identifyModule(pkgs)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -91,14 +98,36 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 
 	// Execution Pipeline
 	a.harvestExportedSymbols(state)
+	a.analyzeUsages(ctx, state, resolvedPath)
+	a.mapInterfaceImplementations(state)
 
-	// Build a file-to-package map for fast lookup during usage analysis.
-	fileToPkg := make(map[string]string)
-	for _, pkg := range state.pkgs {
-		for _, file := range pkg.GoFiles {
-			fileToPkg[file] = pkg.PkgPath
+	findings := a.buildReport(state)
+	return a.formatToolResult(findings), nil
+}
+
+func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {
+	for _, pkg := range pkgs {
+		for _, err := range pkg.Errors {
+			if strings.Contains(err.Msg, "does not contain main module") {
+				return "", fmt.Errorf("no go.mod found")
+			}
+			if !strings.Contains(err.Msg, "no Go files") {
+				return "", fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
+			}
 		}
 	}
+
+	for _, pkg := range pkgs {
+		if pkg.Module != nil {
+			return pkg.Module.Path, nil
+		}
+	}
+	return "", fmt.Errorf("no go.mod found")
+}
+
+
+func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
+	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	for id, meta := range state.declarations {
 		if a.idx.IsSymbolUsed(meta.name) {
@@ -121,78 +150,18 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 			}
 		}
 	}
-	a.mapInterfaceImplementations(state)
-
-	findings := a.buildReport(state)
-	return a.formatToolResult(findings), nil
 }
 
-func (a *deadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath string) ([]*packages.Package, string, error) {
-	// Scope Validation: Ensure we are within a Go module.
-	if _, err := a.resolveModuleRoot(resolvedPath); err != nil {
-		return nil, "", err
-	}
-
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedCompiledGoFiles |
-			packages.NeedImports |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedSyntax |
-			packages.NeedModule,
-		Dir:     resolvedPath,
-		Context: ctx,
-		Tests:   true, // Crucial for including test-based references.
-		Env:     os.Environ(),
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Check for critical loading errors
-	if err := a.checkLoadingErrors(pkgs); err != nil {
-		return nil, "", err
-	}
-
-	var targetModule string
+func (a *deadCodeAnalyzer) buildFileToPkgMap(pkgs []*packages.Package) map[string]string {
+	fileToPkg := make(map[string]string)
 	for _, pkg := range pkgs {
-		if pkg.Module != nil {
-			targetModule = pkg.Module.Path
-			break
+		for _, file := range pkg.GoFiles {
+			fileToPkg[file] = pkg.PkgPath
 		}
 	}
-	return pkgs, targetModule, nil
+	return fileToPkg
 }
 
-func (a *deadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
-	curr := path
-	for {
-		if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
-			return curr, nil
-		}
-		parent := filepath.Dir(curr)
-		if parent == curr {
-			break
-		}
-		curr = parent
-	}
-	return "", fmt.Errorf("no go.mod found in %s or any parent", path)
-}
-
-func (a *deadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
-	for _, pkg := range pkgs {
-		for _, err := range pkg.Errors {
-			if !strings.Contains(err.Msg, "no Go files") { // Ignore empty package warnings
-				return fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
-			}
-		}
-	}
-	return nil
-}
 
 func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolResult {
 	if len(findings) == 0 {
@@ -335,10 +304,25 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 	}
 
 	// Exclude Go test functions from being reported as technical debt.
-	if strings.HasPrefix(obj.Name(), "Test") || strings.HasPrefix(obj.Name(), "Benchmark") || strings.HasPrefix(obj.Name(), "Example") {
+	if a.isTestSymbol(obj.Name()) {
 		return
 	}
 
+	a.registerDeclaration(obj, state)
+
+	// Capture exported methods
+	if tn, ok := obj.(*types.TypeName); ok {
+		if named, ok := tn.Type().(*types.Named); ok {
+			a.harvestMethods(named, state)
+		}
+	}
+}
+
+func (a *deadCodeAnalyzer) isTestSymbol(name string) bool {
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example")
+}
+
+func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
 	id := a.getSymbolIdentity(obj)
 	if _, exists := state.declarations[id]; !exists {
 		state.declarations[id] = &symMeta{
@@ -349,14 +333,8 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 			obj:     obj,
 		}
 	}
-
-	// Capture exported methods
-	if tn, ok := obj.(*types.TypeName); ok {
-		if named, ok := tn.Type().(*types.Named); ok {
-			a.harvestMethods(named, state)
-		}
-	}
 }
+
 
 func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
