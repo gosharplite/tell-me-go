@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
@@ -42,140 +43,132 @@ func (s *spyInteractor) Confirm(ctx context.Context, message string) (bool, erro
 
 func TestInteractionHandler_ConfirmAction(t *testing.T) {
 	tests := []struct {
-		name           string
-		action         string
-		target         string
-		detail         string
-		bypass         bool
-		interactorAns  string
-		interactorErr  error
-		expectResult   bool
-		expectErr      bool
-		expectWarn     string
-		expectAudit    string
-		expectTruncLog bool
+		name       string
+		action     string
+		target     string
+		detail     string
+		bypass     bool
+		mockSetup  func(m *MockInteractor)
+		wantResult bool
+		wantErr    bool
+		errSubstr  string
+		verify     func(t *testing.T, spy *spyInteractor, auditor *mockAuditor)
 	}{
 		{
-			name:          "Standard Confirmation - Approved",
-			action:        "delete",
-			target:        "file.txt",
-			detail:        "User wants to delete the file.",
-			bypass:        false,
-			interactorAns: "y",
-			expectResult:  true,
-			expectAudit:   "delete on file.txt",
+			name:   "Standard Confirmation - Approved",
+			action: "delete",
+			target: "file.txt",
+			detail: "User wants to delete the file.",
+			bypass: false,
+			mockSetup: func(m *MockInteractor) {
+				m.Answer = "y"
+			},
+			wantResult: true,
+			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
+				assert.NotEmpty(t, spy.ConfirmCalls)
+				assert.Len(t, auditor.Logs, 1)
+				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
+			},
 		},
 		{
-			name:          "Standard Confirmation - Denied",
-			action:        "delete",
-			target:        "file.txt",
-			detail:        "User wants to delete the file.",
-			bypass:        false,
-			interactorAns: "n",
-			expectResult:  false,
+			name:   "Standard Confirmation - Denied",
+			action: "delete",
+			target: "file.txt",
+			detail: "User wants to delete the file.",
+			bypass: false,
+			mockSetup: func(m *MockInteractor) {
+				m.Answer = "n"
+			},
+			wantResult: false,
+			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
+				assert.NotEmpty(t, spy.ConfirmCalls)
+				assert.Empty(t, auditor.Logs)
+			},
 		},
 		{
-			name:          "Bypass Active",
-			action:        "delete",
-			target:        "file.txt",
-			detail:        "User wants to delete the file.",
-			bypass:        true,
-			expectResult:  true,
-			expectWarn:    "[Auto-Approved]",
-			expectAudit:   "delete on file.txt",
+			name:   "Bypass Active",
+			action: "delete",
+			target: "file.txt",
+			detail: "User wants to delete the file.",
+			bypass: true,
+			wantResult: true,
+			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
+				assert.Empty(t, spy.ConfirmCalls)
+				assert.NotEmpty(t, spy.Warns)
+				assert.Contains(t, spy.Warns[0], "[Auto-Approved]")
+				assert.Len(t, auditor.Logs, 1)
+				assert.Contains(t, auditor.Logs[0].Val1, "delete on file.txt")
+				assert.Contains(t, auditor.Logs[0].Val2, "(auto-approved via bypass_confirmation)")
+			},
 		},
 		{
-			name:           "Audit Logging with Truncation",
-			action:         "write",
-			target:         "large_file.txt",
-			detail:         strings.Repeat("A", 600),
-			bypass:         false,
-			interactorAns:  "y",
-			expectResult:   true,
-			expectAudit:    "write on large_file.txt",
-			expectTruncLog: true,
+			name:   "Audit Logging with Truncation",
+			action: "write",
+			target: "large_file.txt",
+			detail: strings.Repeat("A", 600),
+			bypass: false,
+			mockSetup: func(m *MockInteractor) {
+				m.Answer = "y"
+			},
+			wantResult: true,
+			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
+				assert.Len(t, auditor.Logs, 1)
+				assert.Contains(t, auditor.Logs[0].Val1, "write on large_file.txt")
+				assert.Contains(t, auditor.Logs[0].Val2, "... (truncated)")
+			},
 		},
 		{
-			name:          "User Prompt Truncation",
-			action:        "write",
-			target:        "large_file.txt",
-			detail:        strings.Repeat("B", 1200),
-			bypass:        false,
-			interactorAns: "y",
-			expectResult:  true,
+			name:   "User Prompt Truncation",
+			action: "write",
+			target: "large_file.txt",
+			detail: strings.Repeat("B", 1200),
+			bypass: false,
+			mockSetup: func(m *MockInteractor) {
+				m.Answer = "y"
+			},
+			wantResult: true,
+			verify: func(t *testing.T, spy *spyInteractor, auditor *mockAuditor) {
+				assert.NotEmpty(t, spy.ConfirmCalls)
+				assert.Contains(t, spy.ConfirmCalls[0], "... (truncated)")
+			},
 		},
 		{
-			name:          "Interactor Error",
-			action:        "delete",
-			target:        "file.txt",
-			bypass:        false,
-			interactorErr: fmt.Errorf("interactor error"),
-			expectErr:     true,
+			name:   "Interactor Error",
+			action: "delete",
+			target: "file.txt",
+			bypass: false,
+			mockSetup: func(m *MockInteractor) {
+				m.Err = fmt.Errorf("interactor error")
+			},
+			wantErr:   true,
+			errSubstr: "interactor error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			spy := &spyInteractor{}
-			spy.Answer = tt.interactorAns
-			spy.Err = tt.interactorErr
+			if tt.mockSetup != nil {
+				tt.mockSetup(&spy.MockInteractor)
+			}
 			auditor := &mockAuditor{}
 			handler := newInteractionHandler(spy, auditor)
 
-			ctx := context.Background()
-			result, err := handler.ConfirmAction(ctx, tt.action, tt.target, tt.detail, tt.bypass)
+			got, err := handler.ConfirmAction(ctx, tt.action, tt.target, tt.detail, tt.bypass)
 
-			if (err != nil) != tt.expectErr {
-				t.Errorf("ConfirmAction() error = %v, expectErr %v", err, tt.expectErr)
-				return
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errSubstr != "" {
+					assert.Contains(t, err.Error(), tt.errSubstr)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantResult, got)
 			}
 
-			if result != tt.expectResult {
-				t.Errorf("ConfirmAction() result = %v, expectResult %v", result, tt.expectResult)
-			}
-
-			if tt.bypass {
-				if len(spy.ConfirmCalls) > 0 {
-					t.Error("Confirm() should not be called when bypass is active")
-				}
-				foundWarn := false
-				for _, w := range spy.Warns {
-					if strings.Contains(w, tt.expectWarn) {
-						foundWarn = true
-						break
-					}
-				}
-				if !foundWarn {
-					t.Errorf("Expected warning containing %q, but not found in %v", tt.expectWarn, spy.Warns)
-				}
-			} else if tt.interactorErr == nil {
-				if len(spy.ConfirmCalls) == 0 {
-					t.Error("Confirm() should be called when bypass is inactive")
-				}
-				if len(tt.detail) > 1000 {
-					if !strings.Contains(spy.ConfirmCalls[0], "... (truncated)") {
-						t.Error("Detail in user prompt should be truncated")
-					}
-				}
-			}
-
-			if tt.expectAudit != "" && (tt.expectResult || tt.bypass) {
-				foundAudit := false
-				for _, log := range auditor.Logs {
-					if strings.Contains(log.Val1, tt.expectAudit) {
-						foundAudit = true
-						if tt.bypass && !strings.Contains(log.Val2, "(auto-approved via bypass_confirmation)") {
-							t.Error("Audit log missing bypass suffix")
-						}
-						if tt.expectTruncLog && !strings.Contains(log.Val2, "... (truncated)") {
-							t.Error("Audit log detail should be truncated")
-						}
-						break
-					}
-				}
-				if !foundAudit {
-					t.Errorf("Expected audit log for %q, but not found", tt.expectAudit)
-				}
+			if tt.verify != nil {
+				tt.verify(t, spy, auditor)
 			}
 		})
 	}
