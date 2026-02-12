@@ -9,19 +9,19 @@ import (
 )
 
 var (
-	cmdRegistry = make(map[string]Factory)
+	cmdRegistry = make(map[string]factory)
 	mu          sync.RWMutex
 )
 
-// Register adds a command factory to the registry.
-func Register(name string, factory Factory) {
+// register adds a command factory to the registry.
+func register(name string, factory factory) {
 	mu.Lock()
 	defer mu.Unlock()
 	cmdRegistry[name] = factory
 }
 
-// Get retrieves a command factory from the registry by name.
-func Get(name string) (Factory, error) {
+// get retrieves a command factory from the registry by name.
+func get(name string) (factory, error) {
 	mu.RLock()
 	defer mu.RUnlock()
 	factory, ok := cmdRegistry[name]

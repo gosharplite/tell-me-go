@@ -4,27 +4,38 @@
 package analysis
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type infoManager struct {
-	SP    security.SecurityProvider
-	Cache *astCache
-	FS    storage.FileSystem
+	SP     security.SecurityProvider
+	Cache  *astCache
+	FS     storage.FileSystem
+	Events events.EventBus
+	Exec   tools.CommandExecutor
+}
+
+type projectStats struct {
+	fileCounts map[string]int
+	packages   map[string]bool
+	totalLOC   int
+}
+
+func (m *infoManager) shouldSkipDir(name string) bool {
+	return name == ".git" || name == "vendor" || name == "node_modules"
 }
 
 var genericSkeletonPatterns = []*regexp.Regexp{
@@ -59,17 +70,22 @@ func (m *infoManager) resolveModuleInfo(ctx context.Context) string {
 }
 
 func (m *infoManager) collectFileStats(ctx context.Context) (map[string]int, map[string]bool, int, error) {
-	fileCounts := make(map[string]int)
-	packages := make(map[string]bool)
-	totalLOC := 0
+	stats := &projectStats{
+		fileCounts: make(map[string]int),
+		packages:   make(map[string]bool),
+	}
 
-	err := m.FS.Walk(ctx, ".", func(path string, info os.FileInfo, err error) error {
+	err := m.FS.Walk(ctx, ".", m.makeWalkFunc(ctx, stats))
+	return stats.fileCounts, stats.packages, stats.totalLOC, err
+}
+
+func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) storage.WalkFunc {
+	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 		if info.IsDir() {
-			name := info.Name()
-			if name == ".git" || name == "vendor" || name == "node_modules" {
+			if m.shouldSkipDir(info.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -79,21 +95,25 @@ func (m *infoManager) collectFileStats(ctx context.Context) (map[string]int, map
 		if ext == "" {
 			ext = "(no ext)"
 		}
-		fileCounts[ext]++
+		stats.fileCounts[ext]++
 
 		if ext == ".go" {
-			packages[filepath.Dir(path)] = true
-			if c, err := m.FS.ReadFile(ctx, path); err == nil {
-				totalLOC += bytes.Count(c, []byte("\n"))
-				if len(c) > 0 && c[len(c)-1] != '\n' {
-					totalLOC++
-				}
+			stats.packages[filepath.Dir(path)] = true
+			// Try cache first to avoid redundant disk I/O
+			var count int
+			var ok bool
+			if m.Cache != nil {
+				count, ok = m.Cache.GetCachedLineCount(path, info)
+			}
+
+			if ok {
+				stats.totalLOC += count
+			} else if count, err := m.countLines(ctx, path); err == nil {
+				stats.totalLOC += count
 			}
 		}
 		return nil
-	})
-
-	return fileCounts, packages, totalLOC, err
+	}
 }
 
 func (m *infoManager) renderProjectSummary(modInfo string, fileCounts map[string]int, packages map[string]bool, totalLOC int) string {
@@ -134,14 +154,14 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	}
 
 	symbol := params.Symbol
-	func() {
-		m.SP.TerminalLock()
-		defer m.SP.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Running go doc %s%s\n", ui.ColorCyan, symbol, ui.ColorReset)
-	}()
+	if m.Events != nil {
+		m.Events.Publish(events.SystemMessageEvent{
+			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
+			Level:   "info",
+		})
+	}
 
-	cmd := exec.CommandContext(ctx, "go", "doc", symbol)
-	out, err := cmd.CombinedOutput()
+	out, err := m.Exec.CombinedOutput(ctx, "go", "doc", symbol)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error running go doc: %v\nOutput: %s", err, string(out))}, nil
 	}
@@ -196,15 +216,7 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 			continue
 		}
 
-		isDef := false
-		for _, p := range genericSkeletonPatterns {
-			if p.MatchString(line) {
-				isDef = true
-				break
-			}
-		}
-
-		if isDef {
+		if m.isDefinitionLine(line) {
 			for _, c := range lastComments {
 				sb.WriteString(c + "\n")
 			}
@@ -218,4 +230,28 @@ func (m *infoManager) extractGenericSkeleton(ctx context.Context, path string) (
 		return tools.ToolResult{Text: "Could not extract skeleton or file has no recognized definitions."}, nil
 	}
 	return tools.ToolResult{Text: res}, nil
+}
+
+func (m *infoManager) isDefinitionLine(line string) bool {
+	for _, p := range genericSkeletonPatterns {
+		if p.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *infoManager) countLines(ctx context.Context, path string) (int, error) {
+	f, err := m.FS.Open(ctx, path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	count := 0
+	for scanner.Scan() {
+		count++
+	}
+	return count, scanner.Err()
 }

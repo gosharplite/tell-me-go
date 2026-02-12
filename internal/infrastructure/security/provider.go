@@ -10,6 +10,7 @@ import (
 )
 
 // SecurityProvider defines the interface for path validation and destructive action confirmation.
+// This is the public interface used by tools and external components.
 type SecurityProvider interface {
 	IsPathSafe(path string) (string, error)
 	IsPathWritable(path string) (string, error)
@@ -19,6 +20,10 @@ type SecurityProvider interface {
 	IsCommandAllowed(command string) bool
 	LogAudit(label1, val1, label2, val2 string)
 	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
-	GetPolicy() *domain.Policy
-	GetSafetyService() *domain.SafetyService
+}
+
+// internalSecurityProvider extends SecurityProvider with methods used only within the security package.
+type internalSecurityProvider interface {
+	SecurityProvider
+	getSafetyService() *domain.SafetyService
 }

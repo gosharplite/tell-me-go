@@ -15,7 +15,7 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
+func TestHeuristicTokenCounter_estimateValueSize(t *testing.T) {
 	htc := &HeuristicTokenCounter{}
 	tests := []struct {
 		name  string
@@ -43,8 +43,8 @@ func TestHeuristicTokenCounter_EstimateValueSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := htc.EstimateValueSize(tt.input); got != tt.want {
-				t.Errorf("EstimateValueSize() = %v, want %v", got, tt.want)
+			if got := htc.estimateValueSize(tt.input); got != tt.want {
+				t.Errorf("estimateValueSize() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -135,7 +135,7 @@ func setupWarningTest() *ContextStrategy {
 
 func TestContextStrategy_Warnings_EmptyHistory(t *testing.T) {
 	cs := setupWarningTest()
-	warnings := cs.GetWarnings(0, 0, 0)
+	warnings := cs.getWarnings(0, 0, 0)
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for empty history, got %d", len(warnings))
 	}
@@ -193,7 +193,7 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
-		h, tool, hTurns := cs.GetLimits()
+		h, tool, hTurns := cs.getLimits()
 		if h <= 0 || tool <= 0 || hTurns <= 0 {
 			t.Errorf("expected limits to remain positive defaults, got %d, %d, %d", h, tool, hTurns)
 		}
@@ -223,37 +223,37 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
 		cs.SetPrunedTurns(10)
-		_ = cs.GetWarnings(1, 10, 1)
+		_ = cs.getWarnings(1, 10, 1)
 		if cs.prunedTurns != 0 {
 			t.Errorf("expected prunedTurns to be reset, got %d", cs.prunedTurns)
 		}
 	})
 
 	t.Run("Clogged Warning", func(t *testing.T) {
-		w := cs.GetCloggedWarning()
+		w := cs.getCloggedWarning()
 		if !contains(w, "CRITICAL") || !contains(w, "summarization failed") {
 			t.Errorf("expected clogged warning, got %q", w)
 		}
 	})
 }
 
-func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
+func TestContextStrategy_setTieredThresholdZero(t *testing.T) {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 
 	// First set to a non-zero value
-	cs.SetTieredThreshold(100)
+	cs.setTieredThreshold(100)
 	if got := cs.GetTieredThreshold(); got != 100 {
 		t.Errorf("expected tieredThreshold to be 100, got %d", got)
 	}
 
 	// Set threshold to 0 (disable)
-	cs.SetTieredThreshold(0)
+	cs.setTieredThreshold(0)
 	if got := cs.GetTieredThreshold(); got != 0 {
 		t.Errorf("expected tieredThreshold to be 0, got %d", got)
 	}
 
 	// Verify no price warning is generated when threshold is 0
-	warnings := cs.GetWarnings(1, 200000, 1) // High token count
+	warnings := cs.getWarnings(1, 200000, 1) // High token count
 	for _, w := range warnings {
 		if contains(w.Message, "ECONOMIC") {
 			t.Errorf("expected no economic warnings when threshold is 0, but got: %q", w.Message)
@@ -265,7 +265,7 @@ func TestContextStrategy_GetPriceWarning(t *testing.T) {
 	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
 
 	t.Run("Zero Threshold", func(t *testing.T) {
-		cs.SetTieredThreshold(0)
+		cs.setTieredThreshold(0)
 		got := cs.getPriceWarningLocked(1000)
 		if got != "" {
 			t.Errorf("expected empty warning for zero threshold, got %q", got)
@@ -273,7 +273,7 @@ func TestContextStrategy_GetPriceWarning(t *testing.T) {
 	})
 
 	t.Run("Below Warning", func(t *testing.T) {
-		cs.SetTieredThreshold(1000)
+		cs.setTieredThreshold(1000)
 		// WarningRatio is 0.78. 0.78 * 1000 = 780.
 		got := cs.getPriceWarningLocked(500)
 		if got != "" {
@@ -282,7 +282,7 @@ func TestContextStrategy_GetPriceWarning(t *testing.T) {
 	})
 
 	t.Run("Warning Ratio", func(t *testing.T) {
-		cs.SetTieredThreshold(1000)
+		cs.setTieredThreshold(1000)
 		// 901 >= 780 (threshold * 0.78)
 		got := cs.getPriceWarningLocked(901)
 		if !contains(got, "[ECONOMIC NOTICE") {
@@ -291,7 +291,7 @@ func TestContextStrategy_GetPriceWarning(t *testing.T) {
 	})
 
 	t.Run("Threshold Hit", func(t *testing.T) {
-		cs.SetTieredThreshold(1000)
+		cs.setTieredThreshold(1000)
 		got := cs.getPriceWarningLocked(1001)
 		if !contains(got, "[URGENT ECONOMIC NOTICE") {
 			t.Errorf("expected [URGENT ECONOMIC NOTICE] prefix for 1001 tokens (threshold 1000), got %q", got)

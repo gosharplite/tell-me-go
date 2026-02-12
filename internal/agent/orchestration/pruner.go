@@ -33,7 +33,7 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 	}
 
 	// If it's a composite policy, we track sub-policies individually.
-	if cp, ok := t.Policy.(*CompositePruningPolicy); ok {
+	if cp, ok := t.Policy.(*compositePruningPolicy); ok {
 		for _, p := range cp.Policies {
 			req.Metadata.KeptByPolicy[p.Name()] = p.MarkTurns(ctx, turns, keep)
 		}
@@ -71,12 +71,12 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 
 func (t *historyPruner) Priority() int { return 10 }
 
-// CompositePruningPolicy aggregates multiple policies using OR logic.
-type CompositePruningPolicy struct {
+// compositePruningPolicy aggregates multiple policies using OR logic.
+type compositePruningPolicy struct {
 	Policies []services.PruningPolicy
 }
 
-func (p *CompositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
 	totalMarked := 0
 	for _, policy := range p.Policies {
 		totalMarked += policy.MarkTurns(ctx, turns, keep)
@@ -84,14 +84,14 @@ func (p *CompositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.C
 	return totalMarked
 }
 
-func (p *CompositePruningPolicy) Name() string { return "Composite" }
+func (p *compositePruningPolicy) Name() string { return "Composite" }
 
-// SlidingWindowPolicy keeps the last N turns.
-type SlidingWindowPolicy struct {
+// slidingWindowPolicy keeps the last N turns.
+type slidingWindowPolicy struct {
 	MaxTurns int
 }
 
-func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *slidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
 	if p.MaxTurns <= 0 {
 		return 0
 	}
@@ -110,12 +110,12 @@ func (p *SlidingWindowPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Cont
 	return count
 }
 
-func (p *SlidingWindowPolicy) Name() string { return "SlidingWindow" }
+func (p *slidingWindowPolicy) Name() string { return "SlidingWindow" }
 
-// ImportanceRankPolicy keeps turns containing function calls, responses, or data.
-type ImportanceRankPolicy struct{}
+// importanceRankPolicy keeps turns containing function calls, responses, or data.
+type importanceRankPolicy struct{}
 
-func (p *ImportanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *importanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
 	count := 0
 	for i, turn := range turns {
 		important := false
@@ -139,12 +139,12 @@ func (p *ImportanceRankPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Con
 	return count
 }
 
-func (p *ImportanceRankPolicy) Name() string { return "Importance" }
+func (p *importanceRankPolicy) Name() string { return "Importance" }
 
-// PinningPolicy keeps turns that have at least one pinned message.
-type PinningPolicy struct{}
+// pinningPolicy keeps turns that have at least one pinned message.
+type pinningPolicy struct{}
 
-func (p *PinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
+func (p *pinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {
 	count := 0
 	for i, turn := range turns {
 		pinned := false
@@ -163,4 +163,4 @@ func (p *PinningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, k
 	return count
 }
 
-func (p *PinningPolicy) Name() string { return "Pinning" }
+func (p *pinningPolicy) Name() string { return "Pinning" }

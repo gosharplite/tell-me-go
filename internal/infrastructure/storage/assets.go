@@ -45,7 +45,7 @@ func (s *AssetStore) Put(ctx context.Context, data []byte) (string, error) {
 	hash := sha256.Sum256(data)
 	id := fmt.Sprintf("%x", hash)
 
-	path := s.GetPath(id)
+	path := s.getPath(id)
 	if _, err := s.fs.Stat(ctx, path); err == nil {
 		return id, nil // Already exists
 	}
@@ -73,11 +73,11 @@ func (s *AssetStore) Get(ctx context.Context, id string) ([]byte, error) {
 	default:
 	}
 
-	return s.fs.ReadFile(ctx, s.GetPath(id))
+	return s.fs.ReadFile(ctx, s.getPath(id))
 }
 
-// GetPath returns the absolute path for an asset ID.
-func (s *AssetStore) GetPath(id string) string {
+// getPath returns the absolute path for an asset ID.
+func (s *AssetStore) getPath(id string) string {
 	// Use subdirectories to avoid thousands of files in one folder
 	// e.g., <baseDir>/ab/abcdef123...
 	if len(id) < 2 {

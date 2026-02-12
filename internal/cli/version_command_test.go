@@ -5,7 +5,7 @@ package cli
 
 import (
 	"bytes"
-	"context"
+	stdctx "context"
 	"testing"
 )
 
@@ -30,12 +30,12 @@ func TestVersionCommand_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var out bytes.Buffer
-			cmd := &VersionCommand{
+			cmd := &versionCommand{
 				Version: tt.version,
 				Stdout:  &out,
 			}
 
-			err := cmd.Execute(context.Background(), nil)
+			err := cmd.Execute(stdctx.Background(), nil)
 			if err != nil {
 				t.Fatalf("Execute() unexpected error: %v", err)
 			}
@@ -48,20 +48,20 @@ func TestVersionCommand_Execute(t *testing.T) {
 }
 
 func TestVersionCommandFactory(t *testing.T) {
-	factory, err := Get("version")
+	factory, err := get("version")
 	if err != nil {
-		t.Fatalf("Get(\"version\") error = %v", err)
+		t.Fatalf("get(\"version\") error = %v", err)
 	}
 
-	ctx := &Context{
+	ctx := &context{
 		Version: "1.2.3-test",
 		Stdout:  &bytes.Buffer{},
 	}
 
 	cmd := factory(ctx)
-	vCmd, ok := cmd.(*VersionCommand)
+	vCmd, ok := cmd.(*versionCommand)
 	if !ok {
-		t.Fatalf("factory did not return *VersionCommand, got %T", cmd)
+		t.Fatalf("factory did not return *versionCommand, got %T", cmd)
 	}
 
 	if vCmd.Version != ctx.Version {

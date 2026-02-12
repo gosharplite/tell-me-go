@@ -18,7 +18,7 @@ import (
 
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
-	GetToken() (string, error)
+	getToken() (string, error)
 	Invalidate()
 	Apply(req *Request)
 }
@@ -57,8 +57,8 @@ func (a *VertexAuth) getCachePath() string {
 	return filepath.Join(dir, "token.txt")
 }
 
-// GetToken retrieves the OAuth2 access token with local caching.
-func (a *VertexAuth) GetToken() (string, error) {
+// getToken retrieves the OAuth2 access token with local caching.
+func (a *VertexAuth) getToken() (string, error) {
 	if a.Token != "" {
 		return a.Token, nil
 	}
@@ -102,7 +102,7 @@ func (a *VertexAuth) Invalidate() {
 
 // Apply injects the Bearer token into the request headers.
 func (a *VertexAuth) Apply(req *Request) {
-	token, _ := a.GetToken()
+	token, _ := a.getToken()
 	if token != "" {
 		req.Headers["Authorization"] = "Bearer " + token
 	}

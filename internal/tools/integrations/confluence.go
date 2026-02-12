@@ -52,8 +52,8 @@ type confluenceManager struct {
 	provider *atlassianProvider
 }
 
-// NewConfluenceManager creates a new instance of confluenceManager.
-func NewConfluenceManager(sm *security.SecurityManager, client tools.HTTPClient) *confluenceManager {
+// newconfluenceManager creates a new instance of confluenceManager.
+func newconfluenceManager(sm *security.SecurityManager, client tools.HTTPClient) *confluenceManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"google.golang.org/genai"
@@ -44,7 +45,7 @@ func TestSendChat(t *testing.T) {
 	// 2. Setup client with mock server URL and mock authenticator
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false)
+	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus())
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestSendChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -105,7 +106,7 @@ func TestSendChat_FinishReason(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -148,7 +149,7 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
@@ -168,7 +169,7 @@ func TestThinkingBudget(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {

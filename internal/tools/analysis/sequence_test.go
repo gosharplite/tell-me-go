@@ -88,7 +88,7 @@ func LoopFunc() {}
 		return true
 	})
 
-	mockExec := &MockExecutor{
+	mockExec := &mockExecutor{
 		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("github.com/test/mod"), nil
 		},

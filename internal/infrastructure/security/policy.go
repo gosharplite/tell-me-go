@@ -6,13 +6,11 @@ package security
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type policyTool struct {
@@ -59,7 +57,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterSafePath(absPath)
-	if err := t.sm.SaveSafePaths(ctx); err != nil {
+	if err := t.sm.saveSafePaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized but failed to persist: %v", err)}, nil
 	}
 
@@ -96,11 +94,11 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
-	if err := t.sm.RemoveSafePath(absPath); err != nil {
+	if err := t.sm.removeSafePath(absPath); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.SaveSafePaths(ctx); err != nil {
+	if err := t.sm.saveSafePaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -156,7 +154,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 
 	// Register and Persist
 	t.sm.RegisterReadOnlyPath(absPath)
-	if err := t.sm.SaveReadOnlyPaths(ctx); err != nil {
+	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path authorized for reading but failed to persist: %v", err)}, nil
 	}
 
@@ -193,11 +191,11 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 		return tools.ToolResult{Text: "Removal denied by user."}, nil
 	}
 
-	if err := t.sm.RemoveReadOnlyPath(absPath); err != nil {
+	if err := t.sm.removeReadOnlyPath(absPath); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error: %v", err)}, nil
 	}
 
-	if err := t.sm.SaveReadOnlyPaths(ctx); err != nil {
+	if err := t.sm.saveReadOnlyPaths(ctx); err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Path removed from memory but failed to update persistence: %v", err)}, nil
 	}
 
@@ -205,7 +203,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 }
 
 func (t *policyTool) ListReadPaths(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	paths := t.sm.GetReadOnlyPaths()
+	paths := t.sm.getReadOnlyPaths()
 	if len(paths) == 0 {
 		return tools.ToolResult{Text: "No additional read-only paths are currently registered."}, nil
 	}
@@ -237,8 +235,8 @@ func (t *policyTool) BypassConfirmation(ctx context.Context, args map[string]int
 
 	t.sm.SetBypassActive(true)
 
-	t.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "%s[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.%s\n", ui.ColorBoldRed, ui.ColorReset)
+	t.sm.saveBypassState(ctx)
+	t.sm.Warn("[SECURITY] ALL INTERACTIVE CONFIRMATIONS HAVE BEEN DISABLED FOR THIS SESSION.")
 	// t.sm.logAudit("ACTION", "BYPASS CONFIRMATION", "DETAIL", "User manually approved bypass of all interactive security prompts for this session.")
 	return tools.ToolResult{Text: "All future confirmations in this session will be bypassed. This setting is now persistent for this session name."}, nil
 }
@@ -249,8 +247,8 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 
 	t.sm.SetBypassActive(false)
 
-	t.sm.SaveBypassState(ctx)
-	fmt.Fprintf(os.Stderr, "%s[SECURITY] Interactive security prompts have been RE-ENABLED.%s\n", ui.ColorBoldGreen, ui.ColorReset)
+	t.sm.saveBypassState(ctx)
+	t.sm.Warn("[SECURITY] Interactive security prompts have been RE-ENABLED.")
 	// t.sm.logAudit("ACTION", "REVOKE BYPASS", "DETAIL", "Bypass status revoked by AI/User.")
 	return tools.ToolResult{Text: "Interactive security prompts have been re-enabled."}, nil
 }
@@ -258,36 +256,29 @@ func (t *policyTool) RevokeBypass(ctx context.Context, args map[string]interface
 func (t *policyTool) confirmAction(ctx context.Context, title, path, reason string, doubleConfirm bool) (bool, error) {
 	lowerTitle := strings.ToLower(title)
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved.%s\n", ui.ColorGreen, t.getBypassMsg(lowerTitle), ui.ColorReset)
+		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved.", t.getBypassMsg(lowerTitle)))
 		return true, nil
 	}
 
-	mainColor := ui.ColorBoldRed
-	if strings.Contains(lowerTitle, "remove") {
-		mainColor = ui.ColorBoldYellow
-	}
-
-	fmt.Fprintf(os.Stderr, "%s[SECURITY] AI is requesting %s%s %s\n", mainColor, title, ui.ColorReset, path)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[SECURITY] AI is requesting %s %s\n", title, path))
 	if reason != "" {
 		if path == "" {
-			fmt.Fprintf(os.Stderr, "%s\n", reason)
+			sb.WriteString(reason + "\n")
 		} else {
-			fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
+			sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "%s", t.getPrompt(lowerTitle))
-	char, err := t.sm.ReadSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil || char != "y" {
+	sb.WriteString(t.getPrompt(lowerTitle))
+	confirmed, err := t.sm.interaction.interactor.Confirm(ctx, sb.String())
+	if err != nil || !confirmed {
 		return false, err
 	}
 
 	if doubleConfirm {
-		fmt.Fprintf(os.Stderr, "%s[DOUBLE CONFIRM] %s%s (y/N) ", ui.ColorBoldRed, t.getDoubleMsg(lowerTitle), ui.ColorReset)
-		char, err = t.sm.ReadSingleKey(ctx)
-		fmt.Fprintf(os.Stderr, "\n")
-		if err != nil || char != "y" {
+		confirmed, err = t.sm.interaction.interactor.Confirm(ctx, fmt.Sprintf("[DOUBLE CONFIRM] %s (y/N) ", t.getDoubleMsg(lowerTitle)))
+		if err != nil || !confirmed {
 			return false, err
 		}
 	}

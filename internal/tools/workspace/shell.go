@@ -12,26 +12,25 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-type ShellTool struct {
+type shellTool struct {
 	sm        *security.SecurityManager
 	validator *security.CommandValidator
-	executor  *ProcessExecutor
+	executor  *processExecutor
 	maxOutput int
 }
 
-func NewShellTool(sm *security.SecurityManager) *ShellTool {
-	return &ShellTool{
+func newshellTool(sm *security.SecurityManager) *shellTool {
+	return &shellTool{
 		sm:        sm,
-		validator: security.NewCommandValidator(sm),
-		executor:  NewProcessExecutor(),
+		validator: security.NewCommandValidator(sm, sm.GetInteractor()),
+		executor:  newprocessExecutor(),
 		maxOutput: 50000,
 	}
 }
 
-func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -74,8 +73,8 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	t.sm.LogAudit("REASON", params.Reason, "COMMAND", params.Command)
 
 	// 3. Execute
-	res, err := t.runWithFeedback(ctx, "Executing", func() (ExecutionResult, error) {
-		return t.executor.RunCommand(ctx, parts, ExecutionConfig{
+	res, err := t.runWithFeedback(ctx, "Executing", func() (executionResult, error) {
+		return t.executor.RunCommand(ctx, parts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
@@ -90,7 +89,7 @@ func (t *ShellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 	return tools.ToolResult{Text: t.formatResult(res, false)}, nil
 }
 
-func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
@@ -129,8 +128,8 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (ExecutionResult, error) {
-		return t.executor.RunPipeline(ctx, pipedParts, ExecutionConfig{
+	res, err := t.runWithFeedback(ctx, "Executing Pipeline", func() (executionResult, error) {
+		return t.executor.RunPipeline(ctx, pipedParts, executionConfig{
 			OutputFile: outputFile,
 			Append:     params.Append,
 			Feedback:   os.Stderr,
@@ -145,7 +144,7 @@ func (t *ShellTool) PipeCommands(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: t.formatResult(res, true)}, nil
 }
 
-func (t *ShellTool) isPipelineSafe(commands []string) bool {
+func (t *shellTool) isPipelineSafe(commands []string) bool {
 	for _, cmd := range commands {
 		if safe, _ := t.validator.IsSafe(cmd); !safe {
 			return false
@@ -154,7 +153,7 @@ func (t *ShellTool) isPipelineSafe(commands []string) bool {
 	return true
 }
 
-func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
+func (t *shellTool) splitPipeline(commands []string) ([][]string, error) {
 	pipedParts := make([][]string, len(commands))
 	for i, cmdStr := range commands {
 		parts, err := t.validator.Split(cmdStr)
@@ -169,53 +168,49 @@ func (t *ShellTool) splitPipeline(commands []string) ([][]string, error) {
 	return pipedParts, nil
 }
 
-func (t *ShellTool) handleAuthResult(approved bool, err error, label string) (tools.ToolResult, error) {
+func (t *shellTool) handleAuthResult(approved bool, err error, label string) (tools.ToolResult, error) {
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	return t.deniedResult(label), nil
 }
 
-func (t *ShellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
+func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
 	if t.sm.IsBypassActive() {
-		fmt.Fprintf(os.Stderr, "%s[Bypassed] %s auto-approved (bypass_confirmation enabled).%s\n", ui.ColorGreen, label, ui.ColorReset)
+		t.sm.Warn(fmt.Sprintf("[Bypassed] %s auto-approved (bypass_confirmation enabled).", label))
 		return true, nil
 	}
 	if isSafe {
-		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Safe %s detected.%s\n", ui.ColorGreen, strings.ToLower(label), ui.ColorReset)
+		t.sm.Warn(fmt.Sprintf("[Auto-Approved] Safe %s detected.", strings.ToLower(label)))
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "%sExecute %s: %s%s\n", ui.ColorCyan, label, ui.ColorReset, detail)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Execute %s: %s\n", label, detail))
 	if reason != "" {
-		fmt.Fprintf(os.Stderr, "%sReason: %s%s\n", ui.ColorYellow, reason, ui.ColorReset)
+		sb.WriteString(fmt.Sprintf("Reason: %s\n", reason))
 	}
 	if outputFile != "" {
 		redir := ">"
 		if append {
 			redir = ">>"
 		}
-		fmt.Fprintf(os.Stderr, "%sRedirect: %s %s%s\n", ui.ColorBlue, redir, outputFile, ui.ColorReset)
+		sb.WriteString(fmt.Sprintf("Redirect: %s %s\n", redir, outputFile))
 	}
-	fmt.Fprintf(os.Stderr, "⚠️  Execute this %s? (y/N) ", strings.ToLower(label))
+	sb.WriteString(fmt.Sprintf("⚠️  Execute this %s? (y/N) ", strings.ToLower(label)))
 
-	char, err := t.sm.ReadSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
-	if err != nil {
-		return false, err
-	}
-	return char == "y", nil
+	return t.sm.GetInteractor().Confirm(ctx, sb.String())
 }
 
-func (t *ShellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (ExecutionResult, error)) (ExecutionResult, error) {
-	fmt.Fprintf(os.Stderr, "%s%s... (Output shown below)%s\n", ui.ColorGray, msg, ui.ColorReset)
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
+func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
+	t.sm.Warn(fmt.Sprintf("%s... (Output shown below)", msg))
+	t.sm.Warn("------------------------------------------------------------")
 	res, err := runFn()
-	fmt.Fprintf(os.Stderr, "%s------------------------------------------------------------%s\n", ui.ColorGray, ui.ColorReset)
+	t.sm.Warn("------------------------------------------------------------")
 	return res, err
 }
 
-func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
+func (t *shellTool) formatResult(res executionResult, isPipeline bool) string {
 	output := res.Output
 	if res.Truncated {
 		output += "\n... (truncated)"
@@ -226,7 +221,7 @@ func (t *ShellTool) formatResult(res ExecutionResult, isPipeline bool) string {
 	return fmt.Sprintf("Exit Code: %d\nOutput:\n%s", res.ExitCode, output)
 }
 
-func (t *ShellTool) resolveOutputFile(path string) (string, error) {
+func (t *shellTool) resolveOutputFile(path string) (string, error) {
 	// Hardened sanitation: trim whitespace and remove null bytes
 	path = strings.TrimSpace(path)
 	path = strings.ReplaceAll(path, "\x00", "")
@@ -237,6 +232,6 @@ func (t *ShellTool) resolveOutputFile(path string) (string, error) {
 	return t.sm.IsPathWritable(path)
 }
 
-func (t *ShellTool) deniedResult(label string) tools.ToolResult {
+func (t *shellTool) deniedResult(label string) tools.ToolResult {
 	return tools.ToolResult{Text: fmt.Sprintf("User denied execution of %s.", label)}
 }

@@ -43,7 +43,7 @@ type finalContextValidator struct {
 }
 
 func (t *finalContextValidator) Transform(ctx context.Context, req *services.ContextRequest) error {
-	maxTokens, _, _ := t.Strategy.GetLimits()
+	maxTokens, _, _ := t.Strategy.getLimits()
 	finalTokens := t.Strategy.EstimateTokens(req.History)
 
 	req.Metadata.FinalTokenCount = finalTokens
@@ -55,7 +55,7 @@ func (t *finalContextValidator) Transform(ctx context.Context, req *services.Con
 	return nil
 }
 
-func (t *finalContextValidator) Priority() int { return PriorityTransientThreshold + 10 } // Run last
+func (t *finalContextValidator) Priority() int { return priorityTransientThreshold + 10 } // Run last
 
 // transientMerger merges TransientParts into Parts for the final API payload.
 type transientMerger struct{}
@@ -64,7 +64,7 @@ func (t *transientMerger) Transform(ctx context.Context, req *services.ContextRe
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
-			cloned := msg.Clone()
+			cloned := llm.CloneContent(msg)
 			cloned.Parts = append(cloned.Parts, cloned.TransientParts...)
 			req.History[i] = cloned
 		}
@@ -72,7 +72,7 @@ func (t *transientMerger) Transform(ctx context.Context, req *services.ContextRe
 	return nil
 }
 
-func (t *transientMerger) Priority() int { return PriorityTransientThreshold + 5 }
+func (t *transientMerger) Priority() int { return priorityTransientThreshold + 5 }
 
 func groupTurns(history []*llm.Content) [][]*llm.Content {
 	if len(history) == 0 {

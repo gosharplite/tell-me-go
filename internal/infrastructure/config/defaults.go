@@ -56,8 +56,8 @@ const (
 	DefaultMaxToolTurns       = 10
 	DefaultMaxHistoryTurns    = 20
 	DefaultMaxHistoryTokens   = 120000
-	DefaultMaxConcurrentTools = 5
-	DefaultToolTimeoutSeconds = 30
+	defaultMaxConcurrentTools = 5
+	defaultToolTimeoutSeconds = 30
 	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
 	WarningRatio              = 0.78 // ~100k for 128k cliff

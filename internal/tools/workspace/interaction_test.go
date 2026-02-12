@@ -13,11 +13,11 @@ import (
 
 func TestInteractionTool(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	it := NewInteractionTool(sm)
+	it := newinteractionTool(sm)
 	ctx := context.Background()
 
 	t.Run("Ask User", func(t *testing.T) {
-		sm.SetInputReader(strings.NewReader("The answer is 42\n"))
+		sm.SetInteractor(&security.MockInteractor{Answer: "The answer is 42\n"})
 		res, err := it.AskUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		})
@@ -30,7 +30,7 @@ func TestInteractionTool(t *testing.T) {
 	})
 
 	t.Run("Ask User EOF", func(t *testing.T) {
-		sm.SetInputReader(strings.NewReader("")) // Immediate EOF
+		sm.SetInteractor(&security.MockInteractor{Answer: ""}) // Immediate EOF
 		res, err := it.AskUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		})
@@ -43,7 +43,7 @@ func TestInteractionTool(t *testing.T) {
 	})
 
 	t.Run("Ask User Read Error", func(t *testing.T) {
-		sm.SetInputReader(&errorReader{err: context.DeadlineExceeded})
+		sm.SetInteractor(&security.MockInteractor{Err: context.DeadlineExceeded})
 		_, err := it.AskUser(ctx, map[string]interface{}{
 			"question": "What is the answer?",
 		})

@@ -12,8 +12,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
-// Warning represents a safety or limit message for the model.
-type Warning struct {
+// warning represents a safety or limit message for the model.
+type warning struct {
 	Message string
 }
 
@@ -55,9 +55,8 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 		bus.Subscribe(func(e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
-				cs.SetTieredThreshold(cfg.Limits.TieredThreshold)
-				// We don't have context window in events.Limits yet, but we could add it if needed.
-				// For now, let's just allow setting it.
+				cs.setTieredThreshold(cfg.Limits.TieredThreshold)
+				cs.setContextWindow(cfg.Limits.ContextWindow)
 			}
 		})
 	}
@@ -65,8 +64,8 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 	return cs
 }
 
-// SetContextWindow updates the model's absolute context window limit.
-func (cs *ContextStrategy) SetContextWindow(window int) {
+// setContextWindow updates the model's absolute context window limit.
+func (cs *ContextStrategy) setContextWindow(window int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if window > 0 {
@@ -74,8 +73,8 @@ func (cs *ContextStrategy) SetContextWindow(window int) {
 	}
 }
 
-// GetContextWindow returns the model's absolute context window limit.
-func (cs *ContextStrategy) GetContextWindow() int {
+// getContextWindow returns the model's absolute context window limit.
+func (cs *ContextStrategy) getContextWindow() int {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.contextWindow
@@ -96,7 +95,7 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
-func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
+func (cs *ContextStrategy) setTieredThreshold(threshold int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if threshold >= 0 {
@@ -111,8 +110,8 @@ func (cs *ContextStrategy) SetPrunedTurns(n int) {
 	cs.prunedTurns = n
 }
 
-// GetLimits returns the current limits.
-func (cs *ContextStrategy) GetLimits() (int, int, int) {
+// getLimits returns the current limits.
+func (cs *ContextStrategy) getLimits() (int, int, int) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.maxHistoryTokens, cs.maxToolTurns, cs.maxHistoryTurns
@@ -147,23 +146,23 @@ func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
 	return cs.getHistoryTurnWarningLocked(currentTurns)
 }
 
-// GetWarnings generates safety and financial warnings based on current state.
-func (cs *ContextStrategy) GetWarnings(turn, tokens, currentTurns int) []Warning {
+// getWarnings generates safety and financial warnings based on current state.
+func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns int) []warning {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	var warnings []Warning
+	var warnings []warning
 
 	if w := cs.getTurnWarningLocked(turn); w != "" {
-		warnings = append(warnings, Warning{Message: w})
+		warnings = append(warnings, warning{Message: w})
 	}
 	if w := cs.getTokenWarningLocked(tokens); w != "" {
-		warnings = append(warnings, Warning{Message: w})
+		warnings = append(warnings, warning{Message: w})
 	}
 	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
-		warnings = append(warnings, Warning{Message: w})
+		warnings = append(warnings, warning{Message: w})
 	}
 	if w := cs.getPriceWarningLocked(tokens); w != "" {
-		warnings = append(warnings, Warning{Message: w})
+		warnings = append(warnings, warning{Message: w})
 	}
 
 	return warnings
@@ -230,8 +229,8 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string 
 	return ""
 }
 
-// GetCloggedWarning returns a warning message for when summarization fails to reduce context.
-func (cs *ContextStrategy) GetCloggedWarning() string {
+// getCloggedWarning returns a warning message for when summarization fails to reduce context.
+func (cs *ContextStrategy) getCloggedWarning() string {
 	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to the 'manage_scratchpad' immediately to avoid a session crash.]"
 }
 

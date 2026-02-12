@@ -69,7 +69,7 @@ func testMetadata(t *testing.T) {
 	content := []byte("metadata test content")
 	id := createTestAsset(t, store, content)
 
-	path := store.GetPath(id)
+	path := store.getPath(id)
 	info, err := store.fs.Stat(ctx, path)
 	if err != nil {
 		t.Fatalf("Stat failed: %v", err)
@@ -92,7 +92,7 @@ func testPathSanitization(t *testing.T) {
 	store := NewAssetStore(t.TempDir())
 
 	t.Run("ShortID", func(t *testing.T) {
-		path := store.GetPath("a")
+		path := store.getPath("a")
 		if filepath.Base(path) != "a" {
 			t.Errorf("expected filename 'a', got %s", filepath.Base(path))
 		}
@@ -100,7 +100,7 @@ func testPathSanitization(t *testing.T) {
 
 	t.Run("LongID", func(t *testing.T) {
 		id := "abcdef123456"
-		path := store.GetPath(id)
+		path := store.getPath(id)
 		expectedSuffix := filepath.Join("ab", id)
 		// Check that it ends with ab/abcdef123456
 		if !bytes.HasSuffix([]byte(path), []byte(expectedSuffix)) {
@@ -168,7 +168,7 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 
 func TestAssetStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
-	fs := &OSFileSystem{}
+	fs := &osFileSystem{}
 	store := NewAssetStore(tmpDir).WithFileSystem(fs)
 	if store.fs != fs {
 		t.Error("WithFileSystem failed to set filesystem")

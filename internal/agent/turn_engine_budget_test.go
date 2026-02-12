@@ -26,8 +26,8 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	strategy := orchestration.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 10, 10)
 
-	gw := &mockLLMGateway{}
-	exec := &mockExecutor{}
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
 	factory := &orchestration.PipelineFactory{
@@ -48,7 +48,7 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	modelPricing := pricingData.Models["test-model"]
 	var tracker domain_pricing.ICostTracker = telemetry.NewSessionCostTracker(nil, "", "test-mode", "test-model", modelPricing, pricingData)
 
-	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithHardBudget(0.0001), WithCostTracker(tracker)) // Very low budget
+	engine := newTurnEngine(gw, exec, cm, reg, bus, withHardBudget(0.0001), withCostTracker(tracker)) // Very low budget
 
 	ctx := context.Background()
 	_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})

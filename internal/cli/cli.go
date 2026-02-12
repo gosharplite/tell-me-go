@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-// App represents the tell-me-go application.
-type App struct {
+// app represents the tell-me-go application.
+type app struct {
 	Version string
 	Stdin   io.Reader
 	Stdout  io.Writer
@@ -25,7 +25,7 @@ type App struct {
 }
 
 // New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *App {
+func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *app {
 	homeDir := os.Getenv("TELL_ME_HOME")
 	if homeDir == "" {
 		homeDir = os.Getenv("AIT_HOME")
@@ -34,9 +34,9 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *A
 		homeDir = "."
 	}
 
-	sm := security.NewSecurityManager(stdin)
+	sm := security.NewSecurityManager(nil)
 
-	return &App{
+	return &app{
 		Version: version,
 		Stdin:   stdin,
 		Stdout:  stdout,
@@ -47,7 +47,7 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *A
 }
 
 // Run executes the application logic.
-func (a *App) Run(ctx context.Context, args []string) error {
+func (a *app) Run(ctx stdctx.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
@@ -60,12 +60,12 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	factory, err := Get(cmdName)
+	factory, err := get(cmdName)
 	if err != nil {
 		return err
 	}
 
-	cmdCtx := &Context{
+	cmdCtx := &context{
 		Version: a.Version,
 		Stdin:   a.Stdin,
 		Stdout:  a.Stdout,
@@ -77,7 +77,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	cmd := factory(cmdCtx)
 
 	if err := cmd.Execute(ctx, args); err != nil {
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, stdctx.Canceled) {
 			fmt.Fprintln(a.Stderr)
 			return nil
 		}

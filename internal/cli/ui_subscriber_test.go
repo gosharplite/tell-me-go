@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"sync"
 	"testing"
 	"time"
@@ -17,8 +17,6 @@ import (
 type mockUIRenderer struct {
 	mu                     sync.Mutex
 	wg                     sync.WaitGroup
-	renderResponseCalled   bool
-	lastRenderContent      *llm.Content
 	streamResponseCalled   bool
 	logUsageCalled         bool
 	lastMetrics            *llm.Metrics
@@ -36,14 +34,7 @@ type mockUIRenderer struct {
 	skipConsumer           bool
 }
 
-func (m *mockUIRenderer) RenderResponse(respContent *llm.Content, showThoughts, rawOutput bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.renderResponseCalled = true
-	m.lastRenderContent = respContent
-}
-
-func (m *mockUIRenderer) StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
+func (m *mockUIRenderer) StreamResponse(ctx stdctx.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content) {
 	m.mu.Lock()
 	m.streamResponseCalled = true
 	skip := m.skipConsumer
@@ -77,7 +68,7 @@ func (m *mockUIRenderer) LogTurnStatus(status events.TurnStatus) {
 	m.lastTurnStatus = status
 }
 
-func (m *mockUIRenderer) LogUsage(ctx context.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
+func (m *mockUIRenderer) LogUsage(ctx stdctx.Context, metrics *llm.Metrics, logFile string, startTime time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.logUsageCalled = true
@@ -107,17 +98,17 @@ func (m *mockUIRenderer) LogSystemMessage(msg string, level string) {
 	m.lastSystemLevel = level
 }
 
-func (m *mockUIRenderer) RenderStatus(ctx context.Context, status events.TurnStatus) {
+func (m *mockUIRenderer) RenderStatus(ctx stdctx.Context, status events.TurnStatus) {
 	m.LogTurnStatus(status)
 }
 
-func (m *mockUIRenderer) RenderEvent(ctx context.Context, event events.Event) {}
+func (m *mockUIRenderer) RenderEvent(ctx stdctx.Context, event events.Event) {}
 
 func (m *mockUIRenderer) SetUseColor(use bool) {}
 
 func TestUISubscriber_HandleEvent_NilContext(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, false, "")
+	s := newUISubscriber(renderer, false, false, false, false, "")
 
 	// This should not panic and should log a warning
 	t.Run("ResponseStreamEvent with nil context", func(t *testing.T) {
@@ -207,7 +198,7 @@ func TestUISubscriber_HandleEvent_OtherEvents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			renderer := &mockUIRenderer{}
-			s := NewUISubscriber(renderer, true, true, false, false, "")
+			s := newUISubscriber(renderer, true, true, false, false, "")
 
 			s.HandleEvent(tt.event)
 
@@ -270,9 +261,9 @@ func checkStatusUpdate(t *testing.T, m *mockUIRenderer) {
 
 func TestUISubscriber_HandleEvent_Cancellation(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, false, "")
+	s := newUISubscriber(renderer, false, false, false, false, "")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel immediately
 
 	streamCh := make(chan *llm.Content)
@@ -297,7 +288,7 @@ func TestUISubscriber_HandleEvent_Cancellation(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 	renderer := &mockUIRenderer{}
-	s := NewUISubscriber(renderer, false, false, false, false, "")
+	s := newUISubscriber(renderer, false, false, false, false, "")
 
 	streamCh := make(chan *llm.Content, 2)
 	content1 := &llm.Content{Parts: []*llm.Part{{Text: "hello"}}}
@@ -308,7 +299,7 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 	close(streamCh)
 
 	s.HandleEvent(events.ResponseStreamEvent{
-		Context: context.Background(),
+		Context: stdctx.Background(),
 		Stream:  streamCh,
 	})
 
@@ -328,9 +319,9 @@ func TestUISubscriber_HandleEvent_StreamDataFlow(t *testing.T) {
 
 func TestUISubscriber_HandleEvent_CancellationDuringBlock(t *testing.T) {
 	renderer := &mockUIRenderer{skipConsumer: true}
-	s := NewUISubscriber(renderer, false, false, false, false, "")
+	s := newUISubscriber(renderer, false, false, false, false, "")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	streamCh := make(chan *llm.Content)
 
 	done := make(chan struct{})
@@ -352,7 +343,7 @@ func TestUISubscriber_HandleEvent_CancellationDuringBlock(t *testing.T) {
 	}
 
 	// Now it should be blocked at `uiCh <- c` in HandleEvent.
-	// We cancel the context.
+	// We cancel the stdctx.
 	cancel()
 
 	select {

@@ -5,7 +5,7 @@ package cli
 
 import (
 	"bytes"
-	"context"
+	stdctx "context"
 	"errors"
 	"os"
 	"testing"
@@ -49,7 +49,7 @@ func TestApp_Run_Version(t *testing.T) {
 	version := "1.2.3"
 	app := New(version, nil, stdout, stderr)
 
-	err := app.Run(context.Background(), []string{"--version"})
+	err := app.Run(stdctx.Background(), []string{"--version"})
 	if err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestApp_Run_UnknownCommand(t *testing.T) {
 	app := New("1.0.0", nil, stdout, stderr)
 
 	// "chat" is not registered in this test yet, so it should fail.
-	err := app.Run(context.Background(), []string{})
+	err := app.Run(stdctx.Background(), []string{})
 	if err == nil {
 		t.Fatal("expected error for unregistered 'chat' command, got nil")
 	}
@@ -77,20 +77,20 @@ type mockCommand struct {
 	err error
 }
 
-func (m *mockCommand) Execute(ctx context.Context, args []string) error {
+func (m *mockCommand) Execute(ctx stdctx.Context, args []string) error {
 	return m.err
 }
 
 func TestApp_Run_ContextCanceled(t *testing.T) {
 	// Register a mock command for "chat" to test error handling
-	Register("chat", func(ctx *Context) Command {
-		return &mockCommand{err: context.Canceled}
+	register("chat", func(ctx *context) command {
+		return &mockCommand{err: stdctx.Canceled}
 	})
 
 	stderr := &bytes.Buffer{}
 	app := New("1.0.0", nil, nil, stderr)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := stdctx.WithCancel(stdctx.Background())
 	cancel() // Cancel it immediately
 
 	err := app.Run(ctx, []string{})
@@ -107,18 +107,18 @@ func TestApp_Run_ContextCanceled(t *testing.T) {
 func TestApp_Run_CommandError(t *testing.T) {
 	// Register a mock command for a custom error
 	customErr := errors.New("custom error")
-	Register("error-cmd", func(ctx *Context) Command {
+	register("error-cmd", func(ctx *context) command {
 		return &mockCommand{err: customErr}
 	})
 
 	// Since App.Run doesn't allow choosing a command name except via hardcoded logic,
 	// we'll temporarily hijack "chat" again (it's already registered by previous test).
-	Register("chat", func(ctx *Context) Command {
+	register("chat", func(ctx *context) command {
 		return &mockCommand{err: customErr}
 	})
 
 	app := New("1.0.0", nil, nil, nil)
-	err := app.Run(context.Background(), []string{})
+	err := app.Run(stdctx.Background(), []string{})
 	if !errors.Is(err, customErr) {
 		t.Errorf("expected %v, got %v", customErr, err)
 	}

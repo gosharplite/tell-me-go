@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -13,24 +14,24 @@ import (
 )
 
 // Analyzer interfaces for segregation and testing
-type IComplexityAnalyzer interface {
+type iComplexityAnalyzer interface {
 	Analyze(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
-	GatherComplexities(ctx context.Context, root string) ([]FuncComplexity, error)
+	GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error)
 }
 
-type IDependencyAnalyzer interface {
+type iDependencyAnalyzer interface {
 	GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type ISequenceAnalyzer interface {
+type iSequenceAnalyzer interface {
 	AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type IChangeAnalyzer interface {
+type iChangeAnalyzer interface {
 	SemanticDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type ITypeManager interface {
+type iTypeManager interface {
 	GetTypeInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	ListSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 	ListImplementations(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
@@ -38,18 +39,18 @@ type ITypeManager interface {
 	FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
-type IDeadCodeAnalyzer interface {
+type iDeadCodeAnalyzer interface {
 	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
 }
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.
 type analysisManager struct {
-	Complexity IComplexityAnalyzer
-	Dependency IDependencyAnalyzer
-	Sequence   ISequenceAnalyzer
-	Change     IChangeAnalyzer
-	Types      ITypeManager
-	DeadCode   IDeadCodeAnalyzer
+	Complexity iComplexityAnalyzer
+	Dependency iDependencyAnalyzer
+	Sequence   iSequenceAnalyzer
+	Change     iChangeAnalyzer
+	Types      iTypeManager
+	DeadCode   iDeadCodeAnalyzer
 
 	// Refactoring
 	Refactor *refactorManager
@@ -61,27 +62,31 @@ type analysisManager struct {
 	// Project Health & Architecture
 	Health *healthManager
 	Arch   *architectureManager
+
+	// EventBus for progress reporting
+	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider, bus events.EventBus) *analysisManager {
 	executor := &exec.RealExecutor{}
 	fs := storage.DefaultFileSystem
 
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
-		Dependency: newDependencyAnalyzer(executor, sp),
+		Dependency: newDependencyAnalyzer(executor, sp, bus),
 		Sequence:   newSequenceAnalyzer(executor, sp),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
 		DeadCode:   newDeadCodeAnalyzer(sp),
 
 		Refactor: newRefactorManager(sp),
-		Info:     &infoManager{SP: sp, Cache: cache, FS: fs},
+		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},
 		Search:   &searchManager{SP: sp, FS: fs},
 		Arch:     &architectureManager{SP: sp},
+		Events:   bus,
 	}
 
-	m.Arch.Loader = &RealPackageProvider{m: m.Arch}
+	m.Arch.Loader = &realpackageProvider{m: m.Arch}
 	m.Health = &healthManager{SP: sp, Ana: m}
 
 	return m

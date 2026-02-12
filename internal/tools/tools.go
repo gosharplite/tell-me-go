@@ -8,6 +8,7 @@ package tools
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
@@ -32,17 +33,19 @@ func RegisterAll(
 	pricingOverrides map[string]pricing.ModelPricing,
 	client llm.LLMClient,
 	assetsDir string,
+	bus events.EventBus,
 ) {
 	ctx := context.Background()
 	state, _ := persistence.NewSessionState(ctx, outputDir)
 
-	workspace.Register(r, sm, &exec.RealExecutor{})
+	executor := &exec.RealExecutor{}
+	workspace.Register(r, sm, executor)
 	if state != nil {
-		workspace.NewPersistenceTools(state).Register(r)
+		workspace.RegisterPersistence(r, state)
 	}
 	security.RegisterPolicy(r, sm)
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
-	analysis.Register(r, sm)
-	developer.Register(r, sm)
+	analysis.Register(r, sm, bus)
+	developer.Register(r, sm, executor)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }

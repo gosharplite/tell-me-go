@@ -16,7 +16,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	ana := newAnalysisManager(idx, cache, sm)
+	ana := newAnalysisManager(idx, cache, sm, nil)
 	hea := &healthManager{SP: sm, Ana: ana}
 
 	ctx := context.Background()
@@ -31,6 +31,9 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| Metric | Status | Details |") {
 		t.Errorf("expected table header, got %q", res.Text)
 	}
+	if !strings.Contains(res.Text, "| **Dead Code** |") {
+		t.Errorf("expected Dead Code row, got %q", res.Text)
+	}
 }
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
@@ -38,7 +41,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	ana := newAnalysisManager(idx, cache, sm)
+	ana := newAnalysisManager(idx, cache, sm, nil)
 	hea := &healthManager{SP: sm, Ana: ana}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -64,6 +67,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 		lint string
 		comp string
 		sec  string
+		dead string
 		want []string
 	}{
 		{
@@ -73,6 +77,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			sec:  "CLEAN",
+			dead: "CLEAN",
 			want: []string{"Project health is excellent."},
 		},
 		{
@@ -82,6 +87,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			sec:  "CLEAN",
+			dead: "CLEAN",
 			want: []string{"Fix failing tests immediately."},
 		},
 		{
@@ -91,6 +97,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			sec:  "CLEAN",
+			dead: "CLEAN",
 			want: []string{"Coverage (70.0%) is below the 80% target."},
 		},
 		{
@@ -100,6 +107,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "CLEAN",
 			comp: "GOOD",
 			sec:  "VULNS",
+			dead: "CLEAN",
 			want: []string{"Review and fix security vulnerabilities."},
 		},
 		{
@@ -109,13 +117,24 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			lint: "5 Issues",
 			comp: "3 Alerts",
 			sec:  "CLEAN",
+			dead: "CLEAN",
 			want: []string{"Refactor high-complexity functions.", "Address linting issues."},
+		},
+		{
+			name: "dead code",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			sec:  "CLEAN",
+			dead: "DEBT",
+			want: []string{"Prune orphaned symbols to reduce technical debt."},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.sec)
+			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.sec, tt.dead)
 			for _, w := range tt.want {
 				if !strings.Contains(got, w) {
 					t.Errorf("generateRecommendation() = %q, want it to contain %q", got, w)

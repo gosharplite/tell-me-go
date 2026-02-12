@@ -15,7 +15,7 @@ import (
 func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := NewShellTool(sm)
+	tool := newshellTool(sm)
 
 	// "世界" is 6 bytes. "世" is 3 bytes, "界" is 3 bytes.
 
@@ -94,7 +94,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 			// Verify exact bytes for the "truncate middle of char" case
 			if tt.name == "truncate middle of char" {
 				// The output part before "Exit Code" and headers should be exactly "世"
-				// Actually, ShellTool adds "Exit Code: 0\nOutput:\n"
+				// Actually, shellTool adds "Exit Code: 0\nOutput:\n"
 				prefix := "Exit Code: 0\nOutput:\n"
 				if !strings.HasPrefix(res.Text, prefix) {
 					t.Fatalf("unexpected output format: %q", res.Text)
@@ -113,7 +113,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := NewShellTool(sm)
+	tool := newshellTool(sm)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -179,7 +179,7 @@ func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := NewShellTool(sm)
+	tool := newshellTool(sm)
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
@@ -210,7 +210,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := NewShellTool(sm)
+	tool := newshellTool(sm)
 
 	tests := []struct {
 		name     string
@@ -273,7 +273,7 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 func TestShellTool_PipeCommands(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := NewShellTool(sm)
+	tool := newshellTool(sm)
 	ctx := context.Background()
 
 	t.Run("Simple pipe", func(t *testing.T) {

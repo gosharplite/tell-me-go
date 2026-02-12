@@ -28,7 +28,7 @@ func TestTransaction_Commit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tx := NewTransaction()
+	tx := newTransaction()
 	_, err := tx.LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
@@ -61,7 +61,7 @@ func TestTransaction_Commit(t *testing.T) {
 }
 
 func TestTransaction_Rollback(t *testing.T) {
-	tx := NewTransaction()
+	tx := newTransaction()
 	path := "test_rollback.txt"
 	_ = os.WriteFile(path+".tmp", []byte("temp"), 0644)
 	defer os.Remove(path + ".tmp")
@@ -74,7 +74,7 @@ func TestTransaction_Rollback(t *testing.T) {
 }
 
 func TestTransaction_LoadFile_Error(t *testing.T) {
-	tx := NewTransaction()
+	tx := newTransaction()
 	_, err := tx.LoadFile("non_existent.go")
 	if err == nil {
 		t.Error("expected error loading non-existent file")

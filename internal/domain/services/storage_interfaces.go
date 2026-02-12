@@ -17,4 +17,5 @@ type KVStore interface {
 type ListStore[T any] interface {
 	ReadAll(ctx context.Context) ([]T, error)
 	WriteAll(ctx context.Context, items []T) error
+	Append(ctx context.Context, item T) error
 }

@@ -46,7 +46,7 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 
 	// Case 1: cm.Pipeline is nil. (Assert no panic)
 	assert.NotPanics(t, func() {
-		cm.RegisterToolRegistry(&mockToolRegistry{})
+		cm.registerToolRegistry(&mockToolRegistry{})
 	})
 
 	// Case 2: cm.Pipeline contains a toolDeclarationGenerator.
@@ -54,21 +54,21 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 	p := NewContextPipeline(tg)
 	cm.SetPipeline(p)
 	reg := &mockToolRegistry{}
-	cm.RegisterToolRegistry(reg)
+	cm.registerToolRegistry(reg)
 	assert.Equal(t, reg, tg.Registry)
 
 	// Case 3: cm.Pipeline contains other transformers but no toolDeclarationGenerator.
 	p2 := NewContextPipeline(&emptyTurnFilter{})
 	cm.SetPipeline(p2)
 	assert.NotPanics(t, func() {
-		cm.RegisterToolRegistry(reg)
+		cm.registerToolRegistry(reg)
 	})
 }
 
 func TestContextManager_GetLimits(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
 	strategy.SetLimits(1000, 20, 30)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 	cm := NewContextManager(strategy, &mockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
@@ -169,7 +169,7 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	mockSum.summarizeFn = func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
-		history.contents[0] = history.contents[0].Clone()
+		history.contents[0] = llm.CloneContent(history.contents[0])
 		history.contents[0].Parts[0].Text = "changed"
 		return "late summary", nil, nil
 	}
@@ -185,14 +185,14 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	counter.tokens = 1000
-	strategy.SetContextWindow(500)
+	strategy.setContextWindow(500)
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds the safety limit")
 
 	// Reset state
 	counter.tokens = 0
-	strategy.SetContextWindow(1000000)
+	strategy.setContextWindow(1000000)
 
 	// Case 7: Summarizer returns error (Transient)
 	history.contents = []*llm.Content{

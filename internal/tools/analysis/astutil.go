@@ -21,9 +21,10 @@ import (
 
 // Global AST Cache to improve performance of AST-based tools
 type cachedFile struct {
-	file    *ast.File
-	fset    *token.FileSet
-	modTime time.Time
+	file      *ast.File
+	fset      *token.FileSet
+	modTime   time.Time
+	lineCount int
 }
 
 type astCache struct {
@@ -38,6 +39,21 @@ func newASTCache() *astCache {
 		files:   make(map[string]cachedFile),
 		maxSize: 1000,
 	}
+}
+
+func (cf cachedFile) isValid(info os.FileInfo) bool {
+	return cf.modTime.Equal(info.ModTime())
+}
+
+func (c *astCache) GetCachedLineCount(path string, info os.FileInfo) (int, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, ok := c.files[path]
+	if ok && entry.isValid(info) {
+		return entry.lineCount, true
+	}
+	return 0, false
 }
 
 func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
@@ -82,9 +98,15 @@ func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
 		}
 
 		newEntry := cachedFile{
-			file:    f,
-			fset:    fset,
-			modTime: info.ModTime(),
+			file:      f,
+			fset:      fset,
+			modTime:   info.ModTime(),
+			lineCount: 0,
+		}
+		if fset != nil && f != nil {
+			if tf := fset.File(f.Pos()); tf != nil {
+				newEntry.lineCount = tf.LineCount()
+			}
 		}
 		c.files[path] = newEntry
 
@@ -99,27 +121,30 @@ func (c *astCache) Get(path string) (*ast.File, *token.FileSet, error) {
 	return cf.file, cf.fset, nil
 }
 
-func ExprToString(expr ast.Expr) string {
+func exprToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.SelectorExpr:
-		return ExprToString(t.X) + "." + t.Sel.Name
+		return exprToString(t.X) + "." + t.Sel.Name
 	case *ast.StarExpr:
-		return "*" + ExprToString(t.X)
+		return "*" + exprToString(t.X)
 	case *ast.ArrayType:
-		return "[]" + ExprToString(t.Elt)
+		return "[]" + exprToString(t.Elt)
 	case *ast.MapType:
-		return "map[" + ExprToString(t.Key) + "]" + ExprToString(t.Value)
+		return "map[" + exprToString(t.Key) + "]" + exprToString(t.Value)
 	case *ast.InterfaceType:
 		return "interface{}"
 	case *ast.Ellipsis:
-		return "..." + ExprToString(t.Elt)
+		return "..." + exprToString(t.Elt)
 	case *ast.FuncType:
 		return "func(...)"
-	default:
-		return fmt.Sprintf("%T", t)
 	}
+	return handleComplexExpr(expr)
+}
+
+func handleComplexExpr(expr ast.Expr) string {
+	return fmt.Sprintf("%T", expr)
 }
 
 func writeFields(sb *strings.Builder, fields *ast.FieldList, showNames bool) {
@@ -136,7 +161,7 @@ func writeFields(sb *strings.Builder, fields *ast.FieldList, showNames bool) {
 			}
 			sb.WriteString(" ")
 		}
-		sb.WriteString(ExprToString(field.Type))
+		sb.WriteString(exprToString(field.Type))
 	}
 }
 
@@ -150,7 +175,7 @@ func writeResults(sb *strings.Builder, results *ast.FieldList) {
 	}
 }
 
-func GetFuncSignature(f *ast.FuncDecl) string {
+func getFuncSignature(f *ast.FuncDecl) string {
 	var sb strings.Builder
 	sb.WriteString("func ")
 	if f.Recv != nil {
@@ -170,7 +195,7 @@ func GetFuncSignature(f *ast.FuncDecl) string {
 	return sb.String()
 }
 
-func CalculateComplexity(fd *ast.FuncDecl) int {
+func calculateComplexity(fd *ast.FuncDecl) int {
 	complexity := 1
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch t := n.(type) {
@@ -186,20 +211,30 @@ func CalculateComplexity(fd *ast.FuncDecl) int {
 	return complexity
 }
 
-func CompareASTs(base, curr *ast.File) []string {
+func compareASTs(base, curr *ast.File) []string {
 	var changes []string
 
 	baseDecls := map[string]ast.Decl{}
 	for _, d := range base.Decls {
-		baseDecls[GetDeclKey(d)] = d
+		baseDecls[getDeclKey(d)] = d
 	}
 
 	currDecls := map[string]ast.Decl{}
 	for _, d := range curr.Decls {
-		currDecls[GetDeclKey(d)] = d
+		currDecls[getDeclKey(d)] = d
 	}
 
 	// Find Added and Modified
+	changes = append(changes, findAddedAndModified(baseDecls, currDecls)...)
+
+	// Find Deleted
+	changes = append(changes, findDeleted(baseDecls, currDecls)...)
+
+	return changes
+}
+
+func findAddedAndModified(baseDecls, currDecls map[string]ast.Decl) []string {
+	var changes []string
 	var keys []string
 	for k := range currDecls {
 		keys = append(keys, k)
@@ -216,8 +251,11 @@ func CompareASTs(base, curr *ast.File) []string {
 			}
 		}
 	}
+	return changes
+}
 
-	// Find Deleted
+func findDeleted(baseDecls, currDecls map[string]ast.Decl) []string {
+	var changes []string
 	var baseKeys []string
 	for k := range baseDecls {
 		baseKeys = append(baseKeys, k)
@@ -229,31 +267,39 @@ func CompareASTs(base, curr *ast.File) []string {
 			changes = append(changes, "Deleted: "+k)
 		}
 	}
-
 	return changes
 }
 
-func GetDeclKey(decl ast.Decl) string {
+func getDeclKey(decl ast.Decl) string {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
-		name := d.Name.Name
-		if d.Recv != nil && len(d.Recv.List) > 0 {
-			recv := ExprToString(d.Recv.List[0].Type)
-			return fmt.Sprintf("func (%s) %s", recv, name)
-		}
-		return "func " + name
+		return handleFuncDeclKey(d)
 	case *ast.GenDecl:
-		if d.Tok == token.TYPE && len(d.Specs) > 0 {
-			if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
-				return "type " + ts.Name.Name
-			}
+		return handleGenDeclKey(d)
+	}
+	return "unknown"
+}
+
+func handleFuncDeclKey(d *ast.FuncDecl) string {
+	name := d.Name.Name
+	if d.Recv != nil && len(d.Recv.List) > 0 {
+		recv := exprToString(d.Recv.List[0].Type)
+		return fmt.Sprintf("func (%s) %s", recv, name)
+	}
+	return "func " + name
+}
+
+func handleGenDeclKey(d *ast.GenDecl) string {
+	if d.Tok == token.TYPE && len(d.Specs) > 0 {
+		if ts, ok := d.Specs[0].(*ast.TypeSpec); ok {
+			return "type " + ts.Name.Name
 		}
-		if d.Tok == token.CONST && len(d.Specs) > 0 {
-			return "const block"
-		}
-		if d.Tok == token.VAR && len(d.Specs) > 0 {
-			return "var block"
-		}
+	}
+	if d.Tok == token.CONST && len(d.Specs) > 0 {
+		return "const block"
+	}
+	if d.Tok == token.VAR && len(d.Specs) > 0 {
+		return "var block"
 	}
 	return "unknown"
 }
@@ -271,8 +317,8 @@ func isDeclEqual(a, b ast.Decl) bool {
 	return bufA.String() == bufB.String()
 }
 
-// FindTypeSpec searches for a type specification by name in an AST file.
-func FindTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
+// findTypeSpec searches for a type specification by name in an AST file.
+func findTypeSpec(f *ast.File, name string) (*ast.TypeSpec, *ast.GenDecl) {
 	for _, decl := range f.Decls {
 		if gd, ok := decl.(*ast.GenDecl); ok && gd.Tok == token.TYPE {
 			for _, spec := range gd.Specs {
@@ -296,43 +342,58 @@ func (c *astCache) GetFileSkeletonGo(filePath string) (string, error) {
 	sb.WriteString(fmt.Sprintf("package %s\n\n", f.Name.Name))
 
 	for _, decl := range f.Decls {
-		switch d := decl.(type) {
-		case *ast.GenDecl:
-			if d.Tok == token.TYPE {
-				for _, spec := range d.Specs {
-					ts := spec.(*ast.TypeSpec)
-					if ts.Name.IsExported() {
-						// Create a copy of GenDecl for formatting
-						newGD := &ast.GenDecl{
-							Doc:    d.Doc,
-							TokPos: d.TokPos,
-							Tok:    d.Tok,
-							Lparen: d.Lparen,
-							Specs:  []ast.Spec{ts},
-							Rparen: d.Rparen,
-						}
-						if err := format.Node(&sb, fset, newGD); err == nil {
-							sb.WriteString("\n\n")
-						}
-					}
-				}
-			}
-		case *ast.FuncDecl:
-			if d.Name.IsExported() {
-				// Create a copy of FuncDecl for formatting
-				newFD := &ast.FuncDecl{
-					Doc:  d.Doc,
-					Recv: d.Recv,
-					Name: d.Name,
-					Type: d.Type,
-					Body: nil, // Remove body
-				}
-				if err := format.Node(&sb, fset, newFD); err == nil {
-					sb.WriteString("\n\n")
-				}
-			}
-		}
+		c.writeSkeletonDecl(&sb, fset, decl)
 	}
 
 	return strings.TrimSpace(sb.String()), nil
+}
+
+func (c *astCache) writeSkeletonDecl(sb *strings.Builder, fset *token.FileSet, decl ast.Decl) {
+	switch d := decl.(type) {
+	case *ast.GenDecl:
+		c.writeGenDeclSkeleton(sb, fset, d)
+	case *ast.FuncDecl:
+		c.writeFuncDeclSkeleton(sb, fset, d)
+	}
+}
+
+func (c *astCache) writeGenDeclSkeleton(sb *strings.Builder, fset *token.FileSet, d *ast.GenDecl) {
+	if d.Tok != token.TYPE {
+		return
+	}
+	for _, spec := range d.Specs {
+		ts, ok := spec.(*ast.TypeSpec)
+		if !ok || !ts.Name.IsExported() {
+			continue
+		}
+		// Create a copy of GenDecl for formatting
+		newGD := &ast.GenDecl{
+			Doc:    d.Doc,
+			TokPos: d.TokPos,
+			Tok:    d.Tok,
+			Lparen: d.Lparen,
+			Specs:  []ast.Spec{ts},
+			Rparen: d.Rparen,
+		}
+		if err := format.Node(sb, fset, newGD); err == nil {
+			sb.WriteString("\n\n")
+		}
+	}
+}
+
+func (c *astCache) writeFuncDeclSkeleton(sb *strings.Builder, fset *token.FileSet, d *ast.FuncDecl) {
+	if !d.Name.IsExported() {
+		return
+	}
+	// Create a copy of FuncDecl for formatting
+	newFD := &ast.FuncDecl{
+		Doc:  d.Doc,
+		Recv: d.Recv,
+		Name: d.Name,
+		Type: d.Type,
+		Body: nil, // Remove body
+	}
+	if err := format.Node(sb, fset, newFD); err == nil {
+		sb.WriteString("\n\n")
+	}
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestHeuristicTokenCounter_EstimateMapSize(t *testing.T) {
+func TestHeuristicTokenCounter_estimateMapSize(t *testing.T) {
 	htc := &HeuristicTokenCounter{}
 
 	tests := []struct {
@@ -53,9 +53,9 @@ func TestHeuristicTokenCounter_EstimateMapSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := htc.EstimateMapSize(tt.input)
+			got := htc.estimateMapSize(tt.input)
 			if got != tt.expected {
-				t.Errorf("EstimateMapSize() = %v, want %v", got, tt.expected)
+				t.Errorf("estimateMapSize() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

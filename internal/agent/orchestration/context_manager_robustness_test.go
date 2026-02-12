@@ -37,7 +37,7 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	// Manually set up pipeline for the test as we are bypassing Agent.New()
 	cm.Pipeline = NewContextPipeline(
 		&historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 20},
+			Policy: &slidingWindowPolicy{MaxTurns: 20},
 		},
 		&tokenGatekeeper{
 			MaxTokens:  1000,
@@ -138,7 +138,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	// Configure pipeline with a pruner that will prune history
 	cm.Pipeline = NewContextPipeline(
 		&historyPruner{
-			Policy: &SlidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
+			Policy: &slidingWindowPolicy{MaxTurns: 2}, // Will keep only last 2 turns (4 messages)
 			Events: bus,
 		},
 	)
@@ -197,7 +197,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	}
 
 	// Test case: Exactly below threshold (0.9 * contextWindow)
-	window := strategy.GetContextWindow()
+	window := strategy.getContextWindow()
 	counter.tokens = int(float64(window) * 0.89)
 	cm.Summarizer = &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {

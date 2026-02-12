@@ -43,7 +43,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    map[string]string
-		expected []OrphanReport
+		expected []orphanReport
 	}{
 		{
 			name: "Dead Function",
@@ -52,7 +52,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Dead() {}\nfunc Alive() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Alive() }",
 			},
-			expected: []OrphanReport{
+			expected: []orphanReport{
 				{Symbol: "Dead", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 			},
 		},
@@ -64,7 +64,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 				"pkg1/util.go": "package pkg1\n\nfunc Use() { Private() }\n",
 				"main.go":      "package main\n\nfunc main() {}",
 			},
-			expected: []OrphanReport{
+			expected: []orphanReport{
 				{Symbol: "Private", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 				{Symbol: "Use", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
 			},
@@ -85,7 +85,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 				"pkg1/pkg1.go": "package pkg1\n\ntype S struct{}\nfunc (s S) DeadMethod() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
 			},
-			expected: []OrphanReport{
+			expected: []orphanReport{
 				{Symbol: "DeadMethod", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "DEAD"},
 			},
 		},
@@ -96,7 +96,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc InternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1\n\nimport \"testing\"\n\nfunc TestInternal(t *testing.T) { InternalTestOnly() }\n",
 			},
-			expected: []OrphanReport{
+			expected: []orphanReport{
 				{Symbol: "InternalTestOnly", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 			},
 		},

@@ -83,11 +83,11 @@ type grepResult struct {
 	Line string
 }
 
-type grepExpectedResult struct {
+type grepexpectedResult struct {
 	Content string
 }
 
-func verifyGrepResults(t *testing.T, results []grepResult, expected []grepExpectedResult) {
+func verifyGrepResults(t *testing.T, results []grepResult, expected []grepexpectedResult) {
 	t.Helper()
 	if len(expected) == 0 {
 		verifyNoResults(t, results)
@@ -135,7 +135,7 @@ func testGrepFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+	verifyGrepResults(t, toGrepResults(res.Text), []grepexpectedResult{
 		{Content: "def my_func"},
 		{Content: "function jsFunc"},
 		{Content: "const arrow"},
@@ -153,7 +153,7 @@ func testGrepStructs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+	verifyGrepResults(t, toGrepResults(res.Text), []grepexpectedResult{
 		{Content: "type User struct"},
 		{Content: "class App"},
 	})
@@ -168,7 +168,7 @@ func testGrepInterfaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifyGrepResults(t, toGrepResults(res.Text), []grepExpectedResult{
+	verifyGrepResults(t, toGrepResults(res.Text), []grepexpectedResult{
 		{Content: "type Service interface"},
 	})
 }
@@ -185,7 +185,7 @@ func testGrepComplexPatterns(t *testing.T) {
 			t.Fatal(err)
 		}
 		results := toGrepResults(res.Text)
-		verifyGrepResults(t, results, []grepExpectedResult{{Content: "def my_func"}})
+		verifyGrepResults(t, results, []grepexpectedResult{{Content: "def my_func"}})
 		for _, r := range results {
 			if strings.Contains(r.Line, "class MyClass") {
 				t.Error("result should not contain class MyClass when querying for my_func")

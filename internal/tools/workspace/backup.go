@@ -16,35 +16,35 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// FileSnapshot represents a single file state in history.
-type FileSnapshot struct {
+// fileSnapshot represents a single file state in history.
+type fileSnapshot struct {
 	Timestamp time.Time `json:"timestamp"`
 	Path      string    `json:"path"`
 	Content   []byte    `json:"content"`
 	Action    string    `json:"action"` // "WRITE" or "REPLACE"
 }
 
-// BackupManager handles the snapshotting and restoration of files.
-type BackupManager struct {
+// backupManager handles the snapshotting and restoration of files.
+type backupManager struct {
 	mu        sync.Mutex
-	backups   []FileSnapshot
+	backups   []fileSnapshot
 	maxStored int
 	sm        *security.SecurityManager
 }
 
-// NewBackupManager creates a new BackupManager.
-func NewBackupManager(sm *security.SecurityManager, maxStored int) *BackupManager {
+// newBackupManager creates a new backupManager.
+func newBackupManager(sm *security.SecurityManager, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}
-	return &BackupManager{
+	return &backupManager{
 		maxStored: maxStored,
 		sm:        sm,
 	}
 }
 
 // Snapshot records the current state of a file before it is modified.
-func (b *BackupManager) Snapshot(path string, action string) {
+func (b *backupManager) Snapshot(path string, action string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (b *BackupManager) Snapshot(path string, action string) {
 		content = nil
 	}
 
-	snap := FileSnapshot{
+	snap := fileSnapshot{
 		Timestamp: time.Now(),
 		Path:      absPath,
 		Content:   content,
@@ -73,7 +73,7 @@ func (b *BackupManager) Snapshot(path string, action string) {
 }
 
 // Undo reverts the last N changes.
-func (b *BackupManager) Undo(ctx context.Context, n int) (string, error) {
+func (b *backupManager) Undo(ctx context.Context, n int) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

@@ -34,7 +34,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{
 			"title": "Fix bug",
@@ -75,7 +75,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 	t.Run("Unauthorized", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusUnauthorized,
@@ -96,7 +96,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 	t.Run("Not Found", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
@@ -116,7 +116,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Missing Parameters", func(t *testing.T) {
-		m := NewAzureDevOpsManager(sm, nil)
+		m := newazureDevOpsManager(sm, nil)
 		args := map[string]interface{}{
 			"organization": "myorg",
 		}
@@ -128,7 +128,7 @@ func TestAdoGetPullRequest(t *testing.T) {
 
 	t.Run("Missing PAT", func(t *testing.T) {
 		t.Setenv("AZURE_PAT_ALL", "")
-		m := NewAzureDevOpsManager(sm, nil)
+		m := newazureDevOpsManager(sm, nil)
 		args := map[string]interface{}{
 			"organization":    "myorg",
 			"project":         "myproj",
@@ -149,7 +149,7 @@ func TestAdoListPullRequests(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{
 			"value": [
@@ -196,7 +196,7 @@ func TestAdoListPullRequests(t *testing.T) {
 
 	t.Run("Empty Results", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{"value": [], "count": 0}`
 
@@ -218,7 +218,7 @@ func TestAdoListPullRequests(t *testing.T) {
 
 	t.Run("Filters and Top", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			q := req.URL.Query()
@@ -249,7 +249,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{
 			"changeEntries": [
@@ -289,7 +289,7 @@ func TestAdoGetPrDiff(t *testing.T) {
 
 	t.Run("No Changes", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
@@ -316,7 +316,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{
 			"value": [
@@ -377,7 +377,7 @@ func TestAdoGetPrThreads(t *testing.T) {
 
 	t.Run("No Threads", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
@@ -404,7 +404,7 @@ func TestAdoGetFileContent(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		fileContent := "package main\n\nfunc main() {}"
 
@@ -436,7 +436,7 @@ func TestAdoGetFileContent(t *testing.T) {
 
 	t.Run("Default Version", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return req.URL.Query().Get("versionDescriptor.version") == "main"
@@ -459,7 +459,7 @@ func TestAdoGetFileContent(t *testing.T) {
 
 	t.Run("File Not Found", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
@@ -487,7 +487,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		jsonResponse := `{
 			"value": [
@@ -526,7 +526,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 
 	t.Run("Empty Results", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
@@ -548,7 +548,7 @@ func TestAdoListRepositoryItems(t *testing.T) {
 func TestAdoListPipelineRuns(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01"}]}`
@@ -569,7 +569,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 func TestAdoGetPipelineRun(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01", "url": "http://run"}`
@@ -590,7 +590,7 @@ func TestAdoGetPipelineRun(t *testing.T) {
 func TestAdoGetPipelineLogs(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("List Logs", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
@@ -626,7 +626,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 func TestAdoGetPrStatuses(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -719,7 +719,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		// Mock PR metadata lookup to get project ID
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -755,7 +755,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 
 	t.Run("Empty", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
@@ -785,7 +785,7 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
@@ -817,7 +817,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		// Mock repository lookup
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -869,7 +869,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 
 	t.Run("No Policies", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
@@ -901,7 +901,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 func TestAdoGetBuildTimeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -932,7 +932,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 
 	t.Run("Not Found", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 			return strings.Contains(req.URL.String(), "/build/builds/123/timeline")
@@ -952,7 +952,7 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 func TestAdoGetTaskLog(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		logContent := "Successfully completed task"
@@ -996,7 +996,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 func TestAdoGetBuildChanges(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -1393,7 +1393,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 			}
 
 			mockClient := new(mockAzureDevOpsClient)
-			m := NewAzureDevOpsManager(sm, mockClient)
+			m := newazureDevOpsManager(sm, mockClient)
 
 			if tt.doErr != nil {
 				mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), tt.doErr)
@@ -1414,7 +1414,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 
 	t.Run("adoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		// First call succeeds
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -1447,7 +1447,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 
 	t.Run("adoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 
 		// First call succeeds
 		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
@@ -1482,7 +1482,7 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 func TestAdoTools_AuthError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "")
 	sm := security.NewSecurityManager(nil)
-	m := NewAzureDevOpsManager(sm, nil)
+	m := newazureDevOpsManager(sm, nil)
 	ctx := context.Background()
 	args := map[string]interface{}{
 		"organization": "o",
@@ -1532,7 +1532,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
@@ -1541,7 +1541,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("List Path - Non-200 Status", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("err")),
@@ -1554,7 +1554,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("List Path - Empty Logs", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
@@ -1566,7 +1566,7 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1})
 		assert.Error(t, err)
@@ -1580,7 +1580,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 
 	t.Run("fetchPrStatuses - 404", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1593,7 +1593,7 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 
 	t.Run("fetchPrStatuses - 500", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("err")),
@@ -1611,7 +1611,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 
 	t.Run("fetchRepositoryId - 404", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1624,7 +1624,7 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 
 	t.Run("fetchRepositoryId - Decode Error", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader(`{invalid}`)),
@@ -1641,7 +1641,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 
 	t.Run("401", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusUnauthorized,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1654,7 +1654,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 
 	t.Run("404", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1669,7 +1669,7 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 	mockClient.On("Do", mock.Anything).Return(&http.Response{
 		StatusCode: http.StatusTeapot,
 		Body:       io.NopCloser(strings.NewReader("teapot")),
@@ -1683,7 +1683,7 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 func TestAdoListPipelineRuns_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 	mockClient.On("Do", mock.Anything).Return(&http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
@@ -1699,7 +1699,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 	t.Run("404", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1712,7 +1712,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 	t.Run("Default", func(t *testing.T) {
 		mockClient := new(mockAzureDevOpsClient)
-		m := NewAzureDevOpsManager(sm, mockClient)
+		m := newazureDevOpsManager(sm, mockClient)
 		mockClient.On("Do", mock.Anything).Return(&http.Response{
 			StatusCode: http.StatusInternalServerError,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -1727,7 +1727,7 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 func TestAdoGetBuildChanges_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	mockClient := new(mockAzureDevOpsClient)
-	m := NewAzureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
 	mockClient.On("Do", mock.Anything).Return(&http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
@@ -1740,7 +1740,7 @@ func TestAdoGetBuildChanges_Empty(t *testing.T) {
 func TestAdoTools_MissingParams(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := security.NewSecurityManager(nil)
-	m := NewAzureDevOpsManager(sm, nil)
+	m := newazureDevOpsManager(sm, nil)
 	ctx := context.Background()
 
 	t.Run("adoGetFileContent", func(t *testing.T) {
@@ -1764,7 +1764,7 @@ func TestAdoTools_MissingParams(t *testing.T) {
 
 func TestAdoGetPullRequest_UnmarshalError(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	m := NewAzureDevOpsManager(nil, nil)
+	m := newazureDevOpsManager(nil, nil)
 	_, err := m.adoGetPullRequest(context.Background(), map[string]interface{}{"pull_request_id": "invalid"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unmarshal")

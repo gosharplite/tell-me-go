@@ -38,5 +38,5 @@ func generateMermaidDiagram(ctx context.Context, args map[string]interface{}) (t
 		return tools.ToolResult{Text: "Error: 'graph' argument must be a map of string to string list"}, nil
 	}
 
-	return tools.ToolResult{Text: GenerateMermaid(graph)}, nil
+	return tools.ToolResult{Text: generateMermaid(graph)}, nil
 }

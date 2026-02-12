@@ -83,7 +83,7 @@ func TestSessionCostTracker_LazyInit(t *testing.T) {
 		PromptTokens:   100,
 		ResponseTokens: 50,
 	}
-	// Note: ParseUsage expects JSON lines.
+	// Note: parseUsage expects JSON lines.
 	data, err := json.Marshal(initialMetrics)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestParseUsage_MixedModelsAndCostField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stats, totalCost, _, _, err := ParseUsage(logFile, pricingData, "model-a")
+	stats, totalCost, _, _, err := parseUsage(logFile, pricingData, "model-a")
 	if err != nil {
 		t.Fatal(err)
 	}

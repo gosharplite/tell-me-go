@@ -254,7 +254,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	// Handle role alternation at the start of the injection
 	if len(updated) > 0 && updated[len(updated)-1].Role == "user" {
 		last := updated[len(updated)-1]
-		cloned := last.Clone()
+		cloned := llm.CloneContent(last)
 		cloned.Parts = append(cloned.Parts, &llm.Part{Text: "\n\n" + sumUser.Parts[0].Text})
 		updated[len(updated)-1] = cloned
 		updated = append(updated, sumModel)
@@ -266,7 +266,7 @@ func applySummaryToHistory(history []*llm.Content, start, end int, summary strin
 	remainder := history[end:]
 	if len(remainder) > 0 && remainder[0].Role == "model" {
 		first := remainder[0]
-		cloned := first.Clone()
+		cloned := llm.CloneContent(first)
 		// Prepend acknowledgment text
 		cloned.Parts = append([]*llm.Part{{Text: sumModel.Parts[0].Text + "\n\n"}}, cloned.Parts...)
 

@@ -8,13 +8,13 @@ import (
 func TestUncoveredBlock_Classify(t *testing.T) {
 	tests := []struct {
 		name     string
-		block    UncoveredBlock
+		block    uncoveredBlock
 		wantCat  string
 		wantPrio string
 	}{
 		{
 			name: "error handling high priority",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "internal/domain/service.go",
 				Code: "if err != nil { return err }",
 			},
@@ -23,7 +23,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 		},
 		{
 			name: "business logic medium priority",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "internal/service/logic.go",
 				Code: "x := y + 1",
 			},
@@ -32,7 +32,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 		},
 		{
 			name: "adapter low priority",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "internal/api/handler.go",
 				Code: "w.WriteHeader(200)",
 			},
@@ -41,7 +41,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 		},
 		{
 			name: "other low priority",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "main.go",
 				Code: "fmt.Println()",
 			},
@@ -50,7 +50,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 		},
 		{
 			name: "false positive business logic",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "third_party/some-lib/internal/agent_mock.go",
 				Code: "x := 1",
 			},
@@ -59,7 +59,7 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 		},
 		{
 			name: "false positive adapter",
-			block: UncoveredBlock{
+			block: uncoveredBlock{
 				File: "external/internal/api/client.go",
 				Code: "x := 1",
 			},
@@ -86,14 +86,14 @@ func TestParseCoverageLine(t *testing.T) {
 		name   string
 		line   string
 		prefix string
-		want   *UncoveredBlock
+		want   *uncoveredBlock
 		wantOk bool
 	}{
 		{
 			name:   "uncovered line",
 			line:   "github.com/user/repo/pkg/file.go:10.5,12.10 3 0",
 			prefix: "github.com/user/repo/",
-			want: &UncoveredBlock{
+			want: &uncoveredBlock{
 				File:  "pkg/file.go",
 				Start: 10,
 				End:   12,
@@ -173,8 +173,8 @@ func TestRenderReportSummary(t *testing.T) {
 		"BUSINESS_LOGIC": 5,
 		"ADAPTER":        2,
 	}
-	high := make([]UncoveredBlock, 3)
-	medium := make([]UncoveredBlock, 4)
+	high := make([]uncoveredBlock, 3)
+	medium := make([]uncoveredBlock, 4)
 	lowCount := 1
 
 	renderReportSummary(&sb, "./pkg", 8, high, medium, lowCount, catStats)
@@ -198,7 +198,7 @@ func TestRenderReportSummary(t *testing.T) {
 }
 
 func TestAggregateCoverageStats(t *testing.T) {
-	blocks := []UncoveredBlock{
+	blocks := []uncoveredBlock{
 		{Priority: "High", Category: "ERROR_HANDLING"},
 		{Priority: "High", Category: "BUSINESS_LOGIC"},
 		{Priority: "Medium", Category: "BUSINESS_LOGIC"},
@@ -223,7 +223,7 @@ func TestAggregateCoverageStats(t *testing.T) {
 
 func TestRenderBlockGaps(t *testing.T) {
 	var sb strings.Builder
-	blocks := []UncoveredBlock{
+	blocks := []uncoveredBlock{
 		{File: "file1.go", Start: 1, End: 10, Category: "CAT1", Code: "code1", Priority: "High"},
 		{File: "file2.go", Start: 5, End: 15, Category: "CAT2", Code: "code2", Priority: "High"},
 	}
@@ -263,7 +263,7 @@ func TestParseLineNum(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.part, func(t *testing.T) {
 			got, ok := parseLineNum(tt.part)
 			if ok != tt.ok {
 				t.Errorf("parseLineNum(%q) ok = %v, want %v", tt.part, ok, tt.ok)

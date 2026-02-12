@@ -20,7 +20,7 @@ const (
 )
 
 func TestProcessExecutor_Stress(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 	// Use multiple workers to truly stress concurrent execution and output handling
 	numWorkers := 3
 
@@ -29,7 +29,7 @@ func TestProcessExecutor_Stress(t *testing.T) {
 }
 
 // runStressPool orchestrates the worker pool and collects results.
-func runStressPool(t *testing.T, executor *ProcessExecutor, numWorkers int) []error {
+func runStressPool(t *testing.T, executor *processExecutor, numWorkers int) []error {
 	results := make(chan error, numWorkers)
 	var wg sync.WaitGroup
 
@@ -54,7 +54,7 @@ func runStressPool(t *testing.T, executor *ProcessExecutor, numWorkers int) []er
 }
 
 // runStressWorker executes the stress test logic for a single worker.
-func runStressWorker(t *testing.T, executor *ProcessExecutor, workerID int, results chan<- error) {
+func runStressWorker(t *testing.T, executor *processExecutor, workerID int, results chan<- error) {
 	outputFile := filepath.Join(t.TempDir(), fmt.Sprintf("stress_output_%d.txt", workerID))
 
 	res, err := executeStressCommand(executor, outputFile)
@@ -76,8 +76,8 @@ func runStressWorker(t *testing.T, executor *ProcessExecutor, workerID int, resu
 	results <- nil
 }
 
-func executeStressCommand(executor *ProcessExecutor, outputFile string) (ExecutionResult, error) {
-	config := ExecutionConfig{
+func executeStressCommand(executor *processExecutor, outputFile string) (executionResult, error) {
+	config := executionConfig{
 		MaxCapture: stressMaxCapture,
 		OutputFile: outputFile,
 	}
@@ -92,7 +92,7 @@ wait
 	return executor.RunCommand(context.Background(), []string{"sh", "-c", cmdStr}, config)
 }
 
-func verifyResultIntegrity(res ExecutionResult) error {
+func verifyResultIntegrity(res executionResult) error {
 	if !res.Truncated {
 		return fmt.Errorf("expected result to be truncated")
 	}
@@ -161,11 +161,11 @@ func verifyStressResults(t *testing.T, errs []error) {
 }
 
 func TestProcessExecutor_UTF8Boundary(t *testing.T) {
-	executor := NewProcessExecutor()
+	executor := newprocessExecutor()
 
 	// "世界" is 6 bytes (3+3)
 	// If we set MaxCapture to 4, it should only contain "世" (3 bytes)
-	config := ExecutionConfig{
+	config := executionConfig{
 		MaxCapture: 4,
 	}
 

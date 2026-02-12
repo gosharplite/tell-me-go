@@ -17,12 +17,12 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// SequenceAnalyzer performs static analysis to trace function call flows.
+// sequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
 	SP        security.SecurityProvider
-	Exec      CommandExecutor
-	Provider  IGoPackageProvider
-	Formatter *MermaidFormatter
+	Exec      tools.CommandExecutor
+	Provider  iGopackageProvider
+	Formatter *mermaidFormatter
 
 	pkgMu    sync.RWMutex
 	pkgs     []*packages.Package
@@ -32,12 +32,12 @@ type sequenceAnalyzer struct {
 }
 
 // newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
-func newSequenceAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
+func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,
-		Provider:  &RealGoPackageProvider{},
-		Formatter: NewMermaidFormatter(),
+		Provider:  &realGopackageProvider{},
+		Formatter: newMermaidFormatter(),
 		cacheTTL:  5 * time.Minute,
 	}
 }
@@ -95,7 +95,7 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 	return nil
 }
 
-func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]CallFrame, error) {
+func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]callFrame, error) {
 	if err := a.loadPackages(ctx); err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 		return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
 	}
 
-	var frames []CallFrame
+	var frames []callFrame
 	visited := make(map[string]bool)
 
 	a.walk(startPkg, startFunc, 0, maxDepth, &frames, visited, pkgs, modName)
@@ -123,7 +123,7 @@ func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 	return frames, nil
 }
 
-func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]CallFrame, visited map[string]bool, allPkgs []*packages.Package, modName string) {
+func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, allPkgs []*packages.Package, modName string) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
@@ -152,7 +152,7 @@ type sequenceVisitor struct {
 	modName  string
 	depth    int
 	maxDepth int
-	frames   *[]CallFrame
+	frames   *[]callFrame
 	visited  map[string]bool
 	allPkgs  []*packages.Package
 	analyzer *sequenceAnalyzer
@@ -209,7 +209,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 
 	displayFunc, retType := v.resolveCallDetails(call, targetFunc)
 
-	frame := CallFrame{
+	frame := callFrame{
 		From:     v.analyzer.shortenPkg(v.pkg.PkgPath),
 		To:       v.analyzer.shortenPkg(targetPkgPath),
 		Function: displayFunc,

@@ -12,28 +12,28 @@ import (
 func TestStrategies(t *testing.T) {
 	tests := []struct {
 		name     string
-		strategy ResultStrategy
+		strategy resultStrategy
 		toolName string
 		result   tools.ToolResult
 		wantText string
 	}{
 		{
 			name:     "Markdown - Basic Text",
-			strategy: &MarkdownStrategy{},
+			strategy: &markdownStrategy{},
 			toolName: "ls",
 			result:   tools.ToolResult{Text: "file.txt"},
 			wantText: "file.txt",
 		},
 		{
 			name:     "JSON - Basic Text",
-			strategy: &JSONStrategy{},
+			strategy: &jsonStrategy{},
 			toolName: "ls",
 			result:   tools.ToolResult{Text: "file.txt"},
 			wantText: "file.txt",
 		},
 		{
 			name:     "Empty Result",
-			strategy: &MarkdownStrategy{},
+			strategy: &markdownStrategy{},
 			toolName: "cmd",
 			result:   tools.ToolResult{Text: ""},
 			wantText: "",

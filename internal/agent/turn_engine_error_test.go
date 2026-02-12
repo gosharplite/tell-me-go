@@ -42,7 +42,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*TurnEngine, *orchestration.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
 	bus := &events.SimpleEventBus{}
 	reg := &mockToolRegistry{}
 
@@ -56,9 +56,9 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, t
 	}
 	cm := orchestration.NewContextManager(strategy, hManager, bus, factory)
 
-	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
+	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
 
-	engine := NewTurnEngine(gw, exec, cm, reg, bus, WithRetryPolicy(policy), WithHook(tracker))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -71,14 +71,14 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
 				if callCount == 1 {
-					return nil, nil, NewAgentError(llm.ErrTransient, "temporary failure", nil)
+					return nil, nil, newAgentError(llm.ErrTransient, "temporary failure", nil)
 				}
 				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
 			}
@@ -121,13 +121,13 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)
 
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
+				return nil, nil, newAgentError(llm.ErrTerminal, "auth failed", llm.ErrAuth)
 			}
 		},
 	}
@@ -178,7 +178,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
@@ -192,7 +192,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, NewAgentError(ErrLogic, "tool not found", ErrLogic)
+			return nil, newAgentError(errLogic, "tool not found", errLogic)
 		},
 	}
 
@@ -204,8 +204,8 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("Expected ErrLogic, got: %v", err)
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).
@@ -226,12 +226,12 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
-				return nil, nil, NewAgentError(llm.ErrTransient, "always transient", nil)
+				return nil, nil, newAgentError(llm.ErrTransient, "always transient", nil)
 			}
 		},
 	}

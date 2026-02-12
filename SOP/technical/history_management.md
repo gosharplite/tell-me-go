@@ -41,13 +41,14 @@ The history must strictly alternate between roles to satisfy Vertex AI requireme
 - **Saving**: The history must be updated atomically on disk after every successful model response.
 - **Atomic Writing**: Use a `.tmp` file and `os.Rename` to prevent corruption.
 
-#### 4. Pruning Logic
-To prevent the payload from exceeding the model's context window or the user's budget:
-- **Turn Limit**: Defined by `MAX_HISTORY_TURNS` in the config.
-- **Action**: When the limit is reached, the history is pruned aggressively to remove the oldest **50%** of turns.
-- **Why**: This strategy creates a stable cache prefix for Gemini Context Caching, ensuring the next 50% of turns benefit from cached tokens, significantly reducing latency and cost compared to a rolling window (FIFO) approach.
-- **Consistency**: Ensure the pruning logic always removes an even number of messages to maintain `user` -> `model` role alternation starting from index 0.
-- **System Notice**: If history is pruned (especially major pruning), an urgent notification is injected into the model's volatile context instructing it to consult `manage_scratchpad` to recover lost context.
+#### 4. History Maintenance (Self-Healing)
+To prevent context overflow and stay within the model's high-performance/low-cost context tiers:
+- **Token-Triggered Maintenance**: When the estimated payload exceeds **90%** of `MAX_HISTORY_TOKENS`, the system triggers an automated "Self-Healing" maintenance cycle.
+- **Summarization (`summarize_history`)**: Instead of aggressive deletion, the system identifies the oldest **unpinned** turns and uses the model to generate a concise semantic summary. This summary is then injected as a `user` role message, replacing the original turns.
+- **Pinning (`manage_history`)**: Users or the agent can **pin** critical instructions or key conversation turns to protect them from summarization or pruning.
+- **Turn-Limit Pruning**: If the number of turns exceeds `MAX_HISTORY_TURNS`, the oldest unpinned turns are removed to maintain performance.
+- **Consistent Alternation**: Maintenance logic must always ensure the resulting history maintains the `user` -> `model` role alternation.
+- **System Notice**: If maintenance cannot reduce the context size sufficiently (due to too many pinned turns), an **URGENT SYSTEM NOTICE** is injected, instructing the model to persist state to the scratchpad and stop before a hard rollback occurs.
 
 #### 5. Volatile vs. Persistent Context
 The history manager must distinguish between data that belongs in the permanent session record and data that is temporary for safety.

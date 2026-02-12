@@ -45,9 +45,9 @@ var defaultClassifiers = []errorClassifier{
 	classifyString,
 }
 
-// WrapError converts raw client errors into domain-specific Gateway errors.
+// wrapError converts raw client errors into domain-specific Gateway errors.
 // It uses a Chain of Responsibility pattern for extensibility and low complexity.
-func (r *ResilientClient) WrapError(err error) error {
+func (r *ResilientClient) wrapError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -159,10 +159,10 @@ func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input
 		// If we've already emitted data, we CANNOT retry transparently.
 		// Doing so would cause duplicated text in the UI and history.
 		if emitted {
-			return nil, nil, r.WrapError(err)
+			return nil, nil, r.wrapError(err)
 		}
 
-		wrapped := r.WrapError(err)
+		wrapped := r.wrapError(err)
 		if errors.Is(wrapped, llm.ErrAuth) {
 			if refreshErr := r.client.RefreshAuth(); refreshErr == nil {
 				continue // Fixed! Retry once.

@@ -11,7 +11,7 @@ import (
 )
 
 func TestOSFileSystem(t *testing.T) {
-	fs := &OSFileSystem{}
+	fs := &osFileSystem{}
 	ctx := context.Background()
 
 	t.Run("WriteAndRead", func(t *testing.T) {
@@ -107,25 +107,25 @@ func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
 func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 
-	// Test Remove
+	// Test remove
 	path := filepath.Join(tmpDir, "remove.txt")
 	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.Remove(ctx, path); err != nil {
-		t.Fatalf("Remove failed: %v", err)
+	if err := fs.remove(ctx, path); err != nil {
+		t.Fatalf("remove failed: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("expected file to be removed")
 	}
 
-	// Test RemoveAll
+	// Test removeAll
 	dirPath := filepath.Join(tmpDir, "dir")
 	if err := os.MkdirAll(filepath.Join(dirPath, "sub"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.RemoveAll(ctx, dirPath); err != nil {
-		t.Fatalf("RemoveAll failed: %v", err)
+	if err := fs.removeAll(ctx, dirPath); err != nil {
+		t.Fatalf("removeAll failed: %v", err)
 	}
 	if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
 		t.Error("expected directory to be removed")
@@ -160,7 +160,7 @@ func TestIsBinary(t *testing.T) {
 }
 
 func TestOSFileSystem_ContextCancellation(t *testing.T) {
-	fs := &OSFileSystem{}
+	fs := &osFileSystem{}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")
 	_ = os.WriteFile(path, []byte("data"), 0644)
@@ -198,13 +198,13 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 			t.Error("expected error for cancelled context")
 		}
 	})
-	t.Run("Remove cancelled", func(t *testing.T) {
-		if err := fs.Remove(ctx, path); err == nil {
+	t.Run("remove cancelled", func(t *testing.T) {
+		if err := fs.remove(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
-	t.Run("RemoveAll cancelled", func(t *testing.T) {
-		if err := fs.RemoveAll(ctx, path); err == nil {
+	t.Run("removeAll cancelled", func(t *testing.T) {
+		if err := fs.removeAll(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
@@ -218,7 +218,7 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 }
 
 func TestOSFileSystem_OpenFile(t *testing.T) {
-	fs := &OSFileSystem{}
+	fs := &osFileSystem{}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "openfile.txt")
 	ctx := context.Background()

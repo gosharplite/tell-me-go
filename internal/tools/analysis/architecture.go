@@ -18,15 +18,15 @@ import (
 )
 
 const (
-	LayerDomain   = "domain"
-	LayerAgent    = "agent"
-	LayerTools    = "tools"
-	LayerStorage  = "infrastructure/storage"
-	LayerSecurity = "infrastructure/security"
+	layerDomain   = "domain"
+	layerAgent    = "agent"
+	layerTools    = "tools"
+	layerStorage  = "infrastructure/storage"
+	layerSecurity = "infrastructure/security"
 )
 
-// PackageProvider defines the interface for loading package information.
-type PackageProvider interface {
+// packageProvider defines the interface for loading package information.
+type packageProvider interface {
 	LoadPackages(ctx context.Context) (map[string][]string, error)
 }
 
@@ -35,15 +35,15 @@ type architectureManager struct {
 	SP         security.SecurityProvider
 	ModulePath string
 	once       sync.Once
-	Loader     PackageProvider
+	Loader     packageProvider
 }
 
-// RealPackageProvider implements PackageProvider using the 'go list' command.
-type RealPackageProvider struct {
+// realpackageProvider implements packageProvider using the 'go list' command.
+type realpackageProvider struct {
 	m *architectureManager
 }
 
-func (r *RealPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+func (r *realpackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
 	if !r.m.SP.IsCommandAllowed("go") {
 		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
 	}
@@ -70,7 +70,7 @@ func (r *RealPackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 	return pkgs, nil
 }
 
-func (r *RealPackageProvider) decodePackageInfo(rd io.Reader) (map[string][]string, error) {
+func (r *realpackageProvider) decodePackageInfo(rd io.Reader) (map[string][]string, error) {
 	pkgs := make(map[string][]string)
 	dec := json.NewDecoder(rd)
 	for {
@@ -103,7 +103,7 @@ func (r *RealPackageProvider) decodePackageInfo(rd io.Reader) (map[string][]stri
 	return pkgs, nil
 }
 
-func (r *RealPackageProvider) isTrackedPackage(pkgPath string) bool {
+func (r *realpackageProvider) isTrackedPackage(pkgPath string) bool {
 	if !strings.HasPrefix(pkgPath, r.m.ModulePath) {
 		return false
 	}
@@ -126,7 +126,7 @@ type violation struct {
 	reason   string
 }
 
-type Rule struct {
+type rule struct {
 	SourceLayer string
 	Forbidden   []string // Layer names or "cmd"
 	Reason      string
@@ -134,7 +134,7 @@ type Rule struct {
 
 func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
-		m.Loader = &RealPackageProvider{m: m}
+		m.Loader = &realpackageProvider{m: m}
 	}
 
 	pkgs, err := m.Loader.LoadPackages(ctx)
@@ -184,30 +184,30 @@ func (m *architectureManager) isCmd(pkgPath string) bool {
 }
 
 func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []violation {
-	rules := []Rule{
+	rules := []rule{
 		{
-			SourceLayer: LayerDomain,
-			Forbidden:   []string{LayerAgent, LayerTools, LayerStorage, LayerSecurity},
+			SourceLayer: layerDomain,
+			Forbidden:   []string{layerAgent, layerTools, layerStorage, layerSecurity},
 			Reason:      "Domain must not depend on other internal layers.",
 		},
 		{
-			SourceLayer: LayerAgent,
-			Forbidden:   []string{LayerTools, LayerStorage, "cmd"},
+			SourceLayer: layerAgent,
+			Forbidden:   []string{layerTools, layerStorage, "cmd"},
 			Reason:      "Application/Agent layer must not depend on Infrastructure/Tools implementations or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerTools,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerTools,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerStorage,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerStorage,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 		{
-			SourceLayer: LayerSecurity,
-			Forbidden:   []string{LayerAgent, "cmd"},
+			SourceLayer: layerSecurity,
+			Forbidden:   []string{layerAgent, "cmd"},
 			Reason:      "Infrastructure layers must not depend on Application/Agent logic or Composition Root (cmd).",
 		},
 	}
@@ -230,7 +230,7 @@ func (m *architectureManager) checkLayerViolations(pkgs map[string][]string) []v
 	return violations
 }
 
-func (m *architectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []Rule) []violation {
+func (m *architectureManager) checkSinglePackageViolations(pkg string, imports []string, rules []rule) []violation {
 	var violations []violation
 	shortPkg := m.shorten(pkg)
 

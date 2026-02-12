@@ -11,22 +11,22 @@ import (
 	"os/exec"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type devManager struct {
 	sm             security.SecurityProvider
 	validator      *security.CommandValidator
-	executor       Executor
+	executor       executor
 	stderr         io.Writer
 	createTempFile func(dir, pattern string) (*os.File, error)
 }
 
 // Executor defines the interface for command execution to allow mocking in tests.
-type Executor interface {
+type executor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	LookPath(file string) (string, error)
 }
@@ -321,13 +321,23 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
-	fmt.Fprintf(m.stderr, ui.ColorCyan+"[Tool Action] "+format+ui.ColorReset+"\n", a...)
+	// Use PrintFeedback if it's available in the future, for now just use a basic print or add Warn to SecurityProvider
+	// For now, since devManager is already somewhat decoupled, I'll see if I can get the interactor
+	if sm, ok := m.sm.(*security.SecurityManager); ok {
+		sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
+	} else {
+		fmt.Fprintf(m.stderr, "[Tool Action] "+format+"\n", a...)
+	}
 }
 
 func newDevManager(sm security.SecurityProvider) *devManager {
+	var interactor domain_security.UserInteractor
+	if s, ok := sm.(*security.SecurityManager); ok {
+		interactor = s.GetInteractor()
+	}
 	return &devManager{
 		sm:             sm,
-		validator:      security.NewCommandValidator(sm),
+		validator:      security.NewCommandValidator(sm, interactor),
 		executor:       &realExecutor{},
 		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,

@@ -37,15 +37,15 @@ func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, t
 
 	var combined string
 	var list []string
-	maxTokens, _, _ := t.Strategy.GetLimits()
+	maxTokens, _, _ := t.Strategy.getLimits()
 
 	// Prioritize the Clogged warning if maintenance failed to reduce size OR was blocked by pins,
 	// and we are still near capacity.
 	if (req.Metadata.SummarizationAttempted || req.Metadata.MaintenanceBlocked) && float64(tokens) > float64(maxTokens)*0.85 {
-		combined = t.Strategy.GetCloggedWarning()
+		combined = t.Strategy.getCloggedWarning()
 		list = append(list, combined)
 	} else {
-		warnings := t.Strategy.GetWarnings(req.Turn, tokens, turns)
+		warnings := t.Strategy.getWarnings(req.Turn, tokens, turns)
 		if len(warnings) == 0 {
 			return "", nil
 		}
@@ -68,11 +68,11 @@ func (t *warningInjector) injectWarning(req *services.ContextRequest, combined s
 	lastIdx := len(req.History) - 1
 	orig := req.History[lastIdx]
 
-	cloned := orig.Clone()
+	cloned := llm.CloneContent(orig)
 	cloned.TransientParts = append(cloned.TransientParts, &llm.Part{
 		Text: "\n\n" + combined,
 	})
 	req.History[lastIdx] = cloned
 }
 
-func (t *warningInjector) Priority() int { return PriorityTransientThreshold }
+func (t *warningInjector) Priority() int { return priorityTransientThreshold }

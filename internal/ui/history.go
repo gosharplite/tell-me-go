@@ -70,11 +70,11 @@ type historyRenderer struct {
 func (r *historyRenderer) renderHeader(role string) {
 	roleStr := "[" + strings.ToUpper(role) + "]"
 	if r.useColor {
-		roleColor := ColorBlue
+		roleColor := colorBlue
 		if role != "user" {
-			roleColor = ColorMagenta
+			roleColor = colorMagenta
 		}
-		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, ColorReset)
+		fmt.Fprintf(r.writer, "%s%s%s\n", roleColor, roleStr, colorReset)
 	} else {
 		fmt.Fprintln(r.writer, roleStr)
 	}
@@ -106,14 +106,14 @@ func (r *historyRenderer) renderPart(p llm.Part) {
 	}
 	if p.FunctionCall != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", ColorCyan, p.FunctionCall.Name, ColorReset)
+			fmt.Fprintf(r.writer, "%s[Tool Call] %s%s\n", colorCyan, p.FunctionCall.Name, colorReset)
 		} else {
 			fmt.Fprintf(r.writer, "[Tool Call] %s\n", p.FunctionCall.Name)
 		}
 	}
 	if p.FunctionResponse != nil {
 		if r.useColor {
-			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", ColorCyan, p.FunctionResponse.Name, ColorReset)
+			fmt.Fprintf(r.writer, "%s[Tool Response] %s%s\n", colorCyan, p.FunctionResponse.Name, colorReset)
 		} else {
 			fmt.Fprintf(r.writer, "[Tool Response] %s\n", p.FunctionResponse.Name)
 		}

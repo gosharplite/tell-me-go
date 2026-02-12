@@ -15,17 +15,17 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
-// PersistenceTools provides tool wrappers for persistence services.
-type PersistenceTools struct {
+// persistenceTools provides tool wrappers for persistence services.
+type persistenceTools struct {
 	tasks      *services.TaskService
 	scratchpad *services.ScratchpadService
 	config     *services.ConfigService
 	state      *persistence.SessionState
 }
 
-// NewPersistenceTools creates a new PersistenceTools instance.
-func NewPersistenceTools(state *persistence.SessionState) *PersistenceTools {
-	return &PersistenceTools{
+// newpersistenceTools creates a new persistenceTools instance.
+func newpersistenceTools(state *persistence.SessionState) *persistenceTools {
+	return &persistenceTools{
 		tasks:      state.Tasks,
 		scratchpad: state.Scratchpad,
 		config:     state.Config,
@@ -34,7 +34,7 @@ func NewPersistenceTools(state *persistence.SessionState) *PersistenceTools {
 }
 
 // GetSessionInfo handles the get_session_info tool.
-func (t *PersistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	// Refresh config in session info
 	t.state.Info.Config = t.config.GetAll()
 
@@ -46,7 +46,7 @@ func (t *PersistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 }
 
 // Register adds persistence tools to the registry.
-func (t *PersistenceTools) Register(r *registry.Registry) {
+func (t *persistenceTools) Register(r *registry.Registry) {
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
@@ -126,7 +126,7 @@ func (t *PersistenceTools) Register(r *registry.Registry) {
 }
 
 // ManageTasks handles the manage_tasks tool.
-func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageTasks(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action  string  `json:"action"`
 		Content string  `json:"content"`
@@ -139,48 +139,68 @@ func (t *PersistenceTools) ManageTasks(ctx context.Context, args map[string]inte
 
 	switch params.Action {
 	case "add":
-		task, err := t.tasks.AddTask(ctx, params.Content)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+		return t.addTask(ctx, params.Content)
 	case "update":
-		if _, err := t.tasks.UpdateTask(ctx, params.TaskID, params.Content, params.Status); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", params.TaskID)}, nil
+		return t.updateTask(ctx, params.TaskID, params.Content, params.Status)
 	case "delete":
-		if err := t.tasks.DeleteTask(ctx, params.TaskID); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", params.TaskID)}, nil
+		return t.deleteTask(ctx, params.TaskID)
 	case "list":
-		tasks := t.tasks.ListTasks(params.Status)
-		if len(tasks) == 0 {
-			return tools.ToolResult{Text: "No tasks found."}, nil
-		}
-		var sb strings.Builder
-		sb.WriteString("Tasks:\n")
-		for _, task := range tasks {
-			icon := "[ ]"
-			if task.Status == "completed" {
-				icon = "[x]"
-			}
-			sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status))
-		}
-		return tools.ToolResult{Text: sb.String()}, nil
+		return t.listTasks(params.Status)
 	case "clear":
-		if err := t.tasks.ClearTasks(ctx); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "All tasks cleared."}, nil
+		return t.clearTasks(ctx)
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
 }
 
+func (t *persistenceTools) addTask(ctx context.Context, content string) (tools.ToolResult, error) {
+	task, err := t.tasks.AddTask(ctx, content)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task added with ID %.0f", task.ID)}, nil
+}
+
+func (t *persistenceTools) updateTask(ctx context.Context, id float64, content, status string) (tools.ToolResult, error) {
+	if _, err := t.tasks.UpdateTask(ctx, id, content, status); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f updated", id)}, nil
+}
+
+func (t *persistenceTools) deleteTask(ctx context.Context, id float64) (tools.ToolResult, error) {
+	if err := t.tasks.DeleteTask(ctx, id); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Task %.0f deleted", id)}, nil
+}
+
+func (t *persistenceTools) listTasks(status string) (tools.ToolResult, error) {
+	tasks := t.tasks.ListTasks(status)
+	if len(tasks) == 0 {
+		return tools.ToolResult{Text: "No tasks found."}, nil
+	}
+	var sb strings.Builder
+	sb.WriteString("Tasks:\n")
+	for _, task := range tasks {
+		icon := "[ ]"
+		if task.Status == "completed" {
+			icon = "[x]"
+		}
+		sb.WriteString(fmt.Sprintf("%.0f. %s %s (%s)\n", task.ID, icon, task.Content, task.Status))
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
+}
+
+func (t *persistenceTools) clearTasks(ctx context.Context) (tools.ToolResult, error) {
+	if err := t.tasks.ClearTasks(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "All tasks cleared."}, nil
+}
+
 // ManageScratchpad handles the manage_scratchpad tool.
-func (t *PersistenceTools) ManageScratchpad(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageScratchpad(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action  string `json:"action"`
 		Content string `json:"content"`
@@ -191,33 +211,49 @@ func (t *PersistenceTools) ManageScratchpad(ctx context.Context, args map[string
 
 	switch params.Action {
 	case "read":
-		content := t.scratchpad.Read()
-		if content == "" {
-			return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
-		}
-		return tools.ToolResult{Text: content}, nil
+		return t.readScratchpad()
 	case "write":
-		if err := t.scratchpad.Write(ctx, params.Content); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Scratchpad updated."}, nil
+		return t.writeScratchpad(ctx, params.Content)
 	case "append":
-		if err := t.scratchpad.Append(ctx, params.Content); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
+		return t.appendScratchpad(ctx, params.Content)
 	case "clear":
-		if err := t.scratchpad.Clear(ctx); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: "Scratchpad cleared."}, nil
+		return t.clearScratchpad(ctx)
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
 }
 
+func (t *persistenceTools) readScratchpad() (tools.ToolResult, error) {
+	content := t.scratchpad.Read()
+	if content == "" {
+		return tools.ToolResult{Text: "(Scratchpad is empty)"}, nil
+	}
+	return tools.ToolResult{Text: content}, nil
+}
+
+func (t *persistenceTools) writeScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+	if err := t.scratchpad.Write(ctx, content); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Scratchpad updated."}, nil
+}
+
+func (t *persistenceTools) appendScratchpad(ctx context.Context, content string) (tools.ToolResult, error) {
+	if err := t.scratchpad.Append(ctx, content); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Content appended to scratchpad."}, nil
+}
+
+func (t *persistenceTools) clearScratchpad(ctx context.Context) (tools.ToolResult, error) {
+	if err := t.scratchpad.Clear(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: "Scratchpad cleared."}, nil
+}
+
 // ManageConfig handles the manage_config tool.
-func (t *PersistenceTools) ManageConfig(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *persistenceTools) ManageConfig(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Action string `json:"action"`
 		Key    string `json:"key"`
@@ -229,32 +265,48 @@ func (t *PersistenceTools) ManageConfig(ctx context.Context, args map[string]int
 
 	switch params.Action {
 	case "set":
-		if err := t.config.Set(ctx, params.Key, params.Value); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", params.Key, params.Value)}, nil
+		return t.setConfig(ctx, params.Key, params.Value)
 	case "get":
-		val, err := t.config.Get(params.Key)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: val}, nil
+		return t.getConfig(params.Key)
 	case "delete":
-		if err := t.config.Delete(ctx, params.Key); err != nil {
-			return tools.ToolResult{}, err
-		}
-		return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", params.Key)}, nil
+		return t.deleteConfig(ctx, params.Key)
 	case "list":
-		config := t.config.GetAll()
-		if len(config) == 0 {
-			return tools.ToolResult{Text: "Configuration is empty."}, nil
-		}
-		var sb strings.Builder
-		for k, v := range config {
-			sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
-		}
-		return tools.ToolResult{Text: sb.String()}, nil
+		return t.listConfig()
 	default:
 		return tools.ToolResult{}, fmt.Errorf("unknown action: %s", params.Action)
 	}
+}
+
+func (t *persistenceTools) setConfig(ctx context.Context, key, value string) (tools.ToolResult, error) {
+	if err := t.config.Set(ctx, key, value); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Config set: %s = %s", key, value)}, nil
+}
+
+func (t *persistenceTools) getConfig(key string) (tools.ToolResult, error) {
+	val, err := t.config.Get(key)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: val}, nil
+}
+
+func (t *persistenceTools) deleteConfig(ctx context.Context, key string) (tools.ToolResult, error) {
+	if err := t.config.Delete(ctx, key); err != nil {
+		return tools.ToolResult{}, err
+	}
+	return tools.ToolResult{Text: fmt.Sprintf("Config deleted: %s", key)}, nil
+}
+
+func (t *persistenceTools) listConfig() (tools.ToolResult, error) {
+	config := t.config.GetAll()
+	if len(config) == 0 {
+		return tools.ToolResult{Text: "Configuration is empty."}, nil
+	}
+	var sb strings.Builder
+	for k, v := range config {
+		sb.WriteString(fmt.Sprintf("%s = %s\n", k, v))
+	}
+	return tools.ToolResult{Text: sb.String()}, nil
 }

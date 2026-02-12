@@ -14,7 +14,7 @@ import (
 func TestSecurityManager_Bypass(t *testing.T) {
 	tmpDir := t.TempDir()
 	bypassFile := filepath.Join(tmpDir, "bypass")
-	sm := NewSecurityManager(strings.NewReader("y\n"))
+	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
 	sm.SetBypassFile(bypassFile)
 
 	// Default
@@ -29,7 +29,7 @@ func TestSecurityManager_Bypass(t *testing.T) {
 	}
 
 	// Save
-	sm.SaveBypassState(context.Background())
+	sm.saveBypassState(context.Background())
 	data, err := os.ReadFile(bypassFile)
 	if err != nil {
 		t.Fatalf("Failed to read bypass file: %v", err)
@@ -86,14 +86,14 @@ func TestSecurityManager_Authorize(t *testing.T) {
 
 	// 3. Authorize with user interaction (Yes)
 	sm.SetBypassActive(false)
-	sm.SetInputReader(strings.NewReader("y\n"))
+	sm.SetInteractor(&MockInteractor{Answer: "y"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	if err != nil || !ok {
 		t.Errorf("Authorize(user=y) = %v, %v; want true, nil", ok, err)
 	}
 
 	// 4. Authorize with user interaction (No)
-	sm.SetInputReader(strings.NewReader("n\n"))
+	sm.SetInteractor(&MockInteractor{Answer: "n"})
 	ok, err = sm.Authorize(context.Background(), "label", "detail", "reason", false)
 	if err != nil || ok {
 		t.Errorf("Authorize(user=n) = %v, %v; want false, nil", ok, err)
@@ -108,11 +108,11 @@ func TestSecurityManager_PathManagement(t *testing.T) {
 	if !contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Expected /tmp/safe in safe paths")
 	}
-	if !contains(sm.GetReadOnlyPaths(), "/tmp/readonly") {
+	if !contains(sm.getReadOnlyPaths(), "/tmp/readonly") {
 		t.Error("Expected /tmp/readonly in read-only paths")
 	}
 
-	_ = sm.RemoveSafePath("/tmp/safe")
+	_ = sm.removeSafePath("/tmp/safe")
 	if contains(sm.GetSafePaths(), "/tmp/safe") {
 		t.Error("Did not expect /tmp/safe in safe paths after removal")
 	}
@@ -125,4 +125,57 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+func TestSecurityManager_Misc(t *testing.T) {
+	sm := NewSecurityManager(&MockInteractor{Answer: "y"})
+
+	// getPolicy / setPolicy
+	p := sm.getPolicy()
+	if p == nil {
+		t.Error("getPolicy returned nil")
+	}
+	sm.setPolicy(p)
+
+	// IsPathWritable
+	_, _ = sm.IsPathWritable("/tmp/test")
+
+	// ConfirmDestructiveAction
+	ok, err := sm.ConfirmDestructiveAction(context.Background(), "delete", "file", "detail")
+	if err != nil || !ok {
+		t.Errorf("ConfirmDestructiveAction failed: %v, %v", err, ok)
+	}
+
+	// LogAudit / SetCommandsLogFile
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "commands.log")
+	sm.SetCommandsLogFile(logFile)
+	sm.LogAudit("ACTION", "test", "DETAIL", "detail")
+
+	data, _ := os.ReadFile(logFile)
+	if !strings.Contains(string(data), "ACTION: test") {
+		t.Error("Audit log content mismatch")
+	}
+
+	// Read/Write paths
+	sm.SetSafePathsFile(filepath.Join(tmpDir, "safe.json"))
+	sm.SetReadOnlyPathsFile(filepath.Join(tmpDir, "readonly.json"))
+	_ = sm.saveSafePaths(context.Background())
+	_ = sm.saveReadOnlyPaths(context.Background())
+	_ = sm.LoadSafePaths()
+	_ = sm.LoadReadOnlyPaths()
+
+	sm.RegisterReadOnlyPath("/tmp/ro")
+	_ = sm.removeReadOnlyPath("/tmp/ro")
+
+	// Interactor methods
+	if sm.GetInteractor() == nil {
+		t.Error("GetInteractor returned nil")
+	}
+
+	sm.TerminalLock()
+	sm.TerminalUnlock()
+
+	_, _ = sm.readSingleKey(context.Background())
+	_, _ = sm.ReadLine(context.Background())
 }

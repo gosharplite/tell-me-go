@@ -17,7 +17,7 @@ import (
 // It acts as a dumb persistence adapter with an in-memory cache.
 type Manager struct {
 	mu       sync.RWMutex
-	store    Store
+	store    store
 	FilePath string
 	Contents []*llm.Content
 	backup   []*llm.Content // Keep a copy of the state before the current user prompt
@@ -26,25 +26,25 @@ type Manager struct {
 // NewManager creates a new history manager for the given file path.
 func NewManager(filePath string) *Manager {
 	return &Manager{
-		store:    NewJSONLStore(filePath),
+		store:    newJSONLStore(filePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
 }
 
-// SetStore allows injecting a custom store.
-func (m *Manager) SetStore(store Store) {
+// setStore allows injecting a custom store.
+func (m *Manager) setStore(s store) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.store = store
+	m.store = s
 }
 
-// WithFileSystem sets the filesystem implementation for the default store.
-func (m *Manager) WithFileSystem(fs storage.FileSystem) *Manager {
+// withFileSystem sets the filesystem implementation for the default store.
+func (m *Manager) withFileSystem(fs storage.FileSystem) *Manager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s, ok := m.store.(*JSONLStore); ok {
-		s.WithFileSystem(fs)
+	if s, ok := m.store.(*jsonlStore); ok {
+		s.withFileSystem(fs)
 	}
 	return m
 }
@@ -87,7 +87,7 @@ func (m *Manager) GetContents() []*llm.Content {
 	defer m.mu.RUnlock()
 	contents := make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		contents[i] = c.Clone()
+		contents[i] = llm.CloneContent(c)
 	}
 	return contents
 }
@@ -107,15 +107,15 @@ func (m *Manager) SetContents(ctx context.Context, contents []*llm.Content) erro
 }
 
 func (m *Manager) clonePersistentContentLocked(c *llm.Content) *llm.Content {
-	cloned := c.Clone()
+	cloned := llm.CloneContent(c)
 	if cloned != nil {
 		cloned.TransientParts = nil
 	}
 	return cloned
 }
 
-// GetPath returns the file path of the history file.
-func (m *Manager) GetPath() string {
+// getPath returns the file path of the history file.
+func (m *Manager) getPath() string {
 	return m.FilePath
 }
 
@@ -146,18 +146,18 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	return m.store.Save(ctx, m.Contents)
 }
 
-// Snapshot takes a backup of the current state for potential rollback.
-func (m *Manager) Snapshot() {
+// snapshot takes a backup of the current state for potential rollback.
+func (m *Manager) snapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.backup = make([]*llm.Content, len(m.Contents))
 	for i, c := range m.Contents {
-		m.backup[i] = c.Clone()
+		m.backup[i] = llm.CloneContent(c)
 	}
 }
 
-// Rollback restores the history to the state before Snapshot was called.
-func (m *Manager) Rollback(ctx context.Context) {
+// rollback restores the history to the state before Snapshot was called.
+func (m *Manager) rollback(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.backup != nil {
@@ -166,8 +166,8 @@ func (m *Manager) Rollback(ctx context.Context) {
 	}
 }
 
-// AddEntry appends a new text message to the history.
-func (m *Manager) AddEntry(ctx context.Context, role, text string) error {
+// addEntry appends a new text message to the history.
+func (m *Manager) addEntry(ctx context.Context, role, text string) error {
 	return m.AddContent(ctx, &llm.Content{
 		Role:  role,
 		Parts: []*llm.Part{{Text: text}},

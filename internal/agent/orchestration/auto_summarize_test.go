@@ -50,7 +50,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := llm.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false)
+	client, err := llm.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, bus)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -155,7 +155,7 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextMana
 	}))
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)
@@ -215,7 +215,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	// Set initial system instructions
-	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)
@@ -291,7 +291,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false)
+	client, _ := llm.NewClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)

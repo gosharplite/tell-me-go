@@ -37,7 +37,10 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	// 4. Complexity
 	compStatus, compDetails, alerts := m.checkComplexity(ctx)
 
-	// 5. Security
+	// 5. Dead Code
+	deadStatus, deadDetails := m.runDeadCode(ctx)
+
+	// 6. Security
 	secStatus, secDetails := m.checkSecurity(ctx)
 
 	// Format table
@@ -49,6 +52,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
 	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
 	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
+	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
 	sb.WriteString(fmt.Sprintf("| **Security** | %s | %s |\n", secStatus, secDetails))
 
 	if len(alerts) > 0 {
@@ -58,7 +62,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		}
 	}
 
-	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus, secStatus)
+	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus, secStatus, deadStatus)
 	if recommendation != "" {
 		sb.WriteString("\n**Architectural Recommendation**: " + recommendation + "\n")
 	}
@@ -194,6 +198,29 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
 }
 
+func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
+	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
+		return "CLEAN", "0 Items"
+	}
+
+	res, err := m.Ana.DeadCode.FindOrphanedSymbols(ctx, map[string]interface{}{"path": "."})
+	if err != nil {
+		return "ERROR", err.Error()
+	}
+
+	if strings.Contains(res.Text, "No dead") {
+		return "CLEAN", "0 Items"
+	}
+
+	re := regexp.MustCompile(`Found (\d+) potential`)
+	matches := re.FindStringSubmatch(res.Text)
+	if len(matches) > 1 {
+		return "DEBT", fmt.Sprintf("%s Items", matches[1])
+	}
+
+	return "DEBT", "Unknown"
+}
+
 func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
 	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
 		return "CLEAN", "Skipped (test mode)"
@@ -217,7 +244,7 @@ func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
 	return "VULNS", "Vulnerabilities detected."
 }
 
-func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec string) string {
+func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec, dead string) string {
 	var recs []string
 	if test == "FAIL" {
 		recs = append(recs, "Fix failing tests immediately.")
@@ -239,6 +266,9 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec string
 	if strings.Contains(lint, "Issues") {
 		recs = append(recs, "Address linting issues.")
 	}
+	if dead == "DEBT" {
+		recs = append(recs, "Prune orphaned symbols to reduce technical debt.")
+	}
 
 	if len(recs) == 0 {
 		return "Project health is excellent."
@@ -247,7 +277,7 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec string
 	return strings.Join(recs, " ")
 }
 
-func (m *healthManager) GetDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "./..."

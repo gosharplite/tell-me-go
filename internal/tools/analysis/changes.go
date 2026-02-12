@@ -15,10 +15,10 @@ import (
 
 type changeAnalyzer struct {
 	Cache *astCache
-	Exec  CommandExecutor
+	Exec  tools.CommandExecutor
 }
 
-func newChangeAnalyzer(cache *astCache, exec CommandExecutor) *changeAnalyzer {
+func newChangeAnalyzer(cache *astCache, exec tools.CommandExecutor) *changeAnalyzer {
 	return &changeAnalyzer{
 		Cache: cache,
 		Exec:  exec,
@@ -97,13 +97,13 @@ func (a *changeAnalyzer) analyzeFileChange(ctx context.Context, target, relPath 
 	if baseAST == nil {
 		// Entirely new file
 		for _, d := range currAST.Decls {
-			key := GetDeclKey(d)
+			key := getDeclKey(d)
 			if key != "unknown" {
 				changes = append(changes, "Added: "+key)
 			}
 		}
 	} else {
-		changes = CompareASTs(baseAST, currAST)
+		changes = compareASTs(baseAST, currAST)
 	}
 	return changes, nil
 }

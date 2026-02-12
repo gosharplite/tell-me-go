@@ -4,39 +4,33 @@
 package security
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/ui"
-	"golang.org/x/term"
+	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
-// interactionHandler manages terminal locking and user prompts.
+// interactionHandler manages terminal locking and user prompts via a UserInteractor.
 type interactionHandler struct {
-	reader     *bufio.Reader
-	readerMu   sync.Mutex
 	terminalMu sync.Mutex
-	auditor    *Auditor
+	auditor    auditLogger
+	interactor domain.UserInteractor
 }
 
 // newInteractionHandler creates a new interactionHandler.
-func newInteractionHandler(r io.Reader, auditor *Auditor) *interactionHandler {
+func newInteractionHandler(interactor domain.UserInteractor, auditor auditLogger) *interactionHandler {
 	return &interactionHandler{
-		reader:  bufio.NewReader(r),
-		auditor: auditor,
+		auditor:    auditor,
+		interactor: interactor,
 	}
 }
 
-// SetReader updates the input reader.
-func (h *interactionHandler) SetReader(r io.Reader) {
-	h.readerMu.Lock()
-	defer h.readerMu.Unlock()
-	h.reader = bufio.NewReader(r)
+// SetInteractor updates the user interactor.
+func (h *interactionHandler) SetInteractor(interactor domain.UserInteractor) {
+	h.interactor = interactor
 }
 
 // TerminalLock locks the terminal for exclusive access.
@@ -60,29 +54,29 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 	}
 
 	if bypass {
-		fmt.Fprintf(os.Stderr, "%s[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).%s\n", ui.ColorGreen, action, target, ui.ColorReset)
+		h.interactor.Warn(fmt.Sprintf("[Auto-Approved] Action '%s' on '%s' auto-approved (bypass_confirmation enabled).", action, target))
 		if h.auditor != nil {
 			h.auditor.LogAudit("ACTION", action+" on "+target, "DETAIL", detailLog+" (auto-approved via bypass_confirmation)")
 		}
 		return true, nil
 	}
 
-	fmt.Fprintf(os.Stderr, "%s[CONFIRMATION REQUIRED]%s\n", ui.ColorBoldYellow, ui.ColorReset)
-	fmt.Fprintf(os.Stderr, "AI is requesting to %s: %s\n", action, target)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[CONFIRMATION REQUIRED]\nAI is requesting to %s: %s\n", action, target))
 	if detail != "" {
 		if len(detail) > 1000 {
 			detail = detail[:1000] + "\n... (truncated)"
 		}
-		fmt.Fprintf(os.Stderr, "%s%s%s\n", ui.ColorGray, detail, ui.ColorReset)
+		sb.WriteString(detail + "\n")
 	}
-	fmt.Fprintf(os.Stderr, "Proceed? (y/N) ")
+	sb.WriteString("Proceed? (y/N) ")
 
-	char, err := h.readSingleKey(ctx)
-	fmt.Fprintf(os.Stderr, "\n")
+	confirmed, err := h.interactor.Confirm(ctx, sb.String())
 	if err != nil {
 		return false, err
 	}
-	if char == "y" {
+
+	if confirmed {
 		if h.auditor != nil {
 			h.auditor.LogAudit("ACTION", action+" on "+target, "DETAIL", detailLog)
 		}
@@ -93,101 +87,89 @@ func (h *interactionHandler) ConfirmAction(ctx context.Context, action, target, 
 
 // ReadSingleKey waits for a single key press.
 func (h *interactionHandler) ReadSingleKey(ctx context.Context) (string, error) {
-	return h.readSingleKey(ctx)
-}
-
-func (h *interactionHandler) readSingleKey(ctx context.Context) (string, error) {
-	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
-		return strings.ToLower(val[:1]), nil
-	}
-
-	fd := int(os.Stdin.Fd())
-	state, err := h.getRawTerminalState(fd)
-	if err != nil {
-		return "", err
-	}
-	if state != nil {
-		defer func() { _ = term.Restore(fd, state) }()
-	}
-
-	b, err := h.readByteAsync(ctx)
-	if err != nil {
-		return "", err
-	}
-	return strings.ToLower(string(b)), nil
-}
-
-func (h *interactionHandler) getRawTerminalState(fd int) (*term.State, error) {
-	if !term.IsTerminal(fd) {
-		if os.Getenv("GO_WANT_HELPER_PROCESS") != "" || strings.HasSuffix(os.Args[0], ".test") {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("confirmation required but not running in a terminal. Use --bypass-confirmation to skip if running in a non-interactive environment")
-	}
-
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		return nil, nil
-	}
-	return state, nil
-}
-
-func (h *interactionHandler) readByteAsync(ctx context.Context) (byte, error) {
-	type result struct {
-		b   byte
-		err error
-	}
-	resChan := make(chan result, 1)
-
-	go func() {
-		h.readerMu.Lock()
-		defer h.readerMu.Unlock()
-		b, err := h.reader.ReadByte()
-		resChan <- result{b, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	case res := <-resChan:
-		if res.err != nil {
-			return 0, res.err
-		}
-		if res.b == 3 { // Ctrl+C (ETX)
-			return 0, context.Canceled
-		}
-		return res.b, nil
-	}
+	return h.interactor.ReadSingleKey(ctx)
 }
 
 // ReadLine reads a line of input.
 func (h *interactionHandler) ReadLine(ctx context.Context) (string, error) {
+	return h.interactor.ReadLine(ctx)
+}
+
+// MockInteractor is a test helper that implements UserInteractor.
+type MockInteractor struct {
+	Answer string
+	Err    error
+	Warns  []string
+}
+
+// Confirm returns the mocked answer.
+func (m *MockInteractor) Confirm(ctx context.Context, message string) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
+	if m.Err != nil {
+		return false, m.Err
+	}
+	ans := strings.ToLower(strings.TrimSpace(m.Answer))
+	return ans == "y" || ans == "yes", nil
+}
+
+// Warn captures the warning message.
+func (m *MockInteractor) Warn(message string) {
+	m.Warns = append(m.Warns, message)
+}
+
+// ReadSingleKey returns the first character of the mocked answer.
+func (m *MockInteractor) ReadSingleKey(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
 	default:
 	}
-
-	type result struct {
-		s   string
-		err error
+	if m.Err != nil {
+		return "", m.Err
 	}
-	resChan := make(chan result, 1)
-	go func() {
-		h.readerMu.Lock()
-		defer h.readerMu.Unlock()
-		s, err := h.reader.ReadString('\n')
-		if err != nil && (err != io.EOF || s == "") {
-			resChan <- result{"", err}
-		} else {
-			resChan <- result{s, nil}
-		}
-	}()
+	if m.Answer == "" {
+		return "", nil
+	}
+	return strings.ToLower(m.Answer[:1]), nil
+}
 
+// ReadLine returns the mocked answer.
+func (m *MockInteractor) ReadLine(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
-	case res := <-resChan:
-		return res.s, res.err
+	default:
 	}
+	if m.Err != nil {
+		return "", m.Err
+	}
+	if m.Answer == "" {
+		return "", io.EOF
+	}
+	return m.Answer, nil
+}
+
+// noOpInteractor is a dummy interactor that does nothing and denies all confirmations.
+type noOpInteractor struct{}
+
+// Confirm always returns false.
+func (i *noOpInteractor) Confirm(ctx context.Context, message string) (bool, error) {
+	return false, nil
+}
+
+// Warn does nothing.
+func (i *noOpInteractor) Warn(message string) {}
+
+// ReadSingleKey returns an empty string.
+func (i *noOpInteractor) ReadSingleKey(ctx context.Context) (string, error) {
+	return "", nil
+}
+
+// ReadLine returns an empty string.
+func (i *noOpInteractor) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
 }

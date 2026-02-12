@@ -116,8 +116,8 @@ func (c *Content) AddPart(p *Part) {
 	})
 }
 
-// Clone returns a deep copy of Content.
-func (c *Content) Clone() *Content {
+// clone returns a deep copy of Content.
+func (c *Content) clone() *Content {
 	if c == nil {
 		return nil
 	}
@@ -129,20 +129,20 @@ func (c *Content) Clone() *Content {
 	if c.Parts != nil {
 		clone.Parts = make([]*Part, len(c.Parts))
 		for i, p := range c.Parts {
-			clone.Parts[i] = p.Clone()
+			clone.Parts[i] = p.clone()
 		}
 	}
 	if c.TransientParts != nil {
 		clone.TransientParts = make([]*Part, len(c.TransientParts))
 		for i, p := range c.TransientParts {
-			clone.TransientParts[i] = p.Clone()
+			clone.TransientParts[i] = p.clone()
 		}
 	}
 	return clone
 }
 
-// Clone returns a deep copy of Part.
-func (p *Part) Clone() *Part {
+// clone returns a deep copy of Part.
+func (p *Part) clone() *Part {
 	if p == nil {
 		return nil
 	}
@@ -150,9 +150,9 @@ func (p *Part) Clone() *Part {
 		Text:             p.Text,
 		Thought:          p.Thought,
 		AssetID:          p.AssetID,
-		InlineData:       p.InlineData.Clone(),
-		FunctionCall:     p.FunctionCall.Clone(),
-		FunctionResponse: p.FunctionResponse.Clone(),
+		InlineData:       p.InlineData.clone(),
+		FunctionCall:     p.FunctionCall.clone(),
+		FunctionResponse: p.FunctionResponse.clone(),
 	}
 	if p.ThoughtSignature != nil {
 		clone.ThoughtSignature = make([]byte, len(p.ThoughtSignature))
@@ -161,8 +161,8 @@ func (p *Part) Clone() *Part {
 	return clone
 }
 
-// Clone returns a deep copy of Blob.
-func (b *Blob) Clone() *Blob {
+// clone returns a deep copy of Blob.
+func (b *Blob) clone() *Blob {
 	if b == nil {
 		return nil
 	}
@@ -176,8 +176,8 @@ func (b *Blob) Clone() *Blob {
 	return clone
 }
 
-// Clone returns a deep copy of FunctionCall.
-func (fc *FunctionCall) Clone() *FunctionCall {
+// clone returns a deep copy of FunctionCall.
+func (fc *FunctionCall) clone() *FunctionCall {
 	if fc == nil {
 		return nil
 	}
@@ -193,8 +193,8 @@ func (fc *FunctionCall) Clone() *FunctionCall {
 	return clone
 }
 
-// Clone returns a deep copy of FunctionResponse.
-func (fr *FunctionResponse) Clone() *FunctionResponse {
+// clone returns a deep copy of FunctionResponse.
+func (fr *FunctionResponse) clone() *FunctionResponse {
 	if fr == nil {
 		return nil
 	}
@@ -209,6 +209,9 @@ func (fr *FunctionResponse) Clone() *FunctionResponse {
 	}
 	return clone
 }
+
+// CloneContent returns a deep copy of Content.
+func CloneContent(c *Content) *Content { return c.clone() }
 
 func cloneValue(v interface{}) interface{} {
 	switch val := v.(type) {
@@ -231,8 +234,8 @@ func cloneValue(v interface{}) interface{} {
 	}
 }
 
-// Equal returns true if two Content objects are logically equivalent.
-func (c *Content) Equal(other *Content) bool {
+// equal returns true if two Content objects are logically equivalent.
+func (c *Content) equal(other *Content) bool {
 	if c == nil || other == nil {
 		return c == other
 	}
@@ -240,23 +243,23 @@ func (c *Content) Equal(other *Content) bool {
 		return false
 	}
 	for i := range c.Parts {
-		if !c.Parts[i].Equal(other.Parts[i]) {
+		if !c.Parts[i].equal(other.Parts[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-// Equal returns true if two Blob objects are equivalent.
-func (b *Blob) Equal(other *Blob) bool {
+// equal returns true if two Blob objects are equivalent.
+func (b *Blob) equal(other *Blob) bool {
 	if b == nil || other == nil {
 		return b == other
 	}
 	return b.MIMEType == other.MIMEType && bytes.Equal(b.Data, other.Data)
 }
 
-// Equal returns true if two FunctionCall objects are equivalent.
-func (fc *FunctionCall) Equal(other *FunctionCall) bool {
+// equal returns true if two FunctionCall objects are equivalent.
+func (fc *FunctionCall) equal(other *FunctionCall) bool {
 	if fc == nil || other == nil {
 		return fc == other
 	}
@@ -266,8 +269,8 @@ func (fc *FunctionCall) Equal(other *FunctionCall) bool {
 	return reflect.DeepEqual(fc.Args, other.Args)
 }
 
-// Equal returns true if two FunctionResponse objects are equivalent.
-func (fr *FunctionResponse) Equal(other *FunctionResponse) bool {
+// equal returns true if two FunctionResponse objects are equivalent.
+func (fr *FunctionResponse) equal(other *FunctionResponse) bool {
 	if fr == nil || other == nil {
 		return fr == other
 	}
@@ -277,8 +280,8 @@ func (fr *FunctionResponse) Equal(other *FunctionResponse) bool {
 	return reflect.DeepEqual(fr.Response, other.Response)
 }
 
-// Equal returns true if two Part objects are logically equivalent.
-func (p *Part) Equal(other *Part) bool {
+// equal returns true if two Part objects are logically equivalent.
+func (p *Part) equal(other *Part) bool {
 	if p == nil || other == nil {
 		return p == other
 	}
@@ -288,14 +291,17 @@ func (p *Part) Equal(other *Part) bool {
 	if !bytes.Equal(p.ThoughtSignature, other.ThoughtSignature) {
 		return false
 	}
-	if !p.InlineData.Equal(other.InlineData) {
+	if !p.InlineData.equal(other.InlineData) {
 		return false
 	}
-	if !p.FunctionCall.Equal(other.FunctionCall) {
+	if !p.FunctionCall.equal(other.FunctionCall) {
 		return false
 	}
-	return p.FunctionResponse.Equal(other.FunctionResponse)
+	return p.FunctionResponse.equal(other.FunctionResponse)
 }
+
+// EqualContent returns true if two Content objects are logically equivalent.
+func EqualContent(a, b *Content) bool { return a.equal(b) }
 
 // IsEmpty returns true if the part contains no meaningful content for the LLM.
 func (p *Part) IsEmpty() bool {

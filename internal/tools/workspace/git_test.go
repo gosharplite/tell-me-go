@@ -27,7 +27,7 @@ func (m *mockGitExecutor) CombinedOutput(ctx context.Context, name string, args 
 
 func TestGitTools(t *testing.T) {
 	// SecurityManager requires a reader for InteractionHandler
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	// Allow all paths for testing
 	sm.SetBypassActive(true)
 
@@ -251,7 +251,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			} else {
 				input = "n\n"
 			}
-			sm := security.NewSecurityManager(strings.NewReader(input))
+			sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
 
 			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -275,7 +275,7 @@ func TestGitDestructiveActions(t *testing.T) {
 }
 
 func TestGitBlameSafety(t *testing.T) {
-	sm := security.NewSecurityManager(strings.NewReader(""))
+	sm := security.NewSecurityManager(nil)
 	// Do NOT set bypass.
 
 	executor := &mockGitExecutor{
@@ -313,9 +313,8 @@ func TestGitManagerInternal(t *testing.T) {
 }
 
 func TestGitConfirmError(t *testing.T) {
-	// A reader that always returns an error
-	errReader := &errorReader{err: fmt.Errorf("read error")}
-	sm := security.NewSecurityManager(errReader)
+	// An interactor that always returns an error
+	sm := security.NewSecurityManager(&security.MockInteractor{Err: fmt.Errorf("read error")})
 
 	executor := &mockGitExecutor{
 		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -330,12 +329,4 @@ func TestGitConfirmError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error from ConfirmDestructiveAction, got nil")
 	}
-}
-
-type errorReader struct {
-	err error
-}
-
-func (r *errorReader) Read(p []byte) (n int, err error) {
-	return 0, r.err
 }

@@ -15,36 +15,32 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-type MockSecurityProvider struct {
+type refactorMockSecurityProvider struct {
 	security.SecurityProvider
 	IsPathWritableFunc           func(path string) (string, error)
 	ConfirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
 	IsPathSafeFunc               func(path string) (string, error)
 }
 
-func (m *MockSecurityProvider) GetPolicy() *domain.Policy {
-	return domain.DefaultPolicy()
-}
-
-func (m *MockSecurityProvider) GetSafetyService() *domain.SafetyService {
+func (m *refactorMockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())
 }
 
-func (m *MockSecurityProvider) IsPathWritable(path string) (string, error) {
+func (m *refactorMockSecurityProvider) IsPathWritable(path string) (string, error) {
 	if m.IsPathWritableFunc != nil {
 		return m.IsPathWritableFunc(path)
 	}
 	return path, nil
 }
 
-func (m *MockSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+func (m *refactorMockSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	if m.ConfirmDestructiveActionFunc != nil {
 		return m.ConfirmDestructiveActionFunc(ctx, action, target, detail)
 	}
 	return true, nil
 }
 
-func (m *MockSecurityProvider) IsPathSafe(path string) (string, error) {
+func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {
 	if m.IsPathSafeFunc != nil {
 		return m.IsPathSafeFunc(path)
 	}
@@ -55,7 +51,7 @@ func TestMoveDefinition(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Action Denied", func(t *testing.T) {
-		sp := &MockSecurityProvider{
+		sp := &refactorMockSecurityProvider{
 			ConfirmDestructiveActionFunc: func(ctx context.Context, action, target, detail string) (bool, error) {
 				return false, nil
 			},
@@ -79,7 +75,7 @@ func TestMoveDefinition(t *testing.T) {
 	})
 
 	t.Run("IsPathWritable error", func(t *testing.T) {
-		sp := &MockSecurityProvider{
+		sp := &refactorMockSecurityProvider{
 			IsPathWritableFunc: func(path string) (string, error) {
 				return "", fmt.Errorf("error")
 			},
@@ -116,7 +112,7 @@ func TestMoveDefinition(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sp := &MockSecurityProvider{}
+		sp := &refactorMockSecurityProvider{}
 		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{
@@ -151,7 +147,7 @@ func TestRenameSymbol(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Action Denied", func(t *testing.T) {
-		sp := &MockSecurityProvider{
+		sp := &refactorMockSecurityProvider{
 			ConfirmDestructiveActionFunc: func(ctx context.Context, action, target, detail string) (bool, error) {
 				return false, nil
 			},
@@ -175,7 +171,7 @@ func TestRenameSymbol(t *testing.T) {
 	})
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
-		sp := &MockSecurityProvider{}
+		sp := &refactorMockSecurityProvider{}
 		mgr := newRefactorManager(sp)
 
 		args := map[string]interface{}{

@@ -13,7 +13,7 @@ import (
 )
 
 // ToolFunc is the signature for Go functions that can be called by the model.
-type ToolFunc = tools.ToolFunc
+type toolFunc = tools.ToolFunc
 
 // ToolOptions defines execution behavior for a tool.
 type ToolOptions struct {
@@ -22,9 +22,9 @@ type ToolOptions struct {
 }
 
 // ToolEntry stores a tool's definition, handler, and execution options.
-type ToolEntry struct {
+type toolEntry struct {
 	Declaration *tools.ToolDeclaration
-	Handler     ToolFunc
+	Handler     toolFunc
 	Options     ToolOptions
 }
 
@@ -32,24 +32,24 @@ type ToolEntry struct {
 type Registry struct {
 	mu           sync.RWMutex
 	declarations []*tools.ToolDeclaration
-	entries      map[string]ToolEntry
+	entries      map[string]toolEntry
 }
 
 // New initializes an empty tool registry.
 func New() *Registry {
 	return &Registry{
 		declarations: make([]*tools.ToolDeclaration, 0),
-		entries:      make(map[string]ToolEntry),
+		entries:      make(map[string]toolEntry),
 	}
 }
 
 // Register adds a new tool to the registry with default options.
-func (r *Registry) Register(def *tools.ToolDeclaration, handler ToolFunc) {
+func (r *Registry) Register(def *tools.ToolDeclaration, handler toolFunc) {
 	r.RegisterWithOptions(def, handler, ToolOptions{})
 }
 
 // RegisterWithOptions adds a new tool to the registry with specific options.
-func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler ToolFunc, opts ToolOptions) {
+func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) {
 	if def.Name == "" {
 		panic("cannot register tool with empty name")
 	}
@@ -76,7 +76,7 @@ func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler ToolF
 	}
 
 	r.declarations = append(r.declarations, def)
-	r.entries[def.Name] = ToolEntry{
+	r.entries[def.Name] = toolEntry{
 		Declaration: def,
 		Handler:     handler,
 		Options:     opts,

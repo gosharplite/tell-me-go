@@ -17,11 +17,11 @@ type SessionState struct {
 	Tasks      *services.TaskService
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
-	Info       SessionInfo
+	Info       sessionInfo
 }
 
-// SessionInfo holds metadata about the current execution environment.
-type SessionInfo struct {
+// sessionInfo holds metadata about the current execution environment.
+type sessionInfo struct {
 	Config map[string]string `json:"config"`
 	Env    map[string]string `json:"env"`
 	Paths  map[string]string `json:"paths"`
@@ -47,7 +47,7 @@ func NewSessionState(ctx context.Context, configDir string) (*SessionState, erro
 		Scratchpad: scratch,
 	}
 
-	state.Info = SessionInfo{
+	state.Info = sessionInfo{
 		Config: config.GetAll(),
 		Env: map[string]string{
 			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
@@ -63,7 +63,7 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return NewMemoryListStore[services.Task](), NewMemoryKVStore(), NewMemoryKVStore(), paths
+		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths
 	}
 
 	fs := storage.DefaultFileSystem
@@ -75,9 +75,9 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 	paths["config_file"] = configPath
 	paths["scratch_file"] = scratchPath
 
-	return NewTaskRepository(fs, tasksPath),
-		NewConfigRepository(fs, configPath),
-		NewScratchpadRepository(fs, scratchPath),
+	return newTaskRepository(fs, tasksPath),
+		newConfigRepository(fs, configPath),
+		newScratchpadRepository(fs, scratchPath),
 		paths
 }
 

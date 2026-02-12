@@ -33,8 +33,8 @@ type azureDevOpsManager struct {
 	authOnce   sync.Once
 }
 
-// NewAzureDevOpsManager creates a new instance of azureDevOpsManager.
-func NewAzureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+// newazureDevOpsManager creates a new instance of azureDevOpsManager.
+func newazureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -291,6 +291,20 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
+type adoThreadResponse struct {
+	Value []struct {
+		Comments []struct {
+			Author struct {
+				DisplayName string `json:"displayName"`
+			} `json:"author"`
+			Content       string `json:"content"`
+			PublishedDate string `json:"publishedDate"`
+			CommentType   string `json:"commentType"`
+		} `json:"comments"`
+		IsDeleted bool `json:"isDeleted"`
+	} `json:"value"`
+}
+
 func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization  string `json:"organization"`
@@ -316,26 +330,17 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 	}
 	defer resp.Body.Close()
 
-	var threadData struct {
-		Value []struct {
-			Comments []struct {
-				Author struct {
-					DisplayName string `json:"displayName"`
-				} `json:"author"`
-				Content       string `json:"content"`
-				PublishedDate string `json:"publishedDate"`
-				CommentType   string `json:"commentType"`
-			} `json:"comments"`
-			IsDeleted bool `json:"isDeleted"`
-		} `json:"value"`
-	}
-
+	var threadData adoThreadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&threadData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return tools.ToolResult{Text: m.formatPrThreads(params.PullRequestId, threadData)}, nil
+}
+
+func (m *azureDevOpsManager) formatPrThreads(pullRequestId int, threadData adoThreadResponse) string {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", params.PullRequestId))
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d Discussion Threads:\n\n", pullRequestId))
 
 	threadCount := 0
 	for _, thread := range threadData.Value {
@@ -368,10 +373,10 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 	}
 
 	if threadCount == 0 {
-		return tools.ToolResult{Text: "No discussion threads found in this pull request."}, nil
+		return "No discussion threads found in this pull request."
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -422,6 +427,14 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 	return tools.ToolResult{Text: string(content)}, nil
 }
 
+type adoRepositoryItemsResponse struct {
+	Value []struct {
+		Path     string `json:"path"`
+		IsFolder bool   `json:"isFolder"`
+	} `json:"value"`
+	Count int `json:"count"`
+}
+
 func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Organization   string `json:"organization"`
@@ -469,27 +482,24 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	}
 	defer resp.Body.Close()
 
-	var responseData struct {
-		Value []struct {
-			Path     string `json:"path"`
-			IsFolder bool   `json:"isFolder"`
-		} `json:"value"`
-		Count int `json:"count"`
-	}
-
+	var responseData adoRepositoryItemsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
+}
+
+func (m *azureDevOpsManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
 	if len(responseData.Value) == 0 {
-		return tools.ToolResult{Text: "No items found."}, nil
+		return tools.ToolResult{Text: "No items found."}
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Items in %s (%s):\n\n", params.ScopePath, params.Version))
+	resultText.WriteString(fmt.Sprintf("Items in %s (%s):\n\n", scopePath, version))
 	for _, item := range responseData.Value {
 		// Skip the scope path itself if it's the first element
-		if item.Path == params.ScopePath && len(responseData.Value) > 1 {
+		if item.Path == scopePath && len(responseData.Value) > 1 {
 			continue
 		}
 		prefix := "[FILE]"
@@ -499,7 +509,7 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 		resultText.WriteString(fmt.Sprintf("- %s %s\n", prefix, item.Path))
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return tools.ToolResult{Text: resultText.String()}
 }
 
 func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -634,43 +644,49 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 	}
 
 	if params.LogId == 0 {
-		// List logs first
-		u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-			url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
-
-		resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
-		if err != nil {
-			return tools.ToolResult{}, err
-		}
-		defer resp.Body.Close()
-
-		var logsData struct {
-			Value []struct {
-				Id   int    `json:"id"`
-				Url  string `json:"url"`
-				Line int    `json:"lineCount"`
-			} `json:"value"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
-			return tools.ToolResult{}, fmt.Errorf("failed to decode logs list: %w", err)
-		}
-
-		if len(logsData.Value) == 0 {
-			return tools.ToolResult{Text: "No logs found for this run."}, nil
-		}
-
-		var resultText strings.Builder
-		resultText.WriteString(fmt.Sprintf("Logs for Pipeline Run #%d:\n\n", params.RunId))
-		for _, log := range logsData.Value {
-			resultText.WriteString(fmt.Sprintf("- Log ID: %d (%d lines)\n", log.Id, log.Line))
-		}
-		resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
-		return tools.ToolResult{Text: resultText.String()}, nil
+		return m.listPipelineLogs(ctx, params.Organization, params.Project, params.PipelineId, params.RunId)
 	}
 
-	// Fetch specific log content
+	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId)
+}
+
+func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
+	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
+		url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	defer resp.Body.Close()
+
+	var logsData struct {
+		Value []struct {
+			Id   int    `json:"id"`
+			Url  string `json:"url"`
+			Line int    `json:"lineCount"`
+		} `json:"value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&logsData); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to decode logs list: %w", err)
+	}
+
+	if len(logsData.Value) == 0 {
+		return tools.ToolResult{Text: "No logs found for this run."}, nil
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Logs for Pipeline Run #%d:\n\n", runId))
+	for _, log := range logsData.Value {
+		resultText.WriteString(fmt.Sprintf("- Log ID: %d (%d lines)\n", log.Id, log.Line))
+	}
+	resultText.WriteString("\nPlease provide a log_id to fetch specific log content.")
+	return tools.ToolResult{Text: resultText.String()}, nil
+}
+
+func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId, params.LogId)
+		url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {

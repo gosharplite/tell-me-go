@@ -140,7 +140,7 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 	}
 
 	// Should not panic and should print the message
-	capturer.PrintFeedback(&buf, false, "", "test message")
+	capturer.printFeedback(&buf, false, "", "test message")
 	if !strings.Contains(buf.String(), "test message") {
 		t.Errorf("expected output to contain 'test message', got %q", buf.String())
 	}

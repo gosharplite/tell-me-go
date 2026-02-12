@@ -27,8 +27,8 @@ func GetModelPricing(modelName string, pd domain_pricing.PricingData) domain_pri
 	return pd.GetModelPricing(modelName)
 }
 
-// ParseUsage extracts usage statistics and calculates total cost from a log file.
-func ParseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
+// parseUsage extracts usage statistics and calculates total cost from a log file.
+func parseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return domain_pricing.UsageStats{}, 0, "", time.Time{}, err
@@ -76,7 +76,7 @@ func processLogLine(data []byte, state *parseState, pd domain_pricing.PricingDat
 		mtModel = defaultModel
 	}
 
-	turnStats := Accumulate(&state.stats, mt)
+	turnStats := accumulate(&state.stats, mt)
 	state.totalCost += calculateLineCost(mt, turnStats, pd, mtModel)
 
 	return nil
@@ -108,7 +108,7 @@ func calculateLineCost(mt llm.Metrics, turnStats domain_pricing.UsageStats, pd d
 }
 
 // Accumulate adds metrics to usage statistics and returns the newly added stats.
-func Accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
+func accumulate(stats *domain_pricing.UsageStats, mt llm.Metrics) domain_pricing.UsageStats {
 	turn := domain_pricing.UsageStats{
 		PromptTokens:   int64(mt.PromptTokens),
 		ResponseTokens: int64(mt.ResponseTokens),

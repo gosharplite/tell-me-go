@@ -73,11 +73,11 @@ func RotateSession(w io.Writer, paths Paths, retentionDays int) error {
 	}
 
 	// Cleanup old backups
-	return CleanupOldBackups(paths, retentionDays)
+	return cleanupOldBackups(paths, retentionDays)
 }
 
-// CleanupOldBackups removes backups older than the specified retention days.
-func CleanupOldBackups(paths Paths, retentionDays int) error {
+// cleanupOldBackups removes backups older than the specified retention days.
+func cleanupOldBackups(paths Paths, retentionDays int) error {
 	if retentionDays <= 0 {
 		return nil
 	}

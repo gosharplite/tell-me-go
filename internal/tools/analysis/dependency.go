@@ -3,33 +3,35 @@ package analysis
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 type dependencyAnalyzer struct {
-	Exec CommandExecutor
-	SP   security.SecurityProvider
+	Exec   tools.CommandExecutor
+	SP     security.SecurityProvider
+	Events events.EventBus
 }
 
-func newDependencyAnalyzer(exec CommandExecutor, sp security.SecurityProvider) *dependencyAnalyzer {
+func newDependencyAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider, bus events.EventBus) *dependencyAnalyzer {
 	return &dependencyAnalyzer{
-		Exec: exec,
-		SP:   sp,
+		Exec:   exec,
+		SP:     sp,
+		Events: bus,
 	}
 }
 
 func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	func() {
-		a.SP.TerminalLock()
-		defer a.SP.TerminalUnlock()
-		fmt.Fprintf(os.Stderr, "%s[Tool Action] Analyzing package dependencies%s\n", ui.ColorCyan, ui.ColorReset)
-	}()
+	if a.Events != nil {
+		a.Events.Publish(events.SystemMessageEvent{
+			Message: "[Tool Action] Analyzing package dependencies",
+			Level:   "info",
+		})
+	}
 
 	format, _ := args["format"].(string)
 
@@ -39,7 +41,7 @@ func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[strin
 	}
 
 	if format == "mermaid" {
-		return tools.ToolResult{Text: GenerateMermaid(graph)}, nil
+		return tools.ToolResult{Text: generateMermaid(graph)}, nil
 	}
 
 	var sb strings.Builder

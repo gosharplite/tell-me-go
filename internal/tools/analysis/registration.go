@@ -4,16 +4,17 @@
 package analysis
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager) {
+func Register(r *registry.Registry, sm *security.SecurityManager, bus events.EventBus) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	m := newAnalysisManager(idx, cache, sm)
+	m := newAnalysisManager(idx, cache, sm, bus)
 
 	// Code Analysis Tools
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -39,7 +40,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, m.Health.GetDetailedCoverage, registry.ToolOptions{LongRunning: true})
+	}, m.Health.getDetailedCoverage, registry.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",
@@ -341,7 +342,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager) {
 	// Visualization Tools
 	r.Register(&tools.ToolDeclaration{
 		Name:        "generate_mermaid_diagram",
-		Description: "Transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
+		Description: "transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{

@@ -6,7 +6,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -17,83 +16,81 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
-// MockGateway implements llm.LLMGateway for testing.
-type MockGateway struct {
-	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
-}
-
-func (m *MockGateway) Generate(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	return m.GenerateFunc(ctx, input, t, resolver)
-}
-
-func (m *MockGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	return nil, nil, nil
-}
-
-func (m *MockGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, nil
-}
-
-func (m *MockGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
-	return nil, nil
-}
-
-func (m *MockGateway) RefreshAuth() error { return nil }
-
-func (m *MockGateway) SetSystemInstructions(instr string) {}
-
-// MockRegistry implements ToolRegistry for testing.
-type MockRegistry struct {
-	Declarations []*tools.ToolDeclaration
-}
-
-func (m *MockRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return m.Declarations
-}
-
-func (m *MockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
-
-func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
-	return tools.ToolResult{}, nil
-}
-
-func (m *MockRegistry) IsSerial(name string) bool      { return false }
-func (m *MockRegistry) IsLongRunning(name string) bool { return false }
-
-// MockExecutor implements IToolExecutor for testing.
-type MockExecutor struct {
+// mockExecutor implements iToolExecutor for testing.
+type mockExecutor struct {
 	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
-func (m *MockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
 }
 
-// MockStore implements history.Store for testing.
-type MockStore struct {
-	LoadFunc   func(ctx context.Context) ([]*llm.Content, error)
-	SaveFunc   func(ctx context.Context, contents []*llm.Content) error
-	AppendFunc func(ctx context.Context, contents []*llm.Content) error
+// mockHistoryManager implements services.HistoryManager for testing.
+type mockHistoryManager struct {
+	mu       sync.RWMutex
+	Contents []*llm.Content
+	Backup   []*llm.Content
+	Resolver llm.AssetResolver
+
+	AddContentFunc  func(ctx context.Context, content *llm.Content) error
+	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
-func (m *MockStore) Load(ctx context.Context) ([]*llm.Content, error) { return m.LoadFunc(ctx) }
-func (m *MockStore) Save(ctx context.Context, contents []*llm.Content) error {
-	return m.SaveFunc(ctx, contents)
-}
-func (m *MockStore) Append(ctx context.Context, contents []*llm.Content) error {
-	return m.AppendFunc(ctx, contents)
+func (m *mockHistoryManager) GetContents() []*llm.Content {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := make([]*llm.Content, len(m.Contents))
+	for i, c := range m.Contents {
+		res[i] = llm.CloneContent(c)
+	}
+	return res
 }
 
-// MockClock for deterministic tests
-type MockClock struct {
+func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	if m.SetContentsFunc != nil {
+		return m.SetContentsFunc(ctx, contents)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Contents = contents
+	return nil
+}
+
+func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+	if m.AddContentFunc != nil {
+		return m.AddContentFunc(ctx, content)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Contents = append(m.Contents, llm.CloneContent(content))
+	return nil
+}
+
+func (m *mockHistoryManager) GetResolver() llm.AssetResolver {
+	return m.Resolver
+}
+
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	startIdx := turnIndex * 2
+	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
+		return fmt.Errorf("invalid turn index")
+	}
+	m.Contents[startIdx].Pinned = pinned
+	m.Contents[startIdx+1].Pinned = pinned
+	return nil
+}
+
+// mockClock for deterministic tests
+type mockClock struct {
 	CurrentTime time.Time
 }
 
-func (m *MockClock) Now() time.Time { return m.CurrentTime }
-func (m *MockClock) After(d time.Duration) <-chan time.Time {
+func (m *mockClock) Now() time.Time { return m.CurrentTime }
+func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	ch <- m.CurrentTime
 	return ch
@@ -168,8 +165,8 @@ func newTestContextManager(s *orchestration.ContextStrategy, h services.HistoryM
 
 // testTurnEnv holds the standard environment for TurnEngine tests.
 type testTurnEnv struct {
-	gw       *MockGateway
-	reg      *MockRegistry
+	gw       *mockGateway
+	reg      *mockToolRegistry
 	bus      *events.SimpleEventBus
 	cm       *orchestration.ContextManager
 	hManager services.HistoryManager
@@ -177,18 +174,13 @@ type testTurnEnv struct {
 
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	t.Helper()
-	reg := &MockRegistry{}
+	reg := &mockToolRegistry{}
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
-		LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
-		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
-	})
+	hManager := &mockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
-	gw := &MockGateway{}
+	gw := &mockGateway{}
 
 	// Default prompt in history
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "prompt"}}})
@@ -272,21 +264,21 @@ func closedChan(content *llm.Content) <-chan *llm.Content {
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
 	case phaseRefining:
-		return &ContextRefiner{}
+		return &contextRefiner{}
 	case phaseInference:
-		return &InferenceStep{}
+		return &inferenceStep{}
 	case phaseExecuting:
-		return &ExecutionStep{}
+		return &executionStep{}
 	case phasePersisting:
-		return &PersistenceStep{}
+		return &persistenceStep{}
 	case phaseRecovering:
-		return &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
+		return &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
 	}
 	return nil
 }
 
 func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
-	mockGw := &MockGateway{
+	mockGw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			return closedChan(nil), func() (*llm.Content, *llm.Metrics, error) {
 				content := &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "ok"}}}
@@ -297,22 +289,22 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			}
 		},
 	}
-	reg := &MockRegistry{}
+	reg := &mockToolRegistry{}
 	turn := &turn{
 		State: &turnState{
 			HasToolCalls: hasTools,
 			RetryCount:   0,
-			LastError:    &AgentError{Category: llm.ErrTransient, Message: "err"},
+			LastError:    &agentError{Category: llm.ErrTransient, Message: "err"},
 			Metadata: &orchestration.Metadata{
 				History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 			},
 		},
 		CtxManager: &orchestration.ContextManager{
-			History:  history.NewManager(""),
+			History:  &mockHistoryManager{},
 			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil),
 		},
 		Gateway: mockGw,
-		Executor: &MockExecutor{
+		executor: &mockExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},

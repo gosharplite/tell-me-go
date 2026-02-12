@@ -17,7 +17,7 @@ func TestBackupManager_Undo(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
-	bm := NewBackupManager(sm, 10)
+	bm := newBackupManager(sm, 10)
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "test.txt")
@@ -66,7 +66,7 @@ func TestBackupManager_Undo(t *testing.T) {
 func TestBackupManager_Undo_Errors(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
-	bm := NewBackupManager(sm, 10)
+	bm := newBackupManager(sm, 10)
 	ctx := context.Background()
 
 	t.Run("NoSnapshots", func(t *testing.T) {

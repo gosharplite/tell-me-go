@@ -10,25 +10,25 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// ScratchpadRepository manages a persistent scratchpad.
+// scratchpadRepository manages a persistent scratchpad.
 // It implements services.KVStore but is specialized for a single "content" key
 // to maintain compatibility with raw text storage.
-type ScratchpadRepository struct {
+type scratchpadRepository struct {
 	mu       sync.RWMutex
 	filePath string
 	fs       storage.FileSystem
 }
 
-// NewScratchpadRepository creates a new ScratchpadRepository.
-func NewScratchpadRepository(fs storage.FileSystem, filePath string) *ScratchpadRepository {
-	return &ScratchpadRepository{
+// newScratchpadRepository creates a new scratchpadRepository.
+func newScratchpadRepository(fs storage.FileSystem, filePath string) *scratchpadRepository {
+	return &scratchpadRepository{
 		filePath: filePath,
 		fs:       fs,
 	}
 }
 
 // Get retrieves the value for a key. Only "content" is supported for raw text storage.
-func (r *ScratchpadRepository) Get(ctx context.Context, key string) (string, error) {
+func (r *scratchpadRepository) Get(ctx context.Context, key string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -49,7 +49,7 @@ func (r *ScratchpadRepository) Get(ctx context.Context, key string) (string, err
 }
 
 // Set saves the value for a key. Only "content" is supported.
-func (r *ScratchpadRepository) Set(ctx context.Context, key, val string) error {
+func (r *scratchpadRepository) Set(ctx context.Context, key, val string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -62,7 +62,7 @@ func (r *ScratchpadRepository) Set(ctx context.Context, key, val string) error {
 }
 
 // Delete clears the scratchpad.
-func (r *ScratchpadRepository) Delete(ctx context.Context, key string) error {
+func (r *scratchpadRepository) Delete(ctx context.Context, key string) error {
 	if key != "content" {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (r *ScratchpadRepository) Delete(ctx context.Context, key string) error {
 }
 
 // GetAll returns all keys.
-func (r *ScratchpadRepository) GetAll(ctx context.Context) (map[string]string, error) {
+func (r *scratchpadRepository) GetAll(ctx context.Context) (map[string]string, error) {
 	val, err := r.Get(ctx, "content")
 	if err != nil {
 		return nil, err

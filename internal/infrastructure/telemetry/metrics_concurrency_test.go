@@ -110,7 +110,7 @@ func TestGetDailyCost_DeadlockPrevention(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			m.recordCost(ctx, filepath.Dir(logFile), "interactive", SessionCostRecord{
+			m.recordCost(ctx, filepath.Dir(logFile), "interactive", sessionCostRecord{
 				Session:   "test",
 				TotalCost: 0.1,
 				Timestamp: time.Now(),

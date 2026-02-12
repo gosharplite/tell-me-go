@@ -10,12 +10,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// OptimizationProfile defines the behavior of the context pipeline.
-type OptimizationProfile string
+// optimizationProfile defines the behavior of the context pipeline.
+type optimizationProfile string
 
 const (
-	// ProfilePrecise prioritizes data integrity and code blocks.
-	ProfilePrecise OptimizationProfile = "precise"
+	// profilePrecise prioritizes data integrity and code blocks.
+	profilePrecise optimizationProfile = "precise"
 )
 
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
@@ -25,16 +25,16 @@ type PipelineFactory struct {
 	Summarizer services.Summarizer
 	Estimator  llm.TokenEstimator
 	Events     events.EventBus
-	Profile    OptimizationProfile
+	Profile    optimizationProfile
 }
 
 // BuildStandardPipeline creates the default context transformation pipeline.
 func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPipeline {
 	// 1. Calculate window size based on profile
 	windowTurns := limits.MaxHistoryTurns
-	if f.Profile == ProfilePrecise {
+	if f.Profile == profilePrecise {
 		// Precise mode: Shrink the sliding window to 50% (min 2)
-		// to give ImportanceRankPolicy more token budget.
+		// to give importanceRankPolicy more token budget.
 		windowTurns = limits.MaxHistoryTurns / 2
 		if windowTurns < 2 {
 			windowTurns = 2
@@ -45,12 +45,12 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		&historyRepairer{},
 		&contentCleaner{},
 		&historyPruner{
-			Policy: &CompositePruningPolicy{
+			Policy: &compositePruningPolicy{
 				Policies: []services.PruningPolicy{
 					// 2. Use the profile-adjusted window size
-					&SlidingWindowPolicy{MaxTurns: windowTurns},
-					&PinningPolicy{},
-					&ImportanceRankPolicy{},
+					&slidingWindowPolicy{MaxTurns: windowTurns},
+					&pinningPolicy{},
+					&importanceRankPolicy{},
 				},
 			},
 			Events: f.Events,

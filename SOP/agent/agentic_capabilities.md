@@ -27,8 +27,8 @@ Every tool must be defined using a standard JSON schema that matches the Gemini 
     - **Workspace** (`internal/tools/workspace`): `list_files`, `read_file`, `write_file`, `replace_text`, etc.
     - **Analysis** (`internal/tools/analysis`): `find_usages`, `get_type_info`, `get_semantic_diff`, `rename_symbol`, `generate_mermaid_diagram`, etc.
     - **Developer** (`internal/tools/developer`): `run_tests`, `run_linter`, `go_tidy`, `get_coverage`, `check_vulnerabilities`, `verify_architecture`, etc.
-    - **Integrations** (`internal/tools/integrations`): `send_teams_message`.
-    - **State/System**: Tools for managing task state, scratchpad, and security permissions (often orchestrated by the `agent` or registered in `infrastructure/registry`).
+    - **Integrations** (`internal/tools/integrations`): `send_teams_message`, Atlassian Stack (`jira_search_issues`, `confluence_read`, etc.), Azure DevOps (`ado_list_pull_requests`, etc.), and Network tools (`http_request`, `read_external_docs`).
+    - **State/System**: `get_session_info`, `manage_scratchpad`, `manage_tasks`, `manage_config`, `summarize_history`, `manage_history`, and security tools (`register_safepath`, `bypass_confirmation`).
 - **Validation**: Every tool must have a `description` and a clear `parameters` schema using `genai.FunctionDeclaration`.
 
 #### 2. The Orchestration Loop

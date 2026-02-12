@@ -15,54 +15,46 @@ import (
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
-
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-// ExecutionConfig defines parameters for command or pipeline execution.
-type ExecutionConfig struct {
+// executionConfig defines parameters for command or pipeline execution.
+type executionConfig struct {
 	OutputFile string
 	Append     bool
 	MaxCapture int
 	Feedback   io.Writer
 }
 
-// ExecutionResult holds the outcome of an execution.
-type ExecutionResult struct {
+// executionResult holds the outcome of an execution.
+type executionResult struct {
 	Output    string
 	Error     string
 	ExitCode  int
 	Truncated bool
 }
 
-// CommandExecutor defines the interface for running commands.
-type CommandExecutor interface {
-	RunCommand(ctx context.Context, parts []string, config ExecutionConfig) (ExecutionResult, error)
-	RunPipeline(ctx context.Context, pipedParts [][]string, config ExecutionConfig) (ExecutionResult, error)
-}
-
-// ProcessExecutor handles running external commands and pipelines.
-type ProcessExecutor struct{}
+// processExecutor handles running external commands and pipelines.
+type processExecutor struct{}
 
 const maxScannerCapacity = 10 * 1024 * 1024
 
-// NewProcessExecutor creates a new ProcessExecutor.
-func NewProcessExecutor() *ProcessExecutor {
-	return &ProcessExecutor{}
+// newprocessExecutor creates a new processExecutor.
+func newprocessExecutor() *processExecutor {
+	return &processExecutor{}
 }
 
 // RunCommand executes a single command.
-func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config ExecutionConfig) (ExecutionResult, error) {
+func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error) {
 	cmd, stdout, stderr, file, err := e.setupCommand(ctx, parts, config)
 	if err != nil {
-		return ExecutionResult{}, err
+		return executionResult{}, err
 	}
 	if file != nil {
 		defer file.Close()
 	}
 
 	if err := cmd.Start(); err != nil {
-		return ExecutionResult{}, fmt.Errorf("failed to start: %w", err)
+		return executionResult{}, fmt.Errorf("failed to start: %w", err)
 	}
 
 	var sb strings.Builder
@@ -77,14 +69,14 @@ func (e *ProcessExecutor) RunCommand(ctx context.Context, parts []string, config
 		}
 	}
 
-	return ExecutionResult{
+	return executionResult{
 		Output:    sb.String(),
 		ExitCode:  exitCode,
 		Truncated: truncated.Load(),
 	}, nil
 }
 
-func (e *ProcessExecutor) setupCommand(ctx context.Context, parts []string, config ExecutionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
+func (e *processExecutor) setupCommand(ctx context.Context, parts []string, config executionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
 	if len(parts) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("empty command")
 	}
@@ -109,7 +101,7 @@ func (e *ProcessExecutor) setupCommand(ctx context.Context, parts []string, conf
 	return cmd, stdout, stderr, file, nil
 }
 
-func (e *ProcessExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config ExecutionConfig, file *os.File) *atomic.Bool {
+func (e *processExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config executionConfig, file *os.File) *atomic.Bool {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	truncated := &atomic.Bool{}
@@ -128,7 +120,7 @@ func (e *ProcessExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.R
 	return truncated
 }
 
-func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.Builder, mu *sync.Mutex, wg *sync.WaitGroup, truncated *atomic.Bool, wt *writeTracker, config ExecutionConfig, file *os.File, maxCapture int, totalCaptured *int) {
+func (e *processExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.Builder, mu *sync.Mutex, wg *sync.WaitGroup, truncated *atomic.Bool, wt *writeTracker, config executionConfig, file *os.File, maxCapture int, totalCaptured *int) {
 	defer wg.Done()
 
 	sp := &streamProcessor{
@@ -157,7 +149,7 @@ func (e *ProcessExecutor) captureStream(r io.Reader, isStderr bool, sb *strings.
 	e.handleCaptureError(scanner.Err(), sb, mu, config, truncated, maxCapture)
 }
 
-func (e *ProcessExecutor) handleCaptureError(err error, sb *strings.Builder, mu *sync.Mutex, config ExecutionConfig, truncated *atomic.Bool, maxCapture int) {
+func (e *processExecutor) handleCaptureError(err error, sb *strings.Builder, mu *sync.Mutex, config executionConfig, truncated *atomic.Bool, maxCapture int) {
 	if err == nil {
 		return
 	}
@@ -186,14 +178,14 @@ func (e *ProcessExecutor) handleCaptureError(err error, sb *strings.Builder, mu 
 }
 
 // RunPipeline executes a sequence of piped commands.
-func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string, config ExecutionConfig) (ExecutionResult, error) {
+func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string, config executionConfig) (executionResult, error) {
 	if len(pipedParts) < 2 {
-		return ExecutionResult{}, fmt.Errorf("at least two commands are required for piping")
+		return executionResult{}, fmt.Errorf("at least two commands are required for piping")
 	}
 
 	p, err := e.newPipeline(ctx, pipedParts)
 	if err != nil {
-		return ExecutionResult{}, err
+		return executionResult{}, err
 	}
 	defer p.closePipes()
 
@@ -209,7 +201,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	if err := p.start(); err != nil {
 		_, _ = p.wait() // Ensure started processes are cleaned up
-		return ExecutionResult{}, fmt.Errorf("pipeline failed to start: %w", err)
+		return executionResult{}, fmt.Errorf("pipeline failed to start: %w", err)
 	}
 
 	stdoutStr, stderrStr, truncated := p.capture(config, file)
@@ -225,7 +217,7 @@ func (e *ProcessExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 		exitCode = 1
 	}
 
-	return ExecutionResult{
+	return executionResult{
 		Output:    output,
 		ExitCode:  exitCode,
 		Truncated: truncated,
@@ -240,7 +232,7 @@ type pipeline struct {
 	pipes       []io.Closer
 }
 
-func (e *ProcessExecutor) newPipeline(ctx context.Context, pipedParts [][]string) (*pipeline, error) {
+func (e *processExecutor) newPipeline(ctx context.Context, pipedParts [][]string) (*pipeline, error) {
 	p := &pipeline{cmds: make([]*exec.Cmd, len(pipedParts))}
 
 	for i, parts := range pipedParts {
@@ -288,7 +280,7 @@ func (p *pipeline) start() error {
 	return nil
 }
 
-func (p *pipeline) capture(config ExecutionConfig, file *os.File) (string, string, bool) {
+func (p *pipeline) capture(config executionConfig, file *os.File) (string, string, bool) {
 	var mu sync.Mutex
 	var truncated atomic.Bool
 	totalCaptured := 0
@@ -378,13 +370,13 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 	content := string(rawLine) + "\n"
 	feedbackMsg := ""
 	if feedback != nil {
-		feedbackMsg = fmt.Sprintf("  %s%s%s\n", ui.ColorGray, rawLine, ui.ColorReset)
+		feedbackMsg = fmt.Sprintf("  %s\n", rawLine)
 	}
 
 	if prefix != "" {
 		content = fmt.Sprintf("%s %s", prefix, content)
 		if feedback != nil {
-			feedbackMsg = fmt.Sprintf("  %s%s %s%s\n", ui.ColorRed, prefix, rawLine, ui.ColorReset)
+			feedbackMsg = fmt.Sprintf("  %s %s\n", prefix, rawLine)
 		}
 	}
 
@@ -445,7 +437,7 @@ func (p *pipeline) captureStderrAsync(wg *sync.WaitGroup, sp *streamProcessor, i
 	sp.appendErr(sp.stderrStr, scanner.Err())
 }
 
-func (e *ProcessExecutor) openOutputFile(config ExecutionConfig) (*os.File, error) {
+func (e *processExecutor) openOutputFile(config executionConfig) (*os.File, error) {
 	if config.OutputFile == "" {
 		return nil, nil
 	}
@@ -531,4 +523,28 @@ func truncateToValidUTF8(s string, maxBytes int) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// Output runs the command and returns its standard output.
+func (e *processExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	res, err := e.RunCommand(ctx, append([]string{name}, args...), executionConfig{})
+	if err != nil {
+		return []byte(res.Output), err
+	}
+	if res.ExitCode != 0 {
+		return []byte(res.Output), fmt.Errorf("exit status %d", res.ExitCode)
+	}
+	return []byte(res.Output), nil
+}
+
+// CombinedOutput runs the command and returns its combined standard output and standard error.
+func (e *processExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	res, err := e.RunCommand(ctx, append([]string{name}, args...), executionConfig{})
+	if err != nil {
+		return []byte(res.Output), err
+	}
+	if res.ExitCode != 0 {
+		return []byte(res.Output), fmt.Errorf("exit status %d", res.ExitCode)
+	}
+	return []byte(res.Output), nil
 }

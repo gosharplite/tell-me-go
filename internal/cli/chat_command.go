@@ -4,7 +4,7 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
@@ -28,13 +29,13 @@ import (
 )
 
 func init() {
-	Register("chat", func(ctx *Context) Command {
-		return NewChatCommand(ctx)
+	register("chat", func(ctx *context) command {
+		return newChatCommand(ctx)
 	})
 }
 
-// ChatCommand implements the main chat command.
-type ChatCommand struct {
+// chatCommand implements the main chat command.
+type chatCommand struct {
 	Version string
 	Stdin   io.Reader
 	Stdout  io.Writer
@@ -42,8 +43,8 @@ type ChatCommand struct {
 	HomeDir string
 	SM      *internal_security.SecurityManager
 
-	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
-	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error)
+	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
+	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error)
 }
 
 type cliOptions struct {
@@ -62,34 +63,35 @@ type sessionDeps struct {
 	tracker          domain_pricing.ICostTracker
 	pData            domain_pricing.PricingData
 	pricingOverrides map[string]domain_pricing.ModelPricing
+	bus              events.EventBus
 }
 
-// NewChatCommand creates a new Chat Command with default factories.
-func NewChatCommand(ctx *Context) *ChatCommand {
-	return &ChatCommand{
+// newChatCommand creates a new Chat Command with default factories.
+func newChatCommand(ctx *context) *chatCommand {
+	return &chatCommand{
 		Version: ctx.Version,
 		Stdin:   ctx.Stdin,
 		Stdout:  ctx.Stdout,
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
-			return agent.New(client, hManager, reg, sm, disableStreaming,
+		AgentFactory: func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+			return agent.New(client, hManager, reg, sm, disableStreaming, bus,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
 				agent.WithTraceLogger(logPath),
 			)
 		},
-		ClientFactory: func(cfg *config.Config, pricing domain_pricing.PricingData) (*llm.Client, error) {
+		ClientFactory: func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
-			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch)
+			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 		},
 	}
 }
 
-func (c *ChatCommand) prepareSession(ctx context.Context, cfg *config.Config, opts *cliOptions) (*sessionDeps, error) {
+func (c *chatCommand) prepareSession(ctx stdctx.Context, cfg *config.Config, opts *cliOptions) (*sessionDeps, error) {
 	paths, err := persistence.InitializePaths(c.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, err
@@ -104,7 +106,7 @@ func (c *ChatCommand) prepareSession(ctx context.Context, cfg *config.Config, op
 	return c.initializeDependencies(ctx, paths, cfg, pricingOverrides)
 }
 
-func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions, cfg *config.Config, isTTY bool) {
+func (c *chatCommand) renderHistory(hManager *history.Manager, opts *cliOptions, cfg *config.Config, isTTY bool) {
 	if opts.lastN <= 0 {
 		return
 	}
@@ -116,9 +118,9 @@ func (c *ChatCommand) renderHistory(hManager *history.Manager, opts *cliOptions,
 }
 
 // Execute runs the chat command logic.
-func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
-	c.SM.SetInputReader(c.Stdin)
+func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	c.SM.SetInteractor(capturer)
 
 	opts, fs, cfg, err := c.initializeConfiguration(args)
 	if err != nil {
@@ -138,13 +140,18 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := deps.bus.Shutdown(ctx); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Failed to shutdown event bus: %v\n", err)
+		}
+	}()
 
 	c.renderHistory(deps.hManager, opts, cfg, capturer.IsTTY(c.Stdout))
 	if prompt == "" && opts.lastN > 0 {
 		return nil
 	}
 
-	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, deps.bus, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
 	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
@@ -158,7 +165,7 @@ func (c *ChatCommand) Execute(ctx context.Context, args []string) error {
 	return c.finalizeSession(ctx, chatAgent, deps.hManager, *deps.paths, cfg, deps.pricingOverrides)
 }
 
-func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
+func (c *chatCommand) initializeConfiguration(args []string) (*cliOptions, *flag.FlagSet, *config.Config, error) {
 	args = c.sanitizeArgs(args)
 	var flagArgs []string
 	if len(args) > 0 {
@@ -178,21 +185,22 @@ func (c *ChatCommand) initializeConfiguration(args []string) (*cliOptions, *flag
 	return opts, fs, cfg, nil
 }
 
-func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
+func (c *chatCommand) initializeDependencies(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, fmt.Errorf("error loading history: %w", err)
 	}
 
-	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
-	hManager.Snapshot()
+	bus := events.NewSimpleEventBus()
 
-	client, err := c.ClientFactory(cfg, pricingData)
+	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
+
+	client, err := c.ClientFactory(cfg, pricingData, bus)
 	if err != nil {
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	registry := c.setupRegistry(client, cfg, paths, pricingOverrides)
+	registry := c.setupRegistry(client, cfg, paths, pricingOverrides, bus)
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
@@ -205,10 +213,11 @@ func (c *ChatCommand) initializeDependencies(ctx context.Context, paths *persist
 		tracker:          tracker,
 		pData:            pricingData,
 		pricingOverrides: pricingOverrides,
+		bus:              bus,
 	}, nil
 }
 
-func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {
+func (c *chatCommand) finalizeSession(ctx stdctx.Context, chatAgent agent.Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {
 	if err := hManager.Save(ctx); err != nil {
 		return fmt.Errorf("error saving history: %w", err)
 	}
@@ -218,7 +227,7 @@ func (c *ChatCommand) finalizeSession(ctx context.Context, chatAgent agent.Chatt
 	return nil
 }
 
-func (c *ChatCommand) getPricingOverrides(cfg *config.Config) map[string]domain_pricing.ModelPricing {
+func (c *chatCommand) getPricingOverrides(cfg *config.Config) map[string]domain_pricing.ModelPricing {
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
@@ -228,7 +237,7 @@ func (c *ChatCommand) getPricingOverrides(cfg *config.Config) map[string]domain_
 	return pricingOverrides
 }
 
-func (c *ChatCommand) setupSecurity(paths *persistence.Paths, configPath string) {
+func (c *chatCommand) setupSecurity(paths *persistence.Paths, configPath string) {
 	c.SM.SetSafePathsFile(paths.SafePathsPath)
 	c.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
 	c.SM.SetBypassFile(paths.BypassPath)
@@ -244,7 +253,7 @@ func (c *ChatCommand) setupSecurity(paths *persistence.Paths, configPath string)
 	c.SM.RegisterReadOnlyPath(configPath)
 }
 
-func (c *ChatCommand) handleNewSession(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {
+func (c *chatCommand) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, c.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
@@ -256,16 +265,15 @@ func (c *ChatCommand) handleNewSession(ctx context.Context, paths *persistence.P
 	}
 }
 
-func (c *ChatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
-	renderer := ui.NewStdUIRenderer(c.SM)
-	renderer.SetWriters(c.Stdout, c.Stderr)
+func (c *chatCommand) setupUIRendering(chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, logPath string, capturer *ui.Capturer) {
+	renderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
 	useColor := capturer.IsTTY(c.Stdout) && !opts.rawOutput
 	renderer.SetUseColor(useColor)
-	subscriber := NewUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, useColor, logPath)
+	subscriber := newUISubscriber(renderer, cfg.ShowThoughts, cfg.ShowTools, opts.rawOutput, useColor, logPath)
 	chatAgent.Subscribe(subscriber.HandleEvent)
 }
 
-func (c *ChatCommand) applyConfiguration(ctx context.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
+func (c *chatCommand) applyConfiguration(ctx stdctx.Context, chatAgent agent.Chatter, cfg *config.Config, opts *cliOptions, paths *persistence.Paths, pData domain_pricing.PricingData, capturer *ui.Capturer) error {
 	c.setupUIRendering(chatAgent, cfg, opts, paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err
@@ -273,7 +281,7 @@ func (c *ChatCommand) applyConfiguration(ctx context.Context, chatAgent agent.Ch
 	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (c *ChatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
+func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
 	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	opts := &cliOptions{}
@@ -288,7 +296,7 @@ func (c *ChatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, err
 	return opts, fs, nil
 }
 
-func (c *ChatCommand) sanitizeArgs(args []string) []string {
+func (c *chatCommand) sanitizeArgs(args []string) []string {
 	if len(args) < 2 {
 		return args
 	}

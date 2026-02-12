@@ -18,7 +18,7 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large_history.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
@@ -52,7 +52,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	data := []byte("fake-image-data")
@@ -126,7 +126,7 @@ func verifyLoaded(t *testing.T, loaded []*llm.Content) {
 	}
 }
 
-func verifyResolve(t *testing.T, ctx context.Context, store *JSONLStore, loaded []*llm.Content, expectedData string) {
+func verifyResolve(t *testing.T, ctx context.Context, store *jsonlStore, loaded []*llm.Content, expectedData string) {
 	t.Helper()
 	if len(loaded) == 0 {
 		t.Skip("No loaded content to test Resolve")
@@ -156,7 +156,7 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -167,18 +167,18 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 func TestJSONLStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
-	fs := &storage.OSFileSystem{}
-	store := NewJSONLStore(filePath).WithFileSystem(fs)
+	fs := storage.DefaultFileSystem
+	store := newJSONLStore(filePath).withFileSystem(fs)
 
 	if store.fs != fs {
-		t.Error("WithFileSystem failed to set filesystem on JSONLStore")
+		t.Error("withFileSystem failed to set filesystem on jsonlStore")
 	}
 }
 
 func TestJSONLStore_Append_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -191,7 +191,7 @@ func TestJSONLStore_Append_Cancel(t *testing.T) {
 func TestJSONLStore_Load_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_load.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 	_ = store.Save(ctx, []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}})
 
@@ -206,7 +206,7 @@ func TestJSONLStore_Load_Cancel(t *testing.T) {
 func TestJSONLStore_Save_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_save.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -228,7 +228,7 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "pinned_history.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -284,7 +284,7 @@ func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "transient_test.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -326,7 +326,7 @@ func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_input.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	prepared, err := store.prepareForStorage(ctx, nil)
@@ -342,7 +342,7 @@ func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "malformed_json.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	// prepareForStorage itself doesn't parse JSON, but we test preservation of nil parts
@@ -367,7 +367,7 @@ func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	badStore := NewJSONLStore(filepath.Join(invalidDir, "history.jsonl"))
+	badStore := newJSONLStore(filepath.Join(invalidDir, "history.jsonl"))
 	ctx := context.Background()
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -415,7 +415,7 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "mixed_parts.jsonl")
-	store := NewJSONLStore(filePath)
+	store := newJSONLStore(filePath)
 	ctx := context.Background()
 
 	content := &llm.Content{

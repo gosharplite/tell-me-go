@@ -33,8 +33,8 @@ func TestExprToString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ExprToString(tt.expr); got != tt.want {
-				t.Errorf("ExprToString() = %v, want %v", got, tt.want)
+			if got := exprToString(tt.expr); got != tt.want {
+				t.Errorf("exprToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -56,7 +56,7 @@ func F4(a ...int) {}
 	signatures := make(map[string]string)
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			signatures[fd.Name.Name] = GetFuncSignature(fd)
+			signatures[fd.Name.Name] = getFuncSignature(fd)
 		}
 	}
 
@@ -72,7 +72,7 @@ func F4(a ...int) {}
 
 	for _, tt := range tests {
 		if got := signatures[tt.name]; got != tt.want {
-			t.Errorf("GetFuncSignature(%s) = %q, want %q", tt.name, got, tt.want)
+			t.Errorf("getFuncSignature(%s) = %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }
@@ -112,7 +112,7 @@ func C4(ch chan int) {
 	complexities := make(map[string]int)
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
-			complexities[fd.Name.Name] = CalculateComplexity(fd)
+			complexities[fd.Name.Name] = calculateComplexity(fd)
 		}
 	}
 
@@ -128,7 +128,7 @@ func C4(ch chan int) {
 
 	for _, tt := range tests {
 		if got := complexities[tt.name]; got != tt.want {
-			t.Errorf("CalculateComplexity(%s) = %d, want %d", tt.name, got, tt.want)
+			t.Errorf("calculateComplexity(%s) = %d, want %d", tt.name, got, tt.want)
 		}
 	}
 }
@@ -150,7 +150,7 @@ const C = 3
 	base, _ := parser.ParseFile(fset, "base.go", baseCode, 0)
 	curr, _ := parser.ParseFile(fset, "curr.go", currCode, 0)
 
-	changes := CompareASTs(base, curr)
+	changes := compareASTs(base, curr)
 	changeMap := make(map[string]bool)
 	for _, c := range changes {
 		changeMap[c] = true
@@ -285,12 +285,12 @@ type T2 struct{}
 `
 	f, _ := parser.ParseFile(fset, "t.go", code, 0)
 
-	ts, _ := FindTypeSpec(f, "T1")
+	ts, _ := findTypeSpec(f, "T1")
 	if ts == nil || ts.Name.Name != "T1" {
 		t.Error("failed to find T1")
 	}
 
-	ts, _ = FindTypeSpec(f, "NonExistent")
+	ts, _ = findTypeSpec(f, "NonExistent")
 	if ts != nil {
 		t.Error("should not have found NonExistent")
 	}
@@ -327,7 +327,51 @@ func unexportedFunc() {}
 }
 
 func TestGetDeclKey_Unknown(t *testing.T) {
-	if got := GetDeclKey(&ast.BadDecl{}); got != "unknown" {
-		t.Errorf("GetDeclKey(BadDecl) = %s, want unknown", got)
+	if got := getDeclKey(&ast.BadDecl{}); got != "unknown" {
+		t.Errorf("getDeclKey(BadDecl) = %s, want unknown", got)
+	}
+}
+
+func TestGetCachedLineCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "lines.go")
+	content := "package main\n\nfunc main() {\n\t// comment\n}\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cache := newASTCache()
+	info, _ := os.Stat(path)
+
+	// 1. Initially not in cache
+	count, ok := cache.GetCachedLineCount(path, info)
+	if ok {
+		t.Errorf("expected not in cache, but got count %d", count)
+	}
+
+	// 2. Parse and cache
+	_, _, err := cache.Get(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Now it should be in cache
+	count, ok = cache.GetCachedLineCount(path, info)
+	if !ok {
+		t.Error("expected to be in cache")
+	}
+	if count != 5 {
+		t.Errorf("expected 5 lines, got %d", count)
+	}
+
+	// 4. Invalidation check
+	time.Sleep(10 * time.Millisecond)
+	if err := os.WriteFile(path, []byte(content+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	newInfo, _ := os.Stat(path)
+	_, ok = cache.GetCachedLineCount(path, newInfo)
+	if ok {
+		t.Error("expected cache invalidation")
 	}
 }

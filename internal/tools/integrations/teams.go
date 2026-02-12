@@ -22,7 +22,7 @@ type teamsManager struct {
 	client tools.HTTPClient
 }
 
-func NewTeamsManager(sm *security.SecurityManager, client tools.HTTPClient) *teamsManager {
+func newteamsManager(sm *security.SecurityManager, client tools.HTTPClient) *teamsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

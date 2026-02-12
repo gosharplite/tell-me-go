@@ -6,6 +6,7 @@ package cli
 import (
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -14,7 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
-func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]pricing.ModelPricing) *registry.Registry {
+func (c *chatCommand) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]pricing.ModelPricing, bus events.EventBus) *registry.Registry {
 	reg := registry.New()
 
 	tools.RegisterAll(
@@ -27,6 +28,7 @@ func (c *ChatCommand) setupRegistry(client *llm.Client, cfg *config.Config, path
 		pricingOverrides,
 		client,
 		filepath.Join(c.HomeDir, "assets/generated"),
+		bus,
 	)
 
 	return reg

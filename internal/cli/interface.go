@@ -4,14 +4,14 @@
 package cli
 
 import (
-	"context"
+	stdctx "context"
 	"io"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-// Context provides shared dependencies for commands.
-type Context struct {
+// context provides shared dependencies for commands.
+type context struct {
 	Version string
 	Stdin   io.Reader
 	Stdout  io.Writer
@@ -20,10 +20,10 @@ type Context struct {
 	SM      *security.SecurityManager
 }
 
-// Command represents a CLI command that can be executed.
-type Command interface {
-	Execute(ctx context.Context, args []string) error
+// command represents a CLI command that can be executed.
+type command interface {
+	Execute(ctx stdctx.Context, args []string) error
 }
 
-// Factory is a function that creates a Command.
-type Factory func(ctx *Context) Command
+// factory is a function that creates a command.
+type factory func(ctx *context) command

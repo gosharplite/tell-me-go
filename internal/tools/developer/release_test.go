@@ -5,73 +5,32 @@ package developer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
-	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
-type mockFileSystem struct {
-	storage.FileSystem
-	files map[string][]byte
-}
-
-func (m *mockFileSystem) ReadFile(ctx context.Context, name string) ([]byte, error) {
-	if data, ok := m.files[name]; ok {
-		return data, nil
-	}
-	return nil, os.ErrNotExist
-}
-
-func (m *mockFileSystem) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
-	for path, data := range m.files {
-		fullPath := path
-		if root != "." && !filepath.IsAbs(path) {
-			fullPath = filepath.Join(root, path)
-		}
-		// Mock walk: respect root if it's not "."
-		if root != "." {
-			rel, err := filepath.Rel(root, fullPath)
-			if err != nil || strings.HasPrefix(rel, "..") {
-				continue
-			}
-		}
-		info := &mockFileInfo{name: fullPath, size: int64(len(data))}
-		if err := fn(fullPath, info, nil); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-type mockFileInfo struct {
-	os.FileInfo
-	name string
-	size int64
-}
-
-func (m *mockFileInfo) Name() string       { return m.name }
-func (m *mockFileInfo) Size() int64        { return m.size }
-func (m *mockFileInfo) Mode() os.FileMode  { return 0 }
-func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
-func (m *mockFileInfo) IsDir() bool        { return false }
-func (m *mockFileInfo) Sys() interface{}   { return nil }
-
 type mockCommandExecutor struct {
-	workspace.CommandExecutor
-	runFunc func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error)
+	runFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
-func (m *mockCommandExecutor) RunCommand(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
+func (m *mockCommandExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if m.runFunc != nil {
-		return m.runFunc(ctx, parts, config)
+		return m.runFunc(ctx, name, args...)
 	}
-	return workspace.ExecutionResult{ExitCode: 0}, nil
+	return []byte(""), nil
+}
+
+func (m *mockCommandExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if m.runFunc != nil {
+		return m.runFunc(ctx, name, args...)
+	}
+	return []byte(""), nil
 }
 
 func TestVerifyReleaseReadiness_Success(t *testing.T) {
@@ -79,12 +38,11 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
 
-	fs := &mockFileSystem{
-		files: map[string][]byte{
-			filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
-			filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
-			"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
-		},
+	fs := storage.NewMockFileSystem()
+	fs.Files = map[string][]byte{
+		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
+		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
+		"go.mod":                      []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"), // Still needed for DependencyChecker
 	}
 
 	executor := &mockCommandExecutor{}
@@ -114,6 +72,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 		name       string
 		files      func() map[string][]byte
 		exitCode   int
+		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
 		wantSubstr string
 	}{
 		{
@@ -146,16 +105,41 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 			exitCode:   1,
 			wantSubstr: "Clean build failed",
 		},
+		{
+			name: "Linter failure",
+			files: func() map[string][]byte {
+				return map[string][]byte{
+					"go.mod": []byte("module test"),
+				}
+			},
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "golangci-lint" {
+					return []byte("lint error: style"), fmt.Errorf("exit status 1")
+				}
+				return []byte("success"), nil
+			},
+			wantSubstr: "golangci-lint found issues",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := &mockFileSystem{files: tt.files()}
+			fs := storage.NewMockFileSystem()
+			fs.Files = tt.files()
+			runFunc := tt.runFunc
+			if runFunc == nil {
+				runFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+					if tt.exitCode != 0 {
+						// Build or Test fail
+						if name == "go" && (args[0] == "build" || args[0] == "test") {
+							return []byte("failed"), fmt.Errorf("exit status %d", tt.exitCode)
+						}
+					}
+					return []byte("success"), nil
+				}
+			}
 			executor := &mockCommandExecutor{
-				runFunc: func(ctx context.Context, parts []string, config workspace.ExecutionConfig) (workspace.ExecutionResult, error) {
-					// Build and Test are the two commands executed
-					return workspace.ExecutionResult{ExitCode: tt.exitCode, Output: "failed"}, nil
-				},
+				runFunc: runFunc,
 			}
 
 			m := &releaseManager{

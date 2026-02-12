@@ -8,8 +8,8 @@ import (
 )
 
 func TestMainBootstrap(t *testing.T) {
-	// Simple smoke test to ensure Version is defined
-	if Version == "" {
-		t.Error("Version should not be empty")
+	// Simple smoke test to ensure version is defined
+	if version == "" {
+		t.Error("version should not be empty")
 	}
 }

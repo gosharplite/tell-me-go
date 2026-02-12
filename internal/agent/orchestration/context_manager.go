@@ -55,10 +55,14 @@ func NewContextManager(strategy *ContextStrategy, history services.HistoryManage
 	return cm
 }
 
-// Reconfigure updates the context manager's pipeline based on new limits.
+// Reconfigure updates the context manager's pipeline and strategy based on new limits.
 func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	if cm.Strategy != nil {
+		cm.Strategy.setContextWindow(limits.ContextWindow)
+		cm.Strategy.setTieredThreshold(limits.TieredThreshold)
+	}
 	if cm.Factory != nil {
 		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
 	}
@@ -71,13 +75,13 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	contents := cm.History.GetContents()
 	history := make([]*llm.Content, len(contents))
 	for i, c := range contents {
-		history[i] = c.Clone() // Deep clone each element for thread safety
+		history[i] = llm.CloneContent(c) // Deep clone each element for thread safety
 	}
 	pipeline := cm.Pipeline
 	cm.mu.Unlock()
 
 	// Initialize request with snapshot of history
-	req := &Request{
+	req := &request{
 		Turn:    turn,
 		History: history,
 	}
@@ -89,7 +93,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	// We execute the pipeline. Since some transformers might modify history
 	// and want it persisted (Pruner, Gatekeeper), but others only want it
 	// for the API (warningInjector), we handle persistence carefully through the pipeline.
-	err := pipeline.ExecuteWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
 		cm.mu.Lock()
 		defer cm.mu.Unlock()
 
@@ -136,8 +140,8 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 	cm.Pipeline = p
 }
 
-// RegisterToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
-func (cm *ContextManager) RegisterToolRegistry(reg tools.IToolRegistry) {
+// registerToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
+func (cm *ContextManager) registerToolRegistry(reg tools.IToolRegistry) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -165,12 +169,13 @@ func (cm *ContextManager) GetLimits() events.Limits {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	tokens, turns, histTurns := cm.Strategy.GetLimits()
+	tokens, turns, histTurns := cm.Strategy.getLimits()
 	return events.Limits{
 		MaxHistoryTokens: tokens,
 		MaxToolTurns:     turns,
 		MaxHistoryTurns:  histTurns,
 		TieredThreshold:  cm.Strategy.GetTieredThreshold(),
+		ContextWindow:    cm.Strategy.getContextWindow(),
 	}
 }
 
@@ -250,12 +255,12 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	// Deep clone the subset to ensure mutation safety during the slow LLM call
 	subset = make([]*llm.Content, endIdx)
 	for i := 0; i < endIdx; i++ {
-		subset[i] = contents[i].Clone()
+		subset[i] = llm.CloneContent(contents[i])
 	}
 
 	tokens = cm.Strategy.EstimateTokens(subset)
 
-	window := cm.Strategy.GetContextWindow()
+	window := cm.Strategy.getContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
 		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, safetyLimit)
@@ -274,7 +279,7 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	}
 	// Robust check: did the messages we summarized change?
 	for i := range subset {
-		if !currentContents[i].Equal(subset[i]) {
+		if !llm.EqualContent(currentContents[i], subset[i]) {
 			return fmt.Errorf("%w: summarization aborted: history content changed while summarizing", llm.ErrTerminal)
 		}
 	}

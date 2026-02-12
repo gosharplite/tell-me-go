@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -95,7 +96,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 }
 
 func TestWorkerPool_LeakPrevention(t *testing.T) {
-	pool := NewWorkerPool(1)
+	pool := concurrency.NewWorkerPool(1)
 	defer pool.Shutdown()
 
 	ctx, cancel := context.WithCancel(context.Background())

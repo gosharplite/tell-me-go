@@ -19,18 +19,18 @@ func TestIsTransient(t *testing.T) {
 	}{
 		{"nil error", nil, false},
 		{"standard error", errors.New("some error"), false},
-		{"transient agent error", NewAgentError(llm.ErrTransient, "msg", nil), true},
+		{"transient agent error", newAgentError(llm.ErrTransient, "msg", nil), true},
 		{"direct ErrTransient", llm.ErrTransient, true},
-		{"fatal agent error", NewAgentError(llm.ErrTerminal, "msg", nil), false},
-		{"wrapped transient", fmt.Errorf("wrapped: %w", NewAgentError(llm.ErrTransient, "msg", nil)), true},
+		{"fatal agent error", newAgentError(llm.ErrTerminal, "msg", nil), false},
+		{"wrapped transient", fmt.Errorf("wrapped: %w", newAgentError(llm.ErrTransient, "msg", nil)), true},
 		{"llm transient error", llm.ErrTransient, true},
 		{"llm wrapped transient", fmt.Errorf("wrapped: %w", llm.ErrTransient), true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsTransient(tt.err); got != tt.want {
-				t.Errorf("IsTransient() = %v, want %v", got, tt.want)
+			if got := isTransient(tt.err); got != tt.want {
+				t.Errorf("isTransient() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -44,12 +44,12 @@ func TestIsFatal(t *testing.T) {
 	}{
 		{"nil error", nil, false},
 		{"standard error", errors.New("some error"), false},
-		{"fatal agent error", NewAgentError(llm.ErrTerminal, "msg", nil), true},
+		{"fatal agent error", newAgentError(llm.ErrTerminal, "msg", nil), true},
 		{"direct ErrTerminal", llm.ErrTerminal, true},
-		{"direct ErrLogic", ErrLogic, true},
-		{"logic agent error", NewAgentError(ErrLogic, "msg", nil), true},
-		{"transient agent error", NewAgentError(llm.ErrTransient, "msg", nil), false},
-		{"wrapped fatal", fmt.Errorf("wrapped: %w", NewAgentError(llm.ErrTerminal, "msg", nil)), true},
+		{"direct ErrLogic", errLogic, true},
+		{"logic agent error", newAgentError(errLogic, "msg", nil), true},
+		{"transient agent error", newAgentError(llm.ErrTransient, "msg", nil), false},
+		{"wrapped fatal", fmt.Errorf("wrapped: %w", newAgentError(llm.ErrTerminal, "msg", nil)), true},
 		{"llm terminal error", llm.ErrTerminal, true},
 		{"llm budget exceeded", llm.ErrBudgetExceeded, true},
 		{"llm max turns", llm.ErrMaxTurnsReached, true},
@@ -59,8 +59,8 @@ func TestIsFatal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsFatal(tt.err); got != tt.want {
-				t.Errorf("IsFatal() = %v, want %v", got, tt.want)
+			if got := isFatal(tt.err); got != tt.want {
+				t.Errorf("isFatal() = %v, want %v", got, tt.want)
 			}
 		})
 	}
