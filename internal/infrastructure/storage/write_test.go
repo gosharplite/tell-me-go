@@ -76,27 +76,30 @@ func TestAtomicWrite(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				got, err := os.ReadFile(tt.path)
-				if err != nil {
-					t.Errorf("failed to read file: %v", err)
-					return
-				}
-				if string(got) != string(tt.data) {
-					t.Errorf("AtomicWrite() got = %v, want %v", string(got), string(tt.data))
-				}
-
-				info, err := os.Stat(tt.path)
-				if err != nil {
-					t.Errorf("failed to stat file: %v", err)
-					return
-				}
-				// Note: permission check might be tricky on some systems/umasks,
-				// but let's at least check the bits we can.
-				if info.Mode().Perm() != tt.perm {
-					t.Logf("AtomicWrite() perm got = %o, want %o (umask might affect this)", info.Mode().Perm(), tt.perm)
-				}
+				verifyFileState(t, tt.path, tt.data, tt.perm)
 			}
 		})
+	}
+}
+
+func verifyFileState(t *testing.T, path string, expectedData []byte, expectedPerm os.FileMode) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("failed to read file: %v", err)
+		return
+	}
+	if string(got) != string(expectedData) {
+		t.Errorf("AtomicWrite() got = %q, want %q", string(got), string(expectedData))
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Errorf("failed to stat file: %v", err)
+		return
+	}
+	if info.Mode().Perm() != expectedPerm {
+		t.Logf("AtomicWrite() perm got = %o, want %o (umask might affect this)", info.Mode().Perm(), expectedPerm)
 	}
 }
 
