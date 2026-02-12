@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -632,5 +633,42 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	err := a.Chat(ctx, sess, "Hi")
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestAgent_Shutdown(t *testing.T) {
+	// 1. Setup minimal dependencies
+	client := &MockLLMClient{}
+	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
+
+	// 2. Initialize Agent
+	a := New(client, h, reg, sm, false, bus)
+
+	// 3. Define a timeout context for shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 4. Execute Shutdown and assert success
+	err := a.Shutdown(ctx)
+	if err != nil {
+		t.Fatalf("Expected graceful shutdown, got error: %v", err)
+	}
+
+	// 5. Verify that calling shutdown on an already shut down agent 
+	// (or its components) behaves predictably
+	err = a.Shutdown(ctx)
+	if err != nil {
+		t.Errorf("Expected repeated shutdown to be safe, got error: %v", err)
+	}
+}
+
+func TestAgent_Shutdown_NilDeps(t *testing.T) {
+	a := &Agent{}
+	err := a.Shutdown(context.Background())
+	if err != nil {
+		t.Errorf("Expected nil error for nil dependencies, got %v", err)
 	}
 }
