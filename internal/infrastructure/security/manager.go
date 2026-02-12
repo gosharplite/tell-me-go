@@ -237,8 +237,8 @@ func (sm *SecurityManager) removeReadOnlyPath(path string) error {
 	return sm.policy.RemovePath(path, false)
 }
 
-// GetSafetyService returns the domain safety service.
-func (sm *SecurityManager) GetSafetyService() *domain.SafetyService {
+// getSafetyService returns the domain safety service.
+func (sm *SecurityManager) getSafetyService() *domain.SafetyService {
 	return sm.safety
 }
 

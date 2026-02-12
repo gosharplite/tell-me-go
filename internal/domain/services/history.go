@@ -14,7 +14,6 @@ type HistoryManager interface {
 	GetContents() []*llm.Content
 	SetContents(ctx context.Context, contents []*llm.Content) error
 	Snapshot()
-	Rollback(ctx context.Context)
 	AddContent(ctx context.Context, content *llm.Content) error
 	GetResolver() llm.AssetResolver
 	SetPinned(ctx context.Context, turnIndex int, pinned bool) error

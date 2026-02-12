@@ -197,7 +197,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	}
 
 	// Test case: Exactly below threshold (0.9 * contextWindow)
-	window := strategy.GetContextWindow()
+	window := strategy.getContextWindow()
 	counter.tokens = int(float64(window) * 0.89)
 	cm.Summarizer = &mockSummarizer{
 		summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {

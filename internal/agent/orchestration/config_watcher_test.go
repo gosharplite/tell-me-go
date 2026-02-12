@@ -137,21 +137,21 @@ MODELS:
 
 	// Refresh with model-b (NOT in YAML) first to ensure it doesn't pick up model-a's values
 	cw.Refresh("model-b")
-	window := cw.GetContextWindow()
+	window := cw.getContextWindow()
 	if window == 1000 {
 		t.Errorf("model-b should NOT have model-a's context window (1000)")
 	}
 
 	// Now refresh with model-a
 	cw.Refresh("model-a")
-	window = cw.GetContextWindow()
+	window = cw.getContextWindow()
 	if window != 1000 {
 		t.Errorf("expected 1000 context window for model-a, got %d", window)
 	}
 
 	// Switch back to model-b and ensure it goes back to default
 	cw.Refresh("model-b")
-	window = cw.GetContextWindow()
+	window = cw.getContextWindow()
 	if window == 1000 {
 		t.Errorf("model-b should NOT retain model-a's context window after switching back")
 	}

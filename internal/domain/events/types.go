@@ -15,6 +15,7 @@ type Limits struct {
 	MaxToolTurns     int
 	MaxHistoryTurns  int
 	TieredThreshold  int
+	ContextWindow    int
 }
 
 // ConfigUpdated signals that the agent's configuration has changed.

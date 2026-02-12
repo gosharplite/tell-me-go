@@ -194,7 +194,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	a.config.Limits.TieredThreshold = a.configWatcher.GetTieredThreshold()
 
 	if a.strategy != nil {
-		a.strategy.SetContextWindow(a.configWatcher.GetContextWindow())
+		a.configWatcher.SyncToStrategy(a.strategy)
 	}
 
 	cfg := a.config
@@ -239,7 +239,7 @@ func (a *agent) SetHardBudgetLimit(ctx context.Context, limit float64) error {
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
-	a.configWatcher.SetTieredThreshold(threshold)
+	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
 	return a.applyConfig(ctx)
 }
 

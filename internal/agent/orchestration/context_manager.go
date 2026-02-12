@@ -55,10 +55,14 @@ func NewContextManager(strategy *ContextStrategy, history services.HistoryManage
 	return cm
 }
 
-// Reconfigure updates the context manager's pipeline based on new limits.
+// Reconfigure updates the context manager's pipeline and strategy based on new limits.
 func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	if cm.Strategy != nil {
+		cm.Strategy.setContextWindow(limits.ContextWindow)
+		cm.Strategy.setTieredThreshold(limits.TieredThreshold)
+	}
 	if cm.Factory != nil {
 		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
 	}
@@ -171,6 +175,7 @@ func (cm *ContextManager) GetLimits() events.Limits {
 		MaxToolTurns:     turns,
 		MaxHistoryTurns:  histTurns,
 		TieredThreshold:  cm.Strategy.GetTieredThreshold(),
+		ContextWindow:    cm.Strategy.getContextWindow(),
 	}
 }
 
@@ -255,7 +260,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 
 	tokens = cm.Strategy.EstimateTokens(subset)
 
-	window := cm.Strategy.GetContextWindow()
+	window := cm.Strategy.getContextWindow()
 	safetyLimit := int(float64(window) * 0.9)
 	if tokens > safetyLimit {
 		return nil, 0, 0, fmt.Errorf("%w: summarization failed: the selected %d turns contain ~%d tokens, which exceeds the safety limit of %d. Please try summarizing a smaller number of turns", llm.ErrContextLimitExceeded, numTurns, tokens, safetyLimit)

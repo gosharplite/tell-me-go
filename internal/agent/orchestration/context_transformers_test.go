@@ -1066,7 +1066,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(0)
+	strategy.setTieredThreshold(0)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
@@ -1086,7 +1086,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(2000)
+	strategy.setTieredThreshold(2000)
 	tg := &tokenGatekeeper{Estimator: strategy}
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
@@ -1103,7 +1103,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 
 	summarizerCalled := false
 	tg := &tokenGatekeeper{
@@ -1138,7 +1138,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 
 	t.Run("Not enough history", func(t *testing.T) {
 		tg := &tokenGatekeeper{Estimator: strategy}
@@ -1190,7 +1190,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 
 	var publishedEvents []events.Event
 	mockEvents := &mockTransformerEventBus{
@@ -1246,7 +1246,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	ctx := context.Background()
 	counter := &mockTokenCounter{tokens: 1000}
 	strategy := NewContextStrategy(counter, nil)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 
 	tg := &tokenGatekeeper{
 		Estimator: strategy,

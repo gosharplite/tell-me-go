@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
@@ -176,7 +177,7 @@ func (cw *ConfigWatcher) SetLimits(tokens, toolTurns, historyTurns int) {
 	}
 }
 
-func (cw *ConfigWatcher) SetTieredThreshold(threshold int) {
+func (cw *ConfigWatcher) setTieredThreshold(threshold int) {
 	cw.mu.Lock()
 	defer cw.mu.Unlock()
 	if threshold > 0 {
@@ -197,8 +198,36 @@ func (cw *ConfigWatcher) GetTieredThreshold() int {
 	return cw.tieredThreshold
 }
 
-func (cw *ConfigWatcher) GetContextWindow() int {
+func (cw *ConfigWatcher) getContextWindow() int {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	return cw.contextWindow
+}
+
+// ApplyLimits updates the cached limits from an events.Limits struct.
+func (cw *ConfigWatcher) ApplyLimits(l events.Limits) {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	if l.MaxHistoryTokens > 0 {
+		cw.maxHistoryTokens = l.MaxHistoryTokens
+	}
+	if l.MaxToolTurns > 0 {
+		cw.maxToolTurns = l.MaxToolTurns
+	}
+	if l.MaxHistoryTurns > 0 {
+		cw.maxHistoryTurns = l.MaxHistoryTurns
+	}
+	if l.TieredThreshold > 0 {
+		cw.tieredThreshold = l.TieredThreshold
+	}
+}
+
+// SyncToStrategy synchronizes the current watcher state to a ContextStrategy.
+func (cw *ConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
+	cw.mu.RLock()
+	defer cw.mu.RUnlock()
+	if cs != nil {
+		cs.setContextWindow(cw.contextWindow)
+		cs.setTieredThreshold(cw.tieredThreshold)
+	}
 }

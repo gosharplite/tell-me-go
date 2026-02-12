@@ -55,9 +55,8 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 		bus.Subscribe(func(e events.Event) {
 			if cfg, ok := e.(events.ConfigUpdated); ok {
 				cs.SetLimits(cfg.Limits.MaxHistoryTokens, cfg.Limits.MaxToolTurns, cfg.Limits.MaxHistoryTurns)
-				cs.SetTieredThreshold(cfg.Limits.TieredThreshold)
-				// We don't have context window in events.Limits yet, but we could add it if needed.
-				// For now, let's just allow setting it.
+				cs.setTieredThreshold(cfg.Limits.TieredThreshold)
+				cs.setContextWindow(cfg.Limits.ContextWindow)
 			}
 		})
 	}
@@ -65,8 +64,8 @@ func NewContextStrategy(counter llm.TokenCounter, bus events.EventBus) *ContextS
 	return cs
 }
 
-// SetContextWindow updates the model's absolute context window limit.
-func (cs *ContextStrategy) SetContextWindow(window int) {
+// setContextWindow updates the model's absolute context window limit.
+func (cs *ContextStrategy) setContextWindow(window int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if window > 0 {
@@ -74,8 +73,8 @@ func (cs *ContextStrategy) SetContextWindow(window int) {
 	}
 }
 
-// GetContextWindow returns the model's absolute context window limit.
-func (cs *ContextStrategy) GetContextWindow() int {
+// getContextWindow returns the model's absolute context window limit.
+func (cs *ContextStrategy) getContextWindow() int {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.contextWindow
@@ -96,7 +95,7 @@ func (cs *ContextStrategy) SetLimits(historyTokens, toolTurns, historyTurns int)
 	}
 }
 
-func (cs *ContextStrategy) SetTieredThreshold(threshold int) {
+func (cs *ContextStrategy) setTieredThreshold(threshold int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	if threshold >= 0 {

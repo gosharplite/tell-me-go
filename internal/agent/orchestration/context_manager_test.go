@@ -68,7 +68,7 @@ func TestContextManager_RegisterToolRegistry(t *testing.T) {
 func TestContextManager_GetLimits(t *testing.T) {
 	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
 	strategy.SetLimits(1000, 20, 30)
-	strategy.SetTieredThreshold(500)
+	strategy.setTieredThreshold(500)
 	cm := NewContextManager(strategy, &mockHistoryManager{}, nil, nil)
 
 	limits := cm.GetLimits()
@@ -185,14 +185,14 @@ func TestContextManager_SummarizeRange(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "m2"}}},
 	}
 	counter.tokens = 1000
-	strategy.SetContextWindow(500)
+	strategy.setContextWindow(500)
 	_, _, err = cm.SummarizeRange(ctx, 1, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds the safety limit")
 
 	// Reset state
 	counter.tokens = 0
-	strategy.SetContextWindow(1000000)
+	strategy.setContextWindow(1000000)
 
 	// Case 7: Summarizer returns error (Transient)
 	history.contents = []*llm.Content{

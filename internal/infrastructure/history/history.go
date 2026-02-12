@@ -156,8 +156,8 @@ func (m *Manager) Snapshot() {
 	}
 }
 
-// Rollback restores the history to the state before Snapshot was called.
-func (m *Manager) Rollback(ctx context.Context) {
+// rollback restores the history to the state before Snapshot was called.
+func (m *Manager) rollback(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.backup != nil {

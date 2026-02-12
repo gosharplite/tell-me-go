@@ -103,7 +103,7 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 		t.Errorf("expected 2 entries, got %d", len(m.GetContents()))
 	}
 
-	m.Rollback(ctx)
+	m.rollback(ctx)
 	if len(m.GetContents()) != 1 {
 		t.Errorf("expected 1 entry after rollback, got %d", len(m.GetContents()))
 	}
@@ -111,9 +111,9 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 		t.Errorf("expected 'Initial', got '%s'", m.GetContents()[0].Parts[0].Text)
 	}
 
-	// Rollback with no snapshot should do nothing (or at least not crash)
+	// rollback with no snapshot should do nothing (or at least not crash)
 	m3 := NewManager(filepath.Join(tmpDir, "m3.json"))
-	m3.Rollback(ctx)
+	m3.rollback(ctx)
 }
 
 func TestHistoryManager_Interfaces(t *testing.T) {

@@ -22,8 +22,11 @@ type CommandValidator struct {
 func NewCommandValidator(sm SecurityProvider, interactor domain.UserInteractor) *CommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
-		safety = sm.GetSafetyService()
-	} else {
+		if ism, ok := sm.(internalSecurityProvider); ok {
+			safety = ism.getSafetyService()
+		}
+	}
+	if safety == nil {
 		safety = domain.NewSafetyService(domain.DefaultPolicy())
 	}
 	return &CommandValidator{sm: sm, safety: safety, interactor: interactor}
