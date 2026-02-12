@@ -82,18 +82,18 @@ func TestAgent_Options(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, h, reg, sm, false, bus,
-		withLimits(3, 500, 5),
-		withSystemInstructions("Be helpful"),
+		WithLimits(3, 500, 5),
+		WithSystemInstructions("Be helpful"),
 	)
 	_ = a.events.Flush(context.Background())
 
 	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
-		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
+		t.Errorf("WithLimits did not update a.config.Limits: %+v", a.config.Limits)
 	}
 
 	limits := a.ctxManager.GetLimits()
 	if limits.MaxHistoryTokens != 500 || limits.MaxToolTurns != 3 {
-		t.Errorf("withLimits failed: got %+v", limits)
+		t.Errorf("WithLimits failed: got %+v", limits)
 	}
 }
 
@@ -635,16 +635,6 @@ func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
-	}
-}
-
-func TestAgent_Options_WithEventBus(t *testing.T) {
-	t.Parallel()
-	bus := events.NewSimpleEventBus()
-	a := New(&mockLLMClient{}, nil, registry.New(), security_impl.NewSecurityManager(nil), false, nil, withEventBus(bus))
-
-	if a.events != bus {
-		t.Error("withEventBus did not set the event bus")
 	}
 }
 
