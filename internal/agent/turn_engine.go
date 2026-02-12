@@ -50,18 +50,18 @@ type processResult struct {
 	Recovery  bool // Explicit signal that we should enter recovery
 }
 
-// RetryPolicy defines how the engine should handle errors and retries.
-type RetryPolicy interface {
+// retryPolicy defines how the engine should handle errors and retries.
+type retryPolicy interface {
 	ShouldRetry(err error, attempt int) (time.Duration, bool)
 }
 
-// DefaultRetryPolicy provides a standard retry implementation with linear backoff.
-type DefaultRetryPolicy struct {
+// defaultRetryPolicy provides a standard retry implementation with linear backoff.
+type defaultRetryPolicy struct {
 	MaxRetries int
 	Backoff    time.Duration
 }
 
-func (p *DefaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+func (p *defaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
@@ -99,8 +99,8 @@ type turnState struct {
 	TaskCost             float64                 `json:"task_cost"`
 }
 
-// IToolExecutor defines the interface for tool execution.
-type IToolExecutor interface {
+// iToolExecutor defines the interface for tool execution.
+type iToolExecutor interface {
 	Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
 
@@ -127,7 +127,7 @@ type turn struct {
 	State        *turnState
 	CtxManager   *orchestration.ContextManager
 	Gateway      llm.LLMGateway
-	Executor     IToolExecutor
+	executor     iToolExecutor
 	Registry     tools.IToolRegistry
 	Events       events.EventBus
 	MaxToolTurns int
@@ -147,13 +147,13 @@ type turnEngine struct {
 	mu               sync.RWMutex
 	ctxManager       *orchestration.ContextManager
 	gateway          llm.LLMGateway
-	executor         IToolExecutor
+	executor         iToolExecutor
 	registry         tools.IToolRegistry
 	events           events.EventBus
 	processors       map[turnPhase]turnProcessor
 	middleware       []turnMiddleware
 	hooks            []turnHook
-	retryPolicy      RetryPolicy
+	retryPolicy      retryPolicy
 	clock            clock
 	sm               domain_security.ISecurityManager
 	model            string
@@ -162,39 +162,39 @@ type turnEngine struct {
 	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 }
 
-// EngineOption allows configuring the turnEngine.
-type EngineOption func(*turnEngine)
+// engineOption allows configuring the turnEngine.
+type engineOption func(*turnEngine)
 
 // withMiddleware adds middleware to the turnEngine.
-func withMiddleware(m ...turnMiddleware) EngineOption {
+func withMiddleware(m ...turnMiddleware) engineOption {
 	return func(e *turnEngine) {
 		e.middleware = append(e.middleware, m...)
 	}
 }
 
 // WithProcessor registers or overrides a processor for a specific phase.
-func WithProcessor(phase turnPhase, p turnProcessor) EngineOption {
+func WithProcessor(phase turnPhase, p turnProcessor) engineOption {
 	return func(e *turnEngine) {
 		e.processors[phase] = p
 	}
 }
 
 // WithHook adds a lifecycle hook to the turnEngine.
-func WithHook(h turnHook) EngineOption {
+func WithHook(h turnHook) engineOption {
 	return func(e *turnEngine) {
 		e.hooks = append(e.hooks, h)
 	}
 }
 
 // WithRetryPolicy sets the retry policy for the turnEngine.
-func WithRetryPolicy(p RetryPolicy) EngineOption {
+func WithRetryPolicy(p retryPolicy) engineOption {
 	return func(e *turnEngine) {
 		e.retryPolicy = p
 	}
 }
 
 // withClock sets the clock for the turnEngine.
-func withClock(c clock) EngineOption {
+func withClock(c clock) engineOption {
 	return func(e *turnEngine) {
 		e.clock = c
 	}
@@ -202,21 +202,21 @@ func withClock(c clock) EngineOption {
 
 // WithHardBudget sets a maximum session budget in USD.
 // Feature is intended for internal/API use only to maintain a clean UI.
-func WithHardBudget(limit float64) EngineOption {
+func WithHardBudget(limit float64) engineOption {
 	return func(e *turnEngine) {
 		e.HardBudgetLimit = limit
 	}
 }
 
 // WithCostTracker sets the cost tracker for the engine.
-func WithCostTracker(tracker domain_pricing.ICostTracker) EngineOption {
+func WithCostTracker(tracker domain_pricing.ICostTracker) engineOption {
 	return func(e *turnEngine) {
 		e.costTracker = tracker
 	}
 }
 
 // withConfig sets the security and usage configuration for the engine.
-func withConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) EngineOption {
+func withConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
 		e.model = model
@@ -225,7 +225,7 @@ func withConfig(sm domain_security.ISecurityManager, model string, pricingOverri
 }
 
 // ApplyOptions applies new options to the engine.
-func (e *turnEngine) ApplyOptions(opts ...EngineOption) {
+func (e *turnEngine) ApplyOptions(opts ...engineOption) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, opt := range opts {
@@ -234,7 +234,7 @@ func (e *turnEngine) ApplyOptions(opts ...EngineOption) {
 }
 
 // Reconfigure propagates configuration changes to the engine.
-func (e *turnEngine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.ICostTracker) {
+func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICostTracker) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.model = cfg.Model
@@ -244,7 +244,7 @@ func (e *turnEngine) Reconfigure(cfg RuntimeConfig, tracker domain_pricing.ICost
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...EngineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
 		gateway:     gw,
 		executor:    ex,
@@ -252,23 +252,23 @@ func newTurnEngine(gw llm.LLMGateway, ex IToolExecutor, cm *orchestration.Contex
 		registry:    reg,
 		events:      bus,
 		processors:  make(map[turnPhase]turnProcessor),
-		retryPolicy: &DefaultRetryPolicy{MaxRetries: 3, Backoff: 100 * time.Millisecond},
+		retryPolicy: &defaultRetryPolicy{MaxRetries: 3, Backoff: 100 * time.Millisecond},
 		clock:       realClock{},
 	}
 
 	// Register default processors
 	e.processors[phaseRefining] = &contextRefiner{}
-	e.processors[phaseInference] = &InferenceStep{}
-	e.processors[phaseExecuting] = &ExecutionStep{}
-	e.processors[phasePersisting] = &PersistenceStep{}
-	e.processors[phaseRecovering] = &RecoveryStep{Policy: e.retryPolicy}
+	e.processors[phaseInference] = &inferenceStep{}
+	e.processors[phaseExecuting] = &executionStep{}
+	e.processors[phasePersisting] = &persistenceStep{}
+	e.processors[phaseRecovering] = &recoveryStep{Policy: e.retryPolicy}
 
 	for _, opt := range opts {
 		opt(e)
 	}
 
-	// Ensure RecoveryStep uses the (potentially overridden) policy
-	if rs, ok := e.processors[phaseRecovering].(*RecoveryStep); ok {
+	// Ensure recoveryStep uses the (potentially overridden) policy
+	if rs, ok := e.processors[phaseRecovering].(*recoveryStep); ok {
 		rs.Policy = e.retryPolicy
 	}
 
@@ -382,7 +382,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 		State:       &turnState{CurrentTurns: index, Phase: phaseRefining, RetryCount: 0},
 		CtxManager:  e.ctxManager,
 		Gateway:     e.gateway,
-		Executor:    e.executor,
+		executor:    e.executor,
 		Registry:    e.registry,
 		Events:      e.events,
 		Clock:       e.clock,
@@ -499,10 +499,10 @@ func (p *contextRefiner) Process(ctx context.Context, turn *turn) processResult 
 	return processResult{NextPhase: phaseInference}
 }
 
-// InferenceStep calls the LLM.
-type InferenceStep struct{}
+// inferenceStep calls the LLM.
+type inferenceStep struct{}
 
-func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *inferenceStep) Process(ctx context.Context, turn *turn) processResult {
 	start := time.Now()
 	respContent, metrics, err := p.invokeModel(ctx, turn)
 	inferenceDuration := time.Since(start)
@@ -526,7 +526,7 @@ func (p *InferenceStep) Process(ctx context.Context, turn *turn) processResult {
 	return p.routeBasedOnContent(respContent)
 }
 
-func (p *InferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
+func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Content, *llm.Metrics, error) {
 	history := turn.State.PreparedHistory
 	respCh, finalize := turn.Gateway.Generate(ctx, history, turn.Registry.GetDeclarations(), turn.CtxManager.History.GetResolver())
 
@@ -549,7 +549,7 @@ func (p *InferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Conte
 	return respContent, metrics, nil
 }
 
-func (p *InferenceStep) updateState(turn *turn, content *llm.Content, metrics *llm.Metrics) {
+func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *llm.Metrics) {
 	turn.State.Response = content
 	turn.State.Metrics = metrics
 	if metrics != nil {
@@ -559,14 +559,14 @@ func (p *InferenceStep) updateState(turn *turn, content *llm.Content, metrics *l
 	turn.State.HasToolCalls = p.hasToolCalls(content)
 }
 
-func (p *InferenceStep) routeBasedOnContent(content *llm.Content) processResult {
+func (p *inferenceStep) routeBasedOnContent(content *llm.Content) processResult {
 	if p.hasToolCalls(content) {
 		return processResult{NextPhase: phaseExecuting}
 	}
 	return processResult{NextPhase: phasePersisting}
 }
 
-func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
+func (p *inferenceStep) hasToolCalls(content *llm.Content) bool {
 	if content == nil {
 		return false
 	}
@@ -578,17 +578,17 @@ func (p *InferenceStep) hasToolCalls(content *llm.Content) bool {
 	return false
 }
 
-// ExecutionStep executes tools if any.
-type ExecutionStep struct{}
+// executionStep executes tools if any.
+type executionStep struct{}
 
-func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *executionStep) Process(ctx context.Context, turn *turn) processResult {
 	if !turn.State.HasToolCalls {
 		return processResult{NextPhase: phasePersisting}
 	}
 
 	toolStart := turn.Clock.Now()
 
-	toolResponse, err := turn.Executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
+	toolResponse, err := turn.executor.Execute(ctx, turn.State.Response, turn.Index, turn.MaxToolTurns)
 	if err != nil {
 		return processResult{Error: p.handleToolExecutionError(err)}
 	}
@@ -604,7 +604,7 @@ func (p *ExecutionStep) Process(ctx context.Context, turn *turn) processResult {
 	return processResult{NextPhase: phasePersisting}
 }
 
-func (p *ExecutionStep) handleToolExecutionError(err error) error {
+func (p *executionStep) handleToolExecutionError(err error) error {
 	category := llm.ErrTerminal
 	if IsTransient(err) {
 		category = llm.ErrTransient
@@ -612,7 +612,7 @@ func (p *ExecutionStep) handleToolExecutionError(err error) error {
 	return newAgentError(category, "tool execution failed", err)
 }
 
-func (p *ExecutionStep) injectCircuitBreakerWarning(ctx context.Context, turn *turn, toolResponse *llm.Content) {
+func (p *executionStep) injectCircuitBreakerWarning(ctx context.Context, turn *turn, toolResponse *llm.Content) {
 	if toolResponse == nil {
 		return
 	}
@@ -633,10 +633,10 @@ func (p *ExecutionStep) injectCircuitBreakerWarning(ctx context.Context, turn *t
 	}
 }
 
-// PersistenceStep saves the response and tool results to history.
-type PersistenceStep struct{}
+// persistenceStep saves the response and tool results to history.
+type persistenceStep struct{}
 
-func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *persistenceStep) Process(ctx context.Context, turn *turn) processResult {
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := llm.ErrTerminal
@@ -660,12 +660,12 @@ func (p *PersistenceStep) Process(ctx context.Context, turn *turn) processResult
 	return processResult{NextPhase: phaseComplete}
 }
 
-// RecoveryStep handles errors by deciding whether to retry or fail.
-type RecoveryStep struct {
-	Policy RetryPolicy
+// recoveryStep handles errors by deciding whether to retry or fail.
+type recoveryStep struct {
+	Policy retryPolicy
 }
 
-func (p *RecoveryStep) Process(ctx context.Context, turn *turn) processResult {
+func (p *recoveryStep) Process(ctx context.Context, turn *turn) processResult {
 	err := turn.State.LastError
 	if err == nil {
 		return processResult{NextPhase: phaseComplete}
@@ -679,14 +679,14 @@ func (p *RecoveryStep) Process(ctx context.Context, turn *turn) processResult {
 	return p.attemptRetry(ctx, turn, delay)
 }
 
-func (p *RecoveryStep) handleFailure(err error) processResult {
+func (p *recoveryStep) handleFailure(err error) processResult {
 	if IsTransient(err) {
 		return processResult{NextPhase: phaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
 	}
 	return processResult{NextPhase: phaseComplete, Error: err}
 }
 
-func (p *RecoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
+func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.Duration) processResult {
 	turn.State.RetryCount++
 
 	// Publish retry notification to the UI/EventBus

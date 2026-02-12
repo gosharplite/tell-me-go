@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -78,17 +79,13 @@ func (m *mockGateway) RefreshAuth() error { return nil }
 func (m *mockGateway) SetSystemInstructions(instr string) {}
 
 type MockSecurityManager struct {
+	domain_security.ISecurityManager
 	AllowAll bool
 }
 
-func (m *MockSecurityManager) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
-	return true, nil
-}
-func (m *MockSecurityManager) IsPathSafe(path string) (string, error)     { return path, nil }
-func (m *MockSecurityManager) IsPathWritable(path string) (string, error) { return path, nil }
-func (m *MockSecurityManager) TerminalLock()                              {}
-func (m *MockSecurityManager) TerminalUnlock()                            {}
-func (m *MockSecurityManager) IsBypassActive() bool                       { return true }
+func (m *MockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *MockSecurityManager) TerminalLock()                         {}
+func (m *MockSecurityManager) TerminalUnlock()                       {}
 func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }

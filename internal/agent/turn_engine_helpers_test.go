@@ -63,7 +63,7 @@ func (m *MockRegistry) Execute(ctx context.Context, name string, args map[string
 func (m *MockRegistry) IsSerial(name string) bool      { return false }
 func (m *MockRegistry) IsLongRunning(name string) bool { return false }
 
-// MockExecutor implements IToolExecutor for testing.
+// MockExecutor implements iToolExecutor for testing.
 type MockExecutor struct {
 	ExecuteFunc func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error)
 }
@@ -274,13 +274,13 @@ func createProcessorForPhase(phase turnPhase) turnProcessor {
 	case phaseRefining:
 		return &contextRefiner{}
 	case phaseInference:
-		return &InferenceStep{}
+		return &inferenceStep{}
 	case phaseExecuting:
-		return &ExecutionStep{}
+		return &executionStep{}
 	case phasePersisting:
-		return &PersistenceStep{}
+		return &persistenceStep{}
 	case phaseRecovering:
-		return &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
+		return &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
 	}
 	return nil
 }
@@ -312,7 +312,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil),
 		},
 		Gateway: mockGw,
-		Executor: &MockExecutor{
+		executor: &MockExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},

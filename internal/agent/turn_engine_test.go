@@ -561,7 +561,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 				},
 			}
 
-			p := &RecoveryStep{Policy: &DefaultRetryPolicy{MaxRetries: 3}}
+			p := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
 			res := p.Process(ctx, turn)
 
 			if res.Error == nil {
@@ -1144,7 +1144,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 }
 
 func TestDefaultRetryPolicy_Coverage(t *testing.T) {
-	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond}
+	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 10 * time.Millisecond}
 
 	t.Run("Transient error", func(t *testing.T) {
 		err := &agentError{Category: llm.ErrTransient, Message: "retry"}

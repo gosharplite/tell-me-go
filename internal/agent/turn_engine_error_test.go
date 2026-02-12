@@ -42,7 +42,7 @@ func (m *errorMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 	return nil, nil
 }
 
-func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
+func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, tracker *errorPhaseTracker) (*turnEngine, *orchestration.ContextManager) {
 	bus := &events.SimpleEventBus{}
 	reg := &mockToolRegistry{}
 
@@ -56,7 +56,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec IToolExecutor, t
 	}
 	cm := orchestration.NewContextManager(strategy, hManager, bus, factory)
 
-	policy := &DefaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
+	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
 
 	engine := newTurnEngine(gw, exec, cm, reg, bus, WithRetryPolicy(policy), WithHook(tracker))
 

@@ -57,8 +57,8 @@ type Chatter interface {
 	Shutdown(ctx context.Context) error
 }
 
-// RuntimeConfig consolidates all agent configuration parameters.
-type RuntimeConfig struct {
+// runtimeConfig consolidates all agent configuration parameters.
+type runtimeConfig struct {
 	Limits             events.Limits
 	Model              string
 	Mode               string
@@ -81,7 +81,7 @@ type agent struct {
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
 
-	config           RuntimeConfig
+	config           runtimeConfig
 	registerInternal bool
 }
 
@@ -133,7 +133,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
-		config: RuntimeConfig{
+		config: runtimeConfig{
 			Limits: events.Limits{
 				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
 				MaxToolTurns:     config.DefaultMaxToolTurns,
