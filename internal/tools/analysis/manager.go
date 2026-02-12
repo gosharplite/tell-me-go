@@ -77,7 +77,7 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityPr
 		Sequence:   newSequenceAnalyzer(executor, sp, idx),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
-		DeadCode:   newDeadCodeAnalyzer(sp),
+		DeadCode:   newDeadCodeAnalyzer(sp, idx),
 
 		Refactor: newRefactorManager(sp),
 		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},

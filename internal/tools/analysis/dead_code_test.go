@@ -148,8 +148,13 @@ func main() {
 				require.NoError(t, err)
 			}
 
-			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+			idx, err := newIndexer(tmpDir)
+			require.NoError(t, err)
 			ctx := context.Background()
+			err = idx.Refresh(ctx)
+			require.NoError(t, err)
+
+			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
 			args := map[string]interface{}{
 				"path": tmpDir,
 			}
@@ -188,9 +193,13 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
 	ctx := context.Background()
+	err = idx.Refresh(ctx)
+	require.NoError(t, err)
 
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
 	// Exclude pkg2
 	args := map[string]interface{}{
 		"path":              tmpDir,
@@ -221,8 +230,12 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
 	ctx := context.Background()
+	_ = idx.Refresh(ctx) // Might fail due to syntax error, but that's fine
+
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
 	args := map[string]interface{}{
 		"path": tmpDir,
 	}
@@ -239,8 +252,11 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
 
 	// No go.mod created here
 
-	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir})
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
 	ctx := context.Background()
+
+	analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
 	args := map[string]interface{}{
 		"path": tmpDir,
 	}

@@ -20,7 +20,8 @@ import (
 
 // deadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type deadCodeAnalyzer struct {
-	SP security.SecurityProvider
+	SP  security.SecurityProvider
+	idx symbolIndex
 }
 
 // orphanReport represents a single finding of dead or effectively private code.
@@ -50,8 +51,8 @@ type scanState struct {
 	externalUses     map[string]int
 }
 
-func newDeadCodeAnalyzer(sp security.SecurityProvider) *deadCodeAnalyzer {
-	return &deadCodeAnalyzer{SP: sp}
+func newDeadCodeAnalyzer(sp security.SecurityProvider, idx symbolIndex) *deadCodeAnalyzer {
+	return &deadCodeAnalyzer{SP: sp, idx: idx}
 }
 
 // FindOrphanedSymbols identifies exported symbols with zero inbound references within the module.
@@ -89,8 +90,37 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	}
 
 	// Execution Pipeline
-	a.scanForUsages(state)
 	a.harvestExportedSymbols(state)
+
+	// Build a file-to-package map for fast lookup during usage analysis.
+	fileToPkg := make(map[string]string)
+	for _, pkg := range state.pkgs {
+		for _, file := range pkg.GoFiles {
+			fileToPkg[file] = pkg.PkgPath
+		}
+	}
+
+	for id, meta := range state.declarations {
+		if a.idx.IsSymbolUsed(meta.name) {
+			state.totalUses[id] = 1
+
+			// Check for external usages to distinguish DEAD from PRIVATE.
+			allUsages, _ := a.idx.GetUsages(ctx, meta.name, resolvedPath)
+			objBase := getBasePkgPath(meta.pkgPath)
+
+			for _, loc := range allUsages {
+				usagePkg, ok := fileToPkg[loc.Path]
+				if !ok {
+					continue
+				}
+				pkgBase := getBasePkgPath(usagePkg)
+
+				if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
+					state.externalUses[id]++
+				}
+			}
+		}
+	}
 	a.mapInterfaceImplementations(state)
 
 	findings := a.buildReport(state)
@@ -275,30 +305,6 @@ func getBasePkgPath(path string) string {
 	return path
 }
 
-func (a *deadCodeAnalyzer) scanForUsages(state *scanState) {
-	for _, pkg := range state.pkgs {
-		if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
-			continue
-		}
-
-		// Collect usages first (even for non-exported or external symbols)
-		for _, obj := range pkg.TypesInfo.Uses {
-			if obj == nil || obj.Pkg() == nil {
-				continue
-			}
-			id := a.getSymbolIdentity(obj)
-			state.totalUses[id]++
-
-			// Check if this is an "external" use (outside original package or from a test variant)
-			pkgBase := getBasePkgPath(pkg.PkgPath)
-			objBase := getBasePkgPath(obj.Pkg().Path())
-			if pkgBase != objBase || strings.Contains(pkg.PkgPath, ".test]") || strings.HasSuffix(pkg.PkgPath, "_test") {
-				state.externalUses[id]++
-			}
-		}
-	}
-}
-
 func (a *deadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
 	for _, pkg := range state.pkgs {
 		a.harvestPackageSymbols(pkg, state)
@@ -325,6 +331,11 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 		return
 	}
 	if !obj.Exported() || obj.Name() == "init" {
+		return
+	}
+
+	// Exclude Go test functions from being reported as technical debt.
+	if strings.HasPrefix(obj.Name(), "Test") || strings.HasPrefix(obj.Name(), "Benchmark") || strings.HasPrefix(obj.Name(), "Example") {
 		return
 	}
 
