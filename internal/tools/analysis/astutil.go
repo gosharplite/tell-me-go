@@ -30,6 +30,7 @@ type cachedFile struct {
 type astCache struct {
 	mu      sync.RWMutex
 	files   map[string]cachedFile
+	order   []string
 	sf      singleflight.Group
 	maxSize int
 }
@@ -37,6 +38,7 @@ type astCache struct {
 func newASTCache() *astCache {
 	return &astCache{
 		files:   make(map[string]cachedFile),
+		order:   make([]string, 0),
 		maxSize: 1000,
 	}
 }
@@ -77,11 +79,14 @@ func (c *astCache) updateCache(path string, info os.FileInfo, f *ast.File, fset 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Eviction policy
-	if len(c.files) >= c.maxSize {
-		for k := range c.files {
-			delete(c.files, k)
-			break
+	_, exists := c.files[path]
+
+	// Eviction policy: FIFO
+	if !exists && len(c.files) >= c.maxSize {
+		if len(c.order) > 0 {
+			victim := c.order[0]
+			c.order = c.order[1:]
+			delete(c.files, victim)
 		}
 	}
 
@@ -98,6 +103,9 @@ func (c *astCache) updateCache(path string, info os.FileInfo, f *ast.File, fset 
 	}
 
 	c.files[path] = newEntry
+	if !exists {
+		c.order = append(c.order, path)
+	}
 	return newEntry
 }
 
