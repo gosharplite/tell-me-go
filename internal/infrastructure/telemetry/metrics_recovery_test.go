@@ -35,13 +35,13 @@ func TestRecoverLedger_ContextCancellation(t *testing.T) {
 	m := &metricsManager{
 		sm:     sm,
 		model:  "test-model",
-		ledger: NewLedgerStore(sm, "test-model", nil),
+		ledger: newLedgerStore(sm, "test-model", nil),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	m.ledger.RecoverLedger(ctx, tempDir)
+	m.ledger.recoverLedger(ctx, tempDir)
 
 	// The ledger should NOT have been created if it was cancelled immediately
 	historyPath := filepath.Join(tempDir, "global_costs.json")
@@ -71,7 +71,7 @@ func TestRecordCost_UsesContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	record := SessionCostRecord{
+	record := sessionCostRecord{
 		Date:      "2023-10-27",
 		Session:   "test-session",
 		TotalCost: 1.0,
@@ -103,7 +103,7 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 		sm:     sm,
 		model:  "test-model",
 		mode:   "test-mode",
-		ledger: NewLedgerStore(sm, "test-model", nil),
+		ledger: newLedgerStore(sm, "test-model", nil),
 	}
 
 	outputDir := filepath.Join(tempDir, "test-mode")
@@ -111,7 +111,7 @@ func TestRecordCost_RecoveryContinuesOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	record := SessionCostRecord{
+	record := sessionCostRecord{
 		Date:      "2023-10-27",
 		Session:   "test-session",
 		TotalCost: 1.0,
@@ -147,7 +147,7 @@ func TestRecoverLedger_TableDriven(t *testing.T) {
 		setup          func(t *testing.T, baseDir string)
 		expectedCount  int
 		expectedCost   float64
-		validateResult func(t *testing.T, results []SessionCostRecord)
+		validateResult func(t *testing.T, results []sessionCostRecord)
 	}{
 		{
 			name: "Corrupted Log",
@@ -160,7 +160,7 @@ invalid json line
 				require.NoError(t, os.WriteFile(filepath.Join(logDir, "tokens.log"), []byte(content), 0644))
 			},
 			expectedCount: 1,
-			validateResult: func(t *testing.T, results []SessionCostRecord) {
+			validateResult: func(t *testing.T, results []sessionCostRecord) {
 				assert.Equal(t, "mode1/tokens.log", results[0].Session)
 				// 100+200 prompt, 50+100 response.
 				// Pricing for default model is needed to check exact cost.
@@ -198,7 +198,7 @@ invalid json line
 				require.NoError(t, os.WriteFile(filepath.Join(logDir, "tokens.log"), []byte(content), 0644))
 			},
 			expectedCount: 1,
-			validateResult: func(t *testing.T, results []SessionCostRecord) {
+			validateResult: func(t *testing.T, results []sessionCostRecord) {
 				assert.Equal(t, "test-model", results[0].Model)
 			},
 		},
@@ -211,7 +211,7 @@ invalid json line
 				require.NoError(t, os.WriteFile(filepath.Join(deepDir, "tokens.log"), []byte(content), 0644))
 			},
 			expectedCount: 1,
-			validateResult: func(t *testing.T, results []SessionCostRecord) {
+			validateResult: func(t *testing.T, results []sessionCostRecord) {
 				assert.Contains(t, results[0].Session, "backup/2023/11/01/deep/path/mode3/tokens.log")
 			},
 		},
@@ -226,15 +226,15 @@ invalid json line
 
 			sm := security.NewSecurityManager(nil)
 			sm.RegisterSafePath(tempDir)
-			ls := NewLedgerStore(sm, "test-model", nil)
+			ls := newLedgerStore(sm, "test-model", nil)
 
-			ls.RecoverLedger(context.Background(), tempDir)
+			ls.recoverLedger(context.Background(), tempDir)
 
 			historyPath := filepath.Join(tempDir, "global_costs.json")
 			content, err := os.ReadFile(historyPath)
 			require.NoError(t, err)
 
-			var results []SessionCostRecord
+			var results []sessionCostRecord
 			require.NoError(t, json.Unmarshal(content, &results))
 
 			assert.Len(t, results, tt.expectedCount)

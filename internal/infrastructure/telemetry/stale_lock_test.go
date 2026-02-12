@@ -73,7 +73,7 @@ func TestRecordCost_BreaksStaleLock(t *testing.T) {
 		sm: security.NewSecurityManager(nil),
 	}
 
-	record := SessionCostRecord{
+	record := sessionCostRecord{
 		Date:      "2026-02-02",
 		Session:   "test-session",
 		Model:     "test-model",
@@ -131,9 +131,9 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 			Comp: 200.0,
 		},
 	}
-	m.ledger = NewLedgerStore(sm, m.model, m.pricingOverrides)
+	m.ledger = newLedgerStore(sm, m.model, m.pricingOverrides)
 
-	m.ledger.RecoverLedger(context.Background(), globalDir)
+	m.ledger.recoverLedger(context.Background(), globalDir)
 
 	// Wait for background recovery (though here it might be sync if it's small)
 	// Actually recoverLedger is sync when called directly like this, but wait, it uses a sync.Map to prevent double recovery.
@@ -144,7 +144,7 @@ func TestRecoverLedger_DetectedModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var history []SessionCostRecord
+	var history []sessionCostRecord
 	_ = json.Unmarshal(content, &history)
 
 	if len(history) == 0 {

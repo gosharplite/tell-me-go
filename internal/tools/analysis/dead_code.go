@@ -23,8 +23,8 @@ type deadCodeAnalyzer struct {
 	SP security.SecurityProvider
 }
 
-// OrphanReport represents a single finding of dead or effectively private code.
-type OrphanReport struct {
+// orphanReport represents a single finding of dead or effectively private code.
+type orphanReport struct {
 	Symbol   string `json:"symbol"`
 	Pkg      string `json:"package"`
 	Type     string `json:"type"`     // e.g., "Function", "Method", "Type"
@@ -164,7 +164,7 @@ func (a *deadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
 	return nil
 }
 
-func (a *deadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolResult {
+func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolResult {
 	if len(findings) == 0 {
 		return tools.ToolResult{Text: "No dead or effectively private code found."}
 	}
@@ -183,14 +183,14 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []OrphanReport) tools.ToolR
 	return tools.ToolResult{Text: sb.String()}
 }
 
-func (a *deadCodeAnalyzer) buildReport(state *scanState) []OrphanReport {
-	var findings []OrphanReport
+func (a *deadCodeAnalyzer) buildReport(state *scanState) []orphanReport {
+	var findings []orphanReport
 	for id, meta := range state.declarations {
 		total := state.totalUses[id]
 		external := state.externalUses[id]
 
 		if total == 0 {
-			findings = append(findings, OrphanReport{
+			findings = append(findings, orphanReport{
 				Symbol:   meta.name,
 				Pkg:      meta.pkgPath,
 				Type:     meta.symType,
@@ -198,7 +198,7 @@ func (a *deadCodeAnalyzer) buildReport(state *scanState) []OrphanReport {
 				Reason:   "No references found within the module (including interfaces/tests).",
 			})
 		} else if external == 0 {
-			findings = append(findings, OrphanReport{
+			findings = append(findings, orphanReport{
 				Symbol:   meta.name,
 				Pkg:      meta.pkgPath,
 				Type:     meta.symType,

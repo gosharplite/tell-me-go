@@ -28,7 +28,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, err
 	}
 
-	plan := &MovePlan{
+	plan := &movePlan{
 		Symbol:  params.Symbol,
 		SrcFile: params.SrcFile,
 		DstFile: params.DstFile,

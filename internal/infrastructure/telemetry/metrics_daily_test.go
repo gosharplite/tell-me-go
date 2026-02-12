@@ -16,19 +16,19 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 	tests := []struct {
 		name          string
 		totalCost     float64
-		records       []SessionCostRecord
+		records       []sessionCostRecord
 		expectedDaily float64
 	}{
 		{
 			name:          "Empty Ledger",
 			totalCost:     1.50,
-			records:       []SessionCostRecord{},
+			records:       []sessionCostRecord{},
 			expectedDaily: 1.50,
 		},
 		{
 			name:      "Same Day, Different Session",
 			totalCost: 1.50,
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "interactive/session0.tokens.log",
 					TotalCost: 2.00,
@@ -40,7 +40,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 		{
 			name:      "Same Day, Current Session Already Logged",
 			totalCost: 1.50,
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   currentSessionID,
 					TotalCost: 0.50, // Old value in ledger
@@ -57,7 +57,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 		{
 			name:      "Different Day (Yesterday)",
 			totalCost: 1.50,
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "interactive/yesterday.tokens.log",
 					TotalCost: 10.00,
@@ -70,7 +70,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 			name:      "UTC-8 Boundary - Just before midnight UTC",
 			totalCost: 1.50,
 			// Jan 3rd 05:00 UTC is Jan 2nd 21:00 UTC-8
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "interactive/late_session.tokens.log",
 					TotalCost: 5.00,
@@ -83,7 +83,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 			name:      "UTC-8 Boundary - Just after midnight UTC-8",
 			totalCost: 1.50,
 			// Jan 3rd 08:00 UTC is Jan 3rd 00:00 UTC-8
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "interactive/next_day_early.tokens.log",
 					TotalCost: 5.00,
@@ -95,7 +95,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 		{
 			name:      "Backward Compatibility - Date string only",
 			totalCost: 1.50,
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "interactive/legacy.tokens.log",
 					Date:      "2026-01-02",
@@ -107,7 +107,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 		{
 			name:      "Invalid Record - No date or timestamp",
 			totalCost: 1.50,
-			records: []SessionCostRecord{
+			records: []sessionCostRecord{
 				{
 					Session:   "bad_record",
 					TotalCost: 100.0,
@@ -119,7 +119,7 @@ func TestSessionCostTracker_CalculateDailyCost(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tracker := &SessionCostTracker{
+			tracker := &sessionCostTracker{
 				totalCost: tt.totalCost,
 			}
 			got := tracker.calculateDailyCost(tt.records, now, currentSessionID)
@@ -143,7 +143,7 @@ func TestSessionIDConsistency(t *testing.T) {
 	}
 
 	// Test consistency between Tracker and Manager initialization paths
-	tracker := &SessionCostTracker{
+	tracker := &sessionCostTracker{
 		mode:    mode,
 		logFile: logFile,
 	}

@@ -61,7 +61,7 @@ func Hello() {}`,
 				"dst.go": dstFile,
 			}
 
-			plan := &MovePlan{
+			plan := &movePlan{
 				Symbol:  tt.symbol,
 				SrcFile: "src.go",
 				DstFile: "dst.go",

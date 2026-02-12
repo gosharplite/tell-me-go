@@ -10,8 +10,8 @@ import (
 	"os"
 )
 
-// Transform represents a single code transformation.
-type Transform interface {
+// transform represents a single code transformation.
+type transform interface {
 	Apply(ctx context.Context, fset *token.FileSet, files map[string]*ast.File) error
 }
 
@@ -19,7 +19,7 @@ type Transform interface {
 type transaction struct {
 	fset       *token.FileSet
 	files      map[string]*ast.File
-	transforms []Transform
+	transforms []transform
 }
 
 func newTransaction() *transaction {
@@ -29,7 +29,7 @@ func newTransaction() *transaction {
 	}
 }
 
-func (tx *transaction) Add(t Transform) {
+func (tx *transaction) Add(t transform) {
 	tx.transforms = append(tx.transforms, t)
 }
 

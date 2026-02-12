@@ -26,7 +26,7 @@ type typeDefinition struct {
 	Kind     string // "struct", "interface", "alias"
 	Fields   []fieldInfo
 	Methods  []string // Used for interface methods and receiver methods
-	Location string
+	location string
 }
 
 type fieldInfo struct {
@@ -213,10 +213,10 @@ func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]inter
 	return m.wrapResults(results, "No definitions found."), nil
 }
 
-func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc Location) typeDefinition {
+func (m *typeManager) extractDefinition(ts *ast.TypeSpec, gd *ast.GenDecl, loc location) typeDefinition {
 	def := typeDefinition{
 		Name:     ts.Name.Name,
-		Location: fmt.Sprintf("%s:%d", loc.Path, loc.Line),
+		location: fmt.Sprintf("%s:%d", loc.Path, loc.Line),
 	}
 	if gd.Doc != nil {
 		def.Doc = gd.Doc.Text()
@@ -296,7 +296,7 @@ func (m *typeManager) findMethodsInPackage(dir, typeName string) ([]string, erro
 
 func (m *typeManager) renderTypeInfo(def typeDefinition, receivers []string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.Location))
+	sb.WriteString(fmt.Sprintf("Type: %s\nLocation: %s\n", def.Name, def.location))
 	if def.Kind != "" {
 		sb.WriteString(fmt.Sprintf("Kind: %s\n", def.Kind))
 	}

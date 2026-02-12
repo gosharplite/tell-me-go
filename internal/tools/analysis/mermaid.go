@@ -10,14 +10,14 @@ import (
 	"strings"
 )
 
-// StyleRule defines a regex pattern and the CSS class to apply.
-type StyleRule struct {
+// styleRule defines a regex pattern and the CSS class to apply.
+type styleRule struct {
 	Pattern *regexp.Regexp
 	Class   string
 }
 
-// DefaultStyleRules provides a set of regex patterns for Clean Architecture layers.
-var DefaultStyleRules = []StyleRule{
+// DefaultstyleRules provides a set of regex patterns for Clean Architecture layers.
+var DefaultstyleRules = []styleRule{
 	{Pattern: regexp.MustCompile(`.*(api|transport).*`), Class: "transport"},
 	{Pattern: regexp.MustCompile(`.*domain.*`), Class: "domain"},
 	{Pattern: regexp.MustCompile(`.*(infra|tools|security|storage).*`), Class: "infrastructure"},
@@ -114,7 +114,7 @@ func renderStyles(sb *strings.Builder, pkgs []string, cycleEdgeIndices []string)
 	sb.WriteString("  classDef infrastructure fill:#fdd,stroke:#333,stroke-width:2px;\n")
 
 	for _, pkg := range pkgs {
-		for _, rule := range DefaultStyleRules {
+		for _, rule := range DefaultstyleRules {
 			if rule.Pattern.MatchString(pkg) {
 				sb.WriteString(fmt.Sprintf("  class %s %s;\n", sanitize(pkg), rule.Class))
 				break

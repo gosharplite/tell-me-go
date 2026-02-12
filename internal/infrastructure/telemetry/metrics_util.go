@@ -27,8 +27,8 @@ func GetModelPricing(modelName string, pd domain_pricing.PricingData) domain_pri
 	return pd.GetModelPricing(modelName)
 }
 
-// ParseUsage extracts usage statistics and calculates total cost from a log file.
-func ParseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
+// parseUsage extracts usage statistics and calculates total cost from a log file.
+func parseUsage(path string, pd domain_pricing.PricingData, defaultModel string) (domain_pricing.UsageStats, float64, string, time.Time, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return domain_pricing.UsageStats{}, 0, "", time.Time{}, err

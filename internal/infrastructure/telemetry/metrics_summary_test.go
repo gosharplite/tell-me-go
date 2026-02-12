@@ -21,7 +21,7 @@ func TestGetCostSummary_ReportFormat(t *testing.T) {
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
-	history := []SessionCostRecord{
+	history := []sessionCostRecord{
 		{
 			Date:      "2023-10-27",
 			Session:   "session1",
@@ -118,7 +118,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	// 2023-10-27 08:00:00 CST -> 2023-10-26 16:00:00 PST
 	ts := time.Date(2023, 10, 27, 8, 0, 0, 0, time.FixedZone("CST", 8*3600))
 
-	history := []SessionCostRecord{
+	history := []sessionCostRecord{
 		{
 			Date:      "2023-10-27",
 			Timestamp: ts,
@@ -167,7 +167,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	// Timestamp: 2023-10-27 10:00:00 UTC
 	// In UTC-8, this is 2023-10-27 02:00:00.
 	ts2 := time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC)
-	history = append(history, SessionCostRecord{
+	history = append(history, sessionCostRecord{
 		Date:      "2023-10-27",
 		Timestamp: ts2,
 		Session:   "session-utc",
@@ -191,7 +191,7 @@ func TestGetCostSummary_GoogleBilling(t *testing.T) {
 	// 4. Test UTC rollover
 	// Timestamp: 2023-10-27 23:59:59 UTC
 	ts3 := time.Date(2023, 10, 27, 23, 59, 59, 0, time.UTC)
-	history = append(history, SessionCostRecord{
+	history = append(history, sessionCostRecord{
 		Date:      "2023-10-28", // Local date might be different
 		Timestamp: ts3,
 		Session:   "session-rollover",
@@ -232,7 +232,7 @@ func TestGetCostSummary_Filters(t *testing.T) {
 	// 2023-10-27 00:01 UTC-8
 	ts4 := time.Date(2023, 10, 27, 0, 1, 0, 0, tz)
 
-	history := []SessionCostRecord{
+	history := []sessionCostRecord{
 		{Date: "2023-10-25", Timestamp: ts1, Session: "s1", TotalCost: 0.1, Usage: domain_pricing.UsageStats{PromptTokens: 100}},
 		{Date: "2023-10-25", Timestamp: ts2, Session: "s2", TotalCost: 0.2, Usage: domain_pricing.UsageStats{PromptTokens: 200}},
 		{Date: "2023-10-26", Timestamp: ts3, Session: "s3", TotalCost: 0.3, Usage: domain_pricing.UsageStats{PromptTokens: 300}},
@@ -340,7 +340,7 @@ func TestGetCostSummary_MalformedRecords(t *testing.T) {
 	globalDir := tempDir
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 
-	history := []SessionCostRecord{
+	history := []sessionCostRecord{
 		{
 			Date:      "2023-10-27",
 			Timestamp: time.Date(2023, 10, 27, 10, 0, 0, 0, time.UTC),

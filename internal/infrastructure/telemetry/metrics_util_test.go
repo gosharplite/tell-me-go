@@ -91,9 +91,9 @@ func TestParseUsage_Robustness(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := createTempLogFile(t, tt.content)
-			stats, totalCost, model, timestamp, err := ParseUsage(path, pricingData, "gpt-4")
+			stats, totalCost, model, timestamp, err := parseUsage(path, pricingData, "gpt-4")
 			if err != nil {
-				t.Errorf("ParseUsage() unexpected error: %v", err)
+				t.Errorf("parseUsage() unexpected error: %v", err)
 			}
 
 			assertParseResults(t, totalCost, tt.expectedCost, stats, tt.expectedPrompt, tt.expectedResponse, model, tt.expectedModel, timestamp, tt.expectedTime)
@@ -136,7 +136,7 @@ func assertParseResults(t *testing.T, cost, wantCost float64, stats domain_prici
 }
 
 func TestParseUsage_InvalidPath(t *testing.T) {
-	_, _, _, _, err := ParseUsage("non-existent-file.log", domain_pricing.PricingData{}, "gpt-4")
+	_, _, _, _, err := parseUsage("non-existent-file.log", domain_pricing.PricingData{}, "gpt-4")
 	if err == nil {
 		t.Error("expected error for non-existent file, got nil")
 	}
@@ -144,9 +144,9 @@ func TestParseUsage_InvalidPath(t *testing.T) {
 
 func TestParseUsage_EmptyFile(t *testing.T) {
 	path := createTempLogFile(t, "")
-	stats, totalCost, model, timestamp, err := ParseUsage(path, domain_pricing.PricingData{}, "gpt-4")
+	stats, totalCost, model, timestamp, err := parseUsage(path, domain_pricing.PricingData{}, "gpt-4")
 	if err != nil {
-		t.Errorf("ParseUsage() unexpected error: %v", err)
+		t.Errorf("parseUsage() unexpected error: %v", err)
 	}
 
 	assertParseResults(t, totalCost, 0, stats, 0, 0, model, "", timestamp, false)
@@ -164,9 +164,9 @@ func TestParseUsage_LargeLine(t *testing.T) {
 		},
 	}
 
-	stats, totalCost, _, _, err := ParseUsage(path, pricingData, "gpt-4")
+	stats, totalCost, _, _, err := parseUsage(path, pricingData, "gpt-4")
 	if err != nil {
-		t.Fatalf("ParseUsage failed on large line: %v", err)
+		t.Fatalf("parseUsage failed on large line: %v", err)
 	}
 
 	if totalCost != 0.5 {
@@ -189,9 +189,9 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 		},
 	}
 
-	stats, totalCost, _, _, err := ParseUsage(path, pricingData, "gpt-4")
+	stats, totalCost, _, _, err := parseUsage(path, pricingData, "gpt-4")
 	if err != nil {
-		t.Fatalf("ParseUsage failed on very large line: %v", err)
+		t.Fatalf("parseUsage failed on very large line: %v", err)
 	}
 
 	if totalCost != 0.5 {

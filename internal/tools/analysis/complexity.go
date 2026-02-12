@@ -26,7 +26,7 @@ func newComplexityAnalyzer(cache *astCache, sp security.SecurityProvider) *compl
 	}
 }
 
-type FuncComplexity struct {
+type funcComplexity struct {
 	Line       int
 	Name       string
 	Complexity int
@@ -58,8 +58,8 @@ func (a *complexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	return tools.ToolResult{Text: a.formatResults(complexities)}, nil
 }
 
-func (a *complexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]FuncComplexity, error) {
-	var complexities []FuncComplexity
+func (a *complexityAnalyzer) GatherComplexities(ctx context.Context, root string) ([]funcComplexity, error) {
+	var complexities []funcComplexity
 	err := filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		select {
 		case <-ctx.Done():
@@ -77,13 +77,13 @@ func (a *complexityAnalyzer) GatherComplexities(ctx context.Context, root string
 	return complexities, err
 }
 
-func (a *complexityAnalyzer) analyzeFile(filePath string) []FuncComplexity {
+func (a *complexityAnalyzer) analyzeFile(filePath string) []funcComplexity {
 	f, fset, err := a.Cache.Get(filePath)
 	if err != nil {
 		return nil
 	}
 
-	var fileComplexities []FuncComplexity
+	var fileComplexities []funcComplexity
 	for _, decl := range f.Decls {
 		if fd, ok := decl.(*ast.FuncDecl); ok {
 			complexity := calculateComplexity(fd)
@@ -92,7 +92,7 @@ func (a *complexityAnalyzer) analyzeFile(filePath string) []FuncComplexity {
 				recvType := exprToString(fd.Recv.List[0].Type)
 				funcName = fmt.Sprintf("(%s).%s", recvType, funcName)
 			}
-			fileComplexities = append(fileComplexities, FuncComplexity{
+			fileComplexities = append(fileComplexities, funcComplexity{
 				Line:       fset.Position(fd.Pos()).Line,
 				Name:       funcName,
 				Complexity: complexity,
@@ -103,7 +103,7 @@ func (a *complexityAnalyzer) analyzeFile(filePath string) []FuncComplexity {
 	return fileComplexities
 }
 
-func (a *complexityAnalyzer) formatResults(complexities []FuncComplexity) string {
+func (a *complexityAnalyzer) formatResults(complexities []funcComplexity) string {
 	// Sort by complexity descending
 	sort.Slice(complexities, func(i, j int) bool {
 		if complexities[i].Complexity != complexities[j].Complexity {

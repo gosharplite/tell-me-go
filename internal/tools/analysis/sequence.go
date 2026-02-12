@@ -21,7 +21,7 @@ import (
 type sequenceAnalyzer struct {
 	SP        security.SecurityProvider
 	Exec      tools.CommandExecutor
-	Provider  IGoPackageProvider
+	Provider  iGopackageProvider
 	Formatter *mermaidFormatter
 
 	pkgMu    sync.RWMutex
@@ -36,7 +36,7 @@ func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvide
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,
-		Provider:  &RealGoPackageProvider{},
+		Provider:  &realGopackageProvider{},
 		Formatter: newMermaidFormatter(),
 		cacheTTL:  5 * time.Minute,
 	}

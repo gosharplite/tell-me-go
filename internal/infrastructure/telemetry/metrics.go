@@ -26,8 +26,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// SessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
-type SessionCostTracker struct {
+// sessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
+type sessionCostTracker struct {
 	mu        sync.Mutex
 	stats     domain_pricing.UsageStats
 	totalCost float64
@@ -41,8 +41,8 @@ type SessionCostTracker struct {
 }
 
 // NewSessionCostTracker creates a new tracker.
-func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, mode string, modelName string, model domain_pricing.ModelPricing, pricing domain_pricing.PricingData) *SessionCostTracker {
-	return &SessionCostTracker{
+func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, mode string, modelName string, model domain_pricing.ModelPricing, pricing domain_pricing.PricingData) domain_pricing.ICostTracker {
+	return &sessionCostTracker{
 		sm:        sm,
 		logFile:   logFile,
 		mode:      mode,
@@ -53,13 +53,13 @@ func NewSessionCostTracker(sm domain_security.ISecurityManager, logFile string, 
 }
 
 // GetTotalCost returns the accumulated cost.
-func (t *SessionCostTracker) GetTotalCost(ctx context.Context) float64 {
+func (t *sessionCostTracker) GetTotalCost(ctx context.Context) float64 {
 	_, totalCost := t.GetStats(ctx)
 	return totalCost
 }
 
 // GetDailyCost aggregates costs from the global ledger for the current date in UTC-8.
-func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
+func (t *sessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -88,7 +88,7 @@ func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 		return t.totalCost
 	}
 
-	var history []SessionCostRecord
+	var history []sessionCostRecord
 	if err := json.Unmarshal(content, &history); err != nil {
 		log.Printf("Warning: Failed to parse global ledger at %s: %v", historyPath, err)
 		return t.totalCost
@@ -100,7 +100,7 @@ func (t *SessionCostTracker) GetDailyCost(ctx context.Context) float64 {
 	return t.calculateDailyCost(history, time.Now(), currentSessionID)
 }
 
-func (t *SessionCostTracker) calculateDailyCost(records []SessionCostRecord, now time.Time, currentSessionID string) float64 {
+func (t *sessionCostTracker) calculateDailyCost(records []sessionCostRecord, now time.Time, currentSessionID string) float64 {
 	loc := time.FixedZone("UTC-8", -8*3600)
 	today := now.In(loc).Format("2006-01-02")
 
@@ -127,7 +127,7 @@ func (t *SessionCostTracker) calculateDailyCost(records []SessionCostRecord, now
 	return dailyTotal
 }
 
-func (t *SessionCostTracker) getRecordTimestamp(r SessionCostRecord, loc *time.Location) time.Time {
+func (t *sessionCostTracker) getRecordTimestamp(r sessionCostRecord, loc *time.Location) time.Time {
 	ts := r.Timestamp
 	if ts.IsZero() {
 		var err error
@@ -140,14 +140,14 @@ func (t *SessionCostTracker) getRecordTimestamp(r SessionCostRecord, loc *time.L
 }
 
 // GetStats returns the accumulated usage statistics and total cost.
-func (t *SessionCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
+func (t *sessionCostTracker) GetStats(ctx context.Context) (domain_pricing.UsageStats, float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	// If not initiated, we do a synchronous warmup as a fallback,
 	// but normally this should be triggered by Warmup() early.
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -158,11 +158,11 @@ func (t *SessionCostTracker) GetStats(ctx context.Context) (domain_pricing.Usage
 }
 
 // Warmup pre-loads the session state from the log file.
-func (t *SessionCostTracker) Warmup() {
+func (t *sessionCostTracker) Warmup() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.initiated && t.logFile != "" {
-		if usage, totalCost, _, _, err := ParseUsage(t.logFile, t.pricing, t.modelName); err == nil {
+		if usage, totalCost, _, _, err := parseUsage(t.logFile, t.pricing, t.modelName); err == nil {
 			t.stats = usage
 			t.totalCost = totalCost
 		}
@@ -171,7 +171,7 @@ func (t *SessionCostTracker) Warmup() {
 }
 
 // Accumulate adds new turn metrics to the running total.
-func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
+func (t *sessionCostTracker) Accumulate(mt llm.Metrics) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -188,7 +188,7 @@ func (t *SessionCostTracker) Accumulate(mt llm.Metrics) {
 }
 
 // AccumulateAndReturn adds new turn metrics to the running total and returns the cost for this specific turn.
-func (t *SessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
+func (t *sessionCostTracker) AccumulateAndReturn(mt llm.Metrics) float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -216,7 +216,7 @@ type metricsManager struct {
 	model            string
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
-	ledger           *LedgerStore
+	ledger           *ledgerStore
 }
 
 type costSummaryArgs struct {
@@ -236,7 +236,7 @@ func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, 
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
-		ledger:           NewLedgerStore(sm, model, pricingOverrides),
+		ledger:           newLedgerStore(sm, model, pricingOverrides),
 	}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -298,7 +298,7 @@ func RecordSessionCost(ctx context.Context, sm domain_security.ISecurityManager,
 		model:            model,
 		mode:             mode,
 		pricingOverrides: pricingOverrides,
-		ledger:           NewLedgerStore(sm, model, pricingOverrides),
+		ledger:           newLedgerStore(sm, model, pricingOverrides),
 	}
 
 	// 1. Record to global ledger (detailed breakdown)
@@ -328,7 +328,7 @@ func resolveUsageForSummary(ctx context.Context, sm domain_security.ISecurityMan
 		pd.Models[k] = v
 	}
 
-	usage, totalCost, _, _, err := ParseUsage(logPath, pd, model)
+	usage, totalCost, _, _, err := parseUsage(logPath, pd, model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return domain_pricing.UsageStats{}, 0, nil
@@ -373,7 +373,7 @@ func appendSummaryToLog(logPath string, usage domain_pricing.UsageStats, totalCo
 	return nil
 }
 
-func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record SessionCostRecord) {
+func (m *metricsManager) recordCost(ctx context.Context, outputDir string, mode string, record sessionCostRecord) {
 	m.metricsMu.Lock()
 	defer m.metricsMu.Unlock()
 
@@ -412,15 +412,15 @@ func (m *metricsManager) acquireLedgerLock(lockPath string) (*os.File, error) {
 	return lock, err
 }
 
-func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir string) []SessionCostRecord {
-	var history []SessionCostRecord
+func (m *metricsManager) loadHistory(ctx context.Context, historyPath, globalDir string) []sessionCostRecord {
+	var history []sessionCostRecord
 	if content, err := os.ReadFile(historyPath); err == nil {
 		if err := json.Unmarshal(content, &history); err != nil {
 			log.Printf("Warning: Failed to parse ledger %s: %v. Backing up and starting fresh.", historyPath, err)
 			if err := os.Rename(historyPath, historyPath+".bak"); err != nil {
 				log.Printf("Warning: Failed to backup corrupted ledger: %v", err)
 			}
-			return []SessionCostRecord{}
+			return []sessionCostRecord{}
 		}
 	} else if os.IsNotExist(err) && m.ledger != nil {
 		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
@@ -434,12 +434,12 @@ func (m *metricsManager) triggerLedgerRecovery(ctx context.Context, historyPath,
 		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ledgerRecoveryTimeout)
 		go func() {
 			defer cancel()
-			m.ledger.RecoverLedger(bgCtx, globalDir)
+			m.ledger.recoverLedger(bgCtx, globalDir)
 		}()
 	}
 }
 
-func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record SessionCostRecord) {
+func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, globalDir, outputDir string, record sessionCostRecord) {
 	history := m.loadHistory(ctx, historyPath, globalDir)
 	history = upsertRecord(history, record)
 	history = m.applyRetentionPolicy(history, m.loadRetentionDays(outputDir))
@@ -455,7 +455,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 	}
 }
 
-func upsertRecord(history []SessionCostRecord, record SessionCostRecord) []SessionCostRecord {
+func upsertRecord(history []sessionCostRecord, record sessionCostRecord) []sessionCostRecord {
 	found := false
 	for i, r := range history {
 		if r.Session == record.Session {
@@ -516,7 +516,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 	}
 
 	// 1. Parse usage from log
-	usage, totalCost, detectedModel, timestamp, err := ParseUsage(resolvedLog, pd, m.model)
+	usage, totalCost, detectedModel, timestamp, err := parseUsage(resolvedLog, pd, m.model)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "Error: Log file not found. Ensure you have made at least one request.", nil
@@ -543,7 +543,7 @@ func (m *metricsManager) EstimateCost(ctx context.Context, shouldRecord bool, se
 			timestamp = time.Now()
 		}
 		loc := time.FixedZone("UTC-8", -8*3600)
-		m.recordCost(ctx, outputDir, m.mode, SessionCostRecord{
+		m.recordCost(ctx, outputDir, m.mode, sessionCostRecord{
 			Date:      timestamp.In(loc).Format("2006-01-02"),
 			Timestamp: timestamp,
 			Session:   sessionID,
@@ -594,12 +594,12 @@ func (m *metricsManager) loadRetentionDays(outputDir string) int {
 	return retentionDays
 }
 
-func (m *metricsManager) applyRetentionPolicy(history []SessionCostRecord, retentionDays int) []SessionCostRecord {
+func (m *metricsManager) applyRetentionPolicy(history []sessionCostRecord, retentionDays int) []sessionCostRecord {
 	if retentionDays <= 0 {
 		return history
 	}
 	cutoff := time.Now().AddDate(0, 0, -retentionDays).Format("2006-01-02")
-	filtered := make([]SessionCostRecord, 0, len(history))
+	filtered := make([]sessionCostRecord, 0, len(history))
 	for _, r := range history {
 		if r.Date >= cutoff {
 			filtered = append(filtered, r)
@@ -608,7 +608,7 @@ func (m *metricsManager) applyRetentionPolicy(history []SessionCostRecord, reten
 	return filtered
 }
 
-func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, globalDir string) ([]SessionCostRecord, string, error) {
+func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, globalDir string) ([]sessionCostRecord, string, error) {
 	// SOP: Auto-recovery of missing ledger
 	if _, err := os.Stat(historyPath); os.IsNotExist(err) {
 		m.triggerLedgerRecovery(ctx, historyPath, globalDir)
@@ -624,7 +624,7 @@ func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, glo
 		return nil, "No cost history found yet. Run 'estimate_cost' to record your first session.", nil
 	}
 
-	var history []SessionCostRecord
+	var history []sessionCostRecord
 	if err := json.Unmarshal(content, &history); err != nil {
 		return nil, "Error parsing cost history. The file may be corrupted.", err
 	}
@@ -632,7 +632,7 @@ func (m *metricsManager) ensureLedgerReady(ctx context.Context, historyPath, glo
 	return history, "", nil
 }
 
-func (m *metricsManager) getRecordTimestamp(r SessionCostRecord) time.Time {
+func (m *metricsManager) getRecordTimestamp(r sessionCostRecord) time.Time {
 	ts := r.Timestamp
 	if ts.IsZero() {
 		var err error
@@ -663,7 +663,7 @@ func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Locati
 	return startFilter, endFilter, nil
 }
 
-func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]domain_pricing.UsageStats) {
+func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]domain_pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
 	intervalUsage := make(map[string]domain_pricing.UsageStats)
 
@@ -695,7 +695,7 @@ func (m *metricsManager) aggregateHistory(history []SessionCostRecord, start, en
 	return intervalTotals, intervalUsage
 }
 
-func (m *metricsManager) aggregateCosts(history []SessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]domain_pricing.UsageStats, []string, *time.Location, error) {
+func (m *metricsManager) aggregateCosts(history []sessionCostRecord, args costSummaryArgs) (map[string]float64, map[string]domain_pricing.UsageStats, []string, *time.Location, error) {
 	location := time.Local
 	if args.Billing {
 		location = time.FixedZone("UTC-8", -8*3600)
@@ -782,8 +782,8 @@ func generateSessionID(mode, logFile string) string {
 	return filepath.ToSlash(filepath.Join(mode, filepath.Base(logFile)))
 }
 
-// LogTrace writes a TurnTrace to a trace log file.
-func LogTrace(logFile string, trace *domain_telemetry.TurnTrace) {
+// logTrace writes a TurnTrace to a trace log file.
+func logTrace(logFile string, trace *domain_telemetry.TurnTrace) {
 	if logFile == "" || trace == nil {
 		return
 	}
@@ -814,7 +814,7 @@ func RegisterTraceSubscriber(bus events.EventBus, logFile string) {
 	}
 	bus.Subscribe(func(e events.Event) {
 		if te, ok := e.(events.TraceEvent); ok {
-			LogTrace(logFile, te.Trace)
+			logTrace(logFile, te.Trace)
 		}
 	})
 }

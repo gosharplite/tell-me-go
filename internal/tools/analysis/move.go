@@ -7,21 +7,21 @@ import (
 	"go/token"
 )
 
-type MovePlan struct {
+type movePlan struct {
 	Symbol  string
 	SrcFile string
 	DstFile string
 }
 
-func (p *MovePlan) Description() string {
+func (p *movePlan) Description() string {
 	return fmt.Sprintf("Move %s from %s to %s", p.Symbol, p.SrcFile, p.DstFile)
 }
 
 type moveTransform struct {
-	Plan *MovePlan
+	Plan *movePlan
 }
 
-func newMoveTransform(plan *MovePlan) *moveTransform {
+func newMoveTransform(plan *movePlan) *moveTransform {
 	return &moveTransform{Plan: plan}
 }
 

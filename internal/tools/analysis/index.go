@@ -14,24 +14,24 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// Location represents a position in a source file.
-type Location struct {
+// location represents a position in a source file.
+type location struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
 	Column int    `json:"column"`
 }
 
-// SymbolLocation extends Location with symbol metadata.
-type SymbolLocation struct {
-	Location
+// symbolLocation extends location with symbol metadata.
+type symbolLocation struct {
+	location
 	Name      string `json:"name"`
 	Kind      string `json:"kind"` // "func", "type", "var", "const"
 	Signature string `json:"signature,omitempty"`
 	Receiver  string `json:"receiver,omitempty"` // For methods
 }
 
-// TypeName represents a fully qualified type name.
-type TypeName struct {
+// typeName represents a fully qualified type name.
+type typeName struct {
 	PkgPath string `json:"pkg_path"`
 	Name    string `json:"name"`
 }
@@ -39,13 +39,13 @@ type TypeName struct {
 // SymbolIndex provides methods to query symbols and their relationships in a Go workspace.
 type symbolIndex interface {
 	// Lookup returns the locations where the given symbol is defined.
-	Lookup(ctx context.Context, symbol string) ([]Location, error)
+	Lookup(ctx context.Context, symbol string) ([]location, error)
 	// FindImplementors returns the types that implement the given interface.
-	FindImplementors(ctx context.Context, interfaceName string) ([]TypeName, error)
+	FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error)
 	// SearchSymbols searches for symbols matching the query in the given path.
-	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]SymbolLocation, error)
+	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error)
 	// GetUsages returns all locations where the given symbol name is used.
-	GetUsages(ctx context.Context, symbol string, path string) ([]Location, error)
+	GetUsages(ctx context.Context, symbol string, path string) ([]location, error)
 	// Refresh re-scans the workspace to update the index.
 	Refresh(ctx context.Context) error
 }
@@ -57,8 +57,8 @@ type indexer struct {
 	mu   sync.RWMutex
 	pkgs []*packages.Package
 
-	symbolsByPath map[string][]SymbolLocation
-	usagesByName  map[string][]Location
+	symbolsByPath map[string][]symbolLocation
+	usagesByName  map[string][]location
 	lastRefresh   time.Time
 	refreshMu     sync.Mutex // For serializing Refresh calls
 }
@@ -69,8 +69,8 @@ func newIndexer(dir string) (*indexer, error) {
 	return &indexer{
 		dir:           dir,
 		fset:          token.NewFileSet(),
-		symbolsByPath: make(map[string][]SymbolLocation),
-		usagesByName:  make(map[string][]Location),
+		symbolsByPath: make(map[string][]symbolLocation),
+		usagesByName:  make(map[string][]location),
 	}, nil
 }
 
@@ -107,21 +107,21 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (idx *indexer) toLocation(pos token.Pos) Location {
+func (idx *indexer) toLocation(pos token.Pos) location {
 	p := idx.fset.Position(pos)
 	abs, _ := filepath.Abs(p.Filename)
-	return Location{
+	return location{
 		Path:   abs,
 		Line:   p.Line,
 		Column: p.Column,
 	}
 }
 
-func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]Location, error) {
+func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]location, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	var locations []Location
+	var locations []location
 	for _, pkg := range idx.pkgs {
 		obj := pkg.Types.Scope().Lookup(symbol)
 		if obj != nil {
@@ -131,7 +131,7 @@ func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]Location, erro
 	return locations, nil
 }
 
-func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) ([]TypeName, error) {
+func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -153,7 +153,7 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 		return nil, fmt.Errorf("interface %s not found", interfaceName)
 	}
 
-	var implementors []TypeName
+	var implementors []typeName
 	for _, pkg := range idx.pkgs {
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
@@ -163,7 +163,7 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 			}
 
 			if types.Implements(obj.Type(), iface) || types.Implements(types.NewPointer(obj.Type()), iface) {
-				implementors = append(implementors, TypeName{
+				implementors = append(implementors, typeName{
 					PkgPath: pkg.PkgPath,
 					Name:    name,
 				})
@@ -174,7 +174,7 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 	return implementors, nil
 }
 
-func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]SymbolLocation, error) {
+func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -183,7 +183,7 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 		searchPath = path
 	}
 
-	var results []SymbolLocation
+	var results []symbolLocation
 	query = strings.ToLower(query)
 
 	for p, syms := range idx.symbolsByPath {
@@ -205,7 +205,7 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 	return results, nil
 }
 
-func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]Location, error) {
+func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -214,7 +214,7 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 		searchPath = path
 	}
 
-	var results []Location
+	var results []location
 	usages, ok := idx.usagesByName[symbol]
 	if !ok {
 		return nil, nil
@@ -238,16 +238,16 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 
 type harvester struct {
 	fset          *token.FileSet
-	symbolsByPath map[string][]SymbolLocation
-	usagesByName  map[string][]Location
+	symbolsByPath map[string][]symbolLocation
+	usagesByName  map[string][]location
 	currentPath   string
 }
 
 func newHarvester(fset *token.FileSet) *harvester {
 	return &harvester{
 		fset:          fset,
-		symbolsByPath: make(map[string][]SymbolLocation),
-		usagesByName:  make(map[string][]Location),
+		symbolsByPath: make(map[string][]symbolLocation),
+		usagesByName:  make(map[string][]location),
 	}
 }
 
@@ -285,8 +285,8 @@ func (h *harvester) handleValueSpec(d *ast.GenDecl, s *ast.ValueSpec) {
 	}
 	for _, name := range s.Names {
 		loc := h.toLocation(name.Pos())
-		h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
-			Location: loc,
+		h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], symbolLocation{
+			location: loc,
 			Name:     name.Name,
 			Kind:     kind,
 		})
@@ -295,8 +295,8 @@ func (h *harvester) handleValueSpec(d *ast.GenDecl, s *ast.ValueSpec) {
 
 func (h *harvester) handleTypeSpec(s *ast.TypeSpec) {
 	loc := h.toLocation(s.Name.Pos())
-	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
-		Location: loc,
+	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], symbolLocation{
+		location: loc,
 		Name:     s.Name.Name,
 		Kind:     "type",
 	})
@@ -310,8 +310,8 @@ func (h *harvester) handleFuncDecl(d *ast.FuncDecl) {
 		recv = exprToString(d.Recv.List[0].Type)
 	}
 	loc := h.toLocation(d.Name.Pos())
-	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], SymbolLocation{
-		Location:  loc,
+	h.symbolsByPath[h.currentPath] = append(h.symbolsByPath[h.currentPath], symbolLocation{
+		location:  loc,
 		Name:      d.Name.Name,
 		Kind:      kind,
 		Signature: sig,
@@ -324,10 +324,10 @@ func (h *harvester) handleIdent(d *ast.Ident) {
 	h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
 }
 
-func (h *harvester) toLocation(pos token.Pos) Location {
+func (h *harvester) toLocation(pos token.Pos) location {
 	p := h.fset.Position(pos)
 	// Optimization: use h.currentPath which is already absolute
-	return Location{
+	return location{
 		Path:   h.currentPath,
 		Line:   p.Line,
 		Column: p.Column,

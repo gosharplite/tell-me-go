@@ -10,12 +10,12 @@ import (
 	"testing"
 )
 
-type mockPackageProvider struct {
+type mockpackageProvider struct {
 	pkgs map[string][]string
 	err  error
 }
 
-func (m *mockPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+func (m *mockpackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
 	return m.pkgs, m.err
 }
 
@@ -38,7 +38,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 				"github.com/gosharplite/tell-me-go/internal/a", // Circular
 			},
 		}
-		m.Loader = &mockPackageProvider{pkgs: pkgs}
+		m.Loader = &mockpackageProvider{pkgs: pkgs}
 		res, err := m.VerifyArchitecture(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("VerifyArchitecture failed: %v", err)
@@ -55,7 +55,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 		pkgs := map[string][]string{
 			"github.com/gosharplite/tell-me-go/internal/domain": {},
 		}
-		m.Loader = &mockPackageProvider{pkgs: pkgs}
+		m.Loader = &mockpackageProvider{pkgs: pkgs}
 		res, err := m.VerifyArchitecture(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("VerifyArchitecture failed: %v", err)
@@ -66,7 +66,7 @@ func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
 	})
 
 	t.Run("load error", func(t *testing.T) {
-		m.Loader = &mockPackageProvider{err: fmt.Errorf("load error")}
+		m.Loader = &mockpackageProvider{err: fmt.Errorf("load error")}
 		_, err := m.VerifyArchitecture(context.Background(), nil)
 		if err == nil {
 			t.Error("expected error")

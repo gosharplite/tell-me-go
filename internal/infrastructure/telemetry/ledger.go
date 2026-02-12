@@ -20,8 +20,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// SessionCostRecord represents a single session's financial footprint.
-type SessionCostRecord struct {
+// sessionCostRecord represents a single session's financial footprint.
+type sessionCostRecord struct {
 	Date      string                    `json:"date"`      // Keep for backward compatibility
 	Timestamp time.Time                 `json:"timestamp"` // New source of truth
 	Session   string                    `json:"session"`
@@ -38,16 +38,16 @@ var (
 
 const ledgerRecoveryTimeout = 10 * time.Minute
 
-// LedgerStore handles persistence and recovery of cost metrics.
-type LedgerStore struct {
+// ledgerStore handles persistence and recovery of cost metrics.
+type ledgerStore struct {
 	sm               domain_security.ISecurityManager
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 }
 
-// NewLedgerStore creates a new LedgerStore.
-func NewLedgerStore(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) *LedgerStore {
-	return &LedgerStore{
+// newLedgerStore creates a new ledgerStore.
+func newLedgerStore(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) *ledgerStore {
+	return &ledgerStore{
 		sm:               sm,
 		model:            model,
 		pricingOverrides: pricingOverrides,
@@ -62,8 +62,8 @@ func isStale(path string) bool {
 	return false
 }
 
-// RecoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
-func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
+// recoverLedger crawls backups and mode directories to reconstruct a missing global_costs.json.
+func (ls *ledgerStore) recoverLedger(ctx context.Context, globalDir string) {
 	historyPath := filepath.Join(globalDir, "global_costs.json")
 	if !ls.tryStartRecovery(historyPath) {
 		return
@@ -86,20 +86,20 @@ func (ls *LedgerStore) RecoverLedger(ctx context.Context, globalDir string) {
 }
 
 // tryStartRecovery attempts to mark the ledger recovery as in-progress.
-func (ls *LedgerStore) tryStartRecovery(historyPath string) bool {
+func (ls *ledgerStore) tryStartRecovery(historyPath string) bool {
 	_, loaded := recoveryInProgress.LoadOrStore(historyPath, true)
 	return !loaded
 }
 
 // loadExistingSessionIDs reads the existing ledger and extracts already processed session IDs.
-func (ls *LedgerStore) loadExistingSessionIDs(historyPath string) map[string]bool {
+func (ls *ledgerStore) loadExistingSessionIDs(historyPath string) map[string]bool {
 	seen := make(map[string]bool)
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return seen
 	}
 
-	var existing []SessionCostRecord
+	var existing []sessionCostRecord
 	if err := json.Unmarshal(content, &existing); err != nil {
 		log.Printf("Warning: Failed to parse existing ledger during recovery: %v", err)
 		return seen
@@ -112,7 +112,7 @@ func (ls *LedgerStore) loadExistingSessionIDs(historyPath string) map[string]boo
 }
 
 // getPricingWithOverrides fetches the latest pricing data and applies any local overrides.
-func (ls *LedgerStore) getPricingWithOverrides(ctx context.Context, globalDir string) domain_pricing.PricingData {
+func (ls *ledgerStore) getPricingWithOverrides(ctx context.Context, globalDir string) domain_pricing.PricingData {
 	pricing := GetPricing(ctx, ls.sm, globalDir)
 	for k, v := range ls.pricingOverrides {
 		pricing.Models[k] = v
@@ -121,8 +121,8 @@ func (ls *LedgerStore) getPricingWithOverrides(ctx context.Context, globalDir st
 }
 
 // discoverNewRecords scans the list of log files for new sessions not yet in the ledger.
-func (ls *LedgerStore) discoverNewRecords(ctx context.Context, files []string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) []SessionCostRecord {
-	var discovered []SessionCostRecord
+func (ls *ledgerStore) discoverNewRecords(ctx context.Context, files []string, globalDir string, seen map[string]bool, pricing domain_pricing.PricingData) []sessionCostRecord {
+	var discovered []sessionCostRecord
 	for _, path := range files {
 		if ctx.Err() != nil {
 			break
@@ -155,7 +155,7 @@ func (ls *LedgerStore) discoverNewRecords(ctx context.Context, files []string, g
 	return discovered
 }
 
-func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
+func (ls *ledgerStore) findLogFiles(globalDir string) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(globalDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -173,7 +173,7 @@ func (ls *LedgerStore) findLogFiles(globalDir string) ([]string, error) {
 	return files, err
 }
 
-func (ls *LedgerStore) getSessionID(path, globalDir string) string {
+func (ls *ledgerStore) getSessionID(path, globalDir string) string {
 	rel, err := filepath.Rel(globalDir, path)
 	if err != nil {
 		return path // Fallback
@@ -186,10 +186,10 @@ func (ls *LedgerStore) getSessionID(path, globalDir string) string {
 	return sessionID
 }
 
-func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing domain_pricing.PricingData) (*SessionCostRecord, error) {
+func (ls *ledgerStore) processLogFile(path string, info os.FileInfo, globalDir string, pricing domain_pricing.PricingData) (*sessionCostRecord, error) {
 	sessionID := ls.getSessionID(path, globalDir)
 
-	usage, totalCost, detectedModel, timestamp, err := ParseUsage(path, pricing, ls.model)
+	usage, totalCost, detectedModel, timestamp, err := parseUsage(path, pricing, ls.model)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir s
 		timestamp = info.ModTime()
 	}
 
-	return &SessionCostRecord{
+	return &sessionCostRecord{
 		Date:      date,
 		Timestamp: timestamp,
 		Session:   sessionID,
@@ -222,7 +222,7 @@ func (ls *LedgerStore) processLogFile(path string, info os.FileInfo, globalDir s
 	}, nil
 }
 
-func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath string, newRecords []SessionCostRecord) {
+func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath string, newRecords []sessionCostRecord) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
 
@@ -242,7 +242,7 @@ func (ls *LedgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	}
 }
 
-func (ls *LedgerStore) acquireLedgerLock(historyPath string) (*os.File, error) {
+func (ls *ledgerStore) acquireLedgerLock(historyPath string) (*os.File, error) {
 	lockPath := historyPath + ".lock"
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil && os.IsExist(err) {
@@ -256,7 +256,7 @@ func (ls *LedgerStore) acquireLedgerLock(historyPath string) (*os.File, error) {
 	return f, err
 }
 
-func (ls *LedgerStore) releaseLedgerLock(historyPath string, f *os.File) {
+func (ls *ledgerStore) releaseLedgerLock(historyPath string, f *os.File) {
 	lockPath := historyPath + ".lock"
 	if f != nil {
 		if err := f.Close(); err != nil {
@@ -270,8 +270,8 @@ func (ls *LedgerStore) releaseLedgerLock(historyPath string, f *os.File) {
 	}
 }
 
-func (ls *LedgerStore) readExistingRecords(historyPath string) []SessionCostRecord {
-	var history []SessionCostRecord
+func (ls *ledgerStore) readExistingRecords(historyPath string) []sessionCostRecord {
+	var history []sessionCostRecord
 	content, err := os.ReadFile(historyPath)
 	if err != nil {
 		return history
@@ -282,8 +282,8 @@ func (ls *LedgerStore) readExistingRecords(historyPath string) []SessionCostReco
 	return history
 }
 
-func (ls *LedgerStore) mergeRecords(history []SessionCostRecord, newRecords []SessionCostRecord) []SessionCostRecord {
-	mergedMap := make(map[string]SessionCostRecord)
+func (ls *ledgerStore) mergeRecords(history []sessionCostRecord, newRecords []sessionCostRecord) []sessionCostRecord {
+	mergedMap := make(map[string]sessionCostRecord)
 	for _, r := range history {
 		mergedMap[r.Session] = r
 	}
@@ -291,7 +291,7 @@ func (ls *LedgerStore) mergeRecords(history []SessionCostRecord, newRecords []Se
 		mergedMap[r.Session] = r
 	}
 
-	merged := make([]SessionCostRecord, 0, len(mergedMap))
+	merged := make([]sessionCostRecord, 0, len(mergedMap))
 	for _, r := range mergedMap {
 		merged = append(merged, r)
 	}

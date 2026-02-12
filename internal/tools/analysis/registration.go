@@ -342,7 +342,7 @@ func Register(r *registry.Registry, sm *security.SecurityManager, bus events.Eve
 	// Visualization Tools
 	r.Register(&tools.ToolDeclaration{
 		Name:        "generate_mermaid_diagram",
-		Description: "Transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
+		Description: "transform a package dependency graph into Mermaid.js 'graph TD' syntax.",
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
