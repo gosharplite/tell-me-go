@@ -20,8 +20,8 @@ func NewInternalTools(cm *ContextManager) *InternalTools {
 	return &InternalTools{ctxManager: cm}
 }
 
-// SummarizeHistory wraps ContextManager.SummarizeRange as a tool.
-func (t *InternalTools) SummarizeHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+// summarizeHistory wraps ContextManager.SummarizeRange as a tool.
+func (t *InternalTools) summarizeHistory(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Turns float64 `json:"turns"`
 		Focus string  `json:"focus"`
@@ -100,7 +100,7 @@ func RegisterInternal(r tools.IToolRegistry, cm *ContextManager) {
 			},
 			Required: []string{"turns"},
 		},
-	}, it.SummarizeHistory)
+	}, it.summarizeHistory)
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "manage_history",

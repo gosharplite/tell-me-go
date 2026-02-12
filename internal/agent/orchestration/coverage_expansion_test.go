@@ -33,14 +33,14 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		req         *Request
+		req         *request
 		pipeline    []services.ContextTransformer
 		persistFn   func(context.Context, []*llm.Content) error
 		expectedErr error
 	}{
 		{
 			name: "Error in canonical transformer",
-			req:  &Request{},
+			req:  &request{},
 			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10, err: transformErr},
 			},
@@ -48,7 +48,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "Error in transient transformer",
-			req:  &Request{},
+			req:  &request{},
 			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 150, err: transformErr},
 			},
@@ -56,7 +56,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "Error in persistence",
-			req:  &Request{PersistHistory: true},
+			req:  &request{PersistHistory: true},
 			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 				&mockExpTransformer{priority: 150},
@@ -68,7 +68,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		},
 		{
 			name: "No persist function, no error",
-			req:  &Request{PersistHistory: true},
+			req:  &request{PersistHistory: true},
 			pipeline: []services.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 			},
@@ -121,7 +121,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bus.events = nil
-			err := tg.validateHardLimits(context.Background(), &Request{}, tt.tokens)
+			err := tg.validateHardLimits(context.Background(), &request{}, tt.tokens)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				assert.NotEmpty(t, bus.events)
@@ -134,7 +134,7 @@ func TestTokenGatekeeper_ValidateHardLimits_Boundaries(t *testing.T) {
 
 	// MaxTokens <= 0 case
 	tg.MaxTokens = 0
-	assert.NoError(t, tg.validateHardLimits(context.Background(), &Request{}, 9999))
+	assert.NoError(t, tg.validateHardLimits(context.Background(), &request{}, 9999))
 }
 
 func TestTokenGatekeeper_LocateCandidateBlock_EdgeCases(t *testing.T) {
@@ -211,18 +211,18 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 
 	// Case 1: MaxTokens <= 0
 	tg.MaxTokens = 0
-	tokens, err := tg.handleSafetyPressure(context.Background(), &Request{}, 2000)
+	tokens, err := tg.handleSafetyPressure(context.Background(), &request{}, 2000)
 	assert.NoError(t, err)
 	assert.Equal(t, 2000, tokens)
 
 	// Case 2: Tokens under 90%
 	tg.MaxTokens = 1000
-	tokens, err = tg.handleSafetyPressure(context.Background(), &Request{}, 800)
+	tokens, err = tg.handleSafetyPressure(context.Background(), &request{}, 800)
 	assert.NoError(t, err)
 	assert.Equal(t, 800, tokens)
 
 	// Case 3: autoSummarize fails but blocked (history too short)
-	req := &Request{
+	req := &request{
 		History: make([]*llm.Content, 5),
 	}
 	tokens, err = tg.handleSafetyPressure(context.Background(), req, 950)

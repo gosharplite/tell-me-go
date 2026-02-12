@@ -36,9 +36,9 @@ func TestAgent_SetLimits(t *testing.T) {
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
 	_ = a.events.Flush(context.Background())
 
-	tokens, tools, historyTurns := a.ctxManager.Strategy.GetLimits()
-	if tokens != 1000 || tools != 5 || historyTurns != 10 {
-		t.Errorf("SetLimits failed: got tokens=%d, tools=%d, historyTurns=%d", tokens, tools, historyTurns)
+	limits := a.ctxManager.GetLimits()
+	if limits.MaxHistoryTokens != 1000 || limits.MaxToolTurns != 5 || limits.MaxHistoryTurns != 10 {
+		t.Errorf("SetLimits failed: got %+v", limits)
 	}
 }
 
@@ -91,9 +91,9 @@ func TestAgent_Options(t *testing.T) {
 		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
 	}
 
-	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
-	if tokens != 500 || tools != 3 {
-		t.Errorf("withLimits failed: got tokens=%d, tools=%d", tokens, tools)
+	limits := a.ctxManager.GetLimits()
+	if limits.MaxHistoryTokens != 500 || limits.MaxToolTurns != 3 {
+		t.Errorf("withLimits failed: got %+v", limits)
 	}
 }
 
@@ -120,9 +120,9 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	_ = a.applyConfig(context.Background())
 	_ = a.events.Flush(context.Background())
 
-	tokens, tools, _ := a.ctxManager.Strategy.GetLimits()
-	if tokens != 1234 || tools != 42 {
-		t.Errorf("ConfigWatcher integration failed: got tokens=%d, tools=%d", tokens, tools)
+	limits := a.ctxManager.GetLimits()
+	if limits.MaxHistoryTokens != 1234 || limits.MaxToolTurns != 42 {
+		t.Errorf("ConfigWatcher integration failed: got %+v", limits)
 	}
 }
 
@@ -256,7 +256,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !IsFatal(err) {
+	if !isFatal(err) {
 		t.Errorf("expected fatal error for context exhaustion, got %v", err)
 	}
 }

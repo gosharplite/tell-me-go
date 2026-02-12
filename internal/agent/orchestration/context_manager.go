@@ -77,7 +77,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	cm.mu.Unlock()
 
 	// Initialize request with snapshot of history
-	req := &Request{
+	req := &request{
 		Turn:    turn,
 		History: history,
 	}
@@ -165,7 +165,7 @@ func (cm *ContextManager) GetLimits() events.Limits {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	tokens, turns, histTurns := cm.Strategy.GetLimits()
+	tokens, turns, histTurns := cm.Strategy.getLimits()
 	return events.Limits{
 		MaxHistoryTokens: tokens,
 		MaxToolTurns:     turns,

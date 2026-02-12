@@ -675,7 +675,7 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	hook := &mockHook{}
-	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithHook(hook))
+	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, withHook(hook))
 
 	err := e.Run(context.Background(), time.Now())
 	if err != nil {
@@ -709,7 +709,7 @@ func TestTurnEngine_WithRetryPolicy(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	policy := &mockRetryPolicy{retry: false} // Don't actually retry to keep test fast
-	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, WithRetryPolicy(policy))
+	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, withRetryPolicy(policy))
 
 	_ = e.Run(context.Background(), time.Now())
 
@@ -749,7 +749,7 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	hook := &mockHook{}
 	e = newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil,
 		WithProcessor(phaseInference, stopProcessor),
-		WithHook(hook),
+		withHook(hook),
 	)
 
 	_ = e.Run(context.Background(), time.Now())
@@ -769,7 +769,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	modelPricing := telemetry.GetModelPricing(modelName, pricing)
 	tracker := telemetry.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
-	e := newTurnEngine(env.gw, &mockExecutor{}, env.cm, env.reg, env.bus, WithCostTracker(tracker))
+	e := newTurnEngine(env.gw, &mockExecutor{}, env.cm, env.reg, env.bus, withCostTracker(tracker))
 	capturer := newCostCapturer(env.bus)
 
 	// First turn: 1000 prompt tokens, 500 response tokens
@@ -1085,7 +1085,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	cm := newTestContextManager(strategy, hManager, bus)
 
-	e := newTurnEngine(&mockGateway{}, &mockExecutor{}, cm, reg, bus, WithCostTracker(tracker))
+	e := newTurnEngine(&mockGateway{}, &mockExecutor{}, cm, reg, bus, withCostTracker(tracker))
 
 	t.Run("Cost tracking via middleware", func(t *testing.T) {
 		metrics := &llm.Metrics{IsSummary: true, PromptTokens: 100}

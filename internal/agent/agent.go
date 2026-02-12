@@ -166,7 +166,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	// Initialize engine
 	a.engine = newTurnEngine(gw, exec, ctxManager, reg, bus,
 		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
-		WithCostTracker(a.tracker),
+		withCostTracker(a.tracker),
 	)
 
 	if a.registerInternal {
@@ -302,7 +302,7 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
 	return func(a *agent) {
 		a.tracker = tracker
 		if a.engine != nil {
-			a.engine.ApplyOptions(WithCostTracker(tracker))
+			a.engine.ApplyOptions(withCostTracker(tracker))
 		}
 	}
 }

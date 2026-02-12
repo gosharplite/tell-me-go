@@ -18,7 +18,7 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 	injector := &warningInjector{Strategy: strategy}
 
 	// Case where last message is a FunctionResponse
-	req := &Request{
+	req := &request{
 		Turn: 8, // Triggers turn warning (8/10)
 		History: []*llm.Content{
 			{

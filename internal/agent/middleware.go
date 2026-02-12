@@ -39,8 +39,10 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 			}
 
 			if turn.State.Phase == phaseRefining || turn.State.Phase == phasePersisting {
-				maxTokens, _, maxHistTurns := turn.CtxManager.Strategy.GetLimits()
-				threshold := turn.CtxManager.Strategy.GetTieredThreshold()
+				limits := turn.CtxManager.GetLimits()
+				maxTokens := limits.MaxHistoryTokens
+				maxHistTurns := limits.MaxHistoryTurns
+				threshold := limits.TieredThreshold
 
 				var cost float64
 				var dailyCost float64
@@ -106,8 +108,8 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 	}
 }
 
-// WithLoopDetector returns a middleware that detects and breaks infinite tool loops.
-func WithLoopDetector() turnMiddleware {
+// withLoopDetector returns a middleware that detects and breaks infinite tool loops.
+func withLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
 			res := next.Process(ctx, turn)
@@ -122,7 +124,7 @@ func WithLoopDetector() turnMiddleware {
 					if currentHash == prevHash {
 						return processResult{
 							Stop:  true,
-							Error: newAgentError(ErrLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
+							Error: newAgentError(errLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
 						}
 					}
 				}
@@ -141,7 +143,7 @@ func WithLoopDetector() turnMiddleware {
 						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
 							return processResult{
 								Stop:  true,
-								Error: newAgentError(ErrLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
+								Error: newAgentError(errLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
 							}
 						}
 					}

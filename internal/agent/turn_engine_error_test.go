@@ -58,7 +58,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 
 	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
 
-	engine := newTurnEngine(gw, exec, cm, reg, bus, WithRetryPolicy(policy), WithHook(tracker))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -192,7 +192,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 
 	exec := &errorMockExecutor{
 		executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
-			return nil, newAgentError(ErrLogic, "tool not found", ErrLogic)
+			return nil, newAgentError(errLogic, "tool not found", errLogic)
 		},
 	}
 
@@ -204,8 +204,8 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 		t.Fatal("Expected error, got nil")
 	}
 
-	if !errors.Is(err, ErrLogic) {
-		t.Errorf("Expected ErrLogic, got: %v", err)
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).

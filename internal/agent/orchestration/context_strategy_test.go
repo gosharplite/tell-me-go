@@ -135,7 +135,7 @@ func setupWarningTest() *ContextStrategy {
 
 func TestContextStrategy_Warnings_EmptyHistory(t *testing.T) {
 	cs := setupWarningTest()
-	warnings := cs.GetWarnings(0, 0, 0)
+	warnings := cs.getWarnings(0, 0, 0)
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for empty history, got %d", len(warnings))
 	}
@@ -193,7 +193,7 @@ func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {
 
 	t.Run("Zero Limits", func(t *testing.T) {
 		cs.SetLimits(0, 0, 0)
-		h, tool, hTurns := cs.GetLimits()
+		h, tool, hTurns := cs.getLimits()
 		if h <= 0 || tool <= 0 || hTurns <= 0 {
 			t.Errorf("expected limits to remain positive defaults, got %d, %d, %d", h, tool, hTurns)
 		}
@@ -223,7 +223,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
 		cs.SetPrunedTurns(10)
-		_ = cs.GetWarnings(1, 10, 1)
+		_ = cs.getWarnings(1, 10, 1)
 		if cs.prunedTurns != 0 {
 			t.Errorf("expected prunedTurns to be reset, got %d", cs.prunedTurns)
 		}
@@ -253,7 +253,7 @@ func TestContextStrategy_SetTieredThresholdZero(t *testing.T) {
 	}
 
 	// Verify no price warning is generated when threshold is 0
-	warnings := cs.GetWarnings(1, 200000, 1) // High token count
+	warnings := cs.getWarnings(1, 200000, 1) // High token count
 	for _, w := range warnings {
 		if contains(w.Message, "ECONOMIC") {
 			t.Errorf("expected no economic warnings when threshold is 0, but got: %q", w.Message)

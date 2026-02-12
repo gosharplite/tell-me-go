@@ -26,7 +26,7 @@ func TestTokenGatekeeper_Table(t *testing.T) {
 				MaxTokens: tt.maxTokens,
 				Estimator: &mockEstimator{tokens: tt.tokens},
 			}
-			req := &Request{
+			req := &request{
 				History: []*llm.Content{{Role: "user"}},
 			}
 			err := tg.Transform(context.Background(), req)

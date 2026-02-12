@@ -11,7 +11,7 @@ import (
 
 // Category definitions
 var (
-	ErrLogic = errors.New("logic violation") // Should stop, indicates bug or limit
+	errLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 
 // agentError provides structured error context for the orchestration engine.
@@ -45,16 +45,16 @@ func newAgentError(category error, message string, err error) error {
 	}
 }
 
-// IsTransient checks if the error should trigger a retry.
-func IsTransient(err error) bool {
+// isTransient checks if the error should trigger a retry.
+func isTransient(err error) bool {
 	if err == nil {
 		return false
 	}
 	return llm.IsTransient(err)
 }
 
-// IsFatal checks if the error should halt the current turn and session.
-func IsFatal(err error) bool {
+// isFatal checks if the error should halt the current turn and session.
+func isFatal(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -63,5 +63,5 @@ func IsFatal(err error) bool {
 		return true
 	}
 	// Check agent-specific logic violations
-	return errors.Is(err, ErrLogic)
+	return errors.Is(err, errLogic)
 }

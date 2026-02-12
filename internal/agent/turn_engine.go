@@ -65,10 +65,10 @@ func (p *defaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration,
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
-	if IsFatal(err) {
+	if isFatal(err) {
 		return 0, false
 	}
-	if IsTransient(err) {
+	if isTransient(err) {
 		return time.Duration(attempt+1) * p.Backoff, true
 	}
 	return 0, false
@@ -179,15 +179,15 @@ func WithProcessor(phase turnPhase, p turnProcessor) engineOption {
 	}
 }
 
-// WithHook adds a lifecycle hook to the turnEngine.
-func WithHook(h turnHook) engineOption {
+// withHook adds a lifecycle hook to the turnEngine.
+func withHook(h turnHook) engineOption {
 	return func(e *turnEngine) {
 		e.hooks = append(e.hooks, h)
 	}
 }
 
-// WithRetryPolicy sets the retry policy for the turnEngine.
-func WithRetryPolicy(p retryPolicy) engineOption {
+// withRetryPolicy sets the retry policy for the turnEngine.
+func withRetryPolicy(p retryPolicy) engineOption {
 	return func(e *turnEngine) {
 		e.retryPolicy = p
 	}
@@ -200,16 +200,16 @@ func withClock(c clock) engineOption {
 	}
 }
 
-// WithHardBudget sets a maximum session budget in USD.
+// withHardBudget sets a maximum session budget in USD.
 // Feature is intended for internal/API use only to maintain a clean UI.
-func WithHardBudget(limit float64) engineOption {
+func withHardBudget(limit float64) engineOption {
 	return func(e *turnEngine) {
 		e.HardBudgetLimit = limit
 	}
 }
 
-// WithCostTracker sets the cost tracker for the engine.
-func WithCostTracker(tracker domain_pricing.ICostTracker) engineOption {
+// withCostTracker sets the cost tracker for the engine.
+func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
 	return func(e *turnEngine) {
 		e.costTracker = tracker
 	}
@@ -278,7 +278,7 @@ func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.Contex
 			e.WithStreaming(),
 			e.WithStatusReporter(),
 			e.WithMetrics(),
-			WithLoopDetector(),
+			withLoopDetector(),
 		)
 	}
 
@@ -359,7 +359,7 @@ func (e *turnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 		}
 	}
 
-	_, maxTurns, _ := e.ctxManager.Strategy.GetLimits()
+	maxTurns := e.ctxManager.GetLimits().MaxToolTurns
 	if turnIndex > maxTurns {
 		return newAgentError(llm.ErrTerminal, fmt.Sprintf("turn %d exceeds limit %d", turnIndex, maxTurns), llm.ErrMaxTurnsReached)
 	}
@@ -389,7 +389,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 		CostTracker: tracker,
 		Model:       model,
 	}
-	_, turn.MaxToolTurns, _ = e.ctxManager.Strategy.GetLimits()
+	turn.MaxToolTurns = e.ctxManager.GetLimits().MaxToolTurns
 	return turn
 }
 
@@ -439,7 +439,7 @@ func (e *turnEngine) executeTurn(ctx context.Context, turn *turn) error {
 func (e *turnEngine) executePhase(ctx context.Context, turn *turn) (processResult, error) {
 	processor, ok := e.processors[turn.State.Phase]
 	if !ok {
-		return processResult{}, newAgentError(ErrLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
+		return processResult{}, newAgentError(errLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
 	}
 
 	res := processor.Process(ctx, turn)
@@ -487,7 +487,7 @@ func (p *contextRefiner) Process(ctx context.Context, turn *turn) processResult 
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
 		category := llm.ErrTerminal
-		if IsTransient(err) {
+		if isTransient(err) {
 			category = llm.ErrTransient
 		}
 		return processResult{Error: newAgentError(category, "context preparation failed", err)}
@@ -517,7 +517,7 @@ func (p *inferenceStep) Process(ctx context.Context, turn *turn) processResult {
 
 	if err != nil {
 		category := llm.ErrTerminal
-		if IsTransient(err) {
+		if isTransient(err) {
 			category = llm.ErrTransient
 		}
 		return processResult{Error: newAgentError(category, "inference failed", err)}
@@ -544,7 +544,7 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Conte
 		return respContent, metrics, err
 	}
 	if respContent == nil {
-		return nil, nil, newAgentError(ErrLogic, "api returned nil content", nil)
+		return nil, nil, newAgentError(errLogic, "api returned nil content", nil)
 	}
 	return respContent, metrics, nil
 }
@@ -606,7 +606,7 @@ func (p *executionStep) Process(ctx context.Context, turn *turn) processResult {
 
 func (p *executionStep) handleToolExecutionError(err error) error {
 	category := llm.ErrTerminal
-	if IsTransient(err) {
+	if isTransient(err) {
 		category = llm.ErrTransient
 	}
 	return newAgentError(category, "tool execution failed", err)
@@ -640,7 +640,7 @@ func (p *persistenceStep) Process(ctx context.Context, turn *turn) processResult
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := llm.ErrTerminal
-			if IsTransient(err) {
+			if isTransient(err) {
 				category = llm.ErrTransient
 			}
 			return processResult{Error: newAgentError(category, "history error", err)}
@@ -650,7 +650,7 @@ func (p *persistenceStep) Process(ctx context.Context, turn *turn) processResult
 	if turn.State.ToolResponse != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.ToolResponse); err != nil {
 			category := llm.ErrTerminal
-			if IsTransient(err) {
+			if isTransient(err) {
 				category = llm.ErrTransient
 			}
 			return processResult{Error: newAgentError(category, "failed to persist tool results", err)}
@@ -680,7 +680,7 @@ func (p *recoveryStep) Process(ctx context.Context, turn *turn) processResult {
 }
 
 func (p *recoveryStep) handleFailure(err error) processResult {
-	if IsTransient(err) {
+	if isTransient(err) {
 		return processResult{NextPhase: phaseComplete, Error: fmt.Errorf("max retries reached: %w", err)}
 	}
 	return processResult{NextPhase: phaseComplete, Error: err}

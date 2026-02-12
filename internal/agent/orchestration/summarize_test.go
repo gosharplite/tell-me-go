@@ -110,7 +110,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 		args["focus"] = "refactoring"
 	}
 
-	resp, err := it.SummarizeHistory(ctx, args)
+	resp, err := it.summarizeHistory(ctx, args)
 	verifySummarizeResult(t, tt, resp, err, hManager)
 }
 

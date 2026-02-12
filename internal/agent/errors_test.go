@@ -29,8 +29,8 @@ func TestIsTransient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsTransient(tt.err); got != tt.want {
-				t.Errorf("IsTransient() = %v, want %v", got, tt.want)
+			if got := isTransient(tt.err); got != tt.want {
+				t.Errorf("isTransient() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -46,8 +46,8 @@ func TestIsFatal(t *testing.T) {
 		{"standard error", errors.New("some error"), false},
 		{"fatal agent error", newAgentError(llm.ErrTerminal, "msg", nil), true},
 		{"direct ErrTerminal", llm.ErrTerminal, true},
-		{"direct ErrLogic", ErrLogic, true},
-		{"logic agent error", newAgentError(ErrLogic, "msg", nil), true},
+		{"direct ErrLogic", errLogic, true},
+		{"logic agent error", newAgentError(errLogic, "msg", nil), true},
 		{"transient agent error", newAgentError(llm.ErrTransient, "msg", nil), false},
 		{"wrapped fatal", fmt.Errorf("wrapped: %w", newAgentError(llm.ErrTerminal, "msg", nil)), true},
 		{"llm terminal error", llm.ErrTerminal, true},
@@ -59,8 +59,8 @@ func TestIsFatal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsFatal(tt.err); got != tt.want {
-				t.Errorf("IsFatal() = %v, want %v", got, tt.want)
+			if got := isFatal(tt.err); got != tt.want {
+				t.Errorf("isFatal() = %v, want %v", got, tt.want)
 			}
 		})
 	}

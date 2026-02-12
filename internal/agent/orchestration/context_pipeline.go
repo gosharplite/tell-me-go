@@ -13,14 +13,14 @@ import (
 
 // Priority levels for transformers
 const (
-	PriorityTransientThreshold = 100 // Transformers above this are usually transient/non-persistent
+	priorityTransientThreshold = 100 // Transformers above this are usually transient/non-persistent
 )
 
 // Metadata contains diagnostics and auxiliary data from the pipeline.
 type Metadata = services.ContextMetadata
 
-// Request represents the input and state of a context preparation pipeline.
-type Request = services.ContextRequest
+// request represents the input and state of a context preparation pipeline.
+type request = services.ContextRequest
 
 // ContextPipeline manages the execution of multiple transformers.
 type ContextPipeline struct {
@@ -35,8 +35,8 @@ func NewContextPipeline(transformers ...services.ContextTransformer) *ContextPip
 	return &ContextPipeline{transformers: transformers}
 }
 
-// Execute runs the pipeline on the given request.
-func (p *ContextPipeline) Execute(ctx context.Context, req *Request) error {
+// execute runs the pipeline on the given request.
+func (p *ContextPipeline) execute(ctx context.Context, req *request) error {
 	for _, t := range p.transformers {
 		if err := t.Transform(ctx, req); err != nil {
 			return err
@@ -47,7 +47,7 @@ func (p *ContextPipeline) Execute(ctx context.Context, req *Request) error {
 
 // ExecuteWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
-func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *Request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	canonical, transient := p.partitionTransformers()
 
 	for _, t := range canonical {
@@ -71,7 +71,7 @@ func (p *ContextPipeline) ExecuteWithPersistence(ctx context.Context, req *Reque
 
 func (p *ContextPipeline) partitionTransformers() (canonical, transient []services.ContextTransformer) {
 	for _, t := range p.transformers {
-		if t.Priority() < PriorityTransientThreshold {
+		if t.Priority() < priorityTransientThreshold {
 			canonical = append(canonical, t)
 		} else {
 			transient = append(transient, t)
@@ -80,7 +80,7 @@ func (p *ContextPipeline) partitionTransformers() (canonical, transient []servic
 	return
 }
 
-func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *Request, persistFn func(context.Context, []*llm.Content) error) error {
+func (p *ContextPipeline) persistIfRequired(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {
 	if req.PersistHistory && persistFn != nil {
 		return persistFn(ctx, req.History)
 	}

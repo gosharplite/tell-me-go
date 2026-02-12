@@ -37,7 +37,7 @@ func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, t
 
 	var combined string
 	var list []string
-	maxTokens, _, _ := t.Strategy.GetLimits()
+	maxTokens, _, _ := t.Strategy.getLimits()
 
 	// Prioritize the Clogged warning if maintenance failed to reduce size OR was blocked by pins,
 	// and we are still near capacity.
@@ -45,7 +45,7 @@ func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, t
 		combined = t.Strategy.getCloggedWarning()
 		list = append(list, combined)
 	} else {
-		warnings := t.Strategy.GetWarnings(req.Turn, tokens, turns)
+		warnings := t.Strategy.getWarnings(req.Turn, tokens, turns)
 		if len(warnings) == 0 {
 			return "", nil
 		}
@@ -75,4 +75,4 @@ func (t *warningInjector) injectWarning(req *services.ContextRequest, combined s
 	req.History[lastIdx] = cloned
 }
 
-func (t *warningInjector) Priority() int { return PriorityTransientThreshold }
+func (t *warningInjector) Priority() int { return priorityTransientThreshold }
