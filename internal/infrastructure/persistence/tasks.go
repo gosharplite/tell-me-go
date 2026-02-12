@@ -16,22 +16,22 @@ import (
 
 // TaskRepository manages a list of tasks with persistence.
 // It implements services.ListStore[services.Task].
-type TaskRepository struct {
+type taskRepository struct {
 	mu       sync.RWMutex
 	filePath string
 	fs       storage.FileSystem
 }
 
-// NewTaskRepository creates a new TaskRepository.
-func NewTaskRepository(fs storage.FileSystem, filePath string) *TaskRepository {
-	return &TaskRepository{
+// newTaskRepository creates a new taskRepository.
+func newTaskRepository(fs storage.FileSystem, filePath string) *taskRepository {
+	return &taskRepository{
 		filePath: filePath,
 		fs:       fs,
 	}
 }
 
 // ReadAll loads tasks from disk.
-func (r *TaskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
+func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (r *TaskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 }
 
 // WriteAll saves tasks to disk.
-func (r *TaskRepository) WriteAll(ctx context.Context, tasks []services.Task) error {
+func (r *taskRepository) WriteAll(ctx context.Context, tasks []services.Task) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -81,7 +81,7 @@ func (r *TaskRepository) WriteAll(ctx context.Context, tasks []services.Task) er
 }
 
 // Append appends a single task to disk.
-func (r *TaskRepository) Append(ctx context.Context, task services.Task) error {
+func (r *taskRepository) Append(ctx context.Context, task services.Task) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

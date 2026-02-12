@@ -14,24 +14,24 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// Store defines the interface for history persistence.
-type Store interface {
+// store defines the interface for history persistence.
+type store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
 	Save(ctx context.Context, history []*llm.Content) error
 	Append(ctx context.Context, contents []*llm.Content) error
 }
 
-// JSONLStore implements Store using a JSON Lines file.
-type JSONLStore struct {
+// jsonlStore implements Store using a JSON Lines file.
+type jsonlStore struct {
 	filePath   string
 	assetStore *storage.AssetStore
 	fs         storage.FileSystem
 }
 
-// NewJSONLStore creates a new JSONLStore.
-func NewJSONLStore(filePath string) *JSONLStore {
+// newJSONLStore creates a new jsonlStore.
+func newJSONLStore(filePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
-	return &JSONLStore{
+	return &jsonlStore{
 		filePath:   filePath,
 		assetStore: storage.NewAssetStore(assetDir),
 		fs:         storage.DefaultFileSystem,
@@ -39,14 +39,14 @@ func NewJSONLStore(filePath string) *JSONLStore {
 }
 
 // WithFileSystem sets the filesystem implementation.
-func (s *JSONLStore) WithFileSystem(fs storage.FileSystem) *JSONLStore {
+func (s *jsonlStore) WithFileSystem(fs storage.FileSystem) *jsonlStore {
 	s.fs = fs
 	s.assetStore.WithFileSystem(fs)
 	return s
 }
 
 // Load reads the history from the JSONL file.
-func (s *JSONLStore) Load(ctx context.Context) ([]*llm.Content, error) {
+func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
 		return []*llm.Content{}, nil
 	}
@@ -78,12 +78,12 @@ func (s *JSONLStore) Load(ctx context.Context) ([]*llm.Content, error) {
 }
 
 // Resolve implements llm.AssetResolver.
-func (s *JSONLStore) Resolve(ctx context.Context, assetID string) ([]byte, error) {
+func (s *jsonlStore) Resolve(ctx context.Context, assetID string) ([]byte, error) {
 	return s.assetStore.Get(ctx, assetID)
 }
 
 // Save overwrites the entire history file (compaction/snapshot).
-func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
+func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 	dir := filepath.Dir(s.filePath)
 	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
 		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
@@ -109,7 +109,7 @@ func (s *JSONLStore) Save(ctx context.Context, contents []*llm.Content) error {
 }
 
 // Append appends multiple content entries to the history file.
-func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error {
+func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) error {
 	if len(contents) == 0 {
 		return nil
 	}
@@ -132,7 +132,7 @@ func (s *JSONLStore) Append(ctx context.Context, contents []*llm.Content) error 
 	return nil
 }
 
-func (s *JSONLStore) ensureDirectory(ctx context.Context) error {
+func (s *jsonlStore) ensureDirectory(ctx context.Context) error {
 	dir := filepath.Dir(s.filePath)
 	if _, err := s.fs.Stat(ctx, dir); os.IsNotExist(err) {
 		if err := s.fs.MkdirAll(ctx, dir, 0755); err != nil {
@@ -142,7 +142,7 @@ func (s *JSONLStore) ensureDirectory(ctx context.Context) error {
 	return nil
 }
 
-func (s *JSONLStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
+func (s *jsonlStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
 	prepared, err := s.prepareForStorage(ctx, content)
 	if err != nil {
 		return err
@@ -167,7 +167,7 @@ func (s *JSONLStore) appendSingleContent(ctx context.Context, f storage.File, co
 }
 
 // prepareForStorage offloads binary data to AssetStore and returns a clone for JSON marshaling.
-func (s *JSONLStore) prepareForStorage(ctx context.Context, c *llm.Content) (*llm.Content, error) {
+func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*llm.Content, error) {
 	if c == nil {
 		return nil, nil
 	}

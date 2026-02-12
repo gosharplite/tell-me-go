@@ -6,7 +6,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
 // MockGateway implements llm.LLMGateway for testing.
@@ -72,7 +70,99 @@ func (m *MockExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
 }
 
-// MockStore implements history.Store for testing.
+// MockHistoryManager implements services.HistoryManager for testing.
+type MockHistoryManager struct {
+	mu       sync.RWMutex
+	Contents []*llm.Content
+	Backup   []*llm.Content
+	Resolver llm.AssetResolver
+
+	AddContentFunc  func(ctx context.Context, content *llm.Content) error
+	SaveFunc        func(ctx context.Context) error
+	LoadFunc        func(ctx context.Context) error
+	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
+}
+
+func (m *MockHistoryManager) GetContents() []*llm.Content {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := make([]*llm.Content, len(m.Contents))
+	for i, c := range m.Contents {
+		res[i] = c.Clone()
+	}
+	return res
+}
+
+func (m *MockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	if m.SetContentsFunc != nil {
+		return m.SetContentsFunc(ctx, contents)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Contents = contents
+	return nil
+}
+
+func (m *MockHistoryManager) Snapshot() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Backup = make([]*llm.Content, len(m.Contents))
+	for i, c := range m.Contents {
+		m.Backup[i] = c.Clone()
+	}
+}
+
+func (m *MockHistoryManager) Rollback(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Backup != nil {
+		m.Contents = m.Backup
+	}
+}
+
+func (m *MockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
+	if m.AddContentFunc != nil {
+		return m.AddContentFunc(ctx, content)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Contents = append(m.Contents, content.Clone())
+	return nil
+}
+
+func (m *MockHistoryManager) GetResolver() llm.AssetResolver {
+	return m.Resolver
+}
+
+func (m *MockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	startIdx := turnIndex * 2
+	if startIdx < 0 || startIdx+1 >= len(m.Contents) {
+		return fmt.Errorf("invalid turn index")
+	}
+	m.Contents[startIdx].Pinned = pinned
+	m.Contents[startIdx+1].Pinned = pinned
+	return nil
+}
+
+func (m *MockHistoryManager) Save(ctx context.Context) error {
+	if m.SaveFunc != nil {
+		return m.SaveFunc(ctx)
+	}
+	return nil
+}
+
+func (m *MockHistoryManager) Load(ctx context.Context) error {
+	if m.LoadFunc != nil {
+		return m.LoadFunc(ctx)
+	}
+	return nil
+}
+
+func (m *MockHistoryManager) GetPath() string { return "" }
+
+// MockStore is no longer used but kept for now to avoid breaking more things if any.
 type MockStore struct {
 	LoadFunc   func(ctx context.Context) ([]*llm.Content, error)
 	SaveFunc   func(ctx context.Context, contents []*llm.Content) error
@@ -181,12 +271,7 @@ func setupTurnEngineTest(t *testing.T) *testTurnEnv {
 	bus := events.NewSimpleEventBus()
 	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
-	hManager := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	hManager.SetStore(&MockStore{
-		AppendFunc: func(ctx context.Context, contents []*llm.Content) error { return nil },
-		LoadFunc:   func(ctx context.Context) ([]*llm.Content, error) { return nil, nil },
-		SaveFunc:   func(ctx context.Context, contents []*llm.Content) error { return nil },
-	})
+	hManager := &MockHistoryManager{}
 	cm := newTestContextManager(strategy, hManager, bus)
 	gw := &MockGateway{}
 
@@ -308,7 +393,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			},
 		},
 		CtxManager: &orchestration.ContextManager{
-			History:  history.NewManager(""),
+			History:  &MockHistoryManager{},
 			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil),
 		},
 		Gateway: mockGw,

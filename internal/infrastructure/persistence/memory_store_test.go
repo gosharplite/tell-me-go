@@ -13,7 +13,7 @@ func TestMemoryKVStore(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := NewMemoryKVStore()
+	store := newMemoryKVStore()
 
 	// Test Set and Get
 	key, val := "key1", "val1"
@@ -66,7 +66,7 @@ func TestMemoryListStore(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("BasicCRUD", func(t *testing.T) {
-		store := NewMemoryListStore[string]()
+		store := newMemoryListStore[string]()
 
 		// Test Append and ReadAll
 		val1 := "item1"
@@ -95,7 +95,7 @@ func TestMemoryListStore(t *testing.T) {
 	})
 
 	t.Run("Concurrency", func(t *testing.T) {
-		store := NewMemoryListStore[int]()
+		store := newMemoryListStore[int]()
 		var wg sync.WaitGroup
 		count := 100
 

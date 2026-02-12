@@ -9,38 +9,38 @@ import (
 )
 
 // MemoryKVStore is an in-memory implementation of services.KVStore.
-type MemoryKVStore struct {
+type memoryKVStore struct {
 	mu   sync.RWMutex
 	data map[string]string
 }
 
-func NewMemoryKVStore() *MemoryKVStore {
-	return &MemoryKVStore{
+func newMemoryKVStore() *memoryKVStore {
+	return &memoryKVStore{
 		data: make(map[string]string),
 	}
 }
 
-func (s *MemoryKVStore) Get(ctx context.Context, key string) (string, error) {
+func (s *memoryKVStore) Get(ctx context.Context, key string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.data[key], nil
 }
 
-func (s *MemoryKVStore) Set(ctx context.Context, key, val string) error {
+func (s *memoryKVStore) Set(ctx context.Context, key, val string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data[key] = val
 	return nil
 }
 
-func (s *MemoryKVStore) Delete(ctx context.Context, key string) error {
+func (s *memoryKVStore) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.data, key)
 	return nil
 }
 
-func (s *MemoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
+func (s *memoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	res := make(map[string]string, len(s.data))
@@ -50,17 +50,17 @@ func (s *MemoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	return res, nil
 }
 
-// MemoryListStore is an in-memory implementation of services.ListStore.
-type MemoryListStore[T any] struct {
+// memoryListStore is an in-memory implementation of services.ListStore.
+type memoryListStore[T any] struct {
 	mu   sync.RWMutex
 	data []T
 }
 
-func NewMemoryListStore[T any]() *MemoryListStore[T] {
-	return &MemoryListStore[T]{}
+func newMemoryListStore[T any]() *memoryListStore[T] {
+	return &memoryListStore[T]{}
 }
 
-func (s *MemoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
+func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	res := make([]T, len(s.data))
@@ -68,7 +68,7 @@ func (s *MemoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	return res, nil
 }
 
-func (s *MemoryListStore[T]) WriteAll(ctx context.Context, items []T) error {
+func (s *memoryListStore[T]) WriteAll(ctx context.Context, items []T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data = make([]T, len(items))
@@ -76,7 +76,7 @@ func (s *MemoryListStore[T]) WriteAll(ctx context.Context, items []T) error {
 	return nil
 }
 
-func (s *MemoryListStore[T]) Append(ctx context.Context, item T) error {
+func (s *memoryListStore[T]) Append(ctx context.Context, item T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data = append(s.data, item)

@@ -16,7 +16,7 @@ func TestConfigRepository(t *testing.T) {
 	fs := storage.DefaultFileSystem
 	tempDir := t.TempDir()
 	file := filepath.Join(tempDir, "config.json")
-	repo := NewConfigRepository(fs, file)
+	repo := newConfigRepository(fs, file)
 
 	t.Run("Save and Load Config", func(t *testing.T) {
 		if err := repo.Set(ctx, "key", "val"); err != nil {
@@ -33,7 +33,7 @@ func TestConfigRepository(t *testing.T) {
 	})
 
 	t.Run("Load Non-existent File", func(t *testing.T) {
-		repo2 := NewConfigRepository(fs, filepath.Join(tempDir, "none.json"))
+		repo2 := newConfigRepository(fs, filepath.Join(tempDir, "none.json"))
 		loaded, err := repo2.GetAll(ctx)
 		if err != nil {
 			t.Fatal(err)

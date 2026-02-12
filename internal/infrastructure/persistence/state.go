@@ -63,7 +63,7 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return NewMemoryListStore[services.Task](), NewMemoryKVStore(), NewMemoryKVStore(), paths
+		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths
 	}
 
 	fs := storage.DefaultFileSystem
@@ -75,8 +75,8 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 	paths["config_file"] = configPath
 	paths["scratch_file"] = scratchPath
 
-	return NewTaskRepository(fs, tasksPath),
-		NewConfigRepository(fs, configPath),
+	return newTaskRepository(fs, tasksPath),
+		newConfigRepository(fs, configPath),
 		NewScratchpadRepository(fs, scratchPath),
 		paths
 }

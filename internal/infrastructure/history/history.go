@@ -17,7 +17,7 @@ import (
 // It acts as a dumb persistence adapter with an in-memory cache.
 type Manager struct {
 	mu       sync.RWMutex
-	store    Store
+	store    store
 	FilePath string
 	Contents []*llm.Content
 	backup   []*llm.Content // Keep a copy of the state before the current user prompt
@@ -26,24 +26,24 @@ type Manager struct {
 // NewManager creates a new history manager for the given file path.
 func NewManager(filePath string) *Manager {
 	return &Manager{
-		store:    NewJSONLStore(filePath),
+		store:    newJSONLStore(filePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
 }
 
-// SetStore allows injecting a custom store.
-func (m *Manager) SetStore(store Store) {
+// setStore allows injecting a custom store.
+func (m *Manager) setStore(s store) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.store = store
+	m.store = s
 }
 
 // WithFileSystem sets the filesystem implementation for the default store.
 func (m *Manager) WithFileSystem(fs storage.FileSystem) *Manager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if s, ok := m.store.(*JSONLStore); ok {
+	if s, ok := m.store.(*jsonlStore); ok {
 		s.WithFileSystem(fs)
 	}
 	return m

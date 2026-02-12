@@ -13,22 +13,22 @@ import (
 
 // ConfigRepository manages persistent configuration settings.
 // It implements services.KVStore.
-type ConfigRepository struct {
+type configRepository struct {
 	mu       sync.RWMutex
 	filePath string
 	fs       storage.FileSystem
 }
 
-// NewConfigRepository creates a new ConfigRepository.
-func NewConfigRepository(fs storage.FileSystem, filePath string) *ConfigRepository {
-	return &ConfigRepository{
+// newConfigRepository creates a new configRepository.
+func newConfigRepository(fs storage.FileSystem, filePath string) *configRepository {
+	return &configRepository{
 		filePath: filePath,
 		fs:       fs,
 	}
 }
 
 // GetAll loads all configuration from disk.
-func (r *ConfigRepository) GetAll(ctx context.Context) (map[string]string, error) {
+func (r *configRepository) GetAll(ctx context.Context) (map[string]string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -49,7 +49,7 @@ func (r *ConfigRepository) GetAll(ctx context.Context) (map[string]string, error
 }
 
 // Get retrieves a single key.
-func (r *ConfigRepository) Get(ctx context.Context, key string) (string, error) {
+func (r *configRepository) Get(ctx context.Context, key string) (string, error) {
 	config, err := r.GetAll(ctx)
 	if err != nil {
 		return "", err
@@ -58,7 +58,7 @@ func (r *ConfigRepository) Get(ctx context.Context, key string) (string, error) 
 }
 
 // Set updates a single key and saves to disk.
-func (r *ConfigRepository) Set(ctx context.Context, key, val string) error {
+func (r *configRepository) Set(ctx context.Context, key, val string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -80,7 +80,7 @@ func (r *ConfigRepository) Set(ctx context.Context, key, val string) error {
 }
 
 // Delete removes a key and saves to disk.
-func (r *ConfigRepository) Delete(ctx context.Context, key string) error {
+func (r *configRepository) Delete(ctx context.Context, key string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

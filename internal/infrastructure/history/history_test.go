@@ -132,15 +132,15 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 	fs := &storage.OSFileSystem{}
 	m.WithFileSystem(fs)
 	// Verify it reached the store
-	if s, ok := m.store.(*JSONLStore); ok {
+	if s, ok := m.store.(*jsonlStore); ok {
 		if s.fs != fs {
 			t.Error("WithFileSystem did not propagate to store")
 		}
 	} else {
-		t.Error("store is not JSONLStore")
+		t.Error("store is not jsonlStore")
 	}
 
-	m.SetStore(m.store) // Coverage for SetStore
+	m.setStore(m.store) // Coverage for SetStore
 }
 
 type mockStore struct{}
@@ -151,7 +151,7 @@ func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error {
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
 	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
-	m.SetStore(&mockStore{})
+	m.setStore(&mockStore{})
 	if m.GetResolver() != nil {
 		t.Error("expected nil resolver for mockStore")
 	}
