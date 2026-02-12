@@ -18,6 +18,8 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
+	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 )
 
 type toolExecResult struct {
@@ -34,7 +36,7 @@ type ToolExecutor struct {
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
-	pool               *WorkerPool
+	pool               *concurrency.WorkerPool
 	strategy           ResultStrategy
 	failures           *failureTracker
 }
@@ -47,7 +49,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
-		pool:               NewWorkerPool(5),
+		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &MarkdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
 	}
@@ -94,7 +96,7 @@ func (e *ToolExecutor) SetStrategy(s ResultStrategy) {
 }
 
 func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) {
-	var oldPool *WorkerPool
+	var oldPool *concurrency.WorkerPool
 	e.mu.Lock()
 
 	if maxConcurrent > 0 && maxConcurrent != e.maxConcurrentTools {
@@ -102,7 +104,7 @@ func (e *ToolExecutor) SetConcurrency(maxConcurrent int, timeout time.Duration) 
 		if e.pool != nil {
 			oldPool = e.pool
 		}
-		e.pool = NewWorkerPool(maxConcurrent)
+		e.pool = concurrency.NewWorkerPool(maxConcurrent)
 	}
 	if timeout > 0 {
 		e.toolTimeout = timeout
@@ -596,119 +598,11 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 
 	for _, tool := range validTools {
 		toolLower := strings.ToLower(tool)
-		dist := levenshteinDistance(hallucinatedLower, toolLower)
+		dist := stringsutil.LevenshteinDistance(hallucinatedLower, toolLower)
 		if dist <= minDist {
 			minDist = dist
 			closest = tool
 		}
 	}
 	return closest
-}
-
-func levenshteinDistance(s, t string) int {
-	s1, s2 := []rune(s), []rune(t)
-	m, n := len(s1), len(s2)
-
-	if m < n {
-		s1, s2 = s2, s1
-		m, n = n, m
-	}
-
-	prev := make([]int, n+1)
-	for j := 0; j <= n; j++ {
-		prev[j] = j
-	}
-
-	curr := make([]int, n+1)
-	for i := 1; i <= m; i++ {
-		curr[0] = i
-		for j := 1; j <= n; j++ {
-			substitutionCost := 0
-			if s1[i-1] != s2[j-1] {
-				substitutionCost = 1
-			}
-			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+substitutionCost)
-		}
-		copy(prev, curr)
-	}
-	return prev[n]
-}
-
-// WorkerPool manages a fixed number of workers to execute tasks concurrently.
-type WorkerPool struct {
-	maxWorkers int
-	tasks      chan func(ctx context.Context)
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
-	closing    chan struct{}
-	mu         sync.RWMutex
-	closed     bool
-	once       sync.Once
-	submitWg   sync.WaitGroup
-}
-
-// NewWorkerPool creates and starts a new worker pool.
-func NewWorkerPool(maxWorkers int) *WorkerPool {
-	if maxWorkers <= 0 {
-		maxWorkers = 1
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	p := &WorkerPool{
-		maxWorkers: maxWorkers,
-		tasks:      make(chan func(ctx context.Context), maxWorkers*2),
-		ctx:        ctx,
-		cancel:     cancel,
-		closing:    make(chan struct{}),
-	}
-	p.start()
-	return p
-}
-
-func (p *WorkerPool) start() {
-	for i := 0; i < p.maxWorkers; i++ {
-		p.wg.Add(1)
-		go func() {
-			defer p.wg.Done()
-			for task := range p.tasks {
-				task(p.ctx)
-			}
-		}()
-	}
-}
-
-// Submit adds a task to the pool. Returns true if the task was successfully queued.
-func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
-	p.mu.RLock()
-	if p.closed {
-		p.mu.RUnlock()
-		return false
-	}
-	p.submitWg.Add(1)
-	p.mu.RUnlock()
-	defer p.submitWg.Done()
-
-	select {
-	case p.tasks <- task:
-		return true
-	case <-p.closing:
-		return false
-	case <-p.ctx.Done():
-		return false
-	}
-}
-
-// Shutdown stops all workers and waits for them to finish.
-func (p *WorkerPool) Shutdown() {
-	p.once.Do(func() {
-		p.mu.Lock()
-		p.closed = true
-		close(p.closing)
-		p.mu.Unlock()
-
-		p.submitWg.Wait()
-		close(p.tasks)
-		p.cancel()
-		p.wg.Wait()
-	})
 }

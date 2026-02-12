@@ -19,6 +19,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
+	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 )
 
 type toolBehavior struct {
@@ -524,7 +526,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := levenshteinDistance(tt.s1, tt.s2)
+		got := stringsutil.LevenshteinDistance(tt.s1, tt.s2)
 		if got != tt.want {
 			t.Errorf("levenshteinDistance(%q, %q) = %d, want %d", tt.s1, tt.s2, got, tt.want)
 		}
@@ -532,7 +534,7 @@ func TestLevenshteinDistance_UTF8(t *testing.T) {
 }
 
 func TestWorkerPool_SubmitFailure(t *testing.T) {
-	p := NewWorkerPool(1)
+	p := concurrency.NewWorkerPool(1)
 	p.Shutdown()
 
 	success := p.Submit(func(ctx context.Context) {})
