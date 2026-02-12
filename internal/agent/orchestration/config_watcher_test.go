@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfigWatcher_Refresh(t *testing.T) {
@@ -215,4 +218,219 @@ MAX_TURNS: 5
 	if toolTurns != 5 {
 		t.Errorf("expected 5 tool turns to persist after YAML deletion, got %d", toolTurns)
 	}
+}
+
+func TestConfigWatcher_ManualLimits(t *testing.T) {
+	t.Parallel()
+	cw := NewConfigWatcher(100, 10, 20)
+
+	t.Run("SetLimits_Positive", func(t *testing.T) {
+		cw.SetLimits(200, 15, 25)
+		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
+		assert.Equal(t, 200, tokens)
+		assert.Equal(t, 15, toolTurns)
+		assert.Equal(t, 25, historyTurns)
+	})
+
+	t.Run("SetLimits_NonPositivePreserves", func(t *testing.T) {
+		cw.SetLimits(200, 15, 25) // Reset to known state
+		cw.SetLimits(0, -1, -5)
+		tokens, toolTurns, historyTurns, _ := cw.GetLimits()
+		assert.Equal(t, 200, tokens)
+		assert.Equal(t, 15, toolTurns)
+		assert.Equal(t, 25, historyTurns)
+	})
+}
+
+func TestConfigWatcher_ApplyLimits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("FullUpdate", func(t *testing.T) {
+		cw := NewConfigWatcher(100, 10, 20)
+		limits := events.Limits{
+			MaxHistoryTokens: 500,
+			MaxToolTurns:     30,
+			MaxHistoryTurns:  40,
+			TieredThreshold:  5000,
+		}
+
+		cw.ApplyLimits(limits)
+		tokens, toolTurns, historyTurns, threshold := cw.GetLimits()
+		assert.Equal(t, 500, tokens)
+		assert.Equal(t, 30, toolTurns)
+		assert.Equal(t, 40, historyTurns)
+		assert.Equal(t, 5000, threshold)
+	})
+
+	t.Run("PartialUpdate", func(t *testing.T) {
+		cw := NewConfigWatcher(100, 10, 20)
+		cw.tieredThreshold = 1000
+		limits := events.Limits{
+			MaxHistoryTokens: 0,
+			MaxToolTurns:     -1,
+			MaxHistoryTurns:  40,
+			TieredThreshold:  0,
+		}
+
+		cw.ApplyLimits(limits)
+		tokens, toolTurns, historyTurns, threshold := cw.GetLimits()
+		assert.Equal(t, 100, tokens)
+		assert.Equal(t, 10, toolTurns)
+		assert.Equal(t, 40, historyTurns)
+		assert.Equal(t, 1000, threshold)
+	})
+}
+
+func TestConfigWatcher_SyncToStrategy(t *testing.T) {
+	t.Parallel()
+	cw := NewConfigWatcher(100, 10, 20)
+	cw.contextWindow = 500000
+	cw.tieredThreshold = 3000
+
+	t.Run("ValidStrategy", func(t *testing.T) {
+		cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
+		cw.SyncToStrategy(cs)
+		assert.Equal(t, 500000, cs.getContextWindow())
+		assert.Equal(t, 3000, cs.GetTieredThreshold())
+	})
+
+	t.Run("NilStrategy", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			cw.SyncToStrategy(nil)
+		})
+	})
+}
+
+func TestConfigWatcher_GetContextWindow_Refresh(t *testing.T) {
+	t.Parallel()
+	cw, mainPath, _ := setupConfigWatcherTest(t)
+
+	// Default
+	assert.Equal(t, 1000000, cw.getContextWindow())
+
+	// Specific model config
+	yamlContent := `
+MODELS:
+  test-model:
+    CONTEXT_WINDOW: 123456
+`
+	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("test-model")
+	assert.Equal(t, 123456, cw.getContextWindow())
+}
+
+func TestConfigWatcher_ToInt(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 123, toInt(float64(123), 10))
+	assert.Equal(t, 456, toInt("456", 10))
+	assert.Equal(t, 10, toInt("invalid", 10))
+	assert.Equal(t, 10, toInt(true, 10))
+	assert.Equal(t, 10, toInt("-1", 10))
+}
+
+func TestConfigWatcher_SessionReadFileError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session_dir")
+	if err := os.Mkdir(sessionPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cw := NewConfigWatcher(100, 10, 20)
+	cw.SetPaths("", sessionPath)
+
+	// Should not panic and return early
+	cw.Refresh("default")
+	tokens, _, _, _ := cw.GetLimits()
+	assert.Equal(t, 100, tokens)
+}
+
+func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
+	t.Parallel()
+	cw, mainPath, _ := setupConfigWatcherTest(t)
+	yamlContent := `MAX_HISTORY_TOKENS: 500`
+	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("model-a")
+	tokens, _, _, _ := cw.GetLimits()
+	assert.Equal(t, 500, tokens)
+
+	// Refresh again with same model and no file change
+	cw.Refresh("model-a")
+}
+
+func TestConfigWatcher_SetPaths(t *testing.T) {
+	t.Parallel()
+	cw := NewConfigWatcher(100, 10, 20)
+	cw.SetPaths("main", "session")
+	assert.Equal(t, "main", cw.mainPath)
+	assert.Equal(t, "session", cw.sessionPath)
+}
+
+func TestConfigWatcher_SessionAllFields(t *testing.T) {
+	t.Parallel()
+	cw, _, sessionPath := setupConfigWatcherTest(t)
+	content := `{"MAX_HISTORY_TOKENS": 500, "MAX_TOOL_TURNS": 15, "MAX_HISTORY_TURNS": 25}`
+	if err := os.WriteFile(sessionPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cw.Refresh("default")
+	tokens, toolTurns, historyTurns, _ := cw.GetLimits()
+	assert.Equal(t, 500, tokens)
+	assert.Equal(t, 15, toolTurns)
+	assert.Equal(t, 25, historyTurns)
+}
+
+func TestConfigWatcher_MalformedYAML(t *testing.T) {
+	t.Parallel()
+	cw, mainPath, _ := setupConfigWatcherTest(t)
+	if err := os.WriteFile(mainPath, []byte(`invalid: yaml: :`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("default")
+	// Should return early and keep defaults
+	tokens, _, _, _ := cw.GetLimits()
+	assert.Equal(t, 100, tokens)
+}
+
+func TestConfigWatcher_ModelConfigZeroContext(t *testing.T) {
+	t.Parallel()
+	cw, mainPath, _ := setupConfigWatcherTest(t)
+	yamlContent := `
+MODELS:
+  test-model:
+    CONTEXT_WINDOW: 0
+`
+	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("test-model")
+	assert.Equal(t, 1000000, cw.getContextWindow())
+}
+
+func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {
+	t.Parallel()
+	cw, _, sessionPath := setupConfigWatcherTest(t)
+	if err := os.WriteFile(sessionPath, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cw.Refresh("default")
+	cw.Refresh("default")
+}
+
+func TestConfigWatcher_EmptyPaths(t *testing.T) {
+	t.Parallel()
+	cw := NewConfigWatcher(100, 10, 20)
+	cw.SetPaths("", "")
+	cw.Refresh("default")
+	tokens, _, _, _ := cw.GetLimits()
+	assert.Equal(t, 100, tokens)
 }
