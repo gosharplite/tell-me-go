@@ -15,8 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
-
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // ExecutionConfig defines parameters for command or pipeline execution.
@@ -378,13 +376,13 @@ func (sp *streamProcessor) processLine(sb *strings.Builder, rawLine []byte, pref
 	content := string(rawLine) + "\n"
 	feedbackMsg := ""
 	if feedback != nil {
-		feedbackMsg = fmt.Sprintf("  %s%s%s\n", ui.ColorGray, rawLine, ui.ColorReset)
+		feedbackMsg = fmt.Sprintf("  %s\n", rawLine)
 	}
 
 	if prefix != "" {
 		content = fmt.Sprintf("%s %s", prefix, content)
 		if feedback != nil {
-			feedbackMsg = fmt.Sprintf("  %s%s %s%s\n", ui.ColorRed, prefix, rawLine, ui.ColorReset)
+			feedbackMsg = fmt.Sprintf("  %s %s\n", prefix, rawLine)
 		}
 	}
 
