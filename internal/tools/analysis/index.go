@@ -336,6 +336,16 @@ func (h *harvester) handleIdent(d *ast.Ident) {
 		if _, isDef := h.info.Defs[d]; isDef {
 			return // skip definitions
 		}
+		if obj, ok := h.info.Uses[d]; ok && obj != nil {
+			key := getSymbolIdentity(obj)
+			loc := h.toLocation(d.Pos())
+			h.usagesByName[key] = append(h.usagesByName[key], loc)
+			// Also store by short name for backward compatibility and general searches
+			if key != d.Name {
+				h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
+			}
+			return
+		}
 	}
 	loc := h.toLocation(d.Pos())
 	h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)

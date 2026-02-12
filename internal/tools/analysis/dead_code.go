@@ -129,11 +129,11 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	for id, meta := range state.declarations {
-		if a.idx.IsSymbolUsed(meta.name) {
+		if a.idx.IsSymbolUsed(id) {
 			state.totalUses[id] = 1
 
 			// Check for external usages to distinguish DEAD from PRIVATE.
-			allUsages, _ := a.idx.GetUsages(ctx, meta.name, resolvedPath)
+			allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
 			objBase := getBasePkgPath(meta.pkgPath)
 
 			for _, loc := range allUsages {
@@ -214,28 +214,6 @@ func (a *deadCodeAnalyzer) buildReport(state *scanState) []orphanReport {
 	return findings
 }
 
-// getSymbolIdentity creates a stable string representation for a Go symbol.
-func (a *deadCodeAnalyzer) getSymbolIdentity(obj types.Object) string {
-	if obj.Pkg() == nil {
-		return obj.Name()
-	}
-	pkgPath := getBasePkgPath(obj.Pkg().Path())
-
-	if fn, ok := obj.(*types.Func); ok {
-		sig := fn.Type().(*types.Signature)
-		if sig.Recv() != nil {
-			recvType := sig.Recv().Type()
-			if ptr, ok := recvType.(*types.Pointer); ok {
-				recvType = ptr.Elem()
-			}
-			if named, ok := recvType.(*types.Named); ok {
-				return fmt.Sprintf("%s.%s.%s", pkgPath, named.Obj().Name(), obj.Name())
-			}
-		}
-	}
-	return fmt.Sprintf("%s.%s", pkgPath, obj.Name())
-}
-
 func (a *deadCodeAnalyzer) shouldExclude(pkgPath string, excluded []string) bool {
 	for _, pattern := range excluded {
 		if strings.Contains(pkgPath, pattern) {
@@ -263,13 +241,6 @@ func getSymbolType(obj types.Object) string {
 	default:
 		return "Unknown"
 	}
-}
-
-func getBasePkgPath(path string) string {
-	if idx := strings.Index(path, " ["); idx != -1 {
-		return path[:idx]
-	}
-	return path
 }
 
 func (a *deadCodeAnalyzer) harvestExportedSymbols(state *scanState) {
@@ -321,7 +292,7 @@ func (a *deadCodeAnalyzer) isTestSymbol(name string) bool {
 }
 
 func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
-	id := a.getSymbolIdentity(obj)
+	id := getSymbolIdentity(obj)
 	if _, exists := state.declarations[id]; !exists {
 		state.declarations[id] = &symMeta{
 			id:      id,
@@ -334,13 +305,14 @@ func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanStat
 }
 
 func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
+	// Regular methods
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
-			mId := a.getSymbolIdentity(m)
+			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
 					id:       mId,
@@ -349,6 +321,29 @@ func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) 
 					symType:  "Method",
 					isMethod: true,
 					obj:      m,
+				}
+			}
+		}
+	}
+
+	// Interface methods
+	if itf, ok := named.Underlying().(*types.Interface); ok {
+		for i := 0; i < itf.NumMethods(); i++ {
+			m := itf.Method(i)
+			if m == nil || m.Pkg() == nil {
+				continue
+			}
+			if m.Exported() {
+				mId := getSymbolIdentity(m)
+				if _, exists := state.declarations[mId]; !exists {
+					state.declarations[mId] = &symMeta{
+						id:       mId,
+						pkgPath:  getBasePkgPath(m.Pkg().Path()),
+						name:     m.Name(),
+						symType:  "Method",
+						isMethod: true,
+						obj:      m,
+					}
 				}
 			}
 		}
@@ -398,12 +393,12 @@ func (a *deadCodeAnalyzer) checkImplementations(named *types.Named, pkg *package
 			// If any method of this interface is used, mark the concrete implementation as used
 			for i := 0; i < itf.NumMethods(); i++ {
 				im := itf.Method(i)
-				imId := a.getSymbolIdentity(im)
+				imId := getSymbolIdentity(im)
 				if state.totalUses[imId] > 0 {
 					// Find the concrete method on our type
 					cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
 					if cm != nil {
-						cmId := a.getSymbolIdentity(cm)
+						cmId := getSymbolIdentity(cm)
 						state.totalUses[cmId] += state.totalUses[imId]
 						state.externalUses[cmId] += state.externalUses[imId]
 					}
