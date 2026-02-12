@@ -21,8 +21,8 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
-	gw := &mockLLMGateway{}
-	exec := &mockExecutor{}
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
 	factory := &orchestration.PipelineFactory{
@@ -78,8 +78,8 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	h := history.NewManager(t.TempDir() + "/history.jsonl")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
-	gw := &mockLLMGateway{}
-	exec := &mockExecutor{}
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
 	factory := &orchestration.PipelineFactory{

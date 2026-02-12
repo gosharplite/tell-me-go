@@ -26,8 +26,8 @@ func TestTurnEngine_BudgetLimit(t *testing.T) {
 	strategy := orchestration.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 10, 10)
 
-	gw := &mockLLMGateway{}
-	exec := &mockExecutor{}
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{}
 	reg := &limitMockRegistry{}
 
 	factory := &orchestration.PipelineFactory{

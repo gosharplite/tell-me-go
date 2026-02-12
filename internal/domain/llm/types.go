@@ -213,9 +213,6 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 // CloneContent returns a deep copy of Content.
 func CloneContent(c *Content) *Content { return c.clone() }
 
-// ClonePart returns a deep copy of Part.
-func ClonePart(p *Part) *Part { return p.clone() }
-
 func cloneValue(v interface{}) interface{} {
 	switch val := v.(type) {
 	case map[string]interface{}:
@@ -305,9 +302,6 @@ func (p *Part) equal(other *Part) bool {
 
 // EqualContent returns true if two Content objects are logically equivalent.
 func EqualContent(a, b *Content) bool { return a.equal(b) }
-
-// EqualPart returns true if two Part objects are logically equivalent.
-func EqualPart(a, b *Part) bool { return a.equal(b) }
 
 // IsEmpty returns true if the part contains no meaningful content for the LLM.
 func (p *Part) IsEmpty() bool {

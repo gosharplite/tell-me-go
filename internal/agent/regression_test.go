@@ -32,8 +32,8 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	})
 
 	registry := internaltools.New()
-	client := &MockLLMClient{}
-	sm := &MockSecurityManager{AllowAll: true}
+	client := &mockLLMClient{}
+	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
 	a := New(client, h, registry, sm, false, bus)
 
@@ -69,8 +69,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 		_ = h.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: fmt.Sprintf("M%d", i)}}})
 	}
 
-	client := &MockLLMClient{}
-	sm := &MockSecurityManager{AllowAll: true}
+	client := &mockLLMClient{}
+	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
 	a := New(client, h, registry, sm, false, bus)
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
@@ -102,7 +102,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	})
 
 	h := history.NewManager(t.TempDir() + "/history.json")
-	sm := &MockSecurityManager{AllowAll: true}
+	sm := &mockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool
 	mockClient := newMultiModalMockClient()
@@ -147,8 +147,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	}
 }
 
-func newMultiModalMockClient() *MockLLMClient {
-	return &MockLLMClient{
+func newMultiModalMockClient() *mockLLMClient {
+	return &mockLLMClient{
 		SendChatFn: func(ctx context.Context, history []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
 			// 1. Identify the last user prompt
 			lastUserPrompt := ""

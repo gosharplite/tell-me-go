@@ -12,11 +12,11 @@ import (
 )
 
 type mockToolRegistry struct {
-	declarations []*tools.ToolDeclaration
+	Declarations []*tools.ToolDeclaration
 }
 
 func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return m.declarations
+	return m.Declarations
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
@@ -43,13 +43,13 @@ func (m *mockTokenCounter) Count(contents []*llm.Content) int {
 }
 
 type mockGateway struct {
-	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
-	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
+	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
 func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
-	if m.generateFn != nil {
-		return m.generateFn(ctx, input, tools, resolver)
+	if m.GenerateFunc != nil {
+		return m.GenerateFunc(ctx, input, tools, resolver)
 	}
 	ch := make(chan *llm.Content)
 	close(ch)
@@ -78,14 +78,14 @@ func (m *mockGateway) RefreshAuth() error { return nil }
 
 func (m *mockGateway) SetSystemInstructions(instr string) {}
 
-type MockSecurityManager struct {
+type mockSecurityManager struct {
 	domain_security.ISecurityManager
 	AllowAll bool
 }
 
-func (m *MockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
-func (m *MockSecurityManager) TerminalLock()                         {}
-func (m *MockSecurityManager) TerminalUnlock()                       {}
-func (m *MockSecurityManager) IsCommandAllowed(command string) bool {
+func (m *mockSecurityManager) IsPathSafe(path string) (string, error) { return path, nil }
+func (m *mockSecurityManager) TerminalLock()                         {}
+func (m *mockSecurityManager) TerminalUnlock()                       {}
+func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
 }

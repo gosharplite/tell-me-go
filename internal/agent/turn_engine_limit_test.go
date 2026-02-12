@@ -17,11 +17,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-type mockLLMGateway struct {
+type limitMockLLMGateway struct {
 	mock.Mock
 }
 
-func (m *mockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (m *limitMockLLMGateway) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 	args := m.Called(ctx, input, tools, resolver)
 	ch := args.Get(0)
 	if ch == nil {
@@ -34,29 +34,29 @@ func (m *mockLLMGateway) Generate(ctx context.Context, input []*llm.Content, too
 	return ch.(<-chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
 }
 
-func (m *mockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (m *limitMockLLMGateway) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return nil, nil, nil
 }
 
-func (m *mockLLMGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (m *limitMockLLMGateway) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	return nil, nil
 }
 
-func (m *mockLLMGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (m *limitMockLLMGateway) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
 
-func (m *mockLLMGateway) RefreshAuth() error { return nil }
+func (m *limitMockLLMGateway) RefreshAuth() error { return nil }
 
-func (m *mockLLMGateway) SetSystemInstructions(instr string) {
+func (m *limitMockLLMGateway) SetSystemInstructions(instr string) {
 	m.Called(instr)
 }
 
-type mockExecutor struct {
+type limitMockExecutor struct {
 	mock.Mock
 }
 
-func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 	args := m.Called(ctx, respContent, turn, maxToolTurns)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -72,8 +72,8 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	strategy := orchestration.NewContextStrategy(counter, bus)
 	strategy.SetLimits(1000, 2, 10) // Limit to 2 tool turns
 
-	gw := &mockLLMGateway{}
-	exec := &mockExecutor{}
+	gw := &limitMockLLMGateway{}
+	exec := &limitMockExecutor{}
 
 	// Pipeline factory
 	factory := &orchestration.PipelineFactory{

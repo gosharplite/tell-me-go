@@ -56,7 +56,7 @@ func TestHistory_Rendering(t *testing.T) {
 		History(&buf, h, 10, RenderOptions{Raw: true, UseColor: true})
 
 		output := buf.String()
-		if !strings.Contains(output, ColorBlue) {
+		if !strings.Contains(output, colorBlue) {
 			t.Errorf("output should contain color codes for user role")
 		}
 	})

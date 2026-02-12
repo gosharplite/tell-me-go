@@ -71,7 +71,7 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)
@@ -121,7 +121,7 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)
@@ -178,7 +178,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
 			close(ch)
 			return ch, func() (*llm.Content, *llm.Metrics, error) {
@@ -226,7 +226,7 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 	callCount := 0
 
 	gw := &mockGateway{
-		generateFn: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			callCount++
 			ch := make(chan *llm.Content)
 			close(ch)

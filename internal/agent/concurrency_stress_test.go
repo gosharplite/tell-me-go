@@ -36,7 +36,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 		return tools.ToolResult{Text: "done"}, nil
 	})
 
-	mockClient := &stressMockLLMClient{
+	mockClient := &stressmockLLMClient{
 		sendChatFn: func(ctx context.Context, history []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 			// Logic for slow tool
 			if len(history) < 4 {
@@ -74,15 +74,15 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	wg.Wait()
 }
 
-type stressMockLLMClient struct {
+type stressmockLLMClient struct {
 	sendChatFn func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 }
 
-func (m *stressMockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (m *stressmockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return m.sendChatFn(ctx, history, tools, resolver)
 }
 
-func (m *stressMockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (m *stressmockLLMClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	content, metrics, err := m.sendChatFn(ctx, history, tools, resolver)
 	if err == nil {
 		callback(content)
@@ -90,15 +90,15 @@ func (m *stressMockLLMClient) StreamChat(ctx context.Context, history []*llm.Con
 	return metrics, err
 }
 
-func (m *stressMockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (m *stressmockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, nil
 }
 
-func (m *stressMockLLMClient) RefreshAuth() error {
+func (m *stressmockLLMClient) RefreshAuth() error {
 	return nil
 }
 
-func (m *stressMockLLMClient) SetSystemInstructions(instr string) {}
+func (m *stressmockLLMClient) SetSystemInstructions(instr string) {}
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
@@ -214,7 +214,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 	bus := &events.SimpleEventBus{}
 
 	// Create a single engine instance
-	gw := &MockGateway{
+	gw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			ch := make(chan *llm.Content)
 			close(ch)
@@ -227,7 +227,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 		},
 	}
 
-	executor := &MockExecutor{
+	executor := &mockExecutor{
 		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 			return nil, nil
 		},

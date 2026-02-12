@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
-// App represents the tell-me-go application.
-type App struct {
+// app represents the tell-me-go application.
+type app struct {
 	Version string
 	Stdin   io.Reader
 	Stdout  io.Writer
@@ -25,7 +25,7 @@ type App struct {
 }
 
 // New creates a new App instance with default IO and factories.
-func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *App {
+func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *app {
 	homeDir := os.Getenv("TELL_ME_HOME")
 	if homeDir == "" {
 		homeDir = os.Getenv("AIT_HOME")
@@ -36,7 +36,7 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *A
 
 	sm := security.NewSecurityManager(nil)
 
-	return &App{
+	return &app{
 		Version: version,
 		Stdin:   stdin,
 		Stdout:  stdout,
@@ -47,7 +47,7 @@ func New(version string, stdin io.Reader, stdout io.Writer, stderr io.Writer) *A
 }
 
 // Run executes the application logic.
-func (a *App) Run(ctx context.Context, args []string) error {
+func (a *app) Run(ctx context.Context, args []string) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
