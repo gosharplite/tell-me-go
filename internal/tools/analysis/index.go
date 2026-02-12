@@ -46,6 +46,8 @@ type symbolIndex interface {
 	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error)
 	// GetUsages returns all locations where the given symbol name is used.
 	GetUsages(ctx context.Context, symbol string, path string) ([]location, error)
+	// Packages returns the loaded packages.
+	Packages() []*packages.Package
 	// Refresh re-scans the workspace to update the index.
 	Refresh(ctx context.Context) error
 }
@@ -234,6 +236,12 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	}
 
 	return results, nil
+}
+
+func (idx *indexer) Packages() []*packages.Package {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.pkgs
 }
 
 type harvester struct {

@@ -97,8 +97,8 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// WithLimits sets the initial operational limits.
-func WithLimits(toolTurns, historyTokens, historyTurns int) agentOption {
+// withLimits sets the initial operational limits.
+func withLimits(toolTurns, historyTokens, historyTurns int) agentOption {
 	return func(a *agent) {
 		a.config.Limits = events.Limits{
 			MaxHistoryTokens: historyTokens,
@@ -283,8 +283,8 @@ func (a *agent) SetSystemInstructions(ctx context.Context, instr string) error {
 	return a.applyConfig(ctx)
 }
 
-// WithSystemInstructions sets the initial system instructions.
-func WithSystemInstructions(instr string) agentOption {
+// withSystemInstructions sets the initial system instructions.
+func withSystemInstructions(instr string) agentOption {
 	return func(a *agent) {
 		a.config.SystemInstructions = instr
 	}
