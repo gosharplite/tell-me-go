@@ -31,6 +31,8 @@ type Capturer struct {
 	SM       domain_security.ISecurityManager
 	reader   *bufio.Reader
 	readerMu sync.Mutex
+
+	isTTYOverride *bool // For testing color logic
 }
 
 // NewCapturer creates a new Capturer.
@@ -46,6 +48,9 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.I
 
 // IsTTY returns true if the value (usually an *os.File) is a terminal.
 func (c *Capturer) IsTTY(v any) bool {
+	if c.isTTYOverride != nil {
+		return *c.isTTYOverride
+	}
 	if f, ok := v.(*os.File); ok {
 		return term.IsTerminal(int(f.Fd()))
 	}

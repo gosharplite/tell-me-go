@@ -212,8 +212,10 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 
 func TestWarn_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
+	isTTY := true
 	capturer := &Capturer{
-		Stderr: &stderr,
+		Stderr:        &stderr,
+		isTTYOverride: &isTTY,
 	}
 
 	tests := []struct {
@@ -224,12 +226,12 @@ func TestWarn_SemanticStyling(t *testing.T) {
 		{
 			name:     "Security warning",
 			message:  "[SECURITY] High risk",
-			expected: "[SECURITY] High risk\n",
+			expected: colorRed + "[SECURITY] High risk" + colorReset + "\n",
 		},
 		{
 			name:     "Normal warning",
 			message:  "Regular warning",
-			expected: "Regular warning\n",
+			expected: colorYellow + "Regular warning" + colorReset + "\n",
 		},
 	}
 
@@ -249,9 +251,11 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 	defer os.Unsetenv("TELL_ME_MOCK_ANSWER")
 
 	var stderr bytes.Buffer
+	isTTY := true
 	capturer := &Capturer{
-		Stdin:  strings.NewReader(""),
-		Stderr: &stderr,
+		Stdin:         strings.NewReader(""),
+		Stderr:        &stderr,
+		isTTYOverride: &isTTY,
 	}
 
 	tests := []struct {
@@ -262,17 +266,17 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 		{
 			name:     "Security confirmation",
 			message:  "[SECURITY] Proceed?",
-			expected: "[SECURITY] Proceed?\n",
+			expected: colorRed + "[SECURITY] Proceed?" + colorReset,
 		},
 		{
 			name:     "Required confirmation",
 			message:  "[CONFIRMATION REQUIRED] Are you sure?",
-			expected: "[CONFIRMATION REQUIRED] Are you sure?\n",
+			expected: colorRed + "[CONFIRMATION REQUIRED] Are you sure?" + colorReset,
 		},
 		{
 			name:     "Normal confirmation",
 			message:  "Continue?",
-			expected: "Continue?\n",
+			expected: "Continue?", // Normal confirmation doesn't have a special color logic in the provided implementation snippet other than writing the message directly
 		},
 	}
 
@@ -283,9 +287,24 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if stderr.String() != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, stderr.String())
+			if stderr.String() != tt.expected+"\n" {
+				t.Errorf("expected %q, got %q", tt.expected+"\n", stderr.String())
 			}
 		})
+	}
+}
+
+func TestPrompt_SemanticStyling(t *testing.T) {
+	var stderr bytes.Buffer
+	isTTY := true
+	capturer := &Capturer{
+		Stderr:        &stderr,
+		isTTYOverride: &isTTY,
+	}
+
+	capturer.Prompt("Answer > ")
+	expected := colorYellow + "Answer > " + colorReset
+	if stderr.String() != expected {
+		t.Errorf("expected %q, got %q", expected, stderr.String())
 	}
 }
