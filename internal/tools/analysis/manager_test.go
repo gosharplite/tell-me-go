@@ -15,7 +15,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module test\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F(){}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("package test\nfunc F(){}\nvar _ = F"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

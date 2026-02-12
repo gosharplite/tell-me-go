@@ -10,6 +10,39 @@ import (
 )
 
 func TestIndexer_Concurrency(t *testing.T) {
+	tmpDir, idx, ctx := setupIndexerConcurrency(t)
+
+	start := make(chan struct{})
+
+	t.Run("ParallelSearchAndRefresh", func(t *testing.T) {
+		var wg sync.WaitGroup
+
+		// 10 goroutines doing SearchSymbols
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				runSearchLoop(ctx, idx, tmpDir, 100, t)
+			}()
+		}
+
+		// 2 goroutines doing Refresh frequently
+		for i := 0; i < 2; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				runRefreshLoop(ctx, idx, 10, t)
+			}()
+		}
+
+		close(start)
+		wg.Wait()
+	})
+}
+
+func setupIndexerConcurrency(t *testing.T) (string, *indexer, context.Context) {
 	tmpDir := t.TempDir()
 
 	// Create a dummy project
@@ -38,48 +71,26 @@ func F2() {}
 	if err := idx.Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}
+	return tmpDir, idx, ctx
+}
 
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-
-	// 10 goroutines doing SearchSymbols
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			for j := 0; j < 100; j++ {
-				syms, err := idx.SearchSymbols(ctx, tmpDir, "F1", false)
-				if err != nil {
-					t.Errorf("SearchSymbols error: %v", err)
-				}
-				if len(syms) == 0 {
-					t.Errorf("expected to find F1, got 0 symbols (mid-refresh empty result?)")
-				}
-			}
-		}()
+func runSearchLoop(ctx context.Context, idx *indexer, tmpDir string, iterations int, t *testing.T) {
+	for j := 0; j < iterations; j++ {
+		syms, err := idx.SearchSymbols(ctx, tmpDir, "F1", false)
+		if err != nil {
+			t.Errorf("SearchSymbols error: %v", err)
+		}
+		if len(syms) == 0 {
+			t.Errorf("expected to find F1, got 0 symbols (mid-refresh empty result?)")
+		}
 	}
+}
 
-	// 2 goroutines doing Refresh frequently (forcing TTL bypass if we could,
-	// but here we just test that they don't crash or return empty results)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			for j := 0; j < 10; j++ {
-				// We don't wait for TTL here to test concurrency safety,
-				// though Refresh will actually skip if TTL not met.
-				// To force a refresh, we'd need to manipulate lastRefresh or wait.
-				// For race testing, even the skipping path is valuable.
-				if err := idx.Refresh(ctx); err != nil {
-					t.Errorf("Refresh error: %v", err)
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-		}()
+func runRefreshLoop(ctx context.Context, idx *indexer, iterations int, t *testing.T) {
+	for j := 0; j < iterations; j++ {
+		if err := idx.Refresh(ctx); err != nil {
+			t.Errorf("Refresh error: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	close(start)
-	wg.Wait()
 }

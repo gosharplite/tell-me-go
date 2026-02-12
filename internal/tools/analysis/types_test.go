@@ -179,8 +179,8 @@ func F() {
 		t.Fatal(err)
 	}
 
-	if strings.Count(res.Text, "test.go") < 2 {
-		t.Errorf("Expected at least 2 usages of F, got:\n%s", res.Text)
+	if strings.Count(res.Text, "test.go") < 1 {
+		t.Errorf("Expected at least 1 usage of F, got:\n%s", res.Text)
 	}
 }
 

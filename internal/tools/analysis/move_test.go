@@ -46,27 +46,10 @@ func Hello() {}`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fset := token.NewFileSet()
-			srcFile, err := parser.ParseFile(fset, "src.go", tt.srcCode, parser.ParseComments)
+			fset, files, tr, err := setupMoveTransform(tt.symbol, tt.srcCode, tt.dstCode)
 			if err != nil {
-				t.Fatalf("failed to parse src: %v", err)
+				t.Fatalf("setup failed: %v", err)
 			}
-			dstFile, err := parser.ParseFile(fset, "dst.go", tt.dstCode, parser.ParseComments)
-			if err != nil {
-				t.Fatalf("failed to parse dst: %v", err)
-			}
-
-			files := map[string]*ast.File{
-				"src.go": srcFile,
-				"dst.go": dstFile,
-			}
-
-			plan := &movePlan{
-				Symbol:  tt.symbol,
-				SrcFile: "src.go",
-				DstFile: "dst.go",
-			}
-			tr := newMoveTransform(plan)
 
 			err = tr.Apply(context.Background(), fset, files)
 			if (err != nil) != tt.wantErr {
@@ -75,29 +58,57 @@ func Hello() {}`,
 			}
 
 			if !tt.wantErr {
-				// Verify symbol moved
-				foundInSrc := false
-				for _, d := range files["src.go"].Decls {
-					if tr.matchSymbol(d) {
-						foundInSrc = true
-						break
-					}
-				}
-				if foundInSrc {
-					t.Errorf("symbol %s still in source", tt.symbol)
-				}
-
-				foundInDst := false
-				for _, d := range files["dst.go"].Decls {
-					if tr.matchSymbol(d) {
-						foundInDst = true
-						break
-					}
-				}
-				if !foundInDst {
-					t.Errorf("symbol %s not in destination", tt.symbol)
-				}
+				verifyMove(t, tt.symbol, files, tr)
 			}
 		})
+	}
+}
+
+func setupMoveTransform(symbol, srcCode, dstCode string) (*token.FileSet, map[string]*ast.File, *moveTransform, error) {
+	fset := token.NewFileSet()
+	srcFile, err := parser.ParseFile(fset, "src.go", srcCode, parser.ParseComments)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	dstFile, err := parser.ParseFile(fset, "dst.go", dstCode, parser.ParseComments)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	files := map[string]*ast.File{
+		"src.go": srcFile,
+		"dst.go": dstFile,
+	}
+
+	plan := &movePlan{
+		Symbol:  symbol,
+		SrcFile: "src.go",
+		DstFile: "dst.go",
+	}
+	return fset, files, newMoveTransform(plan), nil
+}
+
+func verifyMove(t *testing.T, symbol string, files map[string]*ast.File, tr *moveTransform) {
+	// Verify symbol moved
+	foundInSrc := false
+	for _, d := range files["src.go"].Decls {
+		if tr.matchSymbol(d) {
+			foundInSrc = true
+			break
+		}
+	}
+	if foundInSrc {
+		t.Errorf("symbol %s still in source", symbol)
+	}
+
+	foundInDst := false
+	for _, d := range files["dst.go"].Decls {
+		if tr.matchSymbol(d) {
+			foundInDst = true
+			break
+		}
+	}
+	if !foundInDst {
+		t.Errorf("symbol %s not in destination", symbol)
 	}
 }

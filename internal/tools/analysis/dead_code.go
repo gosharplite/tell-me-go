@@ -125,7 +125,6 @@ func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, err
 	return "", fmt.Errorf("no go.mod found")
 }
 
-
 func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
@@ -161,7 +160,6 @@ func (a *deadCodeAnalyzer) buildFileToPkgMap(pkgs []*packages.Package) map[strin
 	}
 	return fileToPkg
 }
-
 
 func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolResult {
 	if len(findings) == 0 {
@@ -334,7 +332,6 @@ func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanStat
 		}
 	}
 }
-
 
 func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
