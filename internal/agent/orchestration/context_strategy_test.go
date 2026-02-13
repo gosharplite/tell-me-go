@@ -98,7 +98,7 @@ func setupWarningTest() *ContextStrategy {
 	return cs
 }
 
-func TestContextStrategy_Warnings_EmptyHistory(t *testing.T) {
+func TestContextStrategy_Warnings_WarningVerification(t *testing.T) {
 	cs := setupWarningTest()
 	warnings := cs.getWarnings(0, 0, 0)
 	if len(warnings) != 0 {
@@ -106,62 +106,62 @@ func TestContextStrategy_Warnings_EmptyHistory(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_Warnings_TokenPressure(t *testing.T) {
+func TestContextStrategy_Warnings_TokenPressureValidation(t *testing.T) {
 	cs := setupWarningTest()
 
-	t.Run("Token Boundaries", func(t *testing.T) {
-		tests := []struct {
-			tokens   int
-			expected string
-		}{
-			{899, ""},
-			{901, "90%"},
-			{901, "manage_history"},
-			{949, "90%"},
-			{951, "CRITICAL"},
-			{951, "95%"},
-		}
-		for _, tt := range tests {
-			warnings := cs.getWarnings(0, tt.tokens, 0)
-			got := ""
-			for _, w := range warnings {
-				if tt.expected != "" && contains(w.Message, tt.expected) {
-					got = w.Message
-					break
-				}
-			}
-			if tt.expected == "" {
-				if len(warnings) != 0 {
-					t.Errorf("expected no warning at %d, got %q", tt.tokens, warnings[0].Message)
-				}
-			} else if got == "" {
-				t.Errorf("expected warning at %d to contain %q, got none", tt.tokens, tt.expected)
+	tests := []struct {
+		tokens   int
+		expected string
+	}{
+		{899, ""},
+		{901, "90%"},
+		{901, "manage_history"},
+		{949, "90%"},
+		{951, "CRITICAL"},
+		{951, "95%"},
+	}
+	for _, tt := range tests {
+		warnings := cs.getWarnings(0, tt.tokens, 0)
+		got := ""
+		for _, w := range warnings {
+			if tt.expected != "" && contains(w.Message, tt.expected) {
+				got = w.Message
+				break
 			}
 		}
-	})
+		if tt.expected == "" {
+			if len(warnings) != 0 {
+				t.Errorf("expected no warning at %d, got %q", tt.tokens, warnings[0].Message)
+			}
+		} else if got == "" {
+			t.Errorf("expected warning at %d to contain %q, got none", tt.tokens, tt.expected)
+		}
+	}
+}
 
-	t.Run("Turn Count Limits", func(t *testing.T) {
-		tests := []struct {
-			turn     int
-			contains []string
-		}{
-			{7, []string{"SYSTEM NOTICE", "3 turns remaining"}},
-			{8, []string{"URGENT", "2 turns remain", "distilled state", "manage_history"}},
-			{9, []string{"FINAL", "final turn", "forbidden"}},
+func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
+	cs := setupWarningTest()
+
+	tests := []struct {
+		turn     int
+		contains []string
+	}{
+		{7, []string{"SYSTEM NOTICE", "3 turns remaining"}},
+		{8, []string{"URGENT", "2 turns remain", "distilled state", "manage_history"}},
+		{9, []string{"FINAL", "final turn", "forbidden"}},
+	}
+	for _, tt := range tests {
+		warnings := cs.getWarnings(tt.turn, 0, 0)
+		got := ""
+		if len(warnings) > 0 {
+			got = warnings[0].Message
 		}
-		for _, tt := range tests {
-			warnings := cs.getWarnings(tt.turn, 0, 0)
-			got := ""
-			if len(warnings) > 0 {
-				got = warnings[0].Message
-			}
-			for _, want := range tt.contains {
-				if !contains(got, want) {
-					t.Errorf("expected turn %d warning to contain %q, got %q", tt.turn, want, got)
-				}
+		for _, want := range tt.contains {
+			if !contains(got, want) {
+				t.Errorf("expected turn %d warning to contain %q, got %q", tt.turn, want, got)
 			}
 		}
-	})
+	}
 }
 
 func TestContextStrategy_Warnings_InvalidStrategyConfig(t *testing.T) {

@@ -18,11 +18,11 @@ type StdHistoryRenderer struct{}
 
 // Render implements services.HistoryRenderer.
 func (r *StdHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
-	History(w, h, n, options)
+	renderHistory(w, h, n, options)
 }
 
-// History renders the chat history to the provided writer.
-func History(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+// renderHistory renders the chat history to the provided writer.
+func renderHistory(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
 	contents := h.GetContents()
 	if len(contents) == 0 {
 		fmt.Fprintln(w, "No history found.")

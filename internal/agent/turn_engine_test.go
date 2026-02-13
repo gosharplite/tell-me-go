@@ -447,7 +447,9 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		Clock:      &realClock{},
 	}
 
-	e.processors[phaseInference].Process(context.Background(), turn)
+	if _, err := e.processors[phaseInference].Process(context.Background(), turn); err != nil {
+		t.Fatal(err)
+	}
 
 	expected := []string{"m1_in", "m2_in", "m2_out", "m1_out"}
 	if strings.Join(order, ",") != strings.Join(expected, ",") {
@@ -1105,7 +1107,9 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 			return processResult{}, nil
 		})
 
-		middleware(finalProcessor).Process(context.Background(), tn)
+		if _, err := middleware(finalProcessor).Process(context.Background(), tn); err != nil {
+			t.Fatal(err)
+		}
 
 		if metrics.Cost <= 0 {
 			t.Errorf("expected cost to be populated in event metrics, got %f", metrics.Cost)

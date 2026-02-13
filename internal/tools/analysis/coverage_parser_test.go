@@ -140,17 +140,32 @@ func TestParseCoverageLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseCoverageLine(tt.line, tt.prefix)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseCoverageLine() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err == nil && got != nil {
-				if got.File != tt.want.File || got.Start != tt.want.Start || got.End != tt.want.End || got.Stmts != tt.want.Stmts {
-					t.Errorf("parseCoverageLine() = %+v, want %+v", got, tt.want)
-				}
-			} else if err == nil && got == nil && tt.want != nil {
-				t.Errorf("parseCoverageLine() returned nil, want %+v", tt.want)
-			}
+			validateParseResult(t, got, err, tt.want, tt.wantErr)
 		})
+	}
+}
+
+func validateParseResult(t *testing.T, got *uncoveredBlock, err error, want *uncoveredBlock, wantErr bool) {
+	t.Helper()
+	if (err != nil) != wantErr {
+		t.Errorf("parseCoverageLine() error = %v, wantErr %v", err, wantErr)
+		return
+	}
+	if err == nil {
+		compareBlocks(t, got, want)
+	}
+}
+
+func compareBlocks(t *testing.T, got, want *uncoveredBlock) {
+	t.Helper()
+	if got == nil {
+		if want != nil {
+			t.Errorf("parseCoverageLine() returned nil, want %+v", want)
+		}
+		return
+	}
+	if got.File != want.File || got.Start != want.Start || got.End != want.End || got.Stmts != want.Stmts {
+		t.Errorf("parseCoverageLine() = %+v, want %+v", got, want)
 	}
 }
 

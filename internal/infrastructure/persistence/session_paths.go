@@ -15,8 +15,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
-// Paths is an alias for persistence.Paths
-type Paths = persistence.Paths
+// paths is an alias for persistence.Paths
+type paths = persistence.Paths
 
 // InitializePaths creates the necessary directories and returns the Paths for the session.
 func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {

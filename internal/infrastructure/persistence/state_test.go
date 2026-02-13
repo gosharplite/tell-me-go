@@ -6,11 +6,13 @@ package persistence
 import (
 	"context"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
-func verifyStateInitialization(t *testing.T, state *SessionState) {
+func verifyStateInitialization(t *testing.T, state services.ISessionProvider) {
 	t.Helper()
-	if state.Tasks == nil || state.Config == nil || state.Scratchpad == nil {
+	if state.GetTasks() == nil || state.GetConfig() == nil || state.GetScratchpad() == nil {
 		t.Error("expected all services to be initialized")
 	}
 }
@@ -26,12 +28,13 @@ func TestNewSessionState_FileStorage(t *testing.T) {
 
 	verifyStateInitialization(t, state)
 
-	if state.Info.Env["STORAGE_TYPE"] != "file" {
-		t.Errorf("expected STORAGE_TYPE to be file, got %s", state.Info.Env["STORAGE_TYPE"])
+	info := state.GetInfo().(sessionInfo)
+	if info.Env["STORAGE_TYPE"] != "file" {
+		t.Errorf("expected STORAGE_TYPE to be file, got %s", info.Env["STORAGE_TYPE"])
 	}
 
-	if state.Info.Paths["config_dir"] != tempDir {
-		t.Errorf("expected config_dir to be %s, got %s", tempDir, state.Info.Paths["config_dir"])
+	if info.Paths["config_dir"] != tempDir {
+		t.Errorf("expected config_dir to be %s, got %s", tempDir, info.Paths["config_dir"])
 	}
 }
 
@@ -47,15 +50,16 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 
 	verifyStateInitialization(t, state)
 
-	if state.Info.Env["STORAGE_TYPE"] != "memory" {
-		t.Errorf("expected STORAGE_TYPE to be memory, got %s", state.Info.Env["STORAGE_TYPE"])
+	info := state.GetInfo().(sessionInfo)
+	if info.Env["STORAGE_TYPE"] != "memory" {
+		t.Errorf("expected STORAGE_TYPE to be memory, got %s", info.Env["STORAGE_TYPE"])
 	}
 
 	// Should work without actual files
-	if err := state.Config.Set(ctx, "mem_key", "mem_val"); err != nil {
+	if err := state.GetConfig().Set(ctx, "mem_key", "mem_val"); err != nil {
 		t.Fatal(err)
 	}
-	val, _ := state.Config.Get("mem_key")
+	val, _ := state.GetConfig().Get("mem_key")
 	if val != "mem_val" {
 		t.Errorf("expected mem_val, got %s", val)
 	}
