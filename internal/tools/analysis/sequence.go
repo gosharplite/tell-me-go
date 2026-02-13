@@ -17,6 +17,11 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+type funcInfo struct {
+	decl *ast.FuncDecl
+	pkg  *packages.Package
+}
+
 // sequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
 	SP        security.ISecurityManager
@@ -24,9 +29,11 @@ type sequenceAnalyzer struct {
 	idx       symbolIndex
 	Formatter *mermaidFormatter
 
-	pkgMu    sync.RWMutex
-	pkgs     []*packages.Package
-	modName  string
+	pkgMu   sync.RWMutex
+	pkgs    []*packages.Package
+	modName string
+
+	funcMap  map[string]funcInfo
 	lastLoad time.Time
 	cacheTTL time.Duration
 }
@@ -39,14 +46,25 @@ func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.ISecurityManage
 		idx:       idx,
 		Formatter: newMermaidFormatter(),
 		cacheTTL:  5 * time.Minute,
+		funcMap:   make(map[string]funcInfo),
 	}
 }
 
 // AnalyzeSequenceFlow is the entry point for the analyze_sequence_flow tool.
 func (a *sequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	startSymbol, _ := args["start_symbol"].(string)
-	maxDepth, ok := args["max_depth"].(float64)
-	if !ok {
+	maxDepthVal, ok := args["max_depth"]
+	var maxDepth int
+	if ok {
+		switch v := maxDepthVal.(type) {
+		case float64:
+			maxDepth = int(v)
+		case int:
+			maxDepth = v
+		default:
+			maxDepth = 5
+		}
+	} else {
 		maxDepth = 5
 	}
 
@@ -54,7 +72,7 @@ func (a *sequenceAnalyzer) AnalyzeSequenceFlow(ctx context.Context, args map[str
 		return tools.ToolResult{Text: "Error: missing 'start_symbol' argument"}, nil
 	}
 
-	frames, err := a.traceFlow(ctx, startSymbol, int(maxDepth))
+	frames, err := a.traceFlow(ctx, startSymbol, maxDepth)
 	if err != nil {
 		return tools.ToolResult{Text: fmt.Sprintf("Error tracing flow: %v", err)}, nil
 	}
@@ -78,13 +96,6 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 		return nil
 	}
 
-	// 0. Get module name
-	modOut, err := a.Exec.Output(ctx, "go", "list", "-m")
-	if err != nil {
-		return fmt.Errorf("failed to get module name: %w", err)
-	}
-	a.modName = strings.TrimSpace(string(modOut))
-
 	// 1. Refresh and get packages from indexer
 	if err := a.idx.Refresh(ctx); err != nil {
 		return fmt.Errorf("refreshing index: %w", err)
@@ -92,6 +103,26 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 	pkgs := a.idx.Packages()
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no packages loaded")
+	}
+
+	// 2. Build maps for O(1) lookup
+	a.funcMap = make(map[string]funcInfo)
+
+	for _, pkg := range pkgs {
+		if a.modName == "" && pkg.Module != nil {
+			a.modName = pkg.Module.Path
+		}
+
+		for _, file := range pkg.Syntax {
+			for _, decl := range file.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					if obj := pkg.TypesInfo.Defs[fd.Name]; obj != nil {
+						id := getSymbolIdentity(obj)
+						a.funcMap[id] = funcInfo{decl: fd, pkg: pkg}
+					}
+				}
+			}
+		}
 	}
 
 	a.pkgs = pkgs
@@ -105,34 +136,58 @@ func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 	}
 
 	a.pkgMu.RLock()
-	pkgs := a.pkgs
 	modName := a.modName
 	a.pkgMu.RUnlock()
 
-	startPkg, remaining := a.findStartPackage(startSymbol, pkgs)
-	if startPkg == nil {
-		return nil, fmt.Errorf("start symbol package not found: %s", startSymbol)
+	// Try exact match first
+	a.pkgMu.RLock()
+	info, ok := a.funcMap[startSymbol]
+	a.pkgMu.RUnlock()
+
+	var startPkg *packages.Package
+	var startFunc *ast.FuncDecl
+
+	if ok {
+		startPkg = info.pkg
+		startFunc = info.decl
+	} else {
+		// Fallback to legacy search
+		a.pkgMu.RLock()
+		pkgs := a.pkgs
+		a.pkgMu.RUnlock()
+
+		startPkg, remaining := a.findStartPackage(startSymbol, pkgs)
+		if startPkg != nil {
+			var err error
+			startFunc, err = a.resolveStartFunc(startPkg, remaining)
+			if err != nil {
+				return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
+			}
+		}
 	}
 
-	startFunc, err := a.resolveStartFunc(startPkg, remaining)
-	if err != nil {
+	if startPkg == nil || startFunc == nil {
 		return nil, fmt.Errorf("start symbol not found: %s", startSymbol)
 	}
 
 	var frames []callFrame
 	visited := make(map[string]bool)
 
-	a.walk(startPkg, startFunc, 0, maxDepth, &frames, visited, pkgs, modName)
+	a.walk(startPkg, startFunc, 0, maxDepth, &frames, visited, modName)
 
 	return frames, nil
 }
 
-func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, allPkgs []*packages.Package, modName string) {
+func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
 
-	key := fmt.Sprintf("%s.%s", pkg.PkgPath, fn.Name.Name)
+	obj := pkg.TypesInfo.Defs[fn.Name]
+	if obj == nil {
+		return
+	}
+	key := getSymbolIdentity(obj)
 	if visited[key] {
 		return
 	}
@@ -145,7 +200,6 @@ func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, 
 		maxDepth: maxDepth,
 		frames:   frames,
 		visited:  visited,
-		allPkgs:  allPkgs,
 		analyzer: a,
 	}
 	ast.Walk(v, fn.Body)
@@ -158,7 +212,6 @@ type sequenceVisitor struct {
 	maxDepth int
 	frames   *[]callFrame
 	visited  map[string]bool
-	allPkgs  []*packages.Package
 	analyzer *sequenceAnalyzer
 	inLoop   int
 	inGo     bool
@@ -232,7 +285,21 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 
 	*v.frames = append(*v.frames, frame)
 
-	v.tryRecurse(targetPkgPath, targetFunc, v.depth, v.maxDepth)
+	// Resolve the target ID for recursion
+	var targetId string
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if obj := v.pkg.TypesInfo.Uses[sel.Sel]; obj != nil {
+			targetId = getSymbolIdentity(obj)
+		}
+	} else if ident, ok := call.Fun.(*ast.Ident); ok {
+		if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
+			targetId = getSymbolIdentity(obj)
+		}
+	}
+
+	if targetId != "" {
+		v.tryRecurse(targetId, v.depth, v.maxDepth)
+	}
 }
 
 func (a *sequenceAnalyzer) getTypePkgPath(t types.Type) string {
@@ -427,19 +494,26 @@ func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc stri
 	return displayFunc, retType
 }
 
-func (v *sequenceVisitor) tryRecurse(targetPkgPath, targetFunc string, depth, maxDepth int) {
-	if depth+1 < maxDepth {
-		for _, p := range v.allPkgs {
-			if p.PkgPath == targetPkgPath {
-				for _, file := range p.Syntax {
-					for _, decl := range file.Decls {
-						if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Name == targetFunc {
-							v.analyzer.walk(p, fd, depth+1, maxDepth, v.frames, v.visited, v.allPkgs, v.modName)
-							return
-						}
-					}
-				}
-			}
+func (v *sequenceVisitor) tryRecurse(targetId string, depth, maxDepth int) {
+	if depth+1 >= maxDepth {
+		return
+	}
+
+	v.analyzer.pkgMu.RLock()
+	defer v.analyzer.pkgMu.RUnlock()
+
+	// 1. Direct match
+	if info, ok := v.analyzer.funcMap[targetId]; ok {
+		v.analyzer.walk(info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
+		return
+	}
+
+	// 2. Interface implementation tracing
+	impls := v.analyzer.idx.GetImplementations(targetId)
+	if len(impls) == 1 {
+		implId := impls[0]
+		if info, ok := v.analyzer.funcMap[implId]; ok {
+			v.analyzer.walk(info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
 		}
 	}
 }
