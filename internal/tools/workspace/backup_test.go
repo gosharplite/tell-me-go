@@ -23,19 +23,19 @@ func TestBackupManager_Undo(t *testing.T) {
 	path := filepath.Join(tempDir, "test.txt")
 
 	// 1. Snapshot new file creation
-	bm.Snapshot(path, "WRITE")
+	bm.snapshot(path, "WRITE")
 	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Snapshot modification
-	bm.Snapshot(path, "REPLACE")
+	bm.snapshot(path, "REPLACE")
 	if err := os.WriteFile(path, []byte("v2"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Undo modification
-	res, err := bm.Undo(ctx, 1)
+	res, err := bm.undo(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestBackupManager_Undo(t *testing.T) {
 	}
 
 	// 4. Undo creation
-	res, err = bm.Undo(ctx, 1)
+	res, err = bm.undo(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("NoSnapshots", func(t *testing.T) {
-		res, err := bm.Undo(ctx, 1)
+		res, err := bm.undo(ctx, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,9 +83,9 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 		// Use a path that is NOT in CWD or TempDir to trigger security violation
 		path := "/unauthorized-path-for-test/denied.txt"
 		// Snapshot it (it will resolve Abs, but BackupManager doesn't check security on Snapshot)
-		bm.Snapshot(path, "WRITE")
+		bm.snapshot(path, "WRITE")
 		// SecurityManager will deny this because it's not in CWD or TempDir
-		_, err := bm.Undo(ctx, 1)
+		_, err := bm.undo(ctx, 1)
 		if err == nil {
 			t.Error("expected error due to permission denied, got nil")
 		} else if !strings.Contains(err.Error(), "security violation") {
@@ -101,7 +101,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		bm.Snapshot(dirPath, "WRITE")
+		bm.snapshot(dirPath, "WRITE")
 		// os.Remove on a non-empty directory or just a directory might fail depending on how it's called
 		// but here we just want to trigger an error in os.Remove.
 		// Actually, os.Remove works on empty dirs. Let's put a file in it.
@@ -109,7 +109,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := bm.Undo(ctx, 1)
+		_, err := bm.undo(ctx, 1)
 		if err == nil {
 			t.Error("expected error removing non-empty directory, got nil")
 		}
@@ -124,7 +124,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		bm.Snapshot(path, "REPLACE")
+		bm.snapshot(path, "REPLACE")
 
 		// Make the directory read-only to make AtomicWrite fail (it creates a temp file)
 		if err := os.Chmod(tempDir, 0555); err != nil {
@@ -132,7 +132,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 		}
 		defer func() { _ = os.Chmod(tempDir, 0755) }()
 
-		_, err := bm.Undo(ctx, 1)
+		_, err := bm.undo(ctx, 1)
 		if err == nil {
 			t.Error("expected error during atomic write, got nil")
 		}

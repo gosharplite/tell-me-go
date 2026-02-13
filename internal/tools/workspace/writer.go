@@ -50,7 +50,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	w.bm.Snapshot(resolvedPath, "WRITE")
+	w.bm.snapshot(resolvedPath, "WRITE")
 
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(resolvedPath)
@@ -96,7 +96,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	w.bm.Snapshot(resolvedPath, "REPLACE")
+	w.bm.snapshot(resolvedPath, "REPLACE")
 
 	contentBytes, err := w.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
@@ -149,7 +149,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{Text: "Action denied by user."}, nil
 	}
 
-	w.bm.Snapshot(resolvedPath, "APPEND")
+	w.bm.snapshot(resolvedPath, "APPEND")
 
 	// Use OpenFile with O_APPEND
 	f, err := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -182,6 +182,6 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 	if n <= 0 {
 		n = 1
 	}
-	res, err := w.bm.Undo(ctx, n)
+	res, err := w.bm.undo(ctx, n)
 	return tools.ToolResult{Text: res}, err
 }

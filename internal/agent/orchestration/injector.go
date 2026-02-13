@@ -33,7 +33,7 @@ func (t *warningInjector) Transform(ctx context.Context, req *services.ContextRe
 
 func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, turns int) (string, []string) {
 	// Temporarily set pruned turns in strategy for warning generation
-	t.Strategy.SetPrunedTurns(req.Metadata.PrunedTurns)
+	t.Strategy.setPrunedTurns(req.Metadata.PrunedTurns)
 
 	var combined string
 	var list []string

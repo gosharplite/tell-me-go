@@ -387,38 +387,42 @@ func (h *harvester) handleIdent(d *ast.Ident) {
 		return
 	}
 
-	// Filter: record only exported symbols, method calls, or package-level symbols.
-	// This reduces noise from local variables and parameters (which comprise the bulk of identifiers)
-	// while keeping relevant symbols for cross-package and package-level analysis.
-	isExported := obj.Exported()
-	isMethod := false
-	if fn, ok := obj.(*types.Func); ok {
-		sig := fn.Type().(*types.Signature)
-		isMethod = sig.Recv() != nil
-	}
-
-	isPackageLevel := false
-	if obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope() {
-		isPackageLevel = true
-	}
-
+	isExported, isMethod, isPackageLevel := h.classifyObject(obj)
 	if !isExported && !isMethod && !isPackageLevel {
 		return
 	}
 
 	// Move toLocation after the filter to avoid unnecessary allocations
 	loc := h.toLocation(d.Pos())
+	h.recordUsage(d.Name, obj, loc, isExported)
+}
 
+func (h *harvester) classifyObject(obj types.Object) (isExported, isMethod, isPackageLevel bool) {
+	isExported = obj.Exported()
+
+	if fn, ok := obj.(*types.Func); ok {
+		sig := fn.Type().(*types.Signature)
+		isMethod = sig.Recv() != nil
+	}
+
+	if obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope() {
+		isPackageLevel = true
+	}
+
+	return
+}
+
+func (h *harvester) recordUsage(shortName string, obj types.Object, loc location, isExported bool) {
 	if isExported {
 		// Only call expensive getSymbolIdentity for exported symbols
 		key := getSymbolIdentity(obj)
 		h.usagesByName[key] = append(h.usagesByName[key], loc)
-		if key != d.Name {
-			h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
+		if key != shortName {
+			h.usagesByName[shortName] = append(h.usagesByName[shortName], loc)
 		}
 	} else {
 		// Private method call or package-level symbol: store by short name to save memory
-		h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
+		h.usagesByName[shortName] = append(h.usagesByName[shortName], loc)
 	}
 }
 

@@ -106,14 +106,14 @@ type iToolExecutor interface {
 
 // turnProcessor defines a single stage in the TurnEngine pipeline.
 type turnProcessor interface {
-	Process(ctx context.Context, turn *turn) (processResult, error)
+	process(ctx context.Context, turn *turn) (processResult, error)
 }
 
 // turnProcessorFunc is an adapter to allow the use of ordinary functions as turnProcessors.
 type turnProcessorFunc func(context.Context, *turn) (processResult, error)
 
-// Process calls f(ctx, turn).
-func (f turnProcessorFunc) Process(ctx context.Context, turn *turn) (processResult, error) {
+// process calls f(ctx, turn).
+func (f turnProcessorFunc) process(ctx context.Context, turn *turn) (processResult, error) {
 	return f(ctx, turn)
 }
 
@@ -365,7 +365,7 @@ func (e *turnEngine) emergencySave(turn *turn) {
 		if p, ok := e.processors[phasePersisting]; ok {
 			saveCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			_, _ = p.Process(saveCtx, turn)
+			_, _ = p.process(saveCtx, turn)
 		}
 	}
 }
@@ -376,7 +376,7 @@ func (e *turnEngine) executePhase(ctx context.Context, turn *turn) (processResul
 		return processResult{}, newAgentError(errLogic, fmt.Sprintf("no processor for phase: %s", turn.State.Phase), nil)
 	}
 
-	res, err := processor.Process(ctx, turn)
+	res, err := processor.process(ctx, turn)
 	if err != nil {
 		turn.State.LastError = err
 	}
@@ -407,7 +407,7 @@ func (e *turnEngine) notifyTransition(from, to turnPhase, state *turnState) {
 // guardStep validates the turn against limits before proceeding.
 type guardStep struct{}
 
-func (p *guardStep) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *guardStep) process(ctx context.Context, turn *turn) (processResult, error) {
 	if err := ctx.Err(); err != nil {
 		return processResult{}, err
 	}
@@ -426,7 +426,7 @@ func (p *guardStep) Process(ctx context.Context, turn *turn) (processResult, err
 // contextRefiner prepares the context for the LLM call.
 type contextRefiner struct{}
 
-func (p *contextRefiner) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *contextRefiner) process(ctx context.Context, turn *turn) (processResult, error) {
 	history, metadata, err := turn.CtxManager.Prepare(ctx, turn.Index)
 	if err != nil {
 		category := llm.ErrTerminal
@@ -445,7 +445,7 @@ func (p *contextRefiner) Process(ctx context.Context, turn *turn) (processResult
 // inferenceStep calls the LLM.
 type inferenceStep struct{}
 
-func (p *inferenceStep) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult, error) {
 	start := time.Now()
 	respContent, metrics, err := p.invokeModel(ctx, turn)
 	inferenceDuration := time.Since(start)
@@ -524,7 +524,7 @@ func (p *inferenceStep) hasToolCalls(content *llm.Content) bool {
 // executionStep executes tools if any.
 type executionStep struct{}
 
-func (p *executionStep) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *executionStep) process(ctx context.Context, turn *turn) (processResult, error) {
 	if !turn.State.HasToolCalls {
 		return processResult{NextPhase: phasePersisting}, nil
 	}
@@ -579,7 +579,7 @@ func (p *executionStep) injectCircuitBreakerWarning(ctx context.Context, turn *t
 // persistenceStep saves the response and tool results to history.
 type persistenceStep struct{}
 
-func (p *persistenceStep) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *persistenceStep) process(ctx context.Context, turn *turn) (processResult, error) {
 	if turn.State.Response != nil {
 		if err := turn.CtxManager.AddContent(ctx, turn.State.Response); err != nil {
 			category := llm.ErrTerminal
@@ -608,7 +608,7 @@ type recoveryStep struct {
 	Policy retryPolicy
 }
 
-func (p *recoveryStep) Process(ctx context.Context, turn *turn) (processResult, error) {
+func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, error) {
 	err := turn.State.LastError
 	if err == nil {
 		return processResult{NextPhase: phaseComplete}, nil

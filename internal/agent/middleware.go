@@ -24,7 +24,7 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
-			return next.Process(ctx, turn)
+			return next.process(ctx, turn)
 		})
 	}
 }
@@ -33,7 +33,7 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
-			res, err := next.Process(ctx, turn)
+			res, err := next.process(ctx, turn)
 			if e.events == nil || err != nil {
 				return res, err
 			}
@@ -86,7 +86,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 func (e *turnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
-			res, err := next.Process(ctx, turn)
+			res, err := next.process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
 					// Calculate and accumulate into session total (thread-safe)
@@ -112,7 +112,7 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 func withLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
-			res, err := next.Process(ctx, turn)
+			res, err := next.process(ctx, turn)
 
 			if turn.State.Phase == phaseInference && err == nil && turn.State.Response != nil {
 				// 1. Multi-step loop detection (Text & Tool Calls)

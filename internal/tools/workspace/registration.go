@@ -320,7 +320,7 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 			},
 			Required: []string{"question"},
 		},
-	}, interaction.AskUser, tools.ToolOptions{Serial: true, LongRunning: true})
+	}, interaction.askUser, tools.ToolOptions{Serial: true, LongRunning: true})
 }
 
 func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {

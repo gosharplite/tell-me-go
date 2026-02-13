@@ -42,7 +42,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 			p := createProcessorForPhase(tt.phase)
 			turn := setupTransitionTurn(tt.hasTools, tt.phase)
 
-			res, _ := p.Process(context.Background(), turn)
+			res, _ := p.process(context.Background(), turn)
 			if res.NextPhase != tt.expected {
 				t.Errorf("phase %s (tools:%v) expected next %s, got %s", tt.phase, tt.hasTools, tt.expected, res.NextPhase)
 			}
@@ -404,7 +404,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	m1 := func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			order = append(order, "m1_in")
-			res, err := next.Process(ctx, turn)
+			res, err := next.process(ctx, turn)
 			order = append(order, "m1_out")
 			return res, err
 		})
@@ -412,7 +412,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	m2 := func(next turnProcessor) turnProcessor {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			order = append(order, "m2_in")
-			res, err := next.Process(ctx, turn)
+			res, err := next.process(ctx, turn)
 			order = append(order, "m2_out")
 			return res, err
 		})
@@ -447,7 +447,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		Clock:      &realClock{},
 	}
 
-	if _, err := e.processors[phaseInference].Process(context.Background(), turn); err != nil {
+	if _, err := e.processors[phaseInference].process(context.Background(), turn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -548,7 +548,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 			}
 
 			p := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
-			_, err := p.Process(ctx, turn)
+			_, err := p.process(ctx, turn)
 
 			if err == nil {
 				t.Fatalf("expected error, got nil")
@@ -1107,7 +1107,7 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 			return processResult{}, nil
 		})
 
-		if _, err := middleware(finalProcessor).Process(context.Background(), tn); err != nil {
+		if _, err := middleware(finalProcessor).process(context.Background(), tn); err != nil {
 			t.Fatal(err)
 		}
 
