@@ -30,14 +30,14 @@ type uncoveredBlock struct {
 
 // classificationRule defines a rule for categorizing uncovered code blocks.
 type classificationRule interface {
-	Category() string
-	Match(b *uncoveredBlock) bool
+	category() string
+	match(b *uncoveredBlock) bool
 }
 
 type errorHandlingRule struct{}
 
-func (r errorHandlingRule) Category() string { return "ERROR_HANDLING" }
-func (r errorHandlingRule) Match(b *uncoveredBlock) bool {
+func (r errorHandlingRule) category() string { return "ERROR_HANDLING" }
+func (r errorHandlingRule) match(b *uncoveredBlock) bool {
 	lowerCode := strings.ToLower(b.Code)
 	return strings.Contains(lowerCode, "if err != nil") ||
 		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
@@ -47,8 +47,8 @@ func (r errorHandlingRule) Match(b *uncoveredBlock) bool {
 
 type businessLogicRule struct{}
 
-func (r businessLogicRule) Category() string { return "BUSINESS_LOGIC" }
-func (r businessLogicRule) Match(b *uncoveredBlock) bool {
+func (r businessLogicRule) category() string { return "BUSINESS_LOGIC" }
+func (r businessLogicRule) match(b *uncoveredBlock) bool {
 	paths := []string{"internal/domain", "internal/usecase", "internal/agent", "internal/service"}
 	for _, p := range paths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
@@ -60,8 +60,8 @@ func (r businessLogicRule) Match(b *uncoveredBlock) bool {
 
 type adapterRule struct{}
 
-func (r adapterRule) Category() string { return "ADAPTER" }
-func (r adapterRule) Match(b *uncoveredBlock) bool {
+func (r adapterRule) category() string { return "ADAPTER" }
+func (r adapterRule) match(b *uncoveredBlock) bool {
 	paths := []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth", "internal/infrastructure"}
 	for _, p := range paths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
@@ -81,8 +81,8 @@ var rules = []classificationRule{
 func (b *uncoveredBlock) Classify() {
 	b.Category = "OTHER"
 	for _, rule := range rules {
-		if rule.Match(b) {
-			b.Category = rule.Category()
+		if rule.match(b) {
+			b.Category = rule.category()
 			break
 		}
 	}
@@ -91,9 +91,9 @@ func (b *uncoveredBlock) Classify() {
 }
 
 func (b *uncoveredBlock) determinePriority() string {
-	isErr := (errorHandlingRule{}).Match(b)
-	isBiz := (businessLogicRule{}).Match(b)
-	isAdap := (adapterRule{}).Match(b)
+	isErr := (errorHandlingRule{}).match(b)
+	isBiz := (businessLogicRule{}).match(b)
+	isAdap := (adapterRule{}).match(b)
 
 	if isErr && isBiz {
 		return "High"

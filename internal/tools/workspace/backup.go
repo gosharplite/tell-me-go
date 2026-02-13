@@ -43,8 +43,8 @@ func newBackupManager(sm domain_security.ISecurityManager, maxStored int) *backu
 	}
 }
 
-// Snapshot records the current state of a file before it is modified.
-func (b *backupManager) Snapshot(path string, action string) {
+// snapshot records the current state of a file before it is modified.
+func (b *backupManager) snapshot(path string, action string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -72,8 +72,8 @@ func (b *backupManager) Snapshot(path string, action string) {
 	}
 }
 
-// Undo reverts the last N changes.
-func (b *backupManager) Undo(ctx context.Context, n int) (string, error) {
+// undo reverts the last N changes.
+func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

@@ -123,7 +123,9 @@ func PublicSymbol() {}
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(origWd)
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
 
 	findings, err := Analyze(context.Background(), "./...")
 	if err != nil {

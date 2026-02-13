@@ -22,7 +22,7 @@ func newinteractionTool(sm domain_security.ISecurityManager) *interactionTool {
 	return &interactionTool{sm: sm}
 }
 
-func (t *interactionTool) AskUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (t *interactionTool) askUser(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	t.sm.TerminalLock()
 	defer t.sm.TerminalUnlock()
 
