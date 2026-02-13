@@ -15,15 +15,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ResilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
-type ResilientClient struct {
+// resilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
+type resilientClient struct {
 	client           llm.LLMClient
 	disableStreaming bool
 }
 
-// NewResilientClient creates a new ResilientClient.
-func NewResilientClient(client llm.LLMClient, disableStreaming bool) *ResilientClient {
-	return &ResilientClient{
+// NewResilientClient creates a new resilientClient.
+func NewResilientClient(client llm.LLMClient, disableStreaming bool) *resilientClient {
+	return &resilientClient{
 		client:           client,
 		disableStreaming: disableStreaming,
 	}
@@ -46,7 +46,7 @@ var defaultClassifiers = []errorClassifier{
 
 // wrapError converts raw client errors into domain-specific Gateway errors.
 // It uses a Chain of Responsibility pattern for extensibility and low complexity.
-func (r *ResilientClient) wrapError(err error) error {
+func (r *resilientClient) wrapError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -123,7 +123,7 @@ type result struct {
 }
 
 // Generate handles the LLM interaction logic, returning a stream and a finalizer.
-func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 	outCh := make(chan *llm.Content, 100)
 	resCh := make(chan result, 1)
 
@@ -146,7 +146,7 @@ func (r *ResilientClient) Generate(ctx context.Context, input []*llm.Content, to
 }
 
 // executeWithTransparentRetry only retries for things the client can fix (like Auth)
-func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
+func (r *resilientClient) executeWithTransparentRetry(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		content, metrics, emitted, err := r.attemptCall(ctx, input, tools, resolver, outCh)
@@ -173,7 +173,7 @@ func (r *ResilientClient) executeWithTransparentRetry(ctx context.Context, input
 	return nil, nil, lastErr
 }
 
-func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
+func (r *resilientClient) attemptCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
 	if r.disableStreaming {
 		content, metrics, err := r.client.SendChat(ctx, input, tools, resolver)
 		var emitted bool
@@ -189,7 +189,7 @@ func (r *ResilientClient) attemptCall(ctx context.Context, input []*llm.Content,
 	return r.performStreamingCall(ctx, input, tools, resolver, outCh)
 }
 
-func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
+func (r *resilientClient) performStreamingCall(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, outCh chan<- *llm.Content) (*llm.Content, *llm.Metrics, bool, error) {
 	finalContent := &llm.Content{Role: "model"}
 	var emitted bool
 	callback := func(c *llm.Content) {
@@ -207,21 +207,21 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 }
 
 // SendChat delegates to the underlying client.
-func (r *ResilientClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (r *resilientClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	return r.client.SendChat(ctx, history, tools, resolver)
 }
 
 // StreamChat delegates to the underlying client.
-func (r *ResilientClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (r *resilientClient) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	return r.client.StreamChat(ctx, history, tools, resolver, callback)
 }
 
 // RefreshAuth delegates to the underlying client.
-func (r *ResilientClient) RefreshAuth() error {
+func (r *resilientClient) RefreshAuth() error {
 	return r.client.RefreshAuth()
 }
 
 // GenerateImages delegates to the underlying client.
-func (r *ResilientClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (r *resilientClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return r.client.GenerateImages(ctx, model, prompt, mimeType)
 }
