@@ -4,10 +4,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 )
 
@@ -20,15 +22,18 @@ func main() {
 		packagePath = flag.Arg(0)
 	}
 
+	ctx := context.Background()
+	executor := &exec.RealExecutor{}
+
 	if *priority == "" {
-		report, err := analysis.GetDetailedCoverageReport(packagePath, analysis.ShellRunner)
+		report, err := analysis.GetDetailedCoverageReport(ctx, packagePath, executor)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Print(report)
 	} else {
-		jsonOutput, err := analysis.GetDetailedCoverageJSON(packagePath, *priority, analysis.ShellRunner)
+		jsonOutput, err := analysis.GetDetailedCoverageJSON(ctx, packagePath, *priority, executor)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

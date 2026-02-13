@@ -90,9 +90,9 @@ func main() {
 	// Assertions
 	// pkg_b.Execute should be DEAD
 	// pkg_a.Execute should NOT be reported as DEAD (it's used in main)
-	// Actually pkg_a.Execute might be reported as PRIVATE if it's only used in its own module but not externally, 
+	// Actually pkg_a.Execute might be reported as PRIVATE if it's only used in its own module but not externally,
 	// but here main is in the same module.
-	
+
 	// Wait, the analyzer identifies EXPORTED symbols with zero inbound references within the module.
 	// pkg_a.Execute is used in main.go (same module).
 	// pkg_b.Execute is NOT used.

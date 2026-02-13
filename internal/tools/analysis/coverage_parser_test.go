@@ -1,6 +1,9 @@
 package analysis
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -83,11 +86,11 @@ func TestUncoveredBlock_Classify(t *testing.T) {
 
 func TestParseCoverageLine(t *testing.T) {
 	tests := []struct {
-		name   string
-		line   string
-		prefix string
-		want   *uncoveredBlock
-		wantOk bool
+		name    string
+		line    string
+		prefix  string
+		want    *uncoveredBlock
+		wantErr bool
 	}{
 		{
 			name:   "uncovered line",
@@ -99,31 +102,53 @@ func TestParseCoverageLine(t *testing.T) {
 				End:   12,
 				Stmts: 3,
 			},
-			wantOk: true,
+			wantErr: false,
 		},
 		{
-			name:   "covered line (skipped)",
-			line:   "github.com/user/repo/pkg/file.go:10.5,12.10 3 1",
-			prefix: "github.com/user/repo/",
-			want:   nil,
-			wantOk: false,
+			name:    "covered line (skipped)",
+			line:    "github.com/user/repo/pkg/file.go:10.5,12.10 3 1",
+			prefix:  "github.com/user/repo/",
+			want:    nil,
+			wantErr: false,
 		},
 		{
-			name:   "invalid line",
-			line:   "invalid",
-			want:   nil,
-			wantOk: false,
+			name:    "invalid line",
+			line:    "invalid",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "malformed count",
+			line:    "file.go:1,2 3 abc",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "malformed stmts",
+			line:    "file.go:1,2 abc 0",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "invalid path in 3 fields",
+			line:    "invalid-path 3 0",
+			want:    nil,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseCoverageLine(tt.line, tt.prefix)
-			if ok != tt.wantOk {
-				t.Errorf("parseCoverageLine() ok = %v, want %v", ok, tt.wantOk)
+			got, err := parseCoverageLine(tt.line, tt.prefix)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseCoverageLine() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if ok && (got.File != tt.want.File || got.Start != tt.want.Start || got.End != tt.want.End || got.Stmts != tt.want.Stmts) {
-				t.Errorf("parseCoverageLine() = %+v, want %+v", got, tt.want)
+			if err == nil && got != nil {
+				if got.File != tt.want.File || got.Start != tt.want.Start || got.End != tt.want.End || got.Stmts != tt.want.Stmts {
+					t.Errorf("parseCoverageLine() = %+v, want %+v", got, tt.want)
+				}
+			} else if err == nil && got == nil && tt.want != nil {
+				t.Errorf("parseCoverageLine() returned nil, want %+v", tt.want)
 			}
 		})
 	}
@@ -155,11 +180,27 @@ func TestExtractFromLines(t *testing.T) {
 			end:   5,
 			want:  "line4\nline5",
 		},
+		{
+			name:  "out of range",
+			start: 10,
+			end:   11,
+			want:  "",
+		},
+		{
+			name:  "empty lines",
+			start: 1,
+			end:   2,
+			want:  "",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractFromLines(lines, tt.start, tt.end)
+			var l []string
+			if tt.name != "empty lines" {
+				l = lines
+			}
+			got := extractFromLines(l, tt.start, tt.end)
 			if got != tt.want {
 				t.Errorf("extractFromLines() = %q, want %q", got, tt.want)
 			}
@@ -252,23 +293,23 @@ func TestRenderBlockGaps(t *testing.T) {
 
 func TestParseLineNum(t *testing.T) {
 	tests := []struct {
-		name string
-		part string
-		want int
-		ok   bool
+		name    string
+		part    string
+		want    int
+		wantErr bool
 	}{
-		{"valid", "10.5", 10, true},
-		{"valid single", "10", 10, true},
-		{"invalid", "abc", 0, false},
+		{"valid", "10.5", 10, false},
+		{"valid single", "10", 10, false},
+		{"invalid", "abc", 0, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.part, func(t *testing.T) {
-			got, ok := parseLineNum(tt.part)
-			if ok != tt.ok {
-				t.Errorf("parseLineNum(%q) ok = %v, want %v", tt.part, ok, tt.ok)
+			got, err := parseLineNum(tt.part)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseLineNum(%q) error = %v, wantErr %v", tt.part, err, tt.wantErr)
 			}
-			if ok && got != tt.want {
+			if err == nil && got != tt.want {
 				t.Errorf("parseLineNum(%q) = %d, want %d", tt.part, got, tt.want)
 			}
 		})
@@ -283,22 +324,506 @@ func TestParsePathAndRange(t *testing.T) {
 		wantFile     string
 		wantStart    int
 		wantEnd      int
-		ok           bool
+		wantErr      bool
 	}{
-		{"valid with prefix", "github.com/user/repo/file.go:1,2", "github.com/user/repo/", "file.go", 1, 2, true},
+		{"valid with prefix", "github.com/user/repo/file.go:1,2", "github.com/user/repo/", "file.go", 1, 2, false},
+		{"invalid format", "no-colon", "", "", 0, 0, true},
+		{"invalid range", "file.go:1", "", "", 0, 0, true},
+		{"invalid start", "file.go:abc,2", "", "", 0, 0, true},
+		{"invalid end", "file.go:1,abc", "", "", 0, 0, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parsePathAndRange(tt.pathAndRange, tt.prefix)
-			if ok != tt.ok {
-				t.Errorf("parsePathAndRange(%q) ok = %v, want %v", tt.pathAndRange, ok, tt.ok)
+			got, err := parsePathAndRange(tt.pathAndRange, tt.prefix)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parsePathAndRange(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
 			}
-			if ok {
+			if err == nil {
 				if got.File != tt.wantFile || got.Start != tt.wantStart || got.End != tt.wantEnd {
 					t.Errorf("parsePathAndRange() = %+v, want file=%s, start=%d, end=%d", got, tt.wantFile, tt.wantStart, tt.wantEnd)
 				}
 			}
 		})
+	}
+}
+
+func TestParseCoverageProfile(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+	}
+
+	content := "mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"
+	r := strings.NewReader(content)
+
+	blocks, err := parseCoverageProfile(ctx, r, mock)
+	if err != nil {
+		t.Fatalf("parseCoverageProfile failed: %v", err)
+	}
+
+	if len(blocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].File != "file.go" {
+		t.Errorf("expected file.go, got %s", blocks[0].File)
+	}
+}
+
+func TestGetDetailedCoverageReport(t *testing.T) {
+	// This test is harder because it runs 'go test' and reads from FS.
+	// We can try to mock but getDetailedCoverage creates temp files and runs actual commands.
+
+	// Let's test with a mock that fails to run go test
+	ctx := context.Background()
+	mock := &mockExecutor{
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		},
+	}
+
+	_, err := GetDetailedCoverageReport(ctx, "./non-existent", mock)
+	if err == nil {
+		t.Error("expected error for non-existent package, got nil")
+	}
+}
+
+func TestGetDetailedCoverageJSON(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, os.ErrNotExist
+		},
+	}
+
+	_, err := GetDetailedCoverageJSON(ctx, "./non-existent", "High", mock)
+	if err == nil {
+		t.Error("expected error for non-existent package, got nil")
+	}
+}
+
+func TestGetModuleName(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		mock := &mockExecutor{
+			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return []byte("github.com/test/mod\n"), nil
+			},
+		}
+		mod := getModuleName(ctx, mock)
+		if mod != "github.com/test/mod/" {
+			t.Errorf("expected github.com/test/mod/, got %q", mod)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		mock := &mockExecutor{
+			OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return nil, os.ErrNotExist
+			},
+		}
+		mod := getModuleName(ctx, mock)
+		if mod != "" {
+			t.Errorf("expected empty string, got %q", mod)
+		}
+	})
+}
+
+func TestParseDetailedCoverage(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+	}
+
+	content := "mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"
+	r := strings.NewReader(content)
+
+	readFile := func(path string) ([]byte, error) {
+		if path == "file.go" {
+			return []byte("line1\nline2\nline3\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	blocks, err := parseDetailedCoverage(ctx, r, mock, readFile)
+	if err != nil {
+		t.Fatalf("parseDetailedCoverage failed: %v", err)
+	}
+
+	if len(blocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Code != "line1\nline2" {
+		t.Errorf("expected code line1\nline2, got %q", blocks[0].Code)
+	}
+}
+
+func TestFormatDetailedCoverageReport(t *testing.T) {
+	blocks := []uncoveredBlock{
+		{File: "file1.go", Start: 1, End: 2, Category: "BUSINESS_LOGIC", Priority: "High", Code: "code1"},
+	}
+	report := formatDetailedCoverageReport("./pkg", blocks)
+	if !strings.Contains(report, "Detailed Coverage Report for ./pkg") {
+		t.Error("report missing title")
+	}
+	if !strings.Contains(report, "HIGH PRIORITY GAPS") {
+		t.Error("report missing high priority section")
+	}
+}
+
+func TestFormatDetailedCoverageJSON(t *testing.T) {
+	blocks := []uncoveredBlock{
+		{File: "file1.go", Start: 1, End: 2, Category: "BUSINESS_LOGIC", Priority: "High", Code: "code1"},
+	}
+	jsonStr, err := formatDetailedCoverageJSON(blocks, "High")
+	if err != nil {
+		t.Fatalf("formatDetailedCoverageJSON failed: %v", err)
+	}
+	if !strings.Contains(jsonStr, "file1.go") {
+		t.Error("json missing file name")
+	}
+
+	jsonStr, err = formatDetailedCoverageJSON(blocks, "Low")
+	if err != nil {
+		t.Fatalf("formatDetailedCoverageJSON failed: %v", err)
+	}
+	if !strings.Contains(jsonStr, "file1.go") {
+		t.Error("json missing file name for Low priority filter")
+	}
+}
+
+func TestParseDetailedCoverage_FileReadError(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+	}
+
+	content := "mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"
+	r := strings.NewReader(content)
+
+	readFile := func(path string) ([]byte, error) {
+		return nil, fmt.Errorf("read error")
+	}
+
+	blocks, err := parseDetailedCoverage(ctx, r, mock, readFile)
+	if err != nil {
+		t.Fatalf("parseDetailedCoverage failed: %v", err)
+	}
+
+	if len(blocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(blocks))
+	}
+	if !strings.Contains(blocks[0].Code, "Error reading file file.go") {
+		t.Errorf("expected error message in code, got %q", blocks[0].Code)
+	}
+}
+
+func TestGetDetailedCoverage_Success(t *testing.T) {
+	ctx := context.Background()
+
+	// We need to create a real temp file for the mock to "generate"
+	f, _ := os.CreateTemp("", "test-coverage-*.out")
+	tempPath := f.Name()
+	defer os.Remove(tempPath)
+	f.WriteString("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n")
+	f.Close()
+
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			// Mocking go test: we need to find the -coverprofile= part and write to it
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+
+	// Mock os.ReadFile by overriding the internal helper if we had one,
+	// but getDetailedCoverage uses os.ReadFile directly.
+	// So we need to create a real file on disk for file.go or it will have an error message in Code.
+	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	defer os.Remove("file.go")
+
+	blocks, err := getDetailedCoverage(ctx, ".", mock)
+	if err != nil {
+		t.Fatalf("getDetailedCoverage failed: %v", err)
+	}
+
+	if len(blocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(blocks))
+	}
+}
+
+func TestFormatDetailedCoverageReport_MoreOptions(t *testing.T) {
+	// Test few high priority gaps and some medium
+	blocks := []uncoveredBlock{
+		{File: "f1.go", Priority: "High", Category: "BUS"},
+		{File: "f2.go", Priority: "Medium", Category: "ADAP"},
+	}
+	report := formatDetailedCoverageReport("pkg", blocks)
+	if !strings.Contains(report, "MEDIUM PRIORITY GAPS") {
+		t.Error("expected medium priority gaps to be shown")
+	}
+
+	// Test many gaps for "and X more"
+	blocks = nil
+	for i := 0; i < 15; i++ {
+		blocks = append(blocks, uncoveredBlock{File: fmt.Sprintf("f%d.go", i), Priority: "High", Category: "BUS"})
+	}
+	report = formatDetailedCoverageReport("pkg", blocks)
+	if !strings.Contains(report, "and 5 more high priority gaps") {
+		t.Error("expected 'and X more' message")
+	}
+}
+
+func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					os.WriteFile(path, []byte(""), 0644) // Empty file
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+
+	_, err := getDetailedCoverage(ctx, ".", mock)
+	if err == nil || !strings.Contains(err.Error(), "coverage profile is empty") {
+		t.Errorf("expected empty profile error, got %v", err)
+	}
+}
+
+func TestParseCoverageProfile_MalformedLine(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+	}
+
+	content := "mode: set\nmalformed line\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"
+	r := strings.NewReader(content)
+
+	blocks, err := parseCoverageProfile(ctx, r, mock)
+	if err != nil {
+		t.Fatalf("parseCoverageProfile failed: %v", err)
+	}
+
+	if len(blocks) != 1 {
+		t.Errorf("expected 1 valid block, got %d", len(blocks))
+	}
+}
+
+func TestGetDetailedCoverageReport_Success(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	defer os.Remove("file.go")
+
+	report, err := GetDetailedCoverageReport(ctx, ".", mock)
+	if err != nil {
+		t.Fatalf("GetDetailedCoverageReport failed: %v", err)
+	}
+	if !strings.Contains(report, "Detailed Coverage Report") {
+		t.Error("report missing title")
+	}
+}
+
+func TestGetDetailedCoverageJSON_Success(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/user/repo"), nil
+		},
+		CombinedOutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-coverprofile=") {
+					path := strings.TrimPrefix(arg, "-coverprofile=")
+					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+				}
+			}
+			return []byte("ok"), nil
+		},
+	}
+	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	defer os.Remove("file.go")
+
+	jsonStr, err := GetDetailedCoverageJSON(ctx, ".", "Low", mock)
+	if err != nil {
+		t.Fatalf("GetDetailedCoverageJSON failed: %v", err)
+	}
+	if !strings.Contains(jsonStr, "file.go") {
+		t.Error("json missing file name")
+	}
+}
+
+func TestExtractFromLines_EdgeCases(t *testing.T) {
+	lines := []string{"line1", "line2"}
+	// Test start = 0
+	got := extractFromLines(lines, 0, 1)
+	if got != "line1" {
+		t.Errorf("expected line1, got %q", got)
+	}
+
+	// Test end > len(lines)
+	got = extractFromLines(lines, 1, 5)
+	if got != "line1\nline2" {
+		t.Errorf("expected line1\\nline2, got %q", got)
+	}
+
+	// Test startIdx >= endIdx
+	got = extractFromLines(lines, 5, 2)
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestParseCoverageProfile_Empty(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{}
+	r := strings.NewReader("")
+	blocks, err := parseCoverageProfile(ctx, r, mock)
+	if err != nil {
+		t.Errorf("expected nil error for empty reader, got %v", err)
+	}
+	if len(blocks) != 0 {
+		t.Errorf("expected 0 blocks, got %d", len(blocks))
+	}
+}
+
+func TestFormatDetailedCoverageReport_NoGaps(t *testing.T) {
+	report := formatDetailedCoverageReport("pkg", nil)
+	if !strings.Contains(report, "Total Gaps: 0") {
+		t.Error("report should indicate 0 gaps")
+	}
+	if strings.Contains(report, "HIGH PRIORITY GAPS") {
+		t.Error("report should not contain gaps section")
+	}
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("read error")
+}
+
+func TestParseCoverageProfile_ScannerError(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{}
+	r := &errorReader{}
+	_, err := parseCoverageProfile(ctx, r, mock)
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Errorf("expected read error, got %v", err)
+	}
+}
+
+func TestParseCoverageLine_SpecialLines(t *testing.T) {
+	// Empty line
+	got, err := parseCoverageLine("", "")
+	if got != nil || err != nil {
+		t.Error("expected nil, nil for empty line")
+	}
+
+	// Mode line
+	got, err = parseCoverageLine("mode: set", "")
+	if got != nil || err != nil {
+		t.Error("expected nil, nil for mode line")
+	}
+}
+
+func TestFormatDetailedCoverageReport_MediumSlots(t *testing.T) {
+	// len(high) < 5
+	var high []uncoveredBlock
+	for i := 0; i < 4; i++ {
+		high = append(high, uncoveredBlock{Priority: "High"})
+	}
+	medium := []uncoveredBlock{{Priority: "Medium"}}
+
+	report := formatDetailedCoverageReport("pkg", append(high, medium...))
+	if !strings.Contains(report, "MEDIUM PRIORITY GAPS") {
+		t.Error("medium gaps should be shown if high gaps are few")
+	}
+}
+
+type delayedErrorReader struct {
+	content string
+	offset  int
+}
+
+func (d *delayedErrorReader) Read(p []byte) (n int, err error) {
+	if d.offset >= len(d.content) {
+		return 0, fmt.Errorf("delayed read error")
+	}
+	n = copy(p, d.content[d.offset:])
+	d.offset += n
+	return n, nil
+}
+
+func TestParseDetailedCoverage_ProfileError(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{}
+	// Valid first line, then error
+	r := &delayedErrorReader{content: "mode: set\n"}
+
+	_, err := parseDetailedCoverage(ctx, r, mock, os.ReadFile)
+	if err == nil || !strings.Contains(err.Error(), "delayed read error") {
+		t.Errorf("expected delayed read error, got %v", err)
+	}
+}
+
+func TestGetModuleName_WithTrailingSlash(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/test/mod/\n"), nil
+		},
+	}
+	mod := getModuleName(ctx, mock)
+	if mod != "github.com/test/mod/" {
+		t.Errorf("expected github.com/test/mod/, got %q", mod)
+	}
+}
+
+func TestGetDetailedCoverage_CreateTempError(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockExecutor{}
+
+	// Set TMPDIR to a non-existent directory to force os.CreateTemp to fail
+	oldTmp := os.Getenv("TMPDIR")
+	os.Setenv("TMPDIR", "/non-existent-directory-12345")
+	defer os.Setenv("TMPDIR", oldTmp)
+
+	_, err := getDetailedCoverage(ctx, ".", mock)
+	if err == nil {
+		t.Error("expected error from os.CreateTemp, got nil")
 	}
 }

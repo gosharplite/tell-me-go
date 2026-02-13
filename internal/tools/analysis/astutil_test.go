@@ -378,7 +378,7 @@ func TestGetCachedLineCount(t *testing.T) {
 
 func TestASTCache_DeterministicEviction(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Repeat 100 times to ensure determinism
 	for i := 0; i < 100; i++ {
 		cache := newASTCache()
