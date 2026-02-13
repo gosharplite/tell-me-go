@@ -18,7 +18,7 @@ func BenchmarkAnalyzeSequenceFlow_Baseline(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	
+
 	analyzer := newSequenceAnalyzer(executor, sm, idx)
 	args := map[string]interface{}{
 		"start_symbol": "github.com/gosharplite/tell-me-go/internal/agent.agent.Chat",

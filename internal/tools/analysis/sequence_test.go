@@ -215,7 +215,7 @@ func Start(r Runner) { r.Run() }`
 	file, _ := parser.ParseFile(fset, "itf.go", code, 0)
 
 	pkgTypes := types.NewPackage(pkgPath, "itf")
-	
+
 	// Interface
 	runMethod := types.NewFunc(token.NoPos, pkgTypes, "Run", types.NewSignatureType(nil, nil, nil, nil, nil, false))
 	itfTypeName := types.NewTypeName(token.NoPos, pkgTypes, "Runner", nil)
@@ -241,8 +241,8 @@ func Start(r Runner) { r.Run() }`
 		Types:   pkgTypes,
 		Module:  &packages.Module{Path: "github.com/test/mod"},
 		TypesInfo: &types.Info{
-			Uses: make(map[*ast.Ident]types.Object),
-			Defs: make(map[*ast.Ident]types.Object),
+			Uses:  make(map[*ast.Ident]types.Object),
+			Defs:  make(map[*ast.Ident]types.Object),
 			Types: make(map[ast.Expr]types.TypeAndValue),
 		},
 	}
@@ -279,7 +279,7 @@ func Start(r Runner) { r.Run() }`
 	// Mock GetImplementations
 	itfMethodId := getSymbolIdentity(runMethod)
 	implMethodId := getSymbolIdentity(implMethod)
-	
+
 	// We need a real indexer or a better mock to test GetImplementations
 	// Since I can't easily mock GetImplementations on the interface without changing mockIndexer
 	// I'll update mockIndexer

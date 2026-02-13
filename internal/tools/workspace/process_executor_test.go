@@ -453,7 +453,7 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 	pipedParts := [][]string{{"sleep", "10"}, {"cat"}}
 	res, err := executor.RunPipeline(ctx, pipedParts, executionConfig{})
 
-	// The test should verify that if the context is cancelled, 
+	// The test should verify that if the context is cancelled,
 	// either an error is returned OR the res.ExitCode is non-zero.
 	if err == nil && res.ExitCode == 0 {
 		t.Error("expected non-zero exit code or error for cancelled context, got 0 and no error")
