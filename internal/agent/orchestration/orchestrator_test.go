@@ -138,13 +138,13 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return mChatter
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -343,13 +343,13 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return mChatter
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -384,13 +384,13 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return nil
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "",
@@ -415,7 +415,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 

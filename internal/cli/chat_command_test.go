@@ -109,7 +109,7 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+	cmd.AgentFactory = func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 		return mock
 	}
 	cmd.ClientFactory = func(cfg *domain_config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {

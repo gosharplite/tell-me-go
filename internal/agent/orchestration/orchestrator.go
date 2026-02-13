@@ -28,6 +28,7 @@ type ICapturer interface {
 type Orchestrator struct {
 	HomeDir         string
 	Version         string
+	Loader          config.ConfigLoader
 	SM              domain_security.ISecurityManager
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -36,7 +37,7 @@ type Orchestrator struct {
 	UIRenderer      services.UIRenderer
 }
 
-type AgentFactory func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
+type AgentFactory func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
 
 // SessionConfig contains configuration for a single session execution.
 type SessionConfig struct {
@@ -62,10 +63,11 @@ type SessionDependencies struct {
 }
 
 // NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *Orchestrator {
+func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *Orchestrator {
 	return &Orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
+		Loader:          loader,
 		SM:              sm,
 		Stdout:          stdout,
 		Stderr:          stderr,
@@ -84,7 +86,7 @@ func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *Sessi
 		return nil
 	}
 
-	chatAgent := o.AgentFactory(deps.Gateway, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
+	chatAgent := o.AgentFactory(o.Loader, deps.Gateway, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
 			fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)

@@ -79,6 +79,15 @@ func WithInternalTools() agentOption {
 	}
 }
 
+// WithLoader sets the configuration loader for the agent.
+func WithLoader(loader domain_config.ConfigLoader) agentOption {
+	return func(a *agent) {
+		if a.configWatcher != nil {
+			a.configWatcher.Loader = loader
+		}
+	}
+}
+
 // New creates a new Agent with required dependencies.
 func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
@@ -88,7 +97,7 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 		gateway:       client,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: orchestration.NewConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(nil, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,

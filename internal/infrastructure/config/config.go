@@ -29,6 +29,14 @@ type Config = domain_config.Config
 // ModelConfig is an alias for domain_config.ModelConfig
 type ModelConfig = domain_config.ModelConfig
 
+// YAMLConfigLoader implements domain_config.ConfigLoader.
+type YAMLConfigLoader struct{}
+
+// Load satisfies the domain_config.ConfigLoader interface.
+func (l *YAMLConfigLoader) Load(path string) (*Config, error) {
+	return Load(path)
+}
+
 // Load reads and parses the configuration file.
 func Load(path string) (*Config, error) {
 	f, err := os.Open(path)

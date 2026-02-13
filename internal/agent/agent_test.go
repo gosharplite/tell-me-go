@@ -18,6 +18,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -111,7 +112,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, WithLoader(&config.YAMLConfigLoader{}))
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update

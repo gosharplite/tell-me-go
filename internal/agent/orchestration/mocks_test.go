@@ -6,8 +6,10 @@ package orchestration
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/mock"
 )
 
 type mockToolRegistry struct {
@@ -118,3 +120,15 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 }
 
 func (m *mockGateway) RefreshAuth() error { return nil }
+
+type mockConfigLoader struct {
+	mock.Mock
+}
+
+func (m *mockConfigLoader) Load(path string) (*config.Config, error) {
+	args := m.Called(path)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*config.Config), args.Error(1)
+}

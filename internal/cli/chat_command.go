@@ -48,8 +48,9 @@ type chatCommand struct {
 	Stderr  io.Writer
 	HomeDir string
 	SM      domain_security.ISecurityManager
+	Loader  domain_config.ConfigLoader
 
-	AgentFactory  func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
+	AgentFactory  func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
 	ClientFactory func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
 }
 
@@ -70,7 +71,8 @@ func newChatCommand(ctx *context) *chatCommand {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+		Loader:  &config.YAMLConfigLoader{},
+		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 			telemetry.RegisterTraceSubscriber(bus, logPath)
 
 			summarizer := llm.NewSummarizer(client, bus)
@@ -79,6 +81,7 @@ func newChatCommand(ctx *context) *chatCommand {
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
+				agent.WithLoader(loader),
 			)
 		},
 		ClientFactory: func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
@@ -118,7 +121,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 
 	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
 	historyRenderer := &ui.StdHistoryRenderer{}
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
+	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
 
 	sCfg := &orchestration.SessionConfig{
 		ConfigPath: opts.configPath,
