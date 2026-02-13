@@ -210,6 +210,10 @@ func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 	}
 	for _, uc := range unsafeChars {
 		if strings.Contains(command, uc.char) {
+			// EXCEPTION: Allow $ in 'go test' for regex anchors like -run=^$
+			if uc.char == "$" && strings.HasPrefix(command, "go test") {
+				continue
+			}
 			return false, uc.reason
 		}
 	}

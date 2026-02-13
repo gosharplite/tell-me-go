@@ -265,7 +265,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 	}
 
 	command := fmt.Sprintf("go test -bench=%s -benchmem -run=^$ %s", bench, path)
-	approved, err := m.authorizeAction(ctx, "Benchmark Execution", command, "Running project benchmarks")
+	approved, err := m.authorizeAction(ctx, "run_benchmark", command, "Running project benchmarks")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}

@@ -173,7 +173,8 @@ func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 64*1024)
+		b := make([]byte, 64*1024)
+		return &b
 	},
 }
 
@@ -187,8 +188,9 @@ func (p *searchPipeline) scanFile(path string) error {
 	if isBin, err := checkBinary(file); err == nil && !isBin {
 		const maxScannerCapacity = 10 * 1024 * 1024
 		scanner := bufio.NewScanner(file)
-		buf := bufferPool.Get().([]byte)
-		defer bufferPool.Put(buf)
+		bufPtr := bufferPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer bufferPool.Put(bufPtr)
 		scanner.Buffer(buf, maxScannerCapacity)
 
 		lineNum := 0

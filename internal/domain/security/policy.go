@@ -172,6 +172,7 @@ func DefaultPolicy() *Policy {
 			"confluence_search": true, "confluence_read": true,
 			"ado_list_branch_policies": true, "ado_get_build_timeline": true,
 			"ado_get_task_log": true, "ado_get_build_changes": true,
+			"run_benchmark":            true,
 		},
 		ForbiddenPatterns: []string{
 			"&&", "||", ";", "|", ">", ">>", "<", "&", "2>", "&>", "|&", "1>", "1>>", "2>>",

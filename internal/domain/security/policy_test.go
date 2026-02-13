@@ -55,6 +55,7 @@ func TestPolicy_isAutoApprovable(t *testing.T) {
 	}{
 		{"ls", "ls", true},
 		{"grep", "grep", true},
+		{"run_benchmark", "run_benchmark", true},
 		{"rm", "rm", false},
 		{"execute_command", "execute_command", false},
 	}

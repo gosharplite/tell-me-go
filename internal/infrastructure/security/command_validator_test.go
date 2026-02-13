@@ -227,6 +227,7 @@ func TestCommandValidator_GranularAuthorization(t *testing.T) {
 		// Expanded 'go' commands
 		{"go test ./...", true},
 		{"go test -v ./...", true},
+		{"go test -bench=. -run=^$", true},
 		{"go tool cover -func=coverage.out", true},
 
 		// Forbidden 'go test' flags
