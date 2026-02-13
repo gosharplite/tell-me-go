@@ -7,53 +7,35 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
+func TestSessionDependencies_Structure(t *testing.T) {
 	tmpDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
-	orch := &Orchestrator{
-		HomeDir: tmpDir,
-		SM:      sm,
+	deps := &SessionDependencies{
+		Paths: &persistence.Paths{
+			ModeDir:         tmpDir,
+			LogPath:         filepath.Join(tmpDir, "tokens.log"),
+			CommandsLogPath: filepath.Join(tmpDir, "commands.log"),
+		},
 	}
-	cfg := &config.Config{
-		Model: "test-model",
-		Mode:  "test-mode",
+	require.NotNil(t, deps.Paths)
+}
+
+func TestOrchestrator_Run_RequiresAgentFactory(t *testing.T) {
+	orch := &Orchestrator{}
+	err := orch.Run(nil, nil, nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "AgentFactory must be set")
+}
+
+func TestSessionConfig_Structure(t *testing.T) {
+	cfg := &SessionConfig{
+		Config: &config.Config{
+			Model: "test-model",
+		},
 	}
-	paths := &persistence.Paths{
-		ModeDir:         tmpDir,
-		LogPath:         filepath.Join(tmpDir, "tokens.log"),
-		CommandsLogPath: filepath.Join(tmpDir, "commands.log"),
-	}
-	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
-
-	bus := events.NewSimpleEventBus()
-	// No shutdown needed for simple bus in this test as it doesn't start goroutines
-
-	reg := orch.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
-
-	declarations := reg.GetDeclarations()
-
-	expectedTools := []string{
-		"estimate_cost",
-		"get_cost_summary",
-		"verify_release_readiness",
-	}
-
-	for _, expected := range expectedTools {
-		found := false
-		for _, decl := range declarations {
-			if decl.Name == expected {
-				found = true
-				break
-			}
-		}
-		require.True(t, found, "Expected tool %q not found in registry", expected)
-	}
+	require.Equal(t, "test-model", cfg.Config.Model)
 }

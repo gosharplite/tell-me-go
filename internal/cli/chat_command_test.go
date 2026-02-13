@@ -13,15 +13,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/require"
@@ -110,10 +109,10 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client domain_llm.LLMClient, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 		return mock
 	}
-	cmd.ClientFactory = func(cfg *config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
+	cmd.ClientFactory = func(cfg *domain_config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
 		return nil, nil
 	}
 
@@ -228,7 +227,7 @@ func TestExecuteErrors(t *testing.T) {
 		})
 
 		// Customize ClientFactory to return an error
-		cmd.ClientFactory = func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
+		cmd.ClientFactory = func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
 			return nil, fmt.Errorf("forced client error")
 		}
 

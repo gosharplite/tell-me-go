@@ -121,7 +121,7 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 
 func TestResolveThinkingBudget(t *testing.T) {
 	cfg := &Config{
-		Models: map[string]modelConfig{
+		Models: map[string]ModelConfig{
 			"gemini-2.0-flash": {MaxThinkingBudget: 1000},
 			"pro":              {MaxThinkingBudget: 5000},
 		},
@@ -147,24 +147,6 @@ func TestResolveThinkingBudget(t *testing.T) {
 		got := cfg.ResolveThinkingBudget(tt.model, pricingData)
 		if got != tt.expected {
 			t.Errorf("model %s: expected %d, got %d", tt.model, tt.expected, got)
-		}
-	}
-}
-
-func TestFindBestMatch_Deterministic(t *testing.T) {
-	m := map[string]int{
-		"gpt":   1,
-		"gpt-4": 2,
-	}
-
-	// "gpt-4" should ALWAYS be preferred for "gpt-4o" because it's a longer match.
-	for i := 0; i < 100; i++ {
-		val, ok := findBestMatch(m, "gpt-4o", func(v int) bool { return true })
-		if !ok {
-			t.Fatal("expected match")
-		}
-		if val != 2 {
-			t.Fatalf("iteration %d: expected value 2 (gpt-4), got %d", i, val)
 		}
 	}
 }

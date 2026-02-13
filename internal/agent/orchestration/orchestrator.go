@@ -7,22 +7,16 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
-	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
@@ -39,8 +33,8 @@ type Orchestrator struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 
-	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
-	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error)
+	AgentFactory  func(client domain_llm.LLMClient, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
+	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
 }
 
 // SessionConfig contains configuration for a single session execution.
@@ -53,16 +47,16 @@ type SessionConfig struct {
 	Config     *config.Config
 }
 
-// sessionDeps consolidates internal dependencies for a session.
-type sessionDeps struct {
-	paths            *persistence.Paths
-	hManager         *history.Manager
-	client           *llm.Client
-	registry         domaintools.IToolRegistry
-	tracker          domain_pricing.ICostTracker
-	pData            domain_pricing.PricingData
-	pricingOverrides map[string]domain_pricing.ModelPricing
-	bus              events.EventBus
+// SessionDependencies holds the required components for a session.
+type SessionDependencies struct {
+	Paths            *persistence.Paths
+	HistoryManager   services.HistoryManager
+	Client           domain_llm.LLMClient
+	Registry         domaintools.IToolRegistry
+	Tracker          domain_pricing.ICostTracker
+	PricingData      domain_pricing.PricingData
+	PricingOverrides map[string]domain_pricing.ModelPricing
+	EventBus         events.EventBus
 }
 
 // NewOrchestrator creates a new Orchestrator.
@@ -77,149 +71,45 @@ func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManage
 }
 
 // Run executes the session orchestration.
-func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, capturer ICapturer) error {
+func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *SessionDependencies, capturer ICapturer) error {
 	if o.AgentFactory == nil {
 		return fmt.Errorf("AgentFactory must be set")
 	}
-	if o.ClientFactory == nil {
-		return fmt.Errorf("ClientFactory must be set")
-	}
 
-	deps, err := o.prepareSession(ctx, sCfg)
-	if err != nil {
-		return err
-	}
 	defer func() {
-		if err := deps.bus.Shutdown(ctx); err != nil {
+		if err := deps.EventBus.Shutdown(ctx); err != nil {
 			fmt.Fprintf(o.Stderr, "Warning: Failed to shutdown event bus: %v\n", err)
 		}
 	}()
 
 	isTTY := capturer.IsTTY(o.Stdout)
-	o.renderHistory(deps.hManager, sCfg, isTTY)
+	o.renderHistory(deps.HistoryManager, sCfg, isTTY)
 
 	if sCfg.Prompt == "" && sCfg.LastN > 0 {
 		return nil
 	}
 
-	chatAgent := o.AgentFactory(deps.client, deps.hManager, deps.registry, o.SM, sCfg.Config.DisableStreaming, deps.bus, sCfg.Config.Model, sCfg.Config.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	chatAgent := o.AgentFactory(deps.Client, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
 			fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
 	}()
 
-	if err := o.applyConfiguration(ctx, chatAgent, sCfg, deps.paths, deps.pData, capturer); err != nil {
+	if err := o.applyConfiguration(ctx, chatAgent, sCfg, deps.Paths, deps.PricingData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
-	sess := NewSession(sessionID, deps.hManager)
+	sess := NewSession(sessionID, deps.HistoryManager)
 	if err := chatAgent.Chat(ctx, sess, sCfg.Prompt); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
 
-	return o.finalizeSession(ctx, chatAgent, deps.hManager, *deps.paths, sCfg.Config, deps.pricingOverrides)
-}
-
-func (o *Orchestrator) prepareSession(ctx context.Context, sCfg *SessionConfig) (*sessionDeps, error) {
-	paths, err := persistence.InitializePaths(o.HomeDir, sCfg.Config.Mode)
-	if err != nil {
-		return nil, err
-	}
-
-	pricingOverrides := o.getPricingOverrides(sCfg.Config)
-	o.setupSecurity(paths, sCfg.ConfigPath)
-	if sCfg.NewSession {
-		o.handleNewSession(ctx, paths, sCfg.Config, pricingOverrides)
-	}
-
-	return o.initializeDependencies(ctx, paths, sCfg.Config, pricingOverrides)
-}
-
-func (o *Orchestrator) initializeDependencies(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) (*sessionDeps, error) {
-	hManager := history.NewManager(paths.HistoryPath)
-	if err := hManager.Load(ctx); err != nil {
-		return nil, fmt.Errorf("error loading history: %w", err)
-	}
-
-	bus := events.NewSimpleEventBus()
-
-	pricingData := telemetry.GetPricing(ctx, o.SM, filepath.Join(o.HomeDir, "output"))
-
-	client, err := o.ClientFactory(cfg, pricingData, bus)
-	if err != nil {
-		return nil, fmt.Errorf("error creating client: %w", err)
-	}
-
-	registry := o.setupRegistry(client, cfg, paths, pricingOverrides, bus)
-	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
-	tracker := telemetry.NewSessionCostTracker(o.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
-	tracker.Warmup()
-
-	return &sessionDeps{
-		paths:            paths,
-		hManager:         hManager,
-		client:           client,
-		registry:         registry,
-		tracker:          tracker,
-		pData:            pricingData,
-		pricingOverrides: pricingOverrides,
-		bus:              bus,
-	}, nil
-}
-
-func (o *Orchestrator) finalizeSession(ctx context.Context, chatAgent Chatter, hManager *history.Manager, paths persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) error {
-	if err := hManager.Save(ctx); err != nil {
-		return fmt.Errorf("error saving history: %w", err)
-	}
-	if err := telemetry.RecordSessionCost(ctx, o.SM, chatAgent.GetCostTracker(), paths.LogPath, cfg.Model, cfg.Mode, "", pricingOverrides); err != nil {
-		fmt.Fprintf(o.Stderr, "Warning: Failed to record final session cost: %v\n", err)
-	}
 	return nil
 }
 
-func (o *Orchestrator) getPricingOverrides(cfg *config.Config) map[string]domain_pricing.ModelPricing {
-	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
-	for k, v := range cfg.Models {
-		if v.Pricing.Comp > 0 {
-			pricingOverrides[k] = v.Pricing
-		}
-	}
-	return pricingOverrides
-}
-
-func (o *Orchestrator) setupSecurity(paths *persistence.Paths, configPath string) {
-	if sm, ok := o.SM.(*internal_security.SecurityManager); ok {
-		sm.SetSafePathsFile(paths.SafePathsPath)
-		sm.SetReadOnlyPathsFile(paths.ReadPathsPath)
-		sm.SetBypassFile(paths.BypassPath)
-		sm.SetCommandsLogFile(paths.CommandsLogPath)
-		if err := sm.LoadSafePaths(); err != nil {
-			fmt.Fprintf(o.Stderr, "Warning: Failed to load safe paths: %v\n", err)
-		}
-		if err := sm.LoadReadOnlyPaths(); err != nil {
-			fmt.Fprintf(o.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
-		}
-		sm.LoadBypassState()
-		sm.RegisterSafePath(filepath.Join(o.HomeDir, "output"))
-		sm.RegisterReadOnlyPath(configPath)
-	}
-}
-
-func (o *Orchestrator) handleNewSession(ctx context.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {
-	timestamp := time.Now().Format("20060102_150405")
-	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
-	if err := telemetry.RecordSessionCost(ctx, o.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {
-		fmt.Fprintf(o.Stderr, "Warning: Failed to record session cost for backup: %v\n", err)
-	}
-	retentionDays := persistence.LoadBackupRetentionDays(*paths)
-	if err := persistence.RotateSession(o.Stdout, *paths, retentionDays); err != nil {
-		fmt.Fprintf(o.Stderr, "Warning: Session rotation failed: %v\n", err)
-	}
-}
-
-func (o *Orchestrator) renderHistory(hManager *history.Manager, sCfg *SessionConfig, isTTY bool) {
+func (o *Orchestrator) renderHistory(hManager services.HistoryManager, sCfg *SessionConfig, isTTY bool) {
 	if sCfg.LastN <= 0 {
 		return
 	}
@@ -244,25 +134,6 @@ func (o *Orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, r
 	renderer.SetUseColor(useColor)
 	bridge := newUIBridge(renderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
-}
-
-func (o *Orchestrator) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]domain_pricing.ModelPricing, bus events.EventBus) domaintools.IToolRegistry {
-	reg := registry.New()
-
-	tools.RegisterAll(
-		reg,
-		o.SM,
-		paths.ModeDir,
-		paths.LogPath,
-		cfg.Model,
-		cfg.Mode,
-		pricingOverrides,
-		client,
-		filepath.Join(o.HomeDir, "assets/generated"),
-		bus,
-	)
-
-	return reg
 }
 
 // uiBridge translates domain events into UI updates.
