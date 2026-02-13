@@ -450,16 +450,3 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 	return results, nil
 }
 
-// SetSystemInstructions updates the system instruction used by the client.
-func (c *Client) SetSystemInstructions(instr string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if instr == "" {
-		c.systemInstruction = nil
-		return
-	}
-	c.systemInstruction = &llm.Content{
-		Role:  "system",
-		Parts: []*llm.Part{{Text: instr}},
-	}
-}

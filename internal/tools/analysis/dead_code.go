@@ -282,7 +282,10 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 	// Capture exported methods
 	if tn, ok := obj.(*types.TypeName); ok {
 		if named, ok := tn.Type().(*types.Named); ok {
-			a.harvestMethods(named, state)
+			a.harvestNamedMethods(named, state)
+			if itf, ok := named.Underlying().(*types.Interface); ok {
+				a.harvestInterfaceMethods(itf, state)
+			}
 		}
 	}
 }
@@ -304,8 +307,7 @@ func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanStat
 	}
 }
 
-func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
-	// Regular methods
+func (a *deadCodeAnalyzer) harvestNamedMethods(named *types.Named, state *scanState) {
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
@@ -325,25 +327,24 @@ func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) 
 			}
 		}
 	}
+}
 
-	// Interface methods
-	if itf, ok := named.Underlying().(*types.Interface); ok {
-		for i := 0; i < itf.NumMethods(); i++ {
-			m := itf.Method(i)
-			if m == nil || m.Pkg() == nil {
-				continue
-			}
-			if m.Exported() {
-				mId := getSymbolIdentity(m)
-				if _, exists := state.declarations[mId]; !exists {
-					state.declarations[mId] = &symMeta{
-						id:       mId,
-						pkgPath:  getBasePkgPath(m.Pkg().Path()),
-						name:     m.Name(),
-						symType:  "Method",
-						isMethod: true,
-						obj:      m,
-					}
+func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *scanState) {
+	for i := 0; i < itf.NumMethods(); i++ {
+		m := itf.Method(i)
+		if m == nil || m.Pkg() == nil {
+			continue
+		}
+		if m.Exported() {
+			mId := getSymbolIdentity(m)
+			if _, exists := state.declarations[mId]; !exists {
+				state.declarations[mId] = &symMeta{
+					id:       mId,
+					pkgPath:  getBasePkgPath(m.Pkg().Path()),
+					name:     m.Name(),
+					symType:  "Method",
+					isMethod: true,
+					obj:      m,
 				}
 			}
 		}

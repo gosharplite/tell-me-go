@@ -98,8 +98,6 @@ func (m *stressmockLLMClient) RefreshAuth() error {
 	return nil
 }
 
-func (m *stressmockLLMClient) SetSystemInstructions(instr string) {}
-
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 	reg := registry.New()
 	bus := &inframock.TestEventBus{}

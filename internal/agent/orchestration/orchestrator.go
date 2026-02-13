@@ -152,7 +152,7 @@ func (o *Orchestrator) initializeDependencies(ctx context.Context, paths *persis
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
-	registry := o.SetupRegistry(client, cfg, paths, pricingOverrides, bus)
+	registry := o.setupRegistry(client, cfg, paths, pricingOverrides, bus)
 	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(o.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
@@ -242,11 +242,11 @@ func (o *Orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, r
 	renderer := ui.NewRenderer(o.SM, o.Stdout, o.Stderr)
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	renderer.SetUseColor(useColor)
-	bridge := NewUIBridge(renderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
-	chatAgent.Subscribe(bridge.HandleEvent)
+	bridge := newUIBridge(renderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	chatAgent.Subscribe(bridge.handleEvent)
 }
 
-func (o *Orchestrator) SetupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]domain_pricing.ModelPricing, bus events.EventBus) domaintools.IToolRegistry {
+func (o *Orchestrator) setupRegistry(client *llm.Client, cfg *config.Config, paths *persistence.Paths, pricingOverrides map[string]domain_pricing.ModelPricing, bus events.EventBus) domaintools.IToolRegistry {
 	reg := registry.New()
 
 	tools.RegisterAll(
@@ -265,8 +265,8 @@ func (o *Orchestrator) SetupRegistry(client *llm.Client, cfg *config.Config, pat
 	return reg
 }
 
-// UIBridge translates domain events into UI updates.
-type UIBridge struct {
+// uiBridge translates domain events into UI updates.
+type uiBridge struct {
 	renderer     ui.UIRenderer
 	showThoughts bool
 	showTools    bool
@@ -275,9 +275,9 @@ type UIBridge struct {
 	logFile      string
 }
 
-// NewUIBridge creates a new UIBridge.
-func NewUIBridge(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *UIBridge {
-	return &UIBridge{
+// newUIBridge creates a new uiBridge.
+func newUIBridge(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+	return &uiBridge{
 		renderer:     renderer,
 		showThoughts: showThoughts,
 		showTools:    showTools,
@@ -287,8 +287,8 @@ func NewUIBridge(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, use
 	}
 }
 
-// HandleEvent processes a domain event and updates the UI.
-func (b *UIBridge) HandleEvent(e events.Event) {
+// handleEvent processes a domain event and updates the UI.
+func (b *uiBridge) handleEvent(e events.Event) {
 	switch ev := e.(type) {
 	case events.TurnStatusEvent:
 		b.renderer.LogTurnStatus(ev.Status)
@@ -311,7 +311,7 @@ func (b *UIBridge) HandleEvent(e events.Event) {
 	}
 }
 
-func (b *UIBridge) ensureContext(ctx context.Context, name string) context.Context {
+func (b *uiBridge) ensureContext(ctx context.Context, name string) context.Context {
 	if ctx == nil {
 		b.renderer.LogSystemMessage(name+" missing context", "warn")
 		return context.Background()
@@ -319,7 +319,7 @@ func (b *UIBridge) ensureContext(ctx context.Context, name string) context.Conte
 	return ctx
 }
 
-func (b *UIBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Content, uiCh chan<- *domain_llm.Content) {
+func (b *uiBridge) relayStream(ctx context.Context, stream <-chan *domain_llm.Content, uiCh chan<- *domain_llm.Content) {
 	for {
 		select {
 		case <-ctx.Done():

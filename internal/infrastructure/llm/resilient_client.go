@@ -17,9 +17,8 @@ import (
 
 // ResilientClient wraps an LLMClient with retry logic and domain-specific error wrapping.
 type ResilientClient struct {
-	client             llm.LLMClient
-	disableStreaming   bool
-	systemInstructions string
+	client           llm.LLMClient
+	disableStreaming bool
 }
 
 // NewResilientClient creates a new ResilientClient.
@@ -205,17 +204,6 @@ func (r *ResilientClient) performStreamingCall(ctx context.Context, input []*llm
 	}
 	metrics, err := r.client.StreamChat(ctx, input, tools, resolver, callback)
 	return finalContent, metrics, emitted, err
-}
-
-// SetSystemInstructions updates the system instructions in the underlying LLM client.
-func (r *ResilientClient) SetSystemInstructions(instr string) {
-	r.systemInstructions = instr
-	r.client.SetSystemInstructions(instr)
-}
-
-// GetSystemInstructions returns the current system instructions.
-func (r *ResilientClient) GetSystemInstructions() string {
-	return r.systemInstructions
 }
 
 // SendChat delegates to the underlying client.

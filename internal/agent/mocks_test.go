@@ -76,8 +76,6 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 
 func (m *mockGateway) RefreshAuth() error { return nil }
 
-func (m *mockGateway) SetSystemInstructions(instr string) {}
-
 type mockSecurityManager struct {
 	domain_security.ISecurityManager
 	AllowAll bool

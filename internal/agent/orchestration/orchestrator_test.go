@@ -36,7 +36,7 @@ func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 	// No shutdown needed for simple bus in this test as it doesn't start goroutines
 
-	reg := orch.SetupRegistry(nil, cfg, paths, pricingOverrides, bus)
+	reg := orch.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
 
 	declarations := reg.GetDeclarations()
 

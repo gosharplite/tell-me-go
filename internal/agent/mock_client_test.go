@@ -16,7 +16,6 @@ type mockLLMClient struct {
 	SendChatFn              func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
 	StreamChatFn            func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
 	RefreshAuthFn           func() error
-	SetSystemInstructionsFn func(instr string)
 }
 
 func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -50,10 +49,4 @@ func (m *mockLLMClient) RefreshAuth() error {
 		return m.RefreshAuthFn()
 	}
 	return nil
-}
-
-func (m *mockLLMClient) SetSystemInstructions(instr string) {
-	if m.SetSystemInstructionsFn != nil {
-		m.SetSystemInstructionsFn(instr)
-	}
 }
