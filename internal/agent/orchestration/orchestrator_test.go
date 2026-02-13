@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"testing"
@@ -101,6 +102,11 @@ type mockCapturer struct {
 func (m *mockCapturer) IsTTY(v any) bool {
 	args := m.Called(v)
 	return args.Bool(0)
+}
+
+func (m *mockCapturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+	args := m.Called(ctx, fs, lastN, raw)
+	return args.String(0), args.Error(1)
 }
 
 // --- Tests ---

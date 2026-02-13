@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -39,14 +40,27 @@ func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 		return nil, nil
 	}
 
-	f, err := r.fs.Open(ctx, r.filePath)
+	data, err := r.fs.ReadFile(ctx, r.filePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
+	// Handle empty file
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	// Try decoding as a JSON array first (backward compatibility/standard JSON)
 	var loaded []services.Task
-	decoder := json.NewDecoder(f)
+	if data[0] == '[' {
+		if err := json.Unmarshal(data, &loaded); err == nil {
+			return loaded, nil
+		}
+	}
+
+	// Fallback to JSONL format
+	loaded = nil
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	for decoder.More() {
 		var t services.Task
 		if err := decoder.Decode(&t); err != nil {

@@ -190,12 +190,6 @@ func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
 }
 
-func (cw *ConfigWatcher) getContextWindow() int {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
-	return cw.contextWindow
-}
-
 // ApplyLimits updates the cached limits from an events.Limits struct.
 func (cw *ConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()

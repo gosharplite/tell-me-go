@@ -45,9 +45,6 @@ func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 			Summarizer: cm.Summarizer,
 			Events:     cm.Events,
 		},
-		&toolDeclarationGenerator{
-			Registry: reg,
-		},
 		&warningInjector{
 			Strategy: strategy,
 		},

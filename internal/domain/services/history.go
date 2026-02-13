@@ -16,4 +16,5 @@ type HistoryManager interface {
 	AddContent(ctx context.Context, content *llm.Content) error
 	GetResolver() llm.AssetResolver
 	SetPinned(ctx context.Context, turnIndex int, pinned bool) error
+	Save(ctx context.Context) error
 }

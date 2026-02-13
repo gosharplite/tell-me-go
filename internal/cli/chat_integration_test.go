@@ -40,18 +40,6 @@ func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshol
 func (m *integrationMockChatter) Subscribe(sub func(events.Event))  {}
 func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error { return nil }
 
-type integrationMockCostTracker struct{}
-
-func (m *integrationMockCostTracker) GetTotalCost(ctx stdctx.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetDailyCost(ctx stdctx.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetStats(ctx stdctx.Context) (domain_pricing.UsageStats, float64) {
-	return domain_pricing.UsageStats{}, 0
-}
-func (m *integrationMockCostTracker) Accumulate(mt domain_llm.Metrics)                  {}
-func (m *integrationMockCostTracker) CalculateCost(mt domain_llm.Metrics) float64       { return 0 }
-func (m *integrationMockCostTracker) AccumulateAndReturn(mt domain_llm.Metrics) float64 { return 0 }
-func (m *integrationMockCostTracker) Warmup()                                           {}
-
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	tmpDir, cfgPath, historyPath, _ := setupChatIntegrationEnv(t)
 

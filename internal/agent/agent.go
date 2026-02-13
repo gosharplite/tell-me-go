@@ -58,20 +58,6 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// withLimits sets the initial operational limits.
-func withLimits(toolTurns, historyTokens, historyTurns int) agentOption {
-	return func(a *agent) {
-		a.config.Limits = events.Limits{
-			MaxHistoryTokens: historyTokens,
-			MaxToolTurns:     toolTurns,
-			MaxHistoryTurns:  historyTurns,
-		}
-		if a.configWatcher != nil {
-			a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-		}
-	}
-}
-
 // WithInternalTools enables the registration of internal agent tools (e.g., history management).
 func WithInternalTools() agentOption {
 	return func(a *agent) {

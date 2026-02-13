@@ -159,21 +159,21 @@ MODELS:
 
 	// Refresh with model-b (NOT in YAML) first to ensure it doesn't pick up model-a's values
 	cw.Refresh("model-b")
-	window := cw.getContextWindow()
+	window := cw.contextWindow
 	if window == 1000 {
 		t.Errorf("model-b should NOT have model-a's context window (1000)")
 	}
 
 	// Now refresh with model-a
 	cw.Refresh("model-a")
-	window = cw.getContextWindow()
+	window = cw.contextWindow
 	if window != 1000 {
 		t.Errorf("expected 1000 context window for model-a, got %d", window)
 	}
 
 	// Switch back to model-b and ensure it goes back to default
 	cw.Refresh("model-b")
-	window = cw.getContextWindow()
+	window = cw.contextWindow
 	if window == 1000 {
 		t.Errorf("model-b should NOT retain model-a's context window after switching back")
 	}
@@ -326,7 +326,7 @@ func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 	t.Run("ValidStrategy", func(t *testing.T) {
 		cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
 		cw.SyncToStrategy(cs)
-		assert.Equal(t, 500000, cs.getContextWindow())
+		assert.Equal(t, 500000, cs.contextWindow)
 		assert.Equal(t, 3000, cs.GetTieredThreshold())
 	})
 
@@ -344,7 +344,7 @@ func TestConfigWatcher_GetContextWindow_Refresh(t *testing.T) {
 	cw.Loader = mockLoader
 
 	// Default
-	assert.Equal(t, 1000000, cw.getContextWindow())
+	assert.Equal(t, 1000000, cw.contextWindow)
 
 	// Specific model config
 	yamlContent := `
@@ -363,7 +363,7 @@ MODELS:
 	}, nil)
 
 	cw.Refresh("test-model")
-	assert.Equal(t, 123456, cw.getContextWindow())
+	assert.Equal(t, 123456, cw.contextWindow)
 }
 
 func TestConfigWatcher_ToInt(t *testing.T) {
@@ -477,7 +477,7 @@ MODELS:
 	}, nil)
 
 	cw.Refresh("test-model")
-	assert.Equal(t, 1000000, cw.getContextWindow())
+	assert.Equal(t, 1000000, cw.contextWindow)
 }
 
 func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {

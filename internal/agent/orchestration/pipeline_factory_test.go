@@ -33,6 +33,6 @@ func TestPipelineFactory_PreciseProfile(t *testing.T) {
 	// Verify that the pipeline was built (no panic)
 	assert.NotNil(t, pipeline)
 
-	err := pipeline.execute(ctx, req)
+	err := pipeline.executeWithPersistence(ctx, req, nil)
 	assert.NoError(t, err)
 }

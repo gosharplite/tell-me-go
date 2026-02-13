@@ -15,41 +15,6 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func TestHeuristicTokenCounter_estimateValueSize(t *testing.T) {
-	htc := &HeuristicTokenCounter{}
-	tests := []struct {
-		name  string
-		input interface{}
-		want  int
-	}{
-		{"string", "hello", 5},
-		{"int", 123, 10},
-		{"float", 123.45, 10},
-		{"bool", true, 5},
-		{"nil", nil, 4},
-		{"slice", []interface{}{1, "a"}, 12},             // 1 + 10 + 1
-		{"map", map[string]interface{}{"key": "val"}, 6}, // "key"(3) + "val"(3)
-		{"nested", map[string]any{"s": []any{1, 2}}, 22}, // "s" (1) + (1+10+10)
-		{"deeply_nested", map[string]any{
-			"a": map[string]any{
-				"b": []any{
-					map[string]any{"c": 1},
-					2,
-				},
-			},
-		}, 24},
-		{"unknown", struct{}{}, 20},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := htc.estimateValueSize(tt.input); got != tt.want {
-				t.Errorf("estimateValueSize() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestContextStrategy_EstimateTokens(t *testing.T) {
 	registry := &mockToolRegistry{}
 	cs := NewContextStrategy(NewHeuristicTokenCounter(registry), nil)
@@ -157,13 +122,20 @@ func TestContextStrategy_Warnings_TokenPressure(t *testing.T) {
 			{951, "95%"},
 		}
 		for _, tt := range tests {
-			got := cs.getTokenWarning(tt.tokens)
-			if tt.expected == "" {
-				if got != "" {
-					t.Errorf("expected no warning at %d, got %q", tt.tokens, got)
+			warnings := cs.getWarnings(0, tt.tokens, 0)
+			got := ""
+			for _, w := range warnings {
+				if tt.expected != "" && contains(w.Message, tt.expected) {
+					got = w.Message
+					break
 				}
-			} else if !contains(got, tt.expected) {
-				t.Errorf("expected warning at %d to contain %q, got %q", tt.tokens, tt.expected, got)
+			}
+			if tt.expected == "" {
+				if len(warnings) != 0 {
+					t.Errorf("expected no warning at %d, got %q", tt.tokens, warnings[0].Message)
+				}
+			} else if got == "" {
+				t.Errorf("expected warning at %d to contain %q, got none", tt.tokens, tt.expected)
 			}
 		}
 	})
@@ -178,7 +150,11 @@ func TestContextStrategy_Warnings_TokenPressure(t *testing.T) {
 			{9, []string{"FINAL", "final turn", "forbidden"}},
 		}
 		for _, tt := range tests {
-			got := cs.getTurnWarning(tt.turn)
+			warnings := cs.getWarnings(tt.turn, 0, 0)
+			got := ""
+			if len(warnings) > 0 {
+				got = warnings[0].Message
+			}
 			for _, want := range tt.contains {
 				if !contains(got, want) {
 					t.Errorf("expected turn %d warning to contain %q, got %q", tt.turn, want, got)
@@ -214,9 +190,16 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 			{100, "limit has been reached"},
 		}
 		for _, tt := range tests {
-			got := cs.getHistoryTurnWarning(tt.turns)
-			if !contains(got, tt.expected) {
-				t.Errorf("expected %d turns warning to contain %q, got %q", tt.turns, tt.expected, got)
+			warnings := cs.getWarnings(0, 0, tt.turns)
+			found := false
+			for _, w := range warnings {
+				if contains(w.Message, tt.expected) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected %d turns warning to contain %q, got %v", tt.turns, tt.expected, warnings)
 			}
 		}
 	})

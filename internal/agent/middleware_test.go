@@ -47,7 +47,7 @@ func TestWithStreaming(t *testing.T) {
 		State: &turnState{Phase: phaseInference},
 	}
 
-	mw(next).Process(ctx, turn)
+	_, _ = mw(next).Process(ctx, turn)
 
 	if turn.StreamHandler == nil {
 		t.Fatal("Expected StreamHandler to be set")
@@ -92,7 +92,7 @@ func TestWithStatusReporter(t *testing.T) {
 				CtxManager: cm,
 				Clock:      realClock{},
 			}
-			mw(next).Process(context.Background(), turn)
+			_, _ = mw(next).Process(context.Background(), turn)
 			if len(bus.events) != tt.wantEvents {
 				t.Errorf("Expected %d events, got %d", tt.wantEvents, len(bus.events))
 			}
@@ -127,7 +127,7 @@ func TestWithMetrics(t *testing.T) {
 			turn := &turn{
 				State: state,
 			}
-			mw(next).Process(context.Background(), turn)
+			_, _ = mw(next).Process(context.Background(), turn)
 			if len(bus.events) != tt.wantEvents {
 				t.Errorf("Expected %d events, got %d", tt.wantEvents, len(bus.events))
 			}

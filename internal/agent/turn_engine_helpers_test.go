@@ -84,6 +84,10 @@ func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 	return nil
 }
 
+func (m *mockHistoryManager) Save(ctx context.Context) error {
+	return nil
+}
+
 // mockClock for deterministic tests
 type mockClock struct {
 	CurrentTime time.Time

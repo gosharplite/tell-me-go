@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -23,6 +24,16 @@ type persistenceTools struct {
 
 // newpersistenceTools creates a new persistenceTools instance.
 func newpersistenceTools(state services.ISessionProvider) *persistenceTools {
+	if state == nil {
+		return &persistenceTools{}
+	}
+
+	// Handle interface-nil-pointer trap
+	v := reflect.ValueOf(state)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		return &persistenceTools{}
+	}
+
 	return &persistenceTools{
 		tasks:      state.GetTasks(),
 		scratchpad: state.GetScratchpad(),
@@ -44,6 +55,10 @@ func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 
 // Register adds persistence tools to the registry.
 func (t *persistenceTools) Register(r tools.IToolRegistry) {
+	if t.state == nil {
+		return
+	}
+
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",

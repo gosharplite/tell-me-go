@@ -80,14 +80,6 @@ func (c *HeuristicTokenCounter) estimatePartChars(p *llm.Part) int {
 	return charCount
 }
 
-func (c *HeuristicTokenCounter) estimateMapSize(m map[string]interface{}) int {
-	return estimateMapSizeInternal(m)
-}
-
-func (c *HeuristicTokenCounter) estimateValueSize(v interface{}) int {
-	return estimateValueSizeInternal(v)
-}
-
 func estimateMapSizeInternal(m map[string]interface{}) int {
 	if m == nil {
 		return 0

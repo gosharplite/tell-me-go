@@ -4,6 +4,7 @@
 package history
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,14 +52,26 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 		return []*llm.Content{}, nil
 	}
 
-	f, err := s.fs.Open(ctx, s.filePath)
+	data, err := s.fs.ReadFile(ctx, s.filePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
+	if len(data) == 0 {
+		return []*llm.Content{}, nil
+	}
+
+	// Try decoding as a JSON array first
 	var contents []*llm.Content
-	decoder := json.NewDecoder(f)
+	if data[0] == '[' {
+		if err := json.Unmarshal(data, &contents); err == nil {
+			return contents, nil
+		}
+	}
+
+	// Fallback to JSONL format
+	contents = nil
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	for decoder.More() {
 		select {
 		case <-ctx.Done():

@@ -164,41 +164,6 @@ type turnEngine struct {
 // engineOption allows configuring the turnEngine.
 type engineOption func(*turnEngine)
 
-// withMiddleware adds middleware to the turnEngine.
-func withMiddleware(m ...turnMiddleware) engineOption {
-	return func(e *turnEngine) {
-		e.middleware = append(e.middleware, m...)
-	}
-}
-
-// withProcessor registers or overrides a processor for a specific phase.
-func withProcessor(phase turnPhase, p turnProcessor) engineOption {
-	return func(e *turnEngine) {
-		e.processors[phase] = p
-	}
-}
-
-// withHook adds a lifecycle hook to the turnEngine.
-func withHook(h turnHook) engineOption {
-	return func(e *turnEngine) {
-		e.hooks = append(e.hooks, h)
-	}
-}
-
-// withRetryPolicy sets the retry policy for the turnEngine.
-func withRetryPolicy(p retryPolicy) engineOption {
-	return func(e *turnEngine) {
-		e.retryPolicy = p
-	}
-}
-
-// withClock sets the clock for the turnEngine.
-func withClock(c clock) engineOption {
-	return func(e *turnEngine) {
-		e.clock = c
-	}
-}
-
 // withCostTracker sets the cost tracker for the engine.
 func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
 	return func(e *turnEngine) {
@@ -688,11 +653,4 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	}
 
 	return processResult{NextPhase: phaseRefining}, nil
-}
-
-// GetCostTracker returns the session cost tracker used by the engine.
-func (e *turnEngine) GetCostTracker() domain_pricing.ICostTracker {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	return e.costTracker
 }

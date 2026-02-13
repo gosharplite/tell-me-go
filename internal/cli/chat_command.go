@@ -99,14 +99,7 @@ func newChatCommand(ctx *context) *chatCommand {
 
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
-	if sm, ok := c.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturer)
-	}
-
-	opts, fs, cfg, err := c.initializeConfiguration(args)
+	capturer, opts, fs, cfg, err := c.initializeCLI(args)
 	if err != nil {
 		return err
 	}
@@ -115,51 +108,60 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return nil
 	}
 
-	prompt, err := capturer.(interface {
-		CapturePrompt(ctx stdctx.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error)
-	}).CapturePrompt(ctx, fs, opts.lastN, opts.rawOutput)
+	prompt, err := capturer.CapturePrompt(ctx, fs, opts.lastN, opts.rawOutput)
 	if err != nil {
 		return err
 	}
 
-	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
-	historyRenderer := &ui.StdHistoryRenderer{}
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
-
-	sCfg := orchestration.NewSessionConfig(opts.configPath, opts.newSession, opts.lastN, opts.rawOutput, prompt, cfg)
-
-	deps, hManager, err := c.buildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer)
+	deps, hManager, err := c.buildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		if depFields, ok := deps.(interface{ GetEventBus() events.EventBus }); ok {
-			if shutdownErr := depFields.GetEventBus().Shutdown(ctx); shutdownErr != nil {
-				fmt.Fprintf(c.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
-			}
+		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
 		}
 	}()
 
-	err = orch.Run(ctx, sCfg, deps, capturer.(orchestration.Capturer))
+	err = c.performChat(ctx, capturer, opts, prompt, cfg, deps)
 
+	c.finalizeCLI(ctx, hManager, deps, cfg)
+
+	return err
+}
+
+func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cliOptions, *flag.FlagSet, *domain_config.Config, error) {
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
+		sm.SetInteractor(capturer)
+	}
+
+	opts, fs, cfg, err := c.initializeConfiguration(args)
+	return capturer.(orchestration.Capturer), opts, fs, cfg, err
+}
+
+func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps services.SessionDependencies) error {
+	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
+	historyRenderer := &ui.StdHistoryRenderer{}
+	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
+
+	sCfg := orchestration.NewSessionConfig(opts.configPath, opts.newSession, opts.lastN, opts.rawOutput, prompt, cfg)
+	return orch.Run(ctx, sCfg, deps, capturer)
+}
+
+func (c *chatCommand) finalizeCLI(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *domain_config.Config) {
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
 		fmt.Fprintf(c.Stderr, "Warning: Error saving history: %v\n", saveErr)
 	}
 
 	// Calculate and record cost
-	if depFields, ok := deps.(interface {
-		GetTracker() domain_pricing.ICostTracker
-		GetPaths() *persistence.Paths
-		GetPricingOverrides() map[string]domain_pricing.ModelPricing
-	}); ok {
-		if recordErr := telemetry.RecordSessionCost(ctx, c.SM, depFields.GetTracker(), depFields.GetPaths().LogPath, cfg.Model, cfg.Mode, "", depFields.GetPricingOverrides()); recordErr != nil {
-			fmt.Fprintf(c.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
-		}
+	if recordErr := telemetry.RecordSessionCost(ctx, c.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
 	}
-
-	return err
 }
 
 func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, error) {
@@ -196,7 +198,12 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 	reg := registry.New()
 
 	executor := &exec.RealExecutor{}
-	state, _ := infra_persistence.NewSessionState(ctx, paths.ModeDir)
+	var sessionProvider services.ISessionProvider
+	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
+		sessionProvider = state
+	} else {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to initialize session state: %v\n", err)
+	}
 	validator := internal_security.NewCommandValidator(c.SM, capturer)
 
 	tools.RegisterAll(
@@ -204,7 +211,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		c.SM,
 		executor,
 		validator,
-		state,
+		sessionProvider,
 		paths.LogPath,
 		cfg.Model,
 		cfg.Mode,

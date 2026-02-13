@@ -43,7 +43,9 @@ func (m *mockChatter) Shutdown(ctx stdctx.Context) error                        
 func TestChatCommand_Execute(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "vertex.yaml")
-	os.WriteFile(cfgPath, []byte("AIMODEL: test\nMODE: dev"), 0644)
+	if err := os.WriteFile(cfgPath, []byte("AIMODEL: test\nMODE: dev"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	var stdout, stderr strings.Builder
 	sm := internal_security.NewSecurityManager(nil)

@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"flag"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
@@ -33,4 +34,5 @@ type Chatter interface {
 // Capturer defines the interface for UI interactions that the orchestrator needs.
 type Capturer interface {
 	IsTTY(v any) bool
+	CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error)
 }

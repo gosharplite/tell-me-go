@@ -74,28 +74,6 @@ func TestAgent_Chat(t *testing.T) {
 	}
 }
 
-func TestAgent_Options(t *testing.T) {
-	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	bus := events.NewSimpleEventBus()
-
-	a := New(client, h, reg, sm, bus, nil,
-		withLimits(3, 500, 5),
-	)
-	_ = a.events.Flush(context.Background())
-
-	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
-		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
-	}
-
-	limits := a.ctxManager.GetLimits()
-	if limits.MaxHistoryTokens != 500 || limits.MaxToolTurns != 3 {
-		t.Errorf("withLimits failed: got %+v", limits)
-	}
-}
-
 func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	mainConfig := filepath.Join(tmpDir, "config.yaml")

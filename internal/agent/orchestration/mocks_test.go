@@ -88,6 +88,7 @@ func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver
 func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	return nil
 }
+func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
 
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
