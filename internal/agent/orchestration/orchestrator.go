@@ -33,7 +33,7 @@ type Orchestrator struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 
-	AgentFactory  func(client domain_llm.LLMClient, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
+	AgentFactory  func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
 	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
 }
 
@@ -52,6 +52,7 @@ type SessionDependencies struct {
 	Paths            *persistence.Paths
 	HistoryManager   services.HistoryManager
 	Client           domain_llm.LLMClient
+	Gateway          domain_llm.LLMGateway
 	Registry         domaintools.IToolRegistry
 	Tracker          domain_pricing.ICostTracker
 	PricingData      domain_pricing.PricingData
@@ -89,7 +90,7 @@ func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *Sessi
 		return nil
 	}
 
-	chatAgent := o.AgentFactory(deps.Client, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
+	chatAgent := o.AgentFactory(deps.Gateway, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
 			fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)

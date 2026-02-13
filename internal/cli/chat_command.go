@@ -49,7 +49,7 @@ type chatCommand struct {
 	HomeDir string
 	SM      domain_security.ISecurityManager
 
-	AgentFactory  func(client domain_llm.LLMClient, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
+	AgentFactory  func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
 	ClientFactory func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
 }
 
@@ -70,11 +70,10 @@ func newChatCommand(ctx *context) *chatCommand {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client domain_llm.LLMClient, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+		AgentFactory: func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 			telemetry.RegisterTraceSubscriber(bus, logPath)
 
-			gw := client.(domain_llm.LLMGateway)
-			summarizer := llm.NewSummarizer(gw, bus)
+			summarizer := llm.NewSummarizer(client, bus)
 
 			return agent.New(client, hManager, reg, sm, bus,
 				agent.WithPricing(model, mode, pricingOverrides),
@@ -182,6 +181,11 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchest
 		return nil, fmt.Errorf("error creating client: %w", err)
 	}
 
+	gw, ok := client.(domain_llm.LLMGateway)
+	if !ok {
+		return nil, fmt.Errorf("client does not implement LLMGateway")
+	}
+
 	reg := registry.New()
 	tools.RegisterAll(
 		reg,
@@ -204,6 +208,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchest
 		Paths:            paths,
 		HistoryManager:   hManager,
 		Client:           client,
+		Gateway:          gw,
 		Registry:         reg,
 		Tracker:          tracker,
 		PricingData:      pricingData,

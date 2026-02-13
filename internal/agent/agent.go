@@ -30,7 +30,7 @@ type runtimeConfig struct {
 // Agent represents the chat orchestration logic (Stateless Service).
 type agent struct {
 	mu            sync.RWMutex
-	gateway       domain_llm.LLMClient
+	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
@@ -80,7 +80,7 @@ func WithInternalTools() agentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, options ...agentOption) *agent {
+func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
@@ -118,9 +118,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	// Note: client must implement domain_llm.LLMGateway (Generate method)
-	gw := client.(domain_llm.LLMGateway)
-	a.engine = newTurnEngine(gw, exec, ctxManager, reg, bus,
+	a.engine = newTurnEngine(client, exec, ctxManager, reg, bus,
 		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)

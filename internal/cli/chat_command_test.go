@@ -109,11 +109,11 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client domain_llm.LLMClient, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+	cmd.AgentFactory = func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 		return mock
 	}
 	cmd.ClientFactory = func(cfg *domain_config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
-		return nil, nil
+		return &mockClient{}, nil
 	}
 
 	err := cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath, "hello world"})
@@ -252,4 +252,12 @@ func TestExecuteErrors(t *testing.T) {
 		err := cmd.Execute(stdctx.Background(), []string{"bin", "-unknown-flag"})
 		require.Error(t, err)
 	})
+}
+
+type mockClient struct {
+	domain_llm.LLMClient
+}
+
+func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, tools []*domaintools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
+	return nil, nil
 }
