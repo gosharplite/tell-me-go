@@ -116,7 +116,9 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr, c.AgentFactory)
+	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
+	historyRenderer := &ui.StdHistoryRenderer{}
+	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
 
 	sCfg := &orchestration.SessionConfig{
 		ConfigPath: opts.configPath,

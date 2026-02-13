@@ -13,15 +13,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
-// RenderOptions defines the options for rendering chat history.
-type RenderOptions struct {
-	Raw          bool
-	ShowThoughts bool
-	UseColor     bool
+// StdHistoryRenderer implements services.HistoryRenderer by wrapping the package-level History function.
+type StdHistoryRenderer struct{}
+
+// Render implements services.HistoryRenderer.
+func (r *StdHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+	History(w, h, n, options)
 }
 
 // History renders the chat history to the provided writer.
-func History(w io.Writer, h services.HistoryManager, n int, options RenderOptions) {
+func History(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
 	contents := h.GetContents()
 	if len(contents) == 0 {
 		fmt.Fprintln(w, "No history found.")

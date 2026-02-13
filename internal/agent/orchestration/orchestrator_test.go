@@ -92,6 +92,14 @@ func (m *mockUIRenderer) SetUseColor(use bool) {
 	m.Called(use)
 }
 
+type mockHistoryRenderer struct {
+	mock.Mock
+}
+
+func (m *mockHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+	m.Called(w, h, n, options)
+}
+
 type mockCapturer struct {
 	mock.Mock
 }
@@ -134,7 +142,9 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 		return mChatter
 	}
 
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -150,6 +160,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	}
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
@@ -336,7 +347,9 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 		return mChatter
 	}
 
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -352,6 +365,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	}
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	mChatter.On("SetTieredThreshold", mock.Anything, mock.Anything).Return(nil)
@@ -374,7 +388,9 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 		return nil
 	}
 
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
 
 	sCfg := &SessionConfig{
 		Prompt: "",
@@ -388,6 +404,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	}
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
+	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
 
 	err := orch.Run(context.Background(), sCfg, deps, mCapturer)
 	require.NoError(t, err)
@@ -396,7 +413,9 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 }
 
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, nil)
+	mHistoryRenderer := new(mockHistoryRenderer)
+	mUIRenderer := new(mockUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, nil, mHistoryRenderer, mUIRenderer)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 
@@ -409,6 +428,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	pData := domain_pricing.PricingData{}
 
 	mCapturer.On("IsTTY", mock.Anything).Return(true)
+	mUIRenderer.On("SetUseColor", true).Return()
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 

@@ -17,7 +17,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
 // ICapturer defines the interface for UI interactions that the Orchestrator needs.
@@ -27,12 +26,14 @@ type ICapturer interface {
 
 // Orchestrator manages the session lifecycle and agent execution.
 type Orchestrator struct {
-	HomeDir      string
-	Version      string
-	SM           domain_security.ISecurityManager
-	Stdout       io.Writer
-	Stderr       io.Writer
-	AgentFactory AgentFactory
+	HomeDir         string
+	Version         string
+	SM              domain_security.ISecurityManager
+	Stdout          io.Writer
+	Stderr          io.Writer
+	AgentFactory    AgentFactory
+	HistoryRenderer services.HistoryRenderer
+	UIRenderer      services.UIRenderer
 }
 
 type AgentFactory func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
@@ -61,14 +62,16 @@ type SessionDependencies struct {
 }
 
 // NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory) *Orchestrator {
+func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *Orchestrator {
 	return &Orchestrator{
-		HomeDir:      homeDir,
-		Version:      version,
-		SM:           sm,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		AgentFactory: agentFactory,
+		HomeDir:         homeDir,
+		Version:         version,
+		SM:              sm,
+		Stdout:          stdout,
+		Stderr:          stderr,
+		AgentFactory:    agentFactory,
+		HistoryRenderer: historyRenderer,
+		UIRenderer:      uiRenderer,
 	}
 }
 
@@ -105,7 +108,7 @@ func (o *Orchestrator) renderHistory(hManager services.HistoryManager, sCfg *Ses
 	if sCfg.LastN <= 0 {
 		return
 	}
-	ui.History(o.Stdout, hManager, sCfg.LastN, ui.RenderOptions{
+	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.LastN, services.HistoryRenderOptions{
 		Raw:          sCfg.RawOutput,
 		ShowThoughts: sCfg.Config.ShowThoughts,
 		UseColor:     isTTY && !sCfg.RawOutput,
@@ -121,16 +124,15 @@ func (o *Orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter
 }
 
 func (o *Orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ICapturer) {
-	renderer := ui.NewRenderer(o.SM, o.Stdout, o.Stderr)
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
-	renderer.SetUseColor(useColor)
-	bridge := newUIBridge(renderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	o.UIRenderer.SetUseColor(useColor)
+	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	renderer     ui.UIRenderer
+	renderer     services.UIRenderer
 	showThoughts bool
 	showTools    bool
 	rawOutput    bool
@@ -139,7 +141,7 @@ type uiBridge struct {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(renderer services.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
 	return &uiBridge{
 		renderer:     renderer,
 		showThoughts: showThoughts,
