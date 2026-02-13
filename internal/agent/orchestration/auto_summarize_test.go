@@ -6,6 +6,7 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -341,5 +342,45 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	newContents := hManager.GetContents()
 	if len(newContents) >= 10 {
 		t.Errorf("Expected history to be pruned/summarized, but still have %d messages", len(newContents))
+	}
+}
+
+func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
+	tg := &tokenGatekeeper{
+		MaxTokens: 1000,
+		Estimator: &mockEstimator{tokens: 100},
+		Summarizer: nil, // This should trigger the panic if not handled
+	}
+
+	req := &services.ContextRequest{
+		History:  make([]*domain_llm.Content, 10),
+		Metadata: services.ContextMetadata{},
+	}
+	// Fill history with some dummy content
+	for i := 0; i < 10; i++ {
+		role := "user"
+		if i%2 != 0 {
+			role = "model"
+		}
+		req.History[i] = &domain_llm.Content{
+			Role:  role,
+			Parts: []*domain_llm.Part{{Text: "some content"}},
+		}
+	}
+
+	ctx := context.Background()
+
+	// After fix, this should not panic and should return llm.ErrTerminal
+	_, err := tg.autoSummarize(ctx, req)
+	if err == nil {
+		t.Fatal("expected an error when summarizer is nil, but got nil")
+	}
+
+	if !errors.Is(err, domain_llm.ErrTerminal) {
+		t.Errorf("expected error to be llm.ErrTerminal, got %v", err)
+	}
+
+	if !req.Metadata.MaintenanceBlocked {
+		t.Error("expected Metadata.MaintenanceBlocked to be true")
 	}
 }
