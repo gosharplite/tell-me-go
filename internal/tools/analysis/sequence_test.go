@@ -15,25 +15,6 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-type mockIndexer struct {
-	symbolIndex
-	pkgs  []*packages.Package
-	impls map[string][]string
-	err   error
-}
-
-func (m *mockIndexer) Packages() []*packages.Package {
-	return m.pkgs
-}
-
-func (m *mockIndexer) Refresh(ctx context.Context) error {
-	return m.err
-}
-
-func (m *mockIndexer) GetImplementations(id string) []string {
-	return m.impls[id]
-}
-
 func TestSequenceAnalyzer_AnalyzeSequenceFlow(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgAPath := "github.com/test/mod/pkgA"

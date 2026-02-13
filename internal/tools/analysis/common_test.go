@@ -4,6 +4,7 @@ import (
 	"context"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"golang.org/x/tools/go/packages"
 )
 
 type mockSecurityProvider struct{}
@@ -51,4 +52,23 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 
 func (s *mockSecurityProvider) GetSafetyService() *domain.SafetyService {
 	return domain.NewSafetyService(domain.DefaultPolicy())
+}
+
+type mockIndexer struct {
+	symbolIndex
+	pkgs  []*packages.Package
+	impls map[string][]string
+	err   error
+}
+
+func (m *mockIndexer) Packages() []*packages.Package {
+	return m.pkgs
+}
+
+func (m *mockIndexer) Refresh(ctx context.Context) error {
+	return m.err
+}
+
+func (m *mockIndexer) GetImplementations(id string) []string {
+	return m.impls[id]
 }
