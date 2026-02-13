@@ -59,6 +59,7 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if cm.Strategy != nil {
+		cm.Strategy.SetLimits(limits.MaxHistoryTokens, limits.MaxToolTurns, limits.MaxHistoryTurns)
 		cm.Strategy.setContextWindow(limits.ContextWindow)
 		cm.Strategy.setTieredThreshold(limits.TieredThreshold)
 	}

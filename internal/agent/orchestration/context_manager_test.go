@@ -236,3 +236,30 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 	assert.NotEqual(t, originalContent.Parts[0].Text, preparedHistory[0].Parts[0].Text)
 	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
 }
+
+func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
+	registry := &mockToolRegistry{}
+	bus := &mockEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(registry), bus)
+	factory := &PipelineFactory{Estimator: strategy}
+	cm := NewContextManager(strategy, nil, bus, factory)
+
+	limits := events.Limits{
+		MaxHistoryTokens: 240000,
+		MaxToolTurns:     500,
+		MaxHistoryTurns:  50,
+	}
+
+	cm.Reconfigure(limits)
+
+	h, tool, hist := strategy.getLimits()
+	if h != 240000 {
+		t.Errorf("expected history tokens limit 240000, got %d", h)
+	}
+	if tool != 500 {
+		t.Errorf("expected tool turns limit 500, got %d", tool)
+	}
+	if hist != 50 {
+		t.Errorf("expected history turns limit 50, got %d", hist)
+	}
+}

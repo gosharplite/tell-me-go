@@ -213,6 +213,7 @@ func (cw *ConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {
+		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
 		cs.setContextWindow(cw.contextWindow)
 		cs.setTieredThreshold(cw.tieredThreshold)
 	}
