@@ -449,4 +449,3 @@ func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 
 	return results, nil
 }
-

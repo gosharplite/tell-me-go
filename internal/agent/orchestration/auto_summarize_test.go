@@ -347,8 +347,8 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 
 func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
 	tg := &tokenGatekeeper{
-		MaxTokens: 1000,
-		Estimator: &mockEstimator{tokens: 100},
+		MaxTokens:  1000,
+		Estimator:  &mockEstimator{tokens: 100},
 		Summarizer: nil, // This should trigger the panic if not handled
 	}
 

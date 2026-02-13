@@ -123,4 +123,3 @@ func LoadBackupRetentionDays(paths persistence.Paths) int {
 	}
 	return retentionDays
 }
-

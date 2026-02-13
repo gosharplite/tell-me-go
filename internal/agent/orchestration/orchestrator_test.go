@@ -168,9 +168,9 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	tests := []struct {
-		name     string
-		event    events.Event
-		setup    func()
+		name  string
+		event events.Event
+		setup func()
 	}{
 		{
 			name: "TurnStatusEvent",
@@ -243,7 +243,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 				uiCh := make(chan *llm.Content)
 				var uiChSend chan<- *llm.Content = uiCh
 				mRenderer.On("StreamResponse", mock.Anything, true, false).Return(uiChSend, func() *llm.Content { return &llm.Content{} })
-				
+
 				// Close the stream in background to avoid blocking
 				go func() {
 					close(uiCh)
@@ -255,7 +255,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup()
-			
+
 			// For ResponseStreamEvent, we need to handle the channel closing
 			if ev, ok := tt.event.(events.ResponseStreamEvent); ok {
 				stream := make(chan *llm.Content)
@@ -265,7 +265,7 @@ func TestUIBridge_HandleEvent(t *testing.T) {
 			} else {
 				bridge.handleEvent(tt.event)
 			}
-			
+
 			mRenderer.AssertExpectations(t)
 		})
 	}
@@ -399,7 +399,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, nil)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
-	
+
 	sCfg := &SessionConfig{
 		Config: &config.Config{
 			MaxToolTurns: 10,

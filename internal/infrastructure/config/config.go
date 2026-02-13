@@ -14,9 +14,9 @@ import (
 
 // Re-export constants for compatibility
 const (
-	DefaultMaxToolTurns     = domain_config.DefaultMaxToolTurns
-	DefaultMaxHistoryTurns  = domain_config.DefaultMaxHistoryTurns
-	DefaultMaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
+	DefaultMaxToolTurns       = domain_config.DefaultMaxToolTurns
+	DefaultMaxHistoryTurns    = domain_config.DefaultMaxHistoryTurns
+	DefaultMaxHistoryTokens   = domain_config.DefaultMaxHistoryTokens
 	DefaultTieredThreshold    = domain_config.DefaultTieredThreshold
 	WarningRatio              = domain_config.WarningRatio
 	SystemContextBuffer       = domain_config.SystemContextBuffer
