@@ -83,15 +83,10 @@ func (m *mockChatter) Chat(ctx stdctx.Context, s *orchestration.Session, prompt 
 func (m *mockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, historyTurns int) error {
 	return nil
 }
-func (m *mockChatter) SetHardBudgetLimit(ctx stdctx.Context, limit float64) error { return nil }
 func (m *mockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error { return nil }
-func (m *mockChatter) SetPrunedTurns(ctx stdctx.Context, n int) error             { return nil }
-func (m *mockChatter) SetSystemInstructions(ctx stdctx.Context, instr string) error {
-	return nil
-}
-func (m *mockChatter) Subscribe(sub func(events.Event))            {}
-func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
-func (m *mockChatter) Shutdown(ctx stdctx.Context) error           { return nil }
+func (m *mockChatter) Subscribe(sub func(events.Event))                           {}
+func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker                { return nil }
+func (m *mockChatter) Shutdown(ctx stdctx.Context) error                          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()

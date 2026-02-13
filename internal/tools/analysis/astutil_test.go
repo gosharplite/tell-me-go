@@ -375,3 +375,44 @@ func TestGetCachedLineCount(t *testing.T) {
 		t.Error("expected cache invalidation")
 	}
 }
+
+func TestASTCache_DeterministicEviction(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Repeat 100 times to ensure determinism
+	for i := 0; i < 100; i++ {
+		cache := newASTCache()
+		cache.maxSize = 2
+
+		f1 := filepath.Join(tmpDir, "f1.go")
+		f2 := filepath.Join(tmpDir, "f2.go")
+		f3 := filepath.Join(tmpDir, "f3.go")
+
+		files := []string{f1, f2, f3}
+		for _, f := range files {
+			if err := os.WriteFile(f, []byte("package p"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := cache.Get(f); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		// In FIFO, f1 should be evicted first.
+		cache.mu.RLock()
+		_, ok1 := cache.files[f1]
+		_, ok2 := cache.files[f2]
+		_, ok3 := cache.files[f3]
+		cache.mu.RUnlock()
+
+		if ok1 {
+			t.Errorf("Iteration %d: expected f1 to be evicted", i)
+		}
+		if !ok2 {
+			t.Errorf("Iteration %d: expected f2 to be in cache", i)
+		}
+		if !ok3 {
+			t.Errorf("Iteration %d: expected f3 to be in cache", i)
+		}
+	}
+}

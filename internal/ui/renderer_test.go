@@ -33,6 +33,26 @@ func (m *mockLocker) TerminalUnlock() {
 	m.mu.Unlock()
 }
 
+func (m *mockLocker) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+	return true, nil
+}
+func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, nil }
+func (m *mockLocker) IsPathWritable(path string) (string, error) { return path, nil }
+func (m *mockLocker) IsBypassActive() bool                       { return false }
+func (m *mockLocker) IsCommandAllowed(command string) bool       { return true }
+func (m *mockLocker) Prompt(message string)                      {}
+func (m *mockLocker) Warn(message string)                        {}
+func (m *mockLocker) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
+}
+func (m *mockLocker) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *mockLocker) LogAudit(label1, val1, label2, val2 string) {}
+func (m *mockLocker) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
+}
+
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
@@ -121,9 +141,16 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val"}}}, 0, 5, true)
-		if !strings.Contains(stderr.String(), "Tool Action") || !strings.Contains(stderr.String(), "my_tool") {
-			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", stderr.String())
+		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val", "reason": "my intent"}}}, 0, 5, true)
+		output := stderr.String()
+		if !strings.Contains(output, "Tool Action") || !strings.Contains(output, "my_tool") {
+			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", output)
+		}
+		if !strings.Contains(output, "[Tool Reason] my intent") {
+			t.Errorf("expected stderr to contain '[Tool Reason] my intent', got %q", output)
+		}
+		if strings.Contains(output, "reason: my intent") {
+			t.Errorf("expected 'reason' to be removed from arguments list, got %q", output)
 		}
 	})
 

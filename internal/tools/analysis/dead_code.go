@@ -7,20 +7,19 @@ import (
 	"context"
 	"fmt"
 	"go/types"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"golang.org/x/tools/go/packages"
 )
 
 // deadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type deadCodeAnalyzer struct {
-	SP security.SecurityProvider
+	SP  security.ISecurityManager
+	idx symbolIndex
 }
 
 // orphanReport represents a single finding of dead or effectively private code.
@@ -50,8 +49,8 @@ type scanState struct {
 	externalUses     map[string]int
 }
 
-func newDeadCodeAnalyzer(sp security.SecurityProvider) *deadCodeAnalyzer {
-	return &deadCodeAnalyzer{SP: sp}
+func newDeadCodeAnalyzer(sp security.ISecurityManager, idx symbolIndex) *deadCodeAnalyzer {
+	return &deadCodeAnalyzer{SP: sp, idx: idx}
 }
 
 // FindOrphanedSymbols identifies exported symbols with zero inbound references within the module.
@@ -74,7 +73,16 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
-	pkgs, targetModule, err := a.validateAndLoad(ctx, resolvedPath)
+	if err := a.idx.Refresh(ctx); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	pkgs := a.idx.Packages()
+	if len(pkgs) == 0 {
+		return tools.ToolResult{Text: "No packages found."}, nil
+	}
+
+	targetModule, err := a.identifyModule(pkgs)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -89,79 +97,68 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	}
 
 	// Execution Pipeline
-	a.scanForUsages(state)
 	a.harvestExportedSymbols(state)
+	a.analyzeUsages(ctx, state, resolvedPath)
 	a.mapInterfaceImplementations(state)
 
 	findings := a.buildReport(state)
 	return a.formatToolResult(findings), nil
 }
 
-func (a *deadCodeAnalyzer) validateAndLoad(ctx context.Context, resolvedPath string) ([]*packages.Package, string, error) {
-	// Scope Validation: Ensure we are within a Go module.
-	if _, err := a.resolveModuleRoot(resolvedPath); err != nil {
-		return nil, "", err
-	}
-
-	cfg := &packages.Config{
-		Mode: packages.NeedName |
-			packages.NeedFiles |
-			packages.NeedCompiledGoFiles |
-			packages.NeedImports |
-			packages.NeedTypes |
-			packages.NeedTypesInfo |
-			packages.NeedSyntax |
-			packages.NeedModule,
-		Dir:     resolvedPath,
-		Context: ctx,
-		Tests:   true, // Crucial for including test-based references.
-		Env:     os.Environ(),
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Check for critical loading errors
-	if err := a.checkLoadingErrors(pkgs); err != nil {
-		return nil, "", err
-	}
-
-	var targetModule string
-	for _, pkg := range pkgs {
-		if pkg.Module != nil {
-			targetModule = pkg.Module.Path
-			break
-		}
-	}
-	return pkgs, targetModule, nil
-}
-
-func (a *deadCodeAnalyzer) resolveModuleRoot(path string) (string, error) {
-	curr := path
-	for {
-		if _, err := os.Stat(filepath.Join(curr, "go.mod")); err == nil {
-			return curr, nil
-		}
-		parent := filepath.Dir(curr)
-		if parent == curr {
-			break
-		}
-		curr = parent
-	}
-	return "", fmt.Errorf("no go.mod found in %s or any parent", path)
-}
-
-func (a *deadCodeAnalyzer) checkLoadingErrors(pkgs []*packages.Package) error {
+func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {
 	for _, pkg := range pkgs {
 		for _, err := range pkg.Errors {
-			if !strings.Contains(err.Msg, "no Go files") { // Ignore empty package warnings
-				return fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
+			if strings.Contains(err.Msg, "does not contain main module") {
+				return "", fmt.Errorf("no go.mod found")
+			}
+			if !strings.Contains(err.Msg, "no Go files") {
+				return "", fmt.Errorf("package load error in %s: %v", pkg.PkgPath, err)
 			}
 		}
 	}
-	return nil
+
+	for _, pkg := range pkgs {
+		if pkg.Module != nil {
+			return pkg.Module.Path, nil
+		}
+	}
+	return "", fmt.Errorf("no go.mod found")
+}
+
+func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, resolvedPath string) {
+	fileToPkg := a.buildFileToPkgMap(state.pkgs)
+
+	for id, meta := range state.declarations {
+		if a.idx.IsSymbolUsed(id) {
+			state.totalUses[id] = 1
+
+			// Check for external usages to distinguish DEAD from PRIVATE.
+			allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
+			objBase := getBasePkgPath(meta.pkgPath)
+
+			for _, loc := range allUsages {
+				usagePkg, ok := fileToPkg[loc.Path]
+				if !ok {
+					continue
+				}
+				pkgBase := getBasePkgPath(usagePkg)
+
+				if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
+					state.externalUses[id]++
+				}
+			}
+		}
+	}
+}
+
+func (a *deadCodeAnalyzer) buildFileToPkgMap(pkgs []*packages.Package) map[string]string {
+	fileToPkg := make(map[string]string)
+	for _, pkg := range pkgs {
+		for _, file := range pkg.GoFiles {
+			fileToPkg[file] = pkg.PkgPath
+		}
+	}
+	return fileToPkg
 }
 
 func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolResult {
@@ -217,28 +214,6 @@ func (a *deadCodeAnalyzer) buildReport(state *scanState) []orphanReport {
 	return findings
 }
 
-// getSymbolIdentity creates a stable string representation for a Go symbol.
-func (a *deadCodeAnalyzer) getSymbolIdentity(obj types.Object) string {
-	if obj.Pkg() == nil {
-		return obj.Name()
-	}
-	pkgPath := getBasePkgPath(obj.Pkg().Path())
-
-	if fn, ok := obj.(*types.Func); ok {
-		sig := fn.Type().(*types.Signature)
-		if sig.Recv() != nil {
-			recvType := sig.Recv().Type()
-			if ptr, ok := recvType.(*types.Pointer); ok {
-				recvType = ptr.Elem()
-			}
-			if named, ok := recvType.(*types.Named); ok {
-				return fmt.Sprintf("%s.%s.%s", pkgPath, named.Obj().Name(), obj.Name())
-			}
-		}
-	}
-	return fmt.Sprintf("%s.%s", pkgPath, obj.Name())
-}
-
 func (a *deadCodeAnalyzer) shouldExclude(pkgPath string, excluded []string) bool {
 	for _, pattern := range excluded {
 		if strings.Contains(pkgPath, pattern) {
@@ -265,37 +240,6 @@ func getSymbolType(obj types.Object) string {
 		return "Variable"
 	default:
 		return "Unknown"
-	}
-}
-
-func getBasePkgPath(path string) string {
-	if idx := strings.Index(path, " ["); idx != -1 {
-		return path[:idx]
-	}
-	return path
-}
-
-func (a *deadCodeAnalyzer) scanForUsages(state *scanState) {
-	for _, pkg := range state.pkgs {
-		if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
-			continue
-		}
-
-		// Collect usages first (even for non-exported or external symbols)
-		for _, obj := range pkg.TypesInfo.Uses {
-			if obj == nil || obj.Pkg() == nil {
-				continue
-			}
-			id := a.getSymbolIdentity(obj)
-			state.totalUses[id]++
-
-			// Check if this is an "external" use (outside original package or from a test variant)
-			pkgBase := getBasePkgPath(pkg.PkgPath)
-			objBase := getBasePkgPath(obj.Pkg().Path())
-			if pkgBase != objBase || strings.Contains(pkg.PkgPath, ".test]") || strings.HasSuffix(pkg.PkgPath, "_test") {
-				state.externalUses[id]++
-			}
-		}
 	}
 }
 
@@ -328,16 +272,12 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 		return
 	}
 
-	id := a.getSymbolIdentity(obj)
-	if _, exists := state.declarations[id]; !exists {
-		state.declarations[id] = &symMeta{
-			id:      id,
-			pkgPath: getBasePkgPath(obj.Pkg().Path()),
-			name:    obj.Name(),
-			symType: getSymbolType(obj),
-			obj:     obj,
-		}
+	// Exclude Go test functions from being reported as technical debt.
+	if a.isTestSymbol(obj.Name()) {
+		return
 	}
+
+	a.registerDeclaration(obj, state)
 
 	// Capture exported methods
 	if tn, ok := obj.(*types.TypeName); ok {
@@ -347,14 +287,32 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 	}
 }
 
+func (a *deadCodeAnalyzer) isTestSymbol(name string) bool {
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example")
+}
+
+func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
+	id := getSymbolIdentity(obj)
+	if _, exists := state.declarations[id]; !exists {
+		state.declarations[id] = &symMeta{
+			id:      id,
+			pkgPath: getBasePkgPath(obj.Pkg().Path()),
+			name:    obj.Name(),
+			symType: getSymbolType(obj),
+			obj:     obj,
+		}
+	}
+}
+
 func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) {
+	// Regular methods
 	for i := 0; i < named.NumMethods(); i++ {
 		m := named.Method(i)
 		if m == nil || m.Pkg() == nil {
 			continue
 		}
 		if m.Exported() {
-			mId := a.getSymbolIdentity(m)
+			mId := getSymbolIdentity(m)
 			if _, exists := state.declarations[mId]; !exists {
 				state.declarations[mId] = &symMeta{
 					id:       mId,
@@ -363,6 +321,29 @@ func (a *deadCodeAnalyzer) harvestMethods(named *types.Named, state *scanState) 
 					symType:  "Method",
 					isMethod: true,
 					obj:      m,
+				}
+			}
+		}
+	}
+
+	// Interface methods
+	if itf, ok := named.Underlying().(*types.Interface); ok {
+		for i := 0; i < itf.NumMethods(); i++ {
+			m := itf.Method(i)
+			if m == nil || m.Pkg() == nil {
+				continue
+			}
+			if m.Exported() {
+				mId := getSymbolIdentity(m)
+				if _, exists := state.declarations[mId]; !exists {
+					state.declarations[mId] = &symMeta{
+						id:       mId,
+						pkgPath:  getBasePkgPath(m.Pkg().Path()),
+						name:     m.Name(),
+						symType:  "Method",
+						isMethod: true,
+						obj:      m,
+					}
 				}
 			}
 		}
@@ -412,12 +393,12 @@ func (a *deadCodeAnalyzer) checkImplementations(named *types.Named, pkg *package
 			// If any method of this interface is used, mark the concrete implementation as used
 			for i := 0; i < itf.NumMethods(); i++ {
 				im := itf.Method(i)
-				imId := a.getSymbolIdentity(im)
+				imId := getSymbolIdentity(im)
 				if state.totalUses[imId] > 0 {
 					// Find the concrete method on our type
 					cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
 					if cm != nil {
-						cmId := a.getSymbolIdentity(cm)
+						cmId := getSymbolIdentity(cm)
 						state.totalUses[cmId] += state.totalUses[imId]
 						state.externalUses[cmId] += state.externalUses[imId]
 					}

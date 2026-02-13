@@ -82,18 +82,17 @@ func TestAgent_Options(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, h, reg, sm, false, bus,
-		WithLimits(3, 500, 5),
-		WithSystemInstructions("Be helpful"),
+		withLimits(3, 500, 5),
 	)
 	_ = a.events.Flush(context.Background())
 
 	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
-		t.Errorf("WithLimits did not update a.config.Limits: %+v", a.config.Limits)
+		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
 	}
 
 	limits := a.ctxManager.GetLimits()
 	if limits.MaxHistoryTokens != 500 || limits.MaxToolTurns != 3 {
-		t.Errorf("WithLimits failed: got %+v", limits)
+		t.Errorf("withLimits failed: got %+v", limits)
 	}
 }
 
@@ -123,24 +122,6 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	limits := a.ctxManager.GetLimits()
 	if limits.MaxHistoryTokens != 1234 || limits.MaxToolTurns != 42 {
 		t.Errorf("ConfigWatcher integration failed: got %+v", limits)
-	}
-}
-
-func TestAgent_BudgetLimit(t *testing.T) {
-	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	bus := events.NewSimpleEventBus()
-
-	a := New(client, h, reg, sm, false, bus)
-	_ = a.SetHardBudgetLimit(context.Background(), 1.50)
-
-	if a.config.HardBudgetLimit != 1.50 {
-		t.Errorf("expected HardBudgetLimit 1.50, got %.2f", a.config.HardBudgetLimit)
-	}
-	if a.engine.HardBudgetLimit != 1.50 {
-		t.Errorf("expected Engine HardBudgetLimit 1.50, got %.2f", a.engine.HardBudgetLimit)
 	}
 }
 
@@ -258,23 +239,6 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 	if !isFatal(err) {
 		t.Errorf("expected fatal error for context exhaustion, got %v", err)
-	}
-}
-
-func TestAgent_SystemInstructions_Sync(t *testing.T) {
-	mockClient := &mockLLMClient{}
-	bus := events.NewSimpleEventBus()
-	a := New(mockClient, nil, registry.New(), security_impl.NewSecurityManager(nil), false, bus)
-
-	instr := "Act as a pirate"
-	_ = a.SetSystemInstructions(context.Background(), instr)
-
-	if a.config.SystemInstructions != instr {
-		t.Errorf("expected instructions %q, got %q", instr, a.config.SystemInstructions)
-	}
-	// Gateway should have it too
-	if a.gateway.GetSystemInstructions() != instr {
-		t.Errorf("expected gateway instructions %q, got %q", instr, a.gateway.GetSystemInstructions())
 	}
 }
 
@@ -425,21 +389,6 @@ func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared [
 	}
 }
 
-func TestAgent_SetPrunedTurns(t *testing.T) {
-	mockClient := &mockLLMClient{}
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	t.Run("SetPrunedTurns", func(t *testing.T) {
-		bus := events.NewSimpleEventBus()
-		a := New(mockClient, nil, reg, sm, false, bus)
-		_ = a.SetPrunedTurns(context.Background(), 7)
-
-		if a.ctxManager.Strategy.GetPrunedTurns() != 7 {
-			t.Errorf("expected prunedTurns 7, got %d", a.ctxManager.Strategy.GetPrunedTurns())
-		}
-	})
-}
-
 func TestAgent_Reconfiguration(t *testing.T) {
 	client := &mockLLMClient{}
 	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
@@ -458,12 +407,6 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	}
 	if a.engine.GetCostTracker() != tracker1 {
 		t.Error("engine didn't receive tracker from WithSessionCostTracker")
-	}
-
-	// Test runtime budget update
-	_ = a.SetHardBudgetLimit(context.Background(), 2.50)
-	if a.engine.HardBudgetLimit != 2.50 {
-		t.Errorf("expected Engine HardBudgetLimit 2.50, got %.2f", a.engine.HardBudgetLimit)
 	}
 
 	// Test tracker replacement

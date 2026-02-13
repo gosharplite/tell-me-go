@@ -11,13 +11,34 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
+type mockHealthExecutor struct{}
+
+func (m *mockHealthExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return m.CombinedOutput(ctx, name, args...)
+}
+
+func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "go" && len(args) > 0 && args[0] == "test" {
+		return []byte("ok package1\nok package2"), nil
+	}
+	if name == "go" && len(args) > 1 && args[0] == "tool" && args[1] == "cover" {
+		return []byte("total: (statements) 82.5%"), nil
+	}
+	if name == "golangci-lint" || name == "staticcheck" {
+		return []byte(""), nil
+	}
+	if name == "govulncheck" {
+		return []byte("No vulnerabilities found"), nil
+	}
+	return []byte(""), nil
+}
+
 func TestHealthManager_GetCodeHealth(t *testing.T) {
-	t.Setenv("SKIP_HEALTH_EXECUTION", "true")
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	ana := newAnalysisManager(idx, cache, sm, nil)
-	hea := &healthManager{SP: sm, Ana: ana}
+	hea := &healthManager{SP: sm, Ana: ana, Exec: &mockHealthExecutor{}}
 
 	ctx := context.Background()
 	res, err := hea.GetCodeHealth(ctx, nil)
@@ -34,15 +55,17 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| **Dead Code** |") {
 		t.Errorf("expected Dead Code row, got %q", res.Text)
 	}
+	if !strings.Contains(res.Text, "82.5%") {
+		t.Errorf("expected 82.5%% coverage, got %q", res.Text)
+	}
 }
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
-	t.Setenv("SKIP_HEALTH_EXECUTION", "true")
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	ana := newAnalysisManager(idx, cache, sm, nil)
-	hea := &healthManager{SP: sm, Ana: ana}
+	hea := &healthManager{SP: sm, Ana: ana, Exec: &mockHealthExecutor{}}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately

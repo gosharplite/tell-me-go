@@ -12,14 +12,32 @@ import (
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type refactorMockSecurityProvider struct {
-	security.SecurityProvider
+	domain.ISecurityManager
 	IsPathWritableFunc           func(path string) (string, error)
 	ConfirmDestructiveActionFunc func(ctx context.Context, action, target, detail string) (bool, error)
 	IsPathSafeFunc               func(path string) (string, error)
+}
+
+func (m *refactorMockSecurityProvider) TerminalLock()   {}
+func (m *refactorMockSecurityProvider) TerminalUnlock() {}
+func (m *refactorMockSecurityProvider) IsBypassActive() bool {
+	return false
+}
+func (m *refactorMockSecurityProvider) IsCommandAllowed(command string) bool {
+	return true
+}
+func (m *refactorMockSecurityProvider) Prompt(message string) {}
+func (m *refactorMockSecurityProvider) Warn(message string)   {}
+func (m *refactorMockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *refactorMockSecurityProvider) LogAudit(label1, val1, label2, val2 string) {
+}
+func (m *refactorMockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
 }
 
 func (m *refactorMockSecurityProvider) GetSafetyService() *domain.SafetyService {

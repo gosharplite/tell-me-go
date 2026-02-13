@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"bytes"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"html"
 	"io"
 	"regexp"
@@ -47,13 +47,13 @@ var (
 )
 
 type confluenceManager struct {
-	sm       *security.SecurityManager
+	sm       security.ISecurityManager
 	client   tools.HTTPClient
 	provider *atlassianProvider
 }
 
 // newconfluenceManager creates a new instance of confluenceManager.
-func newconfluenceManager(sm *security.SecurityManager, client tools.HTTPClient) *confluenceManager {
+func newconfluenceManager(sm security.ISecurityManager, client tools.HTTPClient) *confluenceManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

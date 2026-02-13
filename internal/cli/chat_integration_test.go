@@ -36,16 +36,7 @@ func (m *integrationMockChatter) Chat(ctx stdctx.Context, s *orchestration.Sessi
 func (m *integrationMockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, historyTurns int) error {
 	return nil
 }
-func (m *integrationMockChatter) SetHardBudgetLimit(ctx stdctx.Context, limit float64) error {
-	return nil
-}
 func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error {
-	return nil
-}
-func (m *integrationMockChatter) SetPrunedTurns(ctx stdctx.Context, n int) error {
-	return nil
-}
-func (m *integrationMockChatter) SetSystemInstructions(ctx stdctx.Context, instr string) error {
 	return nil
 }
 func (m *integrationMockChatter) Subscribe(sub func(events.Event)) {}

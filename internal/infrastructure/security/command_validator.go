@@ -13,13 +13,13 @@ import (
 
 // CommandValidator handles command validation and security checks.
 type CommandValidator struct {
-	sm         SecurityProvider
+	sm         domain.ISecurityManager
 	safety     *domain.SafetyService
 	interactor domain.UserInteractor
 }
 
 // NewCommandValidator creates a new CommandValidator.
-func NewCommandValidator(sm SecurityProvider, interactor domain.UserInteractor) *CommandValidator {
+func NewCommandValidator(sm domain.ISecurityManager, interactor domain.UserInteractor) *CommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
 		if ism, ok := sm.(internalSecurityProvider); ok {
@@ -268,7 +268,9 @@ func (v *CommandValidator) validateSinglePath(arg string) (bool, string) {
 
 	if _, err := v.sm.IsPathSafe(arg); err != nil {
 		if v.looksLikePath(arg) {
-			if v.interactor != nil {
+			if v.sm != nil {
+				v.sm.Warn(fmt.Sprintf("[Safety] %v", err))
+			} else if v.interactor != nil {
 				v.interactor.Warn(fmt.Sprintf("[Safety] %v", err))
 			}
 			return false, fmt.Sprintf("path safety check failed for argument '%s': %v", arg, err)

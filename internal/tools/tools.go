@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -25,7 +26,7 @@ import (
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(
 	r *registry.Registry,
-	sm *security.SecurityManager,
+	sm domain_security.ISecurityManager,
 	outputDir string,
 	logFile string,
 	model string,
@@ -43,7 +44,9 @@ func RegisterAll(
 	if state != nil {
 		workspace.RegisterPersistence(r, state)
 	}
-	security.RegisterPolicy(r, sm)
+	if ism, ok := sm.(*security.SecurityManager); ok {
+		security.RegisterPolicy(r, ism)
+	}
 	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
 	analysis.Register(r, sm, bus)
 	developer.Register(r, sm, executor)

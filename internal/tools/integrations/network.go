@@ -12,17 +12,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type networkTool struct {
-	sm     *security.SecurityManager
+	sm     security.ISecurityManager
 	client tools.HTTPClient
 }
 
-func newnetworkTool(sm *security.SecurityManager, client tools.HTTPClient) *networkTool {
+func newnetworkTool(sm security.ISecurityManager, client tools.HTTPClient) *networkTool {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

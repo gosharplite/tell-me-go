@@ -15,13 +15,18 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-type mockPackageLoader struct {
+type mockIndexer struct {
+	symbolIndex
 	pkgs []*packages.Package
 	err  error
 }
 
-func (m *mockPackageLoader) LoadPackages(ctx context.Context, patterns ...string) ([]*packages.Package, error) {
-	return m.pkgs, m.err
+func (m *mockIndexer) Packages() []*packages.Package {
+	return m.pkgs
+}
+
+func (m *mockIndexer) Refresh(ctx context.Context) error {
+	return m.err
 }
 
 func TestSequenceAnalyzer_AnalyzeSequenceFlow(t *testing.T) {
@@ -94,10 +99,10 @@ func LoopFunc() {}
 		},
 	}
 
-	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{})
-	analyzer.Provider = &mockPackageLoader{
+	idx := &mockIndexer{
 		pkgs: []*packages.Package{pkgA, pkgB},
 	}
+	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{}, idx)
 
 	t.Run("basic flow", func(t *testing.T) {
 		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{

@@ -9,16 +9,16 @@ import (
 	"io"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type interactionTool struct {
-	sm *security.SecurityManager
+	sm domain_security.ISecurityManager
 }
 
-func newinteractionTool(sm *security.SecurityManager) *interactionTool {
+func newinteractionTool(sm domain_security.ISecurityManager) *interactionTool {
 	return &interactionTool{sm: sm}
 }
 

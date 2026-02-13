@@ -233,10 +233,3 @@ func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string 
 func (cs *ContextStrategy) getCloggedWarning() string {
 	return "[CRITICAL SYSTEM NOTICE: A recent summarization failed to significantly reduce context size. This is likely due to too many 'Pinned' turns or massive active file buffers. You MUST unpin non-essential turns using 'manage_history' (unpin) or move architectural findings to the 'manage_scratchpad' immediately to avoid a session crash.]"
 }
-
-// GetPrunedTurns returns the current pruned turns count (for testing).
-func (cs *ContextStrategy) GetPrunedTurns() int {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.prunedTurns
-}

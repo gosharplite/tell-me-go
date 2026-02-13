@@ -95,6 +95,11 @@ func (sm *SecurityManager) Prompt(message string) {
 	sm.interaction.interactor.Prompt(message)
 }
 
+// Confirm prompts the user for confirmation.
+func (sm *SecurityManager) Confirm(ctx context.Context, message string) (bool, error) {
+	return sm.interaction.interactor.Confirm(ctx, message)
+}
+
 // SetInteractor updates the user interactor.
 func (sm *SecurityManager) SetInteractor(interactor domain.UserInteractor) {
 	sm.interaction.SetInteractor(interactor)
@@ -250,4 +255,10 @@ func (sm *SecurityManager) getSafetyService() *domain.SafetyService {
 // GetInteractor returns the user interactor.
 func (sm *SecurityManager) GetInteractor() domain.UserInteractor {
 	return sm.interaction.interactor
+}
+
+// internalSecurityProvider extends domain.ISecurityManager with methods used only within the security package.
+type internalSecurityProvider interface {
+	domain.ISecurityManager
+	getSafetyService() *domain.SafetyService
 }

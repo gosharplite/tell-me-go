@@ -12,16 +12,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"golang.org/x/tools/go/packages"
 )
 
 // sequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
-	SP        security.SecurityProvider
+	SP        security.ISecurityManager
 	Exec      tools.CommandExecutor
-	Provider  iGopackageProvider
+	idx       symbolIndex
 	Formatter *mermaidFormatter
 
 	pkgMu    sync.RWMutex
@@ -32,11 +32,11 @@ type sequenceAnalyzer struct {
 }
 
 // newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
-func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider) *sequenceAnalyzer {
+func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.ISecurityManager, idx symbolIndex) *sequenceAnalyzer {
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,
-		Provider:  &realGopackageProvider{},
+		idx:       idx,
 		Formatter: newMermaidFormatter(),
 		cacheTTL:  5 * time.Minute,
 	}
@@ -85,11 +85,15 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 	}
 	a.modName = strings.TrimSpace(string(modOut))
 
-	// 1. Load packages
-	pkgs, err := a.Provider.LoadPackages(ctx, "./...")
-	if err != nil {
-		return fmt.Errorf("loading packages: %w", err)
+	// 1. Refresh and get packages from indexer
+	if err := a.idx.Refresh(ctx); err != nil {
+		return fmt.Errorf("refreshing index: %w", err)
 	}
+	pkgs := a.idx.Packages()
+	if len(pkgs) == 0 {
+		return fmt.Errorf("no packages loaded")
+	}
+
 	a.pkgs = pkgs
 	a.lastLoad = time.Now()
 	return nil

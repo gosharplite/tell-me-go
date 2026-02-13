@@ -18,7 +18,7 @@ import (
 )
 
 type devManager struct {
-	sm             security.SecurityProvider
+	sm             domain_security.ISecurityManager
 	validator      *security.CommandValidator
 	executor       executor
 	stderr         io.Writer
@@ -321,23 +321,13 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.TerminalLock()
 	defer m.sm.TerminalUnlock()
-	// Use PrintFeedback if it's available in the future, for now just use a basic print or add Warn to SecurityProvider
-	// For now, since devManager is already somewhat decoupled, I'll see if I can get the interactor
-	if sm, ok := m.sm.(*security.SecurityManager); ok {
-		sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
-	} else {
-		fmt.Fprintf(m.stderr, "[Tool Action] "+format+"\n", a...)
-	}
+	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-func newDevManager(sm security.SecurityProvider) *devManager {
-	var interactor domain_security.UserInteractor
-	if s, ok := sm.(*security.SecurityManager); ok {
-		interactor = s.GetInteractor()
-	}
+func newDevManager(sm domain_security.ISecurityManager) *devManager {
 	return &devManager{
 		sm:             sm,
-		validator:      security.NewCommandValidator(sm, interactor),
+		validator:      security.NewCommandValidator(sm, nil),
 		executor:       &realExecutor{},
 		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,

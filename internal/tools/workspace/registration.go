@@ -4,10 +4,10 @@
 package workspace
 
 import (
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -18,13 +18,13 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
 	registerFiles(r, sm)
 	registerSystem(r, sm)
 	registerGit(r, sm, exec)
 }
 
-func registerFiles(r *registry.Registry, sm *security.SecurityManager) {
+func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
 	bm := newBackupManager(sm, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: storage.DefaultFileSystem},
@@ -237,12 +237,17 @@ func registerFiles(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "INTEGER",
 					Description: "Number of changes to revert (default 1).",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for reverting the changes.",
+				},
 			},
+			Required: []string{"reason"},
 		},
 	}, m.writer.undoFileChange, registry.ToolOptions{Serial: true})
 }
 
-func registerSystem(r *registry.Registry, sm *security.SecurityManager) {
+func registerSystem(r *registry.Registry, sm domain_security.ISecurityManager) {
 	shell := newshellTool(sm)
 	interaction := newinteractionTool(sm)
 
@@ -319,7 +324,7 @@ func registerSystem(r *registry.Registry, sm *security.SecurityManager) {
 	}, interaction.AskUser, registry.ToolOptions{Serial: true, LongRunning: true})
 }
 
-func registerGit(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+func registerGit(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
 	m := &gitManager{sm: sm, Exec: exec}
 
 	r.Register(&tools.ToolDeclaration{
@@ -395,8 +400,12 @@ func registerGit(r *registry.Registry, sm *security.SecurityManager, exec tools.
 					Type:        "STRING",
 					Description: "The commit message.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for this commit (architectural intent).",
+				},
 			},
-			Required: []string{"message"},
+			Required: []string{"message", "reason"},
 		},
 	}, m.gitCommit, registry.ToolOptions{Serial: true})
 

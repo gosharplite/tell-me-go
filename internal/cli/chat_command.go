@@ -41,7 +41,7 @@ type chatCommand struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	HomeDir string
-	SM      *internal_security.SecurityManager
+	SM      domain_security.ISecurityManager
 
 	AgentFactory  func(client *llm.Client, hManager *history.Manager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter
 	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error)
@@ -120,7 +120,11 @@ func (c *chatCommand) renderHistory(hManager *history.Manager, opts *cliOptions,
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
-	c.SM.SetInteractor(capturer)
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
+		sm.SetInteractor(capturer)
+	}
 
 	opts, fs, cfg, err := c.initializeConfiguration(args)
 	if err != nil {
@@ -152,6 +156,12 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, deps.bus, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	defer func() {
+		if err := chatAgent.Shutdown(ctx); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Agent shutdown failed: %v\n", err)
+		}
+	}()
+
 	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
@@ -238,19 +248,21 @@ func (c *chatCommand) getPricingOverrides(cfg *config.Config) map[string]domain_
 }
 
 func (c *chatCommand) setupSecurity(paths *persistence.Paths, configPath string) {
-	c.SM.SetSafePathsFile(paths.SafePathsPath)
-	c.SM.SetReadOnlyPathsFile(paths.ReadPathsPath)
-	c.SM.SetBypassFile(paths.BypassPath)
-	c.SM.SetCommandsLogFile(paths.CommandsLogPath)
-	if err := c.SM.LoadSafePaths(); err != nil {
-		fmt.Fprintf(c.Stderr, "Warning: Failed to load safe paths: %v\n", err)
+	if sm, ok := c.SM.(*internal_security.SecurityManager); ok {
+		sm.SetSafePathsFile(paths.SafePathsPath)
+		sm.SetReadOnlyPathsFile(paths.ReadPathsPath)
+		sm.SetBypassFile(paths.BypassPath)
+		sm.SetCommandsLogFile(paths.CommandsLogPath)
+		if err := sm.LoadSafePaths(); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Failed to load safe paths: %v\n", err)
+		}
+		if err := sm.LoadReadOnlyPaths(); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
+		}
+		sm.LoadBypassState()
+		sm.RegisterSafePath(filepath.Join(c.HomeDir, "output"))
+		sm.RegisterReadOnlyPath(configPath)
 	}
-	if err := c.SM.LoadReadOnlyPaths(); err != nil {
-		fmt.Fprintf(c.Stderr, "Warning: Failed to load read-only paths: %v\n", err)
-	}
-	c.SM.LoadBypassState()
-	c.SM.RegisterSafePath(filepath.Join(c.HomeDir, "output"))
-	c.SM.RegisterReadOnlyPath(configPath)
 }
 
 func (c *chatCommand) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]domain_pricing.ModelPricing) {

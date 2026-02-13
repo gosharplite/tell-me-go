@@ -193,3 +193,83 @@ func TestArchitectureManager_CheckLayerViolations(t *testing.T) {
 		t.Errorf("expected 2 violations, got %d", len(violations))
 	}
 }
+
+type mockSecurityProviderDenyGo struct {
+	mockSecurityProvider
+}
+
+func (m *mockSecurityProviderDenyGo) IsCommandAllowed(cmd string) bool {
+	return cmd != "go"
+}
+
+func TestRealPackageProvider_LoadPackages(t *testing.T) {
+	m := &architectureManager{
+		SP: &mockSecurityProviderDenyGo{},
+	}
+	executor := &mockExecutor{}
+	r := &realpackageProvider{m: m, Exec: executor}
+
+	t.Run("security denial", func(t *testing.T) {
+		_, err := r.LoadPackages(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "security policy") {
+			t.Errorf("expected security denial error, got %v", err)
+		}
+	})
+
+	t.Run("command failure", func(t *testing.T) {
+		m.SP = &mockSecurityProvider{} // allow go
+		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return nil, fmt.Errorf("exit status 1")
+		}
+		_, err := r.LoadPackages(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "go list command failed") {
+			t.Errorf("expected command failure error, got %v", err)
+		}
+	})
+
+	t.Run("malformed output", func(t *testing.T) {
+		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("invalid json"), nil
+		}
+		_, err := r.LoadPackages(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "failed to decode go list output") {
+			t.Errorf("expected decode error, got %v", err)
+		}
+	})
+
+	t.Run("successful load", func(t *testing.T) {
+		m.ModulePath = "github.com/org/repo"
+		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			data := `{"ImportPath": "github.com/org/repo/internal/domain", "Imports": ["github.com/org/repo/internal/other"], "Module": {"Path": "github.com/org/repo"}}`
+			return []byte(data), nil
+		}
+		pkgs, err := r.LoadPackages(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := pkgs["github.com/org/repo/internal/domain"]; !ok {
+			t.Error("expected package not found")
+		}
+	})
+}
+
+func TestRealPackageProvider_IsTrackedPackage(t *testing.T) {
+	m := &architectureManager{ModulePath: "github.com/org/repo"}
+	r := &realpackageProvider{m: m}
+
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"github.com/org/repo/internal/domain", true},
+		{"github.com/org/repo/cmd/app", true},
+		{"github.com/org/repo/pkg/util", false},
+		{"external.com/pkg", false},
+	}
+
+	for _, tt := range tests {
+		if got := r.isTrackedPackage(tt.path); got != tt.want {
+			t.Errorf("isTrackedPackage(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}

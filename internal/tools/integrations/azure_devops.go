@@ -20,13 +20,13 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type azureDevOpsManager struct {
-	sm         *security.SecurityManager
+	sm         security.ISecurityManager
 	client     tools.HTTPClient
 	authHeader string
 	authErr    error
@@ -34,7 +34,7 @@ type azureDevOpsManager struct {
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm *security.SecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+func newazureDevOpsManager(sm security.ISecurityManager, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

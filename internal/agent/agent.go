@@ -31,21 +31,9 @@ type Chatter interface {
 	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
 
-	// SetHardBudgetLimit sets the hard budget limit for the agent.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetHardBudgetLimit(ctx context.Context, limit float64) error
-
 	// SetTieredThreshold sets the tiered threshold for the agent.
 	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
 	SetTieredThreshold(ctx context.Context, threshold int) error
-
-	// SetPrunedTurns sets the number of turns to prune from history.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetPrunedTurns(ctx context.Context, n int) error
-
-	// SetSystemInstructions updates the system instructions used by the context pipeline.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetSystemInstructions(ctx context.Context, instr string) error
 
 	// Subscribe adds a subscriber for agent events.
 	Subscribe(sub func(events.Event))
@@ -59,12 +47,10 @@ type Chatter interface {
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
-	Limits             events.Limits
-	Model              string
-	Mode               string
-	PricingOverrides   map[string]domain_pricing.ModelPricing
-	HardBudgetLimit    float64
-	SystemInstructions string
+	Limits           events.Limits
+	Model            string
+	Mode             string
+	PricingOverrides map[string]domain_pricing.ModelPricing
 }
 
 // Agent represents the chat orchestration logic (Stateless Service).
@@ -97,8 +83,8 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// WithLimits sets the initial operational limits.
-func WithLimits(toolTurns, historyTokens, historyTurns int) agentOption {
+// withLimits sets the initial operational limits.
+func withLimits(toolTurns, historyTokens, historyTurns int) agentOption {
 	return func(a *agent) {
 		a.config.Limits = events.Limits{
 			MaxHistoryTokens: historyTokens,
@@ -145,11 +131,6 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	// Apply options
 	for _, opt := range options {
 		opt(a)
-	}
-
-	// Sync initial system instructions to gateway
-	if a.config.SystemInstructions != "" {
-		a.gateway.SetSystemInstructions(a.config.SystemInstructions)
 	}
 
 	factory := &orchestration.PipelineFactory{
@@ -227,26 +208,10 @@ func (a *agent) SetLimits(ctx context.Context, toolTurns, historyTokens, history
 	return a.applyConfig(ctx)
 }
 
-// SetHardBudgetLimit sets the hard budget limit for the agent.
-// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetHardBudgetLimit(ctx context.Context, limit float64) error {
-	a.mu.Lock()
-	a.config.HardBudgetLimit = limit
-	a.mu.Unlock()
-	return a.applyConfig(ctx)
-}
-
 // SetTieredThreshold sets the tiered threshold for the agent.
 // It returns an error if the configuration cannot be applied (e.g., context cancellation).
 func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 	a.configWatcher.ApplyLimits(events.Limits{TieredThreshold: threshold})
-	return a.applyConfig(ctx)
-}
-
-// SetPrunedTurns updates the number of turns to prune from history.
-// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetPrunedTurns(ctx context.Context, n int) error {
-	a.strategy.SetPrunedTurns(n)
 	return a.applyConfig(ctx)
 }
 
@@ -269,25 +234,6 @@ func (a *agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 // GetCostTracker returns the session cost tracker used by the agent's engine.
 func (a *agent) GetCostTracker() domain_pricing.ICostTracker {
 	return a.engine.GetCostTracker()
-}
-
-// SetSystemInstructions updates the system instructions used by the context pipeline.
-// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-func (a *agent) SetSystemInstructions(ctx context.Context, instr string) error {
-	a.mu.Lock()
-	a.config.SystemInstructions = instr
-	if a.gateway != nil {
-		a.gateway.SetSystemInstructions(instr)
-	}
-	a.mu.Unlock()
-	return a.applyConfig(ctx)
-}
-
-// WithSystemInstructions sets the initial system instructions.
-func WithSystemInstructions(instr string) agentOption {
-	return func(a *agent) {
-		a.config.SystemInstructions = instr
-	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.

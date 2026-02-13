@@ -46,6 +46,10 @@ type symbolIndex interface {
 	SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error)
 	// GetUsages returns all locations where the given symbol name is used.
 	GetUsages(ctx context.Context, symbol string, path string) ([]location, error)
+	// IsSymbolUsed returns true if the provided name exists in the index with at least one usage.
+	IsSymbolUsed(name string) bool
+	// Packages returns the loaded packages.
+	Packages() []*packages.Package
 	// Refresh re-scans the workspace to update the index.
 	Refresh(ctx context.Context) error
 }
@@ -96,6 +100,7 @@ func (idx *indexer) Refresh(ctx context.Context) error {
 
 	h := newHarvester(fset)
 	for _, pkg := range pkgs {
+		h.info = pkg.TypesInfo
 		for _, file := range pkg.Syntax {
 			filename := fset.File(file.Pos()).Name()
 			h.currentPath, _ = filepath.Abs(filename)
@@ -236,11 +241,18 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	return results, nil
 }
 
+func (idx *indexer) Packages() []*packages.Package {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.pkgs
+}
+
 type harvester struct {
 	fset          *token.FileSet
 	symbolsByPath map[string][]symbolLocation
 	usagesByName  map[string][]location
 	currentPath   string
+	info          *types.Info
 }
 
 func newHarvester(fset *token.FileSet) *harvester {
@@ -320,6 +332,21 @@ func (h *harvester) handleFuncDecl(d *ast.FuncDecl) {
 }
 
 func (h *harvester) handleIdent(d *ast.Ident) {
+	if h.info != nil {
+		if _, isDef := h.info.Defs[d]; isDef {
+			return // skip definitions
+		}
+		if obj, ok := h.info.Uses[d]; ok && obj != nil {
+			key := getSymbolIdentity(obj)
+			loc := h.toLocation(d.Pos())
+			h.usagesByName[key] = append(h.usagesByName[key], loc)
+			// Also store by short name for backward compatibility and general searches
+			if key != d.Name {
+				h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
+			}
+			return
+		}
+	}
 	loc := h.toLocation(d.Pos())
 	h.usagesByName[d.Name] = append(h.usagesByName[d.Name], loc)
 }
@@ -342,10 +369,11 @@ func (idx *indexer) needsRefresh() bool {
 
 func (idx *indexer) loadPackages(ctx context.Context, fset *token.FileSet) ([]*packages.Package, error) {
 	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo,
+		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		Dir:     idx.dir,
 		Fset:    fset,
 		Context: ctx,
+		Tests:   true,
 	}
 	return packages.Load(cfg, "./...")
 }
@@ -358,4 +386,11 @@ func (idx *indexer) updateState(pkgs []*packages.Package, h *harvester, fset *to
 	idx.symbolsByPath = h.symbolsByPath
 	idx.usagesByName = h.usagesByName
 	idx.lastRefresh = time.Now()
+}
+
+func (idx *indexer) IsSymbolUsed(name string) bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	usages, ok := idx.usagesByName[name]
+	return ok && len(usages) > 0
 }

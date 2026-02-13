@@ -17,6 +17,15 @@ func (s *mockSecurityProvider) TerminalLock()                              {}
 func (s *mockSecurityProvider) TerminalUnlock()                            {}
 func (s *mockSecurityProvider) IsCommandAllowed(command string) bool       { return true }
 func (s *mockSecurityProvider) LogAudit(label1, val1, label2, val2 string) {}
+func (s *mockSecurityProvider) IsBypassActive() bool                       { return false }
+func (s *mockSecurityProvider) Prompt(message string)                      {}
+func (s *mockSecurityProvider) Warn(message string)                        {}
+func (s *mockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
+}
+func (s *mockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
 func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }

@@ -4,17 +4,17 @@
 package analysis
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"sort"
 	"strings"
 	"sync"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 const (
@@ -32,7 +32,8 @@ type packageProvider interface {
 
 // architectureManager validates the project's architectural integrity.
 type architectureManager struct {
-	SP         security.SecurityProvider
+	SP         domain_security.ISecurityManager
+	Exec       tools.CommandExecutor
 	ModulePath string
 	once       sync.Once
 	Loader     packageProvider
@@ -40,7 +41,8 @@ type architectureManager struct {
 
 // realpackageProvider implements packageProvider using the 'go list' command.
 type realpackageProvider struct {
-	m *architectureManager
+	m    *architectureManager
+	Exec tools.CommandExecutor
 }
 
 func (r *realpackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
@@ -48,26 +50,12 @@ func (r *realpackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 		return nil, fmt.Errorf("security policy: command 'go' is not allowed")
 	}
 
-	// Use a single call to go list -json ./...
-	cmd := exec.CommandContext(ctx, "go", "list", "-json", "./...")
-	stdout, err := cmd.StdoutPipe()
+	output, err := r.Exec.CombinedOutput(ctx, "go", "list", "-json", "./...")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get stdout pipe for go list: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start go list: %w", err)
-	}
-
-	pkgs, err := r.decodePackageInfo(stdout)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("go list command failed: %w", err)
 	}
 
-	return pkgs, nil
+	return r.decodePackageInfo(bytes.NewReader(output))
 }
 
 func (r *realpackageProvider) decodePackageInfo(rd io.Reader) (map[string][]string, error) {
@@ -134,7 +122,7 @@ type rule struct {
 
 func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
-		m.Loader = &realpackageProvider{m: m}
+		m.Loader = &realpackageProvider{m: m, Exec: m.Exec}
 	}
 
 	pkgs, err := m.Loader.LoadPackages(ctx)

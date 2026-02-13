@@ -11,13 +11,13 @@ import (
 	"regexp"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type releaseManager struct {
-	sm       *security.SecurityManager
+	sm       domain_security.ISecurityManager
 	fs       storage.FileSystem
 	executor tools.CommandExecutor
 }
@@ -68,7 +68,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 
 // secretScanner implementation
 type secretScanner struct {
-	sm *security.SecurityManager
+	sm domain_security.ISecurityManager
 	fs storage.FileSystem
 }
 
@@ -193,41 +193,46 @@ type linterChecker struct {
 }
 
 func (c *linterChecker) Name() string { return "Linter Verification" }
+
 func (c *linterChecker) Run(ctx context.Context) checkResult {
-	// Try golangci-lint first
+	res := c.runGolangciLint(ctx)
+	if res.OK || res.Message != "executable file not found" {
+		return res
+	}
+
+	res = c.runStaticcheck(ctx)
+	if res.Message == "executable file not found" {
+		return checkResult{OK: false, Message: "No linter found (golangci-lint or staticcheck)."}
+	}
+	return res
+}
+
+func (c *linterChecker) runGolangciLint(ctx context.Context) checkResult {
 	out, err := c.executor.CombinedOutput(ctx, "golangci-lint", "run")
+	return c.handleLinterResult(out, err, "golangci-lint")
+}
+
+func (c *linterChecker) runStaticcheck(ctx context.Context) checkResult {
+	out, err := c.executor.CombinedOutput(ctx, "staticcheck", "./...")
+	return c.handleLinterResult(out, err, "staticcheck")
+}
+
+func (c *linterChecker) handleLinterResult(out []byte, err error, name string) checkResult {
 	if err == nil {
 		outStr := strings.TrimSpace(string(out))
 		if outStr == "" {
-			return checkResult{OK: true, Message: "All linting checks passed (golangci-lint)."}
+			return checkResult{OK: true, Message: fmt.Sprintf("All linting checks passed (%s).", name)}
 		}
-		return checkResult{OK: false, Message: fmt.Sprintf("golangci-lint found issues:\n%s", outStr)}
+		return checkResult{OK: false, Message: fmt.Sprintf("%s found issues:\n%s", name, outStr)}
 	}
 
-	// If it failed with exit status 1, it likely found issues
-	if err != nil && strings.Contains(err.Error(), "exit status 1") {
-		return checkResult{OK: false, Message: fmt.Sprintf("golangci-lint found issues:\n%s", string(out))}
+	if strings.Contains(err.Error(), "exit status 1") {
+		return checkResult{OK: false, Message: fmt.Sprintf("%s found issues:\n%s", name, string(out))}
 	}
 
-	// If golangci-lint was not found, try staticcheck
-	if err != nil && strings.Contains(err.Error(), "executable file not found") {
-		out, err = c.executor.CombinedOutput(ctx, "staticcheck", "./...")
-		if err == nil {
-			outStr := strings.TrimSpace(string(out))
-			if outStr == "" {
-				return checkResult{OK: true, Message: "All linting checks passed (staticcheck)."}
-			}
-			return checkResult{OK: false, Message: fmt.Sprintf("staticcheck found issues:\n%s", outStr)}
-		}
-		if err != nil && strings.Contains(err.Error(), "exit status 1") {
-			return checkResult{OK: false, Message: fmt.Sprintf("staticcheck found issues:\n%s", string(out))}
-		}
-		if err != nil && strings.Contains(err.Error(), "executable file not found") {
-			return checkResult{OK: false, Message: "No linter found (golangci-lint or staticcheck)."}
-		}
-		return checkResult{OK: false, Message: fmt.Sprintf("staticcheck failed: %v\nOutput: %s", err, string(out))}
+	if strings.Contains(err.Error(), "executable file not found") {
+		return checkResult{OK: false, Message: "executable file not found"}
 	}
 
-	// golangci-lint failed for other reasons
-	return checkResult{OK: false, Message: fmt.Sprintf("golangci-lint failed: %v\nOutput: %s", err, string(out))}
+	return checkResult{OK: false, Message: fmt.Sprintf("%s failed: %v\nOutput: %s", name, err, string(out))}
 }

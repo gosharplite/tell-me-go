@@ -14,6 +14,11 @@ type ISecurityManager interface {
 	IsBypassActive() bool
 	IsCommandAllowed(command string) bool
 	Prompt(message string)
+	Warn(message string)
+	Confirm(ctx context.Context, message string) (bool, error)
+	ReadLine(ctx context.Context) (string, error)
+	LogAudit(label1, val1, label2, val2 string)
+	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
 }
 
 // UserInteractor defines the interface for user interactions (confirmations, warnings).

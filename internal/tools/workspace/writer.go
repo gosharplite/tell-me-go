@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileWriter struct {
-	sm *security.SecurityManager
+	sm domain_security.ISecurityManager
 	bm *backupManager
 	fs storage.FileSystem
 }
@@ -171,7 +171,8 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 
 func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
-		N int `json:"n"`
+		N      int    `json:"n"`
+		Reason string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err

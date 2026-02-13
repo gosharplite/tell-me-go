@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -67,27 +67,27 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider, bus events.EventBus) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus) *analysisManager {
 	executor := &exec.RealExecutor{}
 	fs := storage.DefaultFileSystem
 
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
 		Dependency: newDependencyAnalyzer(executor, sp, bus),
-		Sequence:   newSequenceAnalyzer(executor, sp),
+		Sequence:   newSequenceAnalyzer(executor, sp, idx),
 		Change:     newChangeAnalyzer(cache, executor),
 		Types:      newTypeManager(idx, cache, sp),
-		DeadCode:   newDeadCodeAnalyzer(sp),
+		DeadCode:   newDeadCodeAnalyzer(sp, idx),
 
 		Refactor: newRefactorManager(sp),
 		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},
 		Search:   &searchManager{SP: sp, FS: fs},
-		Arch:     &architectureManager{SP: sp},
+		Arch:     &architectureManager{SP: sp, Exec: executor},
 		Events:   bus,
 	}
 
-	m.Arch.Loader = &realpackageProvider{m: m.Arch}
-	m.Health = &healthManager{SP: sp, Ana: m}
+	m.Arch.Loader = &realpackageProvider{m: m.Arch, Exec: executor}
+	m.Health = &healthManager{SP: sp, Ana: m, Exec: executor}
 
 	return m
 }

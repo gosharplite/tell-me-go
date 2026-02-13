@@ -9,17 +9,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type complexityAnalyzer struct {
 	Cache *astCache
-	SP    security.SecurityProvider
+	SP    security.ISecurityManager
 }
 
-func newComplexityAnalyzer(cache *astCache, sp security.SecurityProvider) *complexityAnalyzer {
+func newComplexityAnalyzer(cache *astCache, sp security.ISecurityManager) *complexityAnalyzer {
 	return &complexityAnalyzer{
 		Cache: cache,
 		SP:    sp,

@@ -5,13 +5,13 @@ package integrations
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 // RegisterAll registers all external integration tools.
-func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
+func RegisterAll(r *registry.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
 	// Register Media Tools
 	registerMedia(r, sm, client, assetsDir)
 
@@ -32,7 +32,7 @@ func RegisterAll(r *registry.Registry, sm *security.SecurityManager, client llm.
 	registerAzureDevOps(r, sm, nil)
 }
 
-func registerMedia(r *registry.Registry, sm *security.SecurityManager, client llm.LLMClient, assetsDir string) {
+func registerMedia(r *registry.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
 	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -121,7 +121,7 @@ func registerNetwork(r *registry.Registry, net *networkTool) {
 	}, net.HttpRequest, registry.ToolOptions{LongRunning: true})
 }
 
-func registerTeams(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+func registerTeams(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newteamsManager(sm, client)
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "send_teams_message",
@@ -147,7 +147,7 @@ func registerTeams(r *registry.Registry, sm *security.SecurityManager, client to
 	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
 }
 
-func registerConfluence(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+func registerConfluence(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newconfluenceManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
@@ -215,7 +215,7 @@ func registerConfluence(r *registry.Registry, sm *security.SecurityManager, clie
 	}, m.confluenceWrite, registry.ToolOptions{Serial: true})
 }
 
-func registerJira(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+func registerJira(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newjiraManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
@@ -253,7 +253,7 @@ func registerJira(r *registry.Registry, sm *security.SecurityManager, client too
 	}, m.jiraGetIssue)
 }
 
-func registerAzureDevOps(r *registry.Registry, sm *security.SecurityManager, client tools.HTTPClient) {
+func registerAzureDevOps(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newazureDevOpsManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{

@@ -12,13 +12,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type healthManager struct {
-	SP  security.SecurityProvider
-	Ana *analysisManager
+	SP   security.ISecurityManager
+	Exec tools.CommandExecutor
+	Ana  *analysisManager
 }
 
 func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -71,10 +72,6 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 }
 
 func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
-	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
-		return "PASS", "Skipped (test mode)", "80.0%", "Mocked"
-	}
-
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
@@ -86,8 +83,7 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 	f.Close()
 	defer os.Remove(tempPath)
 
-	cmd := exec.CommandContext(ctx, "go", "test", "-coverprofile="+tempPath, "./...")
-	out, err := cmd.CombinedOutput()
+	out, err := m.Exec.CombinedOutput(ctx, "go", "test", "-coverprofile="+tempPath, "./...")
 	outStr := string(out)
 
 	if err == nil {
@@ -115,8 +111,7 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 	}
 
 	// Coverage parsing
-	sumCmd := exec.CommandContext(ctx, "go", "tool", "cover", "-func="+tempPath)
-	sumOut, err := sumCmd.CombinedOutput()
+	sumOut, err := m.Exec.CombinedOutput(ctx, "go", "tool", "cover", "-func="+tempPath)
 	if err != nil {
 		cStatus = "ERROR"
 		cDetails = "Failed to generate coverage summary"
@@ -137,26 +132,22 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 }
 
 func (m *healthManager) runLint(ctx context.Context) (string, string) {
-	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
-		return "CLEAN", "Skipped (test mode)"
-	}
-
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
-	var cmd *exec.Cmd
-	var linter string
+	var tool string
+	var args []string
 	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		cmd = exec.CommandContext(ctx, "golangci-lint", "run")
-		linter = "golangci-lint"
+		tool = "golangci-lint"
+		args = []string{"run"}
 	} else if _, err := exec.LookPath("staticcheck"); err == nil {
-		cmd = exec.CommandContext(ctx, "staticcheck", "./...")
-		linter = "staticcheck"
+		tool = "staticcheck"
+		args = []string{"./..."}
 	} else {
 		return "SKIP", "No linter found"
 	}
 
-	out, _ := cmd.CombinedOutput()
+	out, _ := m.Exec.CombinedOutput(ctx, tool, args...)
 	outStr := strings.TrimSpace(string(out))
 	if outStr == "" {
 		return "CLEAN", "All checks passed"
@@ -169,7 +160,7 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 			count++
 		}
 	}
-	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", linter)
+	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", tool)
 }
 
 func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []string) {
@@ -199,10 +190,6 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 }
 
 func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
-	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
-		return "CLEAN", "0 Items"
-	}
-
 	res, err := m.Ana.DeadCode.FindOrphanedSymbols(ctx, map[string]interface{}{"path": "."})
 	if err != nil {
 		return "ERROR", err.Error()
@@ -222,10 +209,6 @@ func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
 }
 
 func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
-	if os.Getenv("SKIP_HEALTH_EXECUTION") == "true" {
-		return "CLEAN", "Skipped (test mode)"
-	}
-
 	m.SP.TerminalLock()
 	defer m.SP.TerminalUnlock()
 
@@ -233,8 +216,7 @@ func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
 		return "SKIP", "govulncheck not installed (run 'go install golang.org/x/vuln/cmd/govulncheck@latest')"
 	}
 
-	cmd := exec.CommandContext(ctx, "govulncheck", "./...")
-	out, _ := cmd.CombinedOutput()
+	out, _ := m.Exec.CombinedOutput(ctx, "govulncheck", "./...")
 	outStr := string(out)
 
 	if strings.Contains(outStr, "No vulnerabilities found") {
@@ -283,7 +265,7 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string
 		path = "./..."
 	}
 
-	report, err := GetDetailedCoverageReport(path, ShellRunner)
+	report, err := GetDetailedCoverageReport(ctx, path, m.Exec)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

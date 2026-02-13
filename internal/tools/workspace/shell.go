@@ -9,22 +9,23 @@ import (
 	"os"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type shellTool struct {
-	sm        *security.SecurityManager
+	sm        domain_security.ISecurityManager
 	validator *security.CommandValidator
 	executor  *processExecutor
 	maxOutput int
 }
 
-func newshellTool(sm *security.SecurityManager) *shellTool {
+func newshellTool(sm domain_security.ISecurityManager) *shellTool {
 	return &shellTool{
 		sm:        sm,
-		validator: security.NewCommandValidator(sm, sm.GetInteractor()),
+		validator: security.NewCommandValidator(sm, nil),
 		executor:  newprocessExecutor(),
 		maxOutput: 50000,
 	}
@@ -199,7 +200,7 @@ func (t *shellTool) authorize(ctx context.Context, label, detail, reason string,
 	}
 	sb.WriteString(fmt.Sprintf("⚠️  Execute this %s? (y/N) ", strings.ToLower(label)))
 
-	return t.sm.GetInteractor().Confirm(ctx, sb.String())
+	return t.sm.Confirm(ctx, sb.String())
 }
 
 func (t *shellTool) runWithFeedback(ctx context.Context, msg string, runFn func() (executionResult, error)) (executionResult, error) {
