@@ -19,11 +19,6 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// iCapturer defines the interface for UI interactions that the orchestrator needs.
-type iCapturer interface {
-	IsTTY(v any) bool
-}
-
 // orchestrator manages the session lifecycle and agent execution.
 type orchestrator struct {
 	HomeDir         string
@@ -32,7 +27,7 @@ type orchestrator struct {
 	SM              domain_security.ISecurityManager
 	Stdout          io.Writer
 	Stderr          io.Writer
-	AgentFactory    func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) any
+	AgentFactory    func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
 	HistoryRenderer services.HistoryRenderer
 	UIRenderer      services.UIRenderer
 }
@@ -47,8 +42,13 @@ type sessionConfig struct {
 	Config     *config.Config
 }
 
+func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
+func (c *sessionConfig) GetLastN() int             { return c.LastN }
+func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
+func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
+
 // NewSessionConfig creates a new sessionConfig with required parameters.
-func NewSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) any {
+func NewSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) services.SessionConfig {
 	return &sessionConfig{
 		ConfigPath: configPath,
 		NewSession: newSession,
@@ -72,8 +72,23 @@ type sessionDependencies struct {
 	EventBus         events.EventBus
 }
 
+func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
+func (d *sessionDependencies) GetHistoryManager() services.HistoryManager {
+	return d.HistoryManager
+}
+func (d *sessionDependencies) GetRegistry() domaintools.IToolRegistry { return d.Registry }
+func (d *sessionDependencies) GetEventBus() events.EventBus           { return d.EventBus }
+func (d *sessionDependencies) GetPaths() *persistence.Paths          { return d.Paths }
+func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
+	return d.PricingOverrides
+}
+func (d *sessionDependencies) GetTracker() domain_pricing.ICostTracker { return d.Tracker }
+func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
+	return d.PricingData
+}
+
 // NewSessionDependencies creates a new sessionDependencies with all required components.
-func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) any {
+func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) services.SessionDependencies {
 	return &sessionDependencies{
 		Paths:            paths,
 		HistoryManager:   hManager,
@@ -87,25 +102,11 @@ func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryM
 	}
 }
 
-// GetEventBus returns the event bus.
-func (d *sessionDependencies) GetEventBus() events.EventBus { return d.EventBus }
-
-// GetTracker returns the cost tracker.
-func (d *sessionDependencies) GetTracker() domain_pricing.ICostTracker { return d.Tracker }
-
-// GetPaths returns the paths.
-func (d *sessionDependencies) GetPaths() *persistence.Paths { return d.Paths }
-
-// GetPricingOverrides returns the pricing overrides.
-func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
-	return d.PricingOverrides
-}
-
 // NewOrchestrator creates a new orchestrator.
 func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory any, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
-	var agentFactory func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) any
+	var agentFactory func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter
 	if factory != nil {
-		agentFactory = factory.(func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) any)
+		agentFactory = factory.(func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter)
 	}
 	return &orchestrator{
 		HomeDir:         homeDir,
@@ -121,20 +122,17 @@ func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 }
 
 // Run executes the session orchestration.
-func (o *orchestrator) Run(ctx context.Context, sCfg any, deps any, capturer any) error {
-	sc := sCfg.(*sessionConfig)
-	sd := deps.(*sessionDependencies)
-	ic := capturer.(iCapturer)
-
+func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd services.SessionDependencies, ic Capturer) error {
 	isTTY := ic.IsTTY(o.Stdout)
-	o.renderHistory(sd.HistoryManager, sc, isTTY)
+	o.renderHistory(sd.GetHistoryManager(), sc, isTTY)
 
-	if sc.Prompt == "" && sc.LastN > 0 {
+	if sc.GetPrompt() == "" && sc.GetLastN() > 0 {
 		return nil
 	}
 
-	chatAgentRaw := o.AgentFactory(o.Loader, sd.Gateway, sd.HistoryManager, sd.Registry, o.SM, sc.Config.DisableStreaming, sd.EventBus, sc.Config.Model, sc.Config.Mode, sd.Paths.LogPath, sd.PricingOverrides, sd.Tracker)
-	chatAgent := chatAgentRaw.(chatter)
+	cfg := sc.GetConfig()
+	paths := sd.GetPaths()
+	chatAgent := o.AgentFactory(o.Loader, sd.GetGateway(), sd.GetHistoryManager(), sd.GetRegistry(), o.SM, cfg.DisableStreaming, sd.GetEventBus(), cfg.Model, cfg.Mode, paths.LogPath, sd.GetPricingOverrides(), sd.GetTracker())
 
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
@@ -142,39 +140,41 @@ func (o *orchestrator) Run(ctx context.Context, sCfg any, deps any, capturer any
 		}
 	}()
 
-	if err := o.applyConfiguration(ctx, chatAgent, sc, sd.Paths, sd.PricingData, ic); err != nil {
+	if err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
-	sess := NewSession(sessionID, sd.HistoryManager)
-	if err := chatAgent.Chat(ctx, sess, sc.Prompt); err != nil {
+	sess := NewSession(sessionID, sd.GetHistoryManager())
+	if err := chatAgent.Chat(ctx, sess, sc.GetPrompt()); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
 
 	return nil
 }
 
-func (o *orchestrator) renderHistory(hManager services.HistoryManager, sCfg *sessionConfig, isTTY bool) {
-	if sCfg.LastN <= 0 {
+func (o *orchestrator) renderHistory(hManager services.HistoryManager, sCfg services.SessionConfig, isTTY bool) {
+	if sCfg.GetLastN() <= 0 {
 		return
 	}
-	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.LastN, services.HistoryRenderOptions{
-		Raw:          sCfg.RawOutput,
-		ShowThoughts: sCfg.Config.ShowThoughts,
-		UseColor:     isTTY && !sCfg.RawOutput,
+	cfg := sCfg.GetConfig()
+	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), services.HistoryRenderOptions{
+		Raw:          sCfg.GetRawOutput(),
+		ShowThoughts: cfg.ShowThoughts,
+		UseColor:     isTTY && !sCfg.GetRawOutput(),
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent chatter, sCfg *sessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer iCapturer) error {
-	o.setupUIRendering(chatAgent, sCfg.Config, sCfg.RawOutput, paths.LogPath, capturer)
-	if err := chatAgent.SetLimits(ctx, sCfg.Config.MaxToolTurns, sCfg.Config.ResolveContextWindow(), sCfg.Config.MaxHistoryTurns); err != nil {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter, sCfg services.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
+	cfg := sCfg.GetConfig()
+	o.setupUIRendering(chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err
 	}
-	return chatAgent.SetTieredThreshold(ctx, sCfg.Config.ResolveTieredThreshold(pData))
+	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(chatAgent chatter, cfg *config.Config, rawOutput bool, logPath string, capturer iCapturer) {
+func (o *orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)

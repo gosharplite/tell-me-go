@@ -29,10 +29,11 @@ func (m *mockEventBus) Flush(ctx context.Context) error { return nil }
 
 type mockProcessor struct {
 	res processResult
+	err error
 }
 
-func (m *mockProcessor) Process(ctx context.Context, turn *turn) processResult {
-	return m.res
+func (m *mockProcessor) Process(ctx context.Context, turn *turn) (processResult, error) {
+	return m.res, m.err
 }
 
 func TestWithStreaming(t *testing.T) {

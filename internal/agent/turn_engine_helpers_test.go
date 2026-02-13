@@ -263,6 +263,8 @@ func closedChan(content *llm.Content) <-chan *llm.Content {
 
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
+	case phaseGuard:
+		return &guardStep{}
 	case phaseRefining:
 		return &contextRefiner{}
 	case phaseInference:
@@ -312,7 +314,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		Registry: reg,
 		Clock:    &realClock{},
 	}
-	if phase == phaseRefining {
+	if phase == phaseRefining || phase == phaseGuard {
 		turn.CtxManager.Pipeline = orchestration.NewContextPipeline()
 	}
 	return turn

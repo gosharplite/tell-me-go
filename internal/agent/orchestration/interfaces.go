@@ -9,8 +9,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 )
 
-// chatter defines the interface for the AI agent orchestration.
-type chatter interface {
+// Chatter defines the interface for the AI agent orchestration.
+type Chatter interface {
 	// Chat runs the multi-turn orchestration loop.
 	// It returns an error if the conversation cannot be initialized or the engine fails.
 	Chat(ctx context.Context, s *Session, prompt string) error
@@ -28,4 +28,9 @@ type chatter interface {
 
 	// Shutdown gracefully stops the agent and its components.
 	Shutdown(ctx context.Context) error
+}
+
+// Capturer defines the interface for UI interactions that the orchestrator needs.
+type Capturer interface {
+	IsTTY(v any) bool
 }

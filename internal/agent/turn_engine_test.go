@@ -28,6 +28,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 		hasTools bool
 		expected turnPhase
 	}{
+		{"Guard to Refining", phaseGuard, false, phaseRefining},
 		{"Refining to Inference", phaseRefining, false, phaseInference},
 		{"Inference to Executing", phaseInference, true, phaseExecuting},
 		{"Inference to Persisting", phaseInference, false, phasePersisting},
@@ -41,7 +42,7 @@ func TestTurnEngine_StateTransitions(t *testing.T) {
 			p := createProcessorForPhase(tt.phase)
 			turn := setupTransitionTurn(tt.hasTools, tt.phase)
 
-			res := p.Process(context.Background(), turn)
+			res, _ := p.Process(context.Background(), turn)
 			if res.NextPhase != tt.expected {
 				t.Errorf("phase %s (tools:%v) expected next %s, got %s", tt.phase, tt.hasTools, tt.expected, res.NextPhase)
 			}
@@ -401,19 +402,19 @@ func (m *mockTransformer) Priority() int { return 10 }
 func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 	var order []string
 	m1 := func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			order = append(order, "m1_in")
-			res := next.Process(ctx, turn)
+			res, err := next.Process(ctx, turn)
 			order = append(order, "m1_out")
-			return res
+			return res, err
 		})
 	}
 	m2 := func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			order = append(order, "m2_in")
-			res := next.Process(ctx, turn)
+			res, err := next.Process(ctx, turn)
 			order = append(order, "m2_out")
-			return res
+			return res, err
 		})
 	}
 
@@ -545,13 +546,13 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 			}
 
 			p := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
-			res := p.Process(ctx, turn)
+			_, err := p.Process(ctx, turn)
 
-			if res.Error == nil {
+			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
-			if !strings.Contains(res.Error.Error(), tt.wantErr) {
-				t.Errorf("expected error containing %q, got %v", tt.wantErr, res.Error)
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %v", tt.wantErr, err)
 			}
 		})
 	}
@@ -640,12 +641,12 @@ func TestTurnEngine_withProcessor(t *testing.T) {
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
 	customRefinerCalled := false
-	customRefiner := turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+	customRefiner := turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 		customRefinerCalled = true
 		turn.State.Metadata = &orchestration.Metadata{
 			History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "custom"}}}},
 		}
-		return processResult{NextPhase: phaseInference}
+		return processResult{NextPhase: phaseInference}, nil
 	})
 
 	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, nil), reg, nil, withProcessor(phaseRefining, customRefiner))
@@ -688,9 +689,9 @@ func TestTurnEngine_Hooks(t *testing.T) {
 	if hook.afterCalled != 1 {
 		t.Errorf("expected 1 AfterTurn call, got %d", hook.afterCalled)
 	}
-	// Refining -> Inference -> Persisting -> Complete
-	if hook.transCalled != 3 {
-		t.Errorf("expected 3 transition calls, got %d", hook.transCalled)
+	// Guard -> Refining -> Inference -> Persisting -> Complete
+	if hook.transCalled != 4 {
+		t.Errorf("expected 4 transition calls, got %d", hook.transCalled)
 	}
 }
 
@@ -732,8 +733,8 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	stopProcessor := turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
-		return processResult{Stop: true, NextPhase: phaseComplete}
+	stopProcessor := turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+		return processResult{Stop: true, NextPhase: phaseComplete}, nil
 	})
 
 	// Override Inference with a processor that returns Stop: true
@@ -754,10 +755,10 @@ func TestTurnEngine_StopSignal(t *testing.T) {
 
 	_ = e.Run(context.Background(), time.Now())
 
-	// Phases: Refining -> Inference (Stop) -> Complete
-	// Transitions: Refining to Inference, Inference to Complete
-	if hook.transCalled != 2 {
-		t.Errorf("expected 2 transitions with stop signal, got %d", hook.transCalled)
+	// Phases: Guard -> Refining -> Inference (Stop) -> Complete
+	// Transitions: Guard to Refining, Refining to Inference, Inference to Complete
+	if hook.transCalled != 3 {
+		t.Errorf("expected 3 transitions with stop signal, got %d", hook.transCalled)
 	}
 }
 
@@ -1100,8 +1101,8 @@ func TestTurnEngine_BackgroundCostTracking(t *testing.T) {
 
 		// Use the engine's middleware directly
 		middleware := e.WithMetrics()
-		finalProcessor := turnProcessorFunc(func(ctx context.Context, t *turn) processResult {
-			return processResult{}
+		finalProcessor := turnProcessorFunc(func(ctx context.Context, t *turn) (processResult, error) {
+			return processResult{}, nil
 		})
 
 		middleware(finalProcessor).Process(context.Background(), tn)

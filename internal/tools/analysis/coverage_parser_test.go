@@ -316,7 +316,7 @@ func TestParseLineNum(t *testing.T) {
 	}
 }
 
-func TestParsePathAndRange(t *testing.T) {
+func TestParseSymbolLine(t *testing.T) {
 	tests := []struct {
 		name         string
 		pathAndRange string
@@ -335,13 +335,13 @@ func TestParsePathAndRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parsePathAndRange(tt.pathAndRange, tt.prefix)
+			got, err := parseSymbolLine(tt.pathAndRange, tt.prefix)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePathAndRange(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
+				t.Errorf("parseSymbolLine(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
 			}
 			if err == nil {
 				if got.File != tt.wantFile || got.Start != tt.wantStart || got.End != tt.wantEnd {
-					t.Errorf("parsePathAndRange() = %+v, want file=%s, start=%d, end=%d", got, tt.wantFile, tt.wantStart, tt.wantEnd)
+					t.Errorf("parseSymbolLine() = %+v, want file=%s, start=%d, end=%d", got, tt.wantFile, tt.wantStart, tt.wantEnd)
 				}
 			}
 		})
