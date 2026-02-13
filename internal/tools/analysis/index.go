@@ -462,10 +462,7 @@ func (idx *indexer) updateState(pkgs []*packages.Package, symbolsByPath map[stri
 	idx.lastRefresh = time.Now()
 }
 
-func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string][]string {
-	impls := make(map[string][]string)
-
-	// 1. Collect all interfaces
+func (idx *indexer) collectInterfaces(pkgs []*packages.Package) []*types.Interface {
 	var interfaces []*types.Interface
 	for _, pkg := range pkgs {
 		scope := pkg.Types.Scope()
@@ -478,35 +475,49 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 			}
 		}
 	}
+	return interfaces
+}
 
-	// 2. Map implementations
+func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
+	tn, ok := obj.(*types.TypeName)
+	if !ok {
+		return nil, false
+	}
+	named, ok := tn.Type().(*types.Named)
+	if !ok {
+		return nil, false
+	}
+	if _, ok := named.Underlying().(*types.Interface); ok {
+		return nil, false
+	}
+	return named, true
+}
+
+func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
+	for _, itf := range interfaces {
+		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
+			for i := 0; i < itf.NumMethods(); i++ {
+				im := itf.Method(i)
+				imId := getSymbolIdentity(im)
+
+				cm, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, im.Name())
+				if cm != nil {
+					cmId := getSymbolIdentity(cm)
+					impls[imId] = append(impls[imId], cmId)
+				}
+			}
+		}
+	}
+}
+
+func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string][]string {
+	impls := make(map[string][]string)
+	ifaces := idx.collectInterfaces(pkgs)
+
 	for _, pkg := range pkgs {
 		for _, obj := range pkg.TypesInfo.Defs {
-			tn, ok := obj.(*types.TypeName)
-			if !ok {
-				continue
-			}
-			named, ok := tn.Type().(*types.Named)
-			if !ok {
-				continue
-			}
-			if _, ok := named.Underlying().(*types.Interface); ok {
-				continue
-			}
-
-			for _, itf := range interfaces {
-				if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
-					for i := 0; i < itf.NumMethods(); i++ {
-						im := itf.Method(i)
-						imId := getSymbolIdentity(im)
-
-						cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
-						if cm != nil {
-							cmId := getSymbolIdentity(cm)
-							impls[imId] = append(impls[imId], cmId)
-						}
-					}
-				}
+			if named, ok := idx.asConcreteNamedType(obj); ok {
+				idx.mapTypeToInterfaces(impls, named, ifaces, pkg.Types)
 			}
 		}
 	}
