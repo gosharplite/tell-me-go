@@ -99,7 +99,7 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	// Execution Pipeline
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath)
-	a.mapInterfaceImplementations(state)
+	a.propagateInterfaceUsages(state)
 
 	findings := a.buildReport(state)
 	return a.formatToolResult(findings), nil
@@ -351,59 +351,12 @@ func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *
 	}
 }
 
-func (a *deadCodeAnalyzer) mapInterfaceImplementations(state *scanState) {
-	interfaces := a.collectInterfaces(state)
-
-	for _, pkg := range state.pkgs {
-		for _, obj := range pkg.TypesInfo.Defs {
-			tn, ok := obj.(*types.TypeName)
-			if !ok {
-				continue
-			}
-			named, ok := tn.Type().(*types.Named)
-			if !ok {
-				continue
-			}
-
-			// For every concrete type, check implementation of module interfaces
-			a.checkImplementations(named, pkg, state, interfaces)
-		}
-	}
-}
-
-func (a *deadCodeAnalyzer) collectInterfaces(state *scanState) []*types.Interface {
-	var interfaces []*types.Interface
-	for _, pkg := range state.pkgs {
-		scope := pkg.Types.Scope()
-		for _, name := range scope.Names() {
-			obj := scope.Lookup(name)
-			if tn, ok := obj.(*types.TypeName); ok {
-				if itf, ok := tn.Type().Underlying().(*types.Interface); ok {
-					interfaces = append(interfaces, itf)
-				}
-			}
-		}
-	}
-	return interfaces
-}
-
-func (a *deadCodeAnalyzer) checkImplementations(named *types.Named, pkg *packages.Package, state *scanState, interfaces []*types.Interface) {
-	for _, itf := range interfaces {
-		// Check if our named type implements this interface
-		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
-			// If any method of this interface is used, mark the concrete implementation as used
-			for i := 0; i < itf.NumMethods(); i++ {
-				im := itf.Method(i)
-				imId := getSymbolIdentity(im)
-				if state.totalUses[imId] > 0 {
-					// Find the concrete method on our type
-					cm, _, _ := types.LookupFieldOrMethod(named, true, pkg.Types, im.Name())
-					if cm != nil {
-						cmId := getSymbolIdentity(cm)
-						state.totalUses[cmId] += state.totalUses[imId]
-						state.externalUses[cmId] += state.externalUses[imId]
-					}
-				}
+func (a *deadCodeAnalyzer) propagateInterfaceUsages(state *scanState) {
+	for id, count := range state.totalUses {
+		if count > 0 {
+			for _, implId := range a.idx.GetImplementations(id) {
+				state.totalUses[implId] += count
+				state.externalUses[implId] += state.externalUses[id]
 			}
 		}
 	}
