@@ -102,3 +102,12 @@ To prevent runaway costs and infinite execution loops, the agent implements proa
     - If the same hash is detected within a window of recent turns, the turn is stopped with an "infinite loop detected" error.
     - **Argument-Level Detection**: Individual tool calls are also tracked by hashing `name + arguments`. If a specific tool is called with identical parameters more than `config.DefaultMaxLoopRepetitions` (e.g., 3 times) within a single session, the loop is broken.
 - **Economic Transparency**: Every turn status update includes the current session cost and provides "Price Cliff" warnings when approaching tiered thresholds.
+
+#### 7. Logging & Execution Protocol (Observability)
+To ensure maximum observability and traceability in automated refactoring workflows, all mutative tool executions must follow a strict logging protocol.
+- **Intent Logging**: Before any tool that modifies the filesystem, executes commands, or changes configurations is called, the agent must explicitly state its **Architectural Intent**.
+- **The `[Tool Reason]` Prefix**: 
+    - Every mutative tool definition must include a `reason` parameter.
+    - The agent must output a text line starting with `[Tool Reason] ` followed by the exact content of the `reason` argument.
+    - This line must appear **immediately before** the tool block in the agent's response.
+- **UI Display**: The CLI renderer must extract the `reason` argument from `functionCall` objects and display it as a `[Tool Reason]` log line in `stderr` to provide the user with clear context for each action.

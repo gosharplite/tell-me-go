@@ -237,7 +237,12 @@ func registerFiles(r *registry.Registry, sm *security.SecurityManager) {
 					Type:        "INTEGER",
 					Description: "Number of changes to revert (default 1).",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for reverting the changes.",
+				},
 			},
+			Required: []string{"reason"},
 		},
 	}, m.writer.undoFileChange, registry.ToolOptions{Serial: true})
 }
@@ -395,8 +400,12 @@ func registerGit(r *registry.Registry, sm *security.SecurityManager, exec tools.
 					Type:        "STRING",
 					Description: "The commit message.",
 				},
+				"reason": {
+					Type:        "STRING",
+					Description: "Reason for this commit (architectural intent).",
+				},
 			},
-			Required: []string{"message"},
+			Required: []string{"message", "reason"},
 		},
 	}, m.gitCommit, registry.ToolOptions{Serial: true})
 

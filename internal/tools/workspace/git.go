@@ -106,6 +106,7 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Message string `json:"message"`
+		Reason  string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
@@ -116,7 +117,8 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
 
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT COMMIT", "current staged changes", message)
+	detail := fmt.Sprintf("Reason: %s\nMessage: %s", params.Reason, message)
+	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT COMMIT", "current staged changes", detail)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}

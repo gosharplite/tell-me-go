@@ -572,8 +572,17 @@ func (r *stdUIRenderer) LogToolCall(calls []*llm.FunctionCall, turn, maxTurns in
 
 	if showTools {
 		for _, fc := range calls {
+			// Extract and display the reason if present
+			if reason, ok := fc.Args["reason"].(string); ok && reason != "" {
+				fmt.Fprintf(stderr, "%s[%s] [Tool Reason] %s%s\n",
+					ui.c(colorGray), ts, reason, ui.c(colorReset))
+			}
+
 			var argParts []string
 			for k, v := range fc.Args {
+				if k == "reason" {
+					continue // Already shown as [Tool Reason]
+				}
 				valStr := fmt.Sprintf("%v", v)
 				if len(valStr) > 60 {
 					valStr = valStr[:57] + "..."

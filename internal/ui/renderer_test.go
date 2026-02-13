@@ -121,9 +121,16 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
-		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val"}}}, 0, 5, true)
-		if !strings.Contains(stderr.String(), "Tool Action") || !strings.Contains(stderr.String(), "my_tool") {
-			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", stderr.String())
+		r.LogToolCall([]*llm.FunctionCall{{Name: "my_tool", Args: map[string]interface{}{"key": "val", "reason": "my intent"}}}, 0, 5, true)
+		output := stderr.String()
+		if !strings.Contains(output, "Tool Action") || !strings.Contains(output, "my_tool") {
+			t.Errorf("expected stderr to contain 'Tool Action' and 'my_tool', got %q", output)
+		}
+		if !strings.Contains(output, "[Tool Reason] my intent") {
+			t.Errorf("expected stderr to contain '[Tool Reason] my intent', got %q", output)
+		}
+		if strings.Contains(output, "reason: my intent") {
+			t.Errorf("expected 'reason' to be removed from arguments list, got %q", output)
 		}
 	})
 

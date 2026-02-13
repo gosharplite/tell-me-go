@@ -171,7 +171,8 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 
 func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
-		N int `json:"n"`
+		N      int    `json:"n"`
+		Reason string `json:"reason"`
 	}
 	if err := registry.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
