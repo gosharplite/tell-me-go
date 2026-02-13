@@ -159,7 +159,6 @@ type turnEngine struct {
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
-	HardBudgetLimit  float64 // Internal guardrail. Default 0.0 = Disabled.
 }
 
 // engineOption allows configuring the turnEngine.
@@ -200,14 +199,6 @@ func withClock(c clock) engineOption {
 	}
 }
 
-// withHardBudget sets a maximum session budget in USD.
-// Feature is intended for internal/API use only to maintain a clean UI.
-func withHardBudget(limit float64) engineOption {
-	return func(e *turnEngine) {
-		e.HardBudgetLimit = limit
-	}
-}
-
 // withCostTracker sets the cost tracker for the engine.
 func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
 	return func(e *turnEngine) {
@@ -239,7 +230,6 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICost
 	defer e.mu.Unlock()
 	e.model = cfg.Model
 	e.pricingOverrides = cfg.PricingOverrides
-	e.HardBudgetLimit = cfg.HardBudgetLimit
 	e.costTracker = tracker
 }
 
@@ -345,18 +335,6 @@ func (e *turnEngine) Run(ctx context.Context, startTime time.Time) error {
 func (e *turnEngine) checkLimits(ctx context.Context, turnIndex int) error {
 	if err := ctx.Err(); err != nil {
 		return err
-	}
-
-	// Deterministic Budget Guardrail (API/Internal only)
-	e.mu.RLock()
-	limit := e.HardBudgetLimit
-	tracker := e.costTracker
-	e.mu.RUnlock()
-
-	if limit > 0 && tracker != nil {
-		if cost := tracker.GetTotalCost(ctx); cost >= limit {
-			return newAgentError(llm.ErrTerminal, fmt.Sprintf("current session cost $%.4f exceeds internal limit $%.4f", cost, limit), llm.ErrBudgetExceeded)
-		}
 	}
 
 	maxTurns := e.ctxManager.GetLimits().MaxToolTurns
