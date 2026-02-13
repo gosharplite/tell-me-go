@@ -152,6 +152,12 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	}
 
 	chatAgent := c.AgentFactory(deps.client, deps.hManager, deps.registry, c.SM, cfg.DisableStreaming, deps.bus, cfg.Model, cfg.Mode, deps.paths.LogPath, deps.pricingOverrides, deps.tracker)
+	defer func() {
+		if err := chatAgent.Shutdown(ctx); err != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Agent shutdown failed: %v\n", err)
+		}
+	}()
+
 	if err := c.applyConfiguration(ctx, chatAgent, cfg, opts, deps.paths, deps.pData, capturer); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
