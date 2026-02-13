@@ -111,7 +111,7 @@ func TestCleanupOldBackups(t *testing.T) {
 
 func TestLoadBackupRetentionDays(t *testing.T) {
 	tmp := t.TempDir()
-	paths := Paths{
+	paths := paths{
 		PersistentConfigPath: filepath.Join(tmp, "config.json"),
 	}
 
@@ -130,7 +130,7 @@ func TestLoadBackupRetentionDays(t *testing.T) {
 }
 
 func TestCleanupOldBackups_NoRetention(t *testing.T) {
-	err := cleanupOldBackups(Paths{}, 0)
+	err := cleanupOldBackups(paths{}, 0)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with 0 retention should not error: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestCleanupOldBackups_NoRetention(t *testing.T) {
 
 func TestCleanupOldBackups_NoDir(t *testing.T) {
 	tmp := t.TempDir()
-	paths := Paths{ModeDir: filepath.Join(tmp, "nonexistent")}
+	paths := paths{ModeDir: filepath.Join(tmp, "nonexistent")}
 	err := cleanupOldBackups(paths, 30)
 	if err != nil {
 		t.Errorf("CleanupOldBackups with nonexistent dir should not error: %v", err)

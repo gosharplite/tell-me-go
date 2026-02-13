@@ -24,45 +24,6 @@ func TestContextManager_PipelineMethods(t *testing.T) {
 	p := NewContextPipeline()
 	cm.SetPipeline(p)
 	assert.Equal(t, p, cm.Pipeline)
-
-	// Test ensureStandardPipeline - should create if nil
-	cm.Pipeline = nil
-	limits := events.Limits{MaxHistoryTurns: 10}
-	cm.ensureStandardPipeline(limits)
-	assert.NotNil(t, cm.Pipeline)
-	assert.Greater(t, len(cm.Pipeline.transformers), 0)
-
-	// Test ensureStandardPipeline - should NOT overwrite if non-nil
-	existingPipeline := NewContextPipeline()
-	cm.Pipeline = existingPipeline
-	cm.ensureStandardPipeline(limits)
-	assert.Equal(t, existingPipeline, cm.Pipeline)
-}
-
-func TestContextManager_RegisterToolRegistry(t *testing.T) {
-	strategy := NewContextStrategy(&mockTokenCounter{}, nil)
-	history := &mockHistoryManager{}
-	cm := NewContextManager(strategy, history, nil, nil)
-
-	// Case 1: cm.Pipeline is nil. (Assert no panic)
-	assert.NotPanics(t, func() {
-		cm.registerToolRegistry(&mockToolRegistry{})
-	})
-
-	// Case 2: cm.Pipeline contains a toolDeclarationGenerator.
-	tg := &toolDeclarationGenerator{}
-	p := NewContextPipeline(tg)
-	cm.SetPipeline(p)
-	reg := &mockToolRegistry{}
-	cm.registerToolRegistry(reg)
-	assert.Equal(t, reg, tg.Registry)
-
-	// Case 3: cm.Pipeline contains other transformers but no toolDeclarationGenerator.
-	p2 := NewContextPipeline(&emptyTurnFilter{})
-	cm.SetPipeline(p2)
-	assert.NotPanics(t, func() {
-		cm.registerToolRegistry(reg)
-	})
 }
 
 func TestContextManager_GetLimits(t *testing.T) {
@@ -274,4 +235,31 @@ func TestContextManager_Prepare_ClonesContent(t *testing.T) {
 	originalContent.Parts[0].Text = "modified"
 	assert.NotEqual(t, originalContent.Parts[0].Text, preparedHistory[0].Parts[0].Text)
 	assert.Equal(t, "original", preparedHistory[0].Parts[0].Text)
+}
+
+func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
+	registry := &mockToolRegistry{}
+	bus := &mockEventBus{}
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(registry), bus)
+	factory := &PipelineFactory{Estimator: strategy}
+	cm := NewContextManager(strategy, nil, bus, factory)
+
+	limits := events.Limits{
+		MaxHistoryTokens: 240000,
+		MaxToolTurns:     500,
+		MaxHistoryTurns:  50,
+	}
+
+	cm.Reconfigure(limits)
+
+	h, tool, hist := strategy.getLimits()
+	if h != 240000 {
+		t.Errorf("expected history tokens limit 240000, got %d", h)
+	}
+	if tool != 500 {
+		t.Errorf("expected tool turns limit 500, got %d", tool)
+	}
+	if hist != 50 {
+		t.Errorf("expected history turns limit 50, got %d", hist)
+	}
 }

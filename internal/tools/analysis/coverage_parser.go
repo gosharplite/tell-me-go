@@ -29,32 +29,15 @@ type uncoveredBlock struct {
 }
 
 // classificationRule defines a rule for categorizing uncovered code blocks.
-type classificationRule struct {
-	category string
-	match    func(b *uncoveredBlock) bool
+type classificationRule interface {
+	Category() string
+	Match(b *uncoveredBlock) bool
 }
 
-var (
-	businessLogicPaths = []string{"internal/domain", "internal/usecase", "internal/agent", "internal/service"}
-	adapterPaths       = []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth", "internal/infrastructure"}
+type errorHandlingRule struct{}
 
-	classificationRules = []classificationRule{
-		{
-			category: "ERROR_HANDLING",
-			match:    func(b *uncoveredBlock) bool { return b.isErrorHandling() },
-		},
-		{
-			category: "BUSINESS_LOGIC",
-			match:    func(b *uncoveredBlock) bool { return b.isBusinessLogic() },
-		},
-		{
-			category: "ADAPTER",
-			match:    func(b *uncoveredBlock) bool { return b.isAdapter() },
-		},
-	}
-)
-
-func (b *uncoveredBlock) isErrorHandling() bool {
+func (r errorHandlingRule) Category() string { return "ERROR_HANDLING" }
+func (r errorHandlingRule) Match(b *uncoveredBlock) bool {
 	lowerCode := strings.ToLower(b.Code)
 	return strings.Contains(lowerCode, "if err != nil") ||
 		(strings.Contains(lowerCode, "return") && strings.Contains(lowerCode, "err")) ||
@@ -62,8 +45,12 @@ func (b *uncoveredBlock) isErrorHandling() bool {
 		strings.Contains(lowerCode, "errors.new")
 }
 
-func (b *uncoveredBlock) isBusinessLogic() bool {
-	for _, p := range businessLogicPaths {
+type businessLogicRule struct{}
+
+func (r businessLogicRule) Category() string { return "BUSINESS_LOGIC" }
+func (r businessLogicRule) Match(b *uncoveredBlock) bool {
+	paths := []string{"internal/domain", "internal/usecase", "internal/agent", "internal/service"}
+	for _, p := range paths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
 		}
@@ -71,38 +58,50 @@ func (b *uncoveredBlock) isBusinessLogic() bool {
 	return false
 }
 
-func (b *uncoveredBlock) isAdapter() bool {
-	for _, p := range adapterPaths {
+type adapterRule struct{}
+
+func (r adapterRule) Category() string { return "ADAPTER" }
+func (r adapterRule) Match(b *uncoveredBlock) bool {
+	paths := []string{"internal/repository", "internal/gateway", "internal/transport", "internal/api", "internal/auth", "internal/infrastructure"}
+	for _, p := range paths {
 		if strings.HasPrefix(b.File, p+"/") || b.File == p {
 			return true
 		}
 	}
 	return false
+}
+
+var rules = []classificationRule{
+	errorHandlingRule{},
+	businessLogicRule{},
+	adapterRule{},
 }
 
 // Classify categorizes the block and assigns a priority based on heuristics.
 func (b *uncoveredBlock) Classify() {
-	// Categorize by content and path using rule registry
 	b.Category = "OTHER"
-	for _, rule := range classificationRules {
-		if rule.match(b) {
-			b.Category = rule.category
+	for _, rule := range rules {
+		if rule.Match(b) {
+			b.Category = rule.Category()
 			break
 		}
 	}
 
-	// Assign Priority
-	isErr := b.isErrorHandling()
-	isBiz := b.isBusinessLogic()
-	isAdap := b.isAdapter()
+	b.Priority = b.determinePriority()
+}
+
+func (b *uncoveredBlock) determinePriority() string {
+	isErr := (errorHandlingRule{}).Match(b)
+	isBiz := (businessLogicRule{}).Match(b)
+	isAdap := (adapterRule{}).Match(b)
 
 	if isErr && isBiz {
-		b.Priority = "High"
-	} else if isErr || isBiz || isAdap {
-		b.Priority = "Medium"
-	} else {
-		b.Priority = "Low"
+		return "High"
 	}
+	if isErr || isBiz || isAdap {
+		return "Medium"
+	}
+	return "Low"
 }
 
 // extractFromLines extracts a range of lines from a slice, including one line of context before.
@@ -116,7 +115,6 @@ func extractFromLines(lines []string, start, end int) string {
 		startWithContext--
 	}
 
-	// 1-based to 0-based conversion
 	startIdx := startWithContext - 1
 	endIdx := end
 
@@ -155,30 +153,45 @@ func parseLineNum(part string) (int, error) {
 	return val, nil
 }
 
-func parsePathAndRange(pathAndRange string, modulePrefix string) (*uncoveredBlock, error) {
+func parseFile(pathAndRange string, modulePrefix string) (string, string) {
 	colonIdx := strings.LastIndex(pathAndRange, ":")
 	if colonIdx == -1 {
-		return nil, fmt.Errorf("missing colon in path: %s", pathAndRange)
+		return pathAndRange, ""
 	}
 
 	file := pathAndRange[:colonIdx]
 	if modulePrefix != "" && strings.HasPrefix(file, modulePrefix) {
 		file = file[len(modulePrefix):]
 	}
+	return file, pathAndRange[colonIdx+1:]
+}
 
-	rangePart := pathAndRange[colonIdx+1:]
+func parseRange(rangePart string) (int, int, error) {
 	rangeParts := strings.Split(rangePart, ",")
 	if len(rangeParts) != 2 {
-		return nil, fmt.Errorf("invalid range format: %s", rangePart)
+		return 0, 0, fmt.Errorf("invalid range format: %s", rangePart)
 	}
 
 	startLine, err1 := parseLineNum(rangeParts[0])
 	if err1 != nil {
-		return nil, fmt.Errorf("invalid start line: %w", err1)
+		return 0, 0, fmt.Errorf("invalid start line: %w", err1)
 	}
 	endLine, err2 := parseLineNum(rangeParts[1])
 	if err2 != nil {
-		return nil, fmt.Errorf("invalid end line: %w", err2)
+		return 0, 0, fmt.Errorf("invalid end line: %w", err2)
+	}
+	return startLine, endLine, nil
+}
+
+func parseSymbolLine(pathAndRange string, modulePrefix string) (*uncoveredBlock, error) {
+	file, rangePart := parseFile(pathAndRange, modulePrefix)
+	if rangePart == "" {
+		return nil, fmt.Errorf("missing colon in path: %s", pathAndRange)
+	}
+
+	startLine, endLine, err := parseRange(rangePart)
+	if err != nil {
+		return nil, err
 	}
 
 	return &uncoveredBlock{
@@ -188,23 +201,46 @@ func parsePathAndRange(pathAndRange string, modulePrefix string) (*uncoveredBloc
 	}, nil
 }
 
-func parseCoverageLine(line string, modulePrefix string) (*uncoveredBlock, error) {
-	if line == "" || strings.HasPrefix(line, "mode:") {
-		return nil, nil // Not a data line
-	}
-
-	// Format: file.go:startline.startcol,endline.endcol numstmt count
+func validateLine(line string) ([]string, error) {
 	parts := strings.Fields(line)
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("expected 3 fields, got %d", len(parts))
 	}
+	return parts, nil
+}
 
+func parseProfileLine(parts []string) (int, error) {
 	count, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return nil, fmt.Errorf("invalid count: %w", err)
+		return 0, fmt.Errorf("invalid count: %w", err)
+	}
+	return count, nil
+}
+
+func isDataLine(line string) bool {
+	return line != "" && !strings.HasPrefix(line, "mode:")
+}
+
+func parseCoverageLine(line string, modulePrefix string) (*uncoveredBlock, error) {
+	if !isDataLine(line) {
+		return nil, nil
+	}
+
+	parts, err := validateLine(line)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseDataParts(parts, modulePrefix)
+}
+
+func parseDataParts(parts []string, modulePrefix string) (*uncoveredBlock, error) {
+	count, err := parseProfileLine(parts)
+	if err != nil {
+		return nil, err
 	}
 	if count > 0 {
-		return nil, nil // covered
+		return nil, nil
 	}
 
 	stmts, err := strconv.Atoi(parts[1])
@@ -212,7 +248,7 @@ func parseCoverageLine(line string, modulePrefix string) (*uncoveredBlock, error
 		return nil, fmt.Errorf("invalid stmts: %w", err)
 	}
 
-	block, err := parsePathAndRange(parts[0], modulePrefix)
+	block, err := parseSymbolLine(parts[0], modulePrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +262,6 @@ func parseCoverageProfile(ctx context.Context, r io.Reader, exec tools.CommandEx
 	scanner := bufio.NewScanner(r)
 	modulePrefix := getModuleName(ctx, exec)
 
-	// Skip the first line (mode: ...)
 	if !scanner.Scan() {
 		return nil, scanner.Err()
 	}
@@ -234,10 +269,7 @@ func parseCoverageProfile(ctx context.Context, r io.Reader, exec tools.CommandEx
 	for scanner.Scan() {
 		block, err := parseCoverageLine(scanner.Text(), modulePrefix)
 		if err != nil {
-			continue // skip malformed lines or maybe we should return error?
-			// The instructions say "ensure that parseCoverageLine and parsePathAndRange return clear, wrapped errors when encountering unexpected formats"
-			// But for parseCoverageProfile, maybe we want to be resilient or fail?
-			// Usually coverage profiles are generated by tool, so if they are malformed it's a big issue.
+			continue
 		}
 		if block != nil {
 			blocks = append(blocks, *block)
@@ -286,8 +318,6 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	f.Close()
 
 	_, _ = exec.CombinedOutput(ctx, "go", "test", "-coverprofile="+tempPath, packagePath)
-	// We ignore the error from CombinedOutput because even if tests fail,
-	// the coverage profile might still be generated for the parts that did run.
 
 	info, err := os.Stat(tempPath)
 	if err != nil {
@@ -325,7 +355,6 @@ func formatDetailedCoverageReport(packagePath string, blocks []uncoveredBlock) s
 	const maxItems = 10
 	renderBlockGaps(&sb, "HIGH PRIORITY GAPS", high, maxItems)
 
-	// Show Medium if High are few
 	if len(medium) > 0 && len(high) < 5 {
 		remainingSlots := maxItems - len(high)
 		renderBlockGaps(&sb, "MEDIUM PRIORITY GAPS", medium, remainingSlots)
@@ -360,7 +389,6 @@ func renderReportSummary(sb *strings.Builder, packagePath string, total int, hig
 	sb.WriteString(fmt.Sprintf("- Low Priority: %d\n", lowCount))
 	sb.WriteString("\nBreakdown by Category:\n")
 
-	// Sort categories for deterministic output
 	var cats []string
 	for c := range catStats {
 		cats = append(cats, c)
@@ -377,7 +405,6 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 	}
 	sb.WriteString(fmt.Sprintf("\n[%s]\n", title))
 
-	// Prepare the label for "more" message
 	label := strings.ToLower(title)
 	label = strings.TrimSuffix(label, " gaps")
 

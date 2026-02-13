@@ -14,3 +14,11 @@ type Task struct {
 	Status    string    `json:"status"` // pending, completed
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// ISessionProvider provides access to persistence services and session info.
+type ISessionProvider interface {
+	GetTasks() *TaskService
+	GetConfig() *ConfigService
+	GetScratchpad() *ScratchpadService
+	GetInfo() any
+}

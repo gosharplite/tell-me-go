@@ -11,21 +11,19 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type shellTool struct {
 	sm        domain_security.ISecurityManager
-	validator *security.CommandValidator
+	validator domain_security.ICommandValidator
 	executor  *processExecutor
 	maxOutput int
 }
 
-func newshellTool(sm domain_security.ISecurityManager) *shellTool {
+func newshellTool(sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) *shellTool {
 	return &shellTool{
 		sm:        sm,
-		validator: security.NewCommandValidator(sm, nil),
+		validator: validator,
 		executor:  newprocessExecutor(),
 		maxOutput: 50000,
 	}
@@ -41,7 +39,7 @@ func (t *shellTool) ExecuteCommand(ctx context.Context, args map[string]interfac
 		OutputFile string `json:"output_file"`
 		Append     bool   `json:"append"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -100,7 +98,7 @@ func (t *shellTool) PipeCommands(ctx context.Context, args map[string]interface{
 		OutputFile string   `json:"output_file"`
 		Append     bool     `json:"append"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

@@ -10,13 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // ConfigWatcher monitors configuration files for changes and caches values.
 type ConfigWatcher struct {
 	mu                   sync.RWMutex
+	Loader               config.ConfigLoader
 	mainPath             string
 	sessionPath          string
 	lastMainMod          time.Time
@@ -35,7 +36,7 @@ type ConfigWatcher struct {
 }
 
 // NewConfigWatcher creates a new ConfigWatcher with default values.
-func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
+func NewConfigWatcher(loader config.ConfigLoader, tokens, toolTurns, historyTurns int) *ConfigWatcher {
 	defaultThreshold := config.DefaultTieredThreshold
 	defaultWindow := 1000000
 	if dp := config.DefaultPricing(); dp.Models != nil {
@@ -47,6 +48,7 @@ func NewConfigWatcher(tokens, toolTurns, historyTurns int) *ConfigWatcher {
 	}
 
 	return &ConfigWatcher{
+		Loader:               loader,
 		maxHistoryTokens:     tokens,
 		maxToolTurns:         toolTurns,
 		maxHistoryTurns:      historyTurns,
@@ -91,7 +93,11 @@ func (cw *ConfigWatcher) updateFromMain(model string) bool {
 		return false
 	}
 
-	cfg, err := config.Load(cw.mainPath)
+	if cw.Loader == nil {
+		return false
+	}
+
+	cfg, err := cw.Loader.Load(cw.mainPath)
 	if err != nil {
 		return false
 	}
@@ -184,12 +190,6 @@ func (cw *ConfigWatcher) GetLimits() (tokens, toolTurns, historyTurns, threshold
 	return cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns, cw.tieredThreshold
 }
 
-func (cw *ConfigWatcher) getContextWindow() int {
-	cw.mu.RLock()
-	defer cw.mu.RUnlock()
-	return cw.contextWindow
-}
-
 // ApplyLimits updates the cached limits from an events.Limits struct.
 func (cw *ConfigWatcher) ApplyLimits(l events.Limits) {
 	cw.mu.Lock()
@@ -213,6 +213,7 @@ func (cw *ConfigWatcher) SyncToStrategy(cs *ContextStrategy) {
 	cw.mu.RLock()
 	defer cw.mu.RUnlock()
 	if cs != nil {
+		cs.SetLimits(cw.maxHistoryTokens, cw.maxToolTurns, cw.maxHistoryTurns)
 		cs.setContextWindow(cw.contextWindow)
 		cs.setTieredThreshold(cw.tieredThreshold)
 	}

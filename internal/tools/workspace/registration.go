@@ -5,9 +5,8 @@ package workspace
 
 import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -18,13 +17,13 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator) {
 	registerFiles(r, sm)
-	registerSystem(r, sm)
+	registerSystem(r, sm, validator)
 	registerGit(r, sm, exec)
 }
 
-func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
+func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager) {
 	bm := newBackupManager(sm, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: storage.DefaultFileSystem},
@@ -123,7 +122,7 @@ func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"filepath", "old_text", "new_text", "reason"},
 		},
-	}, m.writer.replaceText, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, m.writer.replaceText, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "find_file",
@@ -183,7 +182,7 @@ func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"filepath", "content", "reason"},
 		},
-	}, m.writer.writeFile, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, m.writer.writeFile, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "append_text",
@@ -206,7 +205,7 @@ func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"filepath", "content", "reason"},
 		},
-	}, m.writer.appendText, registry.ToolOptions{Serial: true})
+	}, m.writer.appendText, tools.ToolOptions{Serial: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_file_diff",
@@ -244,11 +243,11 @@ func registerFiles(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"reason"},
 		},
-	}, m.writer.undoFileChange, registry.ToolOptions{Serial: true})
+	}, m.writer.undoFileChange, tools.ToolOptions{Serial: true})
 }
 
-func registerSystem(r *registry.Registry, sm domain_security.ISecurityManager) {
-	shell := newshellTool(sm)
+func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) {
+	shell := newshellTool(sm, validator)
 	interaction := newinteractionTool(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -276,7 +275,7 @@ func registerSystem(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"command", "reason"},
 		},
-	}, shell.ExecuteCommand, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, shell.ExecuteCommand, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "pipe_commands",
@@ -306,7 +305,7 @@ func registerSystem(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"commands", "reason"},
 		},
-	}, shell.PipeCommands, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, shell.PipeCommands, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "ask_user",
@@ -321,10 +320,10 @@ func registerSystem(r *registry.Registry, sm domain_security.ISecurityManager) {
 			},
 			Required: []string{"question"},
 		},
-	}, interaction.AskUser, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, interaction.AskUser, tools.ToolOptions{Serial: true, LongRunning: true})
 }
 
-func registerGit(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
+func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
 	m := &gitManager{sm: sm, Exec: exec}
 
 	r.Register(&tools.ToolDeclaration{
@@ -407,7 +406,7 @@ func registerGit(r *registry.Registry, sm domain_security.ISecurityManager, exec
 			},
 			Required: []string{"message", "reason"},
 		},
-	}, m.gitCommit, registry.ToolOptions{Serial: true})
+	}, m.gitCommit, tools.ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "git_create_branch",
@@ -426,10 +425,10 @@ func registerGit(r *registry.Registry, sm domain_security.ISecurityManager, exec
 			},
 			Required: []string{"name", "reason"},
 		},
-	}, m.gitCreateBranch, registry.ToolOptions{Serial: true})
+	}, m.gitCreateBranch, tools.ToolOptions{Serial: true})
 }
 
 // RegisterPersistence adds persistence tools to the registry.
-func RegisterPersistence(r *registry.Registry, state *persistence.SessionState) {
+func RegisterPersistence(r tools.IToolRegistry, state services.ISessionProvider) {
 	newpersistenceTools(state).Register(r)
 }

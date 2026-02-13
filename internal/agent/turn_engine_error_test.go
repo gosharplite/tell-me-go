@@ -102,8 +102,8 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 		t.Errorf("Expected RetryCount 1, got %d", tracker.lastState.RetryCount)
 	}
 
-	// Verification: Phase sequence should include: Inference -> Recovering -> Refining -> Inference
-	expectedPhases := []turnPhase{phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
+	// Verification: Phase sequence should include: Guard -> Refining -> Inference -> Recovering -> Refining -> Inference
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
@@ -159,10 +159,11 @@ func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	}
 
 	// Phase sequence:
-	// 1. Refining -> Inference
-	// 2. Inference -> Recovering
-	// 3. Recovering -> Complete
-	expectedPhases := []turnPhase{phaseInference, phaseRecovering, phaseComplete}
+	// 1. Guard -> Refining
+	// 2. Refining -> Inference
+	// 3. Inference -> Recovering
+	// 4. Recovering -> Complete
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {
@@ -209,7 +210,7 @@ func TestTurnEngine_ToolExecutionLogicError(t *testing.T) {
 	}
 
 	// Verification: The state machine should transition to Recovering, see it's a Logic error, and then move to Complete (failure).
-	expectedPhases := []turnPhase{phaseInference, phaseExecuting, phaseRecovering, phaseComplete}
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseExecuting, phaseRecovering, phaseComplete}
 	if len(tracker.phases) != len(expectedPhases) {
 		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
 	} else {

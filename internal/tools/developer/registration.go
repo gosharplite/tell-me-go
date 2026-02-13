@@ -6,13 +6,12 @@ package developer
 import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
-	dev := newDevManager(sm)
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator) {
+	dev := newDevManager(sm, validator)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_tests",
@@ -27,12 +26,12 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec to
 			},
 			Required: []string{"command"},
 		},
-	}, dev.runTests, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, dev.runTests, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "go_tidy",
 		Description: "Runs 'go mod tidy' and 'go fmt ./...'.",
-	}, dev.goTidy, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, dev.goTidy, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_coverage",
@@ -46,12 +45,12 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec to
 				},
 			},
 		},
-	}, dev.getCoverage, registry.ToolOptions{LongRunning: true})
+	}, dev.getCoverage, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_linter",
 		Description: "Runs the first available linter (golangci-lint or staticcheck). Returns a list of findings or success message.",
-	}, dev.runLinter, registry.ToolOptions{LongRunning: true})
+	}, dev.runLinter, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "run_benchmark",
@@ -69,12 +68,12 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec to
 				},
 			},
 		},
-	}, dev.runBenchmark, registry.ToolOptions{LongRunning: true})
+	}, dev.runBenchmark, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "check_vulnerabilities",
 		Description: "Runs 'govulncheck'.",
-	}, dev.checkVulnerabilities, registry.ToolOptions{LongRunning: true})
+	}, dev.checkVulnerabilities, tools.ToolOptions{LongRunning: true})
 
 	// Release Management
 	rel := &releaseManager{
@@ -85,5 +84,5 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec to
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_release_readiness",
 		Description: "Performs an automated check of all SOP release requirements (clean build, secret scanning, go.mod check, and test execution).",
-	}, rel.verifyReleaseReadiness, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, rel.verifyReleaseReadiness, tools.ToolOptions{Serial: true, LongRunning: true})
 }

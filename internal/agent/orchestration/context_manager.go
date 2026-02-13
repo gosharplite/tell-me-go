@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // ContextManager handles the preparation of context for the LLM.
@@ -60,6 +59,7 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if cm.Strategy != nil {
+		cm.Strategy.SetLimits(limits.MaxHistoryTokens, limits.MaxToolTurns, limits.MaxHistoryTurns)
 		cm.Strategy.setContextWindow(limits.ContextWindow)
 		cm.Strategy.setTieredThreshold(limits.TieredThreshold)
 	}
@@ -138,31 +138,6 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.Pipeline = p
-}
-
-// registerToolRegistry updates the pipeline if it contains a toolDeclarationGenerator.
-func (cm *ContextManager) registerToolRegistry(reg tools.IToolRegistry) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if cm.Pipeline == nil {
-		return
-	}
-	for _, t := range cm.Pipeline.transformers {
-		if tg, ok := t.(*toolDeclarationGenerator); ok {
-			tg.Registry = reg
-		}
-	}
-}
-
-// ensureStandardPipeline is built if not present
-func (cm *ContextManager) ensureStandardPipeline(limits events.Limits) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if cm.Pipeline == nil && cm.Factory != nil {
-		cm.Pipeline = cm.Factory.BuildStandardPipeline(limits)
-	}
 }
 
 func (cm *ContextManager) GetLimits() events.Limits {

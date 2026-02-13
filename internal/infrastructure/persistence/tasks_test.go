@@ -110,3 +110,26 @@ func setupTaskRepo(t *testing.T) (*taskRepository, context.Context, string, stri
 	repo := newTaskRepository(fs, tasksFile)
 	return repo, ctx, tasksFile, tempDir
 }
+
+func TestTaskRepository_JSONArrayCompatibility(t *testing.T) {
+	repo, ctx, tasksFile, _ := setupTaskRepo(t)
+	fs := storage.DefaultFileSystem
+
+	// Manually write a JSON array
+	content := `[{"id": 1, "content": "Array Task"}]`
+	if err := fs.WriteFile(ctx, tasksFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := repo.ReadAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(loaded) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(loaded))
+	}
+	if loaded[0].Content != "Array Task" {
+		t.Errorf("expected 'Array Task', got %q", loaded[0].Content)
+	}
+}

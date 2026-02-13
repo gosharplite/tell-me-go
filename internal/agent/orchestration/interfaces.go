@@ -5,9 +5,9 @@ package orchestration
 
 import (
 	"context"
+	"flag"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 // Chatter defines the interface for the AI agent orchestration.
@@ -27,9 +27,12 @@ type Chatter interface {
 	// Subscribe adds a subscriber for agent events.
 	Subscribe(sub func(events.Event))
 
-	// GetCostTracker returns the session cost tracker.
-	GetCostTracker() domain_pricing.ICostTracker
-
 	// Shutdown gracefully stops the agent and its components.
 	Shutdown(ctx context.Context) error
+}
+
+// Capturer defines the interface for UI interactions that the orchestrator needs.
+type Capturer interface {
+	IsTTY(v any) bool
+	CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error)
 }

@@ -17,28 +17,23 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/ui"
 )
 
-// ICapturer defines the interface for UI interactions that the Orchestrator needs.
-type ICapturer interface {
-	IsTTY(v any) bool
+// orchestrator manages the session lifecycle and agent execution.
+type orchestrator struct {
+	HomeDir         string
+	Version         string
+	Loader          config.ConfigLoader
+	SM              domain_security.ISecurityManager
+	Stdout          io.Writer
+	Stderr          io.Writer
+	AgentFactory    func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
+	HistoryRenderer services.HistoryRenderer
+	UIRenderer      services.UIRenderer
 }
 
-// Orchestrator manages the session lifecycle and agent execution.
-type Orchestrator struct {
-	HomeDir      string
-	Version      string
-	SM           domain_security.ISecurityManager
-	Stdout       io.Writer
-	Stderr       io.Writer
-	AgentFactory AgentFactory
-}
-
-type AgentFactory func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
-
-// SessionConfig contains configuration for a single session execution.
-type SessionConfig struct {
+// sessionConfig contains configuration for a single session execution.
+type sessionConfig struct {
 	ConfigPath string
 	NewSession bool
 	LastN      int
@@ -47,8 +42,25 @@ type SessionConfig struct {
 	Config     *config.Config
 }
 
-// SessionDependencies holds the required components for a session.
-type SessionDependencies struct {
+func (c *sessionConfig) GetPrompt() string         { return c.Prompt }
+func (c *sessionConfig) GetLastN() int             { return c.LastN }
+func (c *sessionConfig) GetRawOutput() bool        { return c.RawOutput }
+func (c *sessionConfig) GetConfig() *config.Config { return c.Config }
+
+// NewSessionConfig creates a new sessionConfig with required parameters.
+func NewSessionConfig(configPath string, newSession bool, lastN int, rawOutput bool, prompt string, cfg *config.Config) services.SessionConfig {
+	return &sessionConfig{
+		ConfigPath: configPath,
+		NewSession: newSession,
+		LastN:      lastN,
+		RawOutput:  rawOutput,
+		Prompt:     prompt,
+		Config:     cfg,
+	}
+}
+
+// sessionDependencies holds the required components for a session.
+type sessionDependencies struct {
 	Paths            *persistence.Paths
 	HistoryManager   services.HistoryManager
 	Client           domain_llm.LLMClient
@@ -60,77 +72,118 @@ type SessionDependencies struct {
 	EventBus         events.EventBus
 }
 
-// NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory) *Orchestrator {
-	return &Orchestrator{
-		HomeDir:      homeDir,
-		Version:      version,
-		SM:           sm,
-		Stdout:       stdout,
-		Stderr:       stderr,
-		AgentFactory: agentFactory,
+func (d *sessionDependencies) GetGateway() domain_llm.LLMGateway { return d.Gateway }
+func (d *sessionDependencies) GetHistoryManager() services.HistoryManager {
+	return d.HistoryManager
+}
+func (d *sessionDependencies) GetRegistry() domaintools.IToolRegistry { return d.Registry }
+func (d *sessionDependencies) GetEventBus() events.EventBus           { return d.EventBus }
+func (d *sessionDependencies) GetPaths() *persistence.Paths           { return d.Paths }
+func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
+	return d.PricingOverrides
+}
+func (d *sessionDependencies) GetTracker() domain_pricing.ICostTracker { return d.Tracker }
+func (d *sessionDependencies) GetPricingData() domain_pricing.PricingData {
+	return d.PricingData
+}
+
+// NewSessionDependencies creates a new sessionDependencies with all required components.
+func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryManager, client domain_llm.LLMClient, gw domain_llm.LLMGateway, reg domaintools.IToolRegistry, tracker domain_pricing.ICostTracker, pData domain_pricing.PricingData, overrides map[string]domain_pricing.ModelPricing, bus events.EventBus) services.SessionDependencies {
+	return &sessionDependencies{
+		Paths:            paths,
+		HistoryManager:   hManager,
+		Client:           client,
+		Gateway:          gw,
+		Registry:         reg,
+		Tracker:          tracker,
+		PricingData:      pData,
+		PricingOverrides: overrides,
+		EventBus:         bus,
+	}
+}
+
+// NewOrchestrator creates a new orchestrator.
+func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory any, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
+	var agentFactory func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter
+	if factory != nil {
+		agentFactory = factory.(func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter)
+	}
+	return &orchestrator{
+		HomeDir:         homeDir,
+		Version:         version,
+		Loader:          loader,
+		SM:              sm,
+		Stdout:          stdout,
+		Stderr:          stderr,
+		AgentFactory:    agentFactory,
+		HistoryRenderer: historyRenderer,
+		UIRenderer:      uiRenderer,
 	}
 }
 
 // Run executes the session orchestration.
-func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *SessionDependencies, capturer ICapturer) error {
-	isTTY := capturer.IsTTY(o.Stdout)
-	o.renderHistory(deps.HistoryManager, sCfg, isTTY)
+func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd services.SessionDependencies, ic Capturer) error {
+	isTTY := ic.IsTTY(o.Stdout)
+	o.renderHistory(sd.GetHistoryManager(), sc, isTTY)
 
-	if sCfg.Prompt == "" && sCfg.LastN > 0 {
+	if sc.GetPrompt() == "" && sc.GetLastN() > 0 {
 		return nil
 	}
 
-	chatAgent := o.AgentFactory(deps.Gateway, deps.HistoryManager, deps.Registry, o.SM, sCfg.Config.DisableStreaming, deps.EventBus, sCfg.Config.Model, sCfg.Config.Mode, deps.Paths.LogPath, deps.PricingOverrides, deps.Tracker)
+	cfg := sc.GetConfig()
+	paths := sd.GetPaths()
+	chatAgent := o.AgentFactory(o.Loader, sd.GetGateway(), sd.GetHistoryManager(), sd.GetRegistry(), o.SM, cfg.DisableStreaming, sd.GetEventBus(), cfg.Model, cfg.Mode, paths.LogPath, sd.GetPricingOverrides(), sd.GetTracker())
+
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {
 			fmt.Fprintf(o.Stderr, "Warning: Agent shutdown failed: %v\n", err)
 		}
 	}()
 
-	if err := o.applyConfiguration(ctx, chatAgent, sCfg, deps.Paths, deps.PricingData, capturer); err != nil {
+	if err := o.applyConfiguration(ctx, chatAgent, sc, paths, sd.GetPricingData(), ic); err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
 	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
-	sess := NewSession(sessionID, deps.HistoryManager)
-	if err := chatAgent.Chat(ctx, sess, sCfg.Prompt); err != nil {
+	sess := NewSession(sessionID, sd.GetHistoryManager())
+	if err := chatAgent.Chat(ctx, sess, sc.GetPrompt()); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
 
 	return nil
 }
 
-func (o *Orchestrator) renderHistory(hManager services.HistoryManager, sCfg *SessionConfig, isTTY bool) {
-	if sCfg.LastN <= 0 {
+func (o *orchestrator) renderHistory(hManager services.HistoryManager, sCfg services.SessionConfig, isTTY bool) {
+	if sCfg.GetLastN() <= 0 {
 		return
 	}
-	ui.History(o.Stdout, hManager, sCfg.LastN, ui.RenderOptions{
-		Raw:          sCfg.RawOutput,
-		ShowThoughts: sCfg.Config.ShowThoughts,
-		UseColor:     isTTY && !sCfg.RawOutput,
+	cfg := sCfg.GetConfig()
+	o.HistoryRenderer.Render(o.Stdout, hManager, sCfg.GetLastN(), services.HistoryRenderOptions{
+		Raw:          sCfg.GetRawOutput(),
+		ShowThoughts: cfg.ShowThoughts,
+		UseColor:     isTTY && !sCfg.GetRawOutput(),
 	})
 }
 
-func (o *Orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter, sCfg *SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer ICapturer) error {
-	o.setupUIRendering(chatAgent, sCfg.Config, sCfg.RawOutput, paths.LogPath, capturer)
-	if err := chatAgent.SetLimits(ctx, sCfg.Config.MaxToolTurns, sCfg.Config.ResolveContextWindow(), sCfg.Config.MaxHistoryTurns); err != nil {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter, sCfg services.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
+	cfg := sCfg.GetConfig()
+	o.setupUIRendering(chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
+	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
 		return err
 	}
-	return chatAgent.SetTieredThreshold(ctx, sCfg.Config.ResolveTieredThreshold(pData))
+	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *Orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer ICapturer) {
-	renderer := ui.NewRenderer(o.SM, o.Stdout, o.Stderr)
+func (o *orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
-	renderer.SetUseColor(useColor)
-	bridge := newUIBridge(renderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
+	o.UIRenderer.SetUseColor(useColor)
+	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)
 	chatAgent.Subscribe(bridge.handleEvent)
 }
 
 // uiBridge translates domain events into UI updates.
 type uiBridge struct {
-	renderer     ui.UIRenderer
+	renderer     services.UIRenderer
 	showThoughts bool
 	showTools    bool
 	rawOutput    bool
@@ -139,7 +192,7 @@ type uiBridge struct {
 }
 
 // newUIBridge creates a new uiBridge.
-func newUIBridge(renderer ui.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
+func newUIBridge(renderer services.UIRenderer, showThoughts, showTools, rawOutput, useColor bool, logFile string) *uiBridge {
 	return &uiBridge{
 		renderer:     renderer,
 		showThoughts: showThoughts,

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 )
 
@@ -30,7 +31,7 @@ func TestHistory_Rendering(t *testing.T) {
 
 	t.Run("HideThoughts", func(t *testing.T) {
 		var buf bytes.Buffer
-		History(&buf, h, 10, RenderOptions{Raw: true, ShowThoughts: false})
+		renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true, ShowThoughts: false})
 
 		output := buf.String()
 		if strings.Contains(output, "I am thinking") {
@@ -43,7 +44,7 @@ func TestHistory_Rendering(t *testing.T) {
 
 	t.Run("ShowThoughts", func(t *testing.T) {
 		var buf bytes.Buffer
-		History(&buf, h, 10, RenderOptions{Raw: true, ShowThoughts: true})
+		renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true, ShowThoughts: true})
 
 		output := buf.String()
 		if !strings.Contains(output, "I am thinking") {
@@ -53,7 +54,7 @@ func TestHistory_Rendering(t *testing.T) {
 
 	t.Run("UseColor", func(t *testing.T) {
 		var buf bytes.Buffer
-		History(&buf, h, 10, RenderOptions{Raw: true, UseColor: true})
+		renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true, UseColor: true})
 
 		output := buf.String()
 		if !strings.Contains(output, colorBlue) {
@@ -66,7 +67,7 @@ func TestHistory_Empty(t *testing.T) {
 	tmp := t.TempDir()
 	h := history.NewManager(filepath.Join(tmp, "history.json"))
 	var buf bytes.Buffer
-	History(&buf, h, 10, RenderOptions{Raw: true})
+	renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true})
 
 	if !strings.Contains(buf.String(), "No history found.") {
 		t.Errorf("expected 'No history found.', got %q", buf.String())
@@ -92,7 +93,7 @@ func TestHistory_RenderPart_Tool(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	History(&buf, h, 10, RenderOptions{Raw: true})
+	renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true})
 
 	output := buf.String()
 	if !strings.Contains(output, "[Tool Call] test_tool") {

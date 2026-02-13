@@ -128,24 +128,6 @@ func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
 	return cs.counter.Count(contents)
 }
 
-func (cs *ContextStrategy) getTurnWarning(turn int) string {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.getTurnWarningLocked(turn)
-}
-
-func (cs *ContextStrategy) getTokenWarning(tokens int) string {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.getTokenWarningLocked(tokens)
-}
-
-func (cs *ContextStrategy) getHistoryTurnWarning(currentTurns int) string {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	return cs.getHistoryTurnWarningLocked(currentTurns)
-}
-
 // getWarnings generates safety and financial warnings based on current state.
 func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns int) []warning {
 	cs.mu.Lock()

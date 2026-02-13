@@ -29,3 +29,11 @@ type UserInteractor interface {
 	ReadSingleKey(ctx context.Context) (string, error)
 	ReadLine(ctx context.Context) (string, error)
 }
+
+// ICommandValidator defines the interface for command validation.
+type ICommandValidator interface {
+	IsSafe(command string) (bool, string)
+	Split(cmd string) ([]string, error)
+	ValidateStructure(parts []string) error
+	CheckPathSafety(parts []string) (bool, string)
+}

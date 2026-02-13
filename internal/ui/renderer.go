@@ -18,22 +18,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/term"
 )
 
-// UIRenderer defines the interface for UI feedback.
-type UIRenderer interface {
-	StreamResponse(ctx context.Context, showThoughts, rawOutput bool) (chan<- *llm.Content, func() *llm.Content)
-	LogTurnStatus(status events.TurnStatus)
-	LogUsage(ctx context.Context, m *llm.Metrics, logFile string, startTime time.Time)
-	LogToolCall(calls []*llm.FunctionCall, turn, maxTurns int, showTools bool)
-	LogToolResult(name string, result tools.ToolResult, showTools bool)
-	LogSystemMessage(msg string, level string)
-	SetUseColor(use bool)
-}
-
-// stdUIRenderer implements UIRenderer using standard output/error and Glamour.
+// stdUIRenderer implements services.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
 	locker   domain_security.ISecurityManager
 	stdout   io.Writer
@@ -56,8 +46,8 @@ type streamState struct {
 	scrollThreshold int
 }
 
-// NewRenderer creates a new UIRenderer.
-func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) UIRenderer {
+// NewRenderer creates a new services.UIRenderer.
+func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) services.UIRenderer {
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),

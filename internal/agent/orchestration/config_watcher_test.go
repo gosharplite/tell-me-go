@@ -4,11 +4,13 @@
 package orchestration
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/stretchr/testify/assert"
 )
@@ -18,7 +20,7 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("", sessionPath)
 
 	// 1. Initial defaults
@@ -56,7 +58,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	sessionPath := filepath.Join(tmpDir, "malformed.json")
 
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("", sessionPath)
 
 	if err := os.WriteFile(sessionPath, []byte(`{invalid}`), 0644); err != nil {
@@ -73,7 +75,7 @@ func TestConfigWatcher_MalformedJSON(t *testing.T) {
 
 func TestConfigWatcher_MissingFile(t *testing.T) {
 	t.Parallel()
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("", "non-existent.json")
 
 	// Should not panic
@@ -90,7 +92,7 @@ func setupConfigWatcherTest(t *testing.T) (*ConfigWatcher, string, string) {
 	mainPath := filepath.Join(tmpDir, "main.yaml")
 	sessionPath := filepath.Join(tmpDir, "session.json")
 
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths(mainPath, sessionPath)
 	return cw, mainPath, sessionPath
 }
@@ -107,6 +109,9 @@ func TestConfigWatcher_MainConfigAndPrecedence(t *testing.T) {
 func testYamlLoading(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500
 MAX_TURNS: 5
@@ -114,6 +119,11 @@ MAX_TURNS: 5
 	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		MaxHistoryTokens: 500,
+		MaxToolTurns:     5,
+	}, nil)
 
 	cw.Refresh("default")
 	tokens, toolTurns, _, _ := cw.GetLimits()
@@ -129,6 +139,9 @@ MAX_TURNS: 5
 func testModelIsolation(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `
 MODELS:
   model-a:
@@ -138,23 +151,29 @@ MODELS:
 		t.Fatal(err)
 	}
 
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		Models: map[string]config.ModelConfig{
+			"model-a": {ContextWindow: 1000},
+		},
+	}, nil)
+
 	// Refresh with model-b (NOT in YAML) first to ensure it doesn't pick up model-a's values
 	cw.Refresh("model-b")
-	window := cw.getContextWindow()
+	window := cw.contextWindow
 	if window == 1000 {
 		t.Errorf("model-b should NOT have model-a's context window (1000)")
 	}
 
 	// Now refresh with model-a
 	cw.Refresh("model-a")
-	window = cw.getContextWindow()
+	window = cw.contextWindow
 	if window != 1000 {
 		t.Errorf("expected 1000 context window for model-a, got %d", window)
 	}
 
 	// Switch back to model-b and ensure it goes back to default
 	cw.Refresh("model-b")
-	window = cw.getContextWindow()
+	window = cw.contextWindow
 	if window == 1000 {
 		t.Errorf("model-b should NOT retain model-a's context window after switching back")
 	}
@@ -166,6 +185,9 @@ MODELS:
 func testPrecedenceRules(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, sessionPath := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500
 MAX_TURNS: 5
@@ -173,6 +195,11 @@ MAX_TURNS: 5
 	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		MaxHistoryTokens: 500,
+		MaxToolTurns:     5,
+	}, nil)
 
 	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": 999}`), 0644); err != nil {
 		t.Fatal(err)
@@ -191,6 +218,9 @@ MAX_TURNS: 5
 func testDeletionRobustness(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `
 MAX_HISTORY_TOKENS: 500
 MAX_TURNS: 5
@@ -198,6 +228,12 @@ MAX_TURNS: 5
 	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		MaxHistoryTokens: 500,
+		MaxToolTurns:     5,
+	}, nil)
+
 	cw.Refresh("model-a")
 
 	// Verify initial state
@@ -222,7 +258,7 @@ MAX_TURNS: 5
 
 func TestConfigWatcher_ManualLimits(t *testing.T) {
 	t.Parallel()
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 
 	t.Run("SetLimits_Positive", func(t *testing.T) {
 		cw.SetLimits(200, 15, 25)
@@ -246,7 +282,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 	t.Parallel()
 
 	t.Run("FullUpdate", func(t *testing.T) {
-		cw := NewConfigWatcher(100, 10, 20)
+		cw := NewConfigWatcher(nil, 100, 10, 20)
 		limits := events.Limits{
 			MaxHistoryTokens: 500,
 			MaxToolTurns:     30,
@@ -263,7 +299,7 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 	})
 
 	t.Run("PartialUpdate", func(t *testing.T) {
-		cw := NewConfigWatcher(100, 10, 20)
+		cw := NewConfigWatcher(nil, 100, 10, 20)
 		cw.tieredThreshold = 1000
 		limits := events.Limits{
 			MaxHistoryTokens: 0,
@@ -283,14 +319,14 @@ func TestConfigWatcher_ApplyLimits(t *testing.T) {
 
 func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 	t.Parallel()
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.contextWindow = 500000
 	cw.tieredThreshold = 3000
 
 	t.Run("ValidStrategy", func(t *testing.T) {
 		cs := NewContextStrategy(NewHeuristicTokenCounter(nil), nil)
 		cw.SyncToStrategy(cs)
-		assert.Equal(t, 500000, cs.getContextWindow())
+		assert.Equal(t, 500000, cs.contextWindow)
 		assert.Equal(t, 3000, cs.GetTieredThreshold())
 	})
 
@@ -304,9 +340,11 @@ func TestConfigWatcher_SyncToStrategy(t *testing.T) {
 func TestConfigWatcher_GetContextWindow_Refresh(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
 
 	// Default
-	assert.Equal(t, 1000000, cw.getContextWindow())
+	assert.Equal(t, 1000000, cw.contextWindow)
 
 	// Specific model config
 	yamlContent := `
@@ -318,8 +356,14 @@ MODELS:
 		t.Fatal(err)
 	}
 
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		Models: map[string]config.ModelConfig{
+			"test-model": {ContextWindow: 123456},
+		},
+	}, nil)
+
 	cw.Refresh("test-model")
-	assert.Equal(t, 123456, cw.getContextWindow())
+	assert.Equal(t, 123456, cw.contextWindow)
 }
 
 func TestConfigWatcher_ToInt(t *testing.T) {
@@ -339,7 +383,7 @@ func TestConfigWatcher_SessionReadFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("", sessionPath)
 
 	// Should not panic and return early
@@ -351,10 +395,17 @@ func TestConfigWatcher_SessionReadFileError(t *testing.T) {
 func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `MAX_HISTORY_TOKENS: 500`
 	if err := os.WriteFile(mainPath, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		MaxHistoryTokens: 500,
+	}, nil)
 
 	cw.Refresh("model-a")
 	tokens, _, _, _ := cw.GetLimits()
@@ -366,7 +417,7 @@ func TestConfigWatcher_UpdateFromMain_NoChange(t *testing.T) {
 
 func TestConfigWatcher_SetPaths(t *testing.T) {
 	t.Parallel()
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("main", "session")
 	assert.Equal(t, "main", cw.mainPath)
 	assert.Equal(t, "session", cw.sessionPath)
@@ -389,9 +440,14 @@ func TestConfigWatcher_SessionAllFields(t *testing.T) {
 func TestConfigWatcher_MalformedYAML(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	if err := os.WriteFile(mainPath, []byte(`invalid: yaml: :`), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mockLoader.On("Load", mainPath).Return(nil, fmt.Errorf("malformed yaml"))
 
 	cw.Refresh("default")
 	// Should return early and keep defaults
@@ -402,6 +458,9 @@ func TestConfigWatcher_MalformedYAML(t *testing.T) {
 func TestConfigWatcher_ModelConfigZeroContext(t *testing.T) {
 	t.Parallel()
 	cw, mainPath, _ := setupConfigWatcherTest(t)
+	mockLoader := new(mockConfigLoader)
+	cw.Loader = mockLoader
+
 	yamlContent := `
 MODELS:
   test-model:
@@ -411,8 +470,14 @@ MODELS:
 		t.Fatal(err)
 	}
 
+	mockLoader.On("Load", mainPath).Return(&config.Config{
+		Models: map[string]config.ModelConfig{
+			"test-model": {ContextWindow: 0},
+		},
+	}, nil)
+
 	cw.Refresh("test-model")
-	assert.Equal(t, 1000000, cw.getContextWindow())
+	assert.Equal(t, 1000000, cw.contextWindow)
 }
 
 func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {
@@ -428,7 +493,7 @@ func TestConfigWatcher_UpdateFromSession_NoChange(t *testing.T) {
 
 func TestConfigWatcher_EmptyPaths(t *testing.T) {
 	t.Parallel()
-	cw := NewConfigWatcher(100, 10, 20)
+	cw := NewConfigWatcher(nil, 100, 10, 20)
 	cw.SetPaths("", "")
 	cw.Refresh("default")
 	tokens, _, _, _ := cw.GetLimits()

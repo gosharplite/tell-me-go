@@ -9,17 +9,18 @@ import (
 
 	"github.com/google/shlex"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/pkg/stringsutil"
 )
 
-// CommandValidator handles command validation and security checks.
-type CommandValidator struct {
+// commandValidator handles command validation and security checks.
+type commandValidator struct {
 	sm         domain.ISecurityManager
 	safety     *domain.SafetyService
 	interactor domain.UserInteractor
 }
 
-// NewCommandValidator creates a new CommandValidator.
-func NewCommandValidator(sm domain.ISecurityManager, interactor domain.UserInteractor) *CommandValidator {
+// NewCommandValidator creates a new commandValidator.
+func NewCommandValidator(sm domain.ISecurityManager, interactor domain.UserInteractor) domain.ICommandValidator {
 	var safety *domain.SafetyService
 	if sm != nil {
 		if ism, ok := sm.(internalSecurityProvider); ok {
@@ -29,12 +30,12 @@ func NewCommandValidator(sm domain.ISecurityManager, interactor domain.UserInter
 	if safety == nil {
 		safety = domain.NewSafetyService(domain.DefaultPolicy())
 	}
-	return &CommandValidator{sm: sm, safety: safety, interactor: interactor}
+	return &commandValidator{sm: sm, safety: safety, interactor: interactor}
 }
 
 // IsSafe checks if a command is safe for auto-approval.
 // Returns (isSafe, reason if unsafe).
-func (v *CommandValidator) IsSafe(command string) (bool, string) {
+func (v *commandValidator) IsSafe(command string) (bool, string) {
 	parts, err := v.Split(command)
 	if err != nil {
 		return false, fmt.Sprintf("failed to parse command: %v", err)
@@ -62,11 +63,11 @@ func (v *CommandValidator) IsSafe(command string) (bool, string) {
 	return v.CheckPathSafety(parts)
 }
 
-func (v *CommandValidator) validateWhitelists(base string) (bool, string) {
+func (v *commandValidator) validateWhitelists(base string) (bool, string) {
 	return v.safety.IsCommandSafe(base)
 }
 
-func (v *CommandValidator) validateSubcommandSpecifics(parts []string) (bool, string) {
+func (v *commandValidator) validateSubcommandSpecifics(parts []string) (bool, string) {
 	base := parts[0]
 	switch base {
 	case "git":
@@ -78,7 +79,7 @@ func (v *CommandValidator) validateSubcommandSpecifics(parts []string) (bool, st
 }
 
 // Split uses shlex to split a command string into arguments.
-func (v *CommandValidator) Split(cmd string) ([]string, error) {
+func (v *commandValidator) Split(cmd string) ([]string, error) {
 	parts, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("shlex split error: %w", err)
@@ -88,7 +89,7 @@ func (v *CommandValidator) Split(cmd string) ([]string, error) {
 
 // ValidateStructure ensures the command does not contain standalone shell operators
 // that would be misinterpreted during direct binary execution.
-func (v *CommandValidator) ValidateStructure(parts []string) error {
+func (v *commandValidator) ValidateStructure(parts []string) error {
 	if ok, desc := v.safety.HasForbiddenOperators(parts); ok {
 		return fmt.Errorf("standalone shell operator (%s) detected. "+
 			"This tool executes binaries directly and does not support shell features. "+
@@ -116,26 +117,9 @@ func (v *CommandValidator) ValidateStructure(parts []string) error {
 	return nil
 }
 
-// TruncateOutput limits a string to a maximum number of lines, appending a truncation message if needed.
-// It is designed to be memory-efficient by avoiding a full split of the string.
-func TruncateOutput(output string, maxLines int) string {
-	if output == "" {
-		return ""
-	}
-	if maxLines <= 0 {
-		return "\n... (Output truncated) ..."
-	}
-
-	count := 0
-	for i := 0; i < len(output); i++ {
-		if output[i] == '\n' {
-			count++
-			if count >= maxLines {
-				return output[:i] + "\n... (Output truncated) ..."
-			}
-		}
-	}
-	return output
+// truncateOutput limits a string to a maximum number of lines, appending a truncation message if needed.
+func truncateOutput(output string, maxLines int) string {
+	return stringsutil.TruncateOutput(output, maxLines)
 }
 
 func extractSubcommand(parts []string) string {
@@ -152,7 +136,7 @@ func extractSubcommand(parts []string) string {
 	return ""
 }
 
-func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
+func (v *commandValidator) isSafeGit(parts []string) (bool, string) {
 	sub := extractSubcommand(parts)
 	if sub == "" {
 		return false, "missing git subcommand"
@@ -164,7 +148,7 @@ func (v *CommandValidator) isSafeGit(parts []string) (bool, string) {
 	return true, ""
 }
 
-func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
+func (v *commandValidator) isSafeGo(parts []string) (bool, string) {
 	sub := extractSubcommand(parts)
 	if !v.safety.IsSafeGoSubcommand(sub) {
 		return false, fmt.Sprintf("go subcommand '%s' is not in the safe whitelist", sub)
@@ -185,7 +169,7 @@ func (v *CommandValidator) isSafeGo(parts []string) (bool, string) {
 	return true, ""
 }
 
-func (v *CommandValidator) validateGoTest(parts []string) error {
+func (v *commandValidator) validateGoTest(parts []string) error {
 	for _, arg := range parts {
 		if strings.HasPrefix(arg, "-o") || strings.HasPrefix(arg, "--output") {
 			return fmt.Errorf("go test with output redirection is not auto-approvable")
@@ -194,7 +178,7 @@ func (v *CommandValidator) validateGoTest(parts []string) error {
 	return nil
 }
 
-func (v *CommandValidator) validateGoTool(parts []string) error {
+func (v *commandValidator) validateGoTool(parts []string) error {
 	isCover := false
 	for _, arg := range parts {
 		if arg == "cover" {
@@ -208,7 +192,7 @@ func (v *CommandValidator) validateGoTool(parts []string) error {
 	return nil
 }
 
-func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
+func (v *commandValidator) hasUnsafeChars(command string) (bool, string) {
 	// We are extremely strict here to prevent shell injection.
 	unsafeChars := []struct {
 		char   string
@@ -233,7 +217,7 @@ func (v *CommandValidator) hasUnsafeChars(command string) (bool, string) {
 }
 
 // CheckPathSafety ensures all arguments stay within allowed boundaries.
-func (v *CommandValidator) CheckPathSafety(parts []string) (bool, string) {
+func (v *commandValidator) CheckPathSafety(parts []string) (bool, string) {
 	for i := 1; i < len(parts); i++ {
 		cleaned := cleanPathArgument(parts[i])
 		if cleaned != "" {
@@ -261,7 +245,7 @@ func cleanPathArgument(arg string) string {
 	return arg
 }
 
-func (v *CommandValidator) validateSinglePath(arg string) (bool, string) {
+func (v *commandValidator) validateSinglePath(arg string) (bool, string) {
 	if v.isSpecialPattern(arg) {
 		return true, ""
 	}
@@ -279,10 +263,10 @@ func (v *CommandValidator) validateSinglePath(arg string) (bool, string) {
 	return true, ""
 }
 
-func (v *CommandValidator) isSpecialPattern(arg string) bool {
+func (v *commandValidator) isSpecialPattern(arg string) bool {
 	return arg == "" || arg == "./..." || arg == "..."
 }
 
-func (v *CommandValidator) looksLikePath(arg string) bool {
+func (v *commandValidator) looksLikePath(arg string) bool {
 	return strings.Contains(arg, "/") || strings.Contains(arg, "\\") || arg == "." || arg == ".."
 }

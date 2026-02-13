@@ -38,9 +38,6 @@ type mockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
-func (m *mockHistoryManager) Load(ctx context.Context) error { return nil }
-func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
-
 func (m *mockHistoryManager) GetContents() []*llm.Content {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -84,6 +81,10 @@ func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinne
 	}
 	m.Contents[startIdx].Pinned = pinned
 	m.Contents[startIdx+1].Pinned = pinned
+	return nil
+}
+
+func (m *mockHistoryManager) Save(ctx context.Context) error {
 	return nil
 }
 
@@ -266,6 +267,8 @@ func closedChan(content *llm.Content) <-chan *llm.Content {
 
 func createProcessorForPhase(phase turnPhase) turnProcessor {
 	switch phase {
+	case phaseGuard:
+		return &guardStep{}
 	case phaseRefining:
 		return &contextRefiner{}
 	case phaseInference:
@@ -315,7 +318,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 		Registry: reg,
 		Clock:    &realClock{},
 	}
-	if phase == phaseRefining {
+	if phase == phaseRefining || phase == phaseGuard {
 		turn.CtxManager.Pipeline = orchestration.NewContextPipeline()
 	}
 	return turn

@@ -14,7 +14,7 @@ import (
 )
 
 func TestCapturePromptContextCancellation(t *testing.T) {
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -31,7 +31,7 @@ func TestCapturePromptContextCancellation(t *testing.T) {
 
 func TestPrompt_Pipe(t *testing.T) {
 	inputStr := "hello from pipe"
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -50,7 +50,7 @@ func TestPrompt_Pipe(t *testing.T) {
 }
 
 func TestPrompt_Args(t *testing.T) {
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -72,7 +72,7 @@ func TestPrompt_Args(t *testing.T) {
 }
 
 func TestPrompt_Empty(t *testing.T) {
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -89,7 +89,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 	os.Setenv("TELL_ME_MOCK_PROMPT", "mocked prompt")
 	defer os.Unsetenv("TELL_ME_MOCK_PROMPT")
 
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -108,7 +108,7 @@ func TestPrompt_MockEnv(t *testing.T) {
 
 func TestPrompt_EmptyPipe(t *testing.T) {
 	// Empty stdin (simulated pipe)
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -132,7 +132,7 @@ func TestPrompt_EmptyPipe(t *testing.T) {
 
 func TestPrintFeedback_NoSM(t *testing.T) {
 	var buf bytes.Buffer
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(""),
 		Stdout: &buf,
 		Stderr: io.Discard,
@@ -148,7 +148,7 @@ func TestPrintFeedback_NoSM(t *testing.T) {
 
 func TestPrompt_Combined(t *testing.T) {
 	inputStr := "pipe input"
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -171,7 +171,7 @@ func TestPrompt_Combined(t *testing.T) {
 }
 
 func TestIsTTY_False(t *testing.T) {
-	capturer := &Capturer{}
+	capturer := &capturer{}
 	if capturer.IsTTY("not a file") {
 		t.Error("expected IsTTY to be false for string")
 	}
@@ -179,7 +179,7 @@ func TestIsTTY_False(t *testing.T) {
 
 func TestCaptureFromTTY(t *testing.T) {
 	inputStr := "tty input"
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader(inputStr),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -196,7 +196,7 @@ func TestCaptureFromTTY(t *testing.T) {
 }
 
 func TestCaptureFromTTY_Cancel(t *testing.T) {
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:  strings.NewReader("never read"),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -213,7 +213,7 @@ func TestCaptureFromTTY_Cancel(t *testing.T) {
 func TestWarn_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
 	}
@@ -252,7 +252,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stdin:         strings.NewReader(""),
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
@@ -297,7 +297,7 @@ func TestConfirm_SemanticStyling(t *testing.T) {
 func TestPrompt_SemanticStyling(t *testing.T) {
 	var stderr bytes.Buffer
 	isTTY := true
-	capturer := &Capturer{
+	capturer := &capturer{
 		Stderr:        &stderr,
 		isTTYOverride: &isTTY,
 	}

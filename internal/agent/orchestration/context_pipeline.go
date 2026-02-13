@@ -35,16 +35,6 @@ func NewContextPipeline(transformers ...services.ContextTransformer) *ContextPip
 	return &ContextPipeline{transformers: transformers}
 }
 
-// execute runs the pipeline on the given request.
-func (p *ContextPipeline) execute(ctx context.Context, req *request) error {
-	for _, t := range p.transformers {
-		if err := t.Transform(ctx, req); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // executeWithPersistence runs the pipeline and calls a persist function
 // after "canonical" modifications but before "transient" injections.
 func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *request, persistFn func(context.Context, []*llm.Content) error) error {

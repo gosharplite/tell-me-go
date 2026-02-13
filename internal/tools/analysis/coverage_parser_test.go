@@ -140,17 +140,32 @@ func TestParseCoverageLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := parseCoverageLine(tt.line, tt.prefix)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseCoverageLine() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err == nil && got != nil {
-				if got.File != tt.want.File || got.Start != tt.want.Start || got.End != tt.want.End || got.Stmts != tt.want.Stmts {
-					t.Errorf("parseCoverageLine() = %+v, want %+v", got, tt.want)
-				}
-			} else if err == nil && got == nil && tt.want != nil {
-				t.Errorf("parseCoverageLine() returned nil, want %+v", tt.want)
-			}
+			validateParseResult(t, got, err, tt.want, tt.wantErr)
 		})
+	}
+}
+
+func validateParseResult(t *testing.T, got *uncoveredBlock, err error, want *uncoveredBlock, wantErr bool) {
+	t.Helper()
+	if (err != nil) != wantErr {
+		t.Errorf("parseCoverageLine() error = %v, wantErr %v", err, wantErr)
+		return
+	}
+	if err == nil {
+		compareBlocks(t, got, want)
+	}
+}
+
+func compareBlocks(t *testing.T, got, want *uncoveredBlock) {
+	t.Helper()
+	if got == nil {
+		if want != nil {
+			t.Errorf("parseCoverageLine() returned nil, want %+v", want)
+		}
+		return
+	}
+	if got.File != want.File || got.Start != want.Start || got.End != want.End || got.Stmts != want.Stmts {
+		t.Errorf("parseCoverageLine() = %+v, want %+v", got, want)
 	}
 }
 
@@ -316,7 +331,7 @@ func TestParseLineNum(t *testing.T) {
 	}
 }
 
-func TestParsePathAndRange(t *testing.T) {
+func TestParseSymbolLine(t *testing.T) {
 	tests := []struct {
 		name         string
 		pathAndRange string
@@ -335,13 +350,13 @@ func TestParsePathAndRange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parsePathAndRange(tt.pathAndRange, tt.prefix)
+			got, err := parseSymbolLine(tt.pathAndRange, tt.prefix)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePathAndRange(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
+				t.Errorf("parseSymbolLine(%q) error = %v, wantErr %v", tt.pathAndRange, err, tt.wantErr)
 			}
 			if err == nil {
 				if got.File != tt.wantFile || got.Start != tt.wantStart || got.End != tt.wantEnd {
-					t.Errorf("parsePathAndRange() = %+v, want file=%s, start=%d, end=%d", got, tt.wantFile, tt.wantStart, tt.wantEnd)
+					t.Errorf("parseSymbolLine() = %+v, want file=%s, start=%d, end=%d", got, tt.wantFile, tt.wantStart, tt.wantEnd)
 				}
 			}
 		})

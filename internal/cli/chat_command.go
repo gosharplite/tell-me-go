@@ -24,6 +24,7 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -48,8 +49,9 @@ type chatCommand struct {
 	Stderr  io.Writer
 	HomeDir string
 	SM      domain_security.ISecurityManager
+	Loader  domain_config.ConfigLoader
 
-	AgentFactory  func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
+	AgentFactory  func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter
 	ClientFactory func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
 }
 
@@ -70,7 +72,8 @@ func newChatCommand(ctx *context) *chatCommand {
 		Stderr:  ctx.Stderr,
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
-		AgentFactory: func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+		Loader:  &config.YAMLConfigLoader{},
+		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 			telemetry.RegisterTraceSubscriber(bus, logPath)
 
 			summarizer := llm.NewSummarizer(client, bus)
@@ -79,6 +82,7 @@ func newChatCommand(ctx *context) *chatCommand {
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
+				agent.WithLoader(loader),
 			)
 		},
 		ClientFactory: func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
@@ -95,14 +99,7 @@ func newChatCommand(ctx *context) *chatCommand {
 
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
-	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
-	if sm, ok := c.SM.(interface {
-		SetInteractor(domain_security.UserInteractor)
-	}); ok {
-		sm.SetInteractor(capturer)
-	}
-
-	opts, fs, cfg, err := c.initializeConfiguration(args)
+	capturer, opts, fs, cfg, err := c.initializeCLI(args)
 	if err != nil {
 		return err
 	}
@@ -116,103 +113,127 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr, c.AgentFactory)
-
-	sCfg := &orchestration.SessionConfig{
-		ConfigPath: opts.configPath,
-		NewSession: opts.newSession,
-		LastN:      opts.lastN,
-		RawOutput:  opts.rawOutput,
-		Prompt:     prompt,
-		Config:     cfg,
-	}
-
-	deps, err := c.buildSessionDependencies(ctx, sCfg)
+	deps, hManager, err := c.buildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))
 	if err != nil {
 		return err
 	}
+
 	defer func() {
-		if shutdownErr := deps.EventBus.Shutdown(ctx); shutdownErr != nil {
+		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
 			fmt.Fprintf(c.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
 		}
 	}()
 
-	err = orch.Run(ctx, sCfg, deps, capturer)
+	err = c.performChat(ctx, capturer, opts, prompt, cfg, deps)
 
-	// Finalize session
-	if saveErr := deps.HistoryManager.Save(ctx); saveErr != nil {
-		fmt.Fprintf(c.Stderr, "Warning: Error saving history: %v\n", saveErr)
-	}
-
-	// Calculate and record cost
-	costTracker := deps.Tracker
-	if recordErr := telemetry.RecordSessionCost(ctx, c.SM, costTracker, deps.Paths.LogPath, cfg.Model, cfg.Mode, "", deps.PricingOverrides); recordErr != nil {
-		fmt.Fprintf(c.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
-	}
+	c.finalizeCLI(ctx, hManager, deps, cfg)
 
 	return err
 }
 
-func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchestration.SessionConfig) (*orchestration.SessionDependencies, error) {
-	paths, err := infra_persistence.InitializePaths(c.HomeDir, sCfg.Config.Mode)
-	if err != nil {
-		return nil, err
+func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cliOptions, *flag.FlagSet, *domain_config.Config, error) {
+	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
+		sm.SetInteractor(capturer)
 	}
 
-	pricingOverrides := c.getPricingOverrides(sCfg.Config)
-	c.setupSecurity(paths, sCfg.ConfigPath)
-	if sCfg.NewSession {
-		c.handleNewSession(ctx, paths, sCfg.Config, pricingOverrides)
+	opts, fs, cfg, err := c.initializeConfiguration(args)
+	return capturer.(orchestration.Capturer), opts, fs, cfg, err
+}
+
+func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps services.SessionDependencies) error {
+	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
+	historyRenderer := &ui.StdHistoryRenderer{}
+	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.AgentFactory, historyRenderer, uiRenderer)
+
+	sCfg := orchestration.NewSessionConfig(opts.configPath, opts.newSession, opts.lastN, opts.rawOutput, prompt, cfg)
+	return orch.Run(ctx, sCfg, deps, capturer)
+}
+
+func (c *chatCommand) finalizeCLI(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *domain_config.Config) {
+	// Finalize session
+	if saveErr := hManager.Save(ctx); saveErr != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Error saving history: %v\n", saveErr)
+	}
+
+	// Calculate and record cost
+	if recordErr := telemetry.RecordSessionCost(ctx, c.SM, deps.GetTracker(), deps.GetPaths().LogPath, cfg.Model, cfg.Mode, "", deps.GetPricingOverrides()); recordErr != nil {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to record final session cost: %v\n", recordErr)
+	}
+}
+
+func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, error) {
+	paths, err := infra_persistence.InitializePaths(c.HomeDir, cfg.Mode)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pricingOverrides := c.getPricingOverrides(cfg)
+	c.setupSecurity(paths, configPath)
+	if newSession {
+		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
 	hManager := history.NewManager(paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
-		return nil, fmt.Errorf("error loading history: %w", err)
+		return nil, nil, fmt.Errorf("error loading history: %w", err)
 	}
 
 	bus := events.NewSimpleEventBus()
 
 	pricingData := telemetry.GetPricing(ctx, c.SM, filepath.Join(c.HomeDir, "output"))
 
-	client, err := c.ClientFactory(sCfg.Config, pricingData, bus)
+	client, err := c.ClientFactory(cfg, pricingData, bus)
 	if err != nil {
-		return nil, fmt.Errorf("error creating client: %w", err)
+		return nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
 	gw, ok := client.(domain_llm.LLMGateway)
 	if !ok {
-		return nil, fmt.Errorf("client does not implement LLMGateway")
+		return nil, nil, fmt.Errorf("client does not implement LLMGateway")
 	}
 
 	reg := registry.New()
+
+	executor := &exec.RealExecutor{}
+	var sessionProvider services.ISessionProvider
+	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
+		sessionProvider = state
+	} else {
+		fmt.Fprintf(c.Stderr, "Warning: Failed to initialize session state: %v\n", err)
+	}
+	validator := internal_security.NewCommandValidator(c.SM, capturer)
+
 	tools.RegisterAll(
 		reg,
 		c.SM,
-		paths.ModeDir,
+		executor,
+		validator,
+		sessionProvider,
 		paths.LogPath,
-		sCfg.Config.Model,
-		sCfg.Config.Mode,
+		cfg.Model,
+		cfg.Mode,
 		pricingOverrides,
 		client,
 		filepath.Join(c.HomeDir, "assets/generated"),
 		bus,
 	)
 
-	modelPricing := telemetry.GetModelPricing(sCfg.Config.Model, pricingData)
-	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, sCfg.Config.Mode, sCfg.Config.Model, modelPricing, pricingData)
+	// Infrastructure-specific tool registration
+	telemetry.RegisterMetrics(reg, c.SM, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides)
+	if ism, ok := c.SM.(*internal_security.SecurityManager); ok {
+		internal_security.RegisterPolicy(reg, ism)
+	}
+
+	modelPricing := telemetry.GetModelPricing(cfg.Model, pricingData)
+	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, cfg.Mode, cfg.Model, modelPricing, pricingData)
 	tracker.Warmup()
 
-	return &orchestration.SessionDependencies{
-		Paths:            paths,
-		HistoryManager:   hManager,
-		Client:           client,
-		Gateway:          gw,
-		Registry:         reg,
-		Tracker:          tracker,
-		PricingData:      pricingData,
-		PricingOverrides: pricingOverrides,
-		EventBus:         bus,
-	}, nil
+	deps := orchestration.NewSessionDependencies(paths, hManager, client, gw, reg, tracker, pricingData, pricingOverrides, bus)
+
+	return deps, hManager, nil
 }
 
 func (c *chatCommand) getPricingOverrides(cfg *domain_config.Config) map[string]domain_pricing.ModelPricing {

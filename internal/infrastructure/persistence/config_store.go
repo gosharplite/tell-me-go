@@ -41,9 +41,15 @@ func (r *configRepository) GetAll(ctx context.Context) (map[string]string, error
 		return nil, err
 	}
 
+	if len(data) == 0 {
+		return make(map[string]string), nil
+	}
+
 	config := make(map[string]string)
 	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, err
+		// If unmarshal fails (e.g. file is '[]' or malformed), return empty map instead of error
+		// to allow the system to proceed and potentially overwrite with valid data later.
+		return make(map[string]string), nil
 	}
 	return config, nil
 }

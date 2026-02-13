@@ -6,8 +6,11 @@ package orchestration
 import (
 	"context"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/mock"
 )
 
 type mockToolRegistry struct {
@@ -19,6 +22,10 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
+}
+
+func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+	m.Register(def, handler)
 }
 
 func (m *mockToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
@@ -66,9 +73,7 @@ type mockHistoryManager struct {
 	setContentsErr error
 }
 
-func (m *mockHistoryManager) Load(ctx context.Context) error { return nil }
-func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
-func (m *mockHistoryManager) GetContents() []*llm.Content    { return m.contents }
+func (m *mockHistoryManager) GetContents() []*llm.Content { return m.contents }
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	if m.setContentsErr != nil {
 		return m.setContentsErr
@@ -84,6 +89,7 @@ func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver
 func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	return nil
 }
+func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
 
 type mockGateway struct {
 	generateFn func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
@@ -118,3 +124,27 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 }
 
 func (m *mockGateway) RefreshAuth() error { return nil }
+
+type mockConfigLoader struct {
+	mock.Mock
+}
+
+func (m *mockConfigLoader) Load(path string) (*config.Config, error) {
+	args := m.Called(path)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*config.Config), args.Error(1)
+}
+
+type mockEventBus struct {
+	events []events.Event
+}
+
+func (m *mockEventBus) Publish(e events.Event) {
+	m.events = append(m.events, e)
+}
+
+func (m *mockEventBus) Subscribe(f func(events.Event))     {}
+func (m *mockEventBus) Shutdown(ctx context.Context) error { return nil }
+func (m *mockEventBus) Flush(ctx context.Context) error    { return nil }

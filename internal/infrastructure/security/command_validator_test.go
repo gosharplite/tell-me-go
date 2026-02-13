@@ -264,9 +264,9 @@ func TestTruncateOutput(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := TruncateOutput(tt.input, tt.max)
+		got := truncateOutput(tt.input, tt.max)
 		if got != tt.expected {
-			t.Errorf("TruncateOutput(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.expected)
+			t.Errorf("truncateOutput(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.expected)
 		}
 	}
 }

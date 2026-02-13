@@ -117,6 +117,9 @@ func (m *limitMockRegistry) GetDeclarations() []*tools.ToolDeclaration {
 
 func (m *limitMockRegistry) Register(def *tools.ToolDeclaration, handler tools.ToolFunc) {}
 
+func (m *limitMockRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {
+}
+
 func (m *limitMockRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	return tools.ToolResult{}, nil
 }

@@ -58,24 +58,19 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 	}
 }
 
-// withLimits sets the initial operational limits.
-func withLimits(toolTurns, historyTokens, historyTurns int) agentOption {
-	return func(a *agent) {
-		a.config.Limits = events.Limits{
-			MaxHistoryTokens: historyTokens,
-			MaxToolTurns:     toolTurns,
-			MaxHistoryTurns:  historyTurns,
-		}
-		if a.configWatcher != nil {
-			a.configWatcher.SetLimits(historyTokens, toolTurns, historyTurns)
-		}
-	}
-}
-
 // WithInternalTools enables the registration of internal agent tools (e.g., history management).
 func WithInternalTools() agentOption {
 	return func(a *agent) {
 		a.registerInternal = true
+	}
+}
+
+// WithLoader sets the configuration loader for the agent.
+func WithLoader(loader domain_config.ConfigLoader) agentOption {
+	return func(a *agent) {
+		if a.configWatcher != nil {
+			a.configWatcher.Loader = loader
+		}
 	}
 }
 
@@ -88,7 +83,7 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 		gateway:       client,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: orchestration.NewConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(nil, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
@@ -203,11 +198,6 @@ func (a *agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 	}
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
-}
-
-// GetCostTracker returns the session cost tracker used by the agent's engine.
-func (a *agent) GetCostTracker() domain_pricing.ICostTracker {
-	return a.engine.GetCostTracker()
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.

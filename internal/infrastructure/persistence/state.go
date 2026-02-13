@@ -12,13 +12,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
-// SessionState manages all persistent services and session metadata.
-type SessionState struct {
+// sessionState manages all persistent services and session metadata.
+type sessionState struct {
 	Tasks      *services.TaskService
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
 	Info       sessionInfo
 }
+
+func (s *sessionState) GetTasks() *services.TaskService            { return s.Tasks }
+func (s *sessionState) GetConfig() *services.ConfigService         { return s.Config }
+func (s *sessionState) GetScratchpad() *services.ScratchpadService { return s.Scratchpad }
+func (s *sessionState) GetInfo() any                               { return s.Info }
 
 // sessionInfo holds metadata about the current execution environment.
 type sessionInfo struct {
@@ -28,7 +33,7 @@ type sessionInfo struct {
 }
 
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (*SessionState, error) {
+func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "file"
@@ -41,7 +46,7 @@ func NewSessionState(ctx context.Context, configDir string) (*SessionState, erro
 		return nil, err
 	}
 
-	state := &SessionState{
+	state := &sessionState{
 		Tasks:      tasks,
 		Config:     config,
 		Scratchpad: scratch,

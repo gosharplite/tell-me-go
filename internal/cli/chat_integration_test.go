@@ -37,23 +37,8 @@ func (m *integrationMockChatter) SetLimits(ctx stdctx.Context, toolTurns, histor
 func (m *integrationMockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error {
 	return nil
 }
-func (m *integrationMockChatter) Subscribe(sub func(events.Event)) {}
-func (m *integrationMockChatter) GetCostTracker() domain_pricing.ICostTracker {
-	return &integrationMockCostTracker{}
-}
+func (m *integrationMockChatter) Subscribe(sub func(events.Event))  {}
 func (m *integrationMockChatter) Shutdown(ctx stdctx.Context) error { return nil }
-
-type integrationMockCostTracker struct{}
-
-func (m *integrationMockCostTracker) GetTotalCost(ctx stdctx.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetDailyCost(ctx stdctx.Context) float64 { return 0 }
-func (m *integrationMockCostTracker) GetStats(ctx stdctx.Context) (domain_pricing.UsageStats, float64) {
-	return domain_pricing.UsageStats{}, 0
-}
-func (m *integrationMockCostTracker) Accumulate(mt domain_llm.Metrics)                  {}
-func (m *integrationMockCostTracker) CalculateCost(mt domain_llm.Metrics) float64       { return 0 }
-func (m *integrationMockCostTracker) AccumulateAndReturn(mt domain_llm.Metrics) float64 { return 0 }
-func (m *integrationMockCostTracker) Warmup()                                           {}
 
 func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	tmpDir, cfgPath, historyPath, _ := setupChatIntegrationEnv(t)
@@ -69,7 +54,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 		Stderr:  &stderr,
 		HomeDir: tmpDir,
 		SM:      sm,
-		AgentFactory: func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
+		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 			return &integrationMockChatter{}
 		},
 		ClientFactory: func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {

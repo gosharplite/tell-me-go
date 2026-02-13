@@ -7,25 +7,24 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus events.EventBus) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	m := newAnalysisManager(idx, cache, sm, bus)
+	m := newAnalysisManager(idx, cache, sm, bus, executor)
 
 	// Code Analysis Tools
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "verify_architecture",
 		Description: "Map component dependencies and identify 'God Objects' or circular references. Verifies adherence to Hexagonal/Clean Architecture layers.",
-	}, m.Arch.VerifyArchitecture, registry.ToolOptions{LongRunning: true})
+	}, m.Arch.VerifyArchitecture, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_code_health",
 		Description: "Returns a high-level summary of project health, including test status, coverage, linting issues, and complexity alerts. Use this to verify system integrity after major refactors.",
-	}, m.Health.GetCodeHealth, registry.ToolOptions{LongRunning: true})
+	}, m.Health.GetCodeHealth, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_detailed_coverage",
@@ -40,7 +39,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 			},
 			Required: []string{"path"},
 		},
-	}, m.Health.getDetailedCoverage, registry.ToolOptions{LongRunning: true})
+	}, m.Health.getDetailedCoverage, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_usages",
@@ -59,7 +58,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 			},
 			Required: []string{"query"},
 		},
-	}, m.FindUsages, registry.ToolOptions{LongRunning: true})
+	}, m.FindUsages, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "find_definitions",
@@ -78,7 +77,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 			},
 			Required: []string{"query"},
 		},
-	}, m.FindDefinitions, registry.ToolOptions{LongRunning: true})
+	}, m.FindDefinitions, tools.ToolOptions{LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_symbols",
@@ -211,7 +210,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 			},
 			Required: []string{"old_name", "new_name", "reason"},
 		},
-	}, m.Refactor.RenameSymbol, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, m.Refactor.RenameSymbol, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_todos",
@@ -310,7 +309,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 				},
 			},
 		},
-	}, m.FindOrphanedSymbols, registry.ToolOptions{LongRunning: true})
+	}, m.FindOrphanedSymbols, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "move_definition",
@@ -337,7 +336,7 @@ func Register(r *registry.Registry, sm domain_security.ISecurityManager, bus eve
 			},
 			Required: []string{"symbol", "src_file", "dst_file", "reason"},
 		},
-	}, m.Refactor.MoveDefinition, registry.ToolOptions{Serial: true})
+	}, m.Refactor.MoveDefinition, tools.ToolOptions{Serial: true})
 
 	// Visualization Tools
 	r.Register(&tools.ToolDeclaration{

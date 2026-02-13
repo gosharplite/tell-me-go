@@ -14,7 +14,7 @@ import (
 func TestRegister(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	Register(reg, sm, &exec.RealExecutor{})
+	Register(reg, sm, &exec.RealExecutor{}, security.NewCommandValidator(sm, nil))
 
 	decls := reg.GetDeclarations()
 	found := make(map[string]bool)

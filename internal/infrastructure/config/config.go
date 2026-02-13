@@ -14,20 +14,24 @@ import (
 
 // Re-export constants for compatibility
 const (
-	DefaultMaxToolTurns       = domain_config.DefaultMaxToolTurns
-	DefaultMaxHistoryTurns    = domain_config.DefaultMaxHistoryTurns
-	DefaultMaxHistoryTokens   = domain_config.DefaultMaxHistoryTokens
-	DefaultTieredThreshold    = domain_config.DefaultTieredThreshold
-	WarningRatio              = domain_config.WarningRatio
-	SystemContextBuffer       = domain_config.SystemContextBuffer
-	DefaultMaxLoopRepetitions = domain_config.DefaultMaxLoopRepetitions
+	DefaultMaxToolTurns     = domain_config.DefaultMaxToolTurns
+	DefaultMaxHistoryTurns  = domain_config.DefaultMaxHistoryTurns
+	DefaultMaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
+	DefaultTieredThreshold  = domain_config.DefaultTieredThreshold
+	WarningRatio            = domain_config.WarningRatio
+	SystemContextBuffer     = domain_config.SystemContextBuffer
 )
 
 // Config is an alias for domain_config.Config
 type Config = domain_config.Config
 
-// ModelConfig is an alias for domain_config.ModelConfig
-type ModelConfig = domain_config.ModelConfig
+// YAMLConfigLoader implements domain_config.ConfigLoader.
+type YAMLConfigLoader struct{}
+
+// Load satisfies the domain_config.ConfigLoader interface.
+func (l *YAMLConfigLoader) Load(path string) (*Config, error) {
+	return Load(path)
+}
 
 // Load reads and parses the configuration file.
 func Load(path string) (*Config, error) {

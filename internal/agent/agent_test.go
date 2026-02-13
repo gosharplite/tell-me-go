@@ -18,6 +18,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -73,28 +74,6 @@ func TestAgent_Chat(t *testing.T) {
 	}
 }
 
-func TestAgent_Options(t *testing.T) {
-	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
-	reg := registry.New()
-	sm := security_impl.NewSecurityManager(nil)
-	bus := events.NewSimpleEventBus()
-
-	a := New(client, h, reg, sm, bus, nil,
-		withLimits(3, 500, 5),
-	)
-	_ = a.events.Flush(context.Background())
-
-	if a.config.Limits.MaxToolTurns != 3 || a.config.Limits.MaxHistoryTokens != 500 || a.config.Limits.MaxHistoryTurns != 5 {
-		t.Errorf("withLimits did not update a.config.Limits: %+v", a.config.Limits)
-	}
-
-	limits := a.ctxManager.GetLimits()
-	if limits.MaxHistoryTokens != 500 || limits.MaxToolTurns != 3 {
-		t.Errorf("withLimits failed: got %+v", limits)
-	}
-}
-
 func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	tmpDir := t.TempDir()
 	mainConfig := filepath.Join(tmpDir, "config.yaml")
@@ -111,7 +90,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, WithLoader(&config.YAMLConfigLoader{}))
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -401,11 +380,8 @@ func TestAgent_Reconfiguration(t *testing.T) {
 		WithSessionCostTracker(tracker1),
 	)
 
-	if a.GetCostTracker() != tracker1 {
+	if a.tracker != tracker1 {
 		t.Error("WithSessionCostTracker didn't set tracker")
-	}
-	if a.engine.GetCostTracker() != tracker1 {
-		t.Error("engine didn't receive tracker from WithSessionCostTracker")
 	}
 
 	// Test tracker replacement
@@ -413,11 +389,8 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	a.tracker = tracker2
 	_ = a.applyConfig(context.Background())
 
-	if a.GetCostTracker() != tracker2 {
-		t.Error("GetCostTracker didn't return updated tracker")
-	}
-	if a.engine.GetCostTracker() != tracker2 {
-		t.Error("engine didn't receive updated tracker after applyConfig")
+	if a.tracker != tracker2 {
+		t.Error("tracker didn't update after replacement and applyConfig")
 	}
 }
 
@@ -504,23 +477,12 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
-	if a.GetCostTracker() != tracker {
-		t.Error("a.GetCostTracker() does not return the passed tracker")
-	}
-
-	if a.engine.GetCostTracker() != tracker {
-		t.Error("engine tracker does not match passed tracker")
-	}
-
 	// 2. Test applying to existing agent (engine is NOT nil)
 	tracker2 := &mockCostTracker{}
 	WithSessionCostTracker(tracker2)(a)
 
 	if a.tracker != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
-	}
-	if a.engine.GetCostTracker() != tracker2 {
-		t.Error("engine tracker does not match updated tracker")
 	}
 }
 

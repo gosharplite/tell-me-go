@@ -18,7 +18,7 @@ import (
 // WithStreaming returns a middleware that injects a stream handler into the turn.
 func (e *turnEngine) WithStreaming() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			if turn.State.Phase == phaseInference && e.events != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
 					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
@@ -32,10 +32,10 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 // WithStatusReporter returns a middleware that publishes turn status events.
 func (e *turnEngine) WithStatusReporter() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
-			res := next.Process(ctx, turn)
-			if e.events == nil || res.Error != nil {
-				return res
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			res, err := next.Process(ctx, turn)
+			if e.events == nil || err != nil {
+				return res, err
 			}
 
 			if turn.State.Phase == phaseRefining || turn.State.Phase == phasePersisting {
@@ -77,7 +77,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 					},
 				})
 			}
-			return res
+			return res, nil
 		})
 	}
 }
@@ -85,8 +85,8 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 // WithMetrics returns a middleware that publishes usage metrics.
 func (e *turnEngine) WithMetrics() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
-			res := next.Process(ctx, turn)
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			res, err := next.Process(ctx, turn)
 			if e.events != nil && turn.State.Phase == phasePersisting && turn.State.Metrics != nil {
 				if turn.CostTracker != nil {
 					// Calculate and accumulate into session total (thread-safe)
@@ -103,7 +103,7 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 					StartTime: turn.StartTime,
 				})
 			}
-			return res
+			return res, err
 		})
 	}
 }
@@ -111,10 +111,10 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 // withLoopDetector returns a middleware that detects and breaks infinite tool loops.
 func withLoopDetector() turnMiddleware {
 	return func(next turnProcessor) turnProcessor {
-		return turnProcessorFunc(func(ctx context.Context, turn *turn) processResult {
-			res := next.Process(ctx, turn)
+		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
+			res, err := next.Process(ctx, turn)
 
-			if turn.State.Phase == phaseInference && res.Error == nil && turn.State.Response != nil {
+			if turn.State.Phase == phaseInference && err == nil && turn.State.Response != nil {
 				// 1. Multi-step loop detection (Text & Tool Calls)
 				rawJSON, _ := json.Marshal(turn.State.Response)
 				h := sha256.Sum256(rawJSON)
@@ -122,10 +122,7 @@ func withLoopDetector() turnMiddleware {
 
 				for _, prevHash := range turn.State.RecentResponseHashes {
 					if currentHash == prevHash {
-						return processResult{
-							Stop:  true,
-							Error: newAgentError(errLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil),
-						}
+						return processResult{Stop: true}, newAgentError(errLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil)
 					}
 				}
 				// Keep last N hashes (using the same repetition limit)
@@ -141,16 +138,13 @@ func withLoopDetector() turnMiddleware {
 						key := p.FunctionCall.Name + ":" + string(args)
 						turn.State.ToolCallCount[key]++
 						if turn.State.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
-							return processResult{
-								Stop:  true,
-								Error: newAgentError(errLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
-							}
+							return processResult{Stop: true}, newAgentError(errLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil)
 						}
 					}
 				}
 			}
 
-			return res
+			return res, err
 		})
 	}
 }

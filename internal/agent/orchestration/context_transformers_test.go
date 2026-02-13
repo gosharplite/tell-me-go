@@ -13,7 +13,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
@@ -503,7 +502,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		Turn:    1,
 	}
 
-	err := pipeline.execute(ctx, req)
+	err := pipeline.executeWithPersistence(ctx, req, nil)
 	if !errors.Is(err, llm.ErrContextLimitExceeded) {
 		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
 	}
@@ -522,7 +521,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		History: generatePinnedHistory(20, 2960),
 		Turn:    1,
 	}
-	if err := pipeline.execute(ctx, req2); err != nil {
+	if err := pipeline.executeWithPersistence(ctx, req2, nil); err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
 
@@ -775,26 +774,6 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 	}
 }
 
-func TestToolDeclarationGenerator_Transform_SafeWithNilRegistry(t *testing.T) {
-	t.Parallel()
-	tg := &toolDeclarationGenerator{Registry: nil}
-	req := &request{History: []*llm.Content{{Role: "user"}}}
-	err := tg.Transform(context.Background(), req)
-	if err != nil {
-		t.Errorf("expected no error for nil registry, got %v", err)
-	}
-}
-
-func TestToolDeclarationGenerator_Transform_SafeWithEmptyRegistry(t *testing.T) {
-	t.Parallel()
-	tg := &toolDeclarationGenerator{Registry: &mockToolRegistry{}}
-	req := &request{History: []*llm.Content{{Role: "user"}}}
-	err := tg.Transform(context.Background(), req)
-	if err != nil {
-		t.Errorf("expected no error for empty registry, got %v", err)
-	}
-}
-
 func TestGroupTurns_Helper(t *testing.T) {
 	history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
 	turns := groupTurns(history)
@@ -885,63 +864,6 @@ func TestApplySummary_Helper(t *testing.T) {
 	if newHist[2].Parts[0].Text != "4" {
 		t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
 	}
-}
-
-func TestToolDeclarationGenerator_MultipleTools(t *testing.T) {
-	t.Parallel()
-	registry := &mockToolRegistry{
-		declarations: []*tools.ToolDeclaration{
-			{Name: "tool1", Description: "desc1"},
-			{Name: "tool2", Description: "desc2"},
-		},
-	}
-	tg := &toolDeclarationGenerator{Registry: registry}
-	req := &request{
-		History: []*llm.Content{
-			{Role: "system", Parts: []*llm.Part{{Text: "System prompt"}}},
-		},
-	}
-
-	err := tg.Transform(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Transform failed: %v", err)
-	}
-
-	if len(req.History[0].TransientParts) != 1 {
-		t.Errorf("expected 1 transient part, got %d", len(req.History[0].TransientParts))
-	}
-	text := req.History[0].TransientParts[0].Text
-	if !strings.Contains(text, "AVAILABLE_TOOLS") {
-		t.Error("expected AVAILABLE_TOOLS header")
-	}
-	if !strings.Contains(text, "tool1") || !strings.Contains(text, "tool2") {
-		t.Error("expected tool names in declaration")
-	}
-}
-
-func TestToolDeclarationGenerator_Transform_EdgeCases(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Empty History", func(t *testing.T) {
-		tg := &toolDeclarationGenerator{Registry: &mockToolRegistry{}}
-		req := &request{History: []*llm.Content{}}
-		err := tg.Transform(context.Background(), req)
-		if err != nil {
-			t.Fatalf("expected no error for empty history, got %v", err)
-		}
-		// Should return nil (no-op)
-	})
-
-	t.Run("Typed Nil Registry", func(t *testing.T) {
-		var r *mockToolRegistry = nil
-		tg := &toolDeclarationGenerator{Registry: r}
-		req := &request{History: []*llm.Content{{Role: "user"}}}
-		// This should not panic because of reflect.IsNil check in Transform
-		err := tg.Transform(context.Background(), req)
-		if err != nil {
-			t.Fatalf("expected no error for typed nil registry, got %v", err)
-		}
-	})
 }
 
 func TestApplySummaryToHistory_UserMerging(t *testing.T) {

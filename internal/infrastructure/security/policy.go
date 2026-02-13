@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type policyTool struct {
@@ -30,7 +29,7 @@ func (t *policyTool) RegisterSafePath(ctx context.Context, args map[string]inter
 		Path   string `json:"path"`
 		Reason string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -71,7 +70,7 @@ func (t *policyTool) RemoveSafePath(ctx context.Context, args map[string]interfa
 	var params struct {
 		Path string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -127,7 +126,7 @@ func (t *policyTool) RegisterReadPath(ctx context.Context, args map[string]inter
 		Path   string `json:"path"`
 		Reason string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -168,7 +167,7 @@ func (t *policyTool) RemoveReadPath(ctx context.Context, args map[string]interfa
 	var params struct {
 		Path string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -320,7 +319,7 @@ func (t *policyTool) getDoubleMsg(lowerTitle string) string {
 }
 
 // RegisterPolicy adds security policy management tools to the registry.
-func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
+func RegisterPolicy(r tools.IToolRegistry, sm *SecurityManager) {
 	p := newPolicyTool(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -340,7 +339,7 @@ func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RegisterSafePath, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_safepaths",
@@ -360,7 +359,7 @@ func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveSafePath, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RemoveSafePath, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "register_readpath",
@@ -379,7 +378,7 @@ func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path", "reason"},
 		},
-	}, p.RegisterReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RegisterReadPath, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "list_readpaths",
@@ -399,15 +398,15 @@ func RegisterPolicy(r *registry.Registry, sm *SecurityManager) {
 			},
 			Required: []string{"path"},
 		},
-	}, p.RemoveReadPath, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RemoveReadPath, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "bypass_confirmation",
 		Description: "Disables all interactive security prompts for the current session. This setting is persistent for the session until revoked or a new session is started.",
-	}, p.BypassConfirmation, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.BypassConfirmation, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "revoke_bypass",
 		Description: "Re-enables interactive security prompts by revoking the bypass status.",
-	}, p.RevokeBypass, registry.ToolOptions{Serial: true, LongRunning: true})
+	}, p.RevokeBypass, tools.ToolOptions{Serial: true, LongRunning: true})
 }
