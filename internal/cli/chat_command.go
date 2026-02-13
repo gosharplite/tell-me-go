@@ -117,13 +117,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr)
-	if c.AgentFactory != nil {
-		orch.AgentFactory = c.AgentFactory
-	}
-	if c.ClientFactory != nil {
-		orch.ClientFactory = c.ClientFactory
-	}
+	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.SM, c.Stdout, c.Stderr, c.AgentFactory)
 
 	sCfg := &orchestration.SessionConfig{
 		ConfigPath: opts.configPath,

@@ -27,15 +27,15 @@ type ICapturer interface {
 
 // Orchestrator manages the session lifecycle and agent execution.
 type Orchestrator struct {
-	HomeDir string
-	Version string
-	SM      domain_security.ISecurityManager
-	Stdout  io.Writer
-	Stderr  io.Writer
-
-	AgentFactory  func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
-	ClientFactory func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error)
+	HomeDir      string
+	Version      string
+	SM           domain_security.ISecurityManager
+	Stdout       io.Writer
+	Stderr       io.Writer
+	AgentFactory AgentFactory
 }
+
+type AgentFactory func(client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
 
 // SessionConfig contains configuration for a single session execution.
 type SessionConfig struct {
@@ -61,22 +61,19 @@ type SessionDependencies struct {
 }
 
 // NewOrchestrator creates a new Orchestrator.
-func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer) *Orchestrator {
+func NewOrchestrator(homeDir, version string, sm domain_security.ISecurityManager, stdout, stderr io.Writer, agentFactory AgentFactory) *Orchestrator {
 	return &Orchestrator{
-		HomeDir: homeDir,
-		Version: version,
-		SM:      sm,
-		Stdout:  stdout,
-		Stderr:  stderr,
+		HomeDir:      homeDir,
+		Version:      version,
+		SM:           sm,
+		Stdout:       stdout,
+		Stderr:       stderr,
+		AgentFactory: agentFactory,
 	}
 }
 
 // Run executes the session orchestration.
 func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *SessionDependencies, capturer ICapturer) error {
-	if o.AgentFactory == nil {
-		return fmt.Errorf("AgentFactory must be set")
-	}
-
 	isTTY := capturer.IsTTY(o.Stdout)
 	o.renderHistory(deps.HistoryManager, sCfg, isTTY)
 

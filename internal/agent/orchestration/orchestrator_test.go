@@ -115,13 +115,6 @@ func TestSessionDependencies_Structure(t *testing.T) {
 	require.NotNil(t, deps.Paths)
 }
 
-func TestOrchestrator_Run_RequiresAgentFactory(t *testing.T) {
-	orch := &Orchestrator{}
-	err := orch.Run(context.TODO(), nil, nil, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "AgentFactory must be set")
-}
-
 func TestSessionConfig_Structure(t *testing.T) {
 	cfg := &SessionConfig{
 		Config: &config.Config{
@@ -132,16 +125,16 @@ func TestSessionConfig_Structure(t *testing.T) {
 }
 
 func TestOrchestrator_Run_Success(t *testing.T) {
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard)
-	
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	orch.AgentFactory = func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return mChatter
 	}
+
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -334,16 +327,16 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 }
 
 func TestOrchestrator_Run_Error(t *testing.T) {
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard)
-	
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	orch.AgentFactory = func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return mChatter
 	}
+
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
 
 	sCfg := &SessionConfig{
 		Prompt: "hello",
@@ -373,15 +366,15 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 }
 
 func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard)
-	
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	orch.AgentFactory = func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	agentFactory := func(client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
 		return nil
 	}
+
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, agentFactory)
 
 	sCfg := &SessionConfig{
 		Prompt: "",
@@ -403,7 +396,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 }
 
 func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
-	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard)
+	orch := NewOrchestrator("home", "1.0.0", nil, io.Discard, io.Discard, nil)
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	
