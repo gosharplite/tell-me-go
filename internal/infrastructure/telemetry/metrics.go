@@ -22,7 +22,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -229,7 +228,7 @@ type costSummaryArgs struct {
 type estimateCostArgs struct{}
 
 // RegisterMetrics adds tools for usage and cost analysis to the registry.
-func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) {
+func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager, logFile string, model string, mode string, pricingOverrides map[string]domain_pricing.ModelPricing) {
 	m := &metricsManager{
 		sm:               sm,
 		logFile:          logFile,
@@ -244,40 +243,40 @@ func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, 
 		Description: "Calculates the estimated USD cost of the current session.",
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		var eArgs estimateCostArgs
-		if err := registry.UnmarshalArgs(args, &eArgs); err != nil {
+		if err := tools.UnmarshalArgs(args, &eArgs); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 		res, err := m.EstimateCost(ctx, true, "") // Records to ledger with default ID
 		return tools.ToolResult{Text: res}, err
-	}, registry.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "get_cost_summary",
 		Description: "Returns a summary of total AI costs grouped by date from the local history ledger.",
 		Parameters: &tools.Schema{
-			Type: "object",
+			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
 				"billing": {
-					Type:        "boolean",
+					Type:        "BOOLEAN",
 					Description: "If true, aggregates costs using Google Billing timezone (UTC-8).",
 				},
 				"start_date": {
-					Type:        "string",
+					Type:        "STRING",
 					Description: "The start date for the summary (YYYY-MM-DD).",
 				},
 				"end_date": {
-					Type:        "string",
+					Type:        "STRING",
 					Description: "The end date for the summary (YYYY-MM-DD).",
 				},
 				"interval": {
-					Type:        "string",
+					Type:        "STRING",
 					Description: "Aggregation interval: 'hour' or 'day' (default: 'day').",
 				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 		var sArgs costSummaryArgs
-		if err := registry.UnmarshalArgs(args, &sArgs); err != nil {
+		if err := tools.UnmarshalArgs(args, &sArgs); err != nil {
 			return tools.ToolResult{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 
@@ -287,7 +286,7 @@ func RegisterMetrics(r *registry.Registry, sm domain_security.ISecurityManager, 
 		}
 		res, err := m.getCostSummary(ctx, sArgs)
 		return tools.ToolResult{Text: res}, err
-	}, registry.ToolOptions{Serial: true})
+	}, tools.ToolOptions{Serial: true})
 }
 
 // RecordSessionCost calculates and saves the session cost to the global ledger and appends a summary to the log.

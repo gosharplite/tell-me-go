@@ -57,8 +57,15 @@ var (
 // ToolFunc is the signature for Go functions that can be called by the model.
 type ToolFunc func(ctx context.Context, args map[string]interface{}) (ToolResult, error)
 
+// ToolOptions defines execution behavior for a tool.
+type ToolOptions struct {
+	Serial      bool // If true, the agent waits for this tool to finish before running others.
+	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
+}
+
 type IToolRegistry interface {
 	Register(def *ToolDeclaration, handler ToolFunc)
+	RegisterWithOptions(def *ToolDeclaration, handler ToolFunc, opts ToolOptions)
 	Execute(ctx context.Context, name string, args map[string]interface{}) (ToolResult, error)
 	IsSerial(name string) bool
 	IsLongRunning(name string) bool

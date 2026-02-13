@@ -20,6 +20,11 @@ type SessionState struct {
 	Info       sessionInfo
 }
 
+func (s *SessionState) GetTasks() *services.TaskService            { return s.Tasks }
+func (s *SessionState) GetConfig() *services.ConfigService         { return s.Config }
+func (s *SessionState) GetScratchpad() *services.ScratchpadService { return s.Scratchpad }
+func (s *SessionState) GetInfo() any                               { return s.Info }
+
 // sessionInfo holds metadata about the current execution environment.
 type sessionInfo struct {
 	Config map[string]string `json:"config"`

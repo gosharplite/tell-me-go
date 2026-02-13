@@ -7,11 +7,10 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 // RegisterAll registers all external integration tools.
-func RegisterAll(r *registry.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
+func RegisterAll(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
 	// Register Media Tools
 	registerMedia(r, sm, client, assetsDir)
 
@@ -32,7 +31,7 @@ func RegisterAll(r *registry.Registry, sm domain_security.ISecurityManager, clie
 	registerAzureDevOps(r, sm, nil)
 }
 
-func registerMedia(r *registry.Registry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
+func registerMedia(r tools.IToolRegistry, sm domain_security.ISecurityManager, client llm.LLMClient, assetsDir string) {
 	m := &mediaManager{sm: sm, client: client, assetsDir: assetsDir}
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -56,7 +55,7 @@ func registerMedia(r *registry.Registry, sm domain_security.ISecurityManager, cl
 			},
 			Required: []string{"prompt"},
 		},
-	}, m.createImage, registry.ToolOptions{LongRunning: true})
+	}, m.createImage, tools.ToolOptions{LongRunning: true})
 
 	r.Register(&tools.ToolDeclaration{
 		Name:        "read_image",
@@ -74,7 +73,7 @@ func registerMedia(r *registry.Registry, sm domain_security.ISecurityManager, cl
 	}, m.readImage)
 }
 
-func registerNetwork(r *registry.Registry, net *networkTool) {
+func registerNetwork(r tools.IToolRegistry, net *networkTool) {
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "read_external_docs",
 		Description: "Fetches and cleans content from a URL, stripping HTML tags and scripts to provide readable documentation. Useful for researching library APIs.",
@@ -88,7 +87,7 @@ func registerNetwork(r *registry.Registry, net *networkTool) {
 			},
 			Required: []string{"url"},
 		},
-	}, net.ReadExternalDocs, registry.ToolOptions{LongRunning: true})
+	}, net.ReadExternalDocs, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "http_request",
@@ -118,10 +117,10 @@ func registerNetwork(r *registry.Registry, net *networkTool) {
 			},
 			Required: []string{"method", "url"},
 		},
-	}, net.HttpRequest, registry.ToolOptions{LongRunning: true})
+	}, net.HttpRequest, tools.ToolOptions{LongRunning: true})
 }
 
-func registerTeams(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerTeams(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newteamsManager(sm, client)
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "send_teams_message",
@@ -144,10 +143,10 @@ func registerTeams(r *registry.Registry, sm domain_security.ISecurityManager, cl
 			},
 			Required: []string{"webhook_url", "message", "reason"},
 		},
-	}, m.sendTeamsMessage, registry.ToolOptions{Serial: true})
+	}, m.sendTeamsMessage, tools.ToolOptions{Serial: true})
 }
 
-func registerConfluence(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newconfluenceManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
@@ -212,10 +211,10 @@ func registerConfluence(r *registry.Registry, sm domain_security.ISecurityManage
 			},
 			Required: []string{"page_id", "markdown_content"},
 		},
-	}, m.confluenceWrite, registry.ToolOptions{Serial: true})
+	}, m.confluenceWrite, tools.ToolOptions{Serial: true})
 }
 
-func registerJira(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerJira(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newjiraManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{
@@ -253,7 +252,7 @@ func registerJira(r *registry.Registry, sm domain_security.ISecurityManager, cli
 	}, m.jiraGetIssue)
 }
 
-func registerAzureDevOps(r *registry.Registry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
+func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newazureDevOpsManager(sm, client)
 
 	r.Register(&tools.ToolDeclaration{

@@ -9,7 +9,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -67,8 +66,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus) *analysisManager {
-	executor := &exec.RealExecutor{}
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
 	fs := storage.DefaultFileSystem
 
 	m := &analysisManager{

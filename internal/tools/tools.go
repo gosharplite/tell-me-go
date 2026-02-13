@@ -6,17 +6,12 @@
 package tools
 
 import (
-	"context"
-
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/developer"
 	"github.com/gosharplite/tell-me-go/internal/tools/integrations"
@@ -25,9 +20,11 @@ import (
 
 // RegisterAll registers all available tools into the registry.
 func RegisterAll(
-	r *registry.Registry,
+	r tools.IToolRegistry,
 	sm domain_security.ISecurityManager,
-	outputDir string,
+	executor tools.CommandExecutor,
+	validator domain_security.ICommandValidator,
+	state services.ISessionProvider,
 	logFile string,
 	model string,
 	mode string,
@@ -36,19 +33,11 @@ func RegisterAll(
 	assetsDir string,
 	bus events.EventBus,
 ) {
-	ctx := context.Background()
-	state, _ := persistence.NewSessionState(ctx, outputDir)
-
-	executor := &exec.RealExecutor{}
-	workspace.Register(r, sm, executor)
+	workspace.Register(r, sm, executor, validator)
 	if state != nil {
 		workspace.RegisterPersistence(r, state)
 	}
-	if ism, ok := sm.(*security.SecurityManager); ok {
-		security.RegisterPolicy(r, ism)
-	}
-	telemetry.RegisterMetrics(r, sm, logFile, model, mode, pricingOverrides)
-	analysis.Register(r, sm, bus)
-	developer.Register(r, sm, executor)
+	analysis.Register(r, sm, bus, executor)
+	developer.Register(r, sm, executor, validator)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }

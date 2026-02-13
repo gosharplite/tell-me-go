@@ -23,7 +23,7 @@ func setupAnalysisManager(t *testing.T) (*analysisManager, string) {
 	cache := newASTCache()
 	sp := &mockSecurityProvider{}
 
-	m := newAnalysisManager(idx, cache, sp, nil)
+	m := newAnalysisManager(idx, cache, sp, nil, &mockHealthExecutor{})
 	return m, tmpDir
 }
 

@@ -16,10 +16,7 @@ import (
 type toolFunc = tools.ToolFunc
 
 // ToolOptions defines execution behavior for a tool.
-type ToolOptions struct {
-	Serial      bool // If true, the agent waits for this tool to finish before running others.
-	LongRunning bool // If true, the tool is exempt from default timeouts (e.g., interactive or heavy task).
-}
+type ToolOptions = tools.ToolOptions
 
 // ToolEntry stores a tool's definition, handler, and execution options.
 type toolEntry struct {

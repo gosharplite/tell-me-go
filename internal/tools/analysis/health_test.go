@@ -37,8 +37,9 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	ana := newAnalysisManager(idx, cache, sm, nil)
-	hea := &healthManager{SP: sm, Ana: ana, Exec: &mockHealthExecutor{}}
+	mockExec := &mockHealthExecutor{}
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec)
+	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
 
 	ctx := context.Background()
 	res, err := hea.GetCodeHealth(ctx, nil)
@@ -64,8 +65,9 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	ana := newAnalysisManager(idx, cache, sm, nil)
-	hea := &healthManager{SP: sm, Ana: ana, Exec: &mockHealthExecutor{}}
+	mockExec := &mockHealthExecutor{}
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec)
+	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately

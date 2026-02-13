@@ -11,8 +11,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 // persistenceTools provides tool wrappers for persistence services.
@@ -20,25 +18,24 @@ type persistenceTools struct {
 	tasks      *services.TaskService
 	scratchpad *services.ScratchpadService
 	config     *services.ConfigService
-	state      *persistence.SessionState
+	state      services.ISessionProvider
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
-func newpersistenceTools(state *persistence.SessionState) *persistenceTools {
+func newpersistenceTools(state services.ISessionProvider) *persistenceTools {
 	return &persistenceTools{
-		tasks:      state.Tasks,
-		scratchpad: state.Scratchpad,
-		config:     state.Config,
+		tasks:      state.GetTasks(),
+		scratchpad: state.GetScratchpad(),
+		config:     state.GetConfig(),
 		state:      state,
 	}
 }
 
 // GetSessionInfo handles the get_session_info tool.
 func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	// Refresh config in session info
-	t.state.Info.Config = t.config.GetAll()
+	info := t.state.GetInfo()
 
-	data, err := json.MarshalIndent(t.state.Info, "", "  ")
+	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -46,7 +43,7 @@ func (t *persistenceTools) GetSessionInfo(ctx context.Context, args map[string]i
 }
 
 // Register adds persistence tools to the registry.
-func (t *persistenceTools) Register(r *registry.Registry) {
+func (t *persistenceTools) Register(r tools.IToolRegistry) {
 	r.Register(&tools.ToolDeclaration{
 		Name:        "get_session_info",
 		Description: "Returns the active configuration, environment variables, and session file paths.",
@@ -70,7 +67,7 @@ func (t *persistenceTools) Register(r *registry.Registry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageScratchpad, registry.ToolOptions{Serial: true})
+	}, t.ManageScratchpad, tools.ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_config",
@@ -94,7 +91,7 @@ func (t *persistenceTools) Register(r *registry.Registry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageConfig, registry.ToolOptions{Serial: true})
+	}, t.ManageConfig, tools.ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_tasks",
@@ -122,7 +119,7 @@ func (t *persistenceTools) Register(r *registry.Registry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageTasks, registry.ToolOptions{Serial: true})
+	}, t.ManageTasks, tools.ToolOptions{Serial: true})
 }
 
 // ManageTasks handles the manage_tasks tool.

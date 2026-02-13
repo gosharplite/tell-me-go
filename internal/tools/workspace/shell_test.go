@@ -15,7 +15,7 @@ import (
 func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
 
 	// "世界" is 6 bytes. "世" is 3 bytes, "界" is 3 bytes.
 
@@ -113,7 +113,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
 	ctx := context.Background()
 
 	tests := []struct {
@@ -179,7 +179,7 @@ func TestShellTool_ExecuteCommand_Validation(t *testing.T) {
 func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
 	ctx := context.Background()
 
 	t.Run("Empty command", func(t *testing.T) {
@@ -210,7 +210,7 @@ func TestShellTool_ExecuteCommand_EdgeCases(t *testing.T) {
 func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
 
 	tests := []struct {
 		name     string
@@ -273,7 +273,7 @@ func TestShellTool_ResolveOutputFile_Sanitation(t *testing.T) {
 func TestShellTool_PipeCommands(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	tool := newshellTool(sm)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
 	ctx := context.Background()
 
 	t.Run("Simple pipe", func(t *testing.T) {

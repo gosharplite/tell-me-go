@@ -24,6 +24,7 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -132,7 +133,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		Config:     cfg,
 	}
 
-	deps, err := c.buildSessionDependencies(ctx, sCfg)
+	deps, err := c.buildSessionDependencies(ctx, sCfg, capturer)
 	if err != nil {
 		return err
 	}
@@ -158,7 +159,7 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	return err
 }
 
-func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchestration.SessionConfig) (*orchestration.SessionDependencies, error) {
+func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchestration.SessionConfig, capturer domain_security.UserInteractor) (*orchestration.SessionDependencies, error) {
 	paths, err := infra_persistence.InitializePaths(c.HomeDir, sCfg.Config.Mode)
 	if err != nil {
 		return nil, err
@@ -190,10 +191,17 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchest
 	}
 
 	reg := registry.New()
+
+	executor := &exec.RealExecutor{}
+	state, _ := infra_persistence.NewSessionState(ctx, paths.ModeDir)
+	validator := internal_security.NewCommandValidator(c.SM, capturer)
+
 	tools.RegisterAll(
 		reg,
 		c.SM,
-		paths.ModeDir,
+		executor,
+		validator,
+		state,
 		paths.LogPath,
 		sCfg.Config.Model,
 		sCfg.Config.Mode,
@@ -202,6 +210,12 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, sCfg *orchest
 		filepath.Join(c.HomeDir, "assets/generated"),
 		bus,
 	)
+
+	// Infrastructure-specific tool registration
+	telemetry.RegisterMetrics(reg, c.SM, paths.LogPath, sCfg.Config.Model, sCfg.Config.Mode, pricingOverrides)
+	if ism, ok := c.SM.(*internal_security.SecurityManager); ok {
+		internal_security.RegisterPolicy(reg, ism)
+	}
 
 	modelPricing := telemetry.GetModelPricing(sCfg.Config.Model, pricingData)
 	tracker := telemetry.NewSessionCostTracker(c.SM, paths.LogPath, sCfg.Config.Mode, sCfg.Config.Model, modelPricing, pricingData)
