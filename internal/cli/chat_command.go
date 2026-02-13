@@ -138,6 +138,11 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if shutdownErr := deps.EventBus.Shutdown(ctx); shutdownErr != nil {
+			fmt.Fprintf(c.Stderr, "Warning: Event bus shutdown failed: %v\n", shutdownErr)
+		}
+	}()
 
 	err = orch.Run(ctx, sCfg, deps, capturer)
 

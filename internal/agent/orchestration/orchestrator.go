@@ -77,12 +77,6 @@ func (o *Orchestrator) Run(ctx context.Context, sCfg *SessionConfig, deps *Sessi
 		return fmt.Errorf("AgentFactory must be set")
 	}
 
-	defer func() {
-		if err := deps.EventBus.Shutdown(ctx); err != nil {
-			fmt.Fprintf(o.Stderr, "Warning: Failed to shutdown event bus: %v\n", err)
-		}
-	}()
-
 	isTTY := capturer.IsTTY(o.Stdout)
 	o.renderHistory(deps.HistoryManager, sCfg, isTTY)
 
