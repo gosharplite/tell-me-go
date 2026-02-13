@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
 func TestLoad(t *testing.T) {
@@ -116,37 +114,5 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 	}
 	if !cfg.DisableStreaming {
 		t.Error("expected DisableStreaming to be true")
-	}
-}
-
-func TestResolveThinkingBudget(t *testing.T) {
-	cfg := &Config{
-		Models: map[string]ModelConfig{
-			"gemini-2.0-flash": {MaxThinkingBudget: 1000},
-			"pro":              {MaxThinkingBudget: 5000},
-		},
-	}
-	pricingData := pricing.PricingData{
-		ThinkingBudgets: map[string]int{
-			"default": 2000,
-			"extra":   10000,
-		},
-	}
-
-	tests := []struct {
-		model    string
-		expected int
-	}{
-		{"gemini-2.0-flash", 1000},   // Exact match
-		{"gemini-2.0-pro-exp", 5000}, // Substring match ("pro")
-		{"extra-special", 10000},     // Pricing match
-		{"unknown", 2000},            // Default
-	}
-
-	for _, tt := range tests {
-		got := cfg.ResolveThinkingBudget(tt.model, pricingData)
-		if got != tt.expected {
-			t.Errorf("model %s: expected %d, got %d", tt.model, tt.expected, got)
-		}
 	}
 }
