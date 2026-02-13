@@ -47,14 +47,14 @@ func newprocessExecutor() *processExecutor {
 func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config executionConfig) (executionResult, error) {
 	cmd, stdout, stderr, file, err := e.setupCommand(ctx, parts, config)
 	if err != nil {
-		return executionResult{}, err
+		return executionResult{ExitCode: 1}, err
 	}
 	if file != nil {
 		defer file.Close()
 	}
 
 	if err := cmd.Start(); err != nil {
-		return executionResult{}, fmt.Errorf("failed to start: %w", err)
+		return executionResult{ExitCode: 1}, fmt.Errorf("failed to start: %w", err)
 	}
 
 	var sb strings.Builder
@@ -180,12 +180,12 @@ func (e *processExecutor) handleCaptureError(err error, sb *strings.Builder, mu 
 // RunPipeline executes a sequence of piped commands.
 func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string, config executionConfig) (executionResult, error) {
 	if len(pipedParts) < 2 {
-		return executionResult{}, fmt.Errorf("at least two commands are required for piping")
+		return executionResult{ExitCode: 1}, fmt.Errorf("at least two commands are required for piping")
 	}
 
 	p, err := e.newPipeline(ctx, pipedParts)
 	if err != nil {
-		return executionResult{}, err
+		return executionResult{ExitCode: 1}, err
 	}
 	defer p.closePipes()
 
@@ -201,7 +201,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 
 	if err := p.start(); err != nil {
 		_, _ = p.wait() // Ensure started processes are cleaned up
-		return executionResult{}, fmt.Errorf("pipeline failed to start: %w", err)
+		return executionResult{ExitCode: 1}, fmt.Errorf("pipeline failed to start: %w", err)
 	}
 
 	stdoutStr, stderrStr, truncated := p.capture(config, file)
