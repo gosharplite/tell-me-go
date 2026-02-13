@@ -50,3 +50,32 @@ func (m *mockLLMClient) RefreshAuth() error {
 	}
 	return nil
 }
+
+func (m *mockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	outCh := make(chan *llm.Content, 1)
+	resCh := make(chan struct {
+		content *llm.Content
+		metrics *llm.Metrics
+		err     error
+	}, 1)
+
+	go func() {
+		defer close(outCh)
+		content, metrics, err := m.SendChat(ctx, input, tools, resolver)
+		if err == nil {
+			outCh <- content
+		}
+		resCh <- struct {
+			content *llm.Content
+			metrics *llm.Metrics
+			err     error
+		}{content, metrics, err}
+	}()
+
+	finalize := func() (*llm.Content, *llm.Metrics, error) {
+		res := <-resCh
+		return res.content, res.metrics, res.err
+	}
+
+	return outCh, finalize
+}

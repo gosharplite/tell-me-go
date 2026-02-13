@@ -10,20 +10,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
-
-// Chatter is an alias for orchestration.Chatter to maintain compatibility if needed,
-// but the actual definition is now in orchestration to avoid import cycles.
-type Chatter = orchestration.Chatter
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
@@ -36,7 +30,7 @@ type runtimeConfig struct {
 // Agent represents the chat orchestration logic (Stateless Service).
 type agent struct {
 	mu            sync.RWMutex
-	gateway       *llm.ResilientClient
+	gateway       domain_llm.LLMClient
 	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
@@ -46,6 +40,7 @@ type agent struct {
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
+	summarizer    services.Summarizer
 
 	config           runtimeConfig
 	registerInternal bool
@@ -85,25 +80,23 @@ func WithInternalTools() agentOption {
 }
 
 // New creates a new Agent using functional options.
-func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, options ...agentOption) *agent {
-	gw := llm.NewResilientClient(client, disableStreaming)
-
+func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
 	a := &agent{
-		gateway:       gw,
+		gateway:       client,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: orchestration.NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
 		config: runtimeConfig{
 			Limits: events.Limits{
-				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
-				MaxToolTurns:     config.DefaultMaxToolTurns,
-				MaxHistoryTurns:  config.DefaultMaxHistoryTurns,
+				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
+				MaxToolTurns:     domain_config.DefaultMaxToolTurns,
+				MaxHistoryTurns:  domain_config.DefaultMaxHistoryTurns,
 			},
 		},
 	}
@@ -116,7 +109,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	factory := &orchestration.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
-		Summarizer: llm.NewSummarizer(gw, bus),
+		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     bus,
 	}
@@ -125,6 +118,8 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	a.ctxManager = ctxManager
 
 	// Initialize engine
+	// Note: client must implement domain_llm.LLMGateway (Generate method)
+	gw := client.(domain_llm.LLMGateway)
 	a.engine = newTurnEngine(gw, exec, ctxManager, reg, bus,
 		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
@@ -226,10 +221,10 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
 	}
 }
 
-// WithTraceLogger enables tracing and logs it to the specified file.
-func WithTraceLogger(logFile string) agentOption {
+// WithSummarizer sets the summarization service for the agent.
+func WithSummarizer(s services.Summarizer) agentOption {
 	return func(a *agent) {
-		telemetry.RegisterTraceSubscriber(a.events, logFile)
+		a.summarizer = s
 	}
 }
 

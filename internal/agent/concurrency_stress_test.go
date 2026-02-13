@@ -47,7 +47,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, hManager, reg, sm, true, bus)
+	a := New(mockClient, hManager, reg, sm, bus)
 	session := &orchestration.Session{History: hManager, StartTime: time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -96,6 +96,35 @@ func (m *stressmockLLMClient) GenerateImages(ctx context.Context, model, prompt 
 
 func (m *stressmockLLMClient) RefreshAuth() error {
 	return nil
+}
+
+func (m *stressmockLLMClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	outCh := make(chan *llm.Content, 1)
+	resCh := make(chan struct {
+		content *llm.Content
+		metrics *llm.Metrics
+		err     error
+	}, 1)
+
+	go func() {
+		defer close(outCh)
+		content, metrics, err := m.SendChat(ctx, input, tools, resolver)
+		if err == nil {
+			outCh <- content
+		}
+		resCh <- struct {
+			content *llm.Content
+			metrics *llm.Metrics
+			err     error
+		}{content, metrics, err}
+	}()
+
+	finalize := func() (*llm.Content, *llm.Metrics, error) {
+		res := <-resCh
+		return res.content, res.metrics, res.err
+	}
+
+	return outCh, finalize
 }
 
 func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {

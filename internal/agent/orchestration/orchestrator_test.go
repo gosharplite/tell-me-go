@@ -4,6 +4,7 @@
 package orchestration
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestSessionDependencies_Structure(t *testing.T) {
 
 func TestOrchestrator_Run_RequiresAgentFactory(t *testing.T) {
 	orch := &Orchestrator{}
-	err := orch.Run(nil, nil, nil, nil)
+	err := orch.Run(context.TODO(), nil, nil, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "AgentFactory must be set")
 }

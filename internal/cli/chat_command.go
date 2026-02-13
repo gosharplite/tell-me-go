@@ -71,17 +71,26 @@ func newChatCommand(ctx *context) *chatCommand {
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
 		AgentFactory: func(client domain_llm.LLMClient, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
-			return agent.New(client, hManager, reg, sm, disableStreaming, bus,
+			telemetry.RegisterTraceSubscriber(bus, logPath)
+
+			gw := client.(domain_llm.LLMGateway)
+			summarizer := llm.NewSummarizer(gw, bus)
+
+			return agent.New(client, hManager, reg, sm, bus,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
-				agent.WithTraceLogger(logPath),
+				agent.WithSummarizer(summarizer),
 			)
 		},
 		ClientFactory: func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
 			authenticator := &auth.VertexAuth{}
 			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
-			return llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
+			baseClient, err := llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
+			if err != nil {
+				return nil, err
+			}
+			return llm.NewResilientClient(baseClient, cfg.DisableStreaming), nil
 		},
 	}
 }
