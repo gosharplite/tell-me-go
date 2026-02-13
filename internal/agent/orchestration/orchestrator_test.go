@@ -317,14 +317,17 @@ func TestUIBridge_EnsureContext(t *testing.T) {
 	bridge := newUIBridge(mRenderer, true, true, false, true, "log.txt")
 
 	t.Run("Returns existing context", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), "key", "value")
+		type contextKey string
+		const testKey contextKey = "key"
+		ctx := context.WithValue(context.Background(), testKey, "value")
 		result := bridge.ensureContext(ctx, "test")
 		assert.Equal(t, ctx, result)
 	})
 
 	t.Run("Returns background context and logs warning if nil", func(t *testing.T) {
 		mRenderer.On("LogSystemMessage", "test missing context", "warn").Once()
-		result := bridge.ensureContext(nil, "test")
+		var nilCtx context.Context
+		result := bridge.ensureContext(nilCtx, "test")
 		assert.NotNil(t, result)
 		mRenderer.AssertExpectations(t)
 	})
