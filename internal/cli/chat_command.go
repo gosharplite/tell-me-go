@@ -120,7 +120,9 @@ func (c *chatCommand) renderHistory(hManager *history.Manager, opts *cliOptions,
 // Execute runs the chat command logic.
 func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 	capturer := ui.NewCapturer(c.Stdin, c.Stdout, c.Stderr, c.SM)
-	if sm, ok := c.SM.(interface{ SetInteractor(domain_security.UserInteractor) }); ok {
+	if sm, ok := c.SM.(interface {
+		SetInteractor(domain_security.UserInteractor)
+	}); ok {
 		sm.SetInteractor(capturer)
 	}
 

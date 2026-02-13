@@ -84,9 +84,9 @@ func (m *mockChatter) SetLimits(ctx stdctx.Context, toolTurns, historyTokens, hi
 	return nil
 }
 func (m *mockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) error { return nil }
-func (m *mockChatter) Subscribe(sub func(events.Event))            {}
-func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker { return nil }
-func (m *mockChatter) Shutdown(ctx stdctx.Context) error           { return nil }
+func (m *mockChatter) Subscribe(sub func(events.Event))                           {}
+func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker                { return nil }
+func (m *mockChatter) Shutdown(ctx stdctx.Context) error                          { return nil }
 
 func TestRunCapturePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
