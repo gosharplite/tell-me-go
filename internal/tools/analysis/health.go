@@ -12,12 +12,12 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type healthManager struct {
-	SP   security.SecurityProvider
+	SP   security.ISecurityManager
 	Exec tools.CommandExecutor
 	Ana  *analysisManager
 }

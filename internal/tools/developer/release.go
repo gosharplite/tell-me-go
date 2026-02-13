@@ -11,13 +11,13 @@ import (
 	"regexp"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type releaseManager struct {
-	sm       *security.SecurityManager
+	sm       domain_security.ISecurityManager
 	fs       storage.FileSystem
 	executor tools.CommandExecutor
 }
@@ -68,7 +68,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 
 // secretScanner implementation
 type secretScanner struct {
-	sm *security.SecurityManager
+	sm domain_security.ISecurityManager
 	fs storage.FileSystem
 }
 

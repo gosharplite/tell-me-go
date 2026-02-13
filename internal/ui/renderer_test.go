@@ -33,6 +33,26 @@ func (m *mockLocker) TerminalUnlock() {
 	m.mu.Unlock()
 }
 
+func (m *mockLocker) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+	return true, nil
+}
+func (m *mockLocker) IsPathSafe(path string) (string, error)     { return path, nil }
+func (m *mockLocker) IsPathWritable(path string) (string, error) { return path, nil }
+func (m *mockLocker) IsBypassActive() bool                       { return false }
+func (m *mockLocker) IsCommandAllowed(command string) bool       { return true }
+func (m *mockLocker) Prompt(message string)                      {}
+func (m *mockLocker) Warn(message string)                        {}
+func (m *mockLocker) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
+}
+func (m *mockLocker) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *mockLocker) LogAudit(label1, val1, label2, val2 string) {}
+func (m *mockLocker) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
+}
+
 func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}

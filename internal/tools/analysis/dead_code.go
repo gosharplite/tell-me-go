@@ -10,15 +10,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"golang.org/x/tools/go/packages"
 )
 
 // deadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type deadCodeAnalyzer struct {
-	SP  security.SecurityProvider
+	SP  security.ISecurityManager
 	idx symbolIndex
 }
 
@@ -49,7 +49,7 @@ type scanState struct {
 	externalUses     map[string]int
 }
 
-func newDeadCodeAnalyzer(sp security.SecurityProvider, idx symbolIndex) *deadCodeAnalyzer {
+func newDeadCodeAnalyzer(sp security.ISecurityManager, idx symbolIndex) *deadCodeAnalyzer {
 	return &deadCodeAnalyzer{SP: sp, idx: idx}
 }
 

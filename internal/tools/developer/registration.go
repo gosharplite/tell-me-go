@@ -4,14 +4,14 @@
 package developer
 
 import (
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r *registry.Registry, sm *security.SecurityManager, exec tools.CommandExecutor) {
+func Register(r *registry.Registry, sm domain_security.ISecurityManager, exec tools.CommandExecutor) {
 	dev := newDevManager(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{

@@ -12,14 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"golang.org/x/tools/go/packages"
 )
 
 // sequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
-	SP        security.SecurityProvider
+	SP        security.ISecurityManager
 	Exec      tools.CommandExecutor
 	idx       symbolIndex
 	Formatter *mermaidFormatter
@@ -32,7 +32,7 @@ type sequenceAnalyzer struct {
 }
 
 // newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
-func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.SecurityProvider, idx symbolIndex) *sequenceAnalyzer {
+func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.ISecurityManager, idx symbolIndex) *sequenceAnalyzer {
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,

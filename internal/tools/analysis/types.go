@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type typeManager struct {
 	Indexer symbolIndex
 	Cache   *astCache
-	SP      security.SecurityProvider
+	SP      security.ISecurityManager
 }
 
 type typeDefinition struct {
@@ -35,7 +35,7 @@ type fieldInfo struct {
 	Tag   string
 }
 
-func newTypeManager(idx symbolIndex, cache *astCache, sp security.SecurityProvider) *typeManager {
+func newTypeManager(idx symbolIndex, cache *astCache, sp security.ISecurityManager) *typeManager {
 	return &typeManager{
 		Indexer: idx,
 		Cache:   cache,

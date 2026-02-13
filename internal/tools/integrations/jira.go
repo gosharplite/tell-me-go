@@ -14,19 +14,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type jiraManager struct {
-	sm       *security.SecurityManager
+	sm       security.ISecurityManager
 	client   tools.HTTPClient
 	provider *atlassianProvider
 }
 
 // newjiraManager creates a new instance of jiraManager.
-func newjiraManager(sm *security.SecurityManager, client tools.HTTPClient) *jiraManager {
+func newjiraManager(sm security.ISecurityManager, client tools.HTTPClient) *jiraManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type mediaManager struct {
-	sm        *security.SecurityManager
+	sm        security.ISecurityManager
 	client    llm.LLMClient
 	assetsDir string
 }

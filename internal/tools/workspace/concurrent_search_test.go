@@ -97,6 +97,15 @@ func (s *mockSP) TerminalLock()                              {}
 func (s *mockSP) TerminalUnlock()                            {}
 func (s *mockSP) IsCommandAllowed(command string) bool       { return true }
 func (s *mockSP) LogAudit(label1, val1, label2, val2 string) {}
+func (s *mockSP) IsBypassActive() bool                       { return false }
+func (s *mockSP) Prompt(message string)                      {}
+func (s *mockSP) Warn(message string)                        {}
+func (s *mockSP) ReadLine(ctx context.Context) (string, error) {
+	return "", nil
+}
+func (s *mockSP) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
 func (s *mockSP) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
 	return true, nil
 }

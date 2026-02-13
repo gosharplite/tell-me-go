@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 const (
@@ -32,7 +32,7 @@ type packageProvider interface {
 
 // architectureManager validates the project's architectural integrity.
 type architectureManager struct {
-	SP         security.SecurityProvider
+	SP         domain_security.ISecurityManager
 	Exec       tools.CommandExecutor
 	ModulePath string
 	once       sync.Once

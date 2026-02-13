@@ -16,35 +16,11 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"golang.org/x/term"
 )
-
-// terminalLocker defines the interface for locking the terminal to prevent interleaved output.
-type terminalLocker interface {
-	TerminalLock()
-	TerminalUnlock()
-}
-
-// sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
-func sanitizeForTerminal(text string) string {
-	replacements := map[string]string{
-		"$\\leftrightarrow$": "↔",
-		"$\\rightarrow$":     "→",
-		"$\\leftarrow$":      "←",
-		"$\\Rightarrow$":     "⇒",
-		"$\\Leftarrow$":      "⇐",
-		"$\\dots$":           "...",
-		"$\\cdot$":           "·",
-		"$\\times$":          "×",
-		"$\\checkmark$":      "✓",
-	}
-	for old, new := range replacements {
-		text = strings.ReplaceAll(text, old, new)
-	}
-	return text
-}
 
 // UIRenderer defines the interface for UI feedback.
 type UIRenderer interface {
@@ -59,7 +35,7 @@ type UIRenderer interface {
 
 // stdUIRenderer implements UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
-	locker   terminalLocker
+	locker   domain_security.ISecurityManager
 	stdout   io.Writer
 	stderr   io.Writer
 	now      func() time.Time
@@ -81,7 +57,7 @@ type streamState struct {
 }
 
 // NewRenderer creates a new UIRenderer.
-func NewRenderer(locker terminalLocker, stdout, stderr io.Writer) UIRenderer {
+func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) UIRenderer {
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),
@@ -99,6 +75,25 @@ func NewRenderer(locker terminalLocker, stdout, stderr io.Writer) UIRenderer {
 		r.LogSystemMessage(fmt.Sprintf("failed to initialize glamour renderer: %v", err), "warn")
 	}
 	return r
+}
+
+// sanitizeForTerminal converts common LaTeX/Math notation that LLMs use into terminal-friendly Unicode.
+func sanitizeForTerminal(text string) string {
+	replacements := map[string]string{
+		"$\\leftrightarrow$": "↔",
+		"$\\rightarrow$":     "→",
+		"$\\leftarrow$":      "←",
+		"$\\Rightarrow$":     "⇒",
+		"$\\Leftarrow$":      "⇐",
+		"$\\dots$":           "...",
+		"$\\cdot$":           "·",
+		"$\\times$":          "×",
+		"$\\checkmark$":      "✓",
+	}
+	for old, new := range replacements {
+		text = strings.ReplaceAll(text, old, new)
+	}
+	return text
 }
 
 // SetUseColor enables or disables ANSI color output.

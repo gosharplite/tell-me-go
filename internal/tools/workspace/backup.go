@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -29,11 +29,11 @@ type backupManager struct {
 	mu        sync.Mutex
 	backups   []fileSnapshot
 	maxStored int
-	sm        *security.SecurityManager
+	sm        domain_security.ISecurityManager
 }
 
 // newBackupManager creates a new backupManager.
-func newBackupManager(sm *security.SecurityManager, maxStored int) *backupManager {
+func newBackupManager(sm domain_security.ISecurityManager, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}

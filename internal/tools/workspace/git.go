@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"strings"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type gitManager struct {
-	sm   *security.SecurityManager
+	sm   domain_security.ISecurityManager
 	Exec tools.CommandExecutor
 }
 

@@ -7,7 +7,7 @@ import (
 	stdctx "context"
 	"io"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 // context provides shared dependencies for commands.
@@ -17,7 +17,7 @@ type context struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	HomeDir string
-	SM      *security.SecurityManager
+	SM      domain_security.ISecurityManager
 }
 
 // command represents a CLI command that can be executed.

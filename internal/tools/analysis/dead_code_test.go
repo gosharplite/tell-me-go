@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type deadCodeSecurityProvider struct {
-	security.SecurityProvider
+	domain_security.ISecurityManager
 	tempDir string
 }
 
@@ -38,6 +38,25 @@ func (m *deadCodeSecurityProvider) IsPathWritable(path string) (string, error) {
 
 func (m *deadCodeSecurityProvider) TerminalLock()   {}
 func (m *deadCodeSecurityProvider) TerminalUnlock() {}
+func (m *deadCodeSecurityProvider) IsBypassActive() bool {
+	return false
+}
+func (m *deadCodeSecurityProvider) IsCommandAllowed(command string) bool {
+	return true
+}
+func (m *deadCodeSecurityProvider) Prompt(message string) {}
+func (m *deadCodeSecurityProvider) Warn(message string)   {}
+func (m *deadCodeSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
+	return true, nil
+}
+func (m *deadCodeSecurityProvider) LogAudit(label1, val1, label2, val2 string) {
+}
+func (m *deadCodeSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
+}
+func (m *deadCodeSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
+	return true, nil
+}
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 	tests := []struct {
