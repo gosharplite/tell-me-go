@@ -14,6 +14,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/tools/archguard"
 )
 
 type healthManager struct {
@@ -190,19 +191,14 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 }
 
 func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
-	m.SP.TerminalLock()
-	defer m.SP.TerminalUnlock()
-
-	out, err := m.Exec.CombinedOutput(ctx, "go", "run", "cmd/arch-guard/main.go")
-	if err != nil && len(out) == 0 {
+	findings, err := archguard.Analyze(ctx, "./...")
+	if err != nil {
 		return "ERROR", err.Error()
 	}
 
-	lines := strings.Split(string(out), "\n")
 	candidateCount := 0
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[PRIVATE CANDIDATE]") {
+	for _, f := range findings {
+		if f.Category == archguard.PrivateCandidate {
 			candidateCount++
 		}
 	}

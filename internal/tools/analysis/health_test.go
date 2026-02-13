@@ -27,9 +27,6 @@ func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, ar
 	if name == "golangci-lint" || name == "staticcheck" {
 		return []byte(""), nil
 	}
-	if name == "go" && len(args) > 1 && args[0] == "run" && args[1] == "cmd/arch-guard/main.go" {
-		return []byte("[PRIVATE CANDIDATE] Symbol1\n[PRIVATE CANDIDATE] Symbol2\n[ARCHITECTURAL BOUNDARY] SomeInterface"), nil
-	}
 	return []byte(""), nil
 }
 
