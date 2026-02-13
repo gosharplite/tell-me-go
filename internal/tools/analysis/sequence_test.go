@@ -15,20 +15,6 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-type mockIndexer struct {
-	symbolIndex
-	pkgs []*packages.Package
-	err  error
-}
-
-func (m *mockIndexer) Packages() []*packages.Package {
-	return m.pkgs
-}
-
-func (m *mockIndexer) Refresh(ctx context.Context) error {
-	return m.err
-}
-
 func TestSequenceAnalyzer_AnalyzeSequenceFlow(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgAPath := "github.com/test/mod/pkgA"
@@ -67,8 +53,19 @@ func LoopFunc() {}
 		Types:   pkgBTypes,
 		TypesInfo: &types.Info{
 			Uses: make(map[*ast.Ident]types.Object),
+			Defs: make(map[*ast.Ident]types.Object),
 		},
 	}
+
+	ast.Inspect(fileB, func(n ast.Node) bool {
+		if fd, ok := n.(*ast.FuncDecl); ok {
+			obj := pkgBTypes.Scope().Lookup(fd.Name.Name)
+			if obj != nil {
+				pkgB.TypesInfo.Defs[fd.Name] = obj
+			}
+		}
+		return true
+	})
 
 	pkgATypes := types.NewPackage(pkgAPath, "pkgA")
 	pkgBImport := types.NewPkgName(token.NoPos, pkgATypes, "pkgB", pkgBTypes)
@@ -79,15 +76,30 @@ func LoopFunc() {}
 		Syntax:  []*ast.File{fileA},
 		Types:   pkgATypes,
 		Imports: map[string]*packages.Package{pkgBPath: pkgB},
+		Module: &packages.Module{
+			Path: "github.com/test/mod",
+		},
 		TypesInfo: &types.Info{
 			Uses: make(map[*ast.Ident]types.Object),
+			Defs: make(map[*ast.Ident]types.Object),
 		},
 	}
 
 	ast.Inspect(fileA, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && id.Name == "pkgB" {
-				pkgA.TypesInfo.Uses[id] = pkgBImport
+		if fd, ok := n.(*ast.FuncDecl); ok {
+			startFuncObj := types.NewFunc(token.NoPos, pkgATypes, fd.Name.Name, types.NewSignatureType(nil, nil, nil, nil, nil, false))
+			pkgA.TypesInfo.Defs[fd.Name] = startFuncObj
+		}
+		if ident, ok := n.(*ast.Ident); ok {
+			switch ident.Name {
+			case "TargetFunc":
+				pkgA.TypesInfo.Uses[ident] = targetFuncObj
+			case "AsyncFunc":
+				pkgA.TypesInfo.Uses[ident] = asyncFuncObj
+			case "LoopFunc":
+				pkgA.TypesInfo.Uses[ident] = loopFuncObj
+			case "pkgB":
+				pkgA.TypesInfo.Uses[ident] = pkgBImport
 			}
 		}
 		return true
@@ -135,9 +147,20 @@ func LoopFunc() {}`
 		pkgBTypes.Scope().Insert(subFuncObj)
 
 		pkgB.Syntax = []*ast.File{fileB2}
+		for k := range pkgB.TypesInfo.Defs {
+			delete(pkgB.TypesInfo.Defs, k)
+		}
 		ast.Inspect(fileB2, func(n ast.Node) bool {
-			if id, ok := n.(*ast.Ident); ok && id.Name == "SubFunc" {
-				pkgB.TypesInfo.Uses[id] = subFuncObj
+			if fd, ok := n.(*ast.FuncDecl); ok {
+				obj := pkgBTypes.Scope().Lookup(fd.Name.Name)
+				if obj != nil {
+					pkgB.TypesInfo.Defs[fd.Name] = obj
+				}
+			}
+			if id, ok := n.(*ast.Ident); ok {
+				if obj := pkgBTypes.Scope().Lookup(id.Name); obj != nil {
+					pkgB.TypesInfo.Uses[id] = obj
+				}
 			}
 			return true
 		})
@@ -177,4 +200,106 @@ func TestSequenceAnalyzer_Helpers(t *testing.T) {
 			t.Errorf("got %q, want %q", got, "R")
 		}
 	})
+}
+
+func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgPath := "github.com/test/mod/itf"
+
+	code := `package itf
+type Runner interface { Run() }
+type Impl struct{}
+func (i Impl) Run() { Done() }
+func Done() {}
+func Start(r Runner) { r.Run() }`
+	file, _ := parser.ParseFile(fset, "itf.go", code, 0)
+
+	pkgTypes := types.NewPackage(pkgPath, "itf")
+
+	// Interface
+	runMethod := types.NewFunc(token.NoPos, pkgTypes, "Run", types.NewSignatureType(nil, nil, nil, nil, nil, false))
+	itfTypeName := types.NewTypeName(token.NoPos, pkgTypes, "Runner", nil)
+	itfType := types.NewNamed(itfTypeName, types.NewInterfaceType([]*types.Func{runMethod}, nil), nil)
+	pkgTypes.Scope().Insert(itfTypeName)
+
+	// Implementation
+	implType := types.NewNamed(types.NewTypeName(token.NoPos, pkgTypes, "Impl", nil), types.NewStruct(nil, nil), nil)
+	implMethod := types.NewFunc(token.NoPos, pkgTypes, "Run", types.NewSignatureType(types.NewVar(token.NoPos, pkgTypes, "i", implType), nil, nil, nil, nil, false))
+	implType.AddMethod(implMethod)
+	pkgTypes.Scope().Insert(implType.Obj())
+
+	doneFunc := types.NewFunc(token.NoPos, pkgTypes, "Done", types.NewSignatureType(nil, nil, nil, nil, nil, false))
+	pkgTypes.Scope().Insert(doneFunc)
+
+	startFunc := types.NewFunc(token.NoPos, pkgTypes, "Start", types.NewSignatureType(nil, nil, nil, nil, nil, false))
+	pkgTypes.Scope().Insert(startFunc)
+
+	pkg := &packages.Package{
+		Name:    "itf",
+		PkgPath: pkgPath,
+		Syntax:  []*ast.File{file},
+		Types:   pkgTypes,
+		Module:  &packages.Module{Path: "github.com/test/mod"},
+		TypesInfo: &types.Info{
+			Uses:  make(map[*ast.Ident]types.Object),
+			Defs:  make(map[*ast.Ident]types.Object),
+			Types: make(map[ast.Expr]types.TypeAndValue),
+		},
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		if fd, ok := n.(*ast.FuncDecl); ok {
+			obj := pkgTypes.Scope().Lookup(fd.Name.Name)
+			if fd.Recv != nil {
+				obj, _, _ = types.LookupFieldOrMethod(implType, true, pkgTypes, fd.Name.Name)
+			}
+			if obj != nil {
+				pkg.TypesInfo.Defs[fd.Name] = obj
+			}
+		}
+		if call, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				// r.Run()
+				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "r" {
+					pkg.TypesInfo.Uses[ident] = types.NewVar(token.NoPos, pkgTypes, "r", itfType)
+					pkg.TypesInfo.Types[sel.X] = types.TypeAndValue{Type: itfType}
+					pkg.TypesInfo.Uses[sel.Sel] = runMethod
+				}
+			}
+			if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "Done" {
+				pkg.TypesInfo.Uses[ident] = doneFunc
+			}
+		}
+		return true
+	})
+
+	mockIdx := &mockIndexer{
+		pkgs: []*packages.Package{pkg},
+	}
+	// Mock GetImplementations
+	itfMethodId := getSymbolIdentity(runMethod)
+	implMethodId := getSymbolIdentity(implMethod)
+
+	// We need a real indexer or a better mock to test GetImplementations
+	// Since I can't easily mock GetImplementations on the interface without changing mockIndexer
+	// I'll update mockIndexer
+
+	mockIdx.impls = map[string][]string{
+		itfMethodId: {implMethodId},
+	}
+
+	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, mockIdx)
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgPath + ".Start",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(res.Text, "itf->>+itf: Runner.Run") {
+		t.Errorf("missing interface call: %s", res.Text)
+	}
+	if !strings.Contains(res.Text, "itf->>+itf: Done") {
+		t.Errorf("failed to trace into interface implementation: %s", res.Text)
+	}
 }

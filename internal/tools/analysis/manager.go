@@ -80,11 +80,10 @@ func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISe
 		Refactor: newRefactorManager(sp),
 		Info:     &infoManager{SP: sp, Cache: cache, FS: fs, Events: bus, Exec: executor},
 		Search:   &searchManager{SP: sp, FS: fs},
-		Arch:     &architectureManager{SP: sp, Exec: executor},
+		Arch:     &architectureManager{SP: sp, Exec: executor, idx: idx},
 		Events:   bus,
 	}
 
-	m.Arch.Loader = &realpackageProvider{m: m.Arch, Exec: executor}
 	m.Health = &healthManager{SP: sp, Ana: m, Exec: executor}
 
 	return m

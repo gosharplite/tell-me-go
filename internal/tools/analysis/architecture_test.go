@@ -253,9 +253,8 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 	})
 }
 
-func TestRealPackageProvider_IsTrackedPackage(t *testing.T) {
+func TestArchitectureManager_IsTrackedPackage(t *testing.T) {
 	m := &architectureManager{ModulePath: "github.com/org/repo"}
-	r := &realpackageProvider{m: m}
 
 	tests := []struct {
 		path string
@@ -268,7 +267,7 @@ func TestRealPackageProvider_IsTrackedPackage(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := r.isTrackedPackage(tt.path); got != tt.want {
+		if got := m.isTrackedPackage(tt.path); got != tt.want {
 			t.Errorf("isTrackedPackage(%q) = %v, want %v", tt.path, got, tt.want)
 		}
 	}

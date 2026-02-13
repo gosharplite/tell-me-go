@@ -34,6 +34,7 @@ type packageProvider interface {
 type architectureManager struct {
 	SP         domain_security.ISecurityManager
 	Exec       tools.CommandExecutor
+	idx        symbolIndex
 	ModulePath string
 	once       sync.Once
 	Loader     packageProvider
@@ -43,6 +44,42 @@ type architectureManager struct {
 type realpackageProvider struct {
 	m    *architectureManager
 	Exec tools.CommandExecutor
+}
+
+// indexedPackageProvider implements packageProvider using the pre-scanned index.
+type indexedPackageProvider struct {
+	m   *architectureManager
+	idx symbolIndex
+}
+
+func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
+	pkgs := p.idx.Packages()
+	if len(pkgs) == 0 {
+		return nil, fmt.Errorf("no packages found in index")
+	}
+
+	for _, pkg := range pkgs {
+		if pkg.Module != nil {
+			p.m.once.Do(func() {
+				p.m.ModulePath = pkg.Module.Path
+			})
+			break
+		}
+	}
+
+	res := make(map[string][]string)
+	for _, pkg := range pkgs {
+		if p.m.isTrackedPackage(pkg.PkgPath) {
+			var trackedImports []string
+			for impPath := range pkg.Imports {
+				if strings.HasPrefix(impPath, p.m.ModulePath) {
+					trackedImports = append(trackedImports, impPath)
+				}
+			}
+			res[pkg.PkgPath] = trackedImports
+		}
+	}
+	return res, nil
 }
 
 func (r *realpackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
@@ -77,7 +114,7 @@ func (r *realpackageProvider) decodePackageInfo(rd io.Reader) (map[string][]stri
 		}
 
 		// Only track packages within this module and containing "internal/" or "cmd/"
-		if r.isTrackedPackage(p.ImportPath) {
+		if r.m.isTrackedPackage(p.ImportPath) {
 			var trackedImports []string
 			for _, imp := range p.Imports {
 				// Only care about imports within the same module
@@ -91,8 +128,8 @@ func (r *realpackageProvider) decodePackageInfo(rd io.Reader) (map[string][]stri
 	return pkgs, nil
 }
 
-func (r *realpackageProvider) isTrackedPackage(pkgPath string) bool {
-	if !strings.HasPrefix(pkgPath, r.m.ModulePath) {
+func (m *architectureManager) isTrackedPackage(pkgPath string) bool {
+	if !strings.HasPrefix(pkgPath, m.ModulePath) {
 		return false
 	}
 	return strings.Contains(pkgPath, "internal/") || strings.Contains(pkgPath, "cmd/")
@@ -122,7 +159,11 @@ type rule struct {
 
 func (m *architectureManager) VerifyArchitecture(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if m.Loader == nil {
-		m.Loader = &realpackageProvider{m: m, Exec: m.Exec}
+		if m.idx != nil {
+			m.Loader = &indexedPackageProvider{m: m, idx: m.idx}
+		} else {
+			m.Loader = &realpackageProvider{m: m, Exec: m.Exec}
+		}
 	}
 
 	pkgs, err := m.Loader.LoadPackages(ctx)

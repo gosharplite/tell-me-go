@@ -261,8 +261,7 @@ func TestRunCommand_MaxCapture(t *testing.T) {
 }
 
 func TestRunCommand_OutputFile(t *testing.T) {
-	tmpFile := "test_output.txt"
-	defer os.Remove(tmpFile)
+	tmpFile := filepath.Join(t.TempDir(), "test_output.txt")
 
 	executor := newprocessExecutor()
 	config := executionConfig{
@@ -283,8 +282,7 @@ func TestRunCommand_OutputFile(t *testing.T) {
 }
 
 func TestRunCommand_Append(t *testing.T) {
-	tmpFile := "test_append.txt"
-	defer os.Remove(tmpFile)
+	tmpFile := filepath.Join(t.TempDir(), "test_append.txt")
 
 	executor := newprocessExecutor()
 
@@ -455,12 +453,14 @@ func TestRunPipeline_ContextCancel(t *testing.T) {
 	pipedParts := [][]string{{"sleep", "10"}, {"cat"}}
 	res, err := executor.RunPipeline(ctx, pipedParts, executionConfig{})
 
-	if err != nil && !strings.Contains(err.Error(), "context") {
-		t.Logf("Note: RunPipeline returned non-context error: %v", err)
+	// The test should verify that if the context is cancelled,
+	// either an error is returned OR the res.ExitCode is non-zero.
+	if err == nil && res.ExitCode == 0 {
+		t.Error("expected non-zero exit code or error for cancelled context, got 0 and no error")
 	}
 
-	if res.ExitCode == 0 {
-		t.Error("expected non-zero exit code or error for cancelled context, got 0")
+	if err != nil && !strings.Contains(err.Error(), "context") && !strings.Contains(err.Error(), "killed") {
+		t.Logf("Note: RunPipeline returned non-context error: %v", err)
 	}
 }
 
@@ -849,7 +849,7 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 			if f != nil {
 				name := f.Name()
 				f.Close()
-				os.Remove(name)
+				t.Cleanup(func() { os.Remove(name) })
 				if !strings.Contains(name, tt.expected) {
 					t.Errorf("expected path to contain %q, got %q", tt.expected, name)
 				}
