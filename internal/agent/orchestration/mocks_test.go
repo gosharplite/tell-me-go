@@ -145,6 +145,6 @@ func (m *mockEventBus) Publish(e events.Event) {
 	m.events = append(m.events, e)
 }
 
-func (m *mockEventBus) Subscribe(f func(events.Event)) {}
+func (m *mockEventBus) Subscribe(f func(events.Event))     {}
 func (m *mockEventBus) Shutdown(ctx context.Context) error { return nil }
-func (m *mockEventBus) Flush(ctx context.Context) error { return nil }
+func (m *mockEventBus) Flush(ctx context.Context) error    { return nil }

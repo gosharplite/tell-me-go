@@ -78,7 +78,7 @@ func (d *sessionDependencies) GetHistoryManager() services.HistoryManager {
 }
 func (d *sessionDependencies) GetRegistry() domaintools.IToolRegistry { return d.Registry }
 func (d *sessionDependencies) GetEventBus() events.EventBus           { return d.EventBus }
-func (d *sessionDependencies) GetPaths() *persistence.Paths          { return d.Paths }
+func (d *sessionDependencies) GetPaths() *persistence.Paths           { return d.Paths }
 func (d *sessionDependencies) GetPricingOverrides() map[string]domain_pricing.ModelPricing {
 	return d.PricingOverrides
 }
