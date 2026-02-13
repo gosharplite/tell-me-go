@@ -185,53 +185,6 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	}
 }
 
-func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
-	tmpDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
-	cmd := &chatCommand{
-		HomeDir: tmpDir,
-		SM:      sm,
-	}
-	cfg := &config.Config{
-		Model: "test-model",
-		Mode:  "test-mode",
-	}
-	paths := &persistence.Paths{
-		ModeDir: tmpDir,
-		LogPath: filepath.Join(tmpDir, "tokens.log"),
-	}
-	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
-
-	bus := events.NewSimpleEventBus()
-	defer func() {
-		if err := bus.Shutdown(stdctx.Background()); err != nil {
-			t.Logf("Warning: Failed to shutdown event bus: %v", err)
-		}
-	}()
-	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
-
-	declarations := reg.GetDeclarations()
-
-	expectedTools := []string{
-		"estimate_cost",
-		"get_cost_summary",
-		"verify_release_readiness",
-	}
-
-	for _, expected := range expectedTools {
-		found := false
-		for _, decl := range declarations {
-			if decl.Name == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Expected tool %q not found in registry", expected)
-		}
-	}
-}
-
 func TestExecuteErrors(t *testing.T) {
 	t.Run("HistoryLoadFailure", func(t *testing.T) {
 		tmpDir := t.TempDir()

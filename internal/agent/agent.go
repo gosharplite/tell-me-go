@@ -21,29 +21,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
 
-// Chatter defines the interface for the AI agent orchestration.
-type Chatter interface {
-	// Chat runs the multi-turn orchestration loop.
-	// It returns an error if the conversation cannot be initialized or the engine fails.
-	Chat(ctx context.Context, s *orchestration.Session, prompt string) error
-
-	// SetLimits sets the operational limits for the agent.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
-
-	// SetTieredThreshold sets the tiered threshold for the agent.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetTieredThreshold(ctx context.Context, threshold int) error
-
-	// Subscribe adds a subscriber for agent events.
-	Subscribe(sub func(events.Event))
-
-	// GetCostTracker returns the session cost tracker.
-	GetCostTracker() domain_pricing.ICostTracker
-
-	// Shutdown gracefully stops the agent and its components.
-	Shutdown(ctx context.Context) error
-}
+// Chatter is an alias for orchestration.Chatter to maintain compatibility if needed,
+// but the actual definition is now in orchestration to avoid import cycles.
+type Chatter = orchestration.Chatter
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
