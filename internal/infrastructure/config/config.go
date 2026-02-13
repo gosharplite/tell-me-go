@@ -22,26 +22,23 @@ const (
 	SystemContextBuffer     = domain_config.SystemContextBuffer
 )
 
-// Config is an alias for domain_config.Config
-type Config = domain_config.Config
-
 // YAMLConfigLoader implements domain_config.ConfigLoader.
 type YAMLConfigLoader struct{}
 
 // Load satisfies the domain_config.ConfigLoader interface.
-func (l *YAMLConfigLoader) Load(path string) (*Config, error) {
+func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 	return Load(path)
 }
 
 // Load reads and parses the configuration file.
-func Load(path string) (*Config, error) {
+func Load(path string) (*domain_config.Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var cfg Config
+	var cfg domain_config.Config
 	// Set defaults
 	cfg.MaxToolTurns = domain_config.DefaultMaxToolTurns
 	cfg.MaxHistoryTurns = domain_config.DefaultMaxHistoryTurns
