@@ -532,7 +532,9 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 	f, _ := os.CreateTemp("", "test-coverage-*.out")
 	tempPath := f.Name()
 	defer os.Remove(tempPath)
-	f.WriteString("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n")
+	if _, err := f.WriteString("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"); err != nil {
+		t.Fatalf("failed to write coverage string: %v", err)
+	}
 	f.Close()
 
 	mock := &mockExecutor{
@@ -544,7 +546,9 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "-coverprofile=") {
 					path := strings.TrimPrefix(arg, "-coverprofile=")
-					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+					if err := os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
 				}
 			}
 			return []byte("ok"), nil
@@ -554,7 +558,9 @@ func TestGetDetailedCoverage_Success(t *testing.T) {
 	// Mock os.ReadFile by overriding the internal helper if we had one,
 	// but getDetailedCoverage uses os.ReadFile directly.
 	// So we need to create a real file on disk for file.go or it will have an error message in Code.
-	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write mock go file: %v", err)
+	}
 	defer os.Remove("file.go")
 
 	blocks, err := getDetailedCoverage(ctx, ".", mock)
@@ -596,7 +602,9 @@ func TestGetDetailedCoverage_EmptyProfile(t *testing.T) {
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "-coverprofile=") {
 					path := strings.TrimPrefix(arg, "-coverprofile=")
-					os.WriteFile(path, []byte(""), 0644) // Empty file
+					if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+						t.Errorf("failed to write empty file: %v", err)
+					} // Empty file
 				}
 			}
 			return []byte("ok"), nil
@@ -640,13 +648,17 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "-coverprofile=") {
 					path := strings.TrimPrefix(arg, "-coverprofile=")
-					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+					if err := os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
 				}
 			}
 			return []byte("ok"), nil
 		},
 	}
-	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write mock go file: %v", err)
+	}
 	defer os.Remove("file.go")
 
 	report, err := GetDetailedCoverageReport(ctx, ".", mock)
@@ -668,13 +680,17 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 			for _, arg := range args {
 				if strings.HasPrefix(arg, "-coverprofile=") {
 					path := strings.TrimPrefix(arg, "-coverprofile=")
-					os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644)
+					if err := os.WriteFile(path, []byte("mode: set\ngithub.com/user/repo/file.go:1.0,2.0 1 0\n"), 0644); err != nil {
+						t.Errorf("failed to write mock coverage file: %v", err)
+					}
 				}
 			}
 			return []byte("ok"), nil
 		},
 	}
-	os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644)
+	if err := os.WriteFile("file.go", []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatalf("failed to write mock go file: %v", err)
+	}
 	defer os.Remove("file.go")
 
 	jsonStr, err := GetDetailedCoverageJSON(ctx, ".", "Low", mock)

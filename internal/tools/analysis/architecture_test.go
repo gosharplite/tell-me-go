@@ -199,10 +199,7 @@ type mockSecurityProviderDenyGo struct {
 }
 
 func (m *mockSecurityProviderDenyGo) IsCommandAllowed(cmd string) bool {
-	if cmd == "go" {
-		return false
-	}
-	return true
+	return cmd != "go"
 }
 
 func TestRealPackageProvider_LoadPackages(t *testing.T) {
