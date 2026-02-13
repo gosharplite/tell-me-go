@@ -79,8 +79,8 @@ func WithInternalTools() agentOption {
 	}
 }
 
-// New creates a new Agent using functional options.
-func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, options ...agentOption) *agent {
+// New creates a new Agent with required dependencies.
+func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
@@ -92,6 +92,7 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
+		summarizer:    summarizer,
 		config: runtimeConfig{
 			Limits: events.Limits{
 				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
@@ -216,13 +217,6 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
 		if a.engine != nil {
 			a.engine.ApplyOptions(withCostTracker(tracker))
 		}
-	}
-}
-
-// WithSummarizer sets the summarization service for the agent.
-func WithSummarizer(s services.Summarizer) agentOption {
-	return func(a *agent) {
-		a.summarizer = s
 	}
 }
 

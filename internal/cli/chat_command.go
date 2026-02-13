@@ -75,11 +75,10 @@ func newChatCommand(ctx *context) *chatCommand {
 
 			summarizer := llm.NewSummarizer(client, bus)
 
-			return agent.New(client, hManager, reg, sm, bus,
+			return agent.New(client, hManager, reg, sm, bus, summarizer,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),
-				agent.WithSummarizer(summarizer),
 			)
 		},
 		ClientFactory: func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
