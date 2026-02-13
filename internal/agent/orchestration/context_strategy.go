@@ -103,8 +103,8 @@ func (cs *ContextStrategy) setTieredThreshold(threshold int) {
 	}
 }
 
-// SetPrunedTurns sets the initial pruned turns count.
-func (cs *ContextStrategy) SetPrunedTurns(n int) {
+// setPrunedTurns sets the initial pruned turns count.
+func (cs *ContextStrategy) setPrunedTurns(n int) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.prunedTurns = n

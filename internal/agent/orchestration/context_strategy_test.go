@@ -205,7 +205,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	})
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
-		cs.SetPrunedTurns(10)
+		cs.setPrunedTurns(10)
 		_ = cs.getWarnings(1, 10, 1)
 		if cs.prunedTurns != 0 {
 			t.Errorf("expected prunedTurns to be reset, got %d", cs.prunedTurns)
