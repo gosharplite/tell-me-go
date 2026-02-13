@@ -66,7 +66,9 @@ type mockHistoryManager struct {
 	setContentsErr error
 }
 
-func (m *mockHistoryManager) GetContents() []*llm.Content { return m.contents }
+func (m *mockHistoryManager) Load(ctx context.Context) error { return nil }
+func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
+func (m *mockHistoryManager) GetContents() []*llm.Content    { return m.contents }
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	if m.setContentsErr != nil {
 		return m.setContentsErr
@@ -116,5 +118,3 @@ func (m *mockGateway) GenerateImages(ctx context.Context, model, prompt string, 
 }
 
 func (m *mockGateway) RefreshAuth() error { return nil }
-
-func (m *mockGateway) SetSystemInstructions(instr string) {}

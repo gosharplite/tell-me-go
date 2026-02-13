@@ -10,40 +10,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/executor"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
-
-// Chatter defines the interface for the AI agent orchestration.
-type Chatter interface {
-	// Chat runs the multi-turn orchestration loop.
-	// It returns an error if the conversation cannot be initialized or the engine fails.
-	Chat(ctx context.Context, s *orchestration.Session, prompt string) error
-
-	// SetLimits sets the operational limits for the agent.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetLimits(ctx context.Context, toolTurns, historyTokens, historyTurns int) error
-
-	// SetTieredThreshold sets the tiered threshold for the agent.
-	// It returns an error if the configuration cannot be applied (e.g., context cancellation).
-	SetTieredThreshold(ctx context.Context, threshold int) error
-
-	// Subscribe adds a subscriber for agent events.
-	Subscribe(sub func(events.Event))
-
-	// GetCostTracker returns the session cost tracker.
-	GetCostTracker() domain_pricing.ICostTracker
-
-	// Shutdown gracefully stops the agent and its components.
-	Shutdown(ctx context.Context) error
-}
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
@@ -56,7 +30,7 @@ type runtimeConfig struct {
 // Agent represents the chat orchestration logic (Stateless Service).
 type agent struct {
 	mu            sync.RWMutex
-	gateway       *llm.ResilientClient
+	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
 	registry      tools.IToolRegistry
@@ -66,6 +40,7 @@ type agent struct {
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
+	summarizer    services.Summarizer
 
 	config           runtimeConfig
 	registerInternal bool
@@ -104,26 +79,25 @@ func WithInternalTools() agentOption {
 	}
 }
 
-// New creates a new Agent using functional options.
-func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, options ...agentOption) *agent {
-	gw := llm.NewResilientClient(client, disableStreaming)
-
+// New creates a new Agent with required dependencies.
+func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
 	a := &agent{
-		gateway:       gw,
+		gateway:       client,
 		registry:      reg,
 		sm:            sm,
-		configWatcher: orchestration.NewConfigWatcher(config.DefaultMaxHistoryTokens, config.DefaultMaxToolTurns, config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
+		summarizer:    summarizer,
 		config: runtimeConfig{
 			Limits: events.Limits{
-				MaxHistoryTokens: config.DefaultMaxHistoryTokens,
-				MaxToolTurns:     config.DefaultMaxToolTurns,
-				MaxHistoryTurns:  config.DefaultMaxHistoryTurns,
+				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
+				MaxToolTurns:     domain_config.DefaultMaxToolTurns,
+				MaxHistoryTurns:  domain_config.DefaultMaxHistoryTurns,
 			},
 		},
 	}
@@ -136,7 +110,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	factory := &orchestration.PipelineFactory{
 		Registry:   reg,
 		History:    hManager,
-		Summarizer: llm.NewSummarizer(gw, bus),
+		Summarizer: a.summarizer,
 		Estimator:  strategy,
 		Events:     bus,
 	}
@@ -145,7 +119,7 @@ func New(client domain_llm.LLMClient, hManager services.HistoryManager, reg tool
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(gw, exec, ctxManager, reg, bus,
+	a.engine = newTurnEngine(client, exec, ctxManager, reg, bus,
 		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)
@@ -243,13 +217,6 @@ func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
 		if a.engine != nil {
 			a.engine.ApplyOptions(withCostTracker(tracker))
 		}
-	}
-}
-
-// WithTraceLogger enables tracing and logs it to the specified file.
-func WithTraceLogger(logFile string) agentOption {
-	return func(a *agent) {
-		telemetry.RegisterTraceSubscriber(a.events, logFile)
 	}
 }
 

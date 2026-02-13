@@ -1,0 +1,166 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
+package config
+
+import (
+	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+)
+
+// Default limits for history and tools.
+const (
+	DefaultMaxToolTurns       = 10
+	DefaultMaxHistoryTurns    = 20
+	DefaultMaxHistoryTokens   = 120000
+	DefaultMaxConcurrentTools = 5
+	DefaultToolTimeoutSeconds = 30
+	DefaultTieredThreshold    = 0
+	DefaultMaxLoopRepetitions = 5
+	WarningRatio              = 0.78 // ~100k for 128k cliff
+	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
+)
+
+// Config represents the application configuration loaded from a YAML file.
+type Config struct {
+	Mode               string                 `yaml:"MODE"`
+	Person             string                 `yaml:"PERSON"`
+	URL                string                 `yaml:"AIURL"`
+	Model              string                 `yaml:"AIMODEL"`
+	UseSearch          bool                   `yaml:"USE_SEARCH"`
+	MaxToolTurns       int                    `yaml:"MAX_TURNS"`          // Recursion limit
+	MaxHistoryTurns    int                    `yaml:"MAX_HISTORY_TURNS"`  // For pruning turns
+	MaxHistoryTokens   int                    `yaml:"MAX_HISTORY_TOKENS"` // For safety rollback
+	ThinkingBudget     int                    `yaml:"THINKING_BUDGET"`
+	ThinkingLevel      string                 `yaml:"THINKING_LEVEL"`
+	ShowThoughts       bool                   `yaml:"SHOW_THOUGHTS"`
+	ShowTools          bool                   `yaml:"SHOW_TOOLS"`
+	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
+	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
+	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
+	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
+}
+
+// ModelConfig defines capabilities and limits for a specific model.
+type ModelConfig struct {
+	MaxThinkingBudget int                  `yaml:"MAX_THINKING_BUDGET"`
+	ContextWindow     int                  `yaml:"CONTEXT_WINDOW"`
+	Pricing           pricing.ModelPricing `yaml:"PRICING"`
+}
+
+// ResolveThinkingBudget returns the best matching thinking budget for the model.
+func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.PricingData) int {
+	// 1. Try Config overrides
+	if mCfg, ok := findBestMatch(c.Models, model, func(m ModelConfig) bool {
+		return m.MaxThinkingBudget > 0
+	}); ok {
+		return mCfg.MaxThinkingBudget
+	}
+
+	// 2. Try Pricing defaults
+	if budget, ok := findBestMatch(pricingData.ThinkingBudgets, model, func(int) bool {
+		return true
+	}); ok {
+		return budget
+	}
+
+	// 3. Ultimate fallback
+	return pricingData.ThinkingBudgets["default"]
+}
+
+// ResolveContextWindow returns the appropriate context window limit.
+func (c *Config) ResolveContextWindow() int {
+	maxTokens := c.MaxHistoryTokens
+	if mCfg, ok := findBestMatch(c.Models, c.Model, func(m ModelConfig) bool {
+		return m.ContextWindow > 0
+	}); ok {
+		if maxTokens > mCfg.ContextWindow {
+			return mCfg.ContextWindow
+		}
+		return maxTokens
+	}
+	return maxTokens
+}
+
+// ResolveTieredThreshold returns the tiered cost threshold for the model.
+func (c *Config) ResolveTieredThreshold(pData pricing.PricingData) int {
+	if mPricing, ok := findBestMatch(pData.Models, c.Model, func(p pricing.ModelPricing) bool {
+		return p.TieredThreshold > 0
+	}); ok {
+		return int(mPricing.TieredThreshold)
+	}
+	return DefaultTieredThreshold
+}
+
+// findBestMatch encapsulates the priority matching logic: exact match first, then substring match.
+func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, bool) {
+	if val, ok := m[key]; ok && isValid(val) {
+		return val, true
+	}
+
+	var bestV T
+	var found bool
+	var maxLen int
+
+	for k, v := range m {
+		if k != "default" && strings.Contains(key, k) && isValid(v) {
+			if !found || len(k) > maxLen {
+				maxLen = len(k)
+				bestV = v
+				found = true
+			}
+		}
+	}
+
+	if found {
+		return bestV, true
+	}
+
+	var zero T
+	return zero, false
+}
+
+// DefaultPricing returns the hardcoded fallback pricing data.
+func DefaultPricing() pricing.PricingData {
+	return pricing.PricingData{
+		UpdatedAt: "Hardcoded Fallback",
+		Models: map[string]pricing.ModelPricing{
+			"gemini-3-flash-preview": {
+				Hit:             0.05,
+				Miss:            0.50,
+				Comp:            3.00,
+				TieredThreshold: 0,
+			},
+			"flash": {
+				Hit:             0.025,
+				Miss:            0.10,
+				Comp:            0.40,
+				TieredThreshold: 0,
+				TieredMiss:      0.20,
+				TieredComp:      0.80,
+			},
+			"pro": {
+				Hit:             0.125,
+				Miss:            1.25,
+				Comp:            10.00,
+				TieredThreshold: 0,
+				TieredMiss:      2.50,
+				TieredComp:      15.00,
+			},
+			"default": {
+				Hit:             0.125,
+				Miss:            1.25,
+				Comp:            10.00,
+				TieredThreshold: 0,
+				TieredMiss:      2.50,
+				TieredComp:      15.00,
+			},
+		},
+		ThinkingBudgets: map[string]int{
+			"gemini-3-flash-preview": 32768,
+			"gemini-3-pro-preview":   65536,
+		},
+		SearchQuery: 0.035,
+	}
+}

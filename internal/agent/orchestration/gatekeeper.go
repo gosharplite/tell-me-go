@@ -161,6 +161,11 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *services.Conte
 	}
 
 	// 3. Service Call
+	if t.Summarizer == nil {
+		req.Metadata.MaintenanceBlocked = true
+		return 0, fmt.Errorf("%w: summarizer not initialized; cannot perform auto-summarization", llm.ErrTerminal)
+	}
+
 	summary, _, err := t.Summarizer.Summarize(ctx, req.History[start:end], "")
 	if err != nil {
 		return 0, err

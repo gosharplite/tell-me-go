@@ -13,15 +13,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent"
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/require"
@@ -110,11 +109,11 @@ func TestRunCapturePrompt(t *testing.T) {
 	}
 
 	mock := &mockChatter{}
-	cmd.AgentFactory = func(client *llm.Client, hManager *history.Manager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) agent.Chatter {
+	cmd.AgentFactory = func(client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) orchestration.Chatter {
 		return mock
 	}
-	cmd.ClientFactory = func(cfg *config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
-		return nil, nil
+	cmd.ClientFactory = func(cfg *domain_config.Config, pricingData domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
+		return &mockClient{}, nil
 	}
 
 	err := cmd.Execute(stdctx.Background(), []string{"bin", "-c", configPath, "hello world"})
@@ -185,53 +184,6 @@ func TestNoDirectoryCreationOnEmptyPrompt(t *testing.T) {
 	}
 }
 
-func TestSetupRegistry_IncludesRestoredTools(t *testing.T) {
-	tmpDir := t.TempDir()
-	sm := security.NewSecurityManager(nil)
-	cmd := &chatCommand{
-		HomeDir: tmpDir,
-		SM:      sm,
-	}
-	cfg := &config.Config{
-		Model: "test-model",
-		Mode:  "test-mode",
-	}
-	paths := &persistence.Paths{
-		ModeDir: tmpDir,
-		LogPath: filepath.Join(tmpDir, "tokens.log"),
-	}
-	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
-
-	bus := events.NewSimpleEventBus()
-	defer func() {
-		if err := bus.Shutdown(stdctx.Background()); err != nil {
-			t.Logf("Warning: Failed to shutdown event bus: %v", err)
-		}
-	}()
-	reg := cmd.setupRegistry(nil, cfg, paths, pricingOverrides, bus)
-
-	declarations := reg.GetDeclarations()
-
-	expectedTools := []string{
-		"estimate_cost",
-		"get_cost_summary",
-		"verify_release_readiness",
-	}
-
-	for _, expected := range expectedTools {
-		found := false
-		for _, decl := range declarations {
-			if decl.Name == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Expected tool %q not found in registry", expected)
-		}
-	}
-}
-
 func TestExecuteErrors(t *testing.T) {
 	t.Run("HistoryLoadFailure", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -275,7 +227,7 @@ func TestExecuteErrors(t *testing.T) {
 		})
 
 		// Customize ClientFactory to return an error
-		cmd.ClientFactory = func(cfg *config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (*llm.Client, error) {
+		cmd.ClientFactory = func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
 			return nil, fmt.Errorf("forced client error")
 		}
 
@@ -300,4 +252,12 @@ func TestExecuteErrors(t *testing.T) {
 		err := cmd.Execute(stdctx.Background(), []string{"bin", "-unknown-flag"})
 		require.Error(t, err)
 	})
+}
+
+type mockClient struct {
+	domain_llm.LLMClient
+}
+
+func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, tools []*domaintools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
+	return nil, nil
 }

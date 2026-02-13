@@ -29,10 +29,6 @@ func (m *mockGateway) Generate(ctx context.Context, input []*llm.Content, t []*t
 	return ch.(chan *llm.Content), args.Get(1).(func() (*llm.Content, *llm.Metrics, error))
 }
 
-func (m *mockGateway) SetSystemInstructions(instr string) {
-	m.Called(instr)
-}
-
 type mockEventBus struct {
 	mock.Mock
 }

@@ -11,28 +11,21 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
-// Paths holds the filesystem paths for a session.
-type Paths struct {
-	ModeDir              string
-	HistoryPath          string
-	LogPath              string
-	CommandsLogPath      string
-	SafePathsPath        string
-	ReadPathsPath        string
-	BypassPath           string
-	PersistentConfigPath string
-}
+// Paths is an alias for persistence.Paths
+type Paths = persistence.Paths
 
 // InitializePaths creates the necessary directories and returns the Paths for the session.
-func InitializePaths(homeDir string, mode string) (*Paths, error) {
+func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {
 	modeDir := filepath.Join(homeDir, "output", mode)
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create session directory [%s]: %v", modeDir, err)
 	}
 
-	return &Paths{
+	return &persistence.Paths{
 		ModeDir:              modeDir,
 		HistoryPath:          filepath.Join(modeDir, "history.json"),
 		LogPath:              filepath.Join(modeDir, "tokens.log"),
@@ -45,7 +38,7 @@ func InitializePaths(homeDir string, mode string) (*Paths, error) {
 }
 
 // RotateSession archives existing session files and cleans up old backups.
-func RotateSession(w io.Writer, paths Paths, retentionDays int) error {
+func RotateSession(w io.Writer, paths persistence.Paths, retentionDays int) error {
 	timestamp := time.Now().Format("20060102_150405")
 	outputDir := filepath.Dir(paths.ModeDir)
 
@@ -77,7 +70,7 @@ func RotateSession(w io.Writer, paths Paths, retentionDays int) error {
 }
 
 // cleanupOldBackups removes backups older than the specified retention days.
-func cleanupOldBackups(paths Paths, retentionDays int) error {
+func cleanupOldBackups(paths persistence.Paths, retentionDays int) error {
 	if retentionDays <= 0 {
 		return nil
 	}
@@ -113,7 +106,7 @@ func cleanupOldBackups(paths Paths, retentionDays int) error {
 }
 
 // LoadBackupRetentionDays loads the retention days from the persistent config.
-func LoadBackupRetentionDays(paths Paths) int {
+func LoadBackupRetentionDays(paths persistence.Paths) int {
 	retentionDays := 30
 	data, err := os.ReadFile(paths.PersistentConfigPath)
 	if err != nil {

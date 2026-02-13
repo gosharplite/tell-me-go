@@ -38,6 +38,9 @@ type mockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
+func (m *mockHistoryManager) Load(ctx context.Context) error { return nil }
+func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
+
 func (m *mockHistoryManager) GetContents() []*llm.Content {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

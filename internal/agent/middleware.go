@@ -10,9 +10,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
 // WithStreaming returns a middleware that injects a stream handler into the turn.
@@ -130,7 +130,7 @@ func withLoopDetector() turnMiddleware {
 				}
 				// Keep last N hashes (using the same repetition limit)
 				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
-				if len(turn.State.RecentResponseHashes) > config.DefaultMaxLoopRepetitions {
+				if len(turn.State.RecentResponseHashes) > domain_config.DefaultMaxLoopRepetitions {
 					turn.State.RecentResponseHashes = turn.State.RecentResponseHashes[1:]
 				}
 
@@ -140,7 +140,7 @@ func withLoopDetector() turnMiddleware {
 						args, _ := json.Marshal(p.FunctionCall.Args)
 						key := p.FunctionCall.Name + ":" + string(args)
 						turn.State.ToolCallCount[key]++
-						if turn.State.ToolCallCount[key] > config.DefaultMaxLoopRepetitions {
+						if turn.State.ToolCallCount[key] > domain_config.DefaultMaxLoopRepetitions {
 							return processResult{
 								Stop:  true,
 								Error: newAgentError(errLogic, fmt.Sprintf("infinite loop detected: tool '%s' called with same arguments %d times", p.FunctionCall.Name, turn.State.ToolCallCount[key]), nil),
