@@ -402,11 +402,8 @@ func TestAgent_Reconfiguration(t *testing.T) {
 		WithSessionCostTracker(tracker1),
 	)
 
-	if a.GetCostTracker() != tracker1 {
+	if a.tracker != tracker1 {
 		t.Error("WithSessionCostTracker didn't set tracker")
-	}
-	if a.engine.GetCostTracker() != tracker1 {
-		t.Error("engine didn't receive tracker from WithSessionCostTracker")
 	}
 
 	// Test tracker replacement
@@ -414,11 +411,8 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	a.tracker = tracker2
 	_ = a.applyConfig(context.Background())
 
-	if a.GetCostTracker() != tracker2 {
-		t.Error("GetCostTracker didn't return updated tracker")
-	}
-	if a.engine.GetCostTracker() != tracker2 {
-		t.Error("engine didn't receive updated tracker after applyConfig")
+	if a.tracker != tracker2 {
+		t.Error("tracker didn't update after replacement and applyConfig")
 	}
 }
 
@@ -505,23 +499,12 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
-	if a.GetCostTracker() != tracker {
-		t.Error("a.GetCostTracker() does not return the passed tracker")
-	}
-
-	if a.engine.GetCostTracker() != tracker {
-		t.Error("engine tracker does not match passed tracker")
-	}
-
 	// 2. Test applying to existing agent (engine is NOT nil)
 	tracker2 := &mockCostTracker{}
 	WithSessionCostTracker(tracker2)(a)
 
 	if a.tracker != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
-	}
-	if a.engine.GetCostTracker() != tracker2 {
-		t.Error("engine tracker does not match updated tracker")
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -47,11 +46,6 @@ func (m *mockChatter) SetTieredThreshold(ctx context.Context, threshold int) err
 
 func (m *mockChatter) Subscribe(sub func(events.Event)) {
 	m.Called(sub)
-}
-
-func (m *mockChatter) GetCostTracker() domain_pricing.ICostTracker {
-	args := m.Called()
-	return args.Get(0).(domain_pricing.ICostTracker)
 }
 
 func (m *mockChatter) Shutdown(ctx context.Context) error {
@@ -111,53 +105,25 @@ func (m *mockCapturer) IsTTY(v any) bool {
 
 // --- Tests ---
 
-func TestSessionDependencies_Structure(t *testing.T) {
-	tmpDir := t.TempDir()
-	deps := &SessionDependencies{
-		Paths: &persistence.Paths{
-			ModeDir:         tmpDir,
-			LogPath:         filepath.Join(tmpDir, "tokens.log"),
-			CommandsLogPath: filepath.Join(tmpDir, "commands.log"),
-		},
-	}
-	require.NotNil(t, deps.Paths)
-}
-
-func TestSessionConfig_Structure(t *testing.T) {
-	cfg := &SessionConfig{
-		Config: &config.Config{
-			Model: "test-model",
-		},
-	}
-	require.Equal(t, "test-model", cfg.Config.Model)
-}
-
 func TestOrchestrator_Run_Success(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) any {
 		return mChatter
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := &SessionConfig{
-		Prompt: "hello",
-		Config: &config.Config{
-			Model: "model",
-			Mode:  "mode",
-		},
-	}
-	deps := &SessionDependencies{
-		HistoryManager: mHistory,
-		EventBus:       mEventBus,
-		Paths:          &persistence.Paths{},
-	}
+	sCfg := NewSessionConfig("", false, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -343,26 +309,19 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) any {
 		return mChatter
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := &SessionConfig{
-		Prompt: "hello",
-		Config: &config.Config{
-			Model: "model",
-			Mode:  "mode",
-		},
-	}
-	deps := &SessionDependencies{
-		HistoryManager: mHistory,
-		EventBus:       mEventBus,
-		Paths:          &persistence.Paths{},
-	}
+	sCfg := NewSessionConfig("", false, 0, false, "hello", &config.Config{
+		Model: "model",
+		Mode:  "mode",
+	})
+	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mUIRenderer.On("SetUseColor", true).Return()
@@ -384,24 +343,16 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	agentFactory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter {
+	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) any {
 		return nil
 	}
 
 	mHistoryRenderer := new(mockHistoryRenderer)
 	mUIRenderer := new(mockUIRenderer)
-	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, agentFactory, mHistoryRenderer, mUIRenderer)
+	orch := NewOrchestrator("home", "1.0.0", nil, nil, io.Discard, io.Discard, factory, mHistoryRenderer, mUIRenderer)
 
-	sCfg := &SessionConfig{
-		Prompt: "",
-		LastN:  5,
-		Config: &config.Config{},
-	}
-	deps := &SessionDependencies{
-		HistoryManager: mHistory,
-		EventBus:       mEventBus,
-		Paths:          &persistence.Paths{},
-	}
+	sCfg := NewSessionConfig("", false, 5, false, "", &config.Config{})
+	deps := NewSessionDependencies(&persistence.Paths{}, mHistory, nil, nil, nil, nil, domain_pricing.PricingData{}, nil, mEventBus)
 
 	mCapturer.On("IsTTY", io.Discard).Return(true)
 	mHistoryRenderer.On("Render", io.Discard, mHistory, 5, mock.Anything).Return()
@@ -419,7 +370,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mChatter := new(mockChatter)
 	mCapturer := new(mockCapturer)
 
-	sCfg := &SessionConfig{
+	sCfg := &sessionConfig{
 		Config: &config.Config{
 			MaxToolTurns: 10,
 		},

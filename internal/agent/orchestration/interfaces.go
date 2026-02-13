@@ -7,11 +7,10 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
-	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 )
 
-// Chatter defines the interface for the AI agent orchestration.
-type Chatter interface {
+// chatter defines the interface for the AI agent orchestration.
+type chatter interface {
 	// Chat runs the multi-turn orchestration loop.
 	// It returns an error if the conversation cannot be initialized or the engine fails.
 	Chat(ctx context.Context, s *Session, prompt string) error
@@ -26,9 +25,6 @@ type Chatter interface {
 
 	// Subscribe adds a subscriber for agent events.
 	Subscribe(sub func(events.Event))
-
-	// GetCostTracker returns the session cost tracker.
-	GetCostTracker() domain_pricing.ICostTracker
 
 	// Shutdown gracefully stops the agent and its components.
 	Shutdown(ctx context.Context) error

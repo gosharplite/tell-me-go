@@ -11,8 +11,6 @@ import (
 
 // HistoryManager defines the interface for interacting with history.
 type HistoryManager interface {
-	Load(ctx context.Context) error
-	Save(ctx context.Context) error
 	GetContents() []*llm.Content
 	SetContents(ctx context.Context, contents []*llm.Content) error
 	AddContent(ctx context.Context, content *llm.Content) error

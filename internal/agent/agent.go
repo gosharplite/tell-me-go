@@ -214,11 +214,6 @@ func (a *agent) Chat(ctx context.Context, s *orchestration.Session, prompt strin
 	return a.engine.Run(ctx, s.StartTime)
 }
 
-// GetCostTracker returns the session cost tracker used by the agent's engine.
-func (a *agent) GetCostTracker() domain_pricing.ICostTracker {
-	return a.engine.GetCostTracker()
-}
-
 // WithSessionCostTracker sets the cost tracker for the agent.
 func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
 	return func(a *agent) {

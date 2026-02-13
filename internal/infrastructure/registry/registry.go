@@ -25,28 +25,28 @@ type toolEntry struct {
 	Options     ToolOptions
 }
 
-// Registry maintains a mapping between function names and their Go implementations.
-type Registry struct {
+// registry maintains a mapping between function names and their Go implementations.
+type registry struct {
 	mu           sync.RWMutex
 	declarations []*tools.ToolDeclaration
 	entries      map[string]toolEntry
 }
 
 // New initializes an empty tool registry.
-func New() *Registry {
-	return &Registry{
+func New() tools.IToolRegistry {
+	return &registry{
 		declarations: make([]*tools.ToolDeclaration, 0),
 		entries:      make(map[string]toolEntry),
 	}
 }
 
 // Register adds a new tool to the registry with default options.
-func (r *Registry) Register(def *tools.ToolDeclaration, handler toolFunc) {
+func (r *registry) Register(def *tools.ToolDeclaration, handler toolFunc) {
 	r.RegisterWithOptions(def, handler, ToolOptions{})
 }
 
 // RegisterWithOptions adds a new tool to the registry with specific options.
-func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) {
+func (r *registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolFunc, opts ToolOptions) {
 	if def.Name == "" {
 		panic("cannot register tool with empty name")
 	}
@@ -81,7 +81,7 @@ func (r *Registry) RegisterWithOptions(def *tools.ToolDeclaration, handler toolF
 }
 
 // GetDeclarations returns the list of function declarations.
-func (r *Registry) GetDeclarations() []*tools.ToolDeclaration {
+func (r *registry) GetDeclarations() []*tools.ToolDeclaration {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	// Return a copy to ensure thread safety for the caller
@@ -91,7 +91,7 @@ func (r *Registry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 // Execute looks up and runs a tool handler with the provided JSON-parsed arguments.
-func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+func (r *registry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
 	r.mu.RLock()
 	entry, ok := r.entries[name]
 	r.mu.RUnlock()
@@ -107,7 +107,7 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 }
 
 // IsSerial returns true if the tool is configured for serial execution.
-func (r *Registry) IsSerial(name string) bool {
+func (r *registry) IsSerial(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if entry, ok := r.entries[name]; ok {
@@ -117,7 +117,7 @@ func (r *Registry) IsSerial(name string) bool {
 }
 
 // IsLongRunning returns true if the tool is configured as long-running (no timeout).
-func (r *Registry) IsLongRunning(name string) bool {
+func (r *registry) IsLongRunning(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if entry, ok := r.entries[name]; ok {

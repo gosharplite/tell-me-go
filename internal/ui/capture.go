@@ -23,8 +23,8 @@ const (
 	maxPromptSize = 1024 * 1024
 )
 
-// Capturer handles capturing user input from TTY or pipes.
-type Capturer struct {
+// capturer handles capturing user input from TTY or pipes.
+type capturer struct {
 	Stdin    io.Reader
 	Stdout   io.Writer
 	Stderr   io.Writer
@@ -35,9 +35,9 @@ type Capturer struct {
 	isTTYOverride *bool // For testing color logic
 }
 
-// NewCapturer creates a new Capturer.
-func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager) *Capturer {
-	return &Capturer{
+// NewCapturer creates a new capturer.
+func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.ISecurityManager) domain_security.UserInteractor {
+	return &capturer{
 		Stdin:  stdin,
 		Stdout: stdout,
 		Stderr: stderr,
@@ -47,7 +47,7 @@ func NewCapturer(stdin io.Reader, stdout, stderr io.Writer, sm domain_security.I
 }
 
 // IsTTY returns true if the value (usually an *os.File) is a terminal.
-func (c *Capturer) IsTTY(v any) bool {
+func (c *capturer) IsTTY(v any) bool {
 	if c.isTTYOverride != nil {
 		return *c.isTTYOverride
 	}
@@ -58,7 +58,7 @@ func (c *Capturer) IsTTY(v any) bool {
 }
 
 // CapturePrompt captures the initial prompt from command line arguments or standard input.
-func (c *Capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
+func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN int, raw bool) (string, error) {
 	prompt := strings.Join(fs.Args(), " ")
 
 	if val := os.Getenv("TELL_ME_MOCK_PROMPT"); val != "" {
@@ -97,7 +97,7 @@ func (c *Capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 	return prompt, nil
 }
 
-func (c *Capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
+func (c *capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
 	readChan := make(chan []byte, 1)
 	go func() {
 		b, _ := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
@@ -118,7 +118,7 @@ func (c *Capturer) captureFromPipe(ctx context.Context, initialPrompt string) (s
 	}
 }
 
-func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
+func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
 	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
 	readChan := make(chan []byte, 1)
@@ -137,7 +137,7 @@ func (c *Capturer) captureFromTTY(ctx context.Context, useColor bool) (string, e
 
 // printFeedback displays a message with optional color.
 // It DOES NOT perform terminal locking to avoid deadlocks when called from security components.
-func (c *Capturer) printFeedback(w io.Writer, useColor bool, color, msg string) {
+func (c *capturer) printFeedback(w io.Writer, useColor bool, color, msg string) {
 	if useColor && c.IsTTY(w) {
 		fmt.Fprintf(w, "%s%s%s\n", color, msg, colorReset)
 	} else {
@@ -146,7 +146,7 @@ func (c *Capturer) printFeedback(w io.Writer, useColor bool, color, msg string) 
 }
 
 // Confirm prompts the user for confirmation.
-func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
+func (c *capturer) Confirm(ctx context.Context, message string) (bool, error) {
 	color := ""
 	if strings.HasPrefix(message, "[SECURITY]") || strings.HasPrefix(message, "[CONFIRMATION REQUIRED]") {
 		color = colorRed
@@ -167,7 +167,7 @@ func (c *Capturer) Confirm(ctx context.Context, message string) (bool, error) {
 }
 
 // Warn displays a warning message.
-func (c *Capturer) Warn(message string) {
+func (c *capturer) Warn(message string) {
 	color := colorYellow
 	if strings.HasPrefix(message, "[SECURITY]") {
 		color = colorRed
@@ -176,7 +176,7 @@ func (c *Capturer) Warn(message string) {
 }
 
 // Prompt displays an inline message without a newline.
-func (c *Capturer) Prompt(message string) {
+func (c *capturer) Prompt(message string) {
 	if c.IsTTY(c.Stderr) {
 		fmt.Fprintf(c.Stderr, "%s%s%s", colorYellow, message, colorReset)
 	} else {
@@ -185,7 +185,7 @@ func (c *Capturer) Prompt(message string) {
 }
 
 // ReadSingleKey waits for a single key press from Stdin.
-func (c *Capturer) ReadSingleKey(ctx context.Context) (string, error) {
+func (c *capturer) ReadSingleKey(ctx context.Context) (string, error) {
 	if val := os.Getenv("TELL_ME_MOCK_ANSWER"); val != "" {
 		return strings.ToLower(val[:1]), nil
 	}
@@ -214,7 +214,7 @@ func (c *Capturer) ReadSingleKey(ctx context.Context) (string, error) {
 	return c.readByteFallback(ctx)
 }
 
-func (c *Capturer) readByteFallback(ctx context.Context) (string, error) {
+func (c *capturer) readByteFallback(ctx context.Context) (string, error) {
 	type result struct {
 		b   byte
 		err error
@@ -243,7 +243,7 @@ func (c *Capturer) readByteFallback(ctx context.Context) (string, error) {
 }
 
 // ReadLine reads a line of input.
-func (c *Capturer) ReadLine(ctx context.Context) (string, error) {
+func (c *capturer) ReadLine(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
