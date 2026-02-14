@@ -50,8 +50,8 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| Metric | Status | Details |") {
 		t.Errorf("expected table header, got %q", res.Text)
 	}
-	if !strings.Contains(res.Text, "| **Dead Code (Arch Guard)** |") {
-		t.Errorf("expected Dead Code (Arch Guard) row, got %q", res.Text)
+	if !strings.Contains(res.Text, "| **Dead Code** |") {
+		t.Errorf("expected Dead Code row, got %q", res.Text)
 	}
 	if !strings.Contains(res.Text, "82.5%") {
 		t.Errorf("expected 82.5%% coverage, got %q", res.Text)

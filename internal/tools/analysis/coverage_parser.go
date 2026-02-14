@@ -336,8 +336,8 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	return parseDetailedCoverage(ctx, cf, exec, os.ReadFile)
 }
 
-// GetDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func GetDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor) (string, error) {
+// getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
+func getDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor) (string, error) {
 	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
 	if err != nil {
 		return "", err
@@ -419,8 +419,8 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 	}
 }
 
-// GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
-func GetDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor) (string, error) {
+// getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
+func getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor) (string, error) {
 	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
 	if err != nil {
 		return "", err
