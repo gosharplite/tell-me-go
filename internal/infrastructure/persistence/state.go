@@ -17,20 +17,13 @@ type sessionState struct {
 	Tasks      *services.TaskService
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
-	Info       sessionInfo
+	Info       services.SessionInfo
 }
 
 func (s *sessionState) GetTasks() *services.TaskService            { return s.Tasks }
 func (s *sessionState) GetConfig() *services.ConfigService         { return s.Config }
 func (s *sessionState) GetScratchpad() *services.ScratchpadService { return s.Scratchpad }
-func (s *sessionState) GetInfo() any                               { return s.Info }
-
-// sessionInfo holds metadata about the current execution environment.
-type sessionInfo struct {
-	Config map[string]string `json:"config"`
-	Env    map[string]string `json:"env"`
-	Paths  map[string]string `json:"paths"`
-}
+func (s *sessionState) GetInfo() services.SessionInfo              { return s.Info }
 
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
@@ -52,7 +45,7 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 		Scratchpad: scratch,
 	}
 
-	state.Info = sessionInfo{
+	state.Info = services.SessionInfo{
 		Config: config.GetAll(),
 		Env: map[string]string{
 			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),

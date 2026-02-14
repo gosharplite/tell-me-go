@@ -88,22 +88,33 @@ func (m *azureDevOpsManager) executeRequest(ctx context.Context, method, request
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		respBody, _ := io.ReadAll(resp.Body)
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			return nil, fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("forbidden: you don't have permission to access this resource")
-		case http.StatusNotFound:
-			return nil, fmt.Errorf("resource not found (404): %s", requestURL)
-		default:
-			return nil, fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(respBody))
-		}
+	if err := m.checkResponseError(resp, requestURL); err != nil {
+		return nil, err
 	}
 
 	return resp, nil
+}
+
+func (m *azureDevOpsManager) checkResponseError(resp *http.Response, requestURL string) error {
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("azure DevOps API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+	}
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")
+	case http.StatusForbidden:
+		return fmt.Errorf("forbidden: you don't have permission to access this resource")
+	case http.StatusNotFound:
+		return fmt.Errorf("resource not found (404): %s", requestURL)
+	default:
+		return fmt.Errorf("azure DevOps API returned status: %s, body: %s", resp.Status, string(respBody))
+	}
 }
 
 func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -131,29 +142,34 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 	}
 	defer resp.Body.Close()
 
-	var prData struct {
-		ArtifactId string `json:"artifactId"`
-		Title      string `json:"title"`
-		Status     string `json:"status"`
-		CreatedBy  struct {
-			DisplayName string `json:"displayName"`
-		} `json:"createdBy"`
-		CreationDate  string `json:"creationDate"`
-		SourceRefName string `json:"sourceRefName"`
-		TargetRefName string `json:"targetRefName"`
-		MergeStatus   string `json:"mergeStatus"`
-		Repository    struct {
-			Id   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"repository"`
-	}
-
+	var prData adoPullRequestDetail
 	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return tools.ToolResult{Text: m.formatPullRequestDetail(params.PullRequestId, prData)}, nil
+}
+
+type adoPullRequestDetail struct {
+	ArtifactId string `json:"artifactId"`
+	Title      string `json:"title"`
+	Status     string `json:"status"`
+	CreatedBy  struct {
+		DisplayName string `json:"displayName"`
+	} `json:"createdBy"`
+	CreationDate  string `json:"creationDate"`
+	SourceRefName string `json:"sourceRefName"`
+	TargetRefName string `json:"targetRefName"`
+	MergeStatus   string `json:"mergeStatus"`
+	Repository    struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"repository"`
+}
+
+func (m *azureDevOpsManager) formatPullRequestDetail(pullRequestId int, prData adoPullRequestDetail) string {
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Pull Request #%d: %s\n", params.PullRequestId, prData.Title))
+	resultText.WriteString(fmt.Sprintf("Pull Request #%d: %s\n", pullRequestId, prData.Title))
 	resultText.WriteString(fmt.Sprintf("Status: %s\n", prData.Status))
 	resultText.WriteString(fmt.Sprintf("Created By: %s\n", prData.CreatedBy.DisplayName))
 	resultText.WriteString(fmt.Sprintf("Created At: %s\n", prData.CreationDate))
@@ -162,7 +178,7 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 	resultText.WriteString(fmt.Sprintf("Merge Status: %s\n", prData.MergeStatus))
 	resultText.WriteString(fmt.Sprintf("Repository: %s (%s)", prData.Repository.Name, prData.Repository.Id))
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 func (m *azureDevOpsManager) adoListPullRequests(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -182,59 +198,74 @@ func (m *azureDevOpsManager) adoListPullRequests(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("organization, project, and repository are required")
 	}
 
-	if params.Status == "" {
-		params.Status = "active"
-	}
-	if params.Top <= 0 {
-		params.Top = 50
-	}
-
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
+	requestURL, err := m.buildListPullRequestsURL(params.Organization, params.Project, params.Repository, params.Status, params.Top)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return tools.ToolResult{}, err
 	}
 
-	q := u.Query()
-	q.Set("searchCriteria.status", params.Status)
-	q.Set("$top", strconv.Itoa(params.Top))
-	q.Set("api-version", "7.1")
-	u.RawQuery = q.Encode()
-
-	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
 
 	var responseData struct {
-		Value []struct {
-			PullRequestId int    `json:"pullRequestId"`
-			Title         string `json:"title"`
-			CreatedBy     struct {
-				DisplayName string `json:"displayName"`
-			} `json:"createdBy"`
-			CreationDate string `json:"creationDate"`
-		} `json:"value"`
-		Count int `json:"count"`
+		Value []adoPullRequestShort `json:"value"`
+		Count int                   `json:"count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(responseData.Value) == 0 {
-		return tools.ToolResult{Text: "No pull requests found."}, nil
+	return tools.ToolResult{Text: m.formatPullRequestsList(responseData.Value)}, nil
+}
+
+type adoPullRequestShort struct {
+	PullRequestId int    `json:"pullRequestId"`
+	Title         string `json:"title"`
+	CreatedBy     struct {
+		DisplayName string `json:"displayName"`
+	} `json:"createdBy"`
+	CreationDate string `json:"creationDate"`
+}
+
+func (m *azureDevOpsManager) buildListPullRequestsURL(org, project, repo, status string, top int) (string, error) {
+	if status == "" {
+		status = "active"
+	}
+	if top <= 0 {
+		top = 50
+	}
+
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests",
+		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("searchCriteria.status", status)
+	q.Set("$top", strconv.Itoa(top))
+	q.Set("api-version", "7.1")
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
+func (m *azureDevOpsManager) formatPullRequestsList(prs []adoPullRequestShort) string {
+	if len(prs) == 0 {
+		return "No pull requests found."
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Found %d pull requests:\n\n", len(responseData.Value)))
-	for _, pr := range responseData.Value {
+	resultText.WriteString(fmt.Sprintf("Found %d pull requests:\n\n", len(prs)))
+	for _, pr := range prs {
 		resultText.WriteString(fmt.Sprintf("- [#%d] %s (Created by: %s, Date: %s)\n",
 			pr.PullRequestId, pr.Title, pr.CreatedBy.DisplayName, pr.CreationDate))
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -453,30 +484,12 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 		return tools.ToolResult{}, fmt.Errorf("organization, project, and repository are required")
 	}
 
-	if params.ScopePath == "" {
-		params.ScopePath = "/"
-	}
-	if params.Version == "" {
-		params.Version = "main"
-	}
-	if params.RecursionLevel == "" {
-		params.RecursionLevel = "none"
-	}
-
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
+	requestURL, err := m.buildListRepositoryItemsURL(params.Organization, params.Project, params.Repository, params.ScopePath, params.Version, params.RecursionLevel)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return tools.ToolResult{}, err
 	}
 
-	q := u.Query()
-	q.Set("scopePath", params.ScopePath)
-	q.Set("versionDescriptor.version", params.Version)
-	q.Set("recursionLevel", params.RecursionLevel)
-	q.Set("api-version", "7.1")
-	u.RawQuery = q.Encode()
-
-	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -488,6 +501,33 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 	}
 
 	return m.formatRepositoryItems(params.ScopePath, params.Version, responseData), nil
+}
+
+func (m *azureDevOpsManager) buildListRepositoryItemsURL(org, project, repo, scopePath, version, recursionLevel string) (string, error) {
+	if scopePath == "" {
+		scopePath = "/"
+	}
+	if version == "" {
+		version = "main"
+	}
+	if recursionLevel == "" {
+		recursionLevel = "none"
+	}
+
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
+		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("scopePath", scopePath)
+	q.Set("versionDescriptor.version", version)
+	q.Set("recursionLevel", recursionLevel)
+	q.Set("api-version", "7.1")
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
 }
 
 func (m *azureDevOpsManager) formatRepositoryItems(scopePath, version string, responseData adoRepositoryItemsResponse) tools.ToolResult {
@@ -528,53 +568,68 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
 	}
 
-	if params.Top <= 0 {
-		params.Top = 10
-	}
-
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId))
+	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.Top)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return tools.ToolResult{}, err
 	}
 
-	q := u.Query()
-	q.Set("$top", strconv.Itoa(params.Top))
-	q.Set("api-version", "7.1")
-	u.RawQuery = q.Encode()
-
-	resp, err := m.executeRequest(ctx, http.MethodGet, u.String(), nil, nil)
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
 	defer resp.Body.Close()
 
 	var responseData struct {
-		Value []struct {
-			Id      int    `json:"id"`
-			Name    string `json:"name"`
-			State   string `json:"state"`
-			Result  string `json:"result"`
-			Created string `json:"createdDate"`
-		} `json:"value"`
+		Value []adoPipelineRun `json:"value"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(responseData.Value) == 0 {
-		return tools.ToolResult{Text: "No pipeline runs found."}, nil
+	return tools.ToolResult{Text: m.formatPipelineRunsList(params.PipelineId, responseData.Value)}, nil
+}
+
+type adoPipelineRun struct {
+	Id      int    `json:"id"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
+	Result  string `json:"result"`
+	Created string `json:"createdDate"`
+}
+
+func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
+	if top <= 0 {
+		top = 10
+	}
+
+	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs",
+		url.PathEscape(org), url.PathEscape(project), pipelineId))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse base URL: %w", err)
+	}
+
+	q := u.Query()
+	q.Set("$top", strconv.Itoa(top))
+	q.Set("api-version", "7.1")
+	u.RawQuery = q.Encode()
+
+	return u.String(), nil
+}
+
+func (m *azureDevOpsManager) formatPipelineRunsList(pipelineId int, runs []adoPipelineRun) string {
+	if len(runs) == 0 {
+		return "No pipeline runs found."
 	}
 
 	var resultText strings.Builder
-	resultText.WriteString(fmt.Sprintf("Recent runs for pipeline %d:\n\n", params.PipelineId))
-	for _, run := range responseData.Value {
+	resultText.WriteString(fmt.Sprintf("Recent runs for pipeline %d:\n\n", pipelineId))
+	for _, run := range runs {
 		resultText.WriteString(fmt.Sprintf("- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s\n",
 			run.Id, run.Name, run.State, run.Result, run.Created))
 	}
 
-	return tools.ToolResult{Text: resultText.String()}, nil
+	return resultText.String()
 }
 
 func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

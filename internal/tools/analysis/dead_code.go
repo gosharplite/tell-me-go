@@ -159,17 +159,17 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 
 	for id, meta := range state.declarations {
 		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
-		if a.isDomainPort(meta) {
-			a.protectDomainSymbol(state, id)
+		if a.isInterfaceSymbol(meta) {
+			a.protectContractSymbol(state, id)
 		}
 		a.processImplementations(ctx, state, id)
 	}
 }
 
-func (a *deadCodeAnalyzer) isDomainPort(meta *symMeta) bool {
-	if !strings.Contains(meta.pkgPath, "internal/domain") {
-		return false
-	}
+// isInterfaceSymbol determines if a symbol is an interface or a method belonging to one.
+// Exported interface symbols are protected from being marked 'PRIVATE' because
+// they define contracts intended for external implementation.
+func (a *deadCodeAnalyzer) isInterfaceSymbol(meta *symMeta) bool {
 	if meta.symType == "Type" {
 		return a.isInterfaceType(meta.obj)
 	}
@@ -201,7 +201,7 @@ func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	return ok
 }
 
-func (a *deadCodeAnalyzer) protectDomainSymbol(state *scanState, id string) {
+func (a *deadCodeAnalyzer) protectContractSymbol(state *scanState, id string) {
 	if state.totalUses[id] == 0 {
 		state.totalUses[id] = 1
 	}

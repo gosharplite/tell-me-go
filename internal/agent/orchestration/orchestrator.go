@@ -5,6 +5,8 @@ package orchestration
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -27,7 +29,7 @@ type orchestrator struct {
 	SM              domain_security.ISecurityManager
 	Stdout          io.Writer
 	Stderr          io.Writer
-	AgentFactory    func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) Chatter
+	AgentFactory    services.ChatterFactory
 	HistoryRenderer services.HistoryRenderer
 	UIRenderer      services.UIRenderer
 }
@@ -103,11 +105,7 @@ func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryM
 }
 
 // NewOrchestrator creates a new orchestrator.
-func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory any, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
-	var agentFactory func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter
-	if factory != nil {
-		agentFactory = factory.(func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) Chatter)
-	}
+func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory services.ChatterFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -115,7 +113,7 @@ func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 		SM:              sm,
 		Stdout:          stdout,
 		Stderr:          stderr,
-		AgentFactory:    agentFactory,
+		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
 	}
@@ -144,8 +142,15 @@ func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd se
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
-	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
-	sess := NewSession(sessionID, sd.GetHistoryManager())
+	b := make([]byte, 8)
+	var sessionID string
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp if entropy source fails
+		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+	} else {
+		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
+	}
+	sess := services.NewSession(sessionID, sd.GetHistoryManager())
 	if err := chatAgent.Chat(ctx, sess, sc.GetPrompt()); err != nil {
 		return fmt.Errorf("error: %w", err)
 	}
@@ -165,7 +170,7 @@ func (o *orchestrator) renderHistory(hManager services.HistoryManager, sCfg serv
 	})
 }
 
-func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter, sCfg services.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
+func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent services.Chatter, sCfg services.SessionConfig, paths *persistence.Paths, pData domain_pricing.PricingData, capturer Capturer) error {
 	cfg := sCfg.GetConfig()
 	o.setupUIRendering(chatAgent, cfg, sCfg.GetRawOutput(), paths.LogPath, capturer)
 	if err := chatAgent.SetLimits(ctx, cfg.MaxToolTurns, cfg.ResolveContextWindow(), cfg.MaxHistoryTurns); err != nil {
@@ -174,7 +179,7 @@ func (o *orchestrator) applyConfiguration(ctx context.Context, chatAgent Chatter
 	return chatAgent.SetTieredThreshold(ctx, cfg.ResolveTieredThreshold(pData))
 }
 
-func (o *orchestrator) setupUIRendering(chatAgent Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
+func (o *orchestrator) setupUIRendering(chatAgent services.Chatter, cfg *config.Config, rawOutput bool, logPath string, capturer Capturer) {
 	useColor := capturer.IsTTY(o.Stdout) && !rawOutput
 	o.UIRenderer.SetUseColor(useColor)
 	bridge := newUIBridge(o.UIRenderer, cfg.ShowThoughts, cfg.ShowTools, rawOutput, useColor, logPath)

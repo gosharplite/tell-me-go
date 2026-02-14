@@ -98,40 +98,54 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 }
 
 func (c *capturer) captureFromPipe(ctx context.Context, initialPrompt string) (string, error) {
-	readChan := make(chan []byte, 1)
+	type result struct {
+		data []byte
+		err  error
+	}
+	readChan := make(chan result, 1)
 	go func() {
-		b, _ := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- b
+		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		readChan <- result{b, err}
 	}()
 
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
-	case b := <-readChan:
-		if len(b) == 0 {
+	case res := <-readChan:
+		if res.err != nil {
+			return "", fmt.Errorf("failed to read from pipe: %w", res.err)
+		}
+		if len(res.data) == 0 {
 			return initialPrompt, nil
 		}
 		if initialPrompt != "" {
-			return initialPrompt + "\n" + string(b), nil
+			return initialPrompt + "\n" + string(res.data), nil
 		}
-		return string(b), nil
+		return string(res.data), nil
 	}
 }
 
 func (c *capturer) captureFromTTY(ctx context.Context, useColor bool) (string, error) {
 	c.printFeedback(c.Stdout, useColor, colorYellow, "[Reading multi-line input. Press Ctrl+D to send]")
 
-	readChan := make(chan []byte, 1)
+	type result struct {
+		data []byte
+		err  error
+	}
+	readChan := make(chan result, 1)
 	go func() {
-		b, _ := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
-		readChan <- b
+		b, err := io.ReadAll(io.LimitReader(c.Stdin, maxPromptSize))
+		readChan <- result{b, err}
 	}()
 
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
-	case b := <-readChan:
-		return string(b), nil
+	case res := <-readChan:
+		if res.err != nil {
+			return "", fmt.Errorf("failed to read from TTY: %w", res.err)
+		}
+		return string(res.data), nil
 	}
 }
 

@@ -15,10 +15,17 @@ type Task struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// SessionInfo holds metadata about the current execution environment.
+type SessionInfo struct {
+	Config map[string]string `json:"config"`
+	Env    map[string]string `json:"env"`
+	Paths  map[string]string `json:"paths"`
+}
+
 // ISessionProvider provides access to persistence services and session info.
 type ISessionProvider interface {
 	GetTasks() *TaskService
 	GetConfig() *ConfigService
 	GetScratchpad() *ScratchpadService
-	GetInfo() any
+	GetInfo() SessionInfo
 }

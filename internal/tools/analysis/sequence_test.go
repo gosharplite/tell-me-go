@@ -15,7 +15,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-func TestSequenceAnalyzer_AnalyzeSequenceFlow(t *testing.T) {
+func setupMockPackages() (*packages.Package, *packages.Package) {
 	fset := token.NewFileSet()
 	pkgAPath := "github.com/test/mod/pkgA"
 	pkgBPath := "github.com/test/mod/pkgB"
@@ -104,105 +104,10 @@ func LoopFunc() {}
 		}
 		return true
 	})
-
-	mockExec := &mockExecutor{
-		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("github.com/test/mod"), nil
-		},
-	}
-
-	idx := &mockIndexer{
-		pkgs: []*packages.Package{pkgA, pkgB},
-	}
-	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{}, idx)
-
-	t.Run("basic flow", func(t *testing.T) {
-		res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": pkgAPath + ".StartFunc",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		text := res.Text
-		if !strings.Contains(text, "pkgA->>+pkgB: TargetFunc") {
-			t.Errorf("missing basic call in diagram: %s", text)
-		}
-		if !strings.Contains(text, "pkgA->>pkgB: AsyncFunc (async)") {
-			t.Errorf("missing async call in diagram: %s", text)
-		}
-		if !strings.Contains(text, "loop for each") {
-			t.Errorf("missing loop block in diagram: %s", text)
-		}
-	})
-
-	t.Run("max depth", func(t *testing.T) {
-		codeB2 := `package pkgB
-func TargetFunc() { SubFunc() }
-func SubFunc() {}
-func AsyncFunc() {}
-func LoopFunc() {}`
-		fileB2, _ := parser.ParseFile(fset, "b.go", codeB2, 0)
-		subFuncObj := types.NewFunc(token.NoPos, pkgBTypes, "SubFunc", types.NewSignatureType(nil, nil, nil, nil, nil, false))
-		pkgBTypes.Scope().Insert(subFuncObj)
-
-		pkgB.Syntax = []*ast.File{fileB2}
-		for k := range pkgB.TypesInfo.Defs {
-			delete(pkgB.TypesInfo.Defs, k)
-		}
-		ast.Inspect(fileB2, func(n ast.Node) bool {
-			if fd, ok := n.(*ast.FuncDecl); ok {
-				obj := pkgBTypes.Scope().Lookup(fd.Name.Name)
-				if obj != nil {
-					pkgB.TypesInfo.Defs[fd.Name] = obj
-				}
-			}
-			if id, ok := n.(*ast.Ident); ok {
-				if obj := pkgBTypes.Scope().Lookup(id.Name); obj != nil {
-					pkgB.TypesInfo.Uses[id] = obj
-				}
-			}
-			return true
-		})
-
-		analyzer.pkgs = nil // Clear cache
-		res, _ := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
-			"start_symbol": pkgAPath + ".StartFunc",
-			"max_depth":    2.0,
-		})
-		if !strings.Contains(res.Text, "pkgB->>+pkgB: SubFunc") {
-			t.Errorf("SubFunc should be present with max_depth=2, got: %s", res.Text)
-		}
-	})
+	return pkgA, pkgB
 }
 
-func TestSequenceAnalyzer_Helpers(t *testing.T) {
-	a := &sequenceAnalyzer{}
-	t.Run("exprToString", func(t *testing.T) {
-		tests := []struct {
-			expr ast.Expr
-			want string
-		}{
-			{&ast.Ident{Name: "T"}, "T"},
-			{&ast.StarExpr{X: &ast.Ident{Name: "T"}}, "*T"},
-			{&ast.SelectorExpr{X: &ast.Ident{Name: "p"}, Sel: &ast.Ident{Name: "T"}}, "p.T"},
-			{&ast.IndexExpr{X: &ast.Ident{Name: "L"}}, "L"},
-		}
-		for _, tt := range tests {
-			if got := a.exprToString(tt.expr); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		}
-	})
-	t.Run("getReceiverTypeName", func(t *testing.T) {
-		fl := &ast.FieldList{List: []*ast.Field{{Type: &ast.Ident{Name: "R"}}}}
-		if got := a.getReceiverTypeName(fl); got != "R" {
-			t.Errorf("got %q, want %q", got, "R")
-		}
-	})
-}
-
-func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
+func setupInterfaceMockPackage() (*packages.Package, types.Object, types.Object) {
 	fset := token.NewFileSet()
 	pkgPath := "github.com/test/mod/itf"
 
@@ -259,7 +164,6 @@ func Start(r Runner) { r.Run() }`
 		}
 		if call, ok := n.(*ast.CallExpr); ok {
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-				// r.Run()
 				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "r" {
 					pkg.TypesInfo.Uses[ident] = types.NewVar(token.NoPos, pkgTypes, "r", itfType)
 					pkg.TypesInfo.Types[sel.X] = types.TypeAndValue{Type: itfType}
@@ -272,20 +176,121 @@ func Start(r Runner) { r.Run() }`
 		}
 		return true
 	})
+	return pkg, runMethod, implMethod
+}
+
+func TestSequenceAnalyzer_AnalyzeSequenceFlow_Basic(t *testing.T) {
+	pkgA, pkgB := setupMockPackages()
+	mockExec := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/test/mod"), nil
+		},
+	}
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
+	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{}, idx)
+
+	res, err := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgA.PkgPath + ".StartFunc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	text := res.Text
+	if !strings.Contains(text, "pkgA->>+pkgB: TargetFunc") {
+		t.Errorf("missing basic call in diagram: %s", text)
+	}
+	if !strings.Contains(text, "pkgA->>pkgB: AsyncFunc (async)") {
+		t.Errorf("missing async call in diagram: %s", text)
+	}
+	if !strings.Contains(text, "loop for each") {
+		t.Errorf("missing loop block in diagram: %s", text)
+	}
+}
+
+func TestSequenceAnalyzer_AnalyzeSequenceFlow_MaxDepth(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgA, pkgB := setupMockPackages()
+
+	codeB2 := `package pkgB
+func TargetFunc() { SubFunc() }
+func SubFunc() {}
+func AsyncFunc() {}
+func LoopFunc() {}`
+	fileB2, _ := parser.ParseFile(fset, "b.go", codeB2, 0)
+	subFuncObj := types.NewFunc(token.NoPos, pkgB.Types, "SubFunc", types.NewSignatureType(nil, nil, nil, nil, nil, false))
+	pkgB.Types.Scope().Insert(subFuncObj)
+
+	pkgB.Syntax = []*ast.File{fileB2}
+	for k := range pkgB.TypesInfo.Defs {
+		delete(pkgB.TypesInfo.Defs, k)
+	}
+	ast.Inspect(fileB2, func(n ast.Node) bool {
+		if fd, ok := n.(*ast.FuncDecl); ok {
+			if obj := pkgB.Types.Scope().Lookup(fd.Name.Name); obj != nil {
+				pkgB.TypesInfo.Defs[fd.Name] = obj
+			}
+		}
+		if id, ok := n.(*ast.Ident); ok {
+			if obj := pkgB.Types.Scope().Lookup(id.Name); obj != nil {
+				pkgB.TypesInfo.Uses[id] = obj
+			}
+		}
+		return true
+	})
+
+	mockExec := &mockExecutor{
+		OutputFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return []byte("github.com/test/mod"), nil
+		},
+	}
+	idx := &mockIndexer{pkgs: []*packages.Package{pkgA, pkgB}}
+	analyzer := newSequenceAnalyzer(mockExec, &mockSecurityProvider{}, idx)
+
+	res, _ := analyzer.AnalyzeSequenceFlow(context.Background(), map[string]interface{}{
+		"start_symbol": pkgA.PkgPath + ".StartFunc",
+		"max_depth":    2.0,
+	})
+	if !strings.Contains(res.Text, "pkgB->>+pkgB: SubFunc") {
+		t.Errorf("SubFunc should be present with max_depth=2, got: %s", res.Text)
+	}
+}
+
+func TestSequenceAnalyzer_Helpers(t *testing.T) {
+	a := &sequenceAnalyzer{}
+	t.Run("exprToString", func(t *testing.T) {
+		tests := []struct {
+			expr ast.Expr
+			want string
+		}{
+			{&ast.Ident{Name: "T"}, "T"},
+			{&ast.StarExpr{X: &ast.Ident{Name: "T"}}, "*T"},
+			{&ast.SelectorExpr{X: &ast.Ident{Name: "p"}, Sel: &ast.Ident{Name: "T"}}, "p.T"},
+			{&ast.IndexExpr{X: &ast.Ident{Name: "L"}}, "L"},
+		}
+		for _, tt := range tests {
+			if got := a.exprToString(tt.expr); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		}
+	})
+	t.Run("getReceiverTypeName", func(t *testing.T) {
+		fl := &ast.FieldList{List: []*ast.Field{{Type: &ast.Ident{Name: "R"}}}}
+		if got := a.getReceiverTypeName(fl); got != "R" {
+			t.Errorf("got %q, want %q", got, "R")
+		}
+	})
+}
+
+func TestSequenceAnalyzer_InterfaceTracing(t *testing.T) {
+	pkg, runMethod, implMethod := setupInterfaceMockPackage()
+	pkgPath := pkg.PkgPath
 
 	mockIdx := &mockIndexer{
 		pkgs: []*packages.Package{pkg},
-	}
-	// Mock GetImplementations
-	itfMethodId := getSymbolIdentity(runMethod)
-	implMethodId := getSymbolIdentity(implMethod)
-
-	// We need a real indexer or a better mock to test GetImplementations
-	// Since I can't easily mock GetImplementations on the interface without changing mockIndexer
-	// I'll update mockIndexer
-
-	mockIdx.impls = map[string][]string{
-		itfMethodId: {implMethodId},
+		impls: map[string][]string{
+			getSymbolIdentity(runMethod): {getSymbolIdentity(implMethod)},
+		},
 	}
 
 	analyzer := newSequenceAnalyzer(&mockExecutor{}, &mockSecurityProvider{}, mockIdx)

@@ -185,7 +185,7 @@ func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *agent) Chat(ctx context.Context, s *orchestration.Session, prompt string) error {
+func (a *agent) Chat(ctx context.Context, s *services.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},

@@ -60,7 +60,7 @@ func TestAgent_Chat(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, h, reg, sm, bus, nil)
-	sess := orchestration.NewSession("test-chat", h)
+	sess := services.NewSession("test-chat", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
@@ -141,7 +141,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, h, reg, sm, bus, nil)
-	sess := orchestration.NewSession("test-retry", h)
+	sess := services.NewSession("test-retry", h)
 
 	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
@@ -207,7 +207,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, h, reg, sm, bus, nil)
-	sess := orchestration.NewSession("test-exhaustion", h)
+	sess := services.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
@@ -308,7 +308,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
-	err := a.Chat(ctx, orchestration.NewSession("test-pin", h), "next")
+	err := a.Chat(ctx, services.NewSession("test-pin", h), "next")
 	if err != nil {
 		t.Logf("Chat returned error (expected in mock): %v", err)
 	}
@@ -494,7 +494,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, h, reg, sm, bus, nil)
-	sess := orchestration.NewSession("test-config-application", h)
+	sess := services.NewSession("test-config-application", h)
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
