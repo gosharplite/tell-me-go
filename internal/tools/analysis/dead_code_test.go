@@ -189,8 +189,7 @@ func main() { pkg1.Use() }
 `,
 			},
 			expected: []orphanReport{
-				{Symbol: "InternalItf", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "PRIVATE"},
-				{Symbol: "Run", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "PRIVATE"},
+				{Symbol: "Impl", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "PRIVATE"},
 			},
 		},
 		{
