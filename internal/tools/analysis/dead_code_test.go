@@ -238,6 +238,62 @@ func main() {}
 			},
 			expected: nil, // Port methods should be protected in internal/domain
 		},
+		{
+			name: "High Complexity Private Symbol",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"pkg1/pkg1.go": `package pkg1
+func ComplexPrivate(a, b int) {
+    if a > 0 {
+        if b > 0 {
+            for i := 0; i < 10; i++ {
+                if i % 2 == 0 {
+                    _ = i
+                } else {
+                    _ = i + 1
+                }
+            }
+        }
+    }
+    if a == 1 {}
+    if a == 2 {}
+    if a == 3 {}
+    if a == 4 {}
+    if a == 5 {}
+}
+`,
+				"pkg1/util.go": "package pkg1\n\nfunc Use() { ComplexPrivate(1, 2) }\n",
+				"main.go":      "package main\n\nfunc main() {}",
+			},
+			expected: []orphanReport{
+				{Symbol: "ComplexPrivate", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE", Reason: "High Priority Refactoring Candidate: can be refactored with zero external impact."},
+			},
+		},
+		{
+			name: "Structural Anchor",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"pkg1/pkg1.go": `package pkg1
+func Anchor() {
+    Target1()
+    Target2()
+    Target3()
+}
+func Target1() {}
+func Target2() {}
+func Target3() {}
+`,
+				"main.go": `package main
+func main() {}
+`,
+			},
+			expected: []orphanReport{
+				{Symbol: "Anchor", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "DEAD"},
+				{Symbol: "Target1", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
+				{Symbol: "Target2", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
+				{Symbol: "Target3", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -268,7 +324,7 @@ func main() {}
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
-				expectedLine := fmt.Sprintf("- [%s] %s", exp.Severity, exp.Symbol)
+				expectedLine := fmt.Sprintf("[%s] %s", exp.Severity, exp.Symbol)
 				assert.Contains(t, result.Text, expectedLine, "Symbol %s should have severity %s", exp.Symbol, exp.Severity)
 				assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", exp.Pkg))
 			}

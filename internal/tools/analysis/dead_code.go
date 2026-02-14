@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"go/types"
 	"sort"
 	"strings"
@@ -24,11 +25,13 @@ type deadCodeAnalyzer struct {
 
 // orphanReport represents a single finding of dead or effectively private code.
 type orphanReport struct {
-	Symbol   string `json:"symbol"`
-	Pkg      string `json:"package"`
-	Type     string `json:"type"`     // e.g., "Function", "Method", "Type"
-	Severity string `json:"severity"` // "DEAD" or "PRIVATE"
-	Reason   string `json:"reason"`
+	Symbol     string `json:"symbol"`
+	Pkg        string `json:"package"`
+	Type       string `json:"type"`     // e.g., "Function", "Method", "Type"
+	Severity   string `json:"severity"` // "DEAD" or "PRIVATE"
+	Reason     string `json:"reason"`
+	Complexity int    `json:"complexity,omitempty"`
+	Impact     int    `json:"impact,omitempty"`
 }
 
 type symMeta struct {
@@ -256,7 +259,20 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 			sb.WriteString(fmt.Sprintf("\n### Package: %s\n", f.Pkg))
 			currentPkg = f.Pkg
 		}
-		sb.WriteString(fmt.Sprintf("- [%s] %s (%s): %s\n", f.Severity, f.Symbol, f.Type, f.Reason))
+
+		metrics := ""
+		if f.Complexity > 0 || f.Impact > 0 {
+			metrics = fmt.Sprintf(" (Complexity: %d, Impact: %d)", f.Complexity, f.Impact)
+		}
+
+		prefix := ""
+		if f.Impact >= 3 {
+			prefix = "[STRUCTURAL ANCHOR] "
+		} else if f.Complexity >= 10 {
+			prefix = "[HIGH COMPLEXITY] "
+		}
+
+		sb.WriteString(fmt.Sprintf("- %s[%s] %s (%s)%s: %s\n", prefix, f.Severity, f.Symbol, f.Type, metrics, f.Reason))
 	}
 
 	return tools.ToolResult{Text: sb.String()}
@@ -269,25 +285,43 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 		external := state.externalUses[id]
 
 		if total == 0 {
+			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+			impact := a.calculateImpactScore(meta.obj, state.pkgs)
 			findings = append(findings, orphanReport{
-				Symbol:   meta.name,
-				Pkg:      meta.pkgPath,
-				Type:     meta.symType,
-				Severity: "DEAD",
-				Reason:   "No references found within the module (including interfaces/tests).",
+				Symbol:     meta.name,
+				Pkg:        meta.pkgPath,
+				Type:       meta.symType,
+				Severity:   "DEAD",
+				Reason:     "No references found within the module (including interfaces/tests).",
+				Complexity: complexity,
+				Impact:     impact,
 			})
 		} else if external == 0 {
+			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+			impact := a.calculateImpactScore(meta.obj, state.pkgs)
+			reason := "Exported symbol is only used within its own package."
+			if complexity >= 10 {
+				reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
+			}
 			findings = append(findings, orphanReport{
-				Symbol:   meta.name,
-				Pkg:      meta.pkgPath,
-				Type:     meta.symType,
-				Severity: "PRIVATE",
-				Reason:   "Exported symbol is only used within its own package.",
+				Symbol:     meta.name,
+				Pkg:        meta.pkgPath,
+				Type:       meta.symType,
+				Severity:   "PRIVATE",
+				Reason:     reason,
+				Complexity: complexity,
+				Impact:     impact,
 			})
 		}
 	}
 
 	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].Impact != findings[j].Impact {
+			return findings[i].Impact > findings[j].Impact
+		}
+		if findings[i].Complexity != findings[j].Complexity {
+			return findings[i].Complexity > findings[j].Complexity
+		}
 		if findings[i].Pkg != findings[j].Pkg {
 			return findings[i].Pkg < findings[j].Pkg
 		}
@@ -442,4 +476,96 @@ func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *
 			}
 		}
 	}
+}
+
+func (a *deadCodeAnalyzer) calculateSymbolComplexity(obj types.Object, pkgs []*packages.Package) int {
+	if obj == nil {
+		return 0
+	}
+
+	// Only functions and methods have cyclomatic complexity in our current model
+	if _, ok := obj.(*types.Func); !ok {
+		return 0
+	}
+
+	pos := obj.Pos()
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			// Check if the position is within this file
+			if pos >= file.Pos() && pos <= file.End() {
+				// Search for the FuncDecl
+				for _, decl := range file.Decls {
+					if fd, ok := decl.(*ast.FuncDecl); ok {
+						if fd.Name.Pos() == pos {
+							return calculateComplexity(fd)
+						}
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func (a *deadCodeAnalyzer) calculateImpactScore(obj types.Object, pkgs []*packages.Package) int {
+	if obj == nil {
+		return 0
+	}
+
+	// Only functions and methods have an impact score based on calls
+	if _, ok := obj.(*types.Func); !ok {
+		return 0
+	}
+
+	pos := obj.Pos()
+	var funcDecl *ast.FuncDecl
+	var targetPkg *packages.Package
+
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			if pos >= file.Pos() && pos <= file.End() {
+				for _, decl := range file.Decls {
+					if fd, ok := decl.(*ast.FuncDecl); ok {
+						if fd.Name.Pos() == pos {
+							funcDecl = fd
+							targetPkg = pkg
+							break
+						}
+					}
+				}
+			}
+			if funcDecl != nil {
+				break
+			}
+		}
+		if funcDecl != nil {
+			break
+		}
+	}
+
+	if funcDecl == nil || targetPkg == nil {
+		return 0
+	}
+
+	impactedSymbols := make(map[types.Object]struct{})
+	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		var usedObj types.Object
+		switch t := n.(type) {
+		case *ast.Ident:
+			usedObj = targetPkg.TypesInfo.Uses[t]
+		case *ast.SelectorExpr:
+			if sel, ok := targetPkg.TypesInfo.Selections[t]; ok {
+				usedObj = sel.Obj()
+			} else {
+				usedObj = targetPkg.TypesInfo.Uses[t.Sel]
+			}
+		}
+
+		if usedObj != nil && usedObj != obj && usedObj.Exported() && usedObj.Pkg() != nil && usedObj.Pkg().Path() == obj.Pkg().Path() {
+			impactedSymbols[usedObj] = struct{}{}
+		}
+		return true
+	})
+
+	return len(impactedSymbols)
 }
