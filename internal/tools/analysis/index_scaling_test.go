@@ -7,19 +7,13 @@ import (
 )
 
 func TestIndexer_Scaling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping scaling test in short mode")
+	}
 	t.Parallel()
 	// Use current directory for testing
-	idx, err := newIndexer(".")
-	if err != nil {
-		t.Fatalf("failed to create r: %v", err)
-	}
+	idx := getSharedIndexer(t)
 	ctx := context.Background()
-
-	// 1. Initial refresh (O(N) scan)
-	err = idx.Refresh(ctx)
-	if err != nil {
-		t.Fatalf("refresh failed: %v", err)
-	}
 
 	// 2. Performance Check: SearchSymbols should be O(1) in-memory
 	start := time.Now()
@@ -50,15 +44,12 @@ func TestIndexer_Scaling(t *testing.T) {
 }
 
 func TestIndexer_GetUsages_Scaling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping scaling test in short mode")
+	}
 	t.Parallel()
-	idx, err := newIndexer(".")
-	if err != nil {
-		t.Fatalf("failed to create r: %v", err)
-	}
+	idx := getSharedIndexer(t)
 	ctx := context.Background()
-	if err := idx.Refresh(ctx); err != nil {
-		t.Fatalf("failed to refresh  %v", err)
-	}
 
 	start := time.Now()
 	usages, err := idx.GetUsages(ctx, "indexer", ".")

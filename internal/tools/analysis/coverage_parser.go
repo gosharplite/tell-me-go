@@ -317,7 +317,7 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	defer os.Remove(tempPath)
 	f.Close()
 
-	_, _ = exec.CombinedOutput(ctx, "go", "test", "-coverprofile="+tempPath, packagePath)
+	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
 
 	info, err := os.Stat(tempPath)
 	if err != nil {

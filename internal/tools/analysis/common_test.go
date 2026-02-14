@@ -2,10 +2,31 @@ package analysis
 
 import (
 	"context"
+	"sync"
+	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"golang.org/x/tools/go/packages"
 )
+
+var (
+	sharedIdx     *indexer
+	sharedIdxOnce sync.Once
+)
+
+func getSharedIndexer(t *testing.T) *indexer {
+	sharedIdxOnce.Do(func() {
+		var err error
+		sharedIdx, err = newIndexer(".")
+		if err != nil {
+			t.Fatalf("failed to create shared indexer: %v", err)
+		}
+		if err := sharedIdx.Refresh(context.Background()); err != nil {
+			t.Fatalf("failed to refresh shared indexer: %v", err)
+		}
+	})
+	return sharedIdx
+}
 
 type mockSecurityProvider struct{}
 

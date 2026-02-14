@@ -49,19 +49,19 @@ type FunctionResponse struct {
 
 // Metrics represents the token usage and timing for a single API turn.
 type Metrics struct {
-	Timestamp      string  `json:"timestamp"`
-	Model          string  `json:"model,omitempty"`
-	CachedTokens   int32   `json:"cached_tokens"`
-	PromptTokens   int32   `json:"prompt_tokens"`
-	ResponseTokens int32   `json:"response_tokens"`
-	TotalTokens    int32   `json:"total_tokens"`
-	ThinkingTokens int32   `json:"thinking_tokens,omitempty"`
-	SearchQueries  int     `json:"search_queries,omitempty"`
+	Timestamp              string  `json:"timestamp"`
+	Model                  string  `json:"model,omitempty"`
+	CachedTokens           int32   `json:"cached_tokens"`
+	PromptTokens           int32   `json:"prompt_tokens"`
+	ResponseTokens         int32   `json:"response_tokens"`
+	TotalTokens            int32   `json:"total_tokens"`
+	ThinkingTokens         int32   `json:"thinking_tokens,omitempty"`
+	SearchQueries          int     `json:"search_queries,omitempty"`
 	Duration               float64 `json:"duration"`
 	ToolDuration           float64 `json:"tool_duration,omitempty"`
 	CumulativeToolDuration float64 `json:"cumulative_tool_duration,omitempty"`
 	Cost                   float64 `json:"cost,omitempty"` // USD cost for this turn or summary
-	IsSummary      bool    `json:"is_summary,omitempty"`
+	IsSummary              bool    `json:"is_summary,omitempty"`
 }
 
 // AssetResolver defines the interface for lazy hydration of binary assets.

@@ -290,8 +290,8 @@ func TestLogTurnStatus_Format(t *testing.T) {
 	t.Run("CumulativeToolDuration", func(t *testing.T) {
 		stderr.Reset()
 		r.LogTurnStatus(events.TurnStatus{
-			Timestamp:       r.nowSafe(),
-			IsPostCall:      true,
+			Timestamp:  r.nowSafe(),
+			IsPostCall: true,
 			Metrics: &llm.Metrics{
 				Duration:               5.0,
 				ToolDuration:           2.0,
