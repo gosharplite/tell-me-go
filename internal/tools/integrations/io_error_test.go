@@ -65,7 +65,7 @@ func TestJira_IOError(t *testing.T) {
 	}, nil)
 
 	ctx := context.Background()
-	
+
 	// Test jiraSearchIssues
 	_, err := m.jiraSearchIssues(ctx, map[string]interface{}{"jql": "project=PROJ"})
 	assert.Error(t, err)
