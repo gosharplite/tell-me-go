@@ -28,7 +28,7 @@ func TestNewSessionState_FileStorage(t *testing.T) {
 
 	verifyStateInitialization(t, state)
 
-	info := state.GetInfo().(sessionInfo)
+	info := state.GetInfo()
 	if info.Env["STORAGE_TYPE"] != "file" {
 		t.Errorf("expected STORAGE_TYPE to be file, got %s", info.Env["STORAGE_TYPE"])
 	}
@@ -50,7 +50,7 @@ func TestNewSessionState_MemoryStorage(t *testing.T) {
 
 	verifyStateInitialization(t, state)
 
-	info := state.GetInfo().(sessionInfo)
+	info := state.GetInfo()
 	if info.Env["STORAGE_TYPE"] != "memory" {
 		t.Errorf("expected STORAGE_TYPE to be memory, got %s", info.Env["STORAGE_TYPE"])
 	}
