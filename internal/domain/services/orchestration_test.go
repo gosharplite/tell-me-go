@@ -13,17 +13,21 @@ import (
 
 type mockHistoryManager struct{}
 
-func (m *mockHistoryManager) GetContents() []*llm.Content                                    { return nil }
-func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error { return nil }
-func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error     { return nil }
-func (m *mockHistoryManager) GetResolver() llm.AssetResolver                                 { return nil }
-func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error { return nil }
-func (m *mockHistoryManager) Save(ctx context.Context) error                                { return nil }
+func (m *mockHistoryManager) GetContents() []*llm.Content { return nil }
+func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
+	return nil
+}
+func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error { return nil }
+func (m *mockHistoryManager) GetResolver() llm.AssetResolver                             { return nil }
+func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
+	return nil
+}
+func (m *mockHistoryManager) Save(ctx context.Context) error { return nil }
 
 func TestNewSession(t *testing.T) {
 	id := "test-session-id"
 	h := &mockHistoryManager{}
-	
+
 	before := time.Now().Add(-time.Second)
 	session := NewSession(id, h)
 	after := time.Now().Add(time.Second)

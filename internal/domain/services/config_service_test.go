@@ -57,11 +57,11 @@ func TestConfigService_Initialize(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name          string
-		repoData      map[string]string
-		repoErr       error
-		expectedErr   bool
-		expectedData  map[string]string
+		name         string
+		repoData     map[string]string
+		repoErr      error
+		expectedErr  bool
+		expectedData map[string]string
 	}{
 		{
 			name: "Success",
