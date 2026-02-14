@@ -27,7 +27,7 @@ type orchestrator struct {
 	SM              domain_security.ISecurityManager
 	Stdout          io.Writer
 	Stderr          io.Writer
-	AgentFactory    func(loader config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter
+	AgentFactory    services.ChatterFactory
 	HistoryRenderer services.HistoryRenderer
 	UIRenderer      services.UIRenderer
 }
@@ -103,11 +103,7 @@ func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryM
 }
 
 // NewOrchestrator creates a new orchestrator.
-func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory any, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
-	var agentFactory func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) services.Chatter
-	if factory != nil {
-		agentFactory = factory.(func(config.ConfigLoader, domain_llm.LLMGateway, services.HistoryManager, domaintools.IToolRegistry, domain_security.ISecurityManager, bool, events.EventBus, string, string, string, map[string]domain_pricing.ModelPricing, domain_pricing.ICostTracker) services.Chatter)
-	}
+func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory services.ChatterFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
@@ -115,7 +111,7 @@ func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm dom
 		SM:              sm,
 		Stdout:          stdout,
 		Stderr:          stderr,
-		AgentFactory:    agentFactory,
+		AgentFactory:    factory,
 		HistoryRenderer: historyRenderer,
 		UIRenderer:      uiRenderer,
 	}

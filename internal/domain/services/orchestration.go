@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -39,6 +40,20 @@ type Chatter interface {
 	Subscribe(sub func(events.Event))
 	Shutdown(ctx context.Context) error
 }
+
+// ChatterFactory defines the functional signature for creating a Chatter instance.
+type ChatterFactory func(
+	loader config.ConfigLoader,
+	client llm.LLMGateway,
+	hManager HistoryManager,
+	registry tools.IToolRegistry,
+	sm security.ISecurityManager,
+	disableStreaming bool,
+	bus events.EventBus,
+	model, mode, logPath string,
+	pricingOverrides map[string]pricing.ModelPricing,
+	tracker pricing.ICostTracker,
+) Chatter
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {
