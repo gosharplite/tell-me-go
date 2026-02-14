@@ -57,9 +57,10 @@ type Metrics struct {
 	TotalTokens    int32   `json:"total_tokens"`
 	ThinkingTokens int32   `json:"thinking_tokens,omitempty"`
 	SearchQueries  int     `json:"search_queries,omitempty"`
-	Duration       float64 `json:"duration"`
-	ToolDuration   float64 `json:"tool_duration,omitempty"`
-	Cost           float64 `json:"cost,omitempty"` // USD cost for this turn or summary
+	Duration               float64 `json:"duration"`
+	ToolDuration           float64 `json:"tool_duration,omitempty"`
+	CumulativeToolDuration float64 `json:"cumulative_tool_duration,omitempty"`
+	Cost                   float64 `json:"cost,omitempty"` // USD cost for this turn or summary
 	IsSummary      bool    `json:"is_summary,omitempty"`
 }
 
