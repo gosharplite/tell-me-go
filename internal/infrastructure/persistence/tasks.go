@@ -33,8 +33,8 @@ func newTaskRepository(fs storage.FileSystem, filePath string) *taskRepository {
 
 // ReadAll loads tasks from disk.
 func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
 		return nil, nil
