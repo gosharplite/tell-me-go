@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"path/filepath"
 	"sort"
@@ -68,43 +69,13 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
-	resolvedPath, err := a.SP.IsPathSafe(path)
+	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-
-	pkgs, err := a.idx.Packages(ctx)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if len(pkgs) == 0 {
+	if state == nil {
 		return tools.ToolResult{Text: "No packages found."}, nil
 	}
-
-	targetModule, err := a.identifyModule(pkgs)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	state := &scanState{
-		pkgs:             pkgs,
-		targetModule:     targetModule,
-		targetPath:       resolvedPath,
-		excludedPackages: params.ExcludedPackages,
-		declarations:     make(map[string]*symMeta),
-		totalUses:        make(map[string]int),
-		externalUses:     make(map[string]int),
-	}
-
-	// Execution Pipeline
-	a.harvestExportedSymbols(state)
-	a.analyzeUsages(ctx, state, resolvedPath)
-	a.propagateInterfaceUsages(ctx, state)
 
 	findings := a.buildReport(ctx, state)
 	return a.formatToolResult(findings), nil
@@ -112,6 +83,22 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 
 // GatherOrphanReports is an internal helper for health checks that returns structured findings.
 func (a *deadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+	state, err := a.runAnalysisPipeline(ctx, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, nil
+	}
+
+	return a.buildReport(ctx, state), nil
+}
+
+func (a *deadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string) (*scanState, error) {
+	if path == "" {
+		path = "."
+	}
+
 	resolvedPath, err := a.SP.IsPathSafe(path)
 	if err != nil {
 		return nil, err
@@ -131,19 +118,20 @@ func (a *deadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string)
 	}
 
 	state := &scanState{
-		pkgs:         pkgs,
-		targetModule: targetModule,
-		targetPath:   resolvedPath,
-		declarations: make(map[string]*symMeta),
-		totalUses:    make(map[string]int),
-		externalUses: make(map[string]int),
+		pkgs:             pkgs,
+		targetModule:     targetModule,
+		targetPath:       resolvedPath,
+		excludedPackages: excluded,
+		declarations:     make(map[string]*symMeta),
+		totalUses:        make(map[string]int),
+		externalUses:     make(map[string]int),
 	}
 
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath)
 	a.propagateInterfaceUsages(ctx, state)
 
-	return a.buildReport(ctx, state), nil
+	return state, nil
 }
 
 func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {
@@ -170,80 +158,99 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	for id, meta := range state.declarations {
-		if a.idx.IsSymbolUsed(ctx, id) {
-			state.totalUses[id] = 1
-
-			// Check for external usages to distinguish DEAD from PRIVATE.
-			allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
-			objBase := getBasePkgPath(meta.pkgPath)
-
-			for _, loc := range allUsages {
-				usagePkg, ok := fileToPkg[loc.Path]
-				if !ok {
-					continue
-				}
-				if !strings.HasPrefix(usagePkg, state.targetModule) {
-					continue
-				}
-				pkgBase := getBasePkgPath(usagePkg)
-
-				if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
-					state.externalUses[id]++
-				}
-			}
+		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
+		if a.isDomainPort(meta) {
+			a.protectDomainSymbol(state, id)
 		}
+		a.processImplementations(ctx, state, id)
+	}
+}
 
-		// Domain Port Heuristic:
-		// In Hexagonal Architecture, interfaces in the 'domain' layer are 'Ports' that represent mandatory external contracts.
-		// If a symbol is an exported interface or a method of an exported interface located in the internal/domain/... package tree, protect it.
-		if strings.Contains(meta.pkgPath, "internal/domain") {
-			isPort := false
-			if meta.symType == "Type" {
-				if tn, ok := meta.obj.(*types.TypeName); ok {
-					if _, ok := tn.Type().Underlying().(*types.Interface); ok {
-						isPort = true
-					}
-				}
-			} else if meta.isMethod {
-				if fn, ok := meta.obj.(*types.Func); ok {
-					if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
-						if _, ok := sig.Recv().Type().Underlying().(*types.Interface); ok {
-							isPort = true
-						}
-					}
-				}
-			}
+func (a *deadCodeAnalyzer) isDomainPort(meta *symMeta) bool {
+	if !strings.Contains(meta.pkgPath, "internal/domain") {
+		return false
+	}
+	if meta.symType == "Type" {
+		return a.isInterfaceType(meta.obj)
+	}
+	if meta.isMethod {
+		return a.isInterfaceMethod(meta.obj)
+	}
+	return false
+}
 
-			if isPort {
-				if state.totalUses[id] == 0 {
-					state.totalUses[id] = 1
-				}
-				state.externalUses[id]++
-			}
+func (a *deadCodeAnalyzer) isInterfaceType(obj types.Object) bool {
+	tn, ok := obj.(*types.TypeName)
+	if !ok {
+		return false
+	}
+	_, ok = tn.Type().Underlying().(*types.Interface)
+	return ok
+}
+
+func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
+	return ok
+}
+
+func (a *deadCodeAnalyzer) protectDomainSymbol(state *scanState, id string) {
+	if state.totalUses[id] == 0 {
+		state.totalUses[id] = 1
+	}
+	state.externalUses[id]++
+}
+
+func (a *deadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string) {
+	if !a.idx.IsSymbolUsed(ctx, id) {
+		return
+	}
+
+	state.totalUses[id] = 1
+	allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
+	objBase := getBasePkgPath(meta.pkgPath)
+
+	for _, loc := range allUsages {
+		usagePkg, ok := fileToPkg[loc.Path]
+		if !ok {
+			continue
 		}
+		if !strings.HasPrefix(usagePkg, state.targetModule) {
+			continue
+		}
+		pkgBase := getBasePkgPath(usagePkg)
 
-		// Implementation-Aware Visibility Analysis:
-		// Check for implementations in other packages.
-		// In Go, interface methods MUST be exported if implemented across package boundaries.
-		impls := a.idx.GetImplementations(ctx, id)
-		if len(impls) > 0 {
-			// If it has implementations, it is architecturally active
-			if state.totalUses[id] == 0 {
-				state.totalUses[id] = 1
-			}
+		if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
+			state.externalUses[id]++
+		}
+	}
+}
 
-			objBase := getBasePkgPath(meta.pkgPath)
-			for _, implId := range impls {
-				// Only consider implementations that are part of our current analysis set (scoped)
-				if _, exists := state.declarations[implId]; !exists {
-					continue
-				}
+func (a *deadCodeAnalyzer) processImplementations(ctx context.Context, state *scanState, id string) {
+	impls := a.idx.GetImplementations(ctx, id)
+	if len(impls) == 0 {
+		return
+	}
 
-				// We consider cross-package implementations as "external usage"
-				if !strings.HasPrefix(implId, objBase+".") {
-					state.externalUses[id]++
-				}
-			}
+	if state.totalUses[id] == 0 {
+		state.totalUses[id] = 1
+	}
+
+	meta := state.declarations[id]
+	objBase := getBasePkgPath(meta.pkgPath)
+	for _, implId := range impls {
+		if _, exists := state.declarations[implId]; !exists {
+			continue
+		}
+		if !strings.HasPrefix(implId, objBase+".") {
+			state.externalUses[id]++
 		}
 	}
 }
@@ -505,27 +512,13 @@ func (a *deadCodeAnalyzer) calculateSymbolComplexity(obj types.Object, pkgs []*p
 	if obj == nil {
 		return 0
 	}
-
-	// Only functions and methods have cyclomatic complexity in our current model
 	if _, ok := obj.(*types.Func); !ok {
 		return 0
 	}
 
-	pos := obj.Pos()
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			// Check if the position is within this file
-			if pos >= file.Pos() && pos <= file.End() {
-				// Search for the FuncDecl
-				for _, decl := range file.Decls {
-					if fd, ok := decl.(*ast.FuncDecl); ok {
-						if fd.Name.Pos() == pos {
-							return calculateComplexity(fd)
-						}
-					}
-				}
-			}
-		}
+	funcDecl, _ := a.findFuncDecl(obj.Pos(), pkgs)
+	if funcDecl != nil {
+		return calculateComplexity(funcDecl)
 	}
 	return 0
 }
@@ -534,61 +527,58 @@ func (a *deadCodeAnalyzer) calculateImpactScore(obj types.Object, pkgs []*packag
 	if obj == nil {
 		return 0
 	}
-
-	// Only functions and methods have an impact score based on calls
 	if _, ok := obj.(*types.Func); !ok {
 		return 0
 	}
 
-	pos := obj.Pos()
-	var funcDecl *ast.FuncDecl
-	var targetPkg *packages.Package
-
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			if pos >= file.Pos() && pos <= file.End() {
-				for _, decl := range file.Decls {
-					if fd, ok := decl.(*ast.FuncDecl); ok {
-						if fd.Name.Pos() == pos {
-							funcDecl = fd
-							targetPkg = pkg
-							break
-						}
-					}
-				}
-			}
-			if funcDecl != nil {
-				break
-			}
-		}
-		if funcDecl != nil {
-			break
-		}
-	}
-
+	funcDecl, targetPkg := a.findFuncDecl(obj.Pos(), pkgs)
 	if funcDecl == nil || targetPkg == nil {
 		return 0
 	}
 
 	impactedSymbols := make(map[types.Object]struct{})
 	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
-		var usedObj types.Object
-		switch t := n.(type) {
-		case *ast.Ident:
-			usedObj = targetPkg.TypesInfo.Uses[t]
-		case *ast.SelectorExpr:
-			if sel, ok := targetPkg.TypesInfo.Selections[t]; ok {
-				usedObj = sel.Obj()
-			} else {
-				usedObj = targetPkg.TypesInfo.Uses[t.Sel]
-			}
-		}
-
-		if usedObj != nil && usedObj != obj && usedObj.Exported() && usedObj.Pkg() != nil && usedObj.Pkg().Path() == obj.Pkg().Path() {
+		usedObj := a.extractUsedObject(n, targetPkg)
+		if a.isExportedInternalSymbol(usedObj, obj) {
 			impactedSymbols[usedObj] = struct{}{}
 		}
 		return true
 	})
 
 	return len(impactedSymbols)
+}
+
+func (a *deadCodeAnalyzer) findFuncDecl(pos token.Pos, pkgs []*packages.Package) (*ast.FuncDecl, *packages.Package) {
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			if pos >= file.Pos() && pos <= file.End() {
+				for _, decl := range file.Decls {
+					if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Pos() == pos {
+						return fd, pkg
+					}
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (a *deadCodeAnalyzer) extractUsedObject(n ast.Node, pkg *packages.Package) types.Object {
+	switch t := n.(type) {
+	case *ast.Ident:
+		return pkg.TypesInfo.Uses[t]
+	case *ast.SelectorExpr:
+		if sel, ok := pkg.TypesInfo.Selections[t]; ok {
+			return sel.Obj()
+		}
+		return pkg.TypesInfo.Uses[t.Sel]
+	}
+	return nil
+}
+
+func (a *deadCodeAnalyzer) isExportedInternalSymbol(usedObj, originalObj types.Object) bool {
+	if usedObj == nil || usedObj == originalObj || !usedObj.Exported() || usedObj.Pkg() == nil {
+		return false
+	}
+	return usedObj.Pkg().Path() == originalObj.Pkg().Path()
 }
