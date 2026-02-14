@@ -6,7 +6,10 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/token"
 	"go/types"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -24,11 +27,13 @@ type deadCodeAnalyzer struct {
 
 // orphanReport represents a single finding of dead or effectively private code.
 type orphanReport struct {
-	Symbol   string `json:"symbol"`
-	Pkg      string `json:"package"`
-	Type     string `json:"type"`     // e.g., "Function", "Method", "Type"
-	Severity string `json:"severity"` // "DEAD" or "PRIVATE"
-	Reason   string `json:"reason"`
+	Symbol     string `json:"symbol"`
+	Pkg        string `json:"package"`
+	Type       string `json:"type"`     // e.g., "Function", "Method", "Type"
+	Severity   string `json:"severity"` // "DEAD" or "PRIVATE"
+	Reason     string `json:"reason"`
+	Complexity int    `json:"complexity,omitempty"`
+	Impact     int    `json:"impact,omitempty"`
 }
 
 type symMeta struct {
@@ -43,6 +48,7 @@ type symMeta struct {
 type scanState struct {
 	pkgs             []*packages.Package
 	targetModule     string
+	targetPath       string
 	excludedPackages []string
 	declarations     map[string]*symMeta
 	totalUses        map[string]int
@@ -63,46 +69,69 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
-	path := params.Path
+	state, err := a.runAnalysisPipeline(ctx, params.Path, params.ExcludedPackages)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	if state == nil {
+		return tools.ToolResult{Text: "No packages found."}, nil
+	}
+
+	findings := a.buildReport(ctx, state)
+	return a.formatToolResult(findings), nil
+}
+
+// GatherOrphanReports is an internal helper for health checks that returns structured findings.
+func (a *deadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+	state, err := a.runAnalysisPipeline(ctx, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, nil
+	}
+
+	return a.buildReport(ctx, state), nil
+}
+
+func (a *deadCodeAnalyzer) runAnalysisPipeline(ctx context.Context, path string, excluded []string) (*scanState, error) {
 	if path == "" {
 		path = "."
 	}
 
 	resolvedPath, err := a.SP.IsPathSafe(path)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return nil, err
 	}
 
-	if err := a.idx.Refresh(ctx); err != nil {
-		return tools.ToolResult{}, err
+	pkgs, err := a.idx.Packages(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	pkgs := a.idx.Packages()
 	if len(pkgs) == 0 {
-		return tools.ToolResult{Text: "No packages found."}, nil
+		return nil, nil
 	}
 
 	targetModule, err := a.identifyModule(pkgs)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return nil, err
 	}
 
 	state := &scanState{
 		pkgs:             pkgs,
 		targetModule:     targetModule,
-		excludedPackages: params.ExcludedPackages,
+		targetPath:       resolvedPath,
+		excludedPackages: excluded,
 		declarations:     make(map[string]*symMeta),
 		totalUses:        make(map[string]int),
 		externalUses:     make(map[string]int),
 	}
 
-	// Execution Pipeline
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath)
-	a.propagateInterfaceUsages(state)
+	a.propagateInterfaceUsages(ctx, state)
 
-	findings := a.buildReport(state)
-	return a.formatToolResult(findings), nil
+	return state, nil
 }
 
 func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {
@@ -129,24 +158,99 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	for id, meta := range state.declarations {
-		if a.idx.IsSymbolUsed(id) {
-			state.totalUses[id] = 1
+		a.trackExternalUsages(ctx, state, id, meta, fileToPkg, resolvedPath)
+		if a.isDomainPort(meta) {
+			a.protectDomainSymbol(state, id)
+		}
+		a.processImplementations(ctx, state, id)
+	}
+}
 
-			// Check for external usages to distinguish DEAD from PRIVATE.
-			allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
-			objBase := getBasePkgPath(meta.pkgPath)
+func (a *deadCodeAnalyzer) isDomainPort(meta *symMeta) bool {
+	if !strings.Contains(meta.pkgPath, "internal/domain") {
+		return false
+	}
+	if meta.symType == "Type" {
+		return a.isInterfaceType(meta.obj)
+	}
+	if meta.isMethod {
+		return a.isInterfaceMethod(meta.obj)
+	}
+	return false
+}
 
-			for _, loc := range allUsages {
-				usagePkg, ok := fileToPkg[loc.Path]
-				if !ok {
-					continue
-				}
-				pkgBase := getBasePkgPath(usagePkg)
+func (a *deadCodeAnalyzer) isInterfaceType(obj types.Object) bool {
+	tn, ok := obj.(*types.TypeName)
+	if !ok {
+		return false
+	}
+	_, ok = tn.Type().Underlying().(*types.Interface)
+	return ok
+}
 
-				if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
-					state.externalUses[id]++
-				}
-			}
+func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
+	return ok
+}
+
+func (a *deadCodeAnalyzer) protectDomainSymbol(state *scanState, id string) {
+	if state.totalUses[id] == 0 {
+		state.totalUses[id] = 1
+	}
+	state.externalUses[id]++
+}
+
+func (a *deadCodeAnalyzer) trackExternalUsages(ctx context.Context, state *scanState, id string, meta *symMeta, fileToPkg map[string]string, resolvedPath string) {
+	if !a.idx.IsSymbolUsed(ctx, id) {
+		return
+	}
+
+	state.totalUses[id] = 1
+	allUsages, _ := a.idx.GetUsages(ctx, id, resolvedPath)
+	objBase := getBasePkgPath(meta.pkgPath)
+
+	for _, loc := range allUsages {
+		usagePkg, ok := fileToPkg[loc.Path]
+		if !ok {
+			continue
+		}
+		if !strings.HasPrefix(usagePkg, state.targetModule) {
+			continue
+		}
+		pkgBase := getBasePkgPath(usagePkg)
+
+		if pkgBase != objBase || strings.Contains(usagePkg, ".test]") || strings.HasSuffix(usagePkg, "_test") {
+			state.externalUses[id]++
+		}
+	}
+}
+
+func (a *deadCodeAnalyzer) processImplementations(ctx context.Context, state *scanState, id string) {
+	impls := a.idx.GetImplementations(ctx, id)
+	if len(impls) == 0 {
+		return
+	}
+
+	if state.totalUses[id] == 0 {
+		state.totalUses[id] = 1
+	}
+
+	meta := state.declarations[id]
+	objBase := getBasePkgPath(meta.pkgPath)
+	for _, implId := range impls {
+		if _, exists := state.declarations[implId]; !exists {
+			continue
+		}
+		if !strings.HasPrefix(implId, objBase+".") {
+			state.externalUses[id]++
 		}
 	}
 }
@@ -174,38 +278,69 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 			sb.WriteString(fmt.Sprintf("\n### Package: %s\n", f.Pkg))
 			currentPkg = f.Pkg
 		}
-		sb.WriteString(fmt.Sprintf("- [%s] %s (%s): %s\n", f.Severity, f.Symbol, f.Type, f.Reason))
+
+		metrics := ""
+		if f.Complexity > 0 || f.Impact > 0 {
+			metrics = fmt.Sprintf(" (Complexity: %d, Impact: %d)", f.Complexity, f.Impact)
+		}
+
+		prefix := ""
+		if f.Impact >= 3 {
+			prefix = "[STRUCTURAL ANCHOR] "
+		} else if f.Complexity >= 10 {
+			prefix = "[HIGH COMPLEXITY] "
+		}
+
+		sb.WriteString(fmt.Sprintf("- %s[%s] %s (%s)%s: %s\n", prefix, f.Severity, f.Symbol, f.Type, metrics, f.Reason))
 	}
 
 	return tools.ToolResult{Text: sb.String()}
 }
 
-func (a *deadCodeAnalyzer) buildReport(state *scanState) []orphanReport {
+func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
 	for id, meta := range state.declarations {
 		total := state.totalUses[id]
 		external := state.externalUses[id]
 
 		if total == 0 {
+			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+			impact := a.calculateImpactScore(meta.obj, state.pkgs)
 			findings = append(findings, orphanReport{
-				Symbol:   meta.name,
-				Pkg:      meta.pkgPath,
-				Type:     meta.symType,
-				Severity: "DEAD",
-				Reason:   "No references found within the module (including interfaces/tests).",
+				Symbol:     meta.name,
+				Pkg:        meta.pkgPath,
+				Type:       meta.symType,
+				Severity:   "DEAD",
+				Reason:     "No references found within the module (including interfaces/tests).",
+				Complexity: complexity,
+				Impact:     impact,
 			})
 		} else if external == 0 {
+			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
+			impact := a.calculateImpactScore(meta.obj, state.pkgs)
+			reason := "Exported symbol is only used within its own package."
+			if complexity >= 10 {
+				reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
+			}
 			findings = append(findings, orphanReport{
-				Symbol:   meta.name,
-				Pkg:      meta.pkgPath,
-				Type:     meta.symType,
-				Severity: "PRIVATE",
-				Reason:   "Exported symbol is only used within its own package.",
+				Symbol:     meta.name,
+				Pkg:        meta.pkgPath,
+				Type:       meta.symType,
+				Severity:   "PRIVATE",
+				Reason:     reason,
+				Complexity: complexity,
+				Impact:     impact,
 			})
 		}
 	}
 
 	sort.Slice(findings, func(i, j int) bool {
+		if findings[i].Impact != findings[j].Impact {
+			return findings[i].Impact > findings[j].Impact
+		}
+		if findings[i].Complexity != findings[j].Complexity {
+			return findings[i].Complexity > findings[j].Complexity
+		}
 		if findings[i].Pkg != findings[j].Pkg {
 			return findings[i].Pkg < findings[j].Pkg
 		}
@@ -254,6 +389,14 @@ func (a *deadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *s
 	if pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
 		return
 	}
+
+	if state.targetPath != "" && len(pkg.GoFiles) > 0 {
+		absPkg, _ := filepath.Abs(filepath.Dir(pkg.GoFiles[0]))
+		if !strings.HasPrefix(absPkg, state.targetPath) {
+			return
+		}
+	}
+
 	if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
 		return
 	}
@@ -291,7 +434,7 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 }
 
 func (a *deadCodeAnalyzer) isTestSymbol(name string) bool {
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example")
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example") || strings.HasPrefix(name, "Fuzz")
 }
 
 func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
@@ -351,13 +494,91 @@ func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *
 	}
 }
 
-func (a *deadCodeAnalyzer) propagateInterfaceUsages(state *scanState) {
+func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState) {
 	for id, count := range state.totalUses {
 		if count > 0 {
-			for _, implId := range a.idx.GetImplementations(id) {
+			for _, implId := range a.idx.GetImplementations(ctx, id) {
+				if _, exists := state.declarations[implId]; !exists {
+					continue
+				}
 				state.totalUses[implId] += count
 				state.externalUses[implId] += state.externalUses[id]
 			}
 		}
 	}
+}
+
+func (a *deadCodeAnalyzer) calculateSymbolComplexity(obj types.Object, pkgs []*packages.Package) int {
+	if obj == nil {
+		return 0
+	}
+	if _, ok := obj.(*types.Func); !ok {
+		return 0
+	}
+
+	funcDecl, _ := a.findFuncDecl(obj.Pos(), pkgs)
+	if funcDecl != nil {
+		return calculateComplexity(funcDecl)
+	}
+	return 0
+}
+
+func (a *deadCodeAnalyzer) calculateImpactScore(obj types.Object, pkgs []*packages.Package) int {
+	if obj == nil {
+		return 0
+	}
+	if _, ok := obj.(*types.Func); !ok {
+		return 0
+	}
+
+	funcDecl, targetPkg := a.findFuncDecl(obj.Pos(), pkgs)
+	if funcDecl == nil || targetPkg == nil {
+		return 0
+	}
+
+	impactedSymbols := make(map[types.Object]struct{})
+	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		usedObj := a.extractUsedObject(n, targetPkg)
+		if a.isExportedInternalSymbol(usedObj, obj) {
+			impactedSymbols[usedObj] = struct{}{}
+		}
+		return true
+	})
+
+	return len(impactedSymbols)
+}
+
+func (a *deadCodeAnalyzer) findFuncDecl(pos token.Pos, pkgs []*packages.Package) (*ast.FuncDecl, *packages.Package) {
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			if pos >= file.Pos() && pos <= file.End() {
+				for _, decl := range file.Decls {
+					if fd, ok := decl.(*ast.FuncDecl); ok && fd.Name.Pos() == pos {
+						return fd, pkg
+					}
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (a *deadCodeAnalyzer) extractUsedObject(n ast.Node, pkg *packages.Package) types.Object {
+	switch t := n.(type) {
+	case *ast.Ident:
+		return pkg.TypesInfo.Uses[t]
+	case *ast.SelectorExpr:
+		if sel, ok := pkg.TypesInfo.Selections[t]; ok {
+			return sel.Obj()
+		}
+		return pkg.TypesInfo.Uses[t.Sel]
+	}
+	return nil
+}
+
+func (a *deadCodeAnalyzer) isExportedInternalSymbol(usedObj, originalObj types.Object) bool {
+	if usedObj == nil || usedObj == originalObj || !usedObj.Exported() || usedObj.Pkg() == nil {
+		return false
+	}
+	return usedObj.Pkg().Path() == originalObj.Pkg().Path()
 }

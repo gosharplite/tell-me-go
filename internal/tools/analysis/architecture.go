@@ -53,14 +53,13 @@ type indexedPackageProvider struct {
 }
 
 func (p *indexedPackageProvider) LoadPackages(ctx context.Context) (map[string][]string, error) {
-	// Ensure the index is populated before querying packages
-	if err := p.idx.Refresh(ctx); err != nil {
-		return nil, fmt.Errorf("failed to refresh architecture index: %w", err)
+	pkgs, err := p.idx.Packages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load architecture packages: %w", err)
 	}
 
-	pkgs := p.idx.Packages()
 	if len(pkgs) == 0 {
-		return nil, fmt.Errorf("no packages found in index after refresh")
+		return nil, fmt.Errorf("no packages found in index")
 	}
 
 	for _, pkg := range pkgs {

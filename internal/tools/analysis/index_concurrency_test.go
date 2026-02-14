@@ -10,6 +10,10 @@ import (
 )
 
 func TestIndexer_Concurrency(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrency test in short mode")
+	}
+	t.Parallel()
 	tmpDir, idx, ctx := setupIndexerConcurrency(t)
 
 	start := make(chan struct{})

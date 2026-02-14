@@ -399,7 +399,7 @@ func TestGetDetailedCoverageReport(t *testing.T) {
 		},
 	}
 
-	_, err := GetDetailedCoverageReport(ctx, "./non-existent", mock)
+	_, err := getDetailedCoverageReport(ctx, "./non-existent", mock)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -413,7 +413,7 @@ func TestGetDetailedCoverageJSON(t *testing.T) {
 		},
 	}
 
-	_, err := GetDetailedCoverageJSON(ctx, "./non-existent", "High", mock)
+	_, err := getDetailedCoverageJSON(ctx, "./non-existent", "High", mock)
 	if err == nil {
 		t.Error("expected error for non-existent package, got nil")
 	}
@@ -676,9 +676,9 @@ func TestGetDetailedCoverageReport_Success(t *testing.T) {
 	}
 	defer os.Remove("file.go")
 
-	report, err := GetDetailedCoverageReport(ctx, ".", mock)
+	report, err := getDetailedCoverageReport(ctx, ".", mock)
 	if err != nil {
-		t.Fatalf("GetDetailedCoverageReport failed: %v", err)
+		t.Fatalf("getDetailedCoverageReport failed: %v", err)
 	}
 	if !strings.Contains(report, "Detailed Coverage Report") {
 		t.Error("report missing title")
@@ -708,9 +708,9 @@ func TestGetDetailedCoverageJSON_Success(t *testing.T) {
 	}
 	defer os.Remove("file.go")
 
-	jsonStr, err := GetDetailedCoverageJSON(ctx, ".", "Low", mock)
+	jsonStr, err := getDetailedCoverageJSON(ctx, ".", "Low", mock)
 	if err != nil {
-		t.Fatalf("GetDetailedCoverageJSON failed: %v", err)
+		t.Fatalf("getDetailedCoverageJSON failed: %v", err)
 	}
 	if !strings.Contains(jsonStr, "file.go") {
 		t.Error("json missing file name")

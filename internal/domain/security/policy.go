@@ -45,7 +45,6 @@ func DefaultPolicy() *Policy {
 			"golangci-lint": true,
 			"staticcheck":   true,
 			"govulncheck":   true,
-			"arch-guard":    true,
 			"cp":            true,
 			"mv":            true,
 			"rm":            true,

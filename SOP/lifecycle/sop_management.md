@@ -22,7 +22,7 @@ This SOP defines the standard structure and process for documenting procedures w
 To ensure stability, files are categorized by risk:
 - **Core Entry Points** (`cmd/**/*.go`): **HIGH RISK**. These are the orchestrators and CLI entry points. Modifications require full build verification and syntax validation as per [Self-Update Safety](./self_update_safety.md).
 - **Internal/Package Logic** (`internal/**/*.go`, `pkg/**/*.go`): **MEDIUM RISK**. These contain the bulk of the system logic (API handling, history management, metrics). Unit tests must pass before any changes are committed.
-- **Configurations/Assets** (`yaml/*.yaml`, `lib/tools.json`): **LOW RISK**. Ensure valid JSON/YAML syntax.
+- **Configurations/Assets** (`configs/*.yaml`): **LOW RISK**. Ensure valid YAML syntax.
 
 Every SOP should follow a consistent Markdown structure:
 
@@ -46,7 +46,7 @@ Every SOP should follow a consistent Markdown structure:
 
 #### Step 3: Localization
 - **File Path**: Save the file in the `SOP/` directory or an appropriate sub-folder (e.g., `SOP/tools/`).
-- **Naming Convention**: Use lowercase with underscores (e.g., `SOP/technical/architecture_guide.md`).
+- **Naming Convention**: Use lowercase with underscores (e.g., `SOP/technical/architecture_and_packages.md`).
 
 #### Step 4: Verification
 - Follow your own draft as if you were a new user.

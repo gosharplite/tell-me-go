@@ -18,7 +18,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
     *   **Interactive Safety**: 
         *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
-        *   **Session-Persistent Bypass**: The `bypass_confirmation` tool state is now persistent for the entire session. No more re-authorizing every run.
+        *   **Persistent Bypass**: The `bypass_confirmation` state persists across executions in the same mode. No more re-authorizing every run.
     *   **FileSystem (Workspace)**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `get_file_diff`, `undo_file_change`.
     *   **Intelligence (AST-Powered/Analysis)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `get_file_skeleton`, `search_usages_globally`, `get_semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `get_complexity_metrics`, `get_package_graph`, `generate_mermaid_diagram`, `move_definition`, `verify_architecture`, `get_code_health`, `get_detailed_coverage`, `analyze_sequence_flow`, `dead_code_graph`, `get_definitions`.
     *   **Git (Workspace)**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_show`, `get_git_blame`, `git_commit`, `git_create_branch`.
@@ -191,7 +191,7 @@ AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_I
 # --- Tools & Features ---
 USE_SEARCH: true
 THINKING_BUDGET: 0 # Max for gemini-3-flash-preview is 32768
-THINKING_LEVEL: "" # Options: LOW, MEDIUM, HIGH
+THINKING_LEVEL: "HIGH" # Options: LOW, MEDIUM, HIGH
 SHOW_THOUGHTS: true
 SHOW_TOOLS: true
 

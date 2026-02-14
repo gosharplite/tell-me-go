@@ -31,6 +31,7 @@ func (m *mockHealthExecutor) CombinedOutput(ctx context.Context, name string, ar
 }
 
 func TestHealthManager_GetCodeHealth(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
@@ -50,8 +51,8 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| Metric | Status | Details |") {
 		t.Errorf("expected table header, got %q", res.Text)
 	}
-	if !strings.Contains(res.Text, "| **Dead Code (Arch Guard)** |") {
-		t.Errorf("expected Dead Code (Arch Guard) row, got %q", res.Text)
+	if !strings.Contains(res.Text, "| **Dead Code** |") {
+		t.Errorf("expected Dead Code row, got %q", res.Text)
 	}
 	if !strings.Contains(res.Text, "82.5%") {
 		t.Errorf("expected 82.5%% coverage, got %q", res.Text)
@@ -59,6 +60,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 }
 
 func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
+	t.Parallel()
 	sm := security.NewSecurityManager(nil)
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
@@ -80,6 +82,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 }
 
 func TestHealthManager_GenerateRecommendation(t *testing.T) {
+	t.Parallel()
 	hea := &healthManager{}
 
 	tests := []struct {
@@ -155,7 +158,9 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.sec, tt.dead)
 			for _, w := range tt.want {
 				if !strings.Contains(got, w) {

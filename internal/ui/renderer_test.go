@@ -277,6 +277,7 @@ func TestLogTurnStatus_Format(t *testing.T) {
 		"C: 516",
 		"Th: 435",
 		"8.12s",
+		"(ΣT: 0.00s)",
 		"/ 8.33s",
 	}
 
@@ -285,6 +286,29 @@ func TestLogTurnStatus_Format(t *testing.T) {
 			t.Errorf("expected output to contain %q, got %q", p, output)
 		}
 	}
+
+	t.Run("CumulativeToolDuration", func(t *testing.T) {
+		stderr.Reset()
+		r.LogTurnStatus(events.TurnStatus{
+			Timestamp:  r.nowSafe(),
+			IsPostCall: true,
+			Metrics: &llm.Metrics{
+				Duration:               5.0,
+				ToolDuration:           2.0,
+				CumulativeToolDuration: 3.5,
+			},
+			StartTime: r.nowSafe().Add(-10 * time.Second),
+		})
+		output := stderr.String()
+		// Expected Total Latency: 5.0 + 2.0 = 7.0s
+		// Expected Cumulative: (ΣT: 3.50s)
+		if !strings.Contains(output, "7.00s") {
+			t.Errorf("expected output to contain total latency 7.00s, got %q", output)
+		}
+		if !strings.Contains(output, "(ΣT: 3.50s)") {
+			t.Errorf("expected output to contain cumulative tool duration (ΣT: 3.50s), got %q", output)
+		}
+	})
 
 	// Check Ready line with aggregates
 	r.LogTurnStatus(events.TurnStatus{

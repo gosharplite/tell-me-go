@@ -543,6 +543,9 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 
 	if turn.State.Metrics != nil {
 		turn.State.Metrics.ToolDuration = turn.Clock.Now().Sub(toolStart).Seconds()
+		if trace := telemetry.TraceFromContext(ctx); trace != nil {
+			turn.State.Metrics.CumulativeToolDuration = trace.CumulativeToolDuration().Seconds()
+		}
 	}
 	return processResult{NextPhase: phasePersisting}, nil
 }

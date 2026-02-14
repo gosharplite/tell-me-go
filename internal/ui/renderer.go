@@ -226,19 +226,19 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 		hColor = colorReset
 	}
 
-	durationStr := fmt.Sprintf("%.2fs", m.Duration)
-	if m.ToolDuration > 3.0 {
-		durationStr = fmt.Sprintf("%.2fs+%.0fs", m.Duration, m.ToolDuration)
-	}
+	totalTurnLatency := m.Duration + m.ToolDuration
+	timingStr := fmt.Sprintf("%s%.2fs %s(ΣT: %.2fs)%s",
+		ui.c(colorReset), totalTurnLatency,
+		ui.c(colorGray), m.CumulativeToolDuration,
+		ui.c(colorGray))
 
-	timingStr := fmt.Sprintf("%s%s%s", ui.c(colorReset), durationStr, ui.c(colorGray))
 	if !startTime.IsZero() {
 		n := ui.now
 		if n == nil {
 			n = time.Now
 		}
-		totalDuration := n().Sub(startTime).Seconds()
-		timingStr = fmt.Sprintf("%s%s%s / %.2fs%s", ui.c(colorReset), durationStr, ui.c(colorGray), totalDuration, ui.c(colorGray))
+		totalSessionDuration := n().Sub(startTime).Seconds()
+		timingStr = fmt.Sprintf("%s / %.2fs%s", timingStr, totalSessionDuration, ui.c(colorGray))
 	}
 
 	// Prepare cost string

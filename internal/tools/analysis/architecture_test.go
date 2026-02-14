@@ -20,6 +20,7 @@ func (m *mockpackageProvider) LoadPackages(ctx context.Context) (map[string][]st
 }
 
 func TestArchitectureManager_VerifyArchitecture(t *testing.T) {
+	t.Parallel()
 	mockSP := &mockSecurityProvider{}
 	m := &architectureManager{
 		SP:         mockSP,
@@ -203,13 +204,15 @@ func (m *mockSecurityProviderDenyGo) IsCommandAllowed(cmd string) bool {
 }
 
 func TestRealPackageProvider_LoadPackages(t *testing.T) {
-	m := &architectureManager{
-		SP: &mockSecurityProviderDenyGo{},
-	}
-	executor := &mockExecutor{}
-	r := &realpackageProvider{m: m, Exec: executor}
+	t.Parallel()
 
 	t.Run("security denial", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{
+			SP: &mockSecurityProviderDenyGo{},
+		}
+		executor := &mockExecutor{}
+		r := &realpackageProvider{m: m, Exec: executor}
 		_, err := r.LoadPackages(context.Background())
 		if err == nil || !strings.Contains(err.Error(), "security policy") {
 			t.Errorf("expected security denial error, got %v", err)
@@ -217,7 +220,12 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 	})
 
 	t.Run("command failure", func(t *testing.T) {
-		m.SP = &mockSecurityProvider{} // allow go
+		t.Parallel()
+		m := &architectureManager{
+			SP: &mockSecurityProvider{},
+		}
+		executor := &mockExecutor{}
+		r := &realpackageProvider{m: m, Exec: executor}
 		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return nil, fmt.Errorf("exit status 1")
 		}
@@ -228,6 +236,12 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 	})
 
 	t.Run("malformed output", func(t *testing.T) {
+		t.Parallel()
+		m := &architectureManager{
+			SP: &mockSecurityProvider{},
+		}
+		executor := &mockExecutor{}
+		r := &realpackageProvider{m: m, Exec: executor}
 		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			return []byte("invalid json"), nil
 		}
@@ -238,7 +252,13 @@ func TestRealPackageProvider_LoadPackages(t *testing.T) {
 	})
 
 	t.Run("successful load", func(t *testing.T) {
-		m.ModulePath = "github.com/org/repo"
+		t.Parallel()
+		m := &architectureManager{
+			SP:         &mockSecurityProvider{},
+			ModulePath: "github.com/org/repo",
+		}
+		executor := &mockExecutor{}
+		r := &realpackageProvider{m: m, Exec: executor}
 		executor.CombinedOutputFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			data := `{"ImportPath": "github.com/org/repo/internal/domain", "Imports": ["github.com/org/repo/internal/other"], "Module": {"Path": "github.com/org/repo"}}`
 			return []byte(data), nil

@@ -96,11 +96,11 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 		return nil
 	}
 
-	// 1. Refresh and get packages from indexer
-	if err := a.idx.Refresh(ctx); err != nil {
-		return fmt.Errorf("refreshing index: %w", err)
+	// 1. Get packages from indexer (will refresh automatically)
+	pkgs, err := a.idx.Packages(ctx)
+	if err != nil {
+		return fmt.Errorf("getting packages from indexer: %w", err)
 	}
-	pkgs := a.idx.Packages()
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no packages loaded")
 	}
@@ -173,12 +173,12 @@ func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, ma
 	var frames []callFrame
 	visited := make(map[string]bool)
 
-	a.walk(startPkg, startFunc, 0, maxDepth, &frames, visited, modName)
+	a.walk(ctx, startPkg, startFunc, 0, maxDepth, &frames, visited, modName)
 
 	return frames, nil
 }
 
-func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string) {
+func (a *sequenceAnalyzer) walk(ctx context.Context, pkg *packages.Package, fn *ast.FuncDecl, depth, maxDepth int, frames *[]callFrame, visited map[string]bool, modName string) {
 	if depth >= maxDepth || fn.Body == nil {
 		return
 	}
@@ -194,6 +194,7 @@ func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, 
 	visited[key] = true
 
 	v := &sequenceVisitor{
+		ctx:      ctx,
 		pkg:      pkg,
 		modName:  modName,
 		depth:    depth,
@@ -206,6 +207,7 @@ func (a *sequenceAnalyzer) walk(pkg *packages.Package, fn *ast.FuncDecl, depth, 
 }
 
 type sequenceVisitor struct {
+	ctx      context.Context
 	pkg      *packages.Package
 	modName  string
 	depth    int
@@ -298,7 +300,7 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 	}
 
 	if targetId != "" {
-		v.tryRecurse(targetId, v.depth, v.maxDepth)
+		v.tryRecurse(v.ctx, targetId, v.depth, v.maxDepth)
 	}
 }
 
@@ -494,7 +496,7 @@ func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc stri
 	return displayFunc, retType
 }
 
-func (v *sequenceVisitor) tryRecurse(targetId string, depth, maxDepth int) {
+func (v *sequenceVisitor) tryRecurse(ctx context.Context, targetId string, depth, maxDepth int) {
 	if depth+1 >= maxDepth {
 		return
 	}
@@ -504,16 +506,16 @@ func (v *sequenceVisitor) tryRecurse(targetId string, depth, maxDepth int) {
 
 	// 1. Direct match
 	if info, ok := v.analyzer.funcMap[targetId]; ok {
-		v.analyzer.walk(info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
+		v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
 		return
 	}
 
 	// 2. Interface implementation tracing
-	impls := v.analyzer.idx.GetImplementations(targetId)
+	impls := v.analyzer.idx.GetImplementations(ctx, targetId)
 	if len(impls) == 1 {
 		implId := impls[0]
 		if info, ok := v.analyzer.funcMap[implId]; ok {
-			v.analyzer.walk(info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
+			v.analyzer.walk(ctx, info.pkg, info.decl, depth+1, maxDepth, v.frames, v.visited, v.modName)
 		}
 	}
 }

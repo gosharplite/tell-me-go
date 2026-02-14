@@ -22,10 +22,11 @@ To ensure a consistent and user-friendly command-line interface for `tell-me-go`
 
 #### 1. Flag Definitions
 All flags must follow a consistent naming convention:
-- **Config**: `-c` or `--config` for specifying the configuration YAML path.
-- **Model**: `-m` or `--model` for overriding the AI model.
-- **Verbose**: `-v` or `--verbose` for detailed logging.
+- **Config**: `-c` for specifying the configuration YAML path.
+- **Version**: `-v` or `--version` for showing version information.
 - **History**: `-l` for showing conversation history. If used without a numeric argument (e.g., `b -l`), it defaults to showing the single last message (`b -l 1`).
+- **Raw**: `-r` for raw output (no markdown rendering).
+- **New Session**: `-new` to start a fresh conversation.
 
 #### 2. Argument and Input Handling
 The tool follows a "Triple-Mode" input strategy to provide a seamless user experience:
@@ -62,30 +63,37 @@ All terminal log outputs (prompt echoes, system messages, thought processes, too
     - Safety Warnings: Yellow or Red for urgency.
 
 #### 7. Flag Parsing Location
-- Flags should be defined and parsed within `cmd/tell-me-go/main.go`.
+- Flags should be defined and parsed within the `internal/cli` package (e.g., `internal/cli/chat_command.go`) to ensure the application lifecycle is programmatically testable. `cmd/tell-me-go/main.go` should remain a minimal entry point.
 - Defaults should be sensible (e.g., default config path to `configs/vertex.yaml`).
 
 ---
 
 ### Code Templates
 
-#### Standard Input and Flag Parsing:
+#### Standard Flag Parsing (within Command):
 ```go
-// 1. Parse Flags
-configPath := flag.String("c", "configs/vertex.yaml", "Path to config")
-flag.Parse()
+func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
+	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
+	opts := &cliOptions{}
+	fs.StringVar(&opts.configPath, "c", "configs/vertex.yaml", "Path to config")
+	if err := fs.Parse(args); err != nil {
+		return nil, nil, err
+	}
+	return opts, fs, nil
+}
+```
 
-// 2. Resolve Prompt (Triple-Mode)
-prompt := flag.Arg(0)
-// ... (input logic)
-prompt = strings.TrimSpace(prompt)
+#### Resolve Prompt (Triple-Mode):
+```go
+// 1. Direct Argument
+prompt := fs.Arg(0)
+
+// 2. Piped Input / Interactive (inside CapturePrompt)
+// ... logic to read from stdin ...
 
 // 3. Immediate User Feedback with Timestamp
 fmt.Fprintf(os.Stderr, "[0;32m[%s] > %s[0m
 ", time.Now().Format("15:04:05"), prompt)
-
-// 4. Proceed to Load Config (potentially slow)
-cfg, err := config.Load(*configPath)
 ```
 
 #### 9. Agentic State Management (⚠️ CRITICAL)

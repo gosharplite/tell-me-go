@@ -9,6 +9,7 @@ import (
 )
 
 func TestDeadCodeAnalyzer_Precision(t *testing.T) {
+	t.Parallel()
 	// Setup temporary workspace
 	tmpDir, err := os.MkdirTemp("", "precision-test")
 	if err != nil {

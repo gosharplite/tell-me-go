@@ -40,6 +40,7 @@ type iTypeManager interface {
 
 type iDeadCodeAnalyzer interface {
 	FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error)
+	GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error)
 }
 
 // analysisManager is the consolidated hub for all code analysis, refactoring, and development tools.

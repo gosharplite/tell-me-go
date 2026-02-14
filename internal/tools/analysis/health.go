@@ -11,10 +11,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/archguard"
 )
 
 type healthManager struct {
@@ -30,20 +30,49 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	default:
 	}
 
-	// 1 & 2. Run Tests with Coverage (One execution for efficiency)
-	testStatus, testDetails, coverageStatus, coverageDetails := m.runTestsAndCoverage(ctx)
+	var (
+		testStatus, testDetails, coverageStatus, coverageDetails string
+		lintStatus, lintDetails                                  string
+		compStatus, compDetails                                  string
+		alerts                                                   []string
+		deadStatus, deadDetails                                  string
+		secStatus, secDetails                                    string
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	// 1 & 2. Run Tests with Coverage
+	go func() {
+		defer wg.Done()
+		testStatus, testDetails, coverageStatus, coverageDetails = m.runTestsAndCoverage(ctx)
+	}()
 
 	// 3. Linting
-	lintStatus, lintDetails := m.runLint(ctx)
+	go func() {
+		defer wg.Done()
+		lintStatus, lintDetails = m.runLint(ctx)
+	}()
 
 	// 4. Complexity
-	compStatus, compDetails, alerts := m.checkComplexity(ctx)
+	go func() {
+		defer wg.Done()
+		compStatus, compDetails, alerts = m.checkComplexity(ctx)
+	}()
 
 	// 5. Dead Code
-	deadStatus, deadDetails := m.runDeadCode(ctx)
+	go func() {
+		defer wg.Done()
+		deadStatus, deadDetails = m.runDeadCode(ctx)
+	}()
 
 	// 6. Security
-	secStatus, secDetails := m.checkSecurity(ctx)
+	go func() {
+		defer wg.Done()
+		secStatus, secDetails = m.checkSecurity(ctx)
+	}()
+
+	wg.Wait()
 
 	// Format table
 	var sb strings.Builder
@@ -54,7 +83,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
 	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
 	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
-	sb.WriteString(fmt.Sprintf("| **Dead Code (Arch Guard)** | %s | %s |\n", deadStatus, deadDetails))
+	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
 	sb.WriteString(fmt.Sprintf("| **Security** | %s | %s |\n", secStatus, secDetails))
 
 	if len(alerts) > 0 {
@@ -73,9 +102,6 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 }
 
 func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDetails, cStatus, cDetails string) {
-	m.SP.TerminalLock()
-	defer m.SP.TerminalUnlock()
-
 	f, err := os.CreateTemp("", "health-*.out")
 	if err != nil {
 		return "ERROR", "Failed to create temp file", "N/A", err.Error()
@@ -133,9 +159,6 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 }
 
 func (m *healthManager) runLint(ctx context.Context) (string, string) {
-	m.SP.TerminalLock()
-	defer m.SP.TerminalUnlock()
-
 	var tool string
 	var args []string
 	if _, err := exec.LookPath("golangci-lint"); err == nil {
@@ -156,10 +179,15 @@ func (m *healthManager) runLint(ctx context.Context) (string, string) {
 
 	lines := strings.Split(outStr, "\n")
 	count := 0
+	issueRegex := regexp.MustCompile(`.*\.go:\d+:\d+:`)
 	for _, line := range lines {
-		if strings.Contains(line, ":") {
+		if issueRegex.MatchString(line) {
 			count++
 		}
+	}
+
+	if count == 0 {
+		return "CLEAN", "All checks passed"
 	}
 	return fmt.Sprintf("%d Issues", count), fmt.Sprintf("Using %s", tool)
 }
@@ -191,29 +219,19 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 }
 
 func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
-	findings, err := archguard.Analyze(ctx, "./...")
+	findings, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".")
 	if err != nil {
 		return "ERROR", err.Error()
 	}
 
-	candidateCount := 0
-	for _, f := range findings {
-		if f.Category == archguard.PrivateCandidate {
-			candidateCount++
-		}
-	}
-
-	if candidateCount == 0 {
+	if len(findings) == 0 {
 		return "CLEAN", "0 Items"
 	}
 
-	return "DEBT", fmt.Sprintf("%d Items", candidateCount)
+	return "DEBT", fmt.Sprintf("%d Items", len(findings))
 }
 
 func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
-	m.SP.TerminalLock()
-	defer m.SP.TerminalUnlock()
-
 	if _, err := exec.LookPath("govulncheck"); err != nil {
 		return "SKIP", "govulncheck not installed (run 'go install golang.org/x/vuln/cmd/govulncheck@latest')"
 	}
@@ -267,7 +285,7 @@ func (m *healthManager) getDetailedCoverage(ctx context.Context, args map[string
 		path = "./..."
 	}
 
-	report, err := GetDetailedCoverageReport(ctx, path, m.Exec)
+	report, err := getDetailedCoverageReport(ctx, path, m.Exec)
 	if err != nil {
 		return tools.ToolResult{Text: "Error: " + err.Error()}, nil
 	}

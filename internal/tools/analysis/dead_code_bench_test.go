@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"context"
+	"go/types"
 	"path/filepath"
 	"testing"
 
@@ -85,6 +86,38 @@ func BenchmarkDeadCode_CachedScan(b *testing.B) {
 		_, err = analyzer.FindOrphanedSymbols(ctx, args)
 		if err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCalculateImpactScore_ProjectWide(b *testing.B) {
+	ctx := context.Background()
+	idx, _ := newIndexer(".")
+	sm := &benchmarkSecurityManager{}
+	analyzer := newDeadCodeAnalyzer(sm, idx)
+	pkgs, _ := idx.Packages(ctx)
+
+	// Collect all function objects in the project
+	var funcs []types.Object
+	for _, pkg := range pkgs {
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			if _, ok := obj.(*types.Func); ok {
+				funcs = append(funcs, obj)
+			}
+		}
+	}
+
+	if len(funcs) == 0 {
+		b.Fatal("no functions found to benchmark")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Benchmark analysis of the first 20 functions to simulate a typical report
+		for j := 0; j < 20 && j < len(funcs); j++ {
+			_ = analyzer.calculateImpactScore(funcs[j], pkgs)
 		}
 	}
 }

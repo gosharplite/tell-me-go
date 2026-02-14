@@ -62,3 +62,17 @@ func (t *TurnTrace) RecordToolExecution(trace ToolExecutionTrace) {
 	defer t.mu.Unlock()
 	t.ToolExecutions = append(t.ToolExecutions, trace)
 }
+
+// CumulativeToolDuration returns the sum of all tool execution durations.
+func (t *TurnTrace) CumulativeToolDuration() time.Duration {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var total time.Duration
+	for _, te := range t.ToolExecutions {
+		total += te.Duration
+	}
+	return total
+}

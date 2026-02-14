@@ -47,11 +47,11 @@ type symbolIndex interface {
 	// GetUsages returns all locations where the given symbol name is used.
 	GetUsages(ctx context.Context, symbol string, path string) ([]location, error)
 	// IsSymbolUsed returns true if the provided name exists in the index with at least one usage.
-	IsSymbolUsed(name string) bool
+	IsSymbolUsed(ctx context.Context, name string) bool
 	// GetImplementations returns the concrete method identities that implement the given interface method.
-	GetImplementations(interfaceMethodId string) []string
+	GetImplementations(ctx context.Context, interfaceMethodId string) []string
 	// Packages returns the loaded packages.
-	Packages() []*packages.Package
+	Packages(ctx context.Context) ([]*packages.Package, error)
 	// Refresh re-scans the workspace to update the index.
 	Refresh(ctx context.Context) error
 }
@@ -165,6 +165,9 @@ func (idx *indexer) toLocation(pos token.Pos) location {
 }
 
 func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]location, error) {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -179,6 +182,9 @@ func (idx *indexer) Lookup(ctx context.Context, symbol string) ([]location, erro
 }
 
 func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) ([]typeName, error) {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -222,6 +228,9 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 }
 
 func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -253,6 +262,9 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 }
 
 func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -283,10 +295,13 @@ func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) (
 	return results, nil
 }
 
-func (idx *indexer) Packages() []*packages.Package {
+func (idx *indexer) Packages(ctx context.Context) ([]*packages.Package, error) {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil, err
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	return idx.pkgs
+	return idx.pkgs, nil
 }
 
 type harvester struct {
@@ -499,7 +514,25 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
 	for _, itf := range interfaces {
-		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
+		implements := types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf)
+
+		// Generic Interface Handling:
+		// types.Implements often fails when itf is a generic interface definition rather than an instantiation.
+		// If it has methods, check if the concrete type provides them by name.
+		if !implements && itf.NumMethods() > 0 {
+			matchCount := 0
+			for i := 0; i < itf.NumMethods(); i++ {
+				m := itf.Method(i)
+				if obj, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, m.Name()); obj != nil {
+					matchCount++
+				}
+			}
+			if matchCount == itf.NumMethods() {
+				implements = true
+			}
+		}
+
+		if implements {
 			for i := 0; i < itf.NumMethods(); i++ {
 				im := itf.Method(i)
 				imId := getSymbolIdentity(im)
@@ -528,13 +561,19 @@ func (idx *indexer) computeImplementations(pkgs []*packages.Package) map[string]
 	return impls
 }
 
-func (idx *indexer) GetImplementations(interfaceMethodId string) []string {
+func (idx *indexer) GetImplementations(ctx context.Context, interfaceMethodId string) []string {
+	if err := idx.Refresh(ctx); err != nil {
+		return nil
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.implementations[interfaceMethodId]
 }
 
-func (idx *indexer) IsSymbolUsed(name string) bool {
+func (idx *indexer) IsSymbolUsed(ctx context.Context, name string) bool {
+	if err := idx.Refresh(ctx); err != nil {
+		return false
+	}
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	usages, ok := idx.usagesByName[name]

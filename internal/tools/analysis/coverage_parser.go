@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -286,24 +287,45 @@ func parseDetailedCoverage(ctx context.Context, r io.Reader, exec tools.CommandE
 		return nil, err
 	}
 
-	fileCache := make(map[string][]string)
-	for i := range blocks {
-		lines, ok := fileCache[blocks[i].File]
-		if !ok {
-			content, err := readFile(blocks[i].File)
-			if err != nil {
-				blocks[i].Code = fmt.Sprintf("[Error reading file %s: %v]", blocks[i].File, err)
-				blocks[i].Classify()
-				continue
-			}
-			lines = strings.Split(string(content), "\n")
-			fileCache[blocks[i].File] = lines
-		}
+	var (
+		fileCache = make(map[string][]string)
+		mu        sync.RWMutex
+		wg        sync.WaitGroup
+	)
 
-		blocks[i].Code = extractFromLines(lines, blocks[i].Start, blocks[i].End)
-		blocks[i].Classify()
+	for i := range blocks {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+
+			mu.RLock()
+			lines, ok := fileCache[blocks[idx].File]
+			mu.RUnlock()
+
+			if !ok {
+				mu.Lock()
+				// Double-check after lock
+				lines, ok = fileCache[blocks[idx].File]
+				if !ok {
+					content, err := readFile(blocks[idx].File)
+					if err != nil {
+						blocks[idx].Code = fmt.Sprintf("[Error reading file %s: %v]", blocks[idx].File, err)
+						blocks[idx].Classify()
+						mu.Unlock()
+						return
+					}
+					lines = strings.Split(string(content), "\n")
+					fileCache[blocks[idx].File] = lines
+				}
+				mu.Unlock()
+			}
+
+			blocks[idx].Code = extractFromLines(lines, blocks[idx].Start, blocks[idx].End)
+			blocks[idx].Classify()
+		}(i)
 	}
 
+	wg.Wait()
 	return blocks, nil
 }
 
@@ -317,7 +339,7 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	defer os.Remove(tempPath)
 	f.Close()
 
-	_, _ = exec.CombinedOutput(ctx, "go", "test", "-coverprofile="+tempPath, packagePath)
+	_, _ = exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, packagePath)
 
 	info, err := os.Stat(tempPath)
 	if err != nil {
@@ -336,8 +358,8 @@ func getDetailedCoverage(ctx context.Context, packagePath string, exec tools.Com
 	return parseDetailedCoverage(ctx, cf, exec, os.ReadFile)
 }
 
-// GetDetailedCoverageReport generates a formatted report optimized for LLM consumption.
-func GetDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor) (string, error) {
+// getDetailedCoverageReport generates a formatted report optimized for LLM consumption.
+func getDetailedCoverageReport(ctx context.Context, packagePath string, exec tools.CommandExecutor) (string, error) {
 	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
 	if err != nil {
 		return "", err
@@ -419,8 +441,8 @@ func renderBlockGaps(sb *strings.Builder, title string, blocks []uncoveredBlock,
 	}
 }
 
-// GetDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
-func GetDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor) (string, error) {
+// getDetailedCoverageJSON returns the uncovered blocks as a JSON string, filtered by priority.
+func getDetailedCoverageJSON(ctx context.Context, packagePath string, minPriority string, exec tools.CommandExecutor) (string, error) {
 	blocks, err := getDetailedCoverage(ctx, packagePath, exec)
 	if err != nil {
 		return "", err
