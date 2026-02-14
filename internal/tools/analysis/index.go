@@ -514,7 +514,25 @@ func (idx *indexer) asConcreteNamedType(obj types.Object) (*types.Named, bool) {
 
 func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.Named, interfaces []*types.Interface, pkgTypes *types.Package) {
 	for _, itf := range interfaces {
-		if types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf) {
+		implements := types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf)
+
+		// Generic Interface Handling:
+		// types.Implements often fails when itf is a generic interface definition rather than an instantiation.
+		// If it has methods, check if the concrete type provides them by name.
+		if !implements && itf.NumMethods() > 0 {
+			matchCount := 0
+			for i := 0; i < itf.NumMethods(); i++ {
+				m := itf.Method(i)
+				if obj, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, m.Name()); obj != nil {
+					matchCount++
+				}
+			}
+			if matchCount == itf.NumMethods() {
+				implements = true
+			}
+		}
+
+		if implements {
 			for i := 0; i < itf.NumMethods(); i++ {
 				im := itf.Method(i)
 				imId := getSymbolIdentity(im)

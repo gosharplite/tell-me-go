@@ -182,6 +182,54 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 				}
 			}
 		}
+
+		// Domain Port Heuristic:
+		// In Hexagonal Architecture, interfaces in the 'domain' layer are 'Ports' that represent mandatory external contracts.
+		// If a symbol is an exported interface or a method of an exported interface located in the internal/domain/... package tree, protect it.
+		if strings.Contains(meta.pkgPath, "internal/domain") {
+			isPort := false
+			if meta.symType == "Type" {
+				if tn, ok := meta.obj.(*types.TypeName); ok {
+					if _, ok := tn.Type().Underlying().(*types.Interface); ok {
+						isPort = true
+					}
+				}
+			} else if meta.isMethod {
+				if fn, ok := meta.obj.(*types.Func); ok {
+					if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
+						if _, ok := sig.Recv().Type().Underlying().(*types.Interface); ok {
+							isPort = true
+						}
+					}
+				}
+			}
+
+			if isPort {
+				if state.totalUses[id] == 0 {
+					state.totalUses[id] = 1
+				}
+				state.externalUses[id]++
+			}
+		}
+
+		// Implementation-Aware Visibility Analysis:
+		// Check for implementations in other packages.
+		// In Go, interface methods MUST be exported if implemented across package boundaries.
+		impls := a.idx.GetImplementations(ctx, id)
+		if len(impls) > 0 {
+			// If it has implementations, it is architecturally active
+			if state.totalUses[id] == 0 {
+				state.totalUses[id] = 1
+			}
+
+			objBase := getBasePkgPath(meta.pkgPath)
+			for _, implId := range impls {
+				// We consider cross-package implementations as "external usage"
+				if !strings.HasPrefix(implId, objBase+".") {
+					state.externalUses[id]++
+				}
+			}
+		}
 	}
 }
 
@@ -217,11 +265,6 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
 	for id, meta := range state.declarations {
-		// Interface Safety: If it has implementations, it's an architectural boundary.
-		if len(a.idx.GetImplementations(ctx, id)) > 0 {
-			continue
-		}
-
 		total := state.totalUses[id]
 		external := state.externalUses[id]
 

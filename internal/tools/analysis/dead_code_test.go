@@ -152,6 +152,92 @@ func main() {
 			},
 			expected: nil, // Run() should not be dead even if not called directly on MyRunner
 		},
+		{
+			name: "Cross-Package Implementation (Internal Call)",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"services/service.go": `package services
+type Store interface { Append() }
+type Service struct { s Store }
+func (svc Service) Do() { svc.s.Append() }
+`,
+				"persistence/db.go": `package persistence
+import "example.com/test/services"
+type DB struct{}
+func (db DB) Append() {}
+var _ services.Store = DB{}
+`,
+				"main.go": `package main
+import (
+	"example.com/test/services"
+	"example.com/test/persistence"
+)
+func main() {
+	svc := services.Service{}
+	svc.Do()
+	_ = persistence.DB{}
+}
+`,
+			},
+			expected: nil, // Append should NOT be flagged as PRIVATE because it is implemented across packages
+		},
+		{
+			name: "Exported but Private Interface",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"pkg1/pkg1.go": `package pkg1
+type InternalItf interface { Run() }
+type Impl struct{}
+func (i Impl) Run() {}
+func Use() { var itf InternalItf = Impl{}; itf.Run() }
+`,
+				"main.go": `package main
+import "example.com/test/pkg1"
+func main() { pkg1.Use() }
+`,
+			},
+			expected: []orphanReport{
+				{Symbol: "InternalItf", Pkg: "example.com/test/pkg1", Type: "Type", Severity: "PRIVATE"},
+				{Symbol: "Run", Pkg: "example.com/test/pkg1", Type: "Method", Severity: "PRIVATE"},
+			},
+		},
+		{
+			name: "Generic Interface Implementation",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"services/itf.go": `package services
+type GenericStore[T any] interface { Save(T) }
+`,
+				"persistence/db.go": `package persistence
+type DB[T any] struct{}
+func (db DB[T]) Save(item T) {}
+`,
+				"main.go": `package main
+import (
+	"example.com/test/services"
+	"example.com/test/persistence"
+)
+func main() {
+	var s services.GenericStore[string] = persistence.DB[string]{}
+	s.Save("test")
+}
+`,
+			},
+			expected: nil,
+		},
+		{
+			name: "Domain Port Protection",
+			files: map[string]string{
+				"go.mod": "module example.com/test\n\ngo 1.25",
+				"internal/domain/services/port.go": `package services
+type Port interface { Mandatory() }
+`,
+				"main.go": `package main
+func main() {}
+`,
+			},
+			expected: nil, // Port methods should be protected in internal/domain
+		},
 	}
 
 	for _, tt := range tests {

@@ -35,9 +35,23 @@ func getSymbolIdentity(obj types.Object) string {
 			if ptr, ok := recvType.(*types.Pointer); ok {
 				recvType = ptr.Elem()
 			}
+
+			var typeName string
 			if named, ok := recvType.(*types.Named); ok {
-				return fmt.Sprintf("%s.%s.%s", pkgPath, named.Obj().Name(), obj.Name())
+				typeName = named.Obj().Name()
+			} else if tp, ok := recvType.(*types.TypeParam); ok {
+				typeName = tp.Obj().Name()
+			} else {
+				// Handle other types if necessary, but named is most common for methods
+				typeName = strings.TrimPrefix(recvType.String(), pkgPath+".")
 			}
+
+			// Strip generic type parameters like [T] from the identity for stability
+			if idx := strings.Index(typeName, "["); idx != -1 {
+				typeName = typeName[:idx]
+			}
+
+			return fmt.Sprintf("%s.%s.%s", pkgPath, typeName, obj.Name())
 		}
 	}
 	return fmt.Sprintf("%s.%s", pkgPath, obj.Name())
