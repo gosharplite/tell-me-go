@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -109,7 +109,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, h, registry, sm, bus, nil)
-	sess := orchestration.NewSession("regression-multimodal", h)
+	sess := services.NewSession("regression-multimodal", h)
 	err := a.Chat(context.Background(), sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)

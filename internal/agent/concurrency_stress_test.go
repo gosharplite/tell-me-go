@@ -14,6 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -48,7 +49,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, hManager, reg, sm, bus, nil)
-	session := &orchestration.Session{History: hManager, StartTime: time.Now()}
+	session := &services.Session{History: hManager, StartTime: time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
