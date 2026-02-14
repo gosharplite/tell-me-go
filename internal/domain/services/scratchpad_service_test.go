@@ -52,7 +52,7 @@ func (m *mockScratchRepo) GetAll(ctx context.Context) (map[string]string, error)
 	return map[string]string{"content": m.content}, nil
 }
 
-func TestScratchpadService(t *testing.T) {
+func TestScratchpadService_Initialize(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Initialize_Success", func(t *testing.T) {
@@ -73,6 +73,10 @@ func TestScratchpadService(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+func TestScratchpadService_ReadWrite(t *testing.T) {
+	ctx := context.Background()
 
 	t.Run("Write and Read", func(t *testing.T) {
 		repo := &mockScratchRepo{}
@@ -100,6 +104,10 @@ func TestScratchpadService(t *testing.T) {
 			t.Errorf("expected state to stay 'original', got %s", s.Read())
 		}
 	})
+}
+
+func TestScratchpadService_Append(t *testing.T) {
+	ctx := context.Background()
 
 	t.Run("Append", func(t *testing.T) {
 		repo := &mockScratchRepo{}
@@ -130,6 +138,10 @@ func TestScratchpadService(t *testing.T) {
 			t.Errorf("expected state to stay 'original', got %s", s.Read())
 		}
 	})
+}
+
+func TestScratchpadService_Clear(t *testing.T) {
+	ctx := context.Background()
 
 	t.Run("Clear", func(t *testing.T) {
 		repo := &mockScratchRepo{content: "something"}
