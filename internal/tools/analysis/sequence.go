@@ -91,12 +91,10 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 	a.pkgMu.Lock()
 	defer a.pkgMu.Unlock()
 
-	// Double-check
 	if a.pkgs != nil && time.Since(a.lastLoad) < a.cacheTTL {
 		return nil
 	}
 
-	// 1. Get packages from indexer (will refresh automatically)
 	pkgs, err := a.idx.Packages(ctx)
 	if err != nil {
 		return fmt.Errorf("getting packages from indexer: %w", err)
@@ -105,9 +103,14 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 		return fmt.Errorf("no packages loaded")
 	}
 
-	// 2. Build maps for O(1) lookup
-	a.funcMap = make(map[string]funcInfo)
+	a.funcMap = a.mapSymbols(pkgs)
+	a.pkgs = pkgs
+	a.lastLoad = time.Now()
+	return nil
+}
 
+func (a *sequenceAnalyzer) mapSymbols(pkgs []*packages.Package) map[string]funcInfo {
+	funcMap := make(map[string]funcInfo)
 	for _, pkg := range pkgs {
 		if a.modName == "" && pkg.Module != nil {
 			a.modName = pkg.Module.Path
@@ -118,16 +121,13 @@ func (a *sequenceAnalyzer) loadPackages(ctx context.Context) error {
 				if fd, ok := decl.(*ast.FuncDecl); ok {
 					if obj := pkg.TypesInfo.Defs[fd.Name]; obj != nil {
 						id := getSymbolIdentity(obj)
-						a.funcMap[id] = funcInfo{decl: fd, pkg: pkg}
+						funcMap[id] = funcInfo{decl: fd, pkg: pkg}
 					}
 				}
 			}
 		}
 	}
-
-	a.pkgs = pkgs
-	a.lastLoad = time.Now()
-	return nil
+	return funcMap
 }
 
 func (a *sequenceAnalyzer) traceFlow(ctx context.Context, startSymbol string, maxDepth int) ([]callFrame, error) {
@@ -393,16 +393,7 @@ func (a *sequenceAnalyzer) findStartPackage(symbol string, allPkgs []*packages.P
 }
 
 func (a *sequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining string) (*ast.FuncDecl, error) {
-	funcName := remaining
-	if dot := strings.LastIndex(funcName, "."); dot != -1 {
-		funcName = funcName[dot+1:]
-	}
-	funcName = strings.TrimPrefix(funcName, "(")
-	funcName = strings.TrimSuffix(funcName, ")")
-	if dot := strings.LastIndex(funcName, "."); dot != -1 {
-		funcName = funcName[dot+1:]
-	}
-
+	funcName := a.normalizeSymbolName(remaining)
 	var bestMatch *ast.FuncDecl
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
@@ -411,18 +402,10 @@ func (a *sequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining str
 				continue
 			}
 
-			if strings.Contains(remaining, ".") {
-				recvName := a.getReceiverTypeName(fd.Recv)
-				if recvName != "" {
-					cleanRemaining := strings.TrimPrefix(remaining, "*")
-					cleanRecv := strings.TrimPrefix(recvName, "*")
-					if strings.Contains(cleanRemaining, cleanRecv) {
-						return fd, nil
-					}
-				}
-			} else if fd.Recv == nil {
+			if a.isMethodMatch(fd, remaining) {
 				return fd, nil
-			} else {
+			}
+			if !strings.Contains(remaining, ".") {
 				bestMatch = fd
 			}
 		}
@@ -431,6 +414,34 @@ func (a *sequenceAnalyzer) resolveStartFunc(pkg *packages.Package, remaining str
 		return bestMatch, nil
 	}
 	return nil, fmt.Errorf("symbol not found: %s", remaining)
+}
+
+func (a *sequenceAnalyzer) normalizeSymbolName(symbol string) string {
+	funcName := symbol
+	if dot := strings.LastIndex(funcName, "."); dot != -1 {
+		funcName = funcName[dot+1:]
+	}
+	funcName = strings.TrimPrefix(funcName, "(")
+	funcName = strings.TrimSuffix(funcName, ")")
+	if dot := strings.LastIndex(funcName, "."); dot != -1 {
+		funcName = funcName[dot+1:]
+	}
+	return funcName
+}
+
+func (a *sequenceAnalyzer) isMethodMatch(fd *ast.FuncDecl, remaining string) bool {
+	if !strings.Contains(remaining, ".") {
+		return fd.Recv == nil
+	}
+
+	recvName := a.getReceiverTypeName(fd.Recv)
+	if recvName == "" {
+		return false
+	}
+
+	cleanRemaining := strings.TrimPrefix(remaining, "*")
+	cleanRecv := strings.TrimPrefix(recvName, "*")
+	return strings.Contains(cleanRemaining, cleanRecv)
 }
 
 func (v *sequenceVisitor) resolveTarget(call *ast.CallExpr) (string, string) {
