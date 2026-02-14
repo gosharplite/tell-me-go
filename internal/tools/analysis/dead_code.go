@@ -73,11 +73,10 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		return tools.ToolResult{}, err
 	}
 
-	if err := a.idx.Refresh(ctx); err != nil {
+	pkgs, err := a.idx.Packages(ctx)
+	if err != nil {
 		return tools.ToolResult{}, err
 	}
-
-	pkgs := a.idx.Packages()
 	if len(pkgs) == 0 {
 		return tools.ToolResult{Text: "No packages found."}, nil
 	}
@@ -99,7 +98,7 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	// Execution Pipeline
 	a.harvestExportedSymbols(state)
 	a.analyzeUsages(ctx, state, resolvedPath)
-	a.propagateInterfaceUsages(state)
+	a.propagateInterfaceUsages(ctx, state)
 
 	findings := a.buildReport(state)
 	return a.formatToolResult(findings), nil
@@ -129,7 +128,7 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 	fileToPkg := a.buildFileToPkgMap(state.pkgs)
 
 	for id, meta := range state.declarations {
-		if a.idx.IsSymbolUsed(id) {
+		if a.idx.IsSymbolUsed(ctx, id) {
 			state.totalUses[id] = 1
 
 			// Check for external usages to distinguish DEAD from PRIVATE.
@@ -351,10 +350,10 @@ func (a *deadCodeAnalyzer) harvestInterfaceMethods(itf *types.Interface, state *
 	}
 }
 
-func (a *deadCodeAnalyzer) propagateInterfaceUsages(state *scanState) {
+func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *scanState) {
 	for id, count := range state.totalUses {
 		if count > 0 {
-			for _, implId := range a.idx.GetImplementations(id) {
+			for _, implId := range a.idx.GetImplementations(ctx, id) {
 				state.totalUses[implId] += count
 				state.externalUses[implId] += state.externalUses[id]
 			}

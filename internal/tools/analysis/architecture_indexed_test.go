@@ -57,7 +57,7 @@ func TestIndexedPackageProvider_LoadPackages(t *testing.T) {
 	t.Run("empty index", func(t *testing.T) {
 		provider.idx = &mockIndexer{pkgs: nil}
 		_, err := provider.LoadPackages(ctx)
-		if err == nil || err.Error() != "no packages found in index after refresh" {
+		if err == nil || err.Error() != "no packages found in index" {
 			t.Errorf("expected error for empty index, got %v", err)
 		}
 	})

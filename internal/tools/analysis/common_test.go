@@ -61,14 +61,17 @@ type mockIndexer struct {
 	err   error
 }
 
-func (m *mockIndexer) Packages() []*packages.Package {
-	return m.pkgs
+func (m *mockIndexer) Packages(ctx context.Context) ([]*packages.Package, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.pkgs, nil
 }
 
 func (m *mockIndexer) Refresh(ctx context.Context) error {
 	return m.err
 }
 
-func (m *mockIndexer) GetImplementations(id string) []string {
+func (m *mockIndexer) GetImplementations(ctx context.Context, id string) []string {
 	return m.impls[id]
 }

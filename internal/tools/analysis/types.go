@@ -57,10 +57,6 @@ func (m *typeManager) GetTypeInfo(ctx context.Context, args map[string]interface
 		return tools.ToolResult{Text: "Please provide a typename."}, nil
 	}
 
-	if err := m.Indexer.Refresh(ctx); err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	locs, err := m.Indexer.Lookup(ctx, typename)
 	if err != nil || len(locs) == 0 {
 		return tools.ToolResult{Text: "Type not found."}, nil
@@ -101,10 +97,6 @@ func (m *typeManager) ListSymbols(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 
-	if err := m.Indexer.Refresh(ctx); err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	results, err := m.collectSymbols(resolvedPath, "", params.ExportedOnly)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -123,10 +115,6 @@ func (m *typeManager) ListImplementations(ctx context.Context, args map[string]i
 
 	if params.InterfaceName == "" {
 		return tools.ToolResult{Text: "Please provide an interface_name."}, nil
-	}
-
-	if err := m.Indexer.Refresh(ctx); err != nil {
-		return tools.ToolResult{}, err
 	}
 
 	implementors, err := m.Indexer.FindImplementors(ctx, params.InterfaceName)
@@ -167,10 +155,6 @@ func (m *typeManager) FindUsages(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	if err := m.Indexer.Refresh(ctx); err != nil {
-		return tools.ToolResult{}, err
-	}
-
 	locs, err := m.Indexer.GetUsages(ctx, query, resolvedPath)
 	if err != nil {
 		return tools.ToolResult{}, err
@@ -198,10 +182,6 @@ func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]inter
 
 	resolvedPath, err := m.resolvePath(params.Path)
 	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	if err := m.Indexer.Refresh(ctx); err != nil {
 		return tools.ToolResult{}, err
 	}
 
