@@ -5,6 +5,8 @@ package orchestration
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -140,7 +142,14 @@ func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd se
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
 
-	sessionID := fmt.Sprintf("session-%d", time.Now().UnixNano())
+	b := make([]byte, 8)
+	var sessionID string
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp if entropy source fails
+		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+	} else {
+		sessionID = fmt.Sprintf("session-%s", hex.EncodeToString(b))
+	}
 	sess := services.NewSession(sessionID, sd.GetHistoryManager())
 	if err := chatAgent.Chat(ctx, sess, sc.GetPrompt()); err != nil {
 		return fmt.Errorf("error: %w", err)
