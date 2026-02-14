@@ -101,7 +101,10 @@ func (m *azureDevOpsManager) checkResponseError(resp *http.Response, requestURL 
 	}
 
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("azure DevOps API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+	}
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("unauthorized: check your AZURE_PAT_ALL")

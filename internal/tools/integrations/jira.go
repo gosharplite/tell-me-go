@@ -68,7 +68,10 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("jira API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+		}
 		return tools.ToolResult{}, fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
 	}
 
@@ -178,7 +181,10 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("jira issue not found: %s", params.IssueKey)
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("jira API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+		}
 		return tools.ToolResult{}, fmt.Errorf("jira API returned status: %s, body: %s", resp.Status, string(body))
 	}
 

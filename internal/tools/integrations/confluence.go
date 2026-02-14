@@ -147,7 +147,10 @@ func (m *confluenceManager) fetchSearchPage(ctx context.Context, url string) (*s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("confluence API returned status %s; additionally, failed to read response body: %w", resp.Status, err)
+		}
 		return nil, fmt.Errorf("confluence API returned status: %s, body: %s", resp.Status, string(body))
 	}
 
