@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/tools/archguard"
 )
 
 type healthManager struct {
@@ -54,7 +53,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
 	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
 	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
-	sb.WriteString(fmt.Sprintf("| **Dead Code (Arch Guard)** | %s | %s |\n", deadStatus, deadDetails))
+	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
 	sb.WriteString(fmt.Sprintf("| **Security** | %s | %s |\n", secStatus, secDetails))
 
 	if len(alerts) > 0 {
@@ -191,23 +190,16 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 }
 
 func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
-	findings, err := archguard.Analyze(ctx, "./...")
+	findings, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".")
 	if err != nil {
 		return "ERROR", err.Error()
 	}
 
-	candidateCount := 0
-	for _, f := range findings {
-		if f.Category == archguard.PrivateCandidate {
-			candidateCount++
-		}
-	}
-
-	if candidateCount == 0 {
+	if len(findings) == 0 {
 		return "CLEAN", "0 Items"
 	}
 
-	return "DEBT", fmt.Sprintf("%d Items", candidateCount)
+	return "DEBT", fmt.Sprintf("%d Items", len(findings))
 }
 
 func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {

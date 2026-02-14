@@ -100,8 +100,43 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	a.analyzeUsages(ctx, state, resolvedPath)
 	a.propagateInterfaceUsages(ctx, state)
 
-	findings := a.buildReport(state)
+	findings := a.buildReport(ctx, state)
 	return a.formatToolResult(findings), nil
+}
+
+// GatherOrphanReports is an internal helper for health checks that returns structured findings.
+func (a *deadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+	resolvedPath, err := a.SP.IsPathSafe(path)
+	if err != nil {
+		return nil, err
+	}
+
+	pkgs, err := a.idx.Packages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(pkgs) == 0 {
+		return nil, nil
+	}
+
+	targetModule, err := a.identifyModule(pkgs)
+	if err != nil {
+		return nil, err
+	}
+
+	state := &scanState{
+		pkgs:         pkgs,
+		targetModule: targetModule,
+		declarations: make(map[string]*symMeta),
+		totalUses:    make(map[string]int),
+		externalUses: make(map[string]int),
+	}
+
+	a.harvestExportedSymbols(state)
+	a.analyzeUsages(ctx, state, resolvedPath)
+	a.propagateInterfaceUsages(ctx, state)
+
+	return a.buildReport(ctx, state), nil
 }
 
 func (a *deadCodeAnalyzer) identifyModule(pkgs []*packages.Package) (string, error) {
@@ -179,9 +214,14 @@ func (a *deadCodeAnalyzer) formatToolResult(findings []orphanReport) tools.ToolR
 	return tools.ToolResult{Text: sb.String()}
 }
 
-func (a *deadCodeAnalyzer) buildReport(state *scanState) []orphanReport {
+func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []orphanReport {
 	var findings []orphanReport
 	for id, meta := range state.declarations {
+		// Interface Safety: If it has implementations, it's an architectural boundary.
+		if len(a.idx.GetImplementations(ctx, id)) > 0 {
+			continue
+		}
+
 		total := state.totalUses[id]
 		external := state.externalUses[id]
 
@@ -290,7 +330,7 @@ func (a *deadCodeAnalyzer) harvestObjectSymbols(obj types.Object, state *scanSta
 }
 
 func (a *deadCodeAnalyzer) isTestSymbol(name string) bool {
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example")
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Example") || strings.HasPrefix(name, "Fuzz")
 }
 
 func (a *deadCodeAnalyzer) registerDeclaration(obj types.Object, state *scanState) {
