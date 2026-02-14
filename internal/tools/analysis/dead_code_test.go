@@ -59,6 +59,7 @@ func (m *deadCodeSecurityProvider) ConfirmDestructiveAction(ctx context.Context,
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		files    map[string]string
@@ -67,7 +68,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Dead Function",
 			files: map[string]string{
-				"go.mod":       "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Dead() {}\nfunc Alive() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Alive() }",
 			},
@@ -78,7 +78,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Effectively Private Symbol",
 			files: map[string]string{
-				"go.mod":       "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Private() {}\n",
 				"pkg1/util.go": "package pkg1\n\nfunc Use() { Private() }\n",
 				"main.go":      "package main\n\nfunc main() {}",
@@ -91,7 +90,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Validly Used Symbol",
 			files: map[string]string{
-				"go.mod":       "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": "package pkg1\n\nfunc Valid() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { pkg1.Valid() }\n",
 			},
@@ -100,7 +98,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Dead Method",
 			files: map[string]string{
-				"go.mod":       "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": "package pkg1\n\ntype S struct{}\nfunc (s S) DeadMethod() {}\n",
 				"main.go":      "package main\n\nimport \"example.com/test/pkg1\"\n\nfunc main() { _ = pkg1.S{} }",
 			},
@@ -111,7 +108,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Internal Test Reference",
 			files: map[string]string{
-				"go.mod":            "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc InternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1\n\nimport \"testing\"\n\nfunc TestInternal(t *testing.T) { InternalTestOnly() }\n",
 			},
@@ -122,7 +118,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "External Test Reference",
 			files: map[string]string{
-				"go.mod":            "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go":      "package pkg1\n\nfunc ExternalTestOnly() {}\n",
 				"pkg1/pkg1_test.go": "package pkg1_test\n\nimport (\n\t\"testing\"\n\t\"example.com/test/pkg1\"\n)\n\nfunc TestExternal(t *testing.T) { pkg1.ExternalTestOnly() }\n",
 			},
@@ -131,7 +126,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 		{
 			name: "Interface Implementation",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"itf/itf.go": `package itf
 type Runner interface { Run() }
 `,
@@ -155,7 +149,6 @@ func main() {
 		{
 			name: "Cross-Package Implementation (Internal Call)",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"services/service.go": `package services
 type Store interface { Append() }
 type Service struct { s Store }
@@ -184,7 +177,6 @@ func main() {
 		{
 			name: "Exported but Private Interface",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": `package pkg1
 type InternalItf interface { Run() }
 type Impl struct{}
@@ -204,7 +196,6 @@ func main() { pkg1.Use() }
 		{
 			name: "Generic Interface Implementation",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"services/itf.go": `package services
 type GenericStore[T any] interface { Save(T) }
 `,
@@ -228,7 +219,6 @@ func main() {
 		{
 			name: "Domain Port Protection",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"internal/domain/services/port.go": `package services
 type Port interface { Mandatory() }
 `,
@@ -241,7 +231,6 @@ func main() {}
 		{
 			name: "High Complexity Private Symbol",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": `package pkg1
 func ComplexPrivate(a, b int) {
     if a > 0 {
@@ -272,7 +261,6 @@ func ComplexPrivate(a, b int) {
 		{
 			name: "Structural Anchor",
 			files: map[string]string{
-				"go.mod": "module example.com/test\n\ngo 1.25",
 				"pkg1/pkg1.go": `package pkg1
 func Anchor() {
     Target1()
@@ -296,37 +284,68 @@ func main() {}
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, err := filepath.EvalSymlinks(t.TempDir())
-			require.NoError(t, err)
+	// Shared workspace setup
+	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 
-			for path, content := range tt.files {
-				fullPath := filepath.Join(tmpDir, path)
-				err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-				require.NoError(t, err)
-				err = os.WriteFile(fullPath, []byte(content), 0644)
-				require.NoError(t, err)
+	const sharedModule = "shared.test"
+	err = os.WriteFile(filepath.Join(rootTmpDir, "go.mod"), []byte("module "+sharedModule+"\n\ngo 1.25"), 0644)
+	require.NoError(t, err)
+
+	getSafeName := func(name string) string {
+		return strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				return r
 			}
+			return '_'
+		}, name)
+	}
 
-			idx, err := newIndexer(tmpDir)
-			require.NoError(t, err)
-			ctx := context.Background()
-			err = idx.Refresh(ctx)
-			require.NoError(t, err)
+	for _, tt := range tests {
+		safeName := getSafeName(tt.name)
+		caseDir := filepath.Join(rootTmpDir, safeName)
 
-			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: tmpDir}, idx)
+		for path, content := range tt.files {
+			// Update imports: replace "example.com/test" with "shared.test/SAFE_NAME"
+			content = strings.ReplaceAll(content, "example.com/test", sharedModule+"/"+safeName)
+
+			fullPath := filepath.Join(caseDir, path)
+			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
+			require.NoError(t, err)
+			err = os.WriteFile(fullPath, []byte(content), 0644)
+			require.NoError(t, err)
+		}
+	}
+
+	idx, err := newIndexer(rootTmpDir)
+	require.NoError(t, err)
+	ctx := context.Background()
+	err = idx.Refresh(ctx)
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			safeName := getSafeName(tt.name)
+			caseDir := filepath.Join(rootTmpDir, safeName)
+
+			analyzer := newDeadCodeAnalyzer(&deadCodeSecurityProvider{tempDir: rootTmpDir}, idx)
 			args := map[string]interface{}{
-				"path": tmpDir,
+				"path": caseDir,
 			}
 
 			result, err := analyzer.FindOrphanedSymbols(ctx, args)
 			require.NoError(t, err)
 
 			for _, exp := range tt.expected {
+				// Adjust expected package path
+				expectedPkg := strings.ReplaceAll(exp.Pkg, "example.com/test", sharedModule+"/"+safeName)
+
 				expectedLine := fmt.Sprintf("[%s] %s", exp.Severity, exp.Symbol)
 				assert.Contains(t, result.Text, expectedLine, "Symbol %s should have severity %s", exp.Symbol, exp.Severity)
-				assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", exp.Pkg))
+				assert.Contains(t, result.Text, fmt.Sprintf("### Package: %s", expectedPkg))
 			}
 
 			if len(tt.expected) == 0 {
@@ -337,6 +356,7 @@ func main() {}
 }
 
 func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 
@@ -375,6 +395,7 @@ func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 
@@ -408,6 +429,7 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols_PackageError(t *testing.T) {
 }
 
 func TestDeadCodeAnalyzer_FindOrphanedSymbols_NoGoMod(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 

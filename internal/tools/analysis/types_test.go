@@ -9,6 +9,7 @@ import (
 )
 
 func TestTypeManager_GetTypeInfo(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		code     string
@@ -70,7 +71,9 @@ type I2 interface {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tmpDir := t.TempDir()
 			err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
 			if err != nil {
@@ -104,6 +107,7 @@ type I2 interface {
 }
 
 func TestTypeManager_ListImplementations(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
@@ -130,6 +134,7 @@ func (s S) M() {}
 }
 
 func TestTypeManager_ListSymbols(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)
@@ -159,6 +164,7 @@ const C = 1
 }
 
 func TestTypeManager_FindUsages(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644); err != nil {
 		t.Fatal(err)

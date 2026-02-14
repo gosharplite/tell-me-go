@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -46,6 +47,7 @@ type symMeta struct {
 type scanState struct {
 	pkgs             []*packages.Package
 	targetModule     string
+	targetPath       string
 	excludedPackages []string
 	declarations     map[string]*symMeta
 	totalUses        map[string]int
@@ -92,6 +94,7 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 	state := &scanState{
 		pkgs:             pkgs,
 		targetModule:     targetModule,
+		targetPath:       resolvedPath,
 		excludedPackages: params.ExcludedPackages,
 		declarations:     make(map[string]*symMeta),
 		totalUses:        make(map[string]int),
@@ -130,6 +133,7 @@ func (a *deadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string)
 	state := &scanState{
 		pkgs:         pkgs,
 		targetModule: targetModule,
+		targetPath:   resolvedPath,
 		declarations: make(map[string]*symMeta),
 		totalUses:    make(map[string]int),
 		externalUses: make(map[string]int),
@@ -176,6 +180,9 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 			for _, loc := range allUsages {
 				usagePkg, ok := fileToPkg[loc.Path]
 				if !ok {
+					continue
+				}
+				if !strings.HasPrefix(usagePkg, state.targetModule) {
 					continue
 				}
 				pkgBase := getBasePkgPath(usagePkg)
@@ -227,6 +234,11 @@ func (a *deadCodeAnalyzer) analyzeUsages(ctx context.Context, state *scanState, 
 
 			objBase := getBasePkgPath(meta.pkgPath)
 			for _, implId := range impls {
+				// Only consider implementations that are part of our current analysis set (scoped)
+				if _, exists := state.declarations[implId]; !exists {
+					continue
+				}
+
 				// We consider cross-package implementations as "external usage"
 				if !strings.HasPrefix(implId, objBase+".") {
 					state.externalUses[id]++
@@ -370,6 +382,14 @@ func (a *deadCodeAnalyzer) harvestPackageSymbols(pkg *packages.Package, state *s
 	if pkg.Module == nil || !strings.HasPrefix(pkg.PkgPath, state.targetModule) {
 		return
 	}
+
+	if state.targetPath != "" && len(pkg.GoFiles) > 0 {
+		absPkg, _ := filepath.Abs(filepath.Dir(pkg.GoFiles[0]))
+		if !strings.HasPrefix(absPkg, state.targetPath) {
+			return
+		}
+	}
+
 	if a.shouldExclude(pkg.PkgPath, state.excludedPackages) {
 		return
 	}
@@ -471,6 +491,9 @@ func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *
 	for id, count := range state.totalUses {
 		if count > 0 {
 			for _, implId := range a.idx.GetImplementations(ctx, id) {
+				if _, exists := state.declarations[implId]; !exists {
+					continue
+				}
 				state.totalUses[implId] += count
 				state.externalUses[implId] += state.externalUses[id]
 			}

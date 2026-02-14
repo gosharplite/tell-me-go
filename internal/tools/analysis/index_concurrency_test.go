@@ -10,6 +10,7 @@ import (
 )
 
 func TestIndexer_Concurrency(t *testing.T) {
+	t.Parallel()
 	tmpDir, idx, ctx := setupIndexerConcurrency(t)
 
 	start := make(chan struct{})

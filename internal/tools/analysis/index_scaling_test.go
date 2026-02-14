@@ -7,6 +7,7 @@ import (
 )
 
 func TestIndexer_Scaling(t *testing.T) {
+	t.Parallel()
 	// Use current directory for testing
 	idx, err := newIndexer(".")
 	if err != nil {
@@ -49,6 +50,7 @@ func TestIndexer_Scaling(t *testing.T) {
 }
 
 func TestIndexer_GetUsages_Scaling(t *testing.T) {
+	t.Parallel()
 	idx, err := newIndexer(".")
 	if err != nil {
 		t.Fatalf("failed to create r: %v", err)
