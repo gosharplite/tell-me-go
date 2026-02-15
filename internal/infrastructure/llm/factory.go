@@ -24,9 +24,18 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
 
-	// Currently, all requests route to Gemini.
-	// Phase 2 will add branching for "openai" and "anthropic" types here.
-	baseClient, err := NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
+	var baseClient llm.LLMClient
+	var err error
+
+	switch p.Type {
+	case "google", "gemini", "": // Default to Gemini for now
+		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
+	default:
+		// Fallback to Gemini if type is unknown for backward compatibility,
+		// but Phase 2 will explicitly handle "openai" and "anthropic" here.
+		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
+	}
+
 	if err != nil {
 		return nil, err
 	}
