@@ -107,3 +107,17 @@ func (a *VertexAuth) Apply(req *Request) {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
 }
+
+// APIKeyAuth handles authentication using a static API key.
+type APIKeyAuth struct {
+	APIKey string
+}
+
+func (a *APIKeyAuth) getToken() (string, error) { return a.APIKey, nil }
+func (a *APIKeyAuth) Invalidate()               {}
+func (a *APIKeyAuth) Apply(req *Request) {
+	if a.APIKey != "" {
+		// Default to Gemini-style header; this will be specialized per provider in Phase 2
+		req.Headers["x-goog-api-key"] = a.APIKey
+	}
+}

@@ -196,3 +196,78 @@ func TestDefaultPricing(t *testing.T) {
 	assert.NotEmpty(t, pData.ThinkingBudgets)
 	assert.True(t, pData.SearchQuery > 0)
 }
+
+func TestGetActiveProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   Config
+		expected LLMProvider
+	}{
+		{
+			name: "Fallback to legacy config when no provider selected",
+			config: Config{
+				URL:            "legacy-url",
+				Model:          "legacy-model",
+				ThinkingBudget: 1000,
+				ThinkingLevel:  "high",
+			},
+			expected: LLMProvider{
+				Type:           "gemini",
+				URL:            "legacy-url",
+				Model:          "legacy-model",
+				ThinkingBudget: 1000,
+				ThinkingLevel:  "high",
+			},
+		},
+		{
+			name: "Fallback to legacy config when selected provider not found",
+			config: Config{
+				SelectedProvider: "non-existent",
+				URL:              "legacy-url",
+				Model:            "legacy-model",
+				ThinkingBudget:   1000,
+				ThinkingLevel:    "high",
+			},
+			expected: LLMProvider{
+				Type:           "gemini",
+				URL:            "legacy-url",
+				Model:          "legacy-model",
+				ThinkingBudget: 1000,
+				ThinkingLevel:  "high",
+			},
+		},
+		{
+			name: "Return selected provider configuration",
+			config: Config{
+				SelectedProvider: "openai-test",
+				Providers: map[string]LLMProvider{
+					"openai-test": {
+						Type:           "openai",
+						URL:            "openai-url",
+						APIKey:         "test-key",
+						Model:          "gpt-4",
+						ThinkingBudget: 2000,
+						ThinkingLevel:  "medium",
+						Headers:        map[string]string{"X-Test": "value"},
+					},
+				},
+			},
+			expected: LLMProvider{
+				Type:           "openai",
+				URL:            "openai-url",
+				APIKey:         "test-key",
+				Model:          "gpt-4",
+				ThinkingBudget: 2000,
+				ThinkingLevel:  "medium",
+				Headers:        map[string]string{"X-Test": "value"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.config.GetActiveProvider()
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}

@@ -32,11 +32,10 @@ func (l *YAMLConfigLoader) Load(path string) (*domain_config.Config, error) {
 
 // Load reads and parses the configuration file.
 func Load(path string) (*domain_config.Config, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	var cfg domain_config.Config
 	// Set defaults
@@ -52,9 +51,9 @@ func Load(path string) (*domain_config.Config, error) {
 		cfg.DisableStreaming = true
 	}
 
-	decoder := yaml.NewDecoder(f)
-	if err := decoder.Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to decode yaml: %w", err)
+	expanded := os.ExpandEnv(string(data))
+	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal expanded yaml: %w", err)
 	}
 
 	// Environment overrides

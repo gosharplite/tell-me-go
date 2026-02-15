@@ -37,8 +37,8 @@ type Client struct {
 	eventBus          events.EventBus
 }
 
-// NewClient returns a new Gemini API client.
-func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, eventBus events.EventBus) (*Client, error) {
+// NewGeminiClient returns a new Gemini API client.
+func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, eventBus events.EventBus) (*Client, error) {
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
