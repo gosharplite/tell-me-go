@@ -1,0 +1,17 @@
+Clearly tell Coder what to do with details.
+One task at a time, since Coder will start a new session for each of your task.
+Coder don't have previous memory, be as clear as possible.
+
+Is local dev branch good enough to be pushed to origin/dev branch?
+
+Is dev branch good enough to be merged into main branch?
+
+Is README.md still up-to-date?
+Are SOPs still up-to-date?
+
+What is the next step to improve this project?
+
+Do SOP/lifecycle/public_release.md
+
+Show costs summary (billing) in a table.
+Show costs summary (local) by hour of today.
