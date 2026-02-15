@@ -144,7 +144,7 @@ func setupMockGeminiServer() *httptest.Server {
 func setupTestClient(t *testing.T, url string) *llm.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := llm.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+	client, err := llm.NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
