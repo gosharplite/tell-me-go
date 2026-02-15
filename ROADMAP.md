@@ -16,13 +16,19 @@ We are currently executing **Phase 1: Foundation & Governance**.
     - [ ] Implement nested `Providers` registry in `Config` struct.
     - [ ] Add support for Environment Variable expansion in YAML (e.g., `${API_KEY}`).
     - [ ] Implement `Provider` selector (google, openai, deepseek).
-- [ ] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support).
+- [ ] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support for DeepSeek and Claude 3.7 Thinking blocks).
 
 ## Phase 2: OpenAI-Compatible Infrastructure
 - [ ] Implement internal/infrastructure/llm/openai:
     - [ ] Manual HTTP transport for OpenAI v1 Chat Completion.
     - [ ] Specific mapping for gpt-5.2 (reasoning_tokens) and deepseek-reasoner (reasoning_content).
 - [ ] Standardize ResilientClient to support custom HTTP headers and bearer tokens.
+
+## Phase 2.5: Anthropic (Claude) Infrastructure
+- [ ] Implement internal/infrastructure/llm/anthropic:
+    - [ ] Manual HTTP transport for Anthropic Messages API (/v1/messages).
+    - [ ] Specific mapping for 'type: thinking' content blocks to domain 'Thought' string.
+    - [ ] Support for 'x-api-key' and 'anthropic-version' headers.
 
 ## Phase 3: Orchestration & Telemetry
 - [ ] Dynamic Provider Registry (Factory Pattern)
