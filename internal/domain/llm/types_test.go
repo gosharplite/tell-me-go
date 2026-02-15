@@ -507,6 +507,32 @@ func TestAddPart(t *testing.T) {
 				{Text: "bar"},
 			},
 		},
+		{
+			name:    "Preserve metadata when appending",
+			initial: nil,
+			newPart: &Part{
+				Text:             "some text",
+				AssetID:          "asset-123",
+				ThoughtSignature: []byte("sig-456"),
+			},
+			expected: []*Part{
+				{
+					Text:             "some text",
+					AssetID:          "asset-123",
+					ThoughtSignature: []byte("sig-456"),
+				},
+			},
+		},
+		{
+			name: "Idempotent thought merging",
+			initial: []*Part{
+				{Thought: "true"},
+			},
+			newPart: &Part{Thought: "true"},
+			expected: []*Part{
+				{Thought: "true"},
+			},
+		},
 	}
 
 	for _, tt := range tests {

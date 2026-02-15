@@ -98,24 +98,17 @@ func (c *Content) AddPart(p *Part) {
 		last := c.Parts[len(c.Parts)-1]
 		if last.canMergeWith(p) {
 			last.Text += p.Text
-			last.Thought += p.Thought
+			if last.Thought == "true" && p.Thought == "true" {
+				last.Thought = "true"
+			} else {
+				last.Thought += p.Thought
+			}
 			return
 		}
 	}
 
 	// Otherwise append new part.
-	// We use clone() to ensure a deep copy for safety,
-	// except for FunctionCall/Response which we currently append as-is
-	// (matching legacy behavior, though clone() would be safer).
-	// Task requirement: "Ensure that when a new part is appended, it is a deep copy or a new allocation".
-	if p.isPure() {
-		c.Parts = append(c.Parts, &Part{
-			Text:    p.Text,
-			Thought: p.Thought,
-		})
-	} else {
-		c.Parts = append(c.Parts, p)
-	}
+	c.Parts = append(c.Parts, p.clone())
 }
 
 func (p *Part) isPure() bool {
