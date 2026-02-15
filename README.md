@@ -249,7 +249,7 @@ alias b-install-dev='go install ./cmd/tell-me-go'
 ```
 
 ## 🏗️ Design Decisions
-Critical architectural decisions are documented as [ADRs](./docs/adr/) following our [ADR SOP](./docs/sop/standards/adr_standards.md).
+Critical architectural decisions are documented as [ADRs](./docs/adr/) following our [ADR SOP](./docs/sop/standards/adr_standards.md). For detailed implementation plans, see the [Multi-Provider Technical Specification](./docs/sop/technical/multi_provider_implementation.md).
 
 ## 📜 SOP-Driven Development
 This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [docs/sop/](./docs/sop/) directory.
