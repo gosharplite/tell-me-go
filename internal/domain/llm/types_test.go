@@ -51,7 +51,7 @@ func TestClone(t *testing.T) {
 					},
 					{
 						Text:             "thought",
-						Thought:          true,
+						Thought:          "reasoning",
 						ThoughtSignature: []byte("sig"),
 						AssetID:          "asset-123",
 					},
@@ -334,14 +334,14 @@ func TestPartEqual(t *testing.T) {
 		},
 		{
 			name:     "Same thought",
-			p1:       &Part{Text: "thinking", Thought: true},
-			p2:       &Part{Text: "thinking", Thought: true},
+			p1:       &Part{Text: "thinking", Thought: "yes"},
+			p2:       &Part{Text: "thinking", Thought: "yes"},
 			expected: true,
 		},
 		{
 			name:     "Different thought",
-			p1:       &Part{Text: "thinking", Thought: true},
-			p2:       &Part{Text: "thinking", Thought: false},
+			p1:       &Part{Text: "thinking", Thought: "yes"},
+			p2:       &Part{Text: "thinking", Thought: "no"},
 			expected: false,
 		},
 		{
@@ -434,6 +434,94 @@ func TestPartEqual(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.p1.equal(tt.p2); got != tt.expected {
 				t.Errorf("Part.equal() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAddPart(t *testing.T) {
+	tests := []struct {
+		name     string
+		initial  []*Part
+		newPart  *Part
+		expected []*Part
+	}{
+		{
+			name:    "Append to empty",
+			initial: nil,
+			newPart: &Part{Text: "hello"},
+			expected: []*Part{
+				{Text: "hello"},
+			},
+		},
+		{
+			name: "Merge text",
+			initial: []*Part{
+				{Text: "hello "},
+			},
+			newPart: &Part{Text: "world"},
+			expected: []*Part{
+				{Text: "hello world"},
+			},
+		},
+		{
+			name: "Merge thoughts",
+			initial: []*Part{
+				{Text: "thinking...", Thought: "step 1"},
+			},
+			newPart: &Part{Text: " done", Thought: " step 2"},
+			expected: []*Part{
+				{Text: "thinking... done", Thought: "step 1 step 2"},
+			},
+		},
+		{
+			name: "Do not merge different types (text then thought)",
+			initial: []*Part{
+				{Text: "hello"},
+			},
+			newPart: &Part{Text: "thinking", Thought: "step 1"},
+			expected: []*Part{
+				{Text: "hello"},
+				{Text: "thinking", Thought: "step 1"},
+			},
+		},
+		{
+			name: "Do not merge different types (thought then text)",
+			initial: []*Part{
+				{Text: "thinking", Thought: "step 1"},
+			},
+			newPart: &Part{Text: "hello"},
+			expected: []*Part{
+				{Text: "thinking", Thought: "step 1"},
+				{Text: "hello"},
+			},
+		},
+		{
+			name: "Do not merge if blobs present",
+			initial: []*Part{
+				{InlineData: &Blob{MIMEType: "text/plain", Data: []byte("foo")}},
+			},
+			newPart: &Part{Text: "bar"},
+			expected: []*Part{
+				{InlineData: &Blob{MIMEType: "text/plain", Data: []byte("foo")}},
+				{Text: "bar"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Content{Parts: tt.initial}
+			c.AddPart(tt.newPart)
+
+			if len(c.Parts) != len(tt.expected) {
+				t.Fatalf("expected %d parts, got %d", len(tt.expected), len(c.Parts))
+			}
+
+			for i := range c.Parts {
+				if !c.Parts[i].equal(tt.expected[i]) {
+					t.Errorf("part %d mismatch: got %+v, want %+v", i, c.Parts[i], tt.expected[i])
+				}
 			}
 		})
 	}

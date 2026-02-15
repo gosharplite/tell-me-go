@@ -27,7 +27,7 @@ type Part struct {
 	InlineData       *Blob             `json:"inline_data,omitempty"`
 	FunctionCall     *FunctionCall     `json:"function_call,omitempty"`
 	FunctionResponse *FunctionResponse `json:"function_response,omitempty"`
-	Thought          bool              `json:"thought,omitempty"`
+	Thought          string            `json:"thought,omitempty"`
 	ThoughtSignature []byte            `json:"thought_signature,omitempty"`
 	AssetID          string            `json:"asset_id,omitempty"` // Local reference for persistence
 }
@@ -103,9 +103,16 @@ func (c *Content) AddPart(p *Part) {
 	// For text/thought, try to append to last part if same type
 	if len(c.Parts) > 0 {
 		last := c.Parts[len(c.Parts)-1]
-		if last.Thought == p.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
-			last.Text += p.Text
-			return
+		// A part is mergeable if it's purely text or purely thought (no blobs/tools)
+		if last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil &&
+			p.FunctionCall == nil && p.FunctionResponse == nil && p.InlineData == nil {
+
+			// Both are thoughts or both are plain text
+			if (last.Thought != "" && p.Thought != "") || (last.Thought == "" && p.Thought == "") {
+				last.Text += p.Text
+				last.Thought += p.Thought
+				return
+			}
 		}
 	}
 
@@ -313,6 +320,6 @@ func (p *Part) IsEmpty() bool {
 		p.FunctionCall == nil &&
 		p.FunctionResponse == nil &&
 		p.AssetID == "" &&
-		!p.Thought &&
+		p.Thought == "" &&
 		len(p.ThoughtSignature) == 0
 }

@@ -794,7 +794,7 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 		{"Empty", []*llm.Content{{Parts: []*llm.Part{{Text: ""}}}}, true},
 		{"Text", []*llm.Content{{Parts: []*llm.Part{{Text: "hi"}}}}, false},
 		{"AssetID", []*llm.Content{{Parts: []*llm.Part{{AssetID: "123"}}}}, false},
-		{"Thought", []*llm.Content{{Parts: []*llm.Part{{Thought: true}}}}, false},
+		{"Thought", []*llm.Content{{Parts: []*llm.Part{{Thought: "true"}}}}, false},
 		{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
 	}
 	for _, tt := range tests {

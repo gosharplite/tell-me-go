@@ -98,12 +98,19 @@ func (r *historyRenderer) renderText(text string) {
 }
 
 func (r *historyRenderer) renderPart(p llm.Part) {
-	if p.Thought && !r.showThoughts {
+	if p.Thought != "" && !r.showThoughts {
 		return
 	}
 
-	if p.Text != "" {
-		r.renderText(p.Text)
+	text := p.Text
+	// If Thought is the actual reasoning content, use it.
+	// If it's just the marker "true", we continue using p.Text.
+	if p.Thought != "" && p.Thought != "true" {
+		text = p.Thought
+	}
+
+	if text != "" {
+		r.renderText(text)
 	}
 	if p.FunctionCall != nil {
 		if r.useColor {
