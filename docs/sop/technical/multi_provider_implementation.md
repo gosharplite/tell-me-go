@@ -11,11 +11,12 @@ The system will provide native support for the following flagship models:
 | **Google** | `gemini-3-flash-preview` | `https://aiplatform.googleapis.com/v1/...` | OAuth2/IAM |
 | **OpenAI** | `gpt-5.2` | `https://api.openai.com/v1/chat/completions` | Bearer Token |
 | **DeepSeek** | `deepseek-reasoner` | `https://api.deepseek.com/chat/completions` | Bearer Token |
+| **Anthropic** | `claude-3-7-sonnet-latest` | `https://api.anthropic.com/v1/messages` | API Key (x-api-key) |
 
 ## 3. Implementation Roadmap
 
 ### Phase 1: Domain & Configuration (Current)
-- **Domain:** Update `internal/domain/llm.Part` to include a `Thought *string` field.
+- **Domain:** Update `internal/domain/llm.Part` to include a `Thought string` field.
 - **Config:** Expand `internal/domain/config` to support `ProviderType`, `APIKey`, and custom `Endpoints`.
 
 ### Phase 2: OpenAI Compatible Infrastructure
@@ -23,6 +24,11 @@ The system will provide native support for the following flagship models:
 - **Mapping:** 
     - `gpt-5.2`: Map `reasoning_tokens` to internal `Thought`.
     - `deepseek-reasoner`: Map `reasoning_content` to internal `Thought`.
+
+### Phase 2.5: Anthropic Infrastructure
+- **Transport:** Implement `internal/infrastructure/llm/anthropic.go`.
+- **Mapping:** Parse `response.content` where `type == "thinking"` and map it to internal `Thought`.
+- **Headers:** Must include `anthropic-version: 2023-06-01`.
 
 ### Phase 3: Orchestration & Telemetry
 - **Registry:** Update `internal/infrastructure/registry` for dynamic provider switching.
@@ -36,3 +42,4 @@ The system will provide native support for the following flagship models:
 - [Google Vertex AI REST Reference](https://docs.cloud.google.com/vertex-ai/docs/reference/rest)
 - [OpenAI Chat Completion Reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
 - [DeepSeek API Reference](https://api-docs.deepseek.com/api/create-chat-completion)
+- [Anthropic Messages API Reference](https://docs.anthropic.com/en/api/messages)
