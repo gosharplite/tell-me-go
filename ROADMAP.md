@@ -12,13 +12,17 @@ We are currently executing **Phase 1: Foundation & Governance**.
 ## Phase 1: Foundation & Governance (In Progress)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
-- [ ] Unified Domain Thinking Types (`llm.Thought`)
-- [ ] Configuration Schema Expansion (OpenAI/DeepSeek support)
+- [ ] Configuration Schema Expansion (Infrastructure Scaffolding):
+    - [ ] Implement nested `Providers` registry in `Config` struct.
+    - [ ] Add support for Environment Variable expansion in YAML (e.g., `${API_KEY}`).
+    - [ ] Implement `Provider` selector (google, openai, deepseek).
+- [ ] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support).
 
 ## Phase 2: OpenAI-Compatible Infrastructure
-- [ ] Manual HTTP Client implementation for OpenAI v1 standard
-- [ ] Model-specific parsing for `gpt-5.2` and `deepseek-reasoner`
-- [ ] Resilience & Retry logic parity
+- [ ] Implement internal/infrastructure/llm/openai:
+    - [ ] Manual HTTP transport for OpenAI v1 Chat Completion.
+    - [ ] Specific mapping for gpt-5.2 (reasoning_tokens) and deepseek-reasoner (reasoning_content).
+- [ ] Standardize ResilientClient to support custom HTTP headers and bearer tokens.
 
 ## Phase 3: Orchestration & Telemetry
 - [ ] Dynamic Provider Registry (Factory Pattern)
