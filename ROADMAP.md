@@ -12,11 +12,11 @@ We are currently executing **Phase 1: Foundation & Governance**.
 ## Phase 1: Foundation & Governance (In Progress)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
+- [x] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support).
 - [ ] Configuration Schema Expansion (Infrastructure Scaffolding):
     - [ ] Implement nested `Providers` registry in `Config` struct.
     - [ ] Add support for Environment Variable expansion in YAML (e.g., `${API_KEY}`).
-    - [ ] Implement `Provider` selector (google, openai, deepseek).
-- [ ] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support for DeepSeek and Claude Opus 4.6 Thinking blocks).
+    - [ ] Implement `Provider` selector (google, openai, deepseek, anthropic).
 
 ## Phase 2: OpenAI-Compatible Infrastructure
 - [ ] Implement internal/infrastructure/llm/openai:

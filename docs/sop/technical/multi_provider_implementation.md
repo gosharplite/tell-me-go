@@ -16,8 +16,21 @@ The system will provide native support for the following flagship models:
 ## 3. Implementation Roadmap
 
 ### Phase 1: Domain & Configuration (Current)
-- **Domain:** Update `internal/domain/llm.Part` to include a `Thought string` field.
-- **Config:** Expand `internal/domain/config` to support `ProviderType`, `APIKey`, and custom `Endpoints`.
+- **Domain:** Update `internal/domain/llm.Part` to use a `Thought string` field.
+    - **Status:** [COMPLETED]
+    - **Compatibility:** For boolean-based providers (Gemini), a `"true"` string acts as a semantic marker indicating that the reasoning content is found within the `Text` field.
+- **Config Registry:** Implement a formal `Providers` registry in the `Config` struct.
+    - **LLMProvider Schema:**
+        ```go
+        type LLMProvider struct {
+            Type     string `yaml:"TYPE"`     // google, openai, deepseek, anthropic
+            Model    string `yaml:"MODEL"`    // Model ID
+            URL      string `yaml:"URL"`      // Base URL or Endpoint
+            APIKey   string `yaml:"API_KEY"`  // Sensitive credential
+            Thinking int    `yaml:"THINKING"` // Thinking budget/tokens
+        }
+        ```
+    - **Environment Expansion:** The configuration loader must support recursive expansion of `${VAR}` tokens in YAML values for secure credential management.
 
 ### Phase 2: OpenAI Compatible Infrastructure
 - **Transport:** Implement `internal/infrastructure/llm/openai_compatible.go` using a manual HTTP client.
