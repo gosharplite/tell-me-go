@@ -30,7 +30,12 @@ The system will provide native support for the following flagship models:
             Thinking int    `yaml:"THINKING"` // Thinking budget/tokens
         }
         ```
-    - **Environment Expansion:** The configuration loader must support recursive expansion of `${VAR}` tokens in YAML values for secure credential management.
+    - **Selected Provider:** The `Config` struct must include a `SELECTED_PROVIDER` field to determine which key from the `PROVIDERS` map is active.
+- **Environment Expansion:** The configuration loader must support recursive expansion of `${VAR}` tokens in YAML values for secure credential management. This expansion must happen at the raw YAML level (byte slice) before unmarshaling to ensure all fields (including nested provider keys) are expansion-capable.
+
+### Phase 1.5: Factory Abstraction
+- **Dynamic Factory:** Implement `internal/infrastructure/llm/factory.go` to abstract the instantiation of `google`, `openai`, and `anthropic` implementations.
+- **Contract:** The factory must return an `LLMClient` interface based on the `Type` field in the active `LLMProvider` configuration, decoupling client creation from high-level CLI commands.
 
 ### Phase 2: OpenAI Compatible Infrastructure
 - **Transport:** Implement `internal/infrastructure/llm/openai_compatible.go` using a manual HTTP client.

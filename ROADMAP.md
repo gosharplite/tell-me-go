@@ -12,11 +12,14 @@ We are currently executing **Phase 1: Foundation & Governance**.
 ## Phase 1: Foundation & Governance (In Progress)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
-- [x] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string` (Reasoning Content support).
-- [ ] Configuration Schema Expansion (Infrastructure Scaffolding):
-    - [ ] Implement nested `Providers` registry in `Config` struct.
-    - [ ] Add support for Environment Variable expansion in YAML (e.g., `${API_KEY}`).
-    - [ ] Implement `Provider` selector (google, openai, deepseek, anthropic).
+- [x] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string`.
+- [ ] Implement **Registry-based Configuration**:
+    - [ ] Define `LLMProvider` struct in domain.
+    - [ ] Update `Config` to support `Providers` map and `SelectedProvider` key.
+- [ ] Implement **Recursive Environment Expansion**:
+    - [ ] Support `${VAR}` syntax in YAML for secret injection (API Keys).
+- [ ] Implement **Dynamic Provider Factory**:
+    - [ ] Decouple client creation from `chat_command.go`.
 
 ## Phase 2: OpenAI-Compatible Infrastructure
 - [ ] Implement internal/infrastructure/llm/openai:
