@@ -11,7 +11,7 @@ The system will provide native support for the following flagship models:
 | **Google** | `gemini-3-flash-preview` | `https://aiplatform.googleapis.com/v1/...` | OAuth2/IAM |
 | **OpenAI** | `gpt-5.2` | `https://api.openai.com/v1/chat/completions` | Bearer Token |
 | **DeepSeek** | `deepseek-reasoner` | `https://api.deepseek.com/chat/completions` | Bearer Token |
-| **Anthropic** | `claude-3-7-sonnet-latest` | `https://api.anthropic.com/v1/messages` | API Key (x-api-key) |
+| **Anthropic** | `claude-opus-4-6` | `https://api.anthropic.com/v1/messages` | API Key (x-api-key) |
 
 ## 3. Implementation Roadmap
 

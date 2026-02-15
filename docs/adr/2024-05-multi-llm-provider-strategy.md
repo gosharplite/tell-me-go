@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-`tell-me-go` currently relies exclusively on the `google.golang.org/genai` SDK for interaction with Gemini models. To remain competitive and versatile, the system must support next-generation models like OpenAI's `gpt-5.2`, DeepSeek's `deepseek-reasoner`, and Anthropic's Claude 3.7.
+`tell-me-go` currently relies exclusively on the `google.golang.org/genai` SDK for interaction with Gemini models. To remain competitive and versatile, the system must support next-generation models like OpenAI's `gpt-5.2`, DeepSeek's `deepseek-reasoner`, and Anthropic's Claude Opus 4.6.
 
 ## Decision
 We will adopt a **Hybrid Infrastructure Strategy**:

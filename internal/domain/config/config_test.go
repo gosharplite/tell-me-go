@@ -175,7 +175,7 @@ func TestFindBestMatch(t *testing.T) {
 		},
 		{
 			name:     "No match",
-			key:      "claude-3-opus",
+			key:      "claude-opus-4-6",
 			expected: "",
 			found:    false,
 		},
