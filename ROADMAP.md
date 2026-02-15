@@ -2,6 +2,13 @@
 
 This document outlines the strategic evolution of `tell-me-go`. Our primary goal is to provide a unified, provider-agnostic interface for high-performance reasoning models.
 
+## 📍 Current Focus & Key Documentation
+We are currently executing **Phase 1: Foundation & Governance**.
+
+- **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2024-05-multi-llm-provider-strategy.md)
+- **Technical Specification:** [Multi-Provider Implementation Plan](./docs/sop/technical/multi_provider_implementation.md)
+- **Design Standards:** [ADR Management SOP](./docs/sop/standards/adr_standards.md)
+
 ## Phase 1: Foundation & Governance (In Progress)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
