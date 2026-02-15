@@ -3,25 +3,25 @@
 This document outlines the strategic evolution of `tell-me-go`. Our primary goal is to provide a unified, provider-agnostic interface for high-performance reasoning models.
 
 ## 📍 Current Focus & Key Documentation
-We are currently executing **Phase 1: Foundation & Governance**.
+We are currently executing **Phase 2: OpenAI-Compatible Infrastructure**.
 
 - **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2024-05-multi-llm-provider-strategy.md)
 - **Technical Specification:** [Multi-Provider Implementation Plan](./docs/sop/technical/multi_provider_implementation.md)
 - **Design Standards:** [ADR Management SOP](./docs/sop/standards/adr_standards.md)
 
-## Phase 1: Foundation & Governance (In Progress)
+## Phase 1: Foundation & Governance (Completed)
 - [x] Documentation & ADR Initialization
 - [x] ADR-001: Hybrid Infrastructure Strategy
 - [x] Refactor Domain `llm.Part`: Migrate `Thought` from `bool` to `string`.
-- [ ] Implement **Registry-based Configuration**:
-    - [ ] Define `LLMProvider` struct in domain.
-    - [ ] Update `Config` to support `Providers` map and `SelectedProvider` key.
-- [ ] Implement **Recursive Environment Expansion**:
-    - [ ] Support `${VAR}` syntax in YAML for secret injection (API Keys).
-- [ ] Implement **Dynamic Provider Factory**:
-    - [ ] Decouple client creation from `chat_command.go`.
+- [x] Implement **Registry-based Configuration**:
+    - [x] Define `LLMProvider` struct in domain.
+    - [x] Update `Config` to support `Providers` map and `SelectedProvider` key.
+- [x] Implement **Recursive Environment Expansion**:
+    - [x] Support `${VAR}` syntax in YAML for secret injection (API Keys).
+- [x] Implement **Dynamic Provider Factory**:
+    - [x] Decouple client creation from `chat_command.go`.
 
-## Phase 2: OpenAI-Compatible Infrastructure
+## Phase 2: OpenAI-Compatible Infrastructure (In Progress)
 - [ ] Implement internal/infrastructure/llm/openai:
     - [ ] Manual HTTP transport for OpenAI v1 Chat Completion.
     - [ ] Specific mapping for gpt-5.2 (reasoning_tokens) and deepseek-reasoner (reasoning_content).

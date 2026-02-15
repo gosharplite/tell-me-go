@@ -1,7 +1,7 @@
 # ADR-001: Hybrid LLM Infrastructure Strategy
 
 ## Status
-Accepted
+Accepted (Implemented May 2024 via Provider Factory)
 
 ## Context
 `tell-me-go` currently relies exclusively on the `google.golang.org/genai` SDK for interaction with Gemini models. To remain competitive and versatile, the system must support next-generation models like OpenAI's `gpt-5.2`, DeepSeek's `deepseek-reasoner`, and Anthropic's Claude Opus 4.6.

@@ -15,11 +15,12 @@ The system will provide native support for the following flagship models:
 
 ## 3. Implementation Roadmap
 
-### Phase 1: Domain & Configuration (Current)
+### Phase 1: Domain & Configuration (Completed)
 - **Domain:** Update `internal/domain/llm.Part` to use a `Thought string` field.
-    - **Status:** [COMPLETED]
+    - **Status:** [x]
     - **Compatibility:** For boolean-based providers (Gemini), a `"true"` string acts as a semantic marker indicating that the reasoning content is found within the `Text` field.
 - **Config Registry:** Implement a formal `Providers` registry in the `Config` struct.
+    - **Status:** [x]
     - **LLMProvider Schema:**
         ```go
         type LLMProvider struct {
@@ -31,13 +32,15 @@ The system will provide native support for the following flagship models:
         }
         ```
     - **Selected Provider:** The `Config` struct must include a `SELECTED_PROVIDER` field to determine which key from the `PROVIDERS` map is active.
-- **Environment Expansion:** The configuration loader must support recursive expansion of `${VAR}` tokens in YAML values for secure credential management. This expansion must happen at the raw YAML level (byte slice) before unmarshaling to ensure all fields (including nested provider keys) are expansion-capable.
+- **Environment Expansion:** The configuration loader must support recursive expansion of `${VAR}` tokens in YAML values for secure credential management.
+    - **Status:** [x]
 
-### Phase 1.5: Factory Abstraction
+### Phase 1.5: Factory Abstraction (Completed)
 - **Dynamic Factory:** Implement `internal/infrastructure/llm/factory.go` to abstract the instantiation of `google`, `openai`, and `anthropic` implementations.
 - **Contract:** The factory must return an `LLMClient` interface based on the `Type` field in the active `LLMProvider` configuration, decoupling client creation from high-level CLI commands.
+- **Status:** [x]
 
-### Phase 2: OpenAI Compatible Infrastructure
+### Phase 2: OpenAI Compatible Infrastructure (In Progress)
 - **Transport:** Implement `internal/infrastructure/llm/openai_compatible.go` using a manual HTTP client.
 - **Mapping:** 
     - `gpt-5.2`: Map `reasoning_tokens` to internal `Thought`.
