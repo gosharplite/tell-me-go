@@ -249,7 +249,7 @@ alias b-install-dev='go install ./cmd/tell-me-go'
 ```
 
 ## 📜 SOP-Driven Development
-This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [SOP/](./SOP/) directory.
+This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [docs/sop/](./docs/sop/) directory.
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).
