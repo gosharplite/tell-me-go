@@ -24,7 +24,7 @@ func TestStreamResponse(t *testing.T) {
 
 		ch <- &llm.Content{
 			Parts: []*llm.Part{
-				{Thought: true, Text: "Thinking..."},
+				{Thought: "true", Text: "Thinking..."},
 			},
 		}
 		ch <- &llm.Content{

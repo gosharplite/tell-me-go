@@ -22,7 +22,6 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -85,15 +84,7 @@ func newChatCommand(ctx *context) *chatCommand {
 				agent.WithLoader(loader),
 			)
 		},
-		ClientFactory: func(cfg *domain_config.Config, pricing domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
-			authenticator := &auth.VertexAuth{}
-			maxBudget := cfg.ResolveThinkingBudget(cfg.Model, pricing)
-			baseClient, err := llm.NewClient(cfg.URL, cfg.Model, authenticator, cfg.ThinkingBudget, cfg.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
-			if err != nil {
-				return nil, err
-			}
-			return llm.NewResilientClient(baseClient, cfg.DisableStreaming), nil
-		},
+		ClientFactory: llm.NewClient,
 	}
 }
 

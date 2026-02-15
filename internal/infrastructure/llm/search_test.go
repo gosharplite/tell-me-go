@@ -81,7 +81,7 @@ func TestSearchToolSelection(t *testing.T) {
 
 			t.Setenv("TELL_ME_MOCK_URL", server.URL)
 
-			client, err := NewClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", true, events.NewSimpleEventBus())
+			client, err := NewGeminiClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", true, events.NewSimpleEventBus())
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}

@@ -8,12 +8,12 @@ SPDX-License-Identifier: MIT
 A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
 
 ## Overview
-`tell-me-go` is a high-performance, type-safe assistant designed for developers. It provides a terminal-based interface to interact with Google's Gemini models, specifically optimized for **Gemini 3+** reasoning and multimodal capabilities. Governed by strict Standard Operating Procedures (SOPs), it ensures a robust and predictable experience.
+`tell-me-go` is a high-performance, type-safe assistant designed for developers. Originally built for Google's Gemini models, it is evolving into a **multi-provider reasoning agent** that unifies the world's most powerful Chain-of-Thought models (Gemini, DeepSeek, Claude) under a single, resilient interface.
 
 ## 🚀 Features
-*   **Official SDK**: Built on `google.golang.org/genai` for native support of the latest Gemini features.
-*   **Gemini Reasoning**: Support for **Thinking (Reasoning)** models with configurable budgets.
-    *   **Smart Budget Cap**: Automatically adjusts `THINKING_BUDGET` to the maximum allowed by the selected model, preventing `Error 400` failures.
+*   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 3.7**, and **Gemini 2.0/3.0**.
+*   **Unified Domain Model**: Optimized for rich reasoning content with a provider-agnostic `Thought` architecture.
+*   **Official SDK & REST**: Built on `google.golang.org/genai` with upcoming native REST support for OpenAI-compatible and Anthropic endpoints.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
     *   **Interactive Safety**: 
@@ -248,8 +248,11 @@ alias b-install='(cd $TELL_ME_HOME && git pull && go install ./cmd/tell-me-go)'
 alias b-install-dev='go install ./cmd/tell-me-go'
 ```
 
+## 🏗️ Design Decisions
+Critical architectural decisions are documented as [ADRs](./docs/adr/) following our [ADR SOP](./docs/sop/standards/adr_standards.md). For detailed implementation plans, see the [Multi-Provider Technical Specification](./docs/sop/technical/multi_provider_implementation.md).
+
 ## 📜 SOP-Driven Development
-This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [SOP/](./SOP/) directory.
+This project adheres to strict **Standard Operating Procedures (SOPs)**. All development must follow the protocols defined in the [docs/sop/](./docs/sop/) directory.
 
 ## ⚖️ License
 This project is licensed under the [MIT License](LICENSE).

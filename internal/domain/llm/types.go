@@ -27,7 +27,7 @@ type Part struct {
 	InlineData       *Blob             `json:"inline_data,omitempty"`
 	FunctionCall     *FunctionCall     `json:"function_call,omitempty"`
 	FunctionResponse *FunctionResponse `json:"function_response,omitempty"`
-	Thought          bool              `json:"thought,omitempty"`
+	Thought          string            `json:"thought,omitempty"`
 	ThoughtSignature []byte            `json:"thought_signature,omitempty"`
 	AssetID          string            `json:"asset_id,omitempty"` // Local reference for persistence
 }
@@ -94,26 +94,36 @@ func (c *Content) AddPart(p *Part) {
 		return
 	}
 
-	// If it's a function call/response, just append
-	if p.FunctionCall != nil || p.FunctionResponse != nil || p.InlineData != nil {
-		c.Parts = append(c.Parts, p)
-		return
-	}
-
-	// For text/thought, try to append to last part if same type
 	if len(c.Parts) > 0 {
 		last := c.Parts[len(c.Parts)-1]
-		if last.Thought == p.Thought && last.FunctionCall == nil && last.FunctionResponse == nil && last.InlineData == nil {
+		if last.canMergeWith(p) {
 			last.Text += p.Text
+			if last.Thought == "true" && p.Thought == "true" {
+				last.Thought = "true"
+			} else {
+				last.Thought += p.Thought
+			}
 			return
 		}
 	}
 
-	// Otherwise append new part
-	c.Parts = append(c.Parts, &Part{
-		Text:    p.Text,
-		Thought: p.Thought,
-	})
+	// Otherwise append new part.
+	c.Parts = append(c.Parts, p.clone())
+}
+
+func (p *Part) isPure() bool {
+	return p.FunctionCall == nil && p.FunctionResponse == nil && p.InlineData == nil
+}
+
+func (p *Part) canMergeWith(other *Part) bool {
+	if p == nil || other == nil {
+		return false
+	}
+	if !p.isPure() || !other.isPure() {
+		return false
+	}
+	// Both are thoughts or both are plain text
+	return (p.Thought != "" && other.Thought != "") || (p.Thought == "" && other.Thought == "")
 }
 
 // clone returns a deep copy of Content.
@@ -313,6 +323,6 @@ func (p *Part) IsEmpty() bool {
 		p.FunctionCall == nil &&
 		p.FunctionResponse == nil &&
 		p.AssetID == "" &&
-		!p.Thought &&
+		p.Thought == "" &&
 		len(p.ThoughtSignature) == 0
 }

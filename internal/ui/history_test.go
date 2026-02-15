@@ -23,7 +23,7 @@ func TestHistory_Rendering(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{
-		{Thought: true, Text: "I am thinking"},
+		{Thought: "true", Text: "I am thinking"},
 		{Text: "hi there"},
 	}}); err != nil {
 		t.Fatal(err)

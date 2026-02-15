@@ -81,6 +81,10 @@ func (c *capturer) CapturePrompt(ctx context.Context, fs *flag.FlagSet, lastN in
 		return "", err
 	}
 
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		if lastN > 0 {

@@ -333,16 +333,28 @@ func (r *stdUIRenderer) renderResponse(respContent *llm.Content, showThoughts, r
 }
 
 func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts bool) {
-	if showThoughts && part.Thought && part.Text != "" {
+	if showThoughts && part.Thought != "" {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
-		sanitized := sanitizeForTerminal(part.Text)
+
+		// For models where Thought is a boolean-like marker, the text is in part.Text.
+		// For others, the actual reasoning content is in part.Thought.
+		source := part.Thought
+		if source == "true" {
+			source = part.Text
+		}
+
+		if source == "" {
+			return
+		}
+
+		sanitized := sanitizeForTerminal(source)
 		fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
 
 func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
-	if part.Text != "" && !part.Thought {
+	if part.Text != "" && part.Thought == "" {
 		stdout := ui.stdout
 		if raw {
 			fmt.Fprint(stdout, part.Text)
@@ -435,7 +447,7 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 }
 
 func (r *stdUIRenderer) renderStreamPart(state *streamState, part *llm.Part, ui uiState) {
-	if part.Thought {
+	if part.Thought != "" {
 		r.handleThoughtPart(state, part, ui)
 	} else if part.Text != "" {
 		r.handleTextPart(state, part, ui)
@@ -452,7 +464,11 @@ func (r *stdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part, ui
 		state.thoughtActive = true
 	}
 	if state.showThoughts {
-		sanitized := sanitizeForTerminal(part.Text)
+		source := part.Thought
+		if source == "true" {
+			source = part.Text
+		}
+		sanitized := sanitizeForTerminal(source)
 		r.safePrintStderr(sanitized, ui)
 	}
 }

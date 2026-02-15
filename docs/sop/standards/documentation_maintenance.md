@@ -35,7 +35,7 @@ Ensure every technical reference matches the implementation:
 #### 3. Audit: Link and Path Integrity
 Perform a repository-wide audit of all Markdown links:
 - **Relative Paths**: Ensure all internal links (e.g., `[Link Text](./target.md)`) resolve correctly based on the file's location.
-- **Cross-References**: Check that links between `SOP/` subdirectories (e.g., from `standards/` to `lifecycle/`) use the correct number of parent markers (`../`).
+- **Cross-References**: Check that links between `docs/sop/` subdirectories (e.g., from `standards/` to `lifecycle/`) use the correct number of parent markers (`../`).
 - **File Renames**: If a Go file or SOP is renamed, update all referring documentation immediately.
 
 #### 4. Formatting and Compliance

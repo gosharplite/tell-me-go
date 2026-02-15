@@ -29,7 +29,7 @@ Every project repository must have a `README.md` in the root that follows this s
 5.  **🛠️ Installation**: Clear commands to build or install the tool.
 6.  **💻 Usage**: Practical examples of CLI commands and expected output.
 7.  **⚙️ Configuration**: Instructions on setting up YAML files and Environment Variables (e.g., `API_KEY`).
-8.  **📜 SOP-Driven Development**: A note explaining that the project follows strict SOPs (linking to the `SOP/` directory).
+8.  **📜 SOP-Driven Development**: A note explaining that the project follows strict SOPs (linking to the `docs/sop/` directory).
 9.  **⚖️ License**: Reference to the MIT license.
 
 #### 2. Inline Code Documentation

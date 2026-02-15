@@ -33,8 +33,8 @@ func TestPart_Conversion(t *testing.T) {
 	if internalPart.Text != sdkPart.Text {
 		t.Errorf("expected text %s, got %s", sdkPart.Text, internalPart.Text)
 	}
-	if internalPart.Thought != sdkPart.Thought {
-		t.Errorf("expected thought %v, got %v", sdkPart.Thought, internalPart.Thought)
+	if internalPart.Thought != "true" {
+		t.Errorf("expected thought true, got %v", internalPart.Thought)
 	}
 	if !reflect.DeepEqual(internalPart.ThoughtSignature, sdkPart.ThoughtSignature) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
@@ -89,7 +89,7 @@ func TestContent_ToSDK(t *testing.T) {
 		Parts: []*llm.Part{
 			{
 				Text:             "thinking",
-				Thought:          true,
+				Thought:          "true",
 				ThoughtSignature: []byte("sig"),
 			},
 		},

@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -45,7 +46,7 @@ func TestSendChat(t *testing.T) {
 	// 2. Setup client with mock server URL and mock authenticator
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus())
+	client, err := NewGeminiClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus())
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestSendChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -106,7 +107,7 @@ func TestSendChat_FinishReason(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -149,7 +150,7 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false, events.NewSimpleEventBus())
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
@@ -169,10 +170,163 @@ func TestThinkingBudget(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false, events.NewSimpleEventBus())
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false, events.NewSimpleEventBus())
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
+	}
+}
+
+func TestStreamChat_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		chunks := []genai.GenerateContentResponse{
+			{
+				Candidates: []*genai.Candidate{
+					{
+						Content: &genai.Content{
+							Parts: []*genai.Part{{Text: "Hello "}},
+						},
+					},
+				},
+			},
+			{
+				Candidates: []*genai.Candidate{
+					{
+						Content: &genai.Content{
+							Parts: []*genai.Part{{Text: "World!"}},
+						},
+						FinishReason: genai.FinishReasonStop,
+					},
+				},
+				UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+					CandidatesTokenCount: 2,
+					PromptTokenCount:     1,
+					TotalTokenCount:      3,
+				},
+			},
+		}
+
+		for _, chunk := range chunks {
+			data, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
+		}
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+
+	var receivedText string
+	callback := func(c *llm.Content) {
+		for _, p := range c.Parts {
+			receivedText += p.Text
+		}
+	}
+
+	metrics, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, callback)
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if receivedText != "Hello World!" {
+		t.Errorf("expected 'Hello World!', got '%s'", receivedText)
+	}
+
+	if metrics == nil || metrics.ResponseTokens != 2 {
+		t.Errorf("expected 2 response tokens, got %v", metrics)
+	}
+}
+
+func TestStreamChat_SafetyBlock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		chunks := []genai.GenerateContentResponse{
+			{
+				PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
+					BlockReason: "SAFETY",
+				},
+			},
+		}
+
+		for _, chunk := range chunks {
+			data, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
+		}
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+
+	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
+	if err == nil {
+		t.Fatal("expected error for safety block, got nil")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety filters") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestStreamChat_FinishReason_Safety(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		chunks := []genai.GenerateContentResponse{
+			{
+				Candidates: []*genai.Candidate{
+					{
+						Content: &genai.Content{
+							Parts: []*genai.Part{{Text: "Some text"}},
+						},
+						FinishReason: genai.FinishReasonSafety,
+					},
+				},
+			},
+		}
+
+		for _, chunk := range chunks {
+			data, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
+		}
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus())
+
+	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
+	if err == nil {
+		t.Fatal("expected error for finish reason safety, got nil")
+	}
+	if !strings.Contains(err.Error(), "stream interrupted (Finish Reason: SAFETY)") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRefreshAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{{Content: &genai.Content{Parts: []*genai.Part{{Text: "OK"}}}}},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	authenticator := &auth.VertexAuth{Token: "test-token"}
+	client, _ := NewGeminiClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus())
+
+	err := client.RefreshAuth()
+	if err != nil {
+		t.Fatalf("RefreshAuth failed: %v", err)
 	}
 }

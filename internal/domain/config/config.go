@@ -22,6 +22,17 @@ const (
 	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )
 
+// LLMProvider represents the configuration for a specific AI service provider.
+type LLMProvider struct {
+	Type           string            `yaml:"TYPE"`            // e.g., "openai", "anthropic", "gemini"
+	URL            string            `yaml:"URL"`             // Base API URL
+	APIKey         string            `yaml:"API_KEY"`         // Secret key (supports ${VAR} expansion in next task)
+	Model          string            `yaml:"MODEL"`           // Default model for this provider
+	ThinkingBudget int               `yaml:"THINKING_BUDGET"` // Provider-specific thinking budget
+	ThinkingLevel  string            `yaml:"THINKING_LEVEL"`  // Provider-specific thinking level
+	Headers        map[string]string `yaml:"HEADERS"`         // Custom HTTP headers
+}
+
 // Config represents the application configuration loaded from a YAML file.
 type Config struct {
 	Mode               string                 `yaml:"MODE"`
@@ -40,6 +51,25 @@ type Config struct {
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
 	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
 	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
+	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`
+	Providers          map[string]LLMProvider `yaml:"PROVIDERS"`
+}
+
+// GetActiveProvider returns the configuration for the selected provider.
+// If SELECTED_PROVIDER is empty or not found, it should synthesize a provider
+// using the legacy top-level fields (URL, Model, etc.) for backward compatibility.
+func (c *Config) GetActiveProvider() LLMProvider {
+	if p, ok := c.Providers[c.SelectedProvider]; ok {
+		return p
+	}
+	// Fallback to legacy flat config
+	return LLMProvider{
+		Type:           "gemini", // Default legacy type
+		URL:            c.URL,
+		Model:          c.Model,
+		ThinkingBudget: c.ThinkingBudget,
+		ThinkingLevel:  c.ThinkingLevel,
+	}
 }
 
 // ModelConfig defines capabilities and limits for a specific model.

@@ -116,3 +116,33 @@ func TestLoad_MoreEnvOverrides(t *testing.T) {
 		t.Error("expected DisableStreaming to be true")
 	}
 }
+
+func TestLoad_EnvExpansion(t *testing.T) {
+	os.Setenv("MOCK_SECRET", "xyz123")
+	defer os.Unsetenv("MOCK_SECRET")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_expansion.yaml")
+
+	yamlContent := `
+SELECTED_PROVIDER: "work-openai"
+PROVIDERS:
+  work-openai:
+    TYPE: "openai"
+    API_KEY: "${MOCK_SECRET}"
+    MODEL: "gpt-4"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	provider := cfg.Providers["work-openai"]
+	if provider.APIKey != "xyz123" {
+		t.Errorf("expected APIKey 'xyz123', got '%s'", provider.APIKey)
+	}
+}

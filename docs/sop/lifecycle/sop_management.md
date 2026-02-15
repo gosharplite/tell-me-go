@@ -12,7 +12,7 @@ This SOP defines the standard structure and process for documenting procedures w
 
 ### Prerequisites
 - Knowledge of Markdown syntax.
-- Access to the `SOP/` directory.
+- Access to the `docs/sop/` directory.
 
 ---
 
@@ -45,8 +45,8 @@ Every SOP should follow a consistent Markdown structure:
 - Draft the content following the structure in Section 1.
 
 #### Step 3: Localization
-- **File Path**: Save the file in the `SOP/` directory or an appropriate sub-folder (e.g., `SOP/tools/`).
-- **Naming Convention**: Use lowercase with underscores (e.g., `SOP/technical/architecture_and_packages.md`).
+- **File Path**: Save the file in the `docs/sop/` directory or an appropriate sub-folder (e.g., `docs/sop/tools/`).
+- **Naming Convention**: Use lowercase with underscores (e.g., `docs/sop/technical/architecture_and_packages.md`).
 
 #### Step 4: Verification
 - Follow your own draft as if you were a new user.
@@ -60,7 +60,7 @@ Every SOP should follow a consistent Markdown structure:
     - **Verification**: The agent must read back the state after updates.
 - **Evolution**: When a codebase change (e.g., a Go module update or refactor) breaks a documented procedure, the corresponding SOP **must** be updated immediately.
 - **Versioning**: Use Git commit messages to track the "why" behind SOP revisions.
-- **Consistency**: Periodically review all files in the `SOP/` tree to ensure they don't contradict each other or standard Go idioms.
+- **Consistency**: Periodically review all files in the `docs/sop/` tree to ensure they don't contradict each other or standard Go idioms.
 
 ---
 
@@ -70,7 +70,7 @@ Every SOP should follow a consistent Markdown structure:
 - [ ] Are all Go-specific dependencies listed?
 - [ ] Is the logic broken down into digestible numbered steps?
 - [ ] Are there Go code examples or command templates?
-- [ ] Is the file saved in `SOP/` or a sub-folder?
+- [ ] Is the file saved in `docs/sop/` or a sub-folder?
 - [ ] Has the quality been verified? (Run `go test ./...` and `go mod tidy` before committing)
 - [ ] Are there logic gaps? If no unit test exists for a new package, add it to the technical debt list in the scratchpad.
 - [ ] Does this impact **Testing Standards**?

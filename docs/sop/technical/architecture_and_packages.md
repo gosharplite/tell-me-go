@@ -48,7 +48,7 @@ The project is organized into the following top-level directories:
         - `internal/tools/integrations`: External service integrations (e.g., MS Teams).
     - `internal/ui`: Flat UI rendering and interaction layer.
 - **`configs/`**: Storage for default configuration templates (YAML).
-- **`SOP/`**: Project governance and process documentation.
+- **`docs/sop/`**: Project governance and process documentation.
 - **`assets/`**: Static assets like pricing data.
 - **`tests/`**: Integration and End-to-End tests.
 
@@ -94,7 +94,7 @@ tell-me-go/
 │   └── ui/               # Flat UI Layer
 ├── configs/              # Templates
 ├── tests/                # E2E Tests
-├── SOP/                  # Documentation
+├── docs/sop/                  # Documentation
 ├── go.mod
 └── go.sum
 ```
