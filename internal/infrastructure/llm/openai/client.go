@@ -22,26 +22,28 @@ import (
 
 // client implements the llm.LLMClient interface for OpenAI-compatible APIs.
 type client struct {
-	httpClient    *http.Client
-	authenticator auth.Authenticator
-	baseURL       string
-	model         string
-	headers       map[string]string
-	persona       string
+	httpClient     *http.Client
+	authenticator  auth.Authenticator
+	baseURL        string
+	model          string
+	headers        map[string]string
+	persona        string
+	thinkingBudget int
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration) *client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration, thinkingBudget int) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
 	return &client{
-		httpClient:    &http.Client{Timeout: timeout},
-		authenticator: authenticator,
-		baseURL:       strings.TrimSuffix(baseURL, "/"),
-		model:         model,
-		headers:       headers,
-		persona:       persona,
+		httpClient:     &http.Client{Timeout: timeout},
+		authenticator:  authenticator,
+		baseURL:        strings.TrimSuffix(baseURL, "/"),
+		model:          model,
+		headers:        headers,
+		persona:        persona,
+		thinkingBudget: thinkingBudget,
 	}
 }
 
@@ -135,13 +137,13 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		strings.HasPrefix(c.model, "gpt-5")
 
 	if isOpenAIReasoner {
-		reqPayload.MaxCompletionTokens = 8192
+		reqPayload.MaxCompletionTokens = c.thinkingBudget
 		if effort, ok := c.headers["reasoning_effort"]; ok {
 			reqPayload.ReasoningEffort = effort
 		}
 	} else if strings.Contains(c.model, "reasoner") {
 		// DeepSeek Reasoner still uses 'max_tokens'
-		reqPayload.MaxTokens = 8192
+		reqPayload.MaxTokens = c.thinkingBudget
 	}
 
 	// DeepSeek and some other providers do not support stream_options

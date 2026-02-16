@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -195,7 +194,7 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 		}, true
 	}
 	if p.FunctionResponse != nil {
-		respJSON, _ := json.Marshal(marshalResponse(p.FunctionResponse.Response))
+		respJSON, _ := json.Marshal(p.FunctionResponse.Response)
 		return contentBlock{
 			Type:      "tool_result",
 			ToolUseID: p.FunctionResponse.ID,
@@ -352,7 +351,7 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		toolJSONs: make(map[int]*strings.Builder),
 	}
 
-	err = c.parseStream(resp.Body, callback, state)
+	err = c.parseStream(ctx, resp.Body, callback, state)
 
 	if state.metrics != nil {
 		state.metrics.Duration = time.Since(startTime).Seconds()
@@ -372,17 +371,6 @@ func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeT
 func (c *client) RefreshAuth() error {
 	c.authenticator.Invalidate()
 	return nil
-}
-
-func marshalResponse(res map[string]interface{}) string {
-	if res == nil {
-		return ""
-	}
-	if val, ok := res["result"].(string); ok {
-		return val
-	}
-	b, _ := json.Marshal(res)
-	return string(b)
 }
 
 type streamState struct {
@@ -474,7 +462,6 @@ func (c *client) handleContentBlockStart(data string, callback func(*llm.Content
 		} `json:"content_block"`
 	}
 	if err := json.Unmarshal([]byte(data), &start); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Anthropic parse error (content_block_start): %v | Data: %s\n", err, data)
 		return nil
 	}
 	if start.ContentBlock.Type == "thinking" {
@@ -509,7 +496,6 @@ func (c *client) handleContentBlockDelta(data string, callback func(*llm.Content
 		} `json:"delta"`
 	}
 	if err := json.Unmarshal([]byte(data), &delta); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Anthropic parse error (content_block_delta): %v | Data: %s\n", err, data)
 		return nil
 	}
 	update := &llm.Content{Role: "model"}
@@ -564,7 +550,6 @@ func (c *client) handleMessageDelta(data string, state *streamState) error {
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal([]byte(data), &md); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Anthropic parse error (message_delta): %v | Data: %s\n", err, data)
 		return nil
 	}
 	if state.metrics != nil {
@@ -584,7 +569,6 @@ func (c *client) handleMessageStart(data string, state *streamState) error {
 		} `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(data), &ms); err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Anthropic parse error (message_start): %v | Data: %s\n", err, data)
 		return nil
 	}
 	state.metrics = &llm.Metrics{
@@ -615,11 +599,17 @@ func (c *client) checkResponse(resp *http.Response) error {
 	return nil
 }
 
-func (c *client) parseStream(body io.Reader, callback func(*llm.Content), state *streamState) error {
+func (c *client) parseStream(ctx context.Context, body io.Reader, callback func(*llm.Content), state *streamState) error {
 	scanner := bufio.NewScanner(body)
 	var eventType string
 
 	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		line := scanner.Text()
 		if line == "" {
 			continue

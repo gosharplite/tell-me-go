@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -29,8 +30,10 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 		default:
 			authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
 		}
-	} else {
+	} else if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
 		authenticator = &auth.VertexAuth{}
+	} else {
+		return nil, fmt.Errorf("API key is required for provider type: %s", p.Type)
 	}
 
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
@@ -44,9 +47,9 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	switch p.Type {
 	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout)
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget)
 	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, cfg.Person, timeout)
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:

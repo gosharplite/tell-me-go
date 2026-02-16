@@ -54,6 +54,12 @@ func TestNewClient(t *testing.T) {
 			url:       "https://generativelanguage.googleapis.com", // Triggers SDK validation error
 			expectErr: true,
 		},
+		{
+			name:      "Returns error if API key is missing for OpenAI",
+			apiKey:    "",
+			provider:  "openai",
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
