@@ -41,7 +41,6 @@ We are currently executing **Phase 4: Release & Optimization**.
 - [x] Config-driven provider switching (Support for `SELECTED_PROVIDER` and `PROVIDERS` map)
 
 ## Phase 4: Release & Optimization (In Progress)
-- [ ] Performance benchmarking across providers
 - [ ] Security auditing for new endpoints
 - [ ] Public release of multi-provider support
 
