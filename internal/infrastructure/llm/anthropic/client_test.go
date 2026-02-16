@@ -6,6 +6,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -208,4 +209,50 @@ func TestThinkingBudget(t *testing.T) {
 
 	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048)
 	client.SendChat(context.Background(), nil, nil, nil)
+}
+
+func TestStreamChat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		
+		events := []struct {
+			event string
+			data  string
+		}{
+			{"message_start", `{"message":{"usage":{"input_tokens":10}}}`},
+			{"content_block_delta", `{"delta":{"type":"text_delta","text":"Hello"}}`},
+			{"content_block_delta", `{"delta":{"type":"thinking_delta","thinking":"Thinking"}}`},
+			{"content_block_delta", `{"delta":{"type":"text_delta","text":" world"}}`},
+			{"message_delta", `{"usage":{"output_tokens":20}}`},
+		}
+
+		for _, e := range events {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0)
+	
+	var receivedText, receivedThought string
+	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
+		for _, p := range c.Parts {
+			receivedText += p.Text
+			receivedThought += p.Thought
+		}
+	})
+
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if receivedText != "Hello world" {
+		t.Errorf("expected 'Hello world', got %q", receivedText)
+	}
+	if receivedThought != "Thinking" {
+		t.Errorf("expected 'Thinking', got %q", receivedThought)
+	}
+	if metrics == nil || metrics.PromptTokens != 10 || metrics.ResponseTokens != 20 {
+		t.Errorf("unexpected metrics: %+v", metrics)
+	}
 }

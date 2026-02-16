@@ -4,6 +4,7 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -43,9 +44,15 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
-	Tools    []tool    `json:"tools,omitempty"`
+	Model         string         `json:"model"`
+	Messages      []message      `json:"messages"`
+	Tools         []tool         `json:"tools,omitempty"`
+	Stream        bool           `json:"stream,omitempty"`
+	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type message struct {
@@ -302,8 +309,113 @@ func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 	return content, metrics, nil
 }
 
-func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, fmt.Errorf("StreamChat not implemented for OpenAI")
+func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	reqPayload := chatRequest{
+		Model:    c.model,
+		Messages: c.toOpenAIMessages(ctx, history, resolver),
+		Tools:    c.toOpenAITools(toolDecls),
+		Stream:   true,
+		StreamOptions: &streamOptions{
+			IncludeUsage: true,
+		},
+	}
+
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Apply custom headers
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	// Apply authentication
+	authReq := &auth.Request{Headers: make(map[string]string)}
+	c.authenticator.Apply(authReq)
+	for k, v := range authReq.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
+	}
+
+	var metrics *llm.Metrics
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+			} `json:"choices"`
+			Usage *usage `json:"usage"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			// Some providers might send empty lines or non-JSON between chunks
+			continue
+		}
+
+		if chunk.Usage != nil {
+			metrics = &llm.Metrics{
+				Model:          c.model,
+				PromptTokens:   chunk.Usage.PromptTokens,
+				ResponseTokens: chunk.Usage.CompletionTokens,
+				TotalTokens:    chunk.Usage.TotalTokens,
+			}
+			if chunk.Usage.CompletionTokensDetails != nil {
+				metrics.ThinkingTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
+			}
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta
+			if delta.Content != "" || delta.ReasoningContent != "" {
+				update := &llm.Content{Role: "model"}
+				if delta.Content != "" {
+					update.Parts = append(update.Parts, &llm.Part{Text: delta.Content})
+				}
+				if delta.ReasoningContent != "" {
+					update.Parts = append(update.Parts, &llm.Part{Thought: delta.ReasoningContent})
+				}
+				callback(update)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return metrics, fmt.Errorf("stream read error: %w", err)
+	}
+
+	return metrics, nil
 }
 
 func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {

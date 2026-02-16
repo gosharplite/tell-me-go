@@ -4,6 +4,7 @@
 package anthropic
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -51,6 +52,7 @@ type messagesRequest struct {
 	MaxTokens     int       `json:"max_tokens"`
 	Tools         []tool    `json:"tools,omitempty"`
 	Thinking      *thinking `json:"thinking,omitempty"`
+	Stream        bool      `json:"stream,omitempty"`
 }
 
 type thinking struct {
@@ -288,8 +290,139 @@ func (c *Client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	return content, metrics, nil
 }
 
-func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	return nil, fmt.Errorf("StreamChat not implemented for Anthropic")
+func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	system, messages := c.toAnthropicMessages(history)
+
+	reqPayload := messagesRequest{
+		Model:     c.model,
+		Messages:  messages,
+		System:    system,
+		MaxTokens: 4096,
+		Tools:     c.toAnthropicTools(toolDecls),
+		Stream:    true,
+	}
+
+	if c.thinkingBudget > 0 {
+		reqPayload.Thinking = &thinking{
+			Type:   "enabled",
+			Budget: c.thinkingBudget,
+		}
+		if reqPayload.MaxTokens <= c.thinkingBudget {
+			reqPayload.MaxTokens = c.thinkingBudget + 1024
+		}
+	}
+
+	body, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Apply custom headers
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+
+	// Apply authentication
+	authReq := &auth.Request{Headers: make(map[string]string)}
+	c.authenticator.Apply(authReq)
+	for k, v := range authReq.Headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
+	}
+
+	var metrics *llm.Metrics
+	scanner := bufio.NewScanner(resp.Body)
+	var eventType string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "event: ") {
+			eventType = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		switch eventType {
+		case "content_block_delta":
+			var delta struct {
+				Delta struct {
+					Type     string `json:"type"`
+					Text     string `json:"text"`
+					Thinking string `json:"thinking"`
+				} `json:"delta"`
+			}
+			if err := json.Unmarshal([]byte(data), &delta); err == nil {
+				update := &llm.Content{Role: "model"}
+				if delta.Delta.Text != "" {
+					update.Parts = append(update.Parts, &llm.Part{Text: delta.Delta.Text})
+				}
+				if delta.Delta.Thinking != "" {
+					update.Parts = append(update.Parts, &llm.Part{Thought: delta.Delta.Thinking})
+				}
+				if len(update.Parts) > 0 {
+					callback(update)
+				}
+			}
+		case "message_delta":
+			var md struct {
+				Usage struct {
+					OutputTokens int32 `json:"output_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal([]byte(data), &md); err == nil && metrics != nil {
+				metrics.ResponseTokens = md.Usage.OutputTokens
+				metrics.TotalTokens = metrics.PromptTokens + metrics.ResponseTokens
+			}
+		case "message_start":
+			var ms struct {
+				Message struct {
+					Usage struct {
+						InputTokens int32 `json:"input_tokens"`
+					} `json:"usage"`
+				} `json:"message"`
+			}
+			if err := json.Unmarshal([]byte(data), &ms); err == nil {
+				metrics = &llm.Metrics{
+					Model:        c.model,
+					PromptTokens: ms.Message.Usage.InputTokens,
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return metrics, fmt.Errorf("stream read error: %w", err)
+	}
+
+	return metrics, nil
 }
 
 func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {

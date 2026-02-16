@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -273,5 +274,47 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}
 	if resp.Parts[1].Text != "I have thought" {
 		t.Errorf("expected text 'I have thought', got %q", resp.Parts[1].Text)
+	}
+}
+
+func TestStreamChat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		
+		chunks := []string{
+			`{"choices":[{"delta":{"content":"Hello"}}]}`,
+			`{"choices":[{"delta":{"reasoning_content":"Thinking"}}]}`,
+			`{"choices":[{"delta":{"content":" world"}}], "usage":{"prompt_tokens":5, "completion_tokens":10, "total_tokens":15}}`,
+		}
+
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil)
+	
+	var receivedText, receivedThought string
+	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
+		for _, p := range c.Parts {
+			receivedText += p.Text
+			receivedThought += p.Thought
+		}
+	})
+
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if receivedText != "Hello world" {
+		t.Errorf("expected 'Hello world', got %q", receivedText)
+	}
+	if receivedThought != "Thinking" {
+		t.Errorf("expected 'Thinking', got %q", receivedThought)
+	}
+	if metrics == nil || metrics.TotalTokens != 15 {
+		t.Errorf("unexpected metrics: %+v", metrics)
 	}
 }
