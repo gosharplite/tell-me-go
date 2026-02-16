@@ -233,6 +233,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 		var textParts []string
 		var toolCalls []toolCall
 		var toolResponse *llm.FunctionResponse
+		var reasoningContent string
 
 		for _, p := range h.Parts {
 			if p.FunctionCall != nil {
@@ -249,8 +250,13 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			} else if p.Text != "" {
 				textParts = append(textParts, p.Text)
 			} else if p.Thought != "" {
-				// We'll merge reasoning into the text content with a delimiter for history.
-				textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Thought))
+				// DeepSeek requires reasoning_content to be returned in the history for tool calls.
+				if isDeepSeekReasoner {
+					reasoningContent = p.Thought
+				} else {
+					// For other models, we merge it into text to preserve the logical flow.
+					textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Thought))
+				}
 			}
 		}
 
@@ -278,9 +284,10 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			}
 
 			msg := message{
-				Role:      role,
-				ToolCalls: toolCalls,
-				Content:   "", // Ensure content is never null
+				Role:             role,
+				ToolCalls:        toolCalls,
+				Content:          "", // Ensure content is never null
+				ReasoningContent: reasoningContent,
 			}
 
 			content := strings.Join(textParts, "\n")
