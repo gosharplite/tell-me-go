@@ -38,7 +38,20 @@ func Load(path string) (*domain_config.Config, error) {
 	}
 
 	var cfg domain_config.Config
-	// Set defaults
+	setDefaults(&cfg)
+
+	expanded := os.ExpandEnv(string(data))
+	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal expanded yaml: %w", err)
+	}
+
+	applyEnvironmentOverrides(&cfg)
+	syncLegacyFields(&cfg)
+
+	return &cfg, nil
+}
+
+func setDefaults(cfg *domain_config.Config) {
 	cfg.MaxToolTurns = domain_config.DefaultMaxToolTurns
 	cfg.MaxHistoryTurns = domain_config.DefaultMaxHistoryTurns
 	cfg.MaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
@@ -51,13 +64,9 @@ func Load(path string) (*domain_config.Config, error) {
 	if os.Getenv("TELL_ME_NO_STREAM") == "true" {
 		cfg.DisableStreaming = true
 	}
+}
 
-	expanded := os.ExpandEnv(string(data))
-	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal expanded yaml: %w", err)
-	}
-
-	// Environment overrides
+func applyEnvironmentOverrides(cfg *domain_config.Config) {
 	if val := os.Getenv("GOSHARP_MODE"); val != "" {
 		cfg.Mode = val
 	}
@@ -70,8 +79,9 @@ func Load(path string) (*domain_config.Config, error) {
 	if val := os.Getenv("GOSHARP_AIURL"); val != "" {
 		cfg.URL = val
 	}
+}
 
-	// Synchronize legacy fields from active provider if they are empty
+func syncLegacyFields(cfg *domain_config.Config) {
 	active := cfg.GetActiveProvider()
 	if cfg.Model == "" {
 		cfg.Model = active.Model
@@ -85,8 +95,6 @@ func Load(path string) (*domain_config.Config, error) {
 	if cfg.ThinkingLevel == "" {
 		cfg.ThinkingLevel = active.ThinkingLevel
 	}
-
-	return &cfg, nil
 }
 
 // DefaultPricing returns the hardcoded fallback pricing data.

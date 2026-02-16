@@ -131,8 +131,8 @@ func TestToolCalling(t *testing.T) {
 		if len(req.Messages) == 3 && req.Messages[2].Content[0].Type == "tool_result" {
 			lastMsg := req.Messages[2]
 			block := lastMsg.Content[0]
-			expectedContent := map[string]interface{}{"result": "London: 15C"}
-			if block.ToolUseID != "toolu_123" || !reflect.DeepEqual(block.Content, expectedContent) {
+			expectedContent := "London: 15C"
+			if block.ToolUseID != "toolu_123" || block.Content != expectedContent {
 				t.Errorf("unexpected tool result block: %+v", block)
 			}
 

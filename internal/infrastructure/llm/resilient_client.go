@@ -7,10 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -29,21 +29,6 @@ func NewResilientClient(client llm.LLMClient, disableStreaming bool) *resilientC
 	}
 }
 
-// httpStatusErr captures various HTTP error implementations in SDKs.
-type httpStatusErr interface {
-	StatusCode() int
-}
-
-// errorClassifier defines a function that attempts to classify an error into domain types.
-type errorClassifier func(error) (error, bool)
-
-var defaultClassifiers = []errorClassifier{
-	classifyDomain,
-	classifyGRPC,
-	classifyHTTP,
-	classifyString,
-}
-
 // wrapError converts raw client errors into domain-specific Gateway errors.
 // It uses a Chain of Responsibility pattern for extensibility and low complexity.
 func (r *resilientClient) wrapError(err error) error {
@@ -51,69 +36,20 @@ func (r *resilientClient) wrapError(err error) error {
 		return nil
 	}
 
-	for _, classify := range defaultClassifiers {
-		if wrapped, ok := classify(err); ok {
-			return wrapped
-		}
-	}
-
-	return fmt.Errorf("%w: %v", llm.ErrTerminal, err)
-}
-
-func classifyDomain(err error) (error, bool) {
-	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) {
-		return err, true
-	}
-	return nil, false
-}
-
-func classifyGRPC(err error) (error, bool) {
+	// Try gRPC classification first as it's specific to the Google SDK
 	if s, ok := status.FromError(err); ok {
 		switch s.Code() {
 		case codes.Unauthenticated:
-			return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
+			return fmt.Errorf("%w: %v", llm.ErrAuth, err)
 		case codes.ResourceExhausted, codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
-			return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTransient, err)
 		case codes.PermissionDenied, codes.InvalidArgument:
-			return fmt.Errorf("%w: %v", llm.ErrTerminal, err), true
+			return fmt.Errorf("%w: %v", llm.ErrTerminal, err)
 		}
 	}
-	return nil, false
-}
 
-func classifyHTTP(err error) (error, bool) {
-	var httpErr httpStatusErr
-	if errors.As(err, &httpErr) {
-		code := httpErr.StatusCode()
-		switch {
-		case code == 401:
-			return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
-		case code == 429 || code >= 500:
-			return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
-		case code >= 400 && code < 500:
-			return fmt.Errorf("%w: %v", llm.ErrTerminal, err), true
-		}
-	}
-	return nil, false
-}
-
-func classifyString(err error) (error, bool) {
-	msg := strings.ToUpper(err.Error())
-
-	// 1. Auth Failures (Immediate stop/refresh)
-	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
-		return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
-	}
-
-	// 2. Rate Limits & Quotas (Trigger engine retries)
-	// We use OR (||) to catch various SDK error formats (HTTP 429, gRPC RESOURCE_EXHAUSTED, or plain 'QUOTA')
-	if strings.Contains(msg, "429") ||
-		strings.Contains(msg, "RESOURCE_EXHAUSTED") ||
-		strings.Contains(msg, "QUOTA") {
-		return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
-	}
-
-	return nil, false
+	// Use the unified classifier for everything else
+	return llmerr.Classify(err)
 }
 
 type result struct {
