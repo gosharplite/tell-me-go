@@ -195,6 +195,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 		var textParts []string
 		var toolCalls []toolCall
 		var toolResponse *llm.FunctionResponse
+		var thoughtParts []string
 
 		for _, p := range h.Parts {
 			if p.FunctionCall != nil {
@@ -210,9 +211,9 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 				toolResponse = p.FunctionResponse
 			} else if p.Text != "" {
 				textParts = append(textParts, p.Text)
+			} else if p.Thought != "" {
+				thoughtParts = append(thoughtParts, p.Thought)
 			}
-			// Thought is currently not sent BACK to the model in standard OpenAI API, 
-			// but we keep it in our internal state.
 		}
 
 		if toolResponse != nil {
@@ -223,12 +224,18 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			})
 		} else {
 			msg := message{
-				Role:      role,
-				ToolCalls: toolCalls,
+				Role:             role,
+				ToolCalls:        toolCalls,
+				ReasoningContent: strings.Join(thoughtParts, "\n"),
 			}
-			if len(textParts) > 0 {
-				msg.Content = strings.Join(textParts, "\n")
+			
+			content := strings.Join(textParts, "\n")
+			// DeepSeek and some OpenAI-compatible APIs require 'content' to be at least an empty string 
+			// if 'tool_calls' is empty, especially for assistant messages.
+			if content != "" || len(toolCalls) == 0 {
+				msg.Content = content
 			}
+			
 			messages = append(messages, msg)
 		}
 	}

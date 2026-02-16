@@ -247,12 +247,37 @@ func (c *Client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
 		res = append(res, tool{
 			Name:        d.Name,
 			Description: d.Description,
-			InputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": d.Parameters.Properties,
-				"required":   d.Parameters.Required,
-			},
+			InputSchema: toAnthropicSchema(d.Parameters),
 		})
+	}
+	return res
+}
+
+func toAnthropicSchema(s *tools.Schema) interface{} {
+	if s == nil {
+		return nil
+	}
+	res := map[string]interface{}{
+		"type": strings.ToLower(s.Type),
+	}
+	if s.Description != "" {
+		res["description"] = s.Description
+	}
+	if s.Properties != nil {
+		props := make(map[string]interface{})
+		for k, v := range s.Properties {
+			props[k] = toAnthropicSchema(v)
+		}
+		res["properties"] = props
+	}
+	if len(s.Required) > 0 {
+		res["required"] = s.Required
+	}
+	if len(s.Enum) > 0 {
+		res["enum"] = s.Enum
+	}
+	if s.Items != nil {
+		res["items"] = toAnthropicSchema(s.Items)
 	}
 	return res
 }

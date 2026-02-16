@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -316,5 +317,38 @@ func TestStreamChat(t *testing.T) {
 	}
 	if metrics == nil || metrics.TotalTokens != 15 {
 		t.Errorf("unexpected metrics: %+v", metrics)
+	}
+}
+
+func TestToOpenAIMessages_EmptyContent(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil)
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{{Text: "Hi"}},
+		},
+		{
+			Role: "model",
+			Parts: []*llm.Part{{Thought: "I am thinking"}},
+		},
+	}
+
+	messages := c.toOpenAIMessages(context.Background(), history, nil)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+
+	// The assistant message
+	msg := messages[1]
+	if msg.ReasoningContent != "I am thinking" {
+		t.Errorf("expected reasoning_content 'I am thinking', got %q", msg.ReasoningContent)
+	}
+
+	b, _ := json.Marshal(msg)
+	jsonStr := string(b)
+	
+	// Check if content is present (even if empty string) to satisfy DeepSeek/OpenAI
+	if !strings.Contains(jsonStr, `"content"`) {
+		t.Errorf("expected content field to be present, got %s", jsonStr)
 	}
 }
