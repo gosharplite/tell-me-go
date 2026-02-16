@@ -70,6 +70,21 @@ func Load(path string) (*domain_config.Config, error) {
 		cfg.URL = val
 	}
 
+	// Synchronize legacy fields from active provider if they are empty
+	active := cfg.GetActiveProvider()
+	if cfg.Model == "" {
+		cfg.Model = active.Model
+	}
+	if cfg.URL == "" {
+		cfg.URL = active.URL
+	}
+	if cfg.ThinkingBudget == 0 {
+		cfg.ThinkingBudget = active.ThinkingBudget
+	}
+	if cfg.ThinkingLevel == "" {
+		cfg.ThinkingLevel = active.ThinkingLevel
+	}
+
 	return &cfg, nil
 }
 

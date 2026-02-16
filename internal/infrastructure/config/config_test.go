@@ -146,3 +146,40 @@ PROVIDERS:
 		t.Errorf("expected APIKey 'xyz123', got '%s'", provider.APIKey)
 	}
 }
+
+func TestLoad_SyncActiveProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "test_sync.yaml")
+
+	yamlContent := `
+SELECTED_PROVIDER: "google"
+PROVIDERS:
+  google:
+    TYPE: "google"
+    MODEL: "gemini-3-flash"
+    URL: "https://google.com/ai"
+    THINKING_BUDGET: 4096
+    THINKING_LEVEL: "MEDIUM"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Model != "gemini-3-flash" {
+		t.Errorf("expected legacy Model to be synced to 'gemini-3-flash', got '%s'", cfg.Model)
+	}
+	if cfg.URL != "https://google.com/ai" {
+		t.Errorf("expected legacy URL to be synced to 'https://google.com/ai', got '%s'", cfg.URL)
+	}
+	if cfg.ThinkingBudget != 4096 {
+		t.Errorf("expected legacy ThinkingBudget to be synced to 4096, got %d", cfg.ThinkingBudget)
+	}
+	if cfg.ThinkingLevel != "MEDIUM" {
+		t.Errorf("expected legacy ThinkingLevel to be synced to 'MEDIUM', got '%s'", cfg.ThinkingLevel)
+	}
+}
