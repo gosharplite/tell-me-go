@@ -40,9 +40,7 @@ We are currently executing **Phase 4: Release & Optimization**.
 - [x] Multi-provider Token & Cost tracking (Supporting Thinking/Reasoning rates for 2026 models)
 - [x] Config-driven provider switching (Support for `SELECTED_PROVIDER` and `PROVIDERS` map)
 
-## Phase 4: Release & Optimization (In Progress)
-- [ ] Security auditing for new endpoints
-- [ ] Public release of multi-provider support
+## Phase 4: User verify functionalities (In Progress)
 
 ---
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*
