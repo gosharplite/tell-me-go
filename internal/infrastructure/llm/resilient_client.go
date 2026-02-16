@@ -52,7 +52,6 @@ func (r *resilientClient) wrapError(err error) error {
 	return llmerr.Classify(err)
 }
 
-
 type result struct {
 	content *llm.Content
 	metrics *llm.Metrics
