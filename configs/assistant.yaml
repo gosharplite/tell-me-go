@@ -1,0 +1,50 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Assistant Configuration
+MODE: "assistant"
+PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "gemini_vertex"
+
+# --- Provider Registry ---
+PROVIDERS:
+  gemini_vertex:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global/publishers/google/models"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-4o"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-3-5-sonnet-latest"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 200
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 120000

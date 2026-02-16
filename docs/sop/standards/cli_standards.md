@@ -64,7 +64,7 @@ All terminal log outputs (prompt echoes, system messages, thought processes, too
 
 #### 7. Flag Parsing Location
 - Flags should be defined and parsed within the `internal/cli` package (e.g., `internal/cli/chat_command.go`) to ensure the application lifecycle is programmatically testable. `cmd/tell-me-go/main.go` should remain a minimal entry point.
-- Defaults should be sensible (e.g., default config path to `configs/vertex.yaml`).
+- Defaults should be sensible (e.g., default config path to `configs/assistant.yaml`).
 
 ---
 
@@ -75,7 +75,7 @@ All terminal log outputs (prompt echoes, system messages, thought processes, too
 func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, error) {
 	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
 	opts := &cliOptions{}
-	fs.StringVar(&opts.configPath, "c", "configs/vertex.yaml", "Path to config")
+	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to config")
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, err
 	}
@@ -123,6 +123,6 @@ To prevent "Agentic Amnesia" and ensure the reliability of long-running or multi
 
 #### 8. Configuration File Templates
 To ensure discoverability of features and ease of setup:
-- **Completeness**: All configuration templates (e.g., `configs/vertex.yaml`) **MUST** include every variable supported by the application's `Config` struct.
+- **Completeness**: All configuration templates (e.g., `configs/assistant.yaml`) **MUST** include every variable supported by the application's `Config` struct.
 - **Sensible Defaults**: Variables should be set to safe, sensible defaults.
 - **Documentation**: Each variable in the template should be accompanied by a comment explaining its purpose, especially for safety limits like `MAX_HISTORY_TOKENS` or `MAX_TURNS`.

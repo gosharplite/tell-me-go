@@ -83,7 +83,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 func setupChatIntegrationEnv(t *testing.T) (tmpDir, cfgPath, historyPath, logPath string) {
 	tmpDir = t.TempDir()
 
-	cfgPath = filepath.Join(tmpDir, "vertex.yaml")
+	cfgPath = filepath.Join(tmpDir, "assistant.yaml")
 	cfgContent := `
 AIMODEL: test-model
 MODE: test-mode
