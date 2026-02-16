@@ -27,10 +27,11 @@ type Client struct {
 	baseURL       string
 	model         string
 	headers       map[string]string
+	persona       string
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string) *Client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string) *Client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -40,6 +41,7 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		model:         model,
 		headers:       headers,
+		persona:       persona,
 	}
 }
 
@@ -47,6 +49,7 @@ type chatRequest struct {
 	Model         string         `json:"model"`
 	Messages      []message      `json:"messages"`
 	Tools         []tool         `json:"tools,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
 }
@@ -56,11 +59,11 @@ type streamOptions struct {
 }
 
 type message struct {
-	Role             string       `json:"role"`
-	Content          interface{}  `json:"content,omitempty"` // string or []contentPart
-	ToolCalls        []toolCall   `json:"tool_calls,omitempty"`
-	ToolCallID       string       `json:"tool_call_id,omitempty"`
-	ReasoningContent string       `json:"reasoning_content,omitempty"` // DeepSeek extension
+	Role             string      `json:"role"`
+	Content          interface{} `json:"content"` // Never null for DeepSeek
+	ToolCalls        []toolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string      `json:"tool_call_id,omitempty"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
 }
 
 type contentPart struct {
@@ -85,12 +88,12 @@ type functionDeclaration struct {
 }
 
 type schema struct {
-	Type        string            `json:"type"`
-	Description string            `json:"description,omitempty"`
+	Type        string             `json:"type"`
+	Description string             `json:"description,omitempty"`
 	Properties  map[string]*schema `json:"properties,omitempty"`
-	Required    []string          `json:"required,omitempty"`
-	Enum        []string          `json:"enum,omitempty"`
-	Items       *schema           `json:"items,omitempty"`
+	Required    []string           `json:"required,omitempty"`
+	Enum        []string           `json:"enum,omitempty"`
+	Items       *schema            `json:"items,omitempty"`
 }
 
 type toolCall struct {
@@ -133,6 +136,11 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		Tools:    c.toOpenAITools(toolDecls),
 	}
 
+	// Reasoner models often need higher token limits for reasoning + output
+	if strings.Contains(c.model, "reasoner") {
+		reqPayload.MaxTokens = 8192
+	}
+
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -144,12 +152,12 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	// Apply custom headers
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
-	
+
 	// Apply authentication
 	authReq := &auth.Request{Headers: make(map[string]string)}
 	c.authenticator.Apply(authReq)
@@ -185,6 +193,21 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []message {
 	var messages []message
+
+	// DeepSeek Reasoner (R1) compatibility: Some versions don't support 'system' role.
+	// We'll merge the persona into the first 'user' message if we detect deepseek-reasoner.
+	isDeepSeekReasoner := strings.Contains(c.model, "deepseek-reasoner")
+	personaInjected := false
+
+	// If not deepseek-reasoner, inject persona as system message if provided
+	if c.persona != "" && !isDeepSeekReasoner {
+		messages = append(messages, message{
+			Role:    "system",
+			Content: c.persona,
+		})
+		personaInjected = true
+	}
+
 	for _, h := range history {
 		role := h.Role
 		if role == "model" {
@@ -195,7 +218,6 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 		var textParts []string
 		var toolCalls []toolCall
 		var toolResponse *llm.FunctionResponse
-		var thoughtParts []string
 
 		for _, p := range h.Parts {
 			if p.FunctionCall != nil {
@@ -212,7 +234,9 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			} else if p.Text != "" {
 				textParts = append(textParts, p.Text)
 			} else if p.Thought != "" {
-				thoughtParts = append(thoughtParts, p.Thought)
+				// DeepSeek and most OpenAI-compatible APIs do not support 'reasoning_content' in history.
+				// We'll merge it into the text content with a delimiter.
+				textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Thought))
 			}
 		}
 
@@ -223,19 +247,23 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 				Content:    marshalResponse(toolResponse.Response),
 			})
 		} else {
-			msg := message{
-				Role:             role,
-				ToolCalls:        toolCalls,
-				ReasoningContent: strings.Join(thoughtParts, "\n"),
+			// Prepend persona to first user message for DeepSeek Reasoner
+			if role == "user" && isDeepSeekReasoner && !personaInjected && c.persona != "" {
+				textParts = append([]string{c.persona}, textParts...)
+				personaInjected = true
 			}
-			
+
+			msg := message{
+				Role:      role,
+				ToolCalls: toolCalls,
+				Content:   "", // Ensure content is never null
+			}
+
 			content := strings.Join(textParts, "\n")
-			// DeepSeek and some OpenAI-compatible APIs require 'content' to be at least an empty string 
-			// if 'tool_calls' is empty, especially for assistant messages.
-			if content != "" || len(toolCalls) == 0 {
+			if content != "" {
 				msg.Content = content
 			}
-			
+
 			messages = append(messages, msg)
 		}
 	}
@@ -243,7 +271,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 }
 
 func (c *Client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
-	if len(decls) == 0 {
+	if len(decls) == 0 || strings.Contains(c.model, "reasoner") {
 		return nil
 	}
 	var res []tool
@@ -281,6 +309,9 @@ func toOpenAISchema(s *tools.Schema) *schema {
 }
 
 func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+	if len(resp.Choices) == 0 {
+		return nil, nil, fmt.Errorf("no choices returned from api")
+	}
 	choice := resp.Choices[0]
 	msg := choice.Message
 
@@ -351,9 +382,18 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		Messages: c.toOpenAIMessages(ctx, history, resolver),
 		Tools:    c.toOpenAITools(toolDecls),
 		Stream:   true,
-		StreamOptions: &streamOptions{
+	}
+
+	// Reasoner models often need higher token limits for reasoning + output
+	if strings.Contains(c.model, "reasoner") {
+		reqPayload.MaxTokens = 8192
+	}
+
+	// DeepSeek and some other providers do not support stream_options
+	if !strings.Contains(c.model, "deepseek") {
+		reqPayload.StreamOptions = &streamOptions{
 			IncludeUsage: true,
-		},
+		}
 	}
 
 	body, err := json.Marshal(reqPayload)
@@ -413,11 +453,19 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *usage `json:"usage"`
+			Error *struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+			} `json:"error"`
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			// Some providers might send empty lines or non-JSON between chunks
 			continue
+		}
+
+		if chunk.Error != nil {
+			return metrics, fmt.Errorf("api error: %s (%s)", chunk.Error.Message, chunk.Error.Type)
 		}
 
 		if chunk.Usage != nil {

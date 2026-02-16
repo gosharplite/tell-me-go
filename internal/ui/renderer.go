@@ -226,6 +226,11 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 		hColor = colorReset
 	}
 
+	modelStr := ""
+	if m.Model != "" {
+		modelStr = fmt.Sprintf(" [%s]", m.Model)
+	}
+
 	totalTurnLatency := m.Duration + m.ToolDuration
 	timingStr := fmt.Sprintf("%s%.2fs %s(ΣT: %.2fs)%s",
 		ui.c(colorReset), totalTurnLatency,
@@ -247,8 +252,8 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 		costStr = fmt.Sprintf(" %s($%.4f)%s", ui.c(colorGray), m.Cost, ui.c(colorGray))
 	}
 
-	fmt.Fprintf(stderr, "%s[%s] M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
-		ui.c(colorGray), timestamp, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
+	fmt.Fprintf(stderr, "%s[%s]%s M: %d %sH: %d%s C: %d Th: %d%s %s[%s]%s\n",
+		ui.c(colorGray), timestamp, modelStr, miss, ui.c(hColor), m.CachedTokens, ui.c(colorGray), m.ResponseTokens, m.ThinkingTokens, costStr, ui.c(colorGray), timingStr, ui.c(colorReset))
 }
 
 func (r *stdUIRenderer) LogTurnStatus(status events.TurnStatus) {

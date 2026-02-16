@@ -28,10 +28,11 @@ type Client struct {
 	model          string
 	headers        map[string]string
 	thinkingBudget int
+	persona        string
 }
 
 // NewClient creates a new Anthropic client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int) *Client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string) *Client {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
@@ -42,17 +43,18 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 		model:          model,
 		headers:        headers,
 		thinkingBudget: thinkingBudget,
+		persona:        persona,
 	}
 }
 
 type messagesRequest struct {
-	Model         string    `json:"model"`
-	Messages      []message `json:"messages"`
-	System        string    `json:"system,omitempty"`
-	MaxTokens     int       `json:"max_tokens"`
-	Tools         []tool    `json:"tools,omitempty"`
-	Thinking      *thinking `json:"thinking,omitempty"`
-	Stream        bool      `json:"stream,omitempty"`
+	Model     string    `json:"model"`
+	Messages  []message `json:"messages"`
+	System    string    `json:"system,omitempty"`
+	MaxTokens int       `json:"max_tokens"`
+	Tools     []tool    `json:"tools,omitempty"`
+	Thinking  *thinking `json:"thinking,omitempty"`
+	Stream    bool      `json:"stream,omitempty"`
 }
 
 type thinking struct {
@@ -61,7 +63,7 @@ type thinking struct {
 }
 
 type message struct {
-	Role    string        `json:"role"`
+	Role    string         `json:"role"`
 	Content []contentBlock `json:"content"`
 }
 
@@ -69,9 +71,9 @@ type contentBlock struct {
 	Type      string                 `json:"type"`
 	Text      string                 `json:"text,omitempty"`
 	Thinking  string                 `json:"thinking,omitempty"`
-	ID        string                 `json:"id,omitempty"`         // for tool_use
-	Name      string                 `json:"name,omitempty"`       // for tool_use
-	Input     map[string]interface{} `json:"input,omitempty"`      // for tool_use
+	ID        string                 `json:"id,omitempty"`          // for tool_use
+	Name      string                 `json:"name,omitempty"`        // for tool_use
+	Input     map[string]interface{} `json:"input,omitempty"`       // for tool_use
 	ToolUseID string                 `json:"tool_use_id,omitempty"` // for tool_result
 	Content   interface{}            `json:"content,omitempty"`     // for tool_result (string or array)
 }
@@ -98,7 +100,7 @@ type usage struct {
 
 func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	system, messages := c.toAnthropicMessages(history)
-	
+
 	reqPayload := messagesRequest{
 		Model:     c.model,
 		Messages:  messages,
@@ -117,7 +119,7 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 			reqPayload.MaxTokens = c.thinkingBudget + 1024
 		}
 	}
-	
+
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -130,12 +132,12 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
-	
+
 	// Apply custom headers
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
-	
+
 	// Apply authentication
 	authReq := &auth.Request{Headers: make(map[string]string)}
 	c.authenticator.Apply(authReq)
@@ -166,7 +168,7 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 }
 
 func (c *Client) toAnthropicMessages(history []*llm.Content) (string, []message) {
-	var system string
+	system := c.persona
 	var messages []message
 
 	for _, h := range history {
@@ -177,7 +179,11 @@ func (c *Client) toAnthropicMessages(history []*llm.Content) (string, []message)
 					parts = append(parts, p.Text)
 				}
 			}
-			system = strings.Join(parts, "\n")
+			if system != "" {
+				system += "\n\n" + strings.Join(parts, "\n")
+			} else {
+				system = strings.Join(parts, "\n")
+			}
 			continue
 		}
 

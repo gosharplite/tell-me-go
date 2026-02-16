@@ -237,7 +237,7 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 			p := pricing.GetModelPricing(tt.modelName)
 			calc := &domain_pricing.CostCalculator{Pricing: pricing, Model: p}
 			breakdown := calc.Calculate(tt.stats)
-			
+
 			const epsilon = 1e-9
 			if math.Abs(breakdown.TotalCost-tt.expectedCost) > epsilon {
 				t.Errorf("Calculate() totalCost = %v, want %v", breakdown.TotalCost, tt.expectedCost)

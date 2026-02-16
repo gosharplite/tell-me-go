@@ -570,7 +570,7 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 
 	sb.WriteString(fmt.Sprintf("| Text Input | %d | $%.2f | $%.6f |\n", stats.PromptTokens-stats.CachedTokens, p.Miss, breakdown.InputCost))
 	sb.WriteString(fmt.Sprintf("| Input Caching | %d | $%.2f | $%.6f |\n", stats.CachedTokens, p.Hit, breakdown.CacheCost))
-	
+
 	thinkingRate := p.Thinking
 	if thinkingRate == 0 {
 		thinkingRate = p.Comp

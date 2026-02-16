@@ -55,7 +55,7 @@ func TestSendChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil)
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "")
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -101,7 +101,7 @@ func TestDeepSeekReasoning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil)
+	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "")
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -146,7 +146,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil)
+	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "")
 	_, metrics, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if metrics.ThinkingTokens != 15 {
@@ -190,7 +190,7 @@ func TestToolCalling(t *testing.T) {
 			if lastMsg.Role != "tool" || lastMsg.ToolCallID != "call_123" || lastMsg.Content != "Sunny" {
 				t.Errorf("unexpected tool response message: %+v", lastMsg)
 			}
-			
+
 			resp := chatResponse{
 				Choices: []choice{
 					{
@@ -207,8 +207,8 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil)
-	
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "")
+
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather?"}}}}
 	resp, _, err := client.SendChat(context.Background(), history, nil, nil)
@@ -264,7 +264,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil)
+	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "")
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if len(resp.Parts) != 2 {
@@ -281,7 +281,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 func TestStreamChat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		
+
 		chunks := []string{
 			`{"choices":[{"delta":{"content":"Hello"}}]}`,
 			`{"choices":[{"delta":{"reasoning_content":"Thinking"}}]}`,
@@ -295,8 +295,8 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil)
-	
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "")
+
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
 		for _, p := range c.Parts {
@@ -321,14 +321,14 @@ func TestStreamChat(t *testing.T) {
 }
 
 func TestToOpenAIMessages_EmptyContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil)
+	c := NewClient("", "gpt-4", nil, nil, "")
 	history := []*llm.Content{
 		{
-			Role: "user",
+			Role:  "user",
 			Parts: []*llm.Part{{Text: "Hi"}},
 		},
 		{
-			Role: "model",
+			Role:  "model",
 			Parts: []*llm.Part{{Thought: "I am thinking"}},
 		},
 	}
@@ -340,13 +340,13 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 
 	// The assistant message
 	msg := messages[1]
-	if msg.ReasoningContent != "I am thinking" {
-		t.Errorf("expected reasoning_content 'I am thinking', got %q", msg.ReasoningContent)
+	if !strings.Contains(msg.Content.(string), "I am thinking") {
+		t.Errorf("expected content to contain 'I am thinking', got %q", msg.Content)
 	}
 
 	b, _ := json.Marshal(msg)
 	jsonStr := string(b)
-	
+
 	// Check if content is present (even if empty string) to satisfy DeepSeek/OpenAI
 	if !strings.Contains(jsonStr, `"content"`) {
 		t.Errorf("expected content field to be present, got %s", jsonStr)

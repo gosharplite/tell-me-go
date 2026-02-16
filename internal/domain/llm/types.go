@@ -212,8 +212,8 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 		return nil
 	}
 	clone := &FunctionResponse{
-		ID:       fr.ID,
-		Name:     fr.Name,
+		ID:   fr.ID,
+		Name: fr.Name,
 	}
 	if fr.Response != nil {
 		clone.Response = make(map[string]interface{}, len(fr.Response))

@@ -18,12 +18,12 @@ type ToolDeclaration struct {
 
 // Schema represents the parameters of a tool.
 type Schema struct {
-	Type        string            `json:"type"`
-	Description string            `json:"description,omitempty"`
+	Type        string             `json:"type"`
+	Description string             `json:"description,omitempty"`
 	Properties  map[string]*Schema `json:"properties,omitempty"`
-	Required    []string          `json:"required,omitempty"`
-	Enum        []string          `json:"enum,omitempty"`
-	Items       *Schema           `json:"items,omitempty"`
+	Required    []string           `json:"required,omitempty"`
+	Enum        []string           `json:"enum,omitempty"`
+	Items       *Schema            `json:"items,omitempty"`
 }
 
 // ToolResult represents the outcome of a tool execution.

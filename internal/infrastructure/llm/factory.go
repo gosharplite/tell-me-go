@@ -38,9 +38,9 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	switch p.Type {
 	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers)
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person)
 	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget)
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, cfg.Person)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:

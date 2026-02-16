@@ -37,7 +37,7 @@ func TestSendChat(t *testing.T) {
 		}
 
 		resp := messagesResponse{
-			ID: "msg_123",
+			ID:   "msg_123",
 			Role: "assistant",
 			Content: []contentBlock{
 				{
@@ -54,7 +54,7 @@ func TestSendChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0)
+	client := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "")
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -96,7 +96,7 @@ func TestExtendedThinking(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"}, nil, 0)
+	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -129,7 +129,7 @@ func TestToolCalling(t *testing.T) {
 			if block.ToolUseID != "toolu_123" || block.Content != "London: 15C" {
 				t.Errorf("unexpected tool result block: %+v", block)
 			}
-			
+
 			resp := messagesResponse{
 				Content: []contentBlock{{Type: "text", Text: "It is 15C in London."}},
 			}
@@ -141,9 +141,9 @@ func TestToolCalling(t *testing.T) {
 		resp := messagesResponse{
 			Content: []contentBlock{
 				{
-					Type: "tool_use",
-					ID:   "toolu_123",
-					Name: "get_weather",
+					Type:  "tool_use",
+					ID:    "toolu_123",
+					Name:  "get_weather",
 					Input: map[string]interface{}{"location": "London"},
 				},
 			},
@@ -152,8 +152,8 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0)
-	
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather in London?"}}}}
 	resp, _, err := client.SendChat(context.Background(), history, nil, nil)
@@ -207,14 +207,14 @@ func TestThinkingBudget(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048)
+	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048, "")
 	client.SendChat(context.Background(), nil, nil, nil)
 }
 
 func TestStreamChat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		
+
 		events := []struct {
 			event string
 			data  string
@@ -232,8 +232,8 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0)
-	
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
 		for _, p := range c.Parts {
