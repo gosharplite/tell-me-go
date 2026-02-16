@@ -19,7 +19,7 @@ import (
 func TestResilientClient_OpenAI_Classification(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte("Rate limit exceeded"))
+		_, _ = w.Write([]byte("Rate limit exceeded"))
 	}))
 	defer server.Close()
 

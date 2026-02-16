@@ -51,7 +51,7 @@ func TestSendChat(t *testing.T) {
 				TotalTokens:      30,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -97,7 +97,7 @@ func TestDeepSeekReasoning(t *testing.T) {
 				TotalTokens:      30,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -141,7 +141,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -156,7 +156,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 func TestToolCalling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req chatRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		// If it's the first call, return a tool call
 		if len(req.Messages) == 1 {
@@ -179,7 +179,7 @@ func TestToolCalling(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -200,7 +200,7 @@ func TestToolCalling(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 	}))
@@ -259,7 +259,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -387,7 +387,7 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	// Verify JSON marshaling includes reasoning_content
 	b, _ := json.Marshal(msg)
 	var m map[string]interface{}
-	json.Unmarshal(b, &m)
+	_ = json.Unmarshal(b, &m)
 
 	if _, ok := m["reasoning_content"]; !ok {
 		t.Error("expected reasoning_content field in JSON")

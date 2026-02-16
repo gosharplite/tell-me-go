@@ -52,7 +52,7 @@ func TestSendChat(t *testing.T) {
 				OutputTokens: 25,
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -94,7 +94,7 @@ func TestExtendedThinking(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -121,7 +121,7 @@ func TestExtendedThinking(t *testing.T) {
 func TestToolCalling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req messagesRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		// Check if it's the second call (with tool result)
 		if len(req.Messages) == 3 && req.Messages[2].Content[0].Type == "tool_result" {
@@ -134,7 +134,7 @@ func TestToolCalling(t *testing.T) {
 			resp := messagesResponse{
 				Content: []contentBlock{{Type: "text", Text: "It is 15C in London."}},
 			}
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -149,7 +149,7 @@ func TestToolCalling(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -194,7 +194,7 @@ func TestToolCalling(t *testing.T) {
 func TestThinkingBudget(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req messagesRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		if req.Thinking == nil || req.Thinking.Budget != 2048 || req.Thinking.Type != "enabled" {
 			t.Errorf("unexpected thinking config: %+v", req.Thinking)
@@ -204,12 +204,12 @@ func TestThinkingBudget(t *testing.T) {
 		}
 
 		resp := messagesResponse{}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048, "")
-	client.SendChat(context.Background(), nil, nil, nil)
+	_, _, _ = client.SendChat(context.Background(), nil, nil, nil)
 }
 
 func TestStreamChat(t *testing.T) {
@@ -365,8 +365,8 @@ func TestToAnthropicSchema(t *testing.T) {
 			expJSON, _ := json.Marshal(tt.expected)
 
 			var gotMap, expMap map[string]interface{}
-			json.Unmarshal(gotJSON, &gotMap)
-			json.Unmarshal(expJSON, &expMap)
+			_ = json.Unmarshal(gotJSON, &gotMap)
+			_ = json.Unmarshal(expJSON, &expMap)
 
 			if !reflect.DeepEqual(gotMap, expMap) {
 				t.Errorf("toAnthropicSchema() = %v, want %v", gotMap, expMap)

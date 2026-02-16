@@ -68,16 +68,6 @@ type message struct {
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
 }
 
-type contentPart struct {
-	Type     string    `json:"type"`
-	Text     string    `json:"text,omitempty"`
-	ImageURL *imageURL `json:"image_url,omitempty"`
-}
-
-type imageURL struct {
-	URL string `json:"url"`
-}
-
 type tool struct {
 	Type     string               `json:"type"`
 	Function *functionDeclaration `json:"function"`
@@ -131,11 +121,12 @@ type completionTokensDetails struct {
 	ReasoningTokens int32 `json:"reasoning_tokens"`
 }
 
-func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (c *Client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) *chatRequest {
 	reqPayload := chatRequest{
 		Model:    c.model,
 		Messages: c.toOpenAIMessages(ctx, history, resolver),
 		Tools:    c.toOpenAITools(toolDecls),
+		Stream:   stream,
 	}
 
 	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
@@ -153,17 +144,31 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		reqPayload.MaxTokens = 8192
 	}
 
-	body, err := json.Marshal(reqPayload)
+	// DeepSeek and some other providers do not support stream_options
+	if stream && !strings.Contains(c.model, "deepseek") {
+		reqPayload.StreamOptions = &streamOptions{
+			IncludeUsage: true,
+		}
+	}
+
+	return &reqPayload
+}
+
+func (c *Client) createHTTPRequest(ctx context.Context, payload interface{}, stream bool) (*http.Request, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(body))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if stream {
+		req.Header.Set("Accept", "text/event-stream")
+	}
 
 	// Apply custom headers
 	for k, v := range c.headers {
@@ -175,6 +180,16 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	c.authenticator.Apply(authReq)
 	for k, v := range authReq.Headers {
 		req.Header.Set(k, v)
+	}
+
+	return req, nil
+}
+
+func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, false)
+	req, err := c.createHTTPRequest(ctx, reqPayload, false)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	startTime := time.Now()
@@ -194,10 +209,6 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	var chatResp chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return nil, nil, fmt.Errorf("no choices returned from api")
 	}
 
 	return c.fromOpenAIResponse(&chatResp, duration)
@@ -409,59 +420,129 @@ func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 	return content, metrics, nil
 }
 
+type toolCallState struct {
+	id   string
+	name string
+	args strings.Builder
+}
+
+type streamChunk struct {
+	Choices []struct {
+		Delta delta `json:"delta"`
+	} `json:"choices"`
+	Usage *usage `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error"`
+}
+
+type delta struct {
+	Content          string `json:"content,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
+	ToolCalls        []struct {
+		Index    int    `json:"index"`
+		ID       string `json:"id,omitempty"`
+		Function struct {
+			Name      string `json:"name,omitempty"`
+			Arguments string `json:"arguments,omitempty"`
+		} `json:"function,omitempty"`
+	} `json:"tool_calls,omitempty"`
+}
+
+func (c *Client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
+	var chunk streamChunk
+	if err := json.Unmarshal(data, &chunk); err != nil {
+		return nil, nil // Ignore malformed JSON in stream
+	}
+
+	if chunk.Error != nil {
+		return nil, fmt.Errorf("api error: %s (%s)", chunk.Error.Message, chunk.Error.Type)
+	}
+
+	var metrics *llm.Metrics
+	if chunk.Usage != nil {
+		metrics = &llm.Metrics{
+			Model:          c.model,
+			PromptTokens:   chunk.Usage.PromptTokens,
+			ResponseTokens: chunk.Usage.CompletionTokens,
+			TotalTokens:    chunk.Usage.TotalTokens,
+		}
+		if chunk.Usage.CompletionTokensDetails != nil {
+			metrics.ThinkingTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
+		}
+	}
+
+	if len(chunk.Choices) > 0 {
+		d := chunk.Choices[0].Delta
+		c.handleDeltaContent(d, callback)
+		c.handleDeltaToolCalls(d, toolCallsByIndex)
+	}
+
+	return metrics, nil
+}
+
+func (c *Client) handleDeltaContent(d delta, callback func(*llm.Content)) {
+	if d.Content != "" || d.ReasoningContent != "" {
+		update := &llm.Content{Role: "model"}
+		if d.Content != "" {
+			update.Parts = append(update.Parts, &llm.Part{Text: d.Content})
+		}
+		if d.ReasoningContent != "" {
+			update.Parts = append(update.Parts, &llm.Part{Text: d.ReasoningContent, IsThought: true})
+		}
+		callback(update)
+	}
+}
+
+func (c *Client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCallState) {
+	for _, tc := range d.ToolCalls {
+		state, ok := toolCallsByIndex[tc.Index]
+		if !ok {
+			state = &toolCallState{}
+			toolCallsByIndex[tc.Index] = state
+		}
+		if tc.ID != "" {
+			state.id = tc.ID
+		}
+		if tc.Function.Name != "" {
+			state.name = tc.Function.Name
+		}
+		if tc.Function.Arguments != "" {
+			state.args.WriteString(tc.Function.Arguments)
+		}
+	}
+}
+
+func (c *Client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) {
+	if len(toolCallsByIndex) == 0 {
+		return
+	}
+	finalContent := &llm.Content{Role: "model"}
+	// Sort by index to maintain order
+	for i := 0; i < len(toolCallsByIndex); i++ {
+		if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
+			var args map[string]interface{}
+			_ = json.Unmarshal([]byte(state.args.String()), &args)
+			finalContent.Parts = append(finalContent.Parts, &llm.Part{
+				FunctionCall: &llm.FunctionCall{
+					ID:   state.id,
+					Name: state.name,
+					Args: args,
+				},
+			})
+		}
+	}
+	if len(finalContent.Parts) > 0 {
+		callback(finalContent)
+	}
+}
+
 func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	reqPayload := chatRequest{
-		Model:    c.model,
-		Messages: c.toOpenAIMessages(ctx, history, resolver),
-		Tools:    c.toOpenAITools(toolDecls),
-		Stream:   true,
-	}
-
-	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
-	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
-		strings.HasPrefix(c.model, "o3") ||
-		strings.HasPrefix(c.model, "gpt-5")
-
-	if isOpenAIReasoner {
-		reqPayload.MaxCompletionTokens = 8192
-		if effort, ok := c.headers["reasoning_effort"]; ok {
-			reqPayload.ReasoningEffort = effort
-		}
-	} else if strings.Contains(c.model, "reasoner") {
-		// DeepSeek Reasoner still uses 'max_tokens'
-		reqPayload.MaxTokens = 8192
-	}
-
-	// DeepSeek and some other providers do not support stream_options
-	if !strings.Contains(c.model, "deepseek") {
-		reqPayload.StreamOptions = &streamOptions{
-			IncludeUsage: true,
-		}
-	}
-
-	body, err := json.Marshal(reqPayload)
+	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
+	req, err := c.createHTTPRequest(ctx, reqPayload, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-
-	// Apply custom headers
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
-	}
-
-	// Apply authentication
-	authReq := &auth.Request{Headers: make(map[string]string)}
-	c.authenticator.Apply(authReq)
-	for k, v := range authReq.Headers {
-		req.Header.Set(k, v)
+		return nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -477,15 +558,7 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 
 	var metrics *llm.Metrics
 	scanner := bufio.NewScanner(resp.Body)
-
 	startTime := time.Now()
-
-	// Buffer to aggregate tool calls by index during streaming
-	type toolCallState struct {
-		id   string
-		name string
-		args strings.Builder
-	}
 	toolCallsByIndex := make(map[int]*toolCallState)
 
 	for scanner.Scan() {
@@ -499,104 +572,16 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 			break
 		}
 
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content          string `json:"content,omitempty"`
-					ReasoningContent string `json:"reasoning_content,omitempty"`
-					ToolCalls        []struct {
-						Index    int    `json:"index"`
-						ID       string `json:"id,omitempty"`
-						Function struct {
-							Name      string `json:"name,omitempty"`
-							Arguments string `json:"arguments,omitempty"`
-						} `json:"function,omitempty"`
-					} `json:"tool_calls,omitempty"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Usage *usage `json:"usage"`
-			Error *struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			} `json:"error"`
+		chunkMetrics, err := c.processStreamChunk([]byte(data), toolCallsByIndex, callback)
+		if err != nil {
+			return metrics, err
 		}
-
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-
-		if chunk.Error != nil {
-			return metrics, fmt.Errorf("api error: %s (%s)", chunk.Error.Message, chunk.Error.Type)
-		}
-
-		if chunk.Usage != nil {
-			metrics = &llm.Metrics{
-				Model:          c.model,
-				PromptTokens:   chunk.Usage.PromptTokens,
-				ResponseTokens: chunk.Usage.CompletionTokens,
-				TotalTokens:    chunk.Usage.TotalTokens,
-			}
-			if chunk.Usage.CompletionTokensDetails != nil {
-				metrics.ThinkingTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
-			}
-		}
-
-		if len(chunk.Choices) > 0 {
-			d := chunk.Choices[0].Delta
-
-			// Handle Text and Reasoning
-			if d.Content != "" || d.ReasoningContent != "" {
-				update := &llm.Content{Role: "model"}
-				if d.Content != "" {
-					update.Parts = append(update.Parts, &llm.Part{Text: d.Content})
-				}
-				if d.ReasoningContent != "" {
-					update.Parts = append(update.Parts, &llm.Part{Text: d.ReasoningContent, IsThought: true})
-				}
-				callback(update)
-			}
-
-			// Aggregate Tool Calls
-			for _, tc := range d.ToolCalls {
-				state, ok := toolCallsByIndex[tc.Index]
-				if !ok {
-					state = &toolCallState{}
-					toolCallsByIndex[tc.Index] = state
-				}
-				if tc.ID != "" {
-					state.id = tc.ID
-				}
-				if tc.Function.Name != "" {
-					state.name = tc.Function.Name
-				}
-				if tc.Function.Arguments != "" {
-					state.args.WriteString(tc.Function.Arguments)
-				}
-			}
+		if chunkMetrics != nil {
+			metrics = chunkMetrics
 		}
 	}
 
-	// Once the stream is finished, emit all aggregated tool calls
-	if len(toolCallsByIndex) > 0 {
-		finalContent := &llm.Content{Role: "model"}
-		// Sort by index to maintain order
-		for i := 0; i < len(toolCallsByIndex); i++ {
-			if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
-				var args map[string]interface{}
-				_ = json.Unmarshal([]byte(state.args.String()), &args)
-				finalContent.Parts = append(finalContent.Parts, &llm.Part{
-					FunctionCall: &llm.FunctionCall{
-						ID:   state.id,
-						Name: state.name,
-						Args: args,
-					},
-				})
-			}
-		}
-		if len(finalContent.Parts) > 0 {
-			callback(finalContent)
-		}
-	}
+	c.emitToolCalls(toolCallsByIndex, callback)
 
 	if metrics != nil {
 		metrics.Duration = time.Since(startTime).Seconds()
