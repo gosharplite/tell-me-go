@@ -1,10 +1,10 @@
 # Technical Specification: Multi-Provider LLM Integration
 
 ## 1. Strategic Goal
-Transition `tell-me-go` from a Gemini-exclusive system into a provider-agnostic agent supporting the industry's leading reasoning models.
+Provide a robust, provider-agnostic agent framework that natively supports flagship reasoning models from Google, OpenAI, Anthropic, and DeepSeek.
 
 ## 2. Target Model Registry
-The system will provide native support for the following flagship models:
+The system provides native support for the following flagship models (as of Feb 2026):
 
 | Provider | Model ID | API Endpoint | Auth Type |
 | :--- | :--- | :--- | :--- |
@@ -55,16 +55,16 @@ The system will provide native support for the following flagship models:
 - **Streaming:** SSE support for `content_block_delta` and `message_delta`.
 - **Status:** [x]
 
-### Phase 3: Orchestration & Telemetry (In Progress)
-- **Registry:** Update `internal/infrastructure/registry` for dynamic provider switching.
-- **Pricing:** Update `internal/infrastructure/telemetry` to handle token-based billing for multiple providers including Thinking Rates.
-- **Status:** [In Progress]
-
-### Phase 4: Resilience & Parity (In Progress)
-- **Error Handling:** Unify HTTP/gRPC error classification via `internal/infrastructure/llm/llmerr`.
+### Phase 3: Orchestration & Telemetry (Completed)
+- **Registry:** Implementation of `LLMProvider` registry and `SelectedProvider` logic in `internal/domain/config`.
+- **Pricing:** Telemetry support for token-based billing, including specialized "Thinking Rates" for reasoning models.
 - **Status:** [x]
-- **E2E Testing:** Verify tool-calling and history management parity across all three models.
-- **Status:** [Pending]
+
+### Phase 4: Release & Optimization (In Progress)
+- **Resilience:** Unified error classification (Transient vs. Terminal) implemented via `internal/infrastructure/llm/llmerr`.
+- **E2E Testing:** Validation of tool-calling and history management parity across Google, OpenAI, and Anthropic providers.
+- **Performance:** Benchmarking token throughput and latency for 2026 flagship models.
+- **Status:** [In Progress]
 
 ## 4. References
 - [Google Vertex AI REST Reference](https://docs.cloud.google.com/vertex-ai/docs/reference/rest)
