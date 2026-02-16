@@ -29,6 +29,7 @@ type ModelPricing struct {
 	Hit             float64 `json:"hit" yaml:"HIT"`
 	Miss            float64 `json:"miss" yaml:"MISS"`
 	Comp            float64 `json:"comp" yaml:"COMP"`
+	Thinking        float64 `json:"thinking,omitempty" yaml:"THINKING,omitempty"`
 	TieredThreshold int64   `json:"tiered_threshold" yaml:"TIERED_THRESHOLD"`
 	TieredMiss      float64 `json:"tiered_miss" yaml:"TIERED_MISS"`
 	TieredComp      float64 `json:"tiered_comp" yaml:"TIERED_COMP"`
@@ -65,7 +66,7 @@ type CostCalculator struct {
 	Model   ModelPricing
 }
 
-// Calculate performs pricing arithmetic based on Vertex AI SKUs.
+// Calculate performs pricing arithmetic based on Vertex AI and other provider SKUs.
 func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 	cb := CostBreakdown{Stats: stats}
 	p := c.Model
@@ -75,9 +76,14 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 		inputTokens = 0
 	}
 
+	thinkingRate := p.Thinking
+	if thinkingRate == 0 {
+		thinkingRate = p.Comp
+	}
+
 	cb.InputCost = float64(inputTokens) * p.Miss / 1e6
 	cb.CacheCost = float64(stats.CachedTokens) * p.Hit / 1e6
-	cb.OutputCost = float64(stats.ResponseTokens+stats.ThinkingTokens) * p.Comp / 1e6
+	cb.OutputCost = (float64(stats.ResponseTokens) * p.Comp / 1e6) + (float64(stats.ThinkingTokens) * thinkingRate / 1e6)
 	cb.SearchCost = float64(stats.SearchQueries) * c.Pricing.SearchQuery
 
 	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.OutputCost + cb.SearchCost
