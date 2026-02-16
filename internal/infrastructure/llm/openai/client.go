@@ -46,12 +46,13 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model         string         `json:"model"`
-	Messages      []message      `json:"messages"`
-	Tools         []tool         `json:"tools,omitempty"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
-	Stream        bool           `json:"stream,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
+	Model          string         `json:"model"`
+	Messages       []message      `json:"messages"`
+	Tools          []tool         `json:"tools,omitempty"`
+	MaxTokens      int            `json:"max_tokens,omitempty"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	Stream         bool           `json:"stream,omitempty"`
+	StreamOptions  *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {
@@ -137,8 +138,11 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	}
 
 	// Reasoner models often need higher token limits for reasoning + output
-	if strings.Contains(c.model, "reasoner") {
+	if strings.Contains(c.model, "reasoner") || strings.HasPrefix(c.model, "o1") || strings.HasPrefix(c.model, "o3") {
 		reqPayload.MaxTokens = 8192
+		if effort, ok := c.headers["reasoning_effort"]; ok {
+			reqPayload.ReasoningEffort = effort
+		}
 	}
 
 	body, err := json.Marshal(reqPayload)
@@ -385,8 +389,11 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	}
 
 	// Reasoner models often need higher token limits for reasoning + output
-	if strings.Contains(c.model, "reasoner") {
+	if strings.Contains(c.model, "reasoner") || strings.HasPrefix(c.model, "o1") || strings.HasPrefix(c.model, "o3") {
 		reqPayload.MaxTokens = 8192
+		if effort, ok := c.headers["reasoning_effort"]; ok {
+			reqPayload.ReasoningEffort = effort
+		}
 	}
 
 	// DeepSeek and some other providers do not support stream_options
