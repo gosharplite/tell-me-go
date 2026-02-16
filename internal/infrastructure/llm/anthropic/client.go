@@ -194,11 +194,10 @@ func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 		}, true
 	}
 	if p.FunctionResponse != nil {
-		respJSON, _ := json.Marshal(p.FunctionResponse.Response)
 		return contentBlock{
 			Type:      "tool_result",
 			ToolUseID: p.FunctionResponse.ID,
-			Content:   json.RawMessage(respJSON),
+			Content:   marshalResponse(p.FunctionResponse.Response),
 		}, true
 	}
 	if p.IsThought && role == "assistant" {
@@ -630,4 +629,16 @@ func (c *client) parseStream(ctx context.Context, body io.Reader, callback func(
 		}
 	}
 	return scanner.Err()
+}
+
+func marshalResponse(res map[string]interface{}) string {
+	if res == nil {
+		return ""
+	}
+	// Typically we want the 'result' field if it exists, otherwise the whole thing
+	if val, ok := res["result"].(string); ok {
+		return val
+	}
+	b, _ := json.Marshal(res)
+	return string(b)
 }

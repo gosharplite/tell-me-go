@@ -20,30 +20,15 @@ import (
 func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
 	p := cfg.GetActiveProvider()
 
-	var authenticator auth.Authenticator
-	if p.APIKey != "" {
-		switch p.Type {
-		case "openai", "deepseek":
-			authenticator = &auth.BearerAuth{Token: p.APIKey}
-		case "anthropic":
-			authenticator = &auth.AnthropicAuth{APIKey: p.APIKey}
-		default:
-			authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
-		}
-	} else if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
-		authenticator = &auth.VertexAuth{}
-	} else {
-		return nil, fmt.Errorf("API key is required for provider type: %s", p.Type)
+	authenticator, err := createAuthenticator(&p)
+	if err != nil {
+		return nil, err
 	}
 
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
-	timeout := time.Duration(cfg.HTTPTimeoutSeconds) * time.Second
-	if timeout == 0 {
-		timeout = 5 * time.Minute
-	}
+	timeout := resolveTimeout(cfg)
 
 	var baseClient llm.LLMClient
-	var err error
 
 	switch p.Type {
 	case "openai", "deepseek":
@@ -53,8 +38,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:
-		// Fallback to Gemini if type is unknown for backward compatibility,
-		// but Phase 2 will explicitly handle "openai" and "anthropic" here.
+		// Fallback to Gemini if type is unknown for backward compatibility
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	}
 
@@ -63,4 +47,29 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	}
 
 	return NewResilientClient(baseClient, cfg.DisableStreaming), nil
+}
+
+func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+	if p.APIKey != "" {
+		switch p.Type {
+		case "openai", "deepseek":
+			return &auth.BearerAuth{Token: p.APIKey}, nil
+		case "anthropic":
+			return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
+		default:
+			return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
+		}
+	}
+	if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
+		return &auth.VertexAuth{}, nil
+	}
+	return nil, fmt.Errorf("API key is required for provider type: %s", p.Type)
+}
+
+func resolveTimeout(cfg *config.Config) time.Duration {
+	timeout := time.Duration(cfg.HTTPTimeoutSeconds) * time.Second
+	if timeout == 0 {
+		return 5 * time.Minute
+	}
+	return timeout
 }

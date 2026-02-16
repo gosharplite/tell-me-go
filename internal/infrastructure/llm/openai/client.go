@@ -367,47 +367,14 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 		Role: "model",
 	}
 
-	// Text and Reasoning content
-	switch v := msg.Content.(type) {
-	case string:
-		if v != "" {
-			content.Parts = append(content.Parts, &llm.Part{Text: v})
-		}
-	case []interface{}:
-		for _, part := range v {
-			if m, ok := part.(map[string]interface{}); ok {
-				contentType, _ := m["type"].(string)
-				switch contentType {
-				case "text":
-					if txt, ok := m["text"].(string); ok && txt != "" {
-						content.Parts = append(content.Parts, &llm.Part{Text: txt})
-					}
-				case "thought", "reasoning":
-					if thought, ok := m[contentType].(string); ok && thought != "" {
-						content.Parts = append(content.Parts, &llm.Part{Text: thought, IsThought: true})
-					}
-				}
-			}
-		}
-	}
+	c.parseResponseContent(msg.Content, content)
 
 	// Reasoning content (DeepSeek extension)
 	if msg.ReasoningContent != "" {
 		content.Parts = append(content.Parts, &llm.Part{Text: msg.ReasoningContent, IsThought: true})
 	}
 
-	// Tool calls
-	for _, tc := range msg.ToolCalls {
-		var args map[string]interface{}
-		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
-		content.Parts = append(content.Parts, &llm.Part{
-			FunctionCall: &llm.FunctionCall{
-				ID:   tc.ID,
-				Name: tc.Function.Name,
-				Args: args,
-			},
-		})
-	}
+	c.parseResponseToolCalls(msg.ToolCalls, content)
 
 	metrics := &llm.Metrics{
 		Model:          c.model,
@@ -422,6 +389,52 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 	}
 
 	return content, metrics, nil
+}
+
+func (c *client) parseResponseContent(rawContent interface{}, content *llm.Content) {
+	switch v := rawContent.(type) {
+	case string:
+		if v != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: v})
+		}
+	case []interface{}:
+		for _, part := range v {
+			c.parseContentPart(part, content)
+		}
+	}
+}
+
+func (c *client) parseContentPart(part interface{}, content *llm.Content) {
+	m, ok := part.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	contentType, _ := m["type"].(string)
+	switch contentType {
+	case "text":
+		if txt, ok := m["text"].(string); ok && txt != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: txt})
+		}
+	case "thought", "reasoning":
+		if thought, ok := m[contentType].(string); ok && thought != "" {
+			content.Parts = append(content.Parts, &llm.Part{Text: thought, IsThought: true})
+		}
+	}
+}
+
+func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Content) {
+	for _, tc := range toolCalls {
+		var args map[string]interface{}
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		content.Parts = append(content.Parts, &llm.Part{
+			FunctionCall: &llm.FunctionCall{
+				ID:   tc.ID,
+				Name: tc.Function.Name,
+				Args: args,
+			},
+		})
+	}
 }
 
 type toolCallState struct {
