@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
 // Client implements the llm.LLMClient interface for the Anthropic Messages API.
@@ -151,7 +152,7 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, nil, fmt.Errorf("api error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var msgResp messagesResponse
