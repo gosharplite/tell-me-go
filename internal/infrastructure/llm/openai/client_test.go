@@ -362,7 +362,7 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0, 0)
 	history := []*llm.Content{
 		{
-			Role: "user",
+			Role:  "user",
 			Parts: []*llm.Part{{Text: "Hello"}},
 		},
 		{

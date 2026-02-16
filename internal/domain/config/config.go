@@ -18,7 +18,7 @@ const (
 	DefaultToolTimeoutSeconds = 30
 	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
-	DefaultHTTPTimeoutSeconds = 300 // 5 minutes
+	DefaultHTTPTimeoutSeconds = 300  // 5 minutes
 	WarningRatio              = 0.78 // ~100k for 128k cliff
 	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )

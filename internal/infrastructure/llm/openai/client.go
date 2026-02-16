@@ -48,14 +48,14 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model                string         `json:"model"`
-	Messages             []message      `json:"messages"`
-	Tools                []tool         `json:"tools,omitempty"`
-	MaxTokens            int            `json:"max_tokens,omitempty"`
-	MaxCompletionTokens  int            `json:"max_completion_tokens,omitempty"`
-	ReasoningEffort      string         `json:"reasoning_effort,omitempty"`
-	Stream               bool           `json:"stream,omitempty"`
-	StreamOptions        *streamOptions `json:"stream_options,omitempty"`
+	Model               string         `json:"model"`
+	Messages            []message      `json:"messages"`
+	Tools               []tool         `json:"tools,omitempty"`
+	MaxTokens           int            `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int            `json:"max_completion_tokens,omitempty"`
+	ReasoningEffort     string         `json:"reasoning_effort,omitempty"`
+	Stream              bool           `json:"stream,omitempty"`
+	StreamOptions       *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {

@@ -538,7 +538,7 @@ func TestSendChat_Timeout(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
@@ -588,7 +588,7 @@ func TestAnthropic_SystemContent(t *testing.T) {
 	client := NewClient("", "claude-3", nil, nil, 0, "Initial Persona", 0)
 	history := []*llm.Content{
 		{
-			Role: "system",
+			Role:  "system",
 			Parts: []*llm.Part{{Text: "Additional instructions"}},
 		},
 	}
@@ -603,11 +603,11 @@ func TestAnthropic_AppendOrMergeMessage(t *testing.T) {
 	messages := []message{
 		{Role: "user", Content: []contentBlock{{Type: "text", Text: "Hi"}}},
 	}
-	
+
 	// Test merging
 	blocks := []contentBlock{{Type: "text", Text: " there"}}
 	merged := client.appendOrMergeMessage(messages, "user", blocks)
-	
+
 	if len(merged) != 1 || len(merged[0].Content) != 2 {
 		t.Errorf("expected 1 merged message with 2 blocks, got %d messages and %d blocks", len(merged), len(merged[0].Content))
 	}
