@@ -6,15 +6,19 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
 func TestSendChat(t *testing.T) {
@@ -56,7 +60,7 @@ func TestSendChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "")
+	client := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "", 0)
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -98,7 +102,7 @@ func TestExtendedThinking(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+	client := NewClient(server.URL, "claude-3-7-sonnet", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -153,7 +157,7 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
 
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather in London?"}}}}
@@ -208,7 +212,7 @@ func TestThinkingBudget(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048, "")
+	client := NewClient(server.URL, "claude-3-7", &auth.AnthropicAuth{APIKey: "key"}, nil, 2048, "", 0)
 	_, _, _ = client.SendChat(context.Background(), nil, nil, nil)
 }
 
@@ -233,7 +237,7 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
 
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
@@ -376,7 +380,7 @@ func TestToAnthropicSchema(t *testing.T) {
 }
 
 func TestToAnthropicTools(t *testing.T) {
-	client := &Client{}
+	client := &client{}
 	decls := []*tools.ToolDeclaration{
 		{
 			Name:        "parameterless_tool",
@@ -444,7 +448,7 @@ func TestStreamChatWithTools(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
 
 	var receivedCalls []*llm.FunctionCall
 	_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
@@ -469,5 +473,172 @@ func TestStreamChatWithTools(t *testing.T) {
 	}
 	if call.Args["loc"] != "London" {
 		t.Errorf("expected arg loc=London, got %v", call.Args["loc"])
+	}
+}
+
+func TestSendChat_Errors(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        int
+		response      string
+		expectedError string
+		isAPIError    bool
+	}{
+		{
+			name:          "400 Bad Request",
+			status:        http.StatusBadRequest,
+			response:      `{"error": {"type": "invalid_request_error", "message": "Missing required parameter"}}`,
+			expectedError: "api error (status 400)",
+			isAPIError:    true,
+		},
+		{
+			name:          "Malformed JSON",
+			status:        http.StatusOK,
+			response:      `{ "id": "msg_123", "content...`,
+			expectedError: "failed to decode response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.expectedError) {
+				t.Errorf("expected error containing %q, got %q", tt.expectedError, err.Error())
+			}
+
+			if tt.isAPIError {
+				var apiErr *llmerr.APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("expected llmerr.APIError, got %T", err)
+				} else if apiErr.Status != tt.status {
+					t.Errorf("expected status %d, got %d", tt.status, apiErr.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestSendChat_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, _, err := client.SendChat(ctx, nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected deadline exceeded, got %v", err)
+	}
+}
+
+func TestStreamChat_Errors(t *testing.T) {
+	t.Run("SSE Error Event", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", `{"error": {"type": "overloaded_error", "message": "Overloaded"}}`)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+
+		if err == nil || !strings.Contains(err.Error(), "Overloaded") {
+			t.Errorf("expected API error, got %v", err)
+		}
+	})
+
+	t.Run("HTTP Error Status", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("Service Unavailable"))
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+
+		var apiErr *llmerr.APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != 503 {
+			t.Errorf("expected APIError with status 503, got %v", err)
+		}
+	})
+}
+
+func TestAnthropic_SystemContent(t *testing.T) {
+	client := NewClient("", "claude-3", nil, nil, 0, "Initial Persona", 0)
+	history := []*llm.Content{
+		{
+			Role: "system",
+			Parts: []*llm.Part{{Text: "Additional instructions"}},
+		},
+	}
+	system, _ := client.toAnthropicMessages(history)
+	if !strings.Contains(system, "Initial Persona") || !strings.Contains(system, "Additional instructions") {
+		t.Errorf("expected merged system content, got %q", system)
+	}
+}
+
+func TestAnthropic_AppendOrMergeMessage(t *testing.T) {
+	client := &client{}
+	messages := []message{
+		{Role: "user", Content: []contentBlock{{Type: "text", Text: "Hi"}}},
+	}
+	
+	// Test merging
+	blocks := []contentBlock{{Type: "text", Text: " there"}}
+	merged := client.appendOrMergeMessage(messages, "user", blocks)
+	
+	if len(merged) != 1 || len(merged[0].Content) != 2 {
+		t.Errorf("expected 1 merged message with 2 blocks, got %d messages and %d blocks", len(merged), len(merged[0].Content))
+	}
+}
+
+func TestAnthropic_GenerateImages_NotImplemented(t *testing.T) {
+	client := NewClient("", "", nil, nil, 0, "", 0)
+	_, err := client.GenerateImages(context.Background(), "", "", "")
+	if err == nil {
+		t.Error("expected error for GenerateImages")
+	}
+}
+
+func TestAnthropic_RefreshAuth(t *testing.T) {
+	auth := &auth.AnthropicAuth{APIKey: "old"}
+	client := NewClient("", "", auth, nil, 0, "", 0)
+	_ = client.RefreshAuth()
+}
+
+func TestStreamChat_MalformedEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "event: content_block_start\ndata: {invalid json}\n\n")
+		fmt.Fprintf(w, "event: message_start\ndata: {invalid json}\n\n")
+		fmt.Fprintf(w, "event: message_delta\ndata: {invalid json}\n\n")
+		fmt.Fprintf(w, "event: error\ndata: malformed error\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+	_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+	if err == nil {
+		t.Error("expected error from malformed error event")
 	}
 }

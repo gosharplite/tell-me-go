@@ -6,6 +6,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,9 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
 func TestSendChat(t *testing.T) {
@@ -55,7 +58,7 @@ func TestSendChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "")
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0)
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -101,7 +104,7 @@ func TestDeepSeekReasoning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "")
+	client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0)
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	var thought, text string
@@ -145,7 +148,7 @@ func TestOpenAIReasoningTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "")
+	client := NewClient(server.URL, "o1-mini", &auth.BearerAuth{Token: "key"}, nil, "", 0)
 	_, metrics, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if metrics.ThinkingTokens != 15 {
@@ -206,7 +209,7 @@ func TestToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "")
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
 
 	// 1. Initial call
 	history := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Weather?"}}}}
@@ -263,7 +266,7 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "")
+	client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0)
 	resp, _, _ := client.SendChat(context.Background(), nil, nil, nil)
 
 	if len(resp.Parts) != 2 {
@@ -294,7 +297,7 @@ func TestStreamChat(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "")
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
 
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
@@ -323,7 +326,7 @@ func TestStreamChat(t *testing.T) {
 }
 
 func TestToOpenAIMessages_EmptyContent(t *testing.T) {
-	c := NewClient("", "gpt-4", nil, nil, "")
+	c := NewClient("", "gpt-4", nil, nil, "", 0)
 	history := []*llm.Content{
 		{
 			Role:  "user",
@@ -356,7 +359,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 }
 
 func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
-	client := NewClient("", "deepseek-reasoner", nil, nil, "")
+	client := NewClient("", "deepseek-reasoner", nil, nil, "", 0)
 	history := []*llm.Content{
 		{
 			Role: "user",
@@ -392,4 +395,186 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 	if _, ok := m["reasoning_content"]; !ok {
 		t.Error("expected reasoning_content field in JSON")
 	}
+}
+
+func TestSendChat_Errors(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        int
+		response      string
+		expectedError string
+		isAPIError    bool
+	}{
+		{
+			name:          "401 Unauthorized",
+			status:        http.StatusUnauthorized,
+			response:      `{"error": {"message": "Invalid API key", "type": "invalid_request_error"}}`,
+			expectedError: "api error (status 401)",
+			isAPIError:    true,
+		},
+		{
+			name:          "429 Rate Limit",
+			status:        http.StatusTooManyRequests,
+			response:      `{"error": {"message": "Rate limit reached", "type": "requests"}}`,
+			expectedError: "api error (status 429)",
+			isAPIError:    true,
+		},
+		{
+			name:          "Malformed JSON",
+			status:        http.StatusOK,
+			response:      `{ "choices": [ { "mess...`,
+			expectedError: "failed to decode response",
+		},
+		{
+			name:          "Empty Choices",
+			status:        http.StatusOK,
+			response:      `{"choices": [], "usage": {"total_tokens": 0}}`,
+			expectedError: "no choices returned from api",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
+			_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.expectedError) {
+				t.Errorf("expected error containing %q, got %q", tt.expectedError, err.Error())
+			}
+
+			if tt.isAPIError {
+				var apiErr *llmerr.APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("expected llmerr.APIError, got %T", err)
+				} else if apiErr.Status != tt.status {
+					t.Errorf("expected status %d, got %d", tt.status, apiErr.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestStreamChat_Errors(t *testing.T) {
+	t.Run("API Error in Chunk", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprintf(w, "data: %s\n\n", `{"error": {"message": "Something went wrong", "type": "api_error"}}`)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
+		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+
+		if err == nil || !strings.Contains(err.Error(), "Something went wrong") {
+			t.Errorf("expected API error, got %v", err)
+		}
+	})
+
+	t.Run("HTTP Error Status", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("Internal Server Error"))
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
+		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+
+		var apiErr *llmerr.APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != 500 {
+			t.Errorf("expected APIError with status 500, got %v", err)
+		}
+	})
+}
+
+func TestToOpenAISchema(t *testing.T) {
+	s := &tools.Schema{
+		Type:        "OBJECT",
+		Description: "test desc",
+		Properties: map[string]*tools.Schema{
+			"foo": {Type: "STRING"},
+		},
+		Required: []string{"foo"},
+	}
+	res := toOpenAISchema(s)
+	if res.Type != "object" {
+		t.Errorf("expected object, got %s", res.Type)
+	}
+	if res.Properties["foo"].Type != "string" {
+		t.Errorf("expected string, got %s", res.Properties["foo"].Type)
+	}
+}
+
+func TestInjectPersona(t *testing.T) {
+	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
+		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0)
+		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		if len(messages) != 2 || messages[0].Role != "developer" {
+			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
+		}
+	})
+
+	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
+		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0)
+		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		if len(messages) != 1 || !strings.Contains(messages[0].Content.(string), "Be helpful") {
+			t.Errorf("expected persona prepended for DeepSeek, got %+v", messages[0])
+		}
+	})
+}
+
+func TestStreamChat_ToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		chunks := []string{
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"get_x"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"a\""}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":1}"}}]}}]}`,
+			`{"choices":[{"delta":{"content":"done"}}]}`,
+		}
+		for _, chunk := range chunks {
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0)
+	var toolCalls []*llm.FunctionCall
+	_, _ = client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
+		for _, p := range c.Parts {
+			if p.FunctionCall != nil {
+				toolCalls = append(toolCalls, p.FunctionCall)
+			}
+		}
+	})
+
+	if len(toolCalls) != 1 || toolCalls[0].Name != "get_x" {
+		t.Errorf("expected 1 tool call get_x, got %+v", toolCalls)
+	}
+}
+
+func TestGenerateImages_NotImplemented(t *testing.T) {
+	client := NewClient("", "", nil, nil, "", 0)
+	_, err := client.GenerateImages(context.Background(), "", "", "")
+	if err == nil {
+		t.Error("expected error for GenerateImages")
+	}
+}
+
+func TestRefreshAuth(t *testing.T) {
+	auth := &auth.BearerAuth{Token: "old"}
+	client := NewClient("", "", auth, nil, "", 0)
+	_ = client.RefreshAuth()
+	// No easy way to check if invalidated without internal knowledge, but call it for coverage
 }

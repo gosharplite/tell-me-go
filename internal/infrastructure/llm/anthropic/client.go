@@ -21,8 +21,8 @@ import (
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
-// Client implements the llm.LLMClient interface for the Anthropic Messages API.
-type Client struct {
+// client implements the llm.LLMClient interface for the Anthropic Messages API.
+type client struct {
 	httpClient     *http.Client
 	authenticator  auth.Authenticator
 	baseURL        string
@@ -33,12 +33,12 @@ type Client struct {
 }
 
 // NewClient creates a new Anthropic client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string) *Client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, thinkingBudget int, persona string, timeout time.Duration) *client {
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com/v1"
 	}
-	return &Client{
-		httpClient:     &http.Client{Timeout: 5 * time.Minute},
+	return &client{
+		httpClient:     &http.Client{Timeout: timeout},
 		authenticator:  authenticator,
 		baseURL:        strings.TrimSuffix(baseURL, "/"),
 		model:          model,
@@ -101,7 +101,7 @@ type usage struct {
 	ThinkingTokens int32 `json:"thinking_tokens,omitempty"`
 }
 
-func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	req, err := c.prepareAnthropicRequest(ctx, history, toolDecls, false)
 	if err != nil {
 		return nil, nil, err
@@ -128,7 +128,7 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromAnthropicResponse(&msgResp, duration)
 }
 
-func (c *Client) toAnthropicMessages(history []*llm.Content) (string, []message) {
+func (c *client) toAnthropicMessages(history []*llm.Content) (string, []message) {
 	system := c.persona
 	var messages []message
 
@@ -149,7 +149,7 @@ func (c *Client) toAnthropicMessages(history []*llm.Content) (string, []message)
 	return system, messages
 }
 
-func (c *Client) appendSystemContent(currentSystem string, h *llm.Content) string {
+func (c *client) appendSystemContent(currentSystem string, h *llm.Content) string {
 	var parts []string
 	for _, p := range h.Parts {
 		if p.Text != "" {
@@ -163,7 +163,7 @@ func (c *Client) appendSystemContent(currentSystem string, h *llm.Content) strin
 	return newContent
 }
 
-func (c *Client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBlock) {
+func (c *client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBlock) {
 	role := h.Role
 	if role == "model" {
 		role = "assistant"
@@ -180,7 +180,7 @@ func (c *Client) convertToAnthropicBlocks(h *llm.Content) (string, []contentBloc
 	return role, blocks
 }
 
-func (c *Client) partToContentBlock(p *llm.Part, role string) (contentBlock, bool) {
+func (c *client) partToContentBlock(p *llm.Part, role string) (contentBlock, bool) {
 	if p.FunctionCall != nil {
 		args := p.FunctionCall.Args
 		if args == nil {
@@ -218,7 +218,7 @@ func (c *Client) partToContentBlock(p *llm.Part, role string) (contentBlock, boo
 	return contentBlock{}, false
 }
 
-func (c *Client) appendOrMergeMessage(messages []message, role string, blocks []contentBlock) []message {
+func (c *client) appendOrMergeMessage(messages []message, role string, blocks []contentBlock) []message {
 	if len(messages) > 0 && messages[len(messages)-1].Role == role {
 		messages[len(messages)-1].Content = append(messages[len(messages)-1].Content, blocks...)
 		return messages
@@ -229,7 +229,7 @@ func (c *Client) appendOrMergeMessage(messages []message, role string, blocks []
 	})
 }
 
-func (c *Client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
+func (c *client) toAnthropicTools(decls []*tools.ToolDeclaration) []tool {
 	if len(decls) == 0 {
 		return nil
 	}
@@ -288,7 +288,7 @@ func toAnthropicSchema(s *tools.Schema) interface{} {
 	return res
 }
 
-func (c *Client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
 	content := &llm.Content{
 		Role: "model",
 	}
@@ -330,7 +330,7 @@ func (c *Client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 	return content, metrics, nil
 }
 
-func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	req, err := c.prepareAnthropicRequest(ctx, history, toolDecls, true)
 	if err != nil {
 		return nil, err
@@ -365,11 +365,11 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	return state.metrics, nil
 }
 
-func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, fmt.Errorf("GenerateImages not implemented for Anthropic")
 }
 
-func (c *Client) RefreshAuth() error {
+func (c *client) RefreshAuth() error {
 	c.authenticator.Invalidate()
 	return nil
 }
@@ -391,7 +391,7 @@ type streamState struct {
 	toolJSONs map[int]*strings.Builder
 }
 
-func (c *Client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, stream bool) (*http.Request, error) {
+func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, stream bool) (*http.Request, error) {
 	system, messages := c.toAnthropicMessages(history)
 
 	reqPayload := messagesRequest{
@@ -445,7 +445,7 @@ func (c *Client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 	return req, nil
 }
 
-func (c *Client) handleAnthropicEvent(eventType, data string, callback func(*llm.Content), state *streamState) error {
+func (c *client) handleAnthropicEvent(eventType, data string, callback func(*llm.Content), state *streamState) error {
 	switch eventType {
 	case "content_block_start":
 		return c.handleContentBlockStart(data, callback, state)
@@ -463,7 +463,7 @@ func (c *Client) handleAnthropicEvent(eventType, data string, callback func(*llm
 	return nil
 }
 
-func (c *Client) handleContentBlockStart(data string, callback func(*llm.Content), state *streamState) error {
+func (c *client) handleContentBlockStart(data string, callback func(*llm.Content), state *streamState) error {
 	var start struct {
 		Index        int `json:"index"`
 		ContentBlock struct {
@@ -497,7 +497,7 @@ func (c *Client) handleContentBlockStart(data string, callback func(*llm.Content
 	return nil
 }
 
-func (c *Client) handleContentBlockDelta(data string, callback func(*llm.Content), state *streamState) error {
+func (c *client) handleContentBlockDelta(data string, callback func(*llm.Content), state *streamState) error {
 	var delta struct {
 		Index int `json:"index"`
 		Delta struct {
@@ -534,7 +534,7 @@ func (c *Client) handleContentBlockDelta(data string, callback func(*llm.Content
 	return nil
 }
 
-func (c *Client) handleContentBlockStop(data string, callback func(*llm.Content), state *streamState) error {
+func (c *client) handleContentBlockStop(data string, callback func(*llm.Content), state *streamState) error {
 	var stop struct {
 		Index int `json:"index"`
 	}
@@ -556,7 +556,7 @@ func (c *Client) handleContentBlockStop(data string, callback func(*llm.Content)
 	return nil
 }
 
-func (c *Client) handleMessageDelta(data string, state *streamState) error {
+func (c *client) handleMessageDelta(data string, state *streamState) error {
 	var md struct {
 		Usage struct {
 			OutputTokens   int32 `json:"output_tokens"`
@@ -575,7 +575,7 @@ func (c *Client) handleMessageDelta(data string, state *streamState) error {
 	return nil
 }
 
-func (c *Client) handleMessageStart(data string, state *streamState) error {
+func (c *client) handleMessageStart(data string, state *streamState) error {
 	var ms struct {
 		Message struct {
 			Usage struct {
@@ -594,7 +594,7 @@ func (c *Client) handleMessageStart(data string, state *streamState) error {
 	return nil
 }
 
-func (c *Client) handleErrorEvent(data string) error {
+func (c *client) handleErrorEvent(data string) error {
 	var apiErr struct {
 		Error struct {
 			Type    string `json:"type"`
@@ -607,7 +607,7 @@ func (c *Client) handleErrorEvent(data string) error {
 	return fmt.Errorf("anthropic api error: %s", data)
 }
 
-func (c *Client) checkResponse(resp *http.Response) error {
+func (c *client) checkResponse(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		return &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
@@ -615,7 +615,7 @@ func (c *Client) checkResponse(resp *http.Response) error {
 	return nil
 }
 
-func (c *Client) parseStream(body io.Reader, callback func(*llm.Content), state *streamState) error {
+func (c *client) parseStream(body io.Reader, callback func(*llm.Content), state *streamState) error {
 	scanner := bufio.NewScanner(body)
 	var eventType string
 

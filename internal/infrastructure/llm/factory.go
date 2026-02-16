@@ -4,6 +4,8 @@
 package llm
 
 import (
+	"time"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -32,15 +34,19 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	}
 
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
+	timeout := time.Duration(cfg.HTTPTimeoutSeconds) * time.Second
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
 
 	var baseClient llm.LLMClient
 	var err error
 
 	switch p.Type {
 	case "openai", "deepseek":
-		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person)
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout)
 	case "anthropic":
-		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, cfg.Person)
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget, cfg.Person, timeout)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:

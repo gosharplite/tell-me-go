@@ -20,8 +20,8 @@ import (
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
-// Client implements the llm.LLMClient interface for OpenAI-compatible APIs.
-type Client struct {
+// client implements the llm.LLMClient interface for OpenAI-compatible APIs.
+type client struct {
 	httpClient    *http.Client
 	authenticator auth.Authenticator
 	baseURL       string
@@ -31,12 +31,12 @@ type Client struct {
 }
 
 // NewClient creates a new OpenAI-compatible client.
-func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string) *Client {
+func NewClient(baseURL, model string, authenticator auth.Authenticator, headers map[string]string, persona string, timeout time.Duration) *client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
-	return &Client{
-		httpClient:    &http.Client{Timeout: 5 * time.Minute},
+	return &client{
+		httpClient:    &http.Client{Timeout: timeout},
 		authenticator: authenticator,
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		model:         model,
@@ -121,7 +121,7 @@ type completionTokensDetails struct {
 	ReasoningTokens int32 `json:"reasoning_tokens"`
 }
 
-func (c *Client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) *chatRequest {
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) *chatRequest {
 	reqPayload := chatRequest{
 		Model:    c.model,
 		Messages: c.toOpenAIMessages(ctx, history, resolver),
@@ -154,7 +154,7 @@ func (c *Client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 	return &reqPayload
 }
 
-func (c *Client) createHTTPRequest(ctx context.Context, payload interface{}, stream bool) (*http.Request, error) {
+func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, stream bool) (*http.Request, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -185,7 +185,7 @@ func (c *Client) createHTTPRequest(ctx context.Context, payload interface{}, str
 	return req, nil
 }
 
-func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
 	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, false)
 	req, err := c.createHTTPRequest(ctx, reqPayload, false)
 	if err != nil {
@@ -214,19 +214,13 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromOpenAIResponse(&chatResp, duration)
 }
 
-func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []message {
+func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []message {
 	var messages []message
-
-	// Detect reasoning models (DeepSeek R1, OpenAI o1/o3/gpt-5)
-	isDeepSeekReasoner := strings.Contains(c.model, "deepseek-reasoner")
-	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
-		strings.HasPrefix(c.model, "o3") ||
-		strings.HasPrefix(c.model, "gpt-5")
-
+	isDeepSeek, isOpenAI := c.getModelCapabilities()
 	personaInjected := false
 
 	// If not a reasoner, inject persona as standard system message
-	if c.persona != "" && !isDeepSeekReasoner && !isOpenAIReasoner {
+	if c.persona != "" && !isDeepSeek && !isOpenAI {
 		messages = append(messages, message{
 			Role:    "system",
 			Content: c.persona,
@@ -240,38 +234,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			role = "assistant"
 		}
 
-		// Group parts by type
-		var textParts []string
-		var toolCalls []toolCall
-		var toolResponse *llm.FunctionResponse
-		var reasoningParts []string
-
-		for _, p := range h.Parts {
-			if p.FunctionCall != nil {
-				toolCalls = append(toolCalls, toolCall{
-					ID:   p.FunctionCall.ID,
-					Type: "function",
-					Function: functionCall{
-						Name:      p.FunctionCall.Name,
-						Arguments: marshalArgs(p.FunctionCall.Args),
-					},
-				})
-			} else if p.FunctionResponse != nil {
-				toolResponse = p.FunctionResponse
-			} else if p.Text != "" {
-				if p.IsThought {
-					// DeepSeek requires reasoning_content to be returned in the history for tool calls.
-					if isDeepSeekReasoner {
-						reasoningParts = append(reasoningParts, p.Text)
-					} else {
-						// For other models, we merge it into text to preserve the logical flow.
-						textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Text))
-					}
-				} else {
-					textParts = append(textParts, p.Text)
-				}
-			}
-		}
+		text, reasoning, toolCalls, toolResponse := c.classifyParts(h.Parts, isDeepSeek)
 
 		if toolResponse != nil {
 			messages = append(messages, message{
@@ -279,42 +242,81 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 				ToolCallID: toolResponse.ID,
 				Content:    marshalResponse(toolResponse.Response),
 			})
-		} else {
-			// Prepend persona for models that don't support the 'system' role
-			if role == "user" && !personaInjected && c.persona != "" {
-				if isOpenAIReasoner {
-					// OpenAI reasoning models (o1/o3/gpt-5) use 'developer' role for system instructions
-					messages = append(messages, message{
-						Role:    "developer",
-						Content: c.persona,
-					})
-					personaInjected = true
-				} else if isDeepSeekReasoner {
-					// DeepSeek Reasoner merges it into the first user message
-					textParts = append([]string{c.persona}, textParts...)
-					personaInjected = true
-				}
-			}
-
-			msg := message{
-				Role:             role,
-				ToolCalls:        toolCalls,
-				Content:          "", // Ensure content is never null
-				ReasoningContent: strings.Join(reasoningParts, ""),
-			}
-
-			content := strings.Join(textParts, "\n")
-			if content != "" {
-				msg.Content = content
-			}
-
-			messages = append(messages, msg)
+			continue
 		}
+
+		c.injectPersona(&messages, &personaInjected, role, &text, isOpenAI, isDeepSeek)
+
+		messages = append(messages, message{
+			Role:             role,
+			ToolCalls:        toolCalls,
+			Content:          text,
+			ReasoningContent: reasoning,
+		})
 	}
 	return messages
 }
 
-func (c *Client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
+func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
+	isDeepSeek = strings.Contains(c.model, "deepseek-reasoner")
+	isOpenAI = strings.HasPrefix(c.model, "o1") ||
+		strings.HasPrefix(c.model, "o3") ||
+		strings.HasPrefix(c.model, "gpt-5")
+	return
+}
+
+func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, toolResponse *llm.FunctionResponse) {
+	var textParts []string
+	var reasoningParts []string
+	for _, p := range parts {
+		if p.FunctionCall != nil {
+			toolCalls = append(toolCalls, toolCall{
+				ID:   p.FunctionCall.ID,
+				Type: "function",
+				Function: functionCall{
+					Name:      p.FunctionCall.Name,
+					Arguments: marshalArgs(p.FunctionCall.Args),
+				},
+			})
+		} else if p.FunctionResponse != nil {
+			toolResponse = p.FunctionResponse
+		} else if p.Text != "" {
+			if p.IsThought {
+				if isDeepSeek {
+					reasoningParts = append(reasoningParts, p.Text)
+				} else {
+					textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Text))
+				}
+			} else {
+				textParts = append(textParts, p.Text)
+			}
+		}
+	}
+	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, toolResponse
+}
+
+func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, isOpenAI, isDeepSeek bool) {
+	if role != "user" || *personaInjected || c.persona == "" {
+		return
+	}
+
+	if isOpenAI {
+		*messages = append(*messages, message{
+			Role:    "developer",
+			Content: c.persona,
+		})
+		*personaInjected = true
+	} else if isDeepSeek {
+		if *text != "" {
+			*text = c.persona + "\n" + *text
+		} else {
+			*text = c.persona
+		}
+		*personaInjected = true
+	}
+}
+
+func (c *client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
 	if len(decls) == 0 {
 		return nil
 	}
@@ -352,7 +354,7 @@ func toOpenAISchema(s *tools.Schema) *schema {
 	return res
 }
 
-func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
+func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.Content, *llm.Metrics, error) {
 	if len(resp.Choices) == 0 {
 		return nil, nil, fmt.Errorf("no choices returned from api")
 	}
@@ -450,7 +452,7 @@ type delta struct {
 	} `json:"tool_calls,omitempty"`
 }
 
-func (c *Client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (c *client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
 	var chunk streamChunk
 	if err := json.Unmarshal(data, &chunk); err != nil {
 		return nil, nil // Ignore malformed JSON in stream
@@ -482,7 +484,7 @@ func (c *Client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolC
 	return metrics, nil
 }
 
-func (c *Client) handleDeltaContent(d delta, callback func(*llm.Content)) {
+func (c *client) handleDeltaContent(d delta, callback func(*llm.Content)) {
 	if d.Content != "" || d.ReasoningContent != "" {
 		update := &llm.Content{Role: "model"}
 		if d.Content != "" {
@@ -495,7 +497,7 @@ func (c *Client) handleDeltaContent(d delta, callback func(*llm.Content)) {
 	}
 }
 
-func (c *Client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCallState) {
+func (c *client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCallState) {
 	for _, tc := range d.ToolCalls {
 		state, ok := toolCallsByIndex[tc.Index]
 		if !ok {
@@ -514,7 +516,7 @@ func (c *Client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCal
 	}
 }
 
-func (c *Client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) {
+func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) {
 	if len(toolCallsByIndex) == 0 {
 		return
 	}
@@ -538,7 +540,7 @@ func (c *Client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback
 	}
 }
 
-func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
 	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
 	req, err := c.createHTTPRequest(ctx, reqPayload, true)
 	if err != nil {
@@ -594,11 +596,11 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	return metrics, nil
 }
 
-func (c *Client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+func (c *client) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
 	return nil, fmt.Errorf("GenerateImages not implemented for OpenAI")
 }
 
-func (c *Client) RefreshAuth() error {
+func (c *client) RefreshAuth() error {
 	c.authenticator.Invalidate()
 	return nil
 }

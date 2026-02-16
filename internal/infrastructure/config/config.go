@@ -44,6 +44,7 @@ func Load(path string) (*domain_config.Config, error) {
 	cfg.MaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
 	cfg.MaxConcurrentTools = domain_config.DefaultMaxConcurrentTools
 	cfg.ToolTimeoutSeconds = domain_config.DefaultToolTimeoutSeconds
+	cfg.HTTPTimeoutSeconds = domain_config.DefaultHTTPTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
 
