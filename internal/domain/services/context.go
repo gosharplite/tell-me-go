@@ -47,5 +47,5 @@ type ContextTransformer interface {
 
 // ResultStrategy defines how tool outputs are transformed back into LLM messages.
 type ResultStrategy interface {
-	Format(name string, result tools.ToolResult) *llm.Part
+	Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part
 }

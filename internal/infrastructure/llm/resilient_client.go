@@ -157,8 +157,9 @@ func (r *resilientClient) executeWithTransparentRetry(ctx context.Context, input
 		// [ARCHITECTURAL GUARD]
 		// If we've already emitted data, we CANNOT retry transparently.
 		// Doing so would cause duplicated text in the UI and history.
+		// We return the partial content we've accumulated along with the error.
 		if emitted {
-			return nil, nil, r.wrapError(err)
+			return content, metrics, r.wrapError(err)
 		}
 
 		wrapped := r.wrapError(err)

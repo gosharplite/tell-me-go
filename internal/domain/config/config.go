@@ -18,6 +18,7 @@ const (
 	DefaultToolTimeoutSeconds = 30
 	DefaultTieredThreshold    = 0
 	DefaultMaxLoopRepetitions = 5
+	DefaultHTTPTimeoutSeconds = 300  // 5 minutes
 	WarningRatio              = 0.78 // ~100k for 128k cliff
 	SystemContextBuffer       = 1000 // Reserved space for system warnings/instructions
 )
@@ -49,6 +50,7 @@ type Config struct {
 	ShowTools          bool                   `yaml:"SHOW_TOOLS"`
 	MaxConcurrentTools int                    `yaml:"MAX_CONCURRENT_TOOLS"` // Parallel tool execution
 	ToolTimeoutSeconds int                    `yaml:"TOOL_TIMEOUT"`         // Single tool timeout
+	HTTPTimeoutSeconds int                    `yaml:"HTTP_TIMEOUT"`         // LLM Client timeout
 	DisableStreaming   bool                   `yaml:"DISABLE_STREAMING"`
 	Models             map[string]ModelConfig `yaml:"MODELS"` // Model-specific overrides
 	SelectedProvider   string                 `yaml:"SELECTED_PROVIDER"`

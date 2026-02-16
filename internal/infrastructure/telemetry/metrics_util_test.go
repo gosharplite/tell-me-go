@@ -201,3 +201,47 @@ func TestParseUsage_VeryLargeLine(t *testing.T) {
 		t.Errorf("expected 100 prompt tokens, got %d", stats.PromptTokens)
 	}
 }
+
+func TestCalculate_ThinkingRate(t *testing.T) {
+	pricing := domain_pricing.PricingData{
+		Models: map[string]domain_pricing.ModelPricing{
+			"ds-reasoner": {Miss: 0.27, Comp: 1.10, Thinking: 1.10},
+			"claude":      {Miss: 3.00, Comp: 15.00}, // No thinking rate, should use Comp
+		},
+	}
+
+	tests := []struct {
+		name         string
+		modelName    string
+		stats        domain_pricing.UsageStats
+		expectedCost float64
+	}{
+		{
+			name:      "DeepSeek with Thinking",
+			modelName: "ds-reasoner",
+			stats:     domain_pricing.UsageStats{PromptTokens: 1000000, ResponseTokens: 1000000, ThinkingTokens: 1000000},
+			// (1M * 0.27) + (1M * 1.10) + (1M * 1.10) = 0.27 + 1.10 + 1.10 = 2.47
+			expectedCost: 2.47,
+		},
+		{
+			name:      "Claude with Thinking Fallback",
+			modelName: "claude",
+			stats:     domain_pricing.UsageStats{PromptTokens: 1000000, ResponseTokens: 1000000, ThinkingTokens: 1000000},
+			// (1M * 3.00) + (1M * 15.00) + (1M * 15.00) = 3.00 + 15.00 + 15.00 = 33.00
+			expectedCost: 33.00,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := pricing.GetModelPricing(tt.modelName)
+			calc := &domain_pricing.CostCalculator{Pricing: pricing, Model: p}
+			breakdown := calc.Calculate(tt.stats)
+
+			const epsilon = 1e-9
+			if math.Abs(breakdown.TotalCost-tt.expectedCost) > epsilon {
+				t.Errorf("Calculate() totalCost = %v, want %v", breakdown.TotalCost, tt.expectedCost)
+			}
+		})
+	}
+}

@@ -15,10 +15,11 @@ type resultStrategy = services.ResultStrategy
 // markdownStrategy formats tool results as markdown-friendly text.
 type markdownStrategy struct{}
 
-func (s *markdownStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+func (s *markdownStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
-			Name:     name,
+			ID:       call.ID,
+			Name:     call.Name,
 			Response: map[string]interface{}{"result": result.Text},
 		},
 	}
@@ -27,12 +28,13 @@ func (s *markdownStrategy) Format(name string, result tools.ToolResult) *llm.Par
 // jsonStrategy formats tool results as raw JSON.
 type jsonStrategy struct{}
 
-func (s *jsonStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+func (s *jsonStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
 	// For now it's similar to markdownStrategy but could differ in the future
 	// (e.g. returning structured data instead of just a 'result' string field).
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
-			Name:     name,
+			ID:       call.ID,
+			Name:     call.Name,
 			Response: map[string]interface{}{"result": result.Text},
 		},
 	}

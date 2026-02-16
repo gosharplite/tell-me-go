@@ -708,9 +708,14 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 
 type mockStrategy struct{}
 
-func (s *mockStrategy) Format(name string, result tools.ToolResult) *llm.Part {
+func (s *mockStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
+	name := ""
+	if call != nil {
+		name = call.Name
+	}
 	return &llm.Part{
 		FunctionResponse: &llm.FunctionResponse{
+			ID:       call.ID,
 			Name:     name,
 			Response: map[string]interface{}{"result": result.Text},
 		},

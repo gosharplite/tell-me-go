@@ -6,6 +6,7 @@ package executor
 import (
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -42,7 +43,7 @@ func TestStrategies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			part := tt.strategy.Format(tt.toolName, tt.result)
+			part := tt.strategy.Format(&llm.FunctionCall{Name: tt.toolName}, tt.result)
 			if part.FunctionResponse.Name != tt.toolName {
 				t.Errorf("Expected name %s, got %s", tt.toolName, part.FunctionResponse.Name)
 			}

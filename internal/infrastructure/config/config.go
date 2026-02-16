@@ -44,6 +44,7 @@ func Load(path string) (*domain_config.Config, error) {
 	cfg.MaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
 	cfg.MaxConcurrentTools = domain_config.DefaultMaxConcurrentTools
 	cfg.ToolTimeoutSeconds = domain_config.DefaultToolTimeoutSeconds
+	cfg.HTTPTimeoutSeconds = domain_config.DefaultHTTPTimeoutSeconds
 	cfg.ShowThoughts = true
 	cfg.ShowTools = true
 
@@ -68,6 +69,21 @@ func Load(path string) (*domain_config.Config, error) {
 	}
 	if val := os.Getenv("GOSHARP_AIURL"); val != "" {
 		cfg.URL = val
+	}
+
+	// Synchronize legacy fields from active provider if they are empty
+	active := cfg.GetActiveProvider()
+	if cfg.Model == "" {
+		cfg.Model = active.Model
+	}
+	if cfg.URL == "" {
+		cfg.URL = active.URL
+	}
+	if cfg.ThinkingBudget == 0 {
+		cfg.ThinkingBudget = active.ThinkingBudget
+	}
+	if cfg.ThinkingLevel == "" {
+		cfg.ThinkingLevel = active.ThinkingLevel
 	}
 
 	return &cfg, nil

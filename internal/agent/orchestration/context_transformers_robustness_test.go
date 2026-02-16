@@ -82,14 +82,14 @@ func TestIsTurnEmpty_ThoughtSignature(t *testing.T) {
 		{
 			name: "Empty with thought false",
 			turn: []*llm.Content{
-				{Parts: []*llm.Part{{Thought: ""}}},
+				{Parts: []*llm.Part{{IsThought: false}}},
 			},
 			expected: true,
 		},
 		{
 			name: "Non-empty with thought true",
 			turn: []*llm.Content{
-				{Parts: []*llm.Part{{Thought: "true"}}},
+				{Parts: []*llm.Part{{IsThought: true}}},
 			},
 			expected: false,
 		},

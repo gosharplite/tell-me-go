@@ -17,6 +17,22 @@
       "tiered_miss": 2.50,
       "tiered_comp": 10.00
     },
+    "gpt-5": {
+      "hit": 0.0,
+      "miss": 5.00,
+      "comp": 15.00
+    },
+    "deepseek-reasoner": {
+      "hit": 0.07,
+      "miss": 0.27,
+      "comp": 1.10,
+      "thinking": 1.10
+    },
+    "claude-3-7-sonnet": {
+      "hit": 0.0,
+      "miss": 3.00,
+      "comp": 15.00
+    },
     "default": {
       "hit": 0.3125,
       "miss": 1.25,

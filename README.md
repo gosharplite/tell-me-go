@@ -8,12 +8,12 @@ SPDX-License-Identifier: MIT
 A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
 
 ## Overview
-`tell-me-go` is a high-performance, type-safe assistant designed for developers. Originally built for Google's Gemini models, it is evolving into a **multi-provider reasoning agent** that unifies the world's most powerful Chain-of-Thought models (Gemini, DeepSeek, Claude) under a single, resilient interface.
+`tell-me-go` is a high-performance, type-safe assistant designed for developers. Originally built for Google's Gemini models, it is now a **production-ready multi-provider reasoning agent** that unifies the world's most powerful Chain-of-Thought models (Gemini, DeepSeek, Claude) under a single, resilient interface.
 
 ## 🚀 Features
 *   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 3.7**, and **Gemini 2.0/3.0**.
 *   **Unified Domain Model**: Optimized for rich reasoning content with a provider-agnostic `Thought` architecture.
-*   **Official SDK & REST**: Built on `google.golang.org/genai` with upcoming native REST support for OpenAI-compatible and Anthropic endpoints.
+*   **Official SDK & REST**: Built on `google.golang.org/genai` with native REST support for OpenAI-compatible (GPT-4o/5.2, DeepSeek-R1) and Anthropic (Claude 3.5/3.7/4) endpoints.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
     *   **Interactive Safety**: 
@@ -75,7 +75,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Exposure Tracking (%)**: The UI shows exactly what percentage of each turn is billed (**N**).
     *   **Green Metrics**: A **Green** percentage (<20%) indicates that Google's Context Cache is successfully serving 80%+ of your turn for free.
 *   **Comprehensive Cost Auditing**:
-    *   **Reasoning Transparency**: "Thinking" tokens are high-cost (Output rate). The system explicitly tracks and bills them in its estimates.
+    *   **Reasoning Transparency**: "Thinking" tokens (from GPT-5.2, DeepSeek-R1, and Claude) are tracked at high-cost output rates. The system explicitly maps these to the domain `llm.Part` and bills them accurately in its estimates.
     *   **Grounding Fees**: Flat-rate fees for Google Search queries ($0.035/ea) are factored into the total session cost.
     *   **Persistent Ledger**: All session costs are recorded in a centralized `global_costs.json` file for daily expenditure tracking via `get_cost_summary`.
 

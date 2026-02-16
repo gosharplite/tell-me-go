@@ -4,13 +4,30 @@
 # Vertex AI Configuration Template
 MODE: "vertex"
 PERSON: "A helpful AI assistant using Google Vertex AI."
-AIMODEL: "gemini-3-flash-preview"
-AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "google"
+
+# --- Provider Registry ---
+PROVIDERS:
+  google:
+    TYPE: "google"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+    THINKING_BUDGET: 0
+    THINKING_LEVEL: "HIGH" # Options: LOW, MEDIUM, HIGH
+
+  # Example of an OpenAI-compatible provider demonstrating ${VAR} usage
+  # openai:
+  #   TYPE: "openai"
+  #   MODEL: "gpt-4o"
+  #   URL: "https://api.openai.com/v1"
+  #   API_KEY: "${OPENAI_API_KEY}"
+  #   HEADERS:
+  #     "OpenAI-Organization": "org-id"
 
 # --- Tools & Features ---
 USE_SEARCH: true
-THINKING_BUDGET: 0
-THINKING_LEVEL: "HIGH" # Options: LOW, MEDIUM, HIGH
 SHOW_THOUGHTS: true
 SHOW_TOOLS: true
 
@@ -35,4 +52,3 @@ MODELS:
   gemini-3-pro-preview:
     MAX_THINKING_BUDGET: 65536
     CONTEXT_WINDOW: 2097152
-

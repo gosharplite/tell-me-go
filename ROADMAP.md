@@ -3,7 +3,7 @@
 This document outlines the strategic evolution of `tell-me-go`. Our primary goal is to provide a unified, provider-agnostic interface for high-performance reasoning models.
 
 ## 📍 Current Focus & Key Documentation
-We are currently executing **Phase 2: OpenAI-Compatible Infrastructure**.
+We are currently executing **Phase 4: Release & Optimization**.
 
 - **Strategic Strategy:** [ADR-001: Hybrid LLM Infrastructure Strategy](./docs/adr/2024-05-multi-llm-provider-strategy.md)
 - **Technical Specification:** [Multi-Provider Implementation Plan](./docs/sop/technical/multi_provider_implementation.md)
@@ -21,27 +21,26 @@ We are currently executing **Phase 2: OpenAI-Compatible Infrastructure**.
 - [x] Implement **Dynamic Provider Factory**:
     - [x] Decouple client creation from `chat_command.go`.
 
-## Phase 2: OpenAI-Compatible Infrastructure (In Progress)
-- [ ] Implement internal/infrastructure/llm/openai:
-    - [ ] Manual HTTP transport for OpenAI v1 Chat Completion.
-    - [ ] Specific mapping for gpt-5.2 (reasoning_tokens) and deepseek-reasoner (reasoning_content).
-- [ ] Standardize ResilientClient to support custom HTTP headers and bearer tokens.
+## Phase 2: OpenAI-Compatible Infrastructure (Completed)
+- [x] Implement internal/infrastructure/llm/openai:
+    - [x] Manual HTTP transport for OpenAI v1 Chat Completion.
+    - [x] Specific mapping for gpt-5.2 (reasoning_tokens) and deepseek-reasoner (reasoning_content).
+- [x] Standardize ResilientClient to support custom HTTP headers, bearer tokens, and standardized error classification via `llmerr.APIError`.
+- [x] Implement SSE Streaming Support for OpenAI-compatible providers.
 
-## Phase 2.5: Anthropic (Claude) Infrastructure
-- [ ] Implement internal/infrastructure/llm/anthropic:
-    - [ ] Manual HTTP transport for Anthropic Messages API (/v1/messages).
-    - [ ] Specific mapping for 'type: thinking' content blocks to domain 'Thought' string.
-    - [ ] Support for 'x-api-key' and 'anthropic-version' headers.
+## Phase 2.5: Anthropic (Claude) Infrastructure (Completed)
+- [x] Implement internal/infrastructure/llm/anthropic:
+    - [x] Manual HTTP transport for Anthropic Messages API (/v1/messages).
+    - [x] Specific mapping for 'type: thinking' content blocks to domain 'Thought' string.
+    - [x] Support for 'x-api-key' and 'anthropic-version' headers.
+- [x] Implement SSE Streaming Support for Anthropic-specific event protocol.
 
-## Phase 3: Orchestration & Telemetry
-- [ ] Dynamic Provider Registry (Factory Pattern)
-- [ ] Multi-provider Token & Cost tracking
-- [ ] Config-driven provider switching
+## Phase 3: Orchestration & Telemetry (Completed)
+- [x] Dynamic Provider Registry (Factory Pattern implementation in `internal/infrastructure/llm/factory.go`)
+- [x] Multi-provider Token & Cost tracking (Supporting Thinking/Reasoning rates for 2026 models)
+- [x] Config-driven provider switching (Support for `SELECTED_PROVIDER` and `PROVIDERS` map)
 
-## Phase 4: Release & Optimization
-- [ ] Performance benchmarking across providers
-- [ ] Security auditing for new endpoints
-- [ ] Public release of multi-provider support
+## Phase 4: User verify functionalities (In Progress)
 
 ---
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*

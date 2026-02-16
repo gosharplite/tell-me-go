@@ -51,7 +51,7 @@ func TestClone(t *testing.T) {
 					},
 					{
 						Text:             "thought",
-						Thought:          "reasoning",
+						IsThought:        true,
 						ThoughtSignature: []byte("sig"),
 						AssetID:          "asset-123",
 					},
@@ -334,14 +334,14 @@ func TestPartEqual(t *testing.T) {
 		},
 		{
 			name:     "Same thought",
-			p1:       &Part{Text: "thinking", Thought: "yes"},
-			p2:       &Part{Text: "thinking", Thought: "yes"},
+			p1:       &Part{Text: "thinking", IsThought: true},
+			p2:       &Part{Text: "thinking", IsThought: true},
 			expected: true,
 		},
 		{
 			name:     "Different thought",
-			p1:       &Part{Text: "thinking", Thought: "yes"},
-			p2:       &Part{Text: "thinking", Thought: "no"},
+			p1:       &Part{Text: "thinking", IsThought: true},
+			p2:       &Part{Text: "thinking", IsThought: false},
 			expected: false,
 		},
 		{
@@ -467,11 +467,11 @@ func TestAddPart(t *testing.T) {
 		{
 			name: "Merge thoughts",
 			initial: []*Part{
-				{Text: "thinking...", Thought: "step 1"},
+				{Text: "step 1", IsThought: true},
 			},
-			newPart: &Part{Text: " done", Thought: " step 2"},
+			newPart: &Part{Text: " step 2", IsThought: true},
 			expected: []*Part{
-				{Text: "thinking... done", Thought: "step 1 step 2"},
+				{Text: "step 1 step 2", IsThought: true},
 			},
 		},
 		{
@@ -479,20 +479,20 @@ func TestAddPart(t *testing.T) {
 			initial: []*Part{
 				{Text: "hello"},
 			},
-			newPart: &Part{Text: "thinking", Thought: "step 1"},
+			newPart: &Part{Text: "thinking", IsThought: true},
 			expected: []*Part{
 				{Text: "hello"},
-				{Text: "thinking", Thought: "step 1"},
+				{Text: "thinking", IsThought: true},
 			},
 		},
 		{
 			name: "Do not merge different types (thought then text)",
 			initial: []*Part{
-				{Text: "thinking", Thought: "step 1"},
+				{Text: "thinking", IsThought: true},
 			},
 			newPart: &Part{Text: "hello"},
 			expected: []*Part{
-				{Text: "thinking", Thought: "step 1"},
+				{Text: "thinking", IsThought: true},
 				{Text: "hello"},
 			},
 		},
@@ -526,11 +526,11 @@ func TestAddPart(t *testing.T) {
 		{
 			name: "Idempotent thought merging",
 			initial: []*Part{
-				{Thought: "true"},
+				{IsThought: true},
 			},
-			newPart: &Part{Thought: "true"},
+			newPart: &Part{IsThought: true},
 			expected: []*Part{
-				{Thought: "true"},
+				{IsThought: true},
 			},
 		},
 	}

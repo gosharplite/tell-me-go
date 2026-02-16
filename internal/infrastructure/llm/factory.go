@@ -4,11 +4,16 @@
 package llm
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/anthropic"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/openai"
 )
 
 // NewClient is the central factory for creating LLM providers.
@@ -17,17 +22,34 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	var authenticator auth.Authenticator
 	if p.APIKey != "" {
-		authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
-	} else {
+		switch p.Type {
+		case "openai", "deepseek":
+			authenticator = &auth.BearerAuth{Token: p.APIKey}
+		case "anthropic":
+			authenticator = &auth.AnthropicAuth{APIKey: p.APIKey}
+		default:
+			authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
+		}
+	} else if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
 		authenticator = &auth.VertexAuth{}
+	} else {
+		return nil, fmt.Errorf("API key is required for provider type: %s", p.Type)
 	}
 
 	maxBudget := cfg.ResolveThinkingBudget(p.Model, pData)
+	timeout := time.Duration(cfg.HTTPTimeoutSeconds) * time.Second
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
 
 	var baseClient llm.LLMClient
 	var err error
 
 	switch p.Type {
+	case "openai", "deepseek":
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget)
+	case "anthropic":
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:

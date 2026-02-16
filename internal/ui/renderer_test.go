@@ -173,7 +173,7 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 
 	t.Run("renderResponse_Thoughts", func(t *testing.T) {
 		stderr.Reset()
-		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", Thought: "true"}}}
+		content := &llm.Content{Parts: []*llm.Part{{Text: "I am thinking", IsThought: true}}}
 		r.renderResponse(content, true, false)
 		if !strings.Contains(stderr.String(), "Thinking") || !strings.Contains(stderr.String(), "I am thinking") {
 			t.Errorf("expected stderr to contain 'Thinking', got %q", stderr.String())
@@ -215,7 +215,7 @@ func TestStdUIRenderer_Streaming(t *testing.T) {
 		defer cancel()
 
 		ch, finalize := r.StreamResponse(ctx, true, true)
-		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Thinking...", Thought: "true"}}}
+		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Thinking...", IsThought: true}}}
 		ch <- &llm.Content{Parts: []*llm.Part{{Text: "Result"}}}
 
 		_ = finalize()
