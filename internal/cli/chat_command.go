@@ -192,6 +192,11 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 	var sessionProvider services.ISessionProvider
 	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
 		sessionProvider = state
+		// Inject model and provider ground truth for tools like get_session_info
+		info := state.GetInfo()
+		info.Model = cfg.Model
+		info.Provider = cfg.SelectedProvider
+		state.SetInfo(info)
 	} else {
 		fmt.Fprintf(c.Stderr, "Warning: Failed to initialize session state: %v\n", err)
 	}

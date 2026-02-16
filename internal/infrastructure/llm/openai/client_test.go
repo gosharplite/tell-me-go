@@ -106,11 +106,10 @@ func TestDeepSeekReasoning(t *testing.T) {
 
 	var thought, text string
 	for _, p := range resp.Parts {
-		if p.Thought != "" {
-			thought = p.Thought
-		}
-		if p.Text != "" {
-			text = p.Text
+		if p.IsThought {
+			thought += p.Text
+		} else if p.Text != "" {
+			text += p.Text
 		}
 	}
 
@@ -270,11 +269,11 @@ func TestOpenAIReasoningContentBlock(t *testing.T) {
 	if len(resp.Parts) != 2 {
 		t.Fatalf("expected 2 parts, got %d", len(resp.Parts))
 	}
-	if resp.Parts[0].Thought != "I am thinking" {
-		t.Errorf("expected thought 'I am thinking', got %q", resp.Parts[0].Thought)
+	if !resp.Parts[0].IsThought || resp.Parts[0].Text != "I am thinking" {
+		t.Errorf("expected thought 'I am thinking', got %+v", resp.Parts[0])
 	}
-	if resp.Parts[1].Text != "I have thought" {
-		t.Errorf("expected text 'I have thought', got %q", resp.Parts[1].Text)
+	if resp.Parts[1].Text != "I have thought" || resp.Parts[1].IsThought {
+		t.Errorf("expected text 'I have thought', got %+v", resp.Parts[1])
 	}
 }
 
@@ -300,8 +299,11 @@ func TestStreamChat(t *testing.T) {
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
 		for _, p := range c.Parts {
-			receivedText += p.Text
-			receivedThought += p.Thought
+			if p.IsThought {
+				receivedThought += p.Text
+			} else {
+				receivedText += p.Text
+			}
 		}
 	})
 
@@ -329,7 +331,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 		},
 		{
 			Role:  "model",
-			Parts: []*llm.Part{{Thought: "I am thinking"}},
+			Parts: []*llm.Part{{Text: "I am thinking", IsThought: true}},
 		},
 	}
 
@@ -350,5 +352,44 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 	// Check if content is present (even if empty string) to satisfy DeepSeek/OpenAI
 	if !strings.Contains(jsonStr, `"content"`) {
 		t.Errorf("expected content field to be present, got %s", jsonStr)
+	}
+}
+
+func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
+	client := NewClient("", "deepseek-reasoner", nil, nil, "")
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{{Text: "Hello"}},
+		},
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{Text: "Thinking...", IsThought: true},
+				{FunctionCall: &llm.FunctionCall{ID: "call_1", Name: "test_tool"}},
+			},
+		},
+	}
+
+	messages := client.toOpenAIMessages(context.Background(), history, nil)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+
+	msg := messages[1]
+	if msg.ReasoningContent != "Thinking..." {
+		t.Errorf("expected reasoning_content 'Thinking...', got %q", msg.ReasoningContent)
+	}
+	if len(msg.ToolCalls) != 1 {
+		t.Errorf("expected 1 tool call, got %d", len(msg.ToolCalls))
+	}
+
+	// Verify JSON marshaling includes reasoning_content
+	b, _ := json.Marshal(msg)
+	var m map[string]interface{}
+	json.Unmarshal(b, &m)
+
+	if _, ok := m["reasoning_content"]; !ok {
+		t.Error("expected reasoning_content field in JSON")
 	}
 }

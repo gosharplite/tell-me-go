@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
@@ -101,11 +103,10 @@ func TestExtendedThinking(t *testing.T) {
 
 	var thought, text string
 	for _, p := range resp.Parts {
-		if p.Thought != "" {
-			thought = p.Thought
-		}
-		if p.Text != "" {
-			text = p.Text
+		if p.IsThought {
+			thought += p.Text
+		} else if p.Text != "" {
+			text += p.Text
 		}
 	}
 
@@ -237,8 +238,11 @@ func TestStreamChat(t *testing.T) {
 	var receivedText, receivedThought string
 	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
 		for _, p := range c.Parts {
-			receivedText += p.Text
-			receivedThought += p.Thought
+			if p.IsThought {
+				receivedThought += p.Text
+			} else {
+				receivedText += p.Text
+			}
 		}
 	})
 
@@ -254,5 +258,216 @@ func TestStreamChat(t *testing.T) {
 	}
 	if metrics == nil || metrics.PromptTokens != 10 || metrics.ResponseTokens != 20 {
 		t.Errorf("unexpected metrics: %+v", metrics)
+	}
+}
+
+func TestToAnthropicSchema(t *testing.T) {
+	tests := []struct {
+		name     string
+		schema   *tools.Schema
+		expected map[string]interface{}
+	}{
+		{
+			name: "Simple string",
+			schema: &tools.Schema{
+				Type:        "STRING",
+				Description: "A string",
+			},
+			expected: map[string]interface{}{
+				"type":        "string",
+				"description": "A string",
+			},
+		},
+		{
+			name: "Object with properties",
+			schema: &tools.Schema{
+				Type: "OBJECT",
+				Properties: map[string]*tools.Schema{
+					"name": {Type: "STRING"},
+				},
+				Required: []string{"name"},
+			},
+			expected: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"name"},
+			},
+		},
+		{
+			name: "Empty object (should not have properties or required)",
+			schema: &tools.Schema{
+				Type:       "OBJECT",
+				Properties: map[string]*tools.Schema{},
+				Required:   []string{},
+			},
+			expected: map[string]interface{}{
+				"type": "object",
+			},
+		},
+		{
+			name: "Array with items",
+			schema: &tools.Schema{
+				Type: "ARRAY",
+				Items: &tools.Schema{
+					Type: "STRING",
+				},
+			},
+			expected: map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
+		},
+		{
+			name: "Non-array with items (items should be omitted)",
+			schema: &tools.Schema{
+				Type: "STRING",
+				Items: &tools.Schema{
+					Type: "STRING",
+				},
+			},
+			expected: map[string]interface{}{
+				"type": "string",
+			},
+		},
+		{
+			name: "Enum",
+			schema: &tools.Schema{
+				Type: "STRING",
+				Enum: []string{"red", "green", "blue"},
+			},
+			expected: map[string]interface{}{
+				"type": "string",
+				"enum": []string{"red", "green", "blue"},
+			},
+		},
+		{
+			name: "Empty enum",
+			schema: &tools.Schema{
+				Type: "STRING",
+				Enum: []string{},
+			},
+			expected: map[string]interface{}{
+				"type": "string",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toAnthropicSchema(tt.schema)
+
+			// Use JSON marshal/unmarshal to compare maps to avoid type issues with nested interfaces
+			gotJSON, _ := json.Marshal(got)
+			expJSON, _ := json.Marshal(tt.expected)
+
+			var gotMap, expMap map[string]interface{}
+			json.Unmarshal(gotJSON, &gotMap)
+			json.Unmarshal(expJSON, &expMap)
+
+			if !reflect.DeepEqual(gotMap, expMap) {
+				t.Errorf("toAnthropicSchema() = %v, want %v", gotMap, expMap)
+			}
+		})
+	}
+}
+
+func TestToAnthropicTools(t *testing.T) {
+	client := &Client{}
+	decls := []*tools.ToolDeclaration{
+		{
+			Name:        "parameterless_tool",
+			Description: "A tool with no parameters",
+			Parameters:  nil,
+		},
+		{
+			Name:        "parameterized_tool",
+			Description: "A tool with parameters",
+			Parameters: &tools.Schema{
+				Type: "OBJECT",
+				Properties: map[string]*tools.Schema{
+					"arg": {Type: "STRING"},
+				},
+			},
+		},
+	}
+
+	anthropicTools := client.toAnthropicTools(decls)
+
+	if len(anthropicTools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(anthropicTools))
+	}
+
+	// Check parameterless tool
+	if anthropicTools[0].Name != "parameterless_tool" {
+		t.Errorf("expected name parameterless_tool, got %s", anthropicTools[0].Name)
+	}
+	expectedSchema := map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}
+	if !reflect.DeepEqual(anthropicTools[0].InputSchema, expectedSchema) {
+		t.Errorf("expected schema %+v, got %+v", expectedSchema, anthropicTools[0].InputSchema)
+	}
+
+	// Check parameterized tool
+	if anthropicTools[1].Name != "parameterized_tool" {
+		t.Errorf("expected name parameterized_tool, got %s", anthropicTools[1].Name)
+	}
+	if anthropicTools[1].InputSchema == nil {
+		t.Error("expected parameterized tool to have a schema, got nil")
+	}
+}
+
+func TestStreamChatWithTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		events := []struct {
+			event string
+			data  string
+		}{
+			{"message_start", `{"message":{"usage":{"input_tokens":10}}}`},
+			{"content_block_start", `{"index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"get_weather","input":{}}}`},
+			{"content_block_delta", `{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"loc\""}}`},
+			{"content_block_delta", `{"index":0,"delta":{"type":"input_json_delta","partial_json":": \"London\"}"}}`},
+			{"content_block_stop", `{"index":0}`},
+			{"message_delta", `{"usage":{"output_tokens":20}}`},
+		}
+
+		for _, e := range events {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "")
+
+	var receivedCalls []*llm.FunctionCall
+	_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {
+		for _, p := range c.Parts {
+			if p.FunctionCall != nil {
+				receivedCalls = append(receivedCalls, p.FunctionCall)
+			}
+		}
+	})
+
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if len(receivedCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(receivedCalls))
+	}
+
+	call := receivedCalls[0]
+	if call.ID != "toolu_123" || call.Name != "get_weather" {
+		t.Errorf("unexpected tool call: %+v", call)
+	}
+	if call.Args["loc"] != "London" {
+		t.Errorf("expected arg loc=London, got %v", call.Args["loc"])
 	}
 }

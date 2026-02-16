@@ -27,7 +27,7 @@ type Part struct {
 	InlineData       *Blob             `json:"inline_data,omitempty"`
 	FunctionCall     *FunctionCall     `json:"function_call,omitempty"`
 	FunctionResponse *FunctionResponse `json:"function_response,omitempty"`
-	Thought          string            `json:"thought,omitempty"`
+	IsThought        bool              `json:"is_thought,omitempty"`
 	ThoughtSignature []byte            `json:"thought_signature,omitempty"`
 	AssetID          string            `json:"asset_id,omitempty"` // Local reference for persistence
 }
@@ -100,10 +100,8 @@ func (c *Content) AddPart(p *Part) {
 		last := c.Parts[len(c.Parts)-1]
 		if last.canMergeWith(p) {
 			last.Text += p.Text
-			if last.Thought == "true" && p.Thought == "true" {
-				last.Thought = "true"
-			} else {
-				last.Thought += p.Thought
+			if len(last.ThoughtSignature) == 0 && len(p.ThoughtSignature) > 0 {
+				last.ThoughtSignature = p.ThoughtSignature
 			}
 			return
 		}
@@ -124,8 +122,8 @@ func (p *Part) canMergeWith(other *Part) bool {
 	if !p.isPure() || !other.isPure() {
 		return false
 	}
-	// Both are thoughts or both are plain text
-	return (p.Thought != "" && other.Thought != "") || (p.Thought == "" && other.Thought == "")
+	// Both must have the same IsThought value
+	return p.IsThought == other.IsThought
 }
 
 // clone returns a deep copy of Content.
@@ -160,7 +158,7 @@ func (p *Part) clone() *Part {
 	}
 	clone := &Part{
 		Text:             p.Text,
-		Thought:          p.Thought,
+		IsThought:        p.IsThought,
 		AssetID:          p.AssetID,
 		InlineData:       p.InlineData.clone(),
 		FunctionCall:     p.FunctionCall.clone(),
@@ -299,7 +297,7 @@ func (p *Part) equal(other *Part) bool {
 	if p == nil || other == nil {
 		return p == other
 	}
-	if p.Text != other.Text || p.Thought != other.Thought || p.AssetID != other.AssetID {
+	if p.Text != other.Text || p.IsThought != other.IsThought || p.AssetID != other.AssetID {
 		return false
 	}
 	if !bytes.Equal(p.ThoughtSignature, other.ThoughtSignature) {
@@ -327,6 +325,6 @@ func (p *Part) IsEmpty() bool {
 		p.FunctionCall == nil &&
 		p.FunctionResponse == nil &&
 		p.AssetID == "" &&
-		p.Thought == "" &&
+		!p.IsThought &&
 		len(p.ThoughtSignature) == 0
 }

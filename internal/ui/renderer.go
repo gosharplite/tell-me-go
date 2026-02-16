@@ -330,36 +330,27 @@ func (r *stdUIRenderer) renderResponse(respContent *llm.Content, showThoughts, r
 
 	for _, part := range respContent.Parts {
 		r.renderThought(ui, part, showThoughts)
-	}
-	for _, part := range respContent.Parts {
 		r.renderText(ui, part, rawOutput)
 		r.renderInlineData(ui, part)
 	}
 }
 
 func (r *stdUIRenderer) renderThought(ui uiState, part *llm.Part, showThoughts bool) {
-	if showThoughts && part.Thought != "" {
+	if showThoughts && (part.IsThought || len(part.ThoughtSignature) > 0) {
 		ts := ui.getTimestamp()
 		stderr := ui.stderr
 
-		// For models where Thought is a boolean-like marker, the text is in part.Text.
-		// For others, the actual reasoning content is in part.Thought.
-		source := part.Thought
-		if source == "true" {
-			source = part.Text
-		}
-
-		if source == "" {
+		if part.Text == "" {
 			return
 		}
 
-		sanitized := sanitizeForTerminal(source)
+		sanitized := sanitizeForTerminal(part.Text)
 		fmt.Fprintf(stderr, "%s[%s] [Thinking]\n%s%s\n", ui.c(colorGray), ts, sanitized, ui.c(colorReset))
 	}
 }
 
 func (r *stdUIRenderer) renderText(ui uiState, part *llm.Part, raw bool) {
-	if part.Text != "" && part.Thought == "" {
+	if part.Text != "" && !part.IsThought {
 		stdout := ui.stdout
 		if raw {
 			fmt.Fprint(stdout, part.Text)
@@ -452,9 +443,10 @@ func (r *stdUIRenderer) processStream(ctx context.Context, ch <-chan *llm.Conten
 }
 
 func (r *stdUIRenderer) renderStreamPart(state *streamState, part *llm.Part, ui uiState) {
-	if part.Thought != "" {
+	if part.IsThought || len(part.ThoughtSignature) > 0 {
 		r.handleThoughtPart(state, part, ui)
-	} else if part.Text != "" {
+	}
+	if part.Text != "" {
 		r.handleTextPart(state, part, ui)
 	}
 
@@ -464,21 +456,23 @@ func (r *stdUIRenderer) renderStreamPart(state *streamState, part *llm.Part, ui 
 }
 
 func (r *stdUIRenderer) handleThoughtPart(state *streamState, part *llm.Part, ui uiState) {
+	if !part.IsThought && len(part.ThoughtSignature) == 0 {
+		return
+	}
 	if !state.thoughtActive && state.showThoughts {
 		r.safePrintStderr(fmt.Sprintf("%s[%s] [Thinking]\n", ui.c(colorGray), ui.getTimestamp()), ui)
 		state.thoughtActive = true
 	}
-	if state.showThoughts {
-		source := part.Thought
-		if source == "true" {
-			source = part.Text
-		}
-		sanitized := sanitizeForTerminal(source)
+	if state.showThoughts && part.Text != "" {
+		sanitized := sanitizeForTerminal(part.Text)
 		r.safePrintStderr(sanitized, ui)
 	}
 }
 
 func (r *stdUIRenderer) handleTextPart(state *streamState, part *llm.Part, ui uiState) {
+	if part.IsThought {
+		return
+	}
 	r.closeThinking(state, ui)
 	output := part.Text
 	if !state.rawOutput {

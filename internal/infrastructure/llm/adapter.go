@@ -35,17 +35,11 @@ func toSDKPart(ctx context.Context, p *llm.Part, resolver llm.AssetResolver) *ge
 
 	res := &genai.Part{
 		Text:             p.Text,
-		Thought:          p.Thought != "",
+		Thought:          p.IsThought,
 		ThoughtSignature: p.ThoughtSignature,
 		InlineData:       toSDKBlob(p.InlineData),
 		FunctionCall:     toSDKFunctionCall(p.FunctionCall),
 		FunctionResponse: toSDKFunctionResponse(p.FunctionResponse),
-	}
-
-	// Refinement: If Text is empty but Thought has content (and isn't just a marker),
-	// assign Thought to the SDK Text field as Gemini expects reasoning text there.
-	if res.Text == "" && p.Thought != "" && p.Thought != "true" {
-		res.Text = p.Thought
 	}
 
 	hydrateAsset(ctx, p, res, resolver)
@@ -126,14 +120,9 @@ func fromSDKPart(p *genai.Part) *llm.Part {
 		return nil
 	}
 
-	thought := ""
-	if p.Thought {
-		thought = "true"
-	}
-
 	return &llm.Part{
 		Text:             p.Text,
-		Thought:          thought,
+		IsThought:        p.Thought,
 		ThoughtSignature: p.ThoughtSignature,
 		InlineData:       fromSDKBlob(p.InlineData),
 		FunctionCall:     fromSDKFunctionCall(p.FunctionCall),

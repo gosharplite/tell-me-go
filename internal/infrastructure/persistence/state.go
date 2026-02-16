@@ -25,6 +25,10 @@ func (s *sessionState) GetConfig() *services.ConfigService         { return s.Co
 func (s *sessionState) GetScratchpad() *services.ScratchpadService { return s.Scratchpad }
 func (s *sessionState) GetInfo() services.SessionInfo              { return s.Info }
 
+func (s *sessionState) SetInfo(info services.SessionInfo) {
+	s.Info = info
+}
+
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")

@@ -17,9 +17,11 @@ type Task struct {
 
 // SessionInfo holds metadata about the current execution environment.
 type SessionInfo struct {
-	Config map[string]string `json:"config"`
-	Env    map[string]string `json:"env"`
-	Paths  map[string]string `json:"paths"`
+	Config   map[string]string `json:"config"`
+	Env      map[string]string `json:"env"`
+	Paths    map[string]string `json:"paths"`
+	Model    string            `json:"model,omitempty"`
+	Provider string            `json:"provider,omitempty"`
 }
 
 // ISessionProvider provides access to persistence services and session info.
@@ -28,4 +30,5 @@ type ISessionProvider interface {
 	GetConfig() *ConfigService
 	GetScratchpad() *ScratchpadService
 	GetInfo() SessionInfo
+	SetInfo(info SessionInfo)
 }

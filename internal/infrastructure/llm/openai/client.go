@@ -233,7 +233,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 		var textParts []string
 		var toolCalls []toolCall
 		var toolResponse *llm.FunctionResponse
-		var reasoningContent string
+		var reasoningParts []string
 
 		for _, p := range h.Parts {
 			if p.FunctionCall != nil {
@@ -248,14 +248,16 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			} else if p.FunctionResponse != nil {
 				toolResponse = p.FunctionResponse
 			} else if p.Text != "" {
-				textParts = append(textParts, p.Text)
-			} else if p.Thought != "" {
-				// DeepSeek requires reasoning_content to be returned in the history for tool calls.
-				if isDeepSeekReasoner {
-					reasoningContent = p.Thought
+				if p.IsThought {
+					// DeepSeek requires reasoning_content to be returned in the history for tool calls.
+					if isDeepSeekReasoner {
+						reasoningParts = append(reasoningParts, p.Text)
+					} else {
+						// For other models, we merge it into text to preserve the logical flow.
+						textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Text))
+					}
 				} else {
-					// For other models, we merge it into text to preserve the logical flow.
-					textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Thought))
+					textParts = append(textParts, p.Text)
 				}
 			}
 		}
@@ -287,7 +289,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 				Role:             role,
 				ToolCalls:        toolCalls,
 				Content:          "", // Ensure content is never null
-				ReasoningContent: reasoningContent,
+				ReasoningContent: strings.Join(reasoningParts, ""),
 			}
 
 			content := strings.Join(textParts, "\n")
@@ -367,7 +369,7 @@ func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 					}
 				case "thought", "reasoning":
 					if thought, ok := m[contentType].(string); ok && thought != "" {
-						content.Parts = append(content.Parts, &llm.Part{Thought: thought})
+						content.Parts = append(content.Parts, &llm.Part{Text: thought, IsThought: true})
 					}
 				}
 			}
@@ -376,7 +378,7 @@ func (c *Client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 
 	// Reasoning content (DeepSeek extension)
 	if msg.ReasoningContent != "" {
-		content.Parts = append(content.Parts, &llm.Part{Thought: msg.ReasoningContent})
+		content.Parts = append(content.Parts, &llm.Part{Text: msg.ReasoningContent, IsThought: true})
 	}
 
 	// Tool calls
@@ -476,6 +478,8 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	var metrics *llm.Metrics
 	scanner := bufio.NewScanner(resp.Body)
 
+	startTime := time.Now()
+
 	// Buffer to aggregate tool calls by index during streaming
 	type toolCallState struct {
 		id   string
@@ -547,7 +551,7 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 					update.Parts = append(update.Parts, &llm.Part{Text: d.Content})
 				}
 				if d.ReasoningContent != "" {
-					update.Parts = append(update.Parts, &llm.Part{Thought: d.ReasoningContent})
+					update.Parts = append(update.Parts, &llm.Part{Text: d.ReasoningContent, IsThought: true})
 				}
 				callback(update)
 			}
@@ -592,6 +596,10 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		if len(finalContent.Parts) > 0 {
 			callback(finalContent)
 		}
+	}
+
+	if metrics != nil {
+		metrics.Duration = time.Since(startTime).Seconds()
 	}
 
 	if err := scanner.Err(); err != nil {
