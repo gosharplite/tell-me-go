@@ -40,24 +40,31 @@ The system will provide native support for the following flagship models:
 - **Contract:** The factory must return an `LLMClient` interface based on the `Type` field in the active `LLMProvider` configuration, decoupling client creation from high-level CLI commands.
 - **Status:** [x]
 
-### Phase 2: OpenAI Compatible Infrastructure (In Progress)
-- **Transport:** Implement `internal/infrastructure/llm/openai_compatible.go` using a manual HTTP client.
+### Phase 2: OpenAI Compatible Infrastructure (Completed)
+- **Transport:** Implement `internal/infrastructure/llm/openai/` using a manual HTTP client.
 - **Mapping:** 
     - `gpt-5.2`: Map `reasoning_tokens` to internal `Thought`.
     - `deepseek-reasoner`: Map `reasoning_content` to internal `Thought`.
+- **Streaming:** SSE support for real-time deltas.
+- **Status:** [x]
 
-### Phase 2.5: Anthropic Infrastructure
-- **Transport:** Implement `internal/infrastructure/llm/anthropic.go`.
+### Phase 2.5: Anthropic Infrastructure (Completed)
+- **Transport:** Implement `internal/infrastructure/llm/anthropic/`.
 - **Mapping:** Parse `response.content` where `type == "thinking"` and map it to internal `Thought`.
 - **Headers:** Must include `anthropic-version: 2023-06-01`.
+- **Streaming:** SSE support for `content_block_delta` and `message_delta`.
+- **Status:** [x]
 
-### Phase 3: Orchestration & Telemetry
+### Phase 3: Orchestration & Telemetry (In Progress)
 - **Registry:** Update `internal/infrastructure/registry` for dynamic provider switching.
-- **Pricing:** Update `internal/infrastructure/telemetry` to handle token-based billing for multiple providers.
+- **Pricing:** Update `internal/infrastructure/telemetry` to handle token-based billing for multiple providers including Thinking Rates.
+- **Status:** [In Progress]
 
-### Phase 4: Resilience & Parity
-- **Error Handling:** Unify HTTP/gRPC error classification in `resilient_client.go`.
+### Phase 4: Resilience & Parity (In Progress)
+- **Error Handling:** Unify HTTP/gRPC error classification via `internal/infrastructure/llm/llmerr`.
+- **Status:** [x]
 - **E2E Testing:** Verify tool-calling and history management parity across all three models.
+- **Status:** [Pending]
 
 ## 4. References
 - [Google Vertex AI REST Reference](https://docs.cloud.google.com/vertex-ai/docs/reference/rest)
