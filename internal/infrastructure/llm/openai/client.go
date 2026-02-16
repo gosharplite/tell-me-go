@@ -46,13 +46,14 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type chatRequest struct {
-	Model          string         `json:"model"`
-	Messages       []message      `json:"messages"`
-	Tools          []tool         `json:"tools,omitempty"`
-	MaxTokens      int            `json:"max_tokens,omitempty"`
-	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
-	Stream         bool           `json:"stream,omitempty"`
-	StreamOptions  *streamOptions `json:"stream_options,omitempty"`
+	Model                string         `json:"model"`
+	Messages             []message      `json:"messages"`
+	Tools                []tool         `json:"tools,omitempty"`
+	MaxTokens            int            `json:"max_tokens,omitempty"`
+	MaxCompletionTokens  int            `json:"max_completion_tokens,omitempty"`
+	ReasoningEffort      string         `json:"reasoning_effort,omitempty"`
+	Stream               bool           `json:"stream,omitempty"`
+	StreamOptions        *streamOptions `json:"stream_options,omitempty"`
 }
 
 type streamOptions struct {
@@ -137,12 +138,19 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 		Tools:    c.toOpenAITools(toolDecls),
 	}
 
-	// Reasoner models often need higher token limits for reasoning + output
-	if strings.Contains(c.model, "reasoner") || strings.HasPrefix(c.model, "o1") || strings.HasPrefix(c.model, "o3") {
-		reqPayload.MaxTokens = 8192
+	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
+	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
+		strings.HasPrefix(c.model, "o3") ||
+		strings.HasPrefix(c.model, "gpt-5")
+
+	if isOpenAIReasoner {
+		reqPayload.MaxCompletionTokens = 8192
 		if effort, ok := c.headers["reasoning_effort"]; ok {
 			reqPayload.ReasoningEffort = effort
 		}
+	} else if strings.Contains(c.model, "reasoner") {
+		// DeepSeek Reasoner still uses 'max_tokens'
+		reqPayload.MaxTokens = 8192
 	}
 
 	body, err := json.Marshal(reqPayload)
@@ -198,13 +206,16 @@ func (c *Client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []message {
 	var messages []message
 
-	// DeepSeek Reasoner (R1) compatibility: Some versions don't support 'system' role.
-	// We'll merge the persona into the first 'user' message if we detect deepseek-reasoner.
+	// Detect reasoning models (DeepSeek R1, OpenAI o1/o3/gpt-5)
 	isDeepSeekReasoner := strings.Contains(c.model, "deepseek-reasoner")
+	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
+		strings.HasPrefix(c.model, "o3") ||
+		strings.HasPrefix(c.model, "gpt-5")
+
 	personaInjected := false
 
-	// If not deepseek-reasoner, inject persona as system message if provided
-	if c.persona != "" && !isDeepSeekReasoner {
+	// If not a reasoner, inject persona as standard system message
+	if c.persona != "" && !isDeepSeekReasoner && !isOpenAIReasoner {
 		messages = append(messages, message{
 			Role:    "system",
 			Content: c.persona,
@@ -238,8 +249,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 			} else if p.Text != "" {
 				textParts = append(textParts, p.Text)
 			} else if p.Thought != "" {
-				// DeepSeek and most OpenAI-compatible APIs do not support 'reasoning_content' in history.
-				// We'll merge it into the text content with a delimiter.
+				// We'll merge reasoning into the text content with a delimiter for history.
 				textParts = append(textParts, fmt.Sprintf("<thought>\n%s\n</thought>", p.Thought))
 			}
 		}
@@ -251,10 +261,20 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 				Content:    marshalResponse(toolResponse.Response),
 			})
 		} else {
-			// Prepend persona to first user message for DeepSeek Reasoner
-			if role == "user" && isDeepSeekReasoner && !personaInjected && c.persona != "" {
-				textParts = append([]string{c.persona}, textParts...)
-				personaInjected = true
+			// Prepend persona for models that don't support the 'system' role
+			if role == "user" && !personaInjected && c.persona != "" {
+				if isOpenAIReasoner {
+					// OpenAI reasoning models (o1/o3/gpt-5) use 'developer' role for system instructions
+					messages = append(messages, message{
+						Role:    "developer",
+						Content: c.persona,
+					})
+					personaInjected = true
+				} else if isDeepSeekReasoner {
+					// DeepSeek Reasoner merges it into the first user message
+					textParts = append([]string{c.persona}, textParts...)
+					personaInjected = true
+				}
 			}
 
 			msg := message{
@@ -275,7 +295,7 @@ func (c *Client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 }
 
 func (c *Client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
-	if len(decls) == 0 || strings.Contains(c.model, "reasoner") {
+	if len(decls) == 0 {
 		return nil
 	}
 	var res []tool
@@ -388,12 +408,19 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		Stream:   true,
 	}
 
-	// Reasoner models often need higher token limits for reasoning + output
-	if strings.Contains(c.model, "reasoner") || strings.HasPrefix(c.model, "o1") || strings.HasPrefix(c.model, "o3") {
-		reqPayload.MaxTokens = 8192
+	// OpenAI reasoning models (o1, o3, gpt-5) use 'max_completion_tokens' instead of 'max_tokens'
+	isOpenAIReasoner := strings.HasPrefix(c.model, "o1") ||
+		strings.HasPrefix(c.model, "o3") ||
+		strings.HasPrefix(c.model, "gpt-5")
+
+	if isOpenAIReasoner {
+		reqPayload.MaxCompletionTokens = 8192
 		if effort, ok := c.headers["reasoning_effort"]; ok {
 			reqPayload.ReasoningEffort = effort
 		}
+	} else if strings.Contains(c.model, "reasoner") {
+		// DeepSeek Reasoner still uses 'max_tokens'
+		reqPayload.MaxTokens = 8192
 	}
 
 	// DeepSeek and some other providers do not support stream_options
@@ -441,6 +468,15 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 
 	var metrics *llm.Metrics
 	scanner := bufio.NewScanner(resp.Body)
+
+	// Buffer to aggregate tool calls by index during streaming
+	type toolCallState struct {
+		id   string
+		name string
+		args strings.Builder
+	}
+	toolCallsByIndex := make(map[int]*toolCallState)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -455,8 +491,16 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content          string `json:"content"`
-					ReasoningContent string `json:"reasoning_content"`
+					Content          string `json:"content,omitempty"`
+					ReasoningContent string `json:"reasoning_content,omitempty"`
+					ToolCalls        []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id,omitempty"`
+						Function struct {
+							Name      string `json:"name,omitempty"`
+							Arguments string `json:"arguments,omitempty"`
+						} `json:"function,omitempty"`
+					} `json:"tool_calls,omitempty"`
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *usage `json:"usage"`
@@ -467,7 +511,6 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			// Some providers might send empty lines or non-JSON between chunks
 			continue
 		}
 
@@ -488,17 +531,59 @@ func (c *Client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		}
 
 		if len(chunk.Choices) > 0 {
-			delta := chunk.Choices[0].Delta
-			if delta.Content != "" || delta.ReasoningContent != "" {
+			d := chunk.Choices[0].Delta
+
+			// Handle Text and Reasoning
+			if d.Content != "" || d.ReasoningContent != "" {
 				update := &llm.Content{Role: "model"}
-				if delta.Content != "" {
-					update.Parts = append(update.Parts, &llm.Part{Text: delta.Content})
+				if d.Content != "" {
+					update.Parts = append(update.Parts, &llm.Part{Text: d.Content})
 				}
-				if delta.ReasoningContent != "" {
-					update.Parts = append(update.Parts, &llm.Part{Thought: delta.ReasoningContent})
+				if d.ReasoningContent != "" {
+					update.Parts = append(update.Parts, &llm.Part{Thought: d.ReasoningContent})
 				}
 				callback(update)
 			}
+
+			// Aggregate Tool Calls
+			for _, tc := range d.ToolCalls {
+				state, ok := toolCallsByIndex[tc.Index]
+				if !ok {
+					state = &toolCallState{}
+					toolCallsByIndex[tc.Index] = state
+				}
+				if tc.ID != "" {
+					state.id = tc.ID
+				}
+				if tc.Function.Name != "" {
+					state.name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					state.args.WriteString(tc.Function.Arguments)
+				}
+			}
+		}
+	}
+
+	// Once the stream is finished, emit all aggregated tool calls
+	if len(toolCallsByIndex) > 0 {
+		finalContent := &llm.Content{Role: "model"}
+		// Sort by index to maintain order
+		for i := 0; i < len(toolCallsByIndex); i++ {
+			if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
+				var args map[string]interface{}
+				_ = json.Unmarshal([]byte(state.args.String()), &args)
+				finalContent.Parts = append(finalContent.Parts, &llm.Part{
+					FunctionCall: &llm.FunctionCall{
+						ID:   state.id,
+						Name: state.name,
+						Args: args,
+					},
+				})
+			}
+		}
+		if len(finalContent.Parts) > 0 {
+			callback(finalContent)
 		}
 	}
 
