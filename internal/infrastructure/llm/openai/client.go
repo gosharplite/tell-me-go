@@ -79,9 +79,18 @@ type tool struct {
 }
 
 type functionDeclaration struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Parameters  interface{} `json:"parameters,omitempty"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Parameters  *schema `json:"parameters,omitempty"`
+}
+
+type schema struct {
+	Type        string            `json:"type"`
+	Description string            `json:"description,omitempty"`
+	Properties  map[string]*schema `json:"properties,omitempty"`
+	Required    []string          `json:"required,omitempty"`
+	Enum        []string          `json:"enum,omitempty"`
+	Items       *schema           `json:"items,omitempty"`
 }
 
 type toolCall struct {
@@ -237,9 +246,29 @@ func (c *Client) toOpenAITools(decls []*tools.ToolDeclaration) []tool {
 			Function: &functionDeclaration{
 				Name:        d.Name,
 				Description: d.Description,
-				Parameters:  d.Parameters,
+				Parameters:  toOpenAISchema(d.Parameters),
 			},
 		})
+	}
+	return res
+}
+
+func toOpenAISchema(s *tools.Schema) *schema {
+	if s == nil {
+		return nil
+	}
+	res := &schema{
+		Type:        strings.ToLower(s.Type),
+		Description: s.Description,
+		Required:    s.Required,
+		Enum:        s.Enum,
+		Items:       toOpenAISchema(s.Items),
+	}
+	if s.Properties != nil {
+		res.Properties = make(map[string]*schema)
+		for k, v := range s.Properties {
+			res.Properties[k] = toOpenAISchema(v)
+		}
 	}
 	return res
 }
