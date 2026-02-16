@@ -245,7 +245,7 @@ func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []dom
 
 	var responseParts []*llm.Part
 	for i, tr := range results {
-		responseParts = append(responseParts, strategy.Format(calls[i].Name, tr))
+		responseParts = append(responseParts, strategy.Format(calls[i], tr))
 		for _, b := range tr.BinaryData {
 			responseParts = append(responseParts, &llm.Part{
 				InlineData: &llm.Blob{

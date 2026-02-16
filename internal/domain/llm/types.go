@@ -38,11 +38,13 @@ type Blob struct {
 }
 
 type FunctionCall struct {
+	ID   string                 `json:"id,omitempty"`
 	Name string                 `json:"name,omitempty"`
 	Args map[string]interface{} `json:"args,omitempty"`
 }
 
 type FunctionResponse struct {
+	ID       string                 `json:"id,omitempty"`
 	Name     string                 `json:"name,omitempty"`
 	Response map[string]interface{} `json:"response,omitempty"`
 }
@@ -192,6 +194,7 @@ func (fc *FunctionCall) clone() *FunctionCall {
 		return nil
 	}
 	clone := &FunctionCall{
+		ID:   fc.ID,
 		Name: fc.Name,
 	}
 	if fc.Args != nil {
@@ -209,7 +212,8 @@ func (fr *FunctionResponse) clone() *FunctionResponse {
 		return nil
 	}
 	clone := &FunctionResponse{
-		Name: fr.Name,
+		ID:       fr.ID,
+		Name:     fr.Name,
 	}
 	if fr.Response != nil {
 		clone.Response = make(map[string]interface{}, len(fr.Response))
@@ -273,7 +277,7 @@ func (fc *FunctionCall) equal(other *FunctionCall) bool {
 	if fc == nil || other == nil {
 		return fc == other
 	}
-	if fc.Name != other.Name {
+	if fc.ID != other.ID || fc.Name != other.Name {
 		return false
 	}
 	return reflect.DeepEqual(fc.Args, other.Args)
@@ -284,7 +288,7 @@ func (fr *FunctionResponse) equal(other *FunctionResponse) bool {
 	if fr == nil || other == nil {
 		return fr == other
 	}
-	if fr.Name != other.Name {
+	if fr.ID != other.ID || fr.Name != other.Name {
 		return false
 	}
 	return reflect.DeepEqual(fr.Response, other.Response)

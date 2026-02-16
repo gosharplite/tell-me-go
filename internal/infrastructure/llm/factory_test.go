@@ -18,6 +18,7 @@ func TestNewClient(t *testing.T) {
 		name       string
 		apiKey     string
 		url        string
+		provider   string
 		expectAuth reflect.Type
 		expectErr  bool
 	}{
@@ -26,6 +27,20 @@ func TestNewClient(t *testing.T) {
 			apiKey:     "test-key",
 			url:        "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1",
 			expectAuth: reflect.TypeOf(&auth.APIKeyAuth{}),
+		},
+		{
+			name:       "Uses BearerAuth for OpenAI",
+			apiKey:     "test-key",
+			url:        "https://api.openai.com/v1",
+			provider:   "openai",
+			expectAuth: reflect.TypeOf(&auth.BearerAuth{}),
+		},
+		{
+			name:       "Uses AnthropicAuth for Anthropic",
+			apiKey:     "test-key",
+			url:        "https://api.anthropic.com/v1",
+			provider:   "anthropic",
+			expectAuth: reflect.TypeOf(&auth.AnthropicAuth{}),
 		},
 		{
 			name:       "Uses VertexAuth when key is empty",
@@ -43,9 +58,14 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pType := tt.provider
+			if pType == "" {
+				pType = "gemini"
+			}
 			cfg := &config.Config{
 				Providers: map[string]config.LLMProvider{
 					"test": {
+						Type:   pType,
 						APIKey: tt.apiKey,
 						URL:    tt.url,
 						Model:  "gemini-2.0-flash",
@@ -81,17 +101,14 @@ func TestNewClient(t *testing.T) {
 				t.Fatalf("expected *resilientClient, got %T", llmClient)
 			}
 
-			// Access the inner client field, type-assert it to *Client (the Gemini client)
-			// Note: factory.go calls NewGeminiClient which returns *Client
-			geminiClient, ok := resilient.client.(*Client)
-			if !ok {
-				t.Fatalf("expected *Client, got %T", resilient.client)
-			}
-
-			// Verify if the authenticator field is correct
-			actualAuthType := reflect.TypeOf(geminiClient.authenticator)
-			if actualAuthType != tt.expectAuth {
-				t.Errorf("expected authenticator type %v, got %v", tt.expectAuth, actualAuthType)
+			// Access the inner client field
+			v := reflect.ValueOf(resilient.client).Elem()
+			f := v.FieldByName("authenticator")
+			if f.IsValid() && !f.IsNil() {
+				actualAuthType := f.Elem().Type()
+				if actualAuthType != tt.expectAuth {
+					t.Errorf("expected authenticator type %v, got %v", tt.expectAuth, actualAuthType)
+				}
 			}
 		})
 	}

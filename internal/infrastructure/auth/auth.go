@@ -121,3 +121,29 @@ func (a *APIKeyAuth) Apply(req *Request) {
 		req.Headers["x-goog-api-key"] = a.APIKey
 	}
 }
+
+// BearerAuth handles authentication using a Bearer token.
+type BearerAuth struct {
+	Token string
+}
+
+func (a *BearerAuth) getToken() (string, error) { return a.Token, nil }
+func (a *BearerAuth) Invalidate()               {}
+func (a *BearerAuth) Apply(req *Request) {
+	if a.Token != "" {
+		req.Headers["Authorization"] = "Bearer " + a.Token
+	}
+}
+
+// AnthropicAuth handles authentication using the x-api-key header.
+type AnthropicAuth struct {
+	APIKey string
+}
+
+func (a *AnthropicAuth) getToken() (string, error) { return a.APIKey, nil }
+func (a *AnthropicAuth) Invalidate()               {}
+func (a *AnthropicAuth) Apply(req *Request) {
+	if a.APIKey != "" {
+		req.Headers["x-api-key"] = a.APIKey
+	}
+}

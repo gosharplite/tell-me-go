@@ -9,6 +9,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/anthropic"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/openai"
 )
 
 // NewClient is the central factory for creating LLM providers.
@@ -17,7 +19,14 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 	var authenticator auth.Authenticator
 	if p.APIKey != "" {
-		authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
+		switch p.Type {
+		case "openai", "deepseek":
+			authenticator = &auth.BearerAuth{Token: p.APIKey}
+		case "anthropic":
+			authenticator = &auth.AnthropicAuth{APIKey: p.APIKey}
+		default:
+			authenticator = &auth.APIKeyAuth{APIKey: p.APIKey}
+		}
 	} else {
 		authenticator = &auth.VertexAuth{}
 	}
@@ -28,6 +37,10 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	var err error
 
 	switch p.Type {
+	case "openai", "deepseek":
+		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers)
+	case "anthropic":
+		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, p.ThinkingBudget)
 	case "google", "gemini", "": // Default to Gemini for now
 		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus)
 	default:
