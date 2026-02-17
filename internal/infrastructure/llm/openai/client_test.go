@@ -338,7 +338,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 		},
 	}
 
-	messages := c.toOpenAIMessages(context.Background(), history, nil)
+	messages, _ := c.toOpenAIMessages(context.Background(), history, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -374,7 +374,7 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 		},
 	}
 
-	messages := client.toOpenAIMessages(context.Background(), history, nil)
+	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -518,7 +518,7 @@ func TestToOpenAISchema(t *testing.T) {
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0)
-		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
 		}
@@ -526,7 +526,7 @@ func TestInjectPersona(t *testing.T) {
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
-		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 1 || !strings.Contains(messages[0].Content.(string), "Be helpful") {
 			t.Errorf("expected persona prepended for DeepSeek, got %+v", messages[0])
 		}

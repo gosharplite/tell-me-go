@@ -1769,3 +1769,25 @@ func TestAdoGetPullRequest_UnmarshalError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unmarshal")
 }
+
+func TestFormatKey(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"simpleKey", "Simple Key"},
+		{"URLPath", "URL Path"},
+		{"ProjectID", "Project ID"},
+		{"MyAPIKey", "My API Key"},
+		{"API", "API"},
+		{"some_key", "Some_key"}, // underscore not handled by camelCase logic, but first letter capitalized
+		{"", ""},
+		{"ProjectId", "Project ID"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, formatKey(tt.input))
+		})
+	}
+}

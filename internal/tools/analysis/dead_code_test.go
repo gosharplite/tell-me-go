@@ -394,7 +394,6 @@ func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
 	}
 }
 
-
 func TestDeadCodeAnalyzer_ExcludedPackages(t *testing.T) {
 	t.Parallel()
 	tmpDir, err := filepath.EvalSymlinks(t.TempDir())

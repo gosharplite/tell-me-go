@@ -27,8 +27,8 @@ func TestListTodos(t *testing.T) {
 		{
 			name: "Standard Detection",
 			files: map[string]string{
-				"file1.go": "// TODO: fix this\npackage main",
-				"file2.py": "# FIXME: optimize this\nimport sys",
+				"file1.go":  "// TODO: fix this\npackage main",
+				"file2.py":  "# FIXME: optimize this\nimport sys",
 				"file3.txt": "Nothing interesting here",
 			},
 			expected: []string{"TODO: fix this", "FIXME: optimize this"},
@@ -95,7 +95,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 
 	for path, content := range files {
 		fullPath := filepath.Join(tempDir, path)
-		// Ensure parent directory exists in mock FS if it supports it, 
+		// Ensure parent directory exists in mock FS if it supports it,
 		// but storage.MockFileSystem usually just takes any path.
 		require.NoError(t, fs.WriteFile(ctx, fullPath, []byte(content), 0644))
 	}

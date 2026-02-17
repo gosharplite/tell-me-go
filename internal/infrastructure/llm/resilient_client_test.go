@@ -136,7 +136,6 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-
 type mockHttpStatusErr struct {
 	code int
 }

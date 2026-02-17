@@ -1150,7 +1150,9 @@ func formatKey(s string) string {
 		return ""
 	}
 	var res strings.Builder
-	for i, r := range s {
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		if i == 0 {
 			if r >= 'a' && r <= 'z' {
 				res.WriteRune(r - 'a' + 'A')
@@ -1159,7 +1161,17 @@ func formatKey(s string) string {
 			}
 		} else {
 			if r >= 'A' && r <= 'Z' {
-				res.WriteRune(' ')
+				// Previous character was lowercase
+				prevLower := runes[i-1] >= 'a' && runes[i-1] <= 'z'
+				// Next character exists and is lowercase
+				nextLower := false
+				if i+1 < len(runes) {
+					nextLower = runes[i+1] >= 'a' && runes[i+1] <= 'z'
+				}
+
+				if prevLower || nextLower {
+					res.WriteRune(' ')
+				}
 			}
 			res.WriteRune(r)
 		}
