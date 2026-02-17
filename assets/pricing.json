@@ -1,22 +1,6 @@
 {
-  "updated_at": "2026-02-02T13:00:00Z",
+  "updated_at": "2026-02-03T12:00:00Z",
   "models": {
-    "flash": {
-      "hit": 0.025,
-      "miss": 0.10,
-      "comp": 0.40,
-      "tiered_threshold": 0,
-      "tiered_miss": 0.20,
-      "tiered_comp": 0.80
-    },
-    "pro": {
-      "hit": 0.3125,
-      "miss": 1.25,
-      "comp": 5.00,
-      "tiered_threshold": 0,
-      "tiered_miss": 2.50,
-      "tiered_comp": 10.00
-    },
     "gpt-5": {
       "hit": 0.0,
       "miss": 5.00,
@@ -28,18 +12,15 @@
       "comp": 1.10,
       "thinking": 1.10
     },
-    "claude-3-7-sonnet": {
+    "claude-opus-4-6": {
       "hit": 0.0,
       "miss": 3.00,
       "comp": 15.00
     },
-    "default": {
-      "hit": 0.3125,
-      "miss": 1.25,
-      "comp": 5.00,
-      "tiered_threshold": 0,
-      "tiered_miss": 2.50,
-      "tiered_comp": 10.00
+    "gemini-3-flash-preview": {
+      "hit": 0.05,
+      "miss": 0.50,
+      "comp": 3.00
     }
   },
   "thinking_budgets": {
