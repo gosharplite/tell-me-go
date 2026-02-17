@@ -72,12 +72,12 @@ func newChatCommand(ctx *context) *chatCommand {
 		HomeDir: ctx.HomeDir,
 		SM:      ctx.SM,
 		Loader:  &config.YAMLConfigLoader{},
-		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
 			telemetry.RegisterTraceSubscriber(bus, logPath)
 
 			summarizer := llm.NewSummarizer(client, bus)
 
-			return agent.New(client, hManager, reg, sm, bus, summarizer,
+			return agent.New(client, hManager, reg, sm, bus, summarizer, providerName,
 				agent.WithPricing(model, mode, pricingOverrides),
 				agent.WithSessionCostTracker(tracker),
 				agent.WithInternalTools(),

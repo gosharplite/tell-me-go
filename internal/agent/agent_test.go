@@ -31,7 +31,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, "test-provider")
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
 	_ = a.events.Flush(context.Background())
@@ -59,7 +59,7 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil)
+	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
 	sess := services.NewSession("test-chat", h)
 
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, WithLoader(&config.YAMLConfigLoader{}))
+	a := New(client, h, reg, sm, bus, nil, "test-provider", WithLoader(&config.YAMLConfigLoader{}))
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -110,7 +110,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, "test-provider")
 	_ = a.SetTieredThreshold(context.Background(), 100000)
 	_ = a.events.Flush(context.Background())
 
@@ -140,7 +140,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil)
+	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
 	sess := services.NewSession("test-retry", h)
 
 	ctx := context.Background()
@@ -156,7 +156,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
-		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil)
+		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil, "test-provider")
 
 		decls := reg.GetDeclarations()
 		for _, d := range decls {
@@ -170,7 +170,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
-		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil, WithInternalTools())
+		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil, "test-provider", WithInternalTools())
 
 		decls := reg.GetDeclarations()
 		foundSumm := false
@@ -206,7 +206,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil)
+	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
 	sess := services.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
@@ -223,7 +223,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	reg := registry.New()
 	bus := events.NewSimpleEventBus()
-	a := New(&mockLLMClient{}, nil, reg, security_impl.NewSecurityManager(nil), bus, nil)
+	a := New(&mockLLMClient{}, nil, reg, security_impl.NewSecurityManager(nil), bus, nil, "test-provider")
 
 	// Build pipeline
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
@@ -290,7 +290,7 @@ func setupPinningFlowTest(t *testing.T) (*agent, services.HistoryManager, contex
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(&mockLLMClient{}, h, reg, sm, bus, nil, WithInternalTools())
+	a := New(&mockLLMClient{}, h, reg, sm, bus, nil, "test-provider", WithInternalTools())
 	return a, h, ctx
 }
 
@@ -335,7 +335,7 @@ func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Co
 
 	mockClient := &mockLLMClient{}
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil, WithInternalTools())
+	a := New(mockClient, h, reg, sm, bus, nil, "test-provider", WithInternalTools())
 	return a, a.ctxManager.History, ctx
 }
 
@@ -376,7 +376,7 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	// Test initial injection via option
 	tracker1 := &mockCostTracker{}
 	bus := events.NewSimpleEventBus()
-	a := New(client, h, reg, sm, bus, nil,
+	a := New(client, h, reg, sm, bus, nil, "test-provider",
 		WithSessionCostTracker(tracker1),
 	)
 
@@ -409,7 +409,7 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, nil, reg, sm, bus, nil,
+	a := New(client, nil, reg, sm, bus, nil, "test-provider",
 		WithPricing("test-model", "chat", overrides),
 	)
 
@@ -431,7 +431,7 @@ func TestAgent_Subscribe(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
-	a := New(client, nil, reg, sm, bus, nil)
+	a := New(client, nil, reg, sm, bus, nil, "test-provider")
 
 	var eventReceived events.Event
 	var mu sync.Mutex
@@ -469,7 +469,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	// 1. Test passing during New (engine is nil when option is applied)
-	a := New(client, nil, reg, sm, bus, nil,
+	a := New(client, nil, reg, sm, bus, nil, "test-provider",
 		WithSessionCostTracker(tracker),
 	)
 
@@ -493,7 +493,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, "test-provider")
 	sess := services.NewSession("test-config-application", h)
 
 	// Test context cancellation
@@ -514,7 +514,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	// 2. Initialize Agent
-	a := New(client, h, reg, sm, bus, nil)
+	a := New(client, h, reg, sm, bus, nil, "test-provider")
 
 	// 3. Define a timeout context for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

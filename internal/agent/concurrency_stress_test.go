@@ -48,7 +48,7 @@ func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, hManager, reg, sm, bus, nil)
+	a := New(mockClient, hManager, reg, sm, bus, nil, "test-provider")
 	session := &services.Session{History: hManager, StartTime: time.Now()}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
