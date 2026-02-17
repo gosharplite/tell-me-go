@@ -7,13 +7,135 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestNewClient(t *testing.T) {
+	tests := []struct {
+		name           string
+		providerType   string
+		apiKey         string
+		url            string
+		mockURL        string
+		timeoutSeconds int
+		expectAuthType reflect.Type
+		expectErr      bool
+	}{
+		{
+			name:           "Success with Gemini API Key",
+			providerType:   "gemini",
+			apiKey:         "test-key",
+			url:            "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l",
+			expectAuthType: reflect.TypeOf(&auth.APIKeyAuth{}),
+		},
+		{
+			name:           "Success with OpenAI Bearer",
+			providerType:   "openai",
+			apiKey:         "test-key",
+			url:            "https://api.openai.com/v1",
+			expectAuthType: reflect.TypeOf(&auth.BearerAuth{}),
+		},
+		{
+			name:           "Success with Anthropic Auth",
+			providerType:   "anthropic",
+			apiKey:         "test-key",
+			url:            "https://api.anthropic.com/v1",
+			expectAuthType: reflect.TypeOf(&auth.AnthropicAuth{}),
+		},
+		{
+			name:           "Success with Vertex (No Key)",
+			providerType:   "gemini",
+			apiKey:         "",
+			url:            "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l",
+			expectAuthType: reflect.TypeOf(&auth.VertexAuth{}),
+		},
+		{
+			name:         "Failure on missing API Key for OpenAI",
+			providerType: "openai",
+			apiKey:       "",
+			expectErr:    true,
+		},
+		{
+			name:           "Success with custom timeout",
+			providerType:   "gemini",
+			apiKey:         "test-key",
+			url:            "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l",
+			timeoutSeconds: 30,
+			expectAuthType: reflect.TypeOf(&auth.APIKeyAuth{}),
+		},
+		{
+			name:           "Success with mock URL",
+			providerType:   "gemini",
+			apiKey:         "test-key",
+			url:            "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l",
+			mockURL:        "http://localhost:8080",
+			expectAuthType: reflect.TypeOf(&auth.APIKeyAuth{}),
+		},
+		{
+			name:         "Returns error if NewGeminiClient fails (SDK validation)",
+			providerType: "gemini",
+			apiKey:       "test-key",
+			url:          "https://generativelanguage.googleapis.com",
+			expectErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.mockURL != "" {
+				t.Setenv("TELL_ME_MOCK_URL", tt.mockURL)
+			}
+
+			cfg := &config.Config{
+				Providers: map[string]config.LLMProvider{
+					"test": {
+						Type:   tt.providerType,
+						APIKey: tt.apiKey,
+						URL:    tt.url,
+						Model:  "model-1",
+					},
+				},
+				SelectedProvider:   "test",
+				HTTPTimeoutSeconds: tt.timeoutSeconds,
+			}
+			pData := pricing.PricingData{}
+			bus := events.NewSimpleEventBus()
+
+			client, err := NewClient(cfg, pData, bus)
+
+			if tt.expectErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, client)
+
+			resilient, ok := client.(*resilientClient)
+			require.True(t, ok)
+
+			// Access the inner client's authenticator using reflection
+			v := reflect.ValueOf(resilient.client).Elem()
+			f := v.FieldByName("authenticator")
+			if f.IsValid() && !f.IsNil() {
+				assert.Equal(t, tt.expectAuthType, f.Elem().Type())
+			}
+		})
+	}
+}
+
 
 type mockHttpStatusErr struct {
 	code int
