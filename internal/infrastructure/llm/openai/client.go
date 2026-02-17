@@ -123,6 +123,8 @@ type completionTokensDetails struct {
 	ReasoningTokens int32 `json:"reasoning_tokens"`
 }
 
+// prepareChatRequest constructs the chat request payload.
+// It returns an error if message conversion or JSON serialization fails.
 func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) (*chatRequest, error) {
 	messages, err := c.toOpenAIMessages(ctx, history, resolver)
 	if err != nil {
@@ -224,6 +226,8 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromOpenAIResponse(&chatResp, duration)
 }
 
+// toOpenAIMessages converts domain-level history to OpenAI-compatible messages.
+// It returns an error if any part of the history cannot be classified or marshalled to JSON.
 func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
 	var messages []message
 	isDeepSeek, isOpenAI := c.getModelCapabilities()
@@ -282,6 +286,8 @@ func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
 	return
 }
 
+// classifyParts categorizes different parts of a message.
+// It returns an error if tool arguments cannot be marshalled to JSON.
 func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, toolResponse *llm.FunctionResponse, err error) {
 	var textParts []string
 	var reasoningParts []string
@@ -444,6 +450,8 @@ func (c *client) parseContentPart(part interface{}, content *llm.Content) {
 	}
 }
 
+// parseResponseToolCalls extracts tool calls from the API response.
+// It returns an error if tool arguments cannot be unmarshalled from JSON.
 func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Content) error {
 	for _, tc := range toolCalls {
 		var args map[string]interface{}
@@ -555,6 +563,8 @@ func (c *client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCal
 	}
 }
 
+// emitToolCalls sends accumulated tool calls back through the callback.
+// It returns an error if tool arguments cannot be unmarshalled from the accumulated buffer.
 func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) error {
 	if len(toolCallsByIndex) == 0 {
 		return nil
@@ -670,6 +680,8 @@ func (c *client) RefreshAuth() error {
 	return nil
 }
 
+// marshalArgs converts tool arguments map to a JSON string.
+// It returns an error if JSON marshalling fails.
 func marshalArgs(args map[string]interface{}) (string, error) {
 	if args == nil {
 		return "{}", nil
@@ -681,6 +693,8 @@ func marshalArgs(args map[string]interface{}) (string, error) {
 	return string(b), nil
 }
 
+// marshalResponse converts tool response map to a JSON string.
+// It returns an error if JSON marshalling fails.
 func marshalResponse(res map[string]interface{}) (string, error) {
 	if res == nil {
 		return "", nil

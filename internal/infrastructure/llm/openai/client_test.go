@@ -578,3 +578,32 @@ func TestRefreshAuth(t *testing.T) {
 	_ = client.RefreshAuth()
 	// No easy way to check if invalidated without internal knowledge, but call it for coverage
 }
+
+func TestSendChat_MarshallingError(t *testing.T) {
+	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{
+					FunctionCall: &llm.FunctionCall{
+						ID:   "call_123",
+						Name: "test_tool",
+						Args: map[string]interface{}{
+							"bad": make(chan int),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to marshal tool arguments") && !strings.Contains(err.Error(), "json: unsupported type: chan") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
