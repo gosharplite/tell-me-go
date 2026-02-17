@@ -8,55 +8,39 @@
       "thinking_budget": 0
     },
     "gpt-5": {
-      "hit": 0.0,
-      "miss": 5.00,
-      "comp": 15.00
+      "hit": 0.175,
+      "miss": 1.75,
+      "comp": 14.00
     },
     "deepseek-reasoner": {
-      "hit": 0.07,
-      "miss": 0.27,
-      "comp": 1.10,
-      "thinking": 1.10
+      "hit": 0.028,
+      "miss": 0.28,
+      "comp": 0.42,
+      "thinking": 0.42
     },
-    "claude-opus-4-6": {
-      "hit": 0.0,
+    "claude-sonnet-4-6": {
+      "hit": 0.30,
       "miss": 3.00,
       "comp": 15.00
     },
-    "gemini-2.0-flash": {
-      "hit": 0.025,
-      "miss": 0.1,
-      "comp": 0.4,
-      "thinking_budget": 24576,
-      "search_query": 0.035
-    },
-    "gemini-2.5-flash": {
-      "hit": 0.025,
-      "miss": 0.1,
-      "comp": 0.4,
-      "thinking_budget": 24576,
-      "search_query": 0.035
-    },
-    "gemini-2.5-pro": {
-      "hit": 0.3125,
-      "miss": 1.25,
-      "comp": 5.0,
-      "thinking_budget": 32768,
-      "search_query": 0.035
+    "claude-opus-4-6": {
+      "hit": 0.50,
+      "miss": 5.00,
+      "comp": 25.00
     },
     "gemini-3-flash-preview": {
       "hit": 0.05,
       "miss": 0.50,
       "comp": 3.00,
       "thinking_budget": 32768,
-      "search_query": 0.035
+      "search_query": 0.014
     },
     "gemini-3-pro-preview": {
-      "hit": 0.3125,
-      "miss": 1.25,
-      "comp": 5.0,
+      "hit": 0.20,
+      "miss": 2.00,
+      "comp": 12.0,
       "thinking_budget": 65536,
-      "search_query": 0.035
+      "search_query": 0.014
     }
   }
 }
