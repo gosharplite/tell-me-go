@@ -188,29 +188,37 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	var iface *types.Interface
+	iface := idx.findInterfaceType(interfaceName)
+	if iface == nil {
+		return nil, fmt.Errorf("interface %s not found", interfaceName)
+	}
 
-	// Find the interface type
+	return idx.collectImplementors(iface), nil
+}
+
+func (idx *indexer) findInterfaceType(interfaceName string) *types.Interface {
 	for _, pkg := range idx.pkgs {
 		obj := pkg.Types.Scope().Lookup(interfaceName)
 		if obj == nil {
 			continue
 		}
 		if t, ok := obj.Type().Underlying().(*types.Interface); ok {
-			iface = t
-			break
+			return t
 		}
 	}
+	return nil
+}
 
-	if iface == nil {
-		return nil, fmt.Errorf("interface %s not found", interfaceName)
-	}
-
+func (idx *indexer) collectImplementors(iface *types.Interface) []typeName {
 	var implementors []typeName
 	for _, pkg := range idx.pkgs {
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
+			if obj == nil {
+				continue
+			}
+			// Skip other interfaces
 			if _, ok := obj.Type().Underlying().(*types.Interface); ok {
 				continue
 			}
@@ -223,8 +231,7 @@ func (idx *indexer) FindImplementors(ctx context.Context, interfaceName string) 
 			}
 		}
 	}
-
-	return implementors, nil
+	return implementors
 }
 
 func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string, exportedOnly bool) ([]symbolLocation, error) {

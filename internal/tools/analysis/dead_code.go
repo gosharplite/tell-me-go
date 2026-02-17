@@ -212,21 +212,17 @@ func (a *deadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
 		return false
 	}
 
-	// error interface: Error() string
-	if fn.Name() == "Error" && sig.Params().Len() == 0 && sig.Results().Len() == 1 {
-		if sig.Results().At(0).Type().String() == "string" {
-			return true
-		}
-	}
+	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
+}
 
-	// fmt.Stringer interface: String() string
-	if fn.Name() == "String" && sig.Params().Len() == 0 && sig.Results().Len() == 1 {
-		if sig.Results().At(0).Type().String() == "string" {
-			return true
-		}
+func (a *deadCodeAnalyzer) isNoArgStringMethod(fn *types.Func, sig *types.Signature, name string) bool {
+	if fn.Name() != name {
+		return false
 	}
-
-	return false
+	if sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+		return false
+	}
+	return sig.Results().At(0).Type().String() == "string"
 }
 
 func (a *deadCodeAnalyzer) protectContractSymbol(state *scanState, id string) {

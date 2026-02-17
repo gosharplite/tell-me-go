@@ -555,7 +555,7 @@ func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback
 	}
 }
 
-func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+func (c *client) executeStreamRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*http.Response, error) {
 	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
 	req, err := c.createHTTPRequest(ctx, reqPayload, true)
 	if err != nil {
@@ -566,18 +566,17 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
+	return resp, nil
+}
 
+func (c *client) scanStream(scanner *bufio.Scanner, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
 	var metrics *llm.Metrics
-	scanner := bufio.NewScanner(resp.Body)
-	startTime := time.Now()
-	toolCallsByIndex := make(map[int]*toolCallState)
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -597,6 +596,21 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 			metrics = chunkMetrics
 		}
 	}
+	return metrics, scanner.Err()
+}
+
+func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	resp, err := c.executeStreamRequest(ctx, history, toolDecls, resolver)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	startTime := time.Now()
+	toolCallsByIndex := make(map[int]*toolCallState)
+	scanner := bufio.NewScanner(resp.Body)
+
+	metrics, err := c.scanStream(scanner, toolCallsByIndex, callback)
 
 	c.emitToolCalls(toolCallsByIndex, callback)
 
@@ -604,8 +618,8 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 		metrics.Duration = time.Since(startTime).Seconds()
 	}
 
-	if err := scanner.Err(); err != nil {
-		return metrics, fmt.Errorf("stream read error: %w", err)
+	if err != nil {
+		return metrics, fmt.Errorf("stream error: %w", err)
 	}
 
 	return metrics, nil
