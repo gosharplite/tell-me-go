@@ -9,23 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestShellTool_UTF8SafeTruncation(t *testing.T) {
-	sm := security.NewSecurityManager(nil)
-	sm.SetBypassActive(true)
-	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
-
-	// "世界" is 6 bytes. "世" is 3 bytes, "界" is 3 bytes.
-
-	ctx := context.Background()
-	// Use sh -c to echo the multi-byte string exactly.
-	// In UTF-8: 世 = \xe4\xb8\x96, 界 = \xe7\x95\x8c
-	args := map[string]interface{}{
-		"command": `sh -c 'printf "世界"'`,
-		"reason":  "testing utf8 truncation",
-	}
+	tool, ctx, args := setupTruncationTest(t)
 
 	tests := []struct {
 		name          string
@@ -33,19 +22,18 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 		expectedPart  string
 		forbiddenPart string
 		wantTruncated bool
+		exactMatch    string
 	}{
 		{
 			name:          "no truncation",
 			maxOutput:     10,
 			expectedPart:  "世界",
-			forbiddenPart: "",
 			wantTruncated: false,
 		},
 		{
 			name:          "exact boundary",
 			maxOutput:     7, // 6 bytes for "世界" + 1 byte for newline added by executor
 			expectedPart:  "世界",
-			forbiddenPart: "",
 			wantTruncated: false,
 		},
 		{
@@ -54,6 +42,7 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 			expectedPart:  "世",
 			forbiddenPart: "界",
 			wantTruncated: true,
+			exactMatch:    "世",
 		},
 		{
 			name:          "truncate to first char",
@@ -78,35 +67,48 @@ func TestShellTool_UTF8SafeTruncation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ExecuteCommand failed: %v", err)
 			}
-
-			if tt.expectedPart != "" && !strings.Contains(res.Text, tt.expectedPart) {
-				t.Errorf("expected output to contain %q, got %q", tt.expectedPart, res.Text)
-			}
-			if tt.forbiddenPart != "" && strings.Contains(res.Text, tt.forbiddenPart) {
-				t.Errorf("output contains %q, truncation failed", tt.forbiddenPart)
-			}
-
-			hasIndicator := strings.Contains(res.Text, "(truncated)")
-			if tt.wantTruncated != hasIndicator {
-				t.Errorf("wantTruncated=%v, but hasIndicator=%v. Output: %q", tt.wantTruncated, hasIndicator, res.Text)
-			}
-
-			// Verify exact bytes for the "truncate middle of char" case
-			if tt.name == "truncate middle of char" {
-				// The output part before "Exit Code" and headers should be exactly "世"
-				// Actually, shellTool adds "Exit Code: 0\nOutput:\n"
-				prefix := "Exit Code: 0\nOutput:\n"
-				if !strings.HasPrefix(res.Text, prefix) {
-					t.Fatalf("unexpected output format: %q", res.Text)
-				}
-				actualOutput := strings.TrimPrefix(res.Text, prefix)
-				actualOutput = strings.TrimSuffix(actualOutput, "\n... (truncated)")
-
-				if actualOutput != "世" {
-					t.Errorf("expected exactly '世' (3 bytes), got %q (%d bytes)", actualOutput, len(actualOutput))
-				}
-			}
+			verifyTruncationResult(t, res, tt.expectedPart, tt.forbiddenPart, tt.wantTruncated, tt.exactMatch)
 		})
+	}
+}
+
+func setupTruncationTest(t *testing.T) (*shellTool, context.Context, map[string]interface{}) {
+	t.Helper()
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tool := newshellTool(sm, security.NewCommandValidator(sm, nil))
+	ctx := context.Background()
+	args := map[string]interface{}{
+		"command": `sh -c 'printf "世界"'`,
+		"reason":  "testing utf8 truncation",
+	}
+	return tool, ctx, args
+}
+
+func verifyTruncationResult(t *testing.T, res tools.ToolResult, expected, forbidden string, wantTruncated bool, exactMatch string) {
+	t.Helper()
+	if expected != "" && !strings.Contains(res.Text, expected) {
+		t.Errorf("expected output to contain %q, got %q", expected, res.Text)
+	}
+	if forbidden != "" && strings.Contains(res.Text, forbidden) {
+		t.Errorf("output contains %q, truncation failed", forbidden)
+	}
+
+	hasIndicator := strings.Contains(res.Text, "(truncated)")
+	if wantTruncated != hasIndicator {
+		t.Errorf("wantTruncated=%v, but hasIndicator=%v. Output: %q", wantTruncated, hasIndicator, res.Text)
+	}
+
+	if exactMatch != "" {
+		prefix := "Exit Code: 0\nOutput:\n"
+		if !strings.HasPrefix(res.Text, prefix) {
+			t.Fatalf("unexpected output format: %q", res.Text)
+		}
+		actual := strings.TrimPrefix(res.Text, prefix)
+		actual = strings.TrimSuffix(actual, "\n... (truncated)")
+		if actual != exactMatch {
+			t.Errorf("expected exact match %q, got %q", exactMatch, actual)
+		}
 	}
 }
 

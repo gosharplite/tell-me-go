@@ -775,8 +775,67 @@ done
 
 func TestOpenOutputFile_Security(t *testing.T) {
 	executor := newprocessExecutor()
+	tmpDir := setupSecurityTest(t)
 
-	// Run in a temporary directory to avoid polluting the project and to have a controlled environment
+	type testCase struct {
+		name       string
+		path       string
+		safePaths  []string // Placeholder for architectural consistency
+		append     bool
+		wantErr    bool
+		errContain string
+	}
+
+	tests := []testCase{
+		{
+			name:       "relative up",
+			path:       "../../outside.txt",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:    "relative same level",
+			path:    "inside.txt",
+			wantErr: false,
+		},
+		{
+			name:    "relative subdir",
+			path:    "logs/test.log",
+			wantErr: false,
+		},
+		{
+			name:    "absolute path",
+			path:    filepath.Join(tmpDir, "absolute.txt"),
+			wantErr: false,
+		},
+		{
+			name:       "nested relative up",
+			path:       "logs/../../outside.txt",
+			wantErr:    true,
+			errContain: "cannot escape current directory",
+		},
+		{
+			name:    "append mode",
+			path:    "append.txt",
+			append:  true,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := executionConfig{
+				OutputFile: tt.path,
+				Append:     tt.append,
+			}
+			f, err := executor.openOutputFile(config)
+			validateOpenResult(t, f, err, tt.wantErr, tt.errContain)
+		})
+	}
+}
+
+func setupSecurityTest(t *testing.T) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	oldWd, err := os.Getwd()
 	if err != nil {
@@ -785,42 +844,26 @@ func TestOpenOutputFile_Security(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if err := os.Chdir(oldWd); err != nil {
 			t.Errorf("failed to restore working directory: %v", err)
 		}
-	}()
+	})
+	return tmpDir
+}
 
-	tests := []struct {
-		name string
-		path string
-		want bool // true if error expected
-	}{
-		{"relative up", "../../outside.txt", true},
-		{"relative same level", "inside.txt", false},
-		{"relative subdir", "logs/test.log", false},
-		{"absolute path", filepath.Join(tmpDir, "absolute.txt"), false},
-		{"nested relative up", "logs/../../outside.txt", true},
+func validateOpenResult(t *testing.T, f *os.File, err error, wantErr bool, errContain string) {
+	t.Helper()
+	if f != nil {
+		defer f.Close()
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := executionConfig{
-				OutputFile: tt.path,
-			}
-			f, err := executor.openOutputFile(config)
-			if (err != nil) != tt.want {
-				// We check if the error is specifically our security error
-				if tt.want && err != nil && !strings.Contains(err.Error(), "cannot escape current directory") {
-					t.Errorf("openOutputFile(%q) expected security error, got %v", tt.path, err)
-				} else if !tt.want {
-					t.Errorf("openOutputFile(%q) unexpected error = %v", tt.path, err)
-				}
-			}
-			if f != nil {
-				f.Close()
-			}
-		})
+	if (err != nil) != wantErr {
+		t.Errorf("error = %v, wantErr %v", err, wantErr)
+		return
+	}
+	if wantErr && errContain != "" && (err == nil || !strings.Contains(err.Error(), errContain)) {
+		t.Errorf("expected error containing %q, got %v", errContain, err)
 	}
 }
 
