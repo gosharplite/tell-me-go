@@ -250,22 +250,38 @@ func (idx *indexer) SearchSymbols(ctx context.Context, path string, query string
 	query = strings.ToLower(query)
 
 	for p, syms := range idx.symbolsByPath {
-		rel, err := filepath.Rel(searchPath, p)
-		if err != nil || strings.HasPrefix(rel, "..") {
+		if !idx.isInSearchPath(searchPath, p) {
 			continue
 		}
 
 		for _, sym := range syms {
-			if exportedOnly && !ast.IsExported(sym.Name) {
-				continue
+			if idx.matchesQuery(sym, query, exportedOnly) {
+				results = append(results, sym)
 			}
-			if query != "" && !strings.Contains(strings.ToLower(sym.Name), query) {
-				continue
-			}
-			results = append(results, sym)
 		}
 	}
 	return results, nil
+}
+
+func (idx *indexer) isInSearchPath(targetPath, filePath string) bool {
+	if targetPath == filePath {
+		return true
+	}
+	rel, err := filepath.Rel(targetPath, filePath)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..")
+}
+
+func (idx *indexer) matchesQuery(sym symbolLocation, query string, exportedOnly bool) bool {
+	if exportedOnly && !ast.IsExported(sym.Name) {
+		return false
+	}
+	if query != "" && !strings.Contains(strings.ToLower(sym.Name), query) {
+		return false
+	}
+	return true
 }
 
 func (idx *indexer) GetUsages(ctx context.Context, symbol string, path string) ([]location, error) {
@@ -523,33 +539,38 @@ func (idx *indexer) mapTypeToInterfaces(impls map[string][]string, named *types.
 	for _, itf := range interfaces {
 		implements := types.Implements(named, itf) || types.Implements(types.NewPointer(named), itf)
 
-		// Generic Interface Handling:
-		// types.Implements often fails when itf is a generic interface definition rather than an instantiation.
-		// If it has methods, check if the concrete type provides them by name.
-		if !implements && itf.NumMethods() > 0 {
-			matchCount := 0
-			for i := 0; i < itf.NumMethods(); i++ {
-				m := itf.Method(i)
-				if obj, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, m.Name()); obj != nil {
-					matchCount++
-				}
-			}
-			if matchCount == itf.NumMethods() {
-				implements = true
-			}
+		if !implements {
+			implements = idx.satisfiesGenericInterface(named, itf, pkgTypes)
 		}
 
 		if implements {
-			for i := 0; i < itf.NumMethods(); i++ {
-				im := itf.Method(i)
-				imId := getSymbolIdentity(im)
+			idx.recordInterfaceImplementation(impls, named, itf, pkgTypes)
+		}
+	}
+}
 
-				cm, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, im.Name())
-				if cm != nil {
-					cmId := getSymbolIdentity(cm)
-					impls[imId] = append(impls[imId], cmId)
-				}
-			}
+func (idx *indexer) satisfiesGenericInterface(named *types.Named, itf *types.Interface, pkgTypes *types.Package) bool {
+	if itf.NumMethods() == 0 {
+		return false
+	}
+	for i := 0; i < itf.NumMethods(); i++ {
+		m := itf.Method(i)
+		if obj, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, m.Name()); obj == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (idx *indexer) recordInterfaceImplementation(impls map[string][]string, named *types.Named, itf *types.Interface, pkgTypes *types.Package) {
+	for i := 0; i < itf.NumMethods(); i++ {
+		im := itf.Method(i)
+		imId := getSymbolIdentity(im)
+
+		cm, _, _ := types.LookupFieldOrMethod(named, true, pkgTypes, im.Name())
+		if cm != nil {
+			cmId := getSymbolIdentity(cm)
+			impls[imId] = append(impls[imId], cmId)
 		}
 	}
 }
