@@ -1145,37 +1145,46 @@ func (m *azureDevOpsManager) policyMatchesBranch(config adoPolicyConfig, targetR
 	return false
 }
 
+// Helper functions to reduce complexity in formatKey
+func isLower(r rune) bool {
+	return r >= 'a' && r <= 'z'
+}
+
+func isUpper(r rune) bool {
+	return r >= 'A' && r <= 'Z'
+}
+
+func toUpper(r rune) rune {
+	if isLower(r) {
+		return r - 'a' + 'A'
+	}
+	return r
+}
+
 func formatKey(s string) string {
 	if s == "" {
 		return ""
 	}
-	var res strings.Builder
 	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if i == 0 {
-			if r >= 'a' && r <= 'z' {
-				res.WriteRune(r - 'a' + 'A')
-			} else {
-				res.WriteRune(r)
-			}
-		} else {
-			if r >= 'A' && r <= 'Z' {
-				// Previous character was lowercase
-				prevLower := runes[i-1] >= 'a' && runes[i-1] <= 'z'
-				// Next character exists and is lowercase
-				nextLower := false
-				if i+1 < len(runes) {
-					nextLower = runes[i+1] >= 'a' && runes[i+1] <= 'z'
-				}
+	var res strings.Builder
 
-				if prevLower || nextLower {
-					res.WriteRune(' ')
-				}
-			}
-			res.WriteRune(r)
+	for i, r := range runes {
+		if i == 0 {
+			res.WriteRune(toUpper(r))
+			continue
 		}
+
+		if isUpper(r) {
+			// Add space if preceded by lowercase OR followed by lowercase (e.g., HTMLReader -> HTML Reader)
+			prevLower := isLower(runes[i-1])
+			nextLower := i+1 < len(runes) && isLower(runes[i+1])
+			if prevLower || nextLower {
+				res.WriteRune(' ')
+			}
+		}
+		res.WriteRune(r)
 	}
+
 	result := res.String()
 	if strings.HasSuffix(result, " Id") {
 		result = result[:len(result)-2] + "ID"
