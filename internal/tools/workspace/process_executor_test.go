@@ -780,7 +780,6 @@ func TestOpenOutputFile_Security(t *testing.T) {
 	type testCase struct {
 		name       string
 		path       string
-		safePaths  []string // Placeholder for architectural consistency
 		append     bool
 		wantErr    bool
 		errContain string
