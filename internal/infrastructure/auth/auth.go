@@ -11,9 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"golang.org/x/oauth2/google"
 )
 
 // Authenticator defines the interface for injecting credentials into API requests.
@@ -145,5 +147,63 @@ func (a *AnthropicAuth) Invalidate()               {}
 func (a *AnthropicAuth) Apply(req *Request) {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
+	}
+}
+
+// ServiceAccountAuth handles authentication using a GCP Service Account JSON file.
+// It exchanges the long-lived JSON key for a short-lived (1-hour) OAuth2 access token.
+type ServiceAccountAuth struct {
+	KeyFilePath string
+	mu          sync.Mutex
+	token       string
+	expiry      time.Time
+}
+
+// getToken performs the OAuth2 exchange and returns a valid access token.
+func (a *ServiceAccountAuth) getToken() (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// 1. Check if cached token is still valid (with 5-minute buffer)
+	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.expiry) {
+		return a.token, nil
+	}
+
+	// 2. Read the master secret (key.json) from disk
+	data, err := os.ReadFile(a.KeyFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read service account key: %w", err)
+	}
+
+	// 3. Exchange JSON key for a Bearer token via Google OAuth2
+	// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
+	ctx := context.Background()
+	creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
+	if err != nil {
+		return "", fmt.Errorf("failed to parse service account JSON: %w", err)
+	}
+
+	ts := creds.TokenSource
+	tok, err := ts.Token()
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch oauth2 token: %w", err)
+	}
+
+	// 4. Cache the resulting short-lived token
+	a.token = tok.AccessToken
+	a.expiry = tok.Expiry
+	return a.token, nil
+}
+
+func (a *ServiceAccountAuth) Invalidate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.token = ""
+}
+
+func (a *ServiceAccountAuth) Apply(req *Request) {
+	token, _ := a.getToken()
+	if token != "" {
+		req.Headers["Authorization"] = "Bearer " + token
 	}
 }

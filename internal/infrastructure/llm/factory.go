@@ -5,6 +5,8 @@ package llm
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
@@ -51,19 +53,32 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 	if p.APIKey != "" {
+		// Detect if the API_KEY field is actually a path to a GCP Service Account JSON
+		lowerKey := strings.ToLower(p.APIKey)
+		if strings.HasSuffix(lowerKey, ".json") {
+			if _, err := os.Stat(p.APIKey); err == nil {
+				// Use the native Service Account provider
+				return &auth.ServiceAccountAuth{KeyFilePath: p.APIKey}, nil
+			}
+		}
+
+		// Fallback to provider-specific static keys
 		switch p.Type {
 		case "openai", "deepseek":
 			return &auth.BearerAuth{Token: p.APIKey}, nil
 		case "anthropic":
 			return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
 		default:
+			// Default static key for Gemini (Google AI Studio)
 			return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
 		}
 	}
+
+	// Legacy fallback: Use VertexAuth (which depends on 'gcloud' CLI)
 	if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
 		return &auth.VertexAuth{}, nil
 	}
-	return nil, fmt.Errorf("API key is required for provider type: %s", p.Type)
+	return nil, fmt.Errorf("API key or Service Account JSON is required for provider: %s", p.Type)
 }
 
 func resolveTimeout(cfg *config.Config) time.Duration {

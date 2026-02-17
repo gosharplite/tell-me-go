@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVertexAuth(t *testing.T) {
@@ -93,6 +94,41 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		content, _ := os.ReadFile(cachePath)
 		if strings.TrimSpace(string(content)) != "gcloud-token" {
 			t.Errorf("token not cached correctly: %s", string(content))
+		}
+	})
+}
+
+func TestServiceAccountAuth(t *testing.T) {
+	t.Parallel()
+	auth := &ServiceAccountAuth{
+		token: "cached-sa-token",
+		expiry: time.Now().Add(10 * time.Minute),
+	}
+
+	t.Run("Use cached token", func(t *testing.T) {
+		token, err := auth.getToken()
+		if err != nil {
+			t.Fatalf("getToken failed: %v", err)
+		}
+		if token != "cached-sa-token" {
+			t.Errorf("got %s, want cached-sa-token", token)
+		}
+	})
+
+	t.Run("Invalidate", func(t *testing.T) {
+		auth.Invalidate()
+		if auth.token != "" {
+			t.Error("expected token to be cleared")
+		}
+	})
+
+	t.Run("Apply cached token", func(t *testing.T) {
+		auth.token = "sa-token"
+		auth.expiry = time.Now().Add(10 * time.Minute)
+		req := &Request{Headers: make(map[string]string)}
+		auth.Apply(req)
+		if req.Headers["Authorization"] != "Bearer sa-token" {
+			t.Errorf("got %s, want Bearer sa-token", req.Headers["Authorization"])
 		}
 	})
 }

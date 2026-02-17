@@ -7,6 +7,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/stretchr/testify v1.8.1
 	go.uber.org/goleak v1.3.0
+	golang.org/x/oauth2 v0.23.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/term v0.39.0
 	golang.org/x/text v0.34.0
