@@ -231,51 +231,95 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
 	var messages []message
 	isDeepSeek, isOpenAI := c.getModelCapabilities()
-	personaInjected := false
 
-	// If not a reasoner, inject persona as standard system message
+	personaInjected := c.maybeInjectInitialPersona(&messages, isDeepSeek, isOpenAI)
+
+	for _, h := range history {
+		if err := c.appendMessagesFromHistoryItem(ctx, &messages, h, resolver, isDeepSeek, isOpenAI, &personaInjected); err != nil {
+			return nil, err
+		}
+	}
+	return messages, nil
+}
+
+func (c *client) maybeInjectInitialPersona(messages *[]message, isDeepSeek, isOpenAI bool) (personaInjected bool) {
 	if c.persona != "" && !isDeepSeek && !isOpenAI {
-		messages = append(messages, message{
+		*messages = append(*messages, message{
 			Role:    "system",
 			Content: c.persona,
 		})
-		personaInjected = true
+		return true
+	}
+	return false
+}
+
+func (c *client) appendMessagesFromHistoryItem(
+	ctx context.Context,
+	messages *[]message,
+	h *llm.Content,
+	resolver llm.AssetResolver,
+	isDeepSeek, isOpenAI bool,
+	personaInjected *bool,
+) error {
+	role := normalizeRole(h.Role)
+
+	toolResponseParts, otherParts := partitionParts(h.Parts)
+
+	if err := c.appendToolResponseMessages(messages, toolResponseParts); err != nil {
+		return err
 	}
 
-	for _, h := range history {
-		role := h.Role
-		if role == "model" {
-			role = "assistant"
-		}
+	if len(otherParts) == 0 {
+		return nil
+	}
 
-		text, reasoning, toolCalls, toolResponse, err := c.classifyParts(h.Parts, isDeepSeek)
+	text, reasoning, toolCalls, err := c.classifyParts(otherParts, isDeepSeek)
+	if err != nil {
+		return err
+	}
+
+	c.injectPersona(messages, personaInjected, role, &text, isOpenAI, isDeepSeek)
+
+	*messages = append(*messages, message{
+		Role:             role,
+		ToolCalls:        toolCalls,
+		Content:          text,
+		ReasoningContent: reasoning,
+	})
+	return nil
+}
+
+func normalizeRole(role string) string {
+	if role == "model" {
+		return "assistant"
+	}
+	return role
+}
+
+func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherParts []*llm.Part) {
+	for _, p := range parts {
+		if p.FunctionResponse != nil {
+			toolResponseParts = append(toolResponseParts, p)
+		} else {
+			otherParts = append(otherParts, p)
+		}
+	}
+	return
+}
+
+func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part) error {
+	for _, p := range toolResponseParts {
+		res, err := marshalResponse(p.FunctionResponse.Response)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to marshal tool response: %w", err)
 		}
-
-		if toolResponse != nil {
-			res, err := marshalResponse(toolResponse.Response)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal tool response: %w", err)
-			}
-			messages = append(messages, message{
-				Role:       "tool",
-				ToolCallID: toolResponse.ID,
-				Content:    res,
-			})
-			continue
-		}
-
-		c.injectPersona(&messages, &personaInjected, role, &text, isOpenAI, isDeepSeek)
-
-		messages = append(messages, message{
-			Role:             role,
-			ToolCalls:        toolCalls,
-			Content:          text,
-			ReasoningContent: reasoning,
+		*messages = append(*messages, message{
+			Role:       "tool",
+			ToolCallID: p.FunctionResponse.ID,
+			Content:    res,
 		})
 	}
-	return messages, nil
+	return nil
 }
 
 func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
@@ -288,14 +332,14 @@ func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
 
 // classifyParts categorizes different parts of a message.
 // It returns an error if tool arguments cannot be marshalled to JSON.
-func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, toolResponse *llm.FunctionResponse, err error) {
+func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, err error) {
 	var textParts []string
 	var reasoningParts []string
 	for _, p := range parts {
 		if p.FunctionCall != nil {
 			args, err := marshalArgs(p.FunctionCall.Args)
 			if err != nil {
-				return "", "", nil, nil, fmt.Errorf("failed to marshal tool arguments: %w", err)
+				return "", "", nil, fmt.Errorf("failed to marshal tool arguments: %w", err)
 			}
 			toolCalls = append(toolCalls, toolCall{
 				ID:   p.FunctionCall.ID,
@@ -305,8 +349,6 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 					Arguments: args,
 				},
 			})
-		} else if p.FunctionResponse != nil {
-			toolResponse = p.FunctionResponse
 		} else if p.Text != "" {
 			if p.IsThought {
 				if isDeepSeek {
@@ -319,7 +361,7 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 			}
 		}
 	}
-	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, toolResponse, nil
+	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, nil
 }
 
 func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, isOpenAI, isDeepSeek bool) {

@@ -607,3 +607,46 @@ func TestSendChat_MarshallingError(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       "call_1",
+						Name:     "tool_1",
+						Response: map[string]interface{}{"result": "resp 1"},
+					},
+				},
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       "call_2",
+						Name:     "tool_2",
+						Response: map[string]interface{}{"result": "resp 2"},
+					},
+				},
+			},
+		},
+	}
+
+	messages, err := c.toOpenAIMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toOpenAIMessages failed: %v", err)
+	}
+
+	// We expect 2 messages, one for each tool response
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+
+	if messages[0].Role != "tool" || messages[0].ToolCallID != "call_1" || messages[0].Content != "resp 1" {
+		t.Errorf("unexpected first message: %+v", messages[0])
+	}
+
+	if messages[1].Role != "tool" || messages[1].ToolCallID != "call_2" || messages[1].Content != "resp 2" {
+		t.Errorf("unexpected second message: %+v", messages[1])
+	}
+}
