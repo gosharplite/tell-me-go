@@ -256,13 +256,18 @@ func (v *sequenceVisitor) Visit(n ast.Node) ast.Visitor {
 }
 
 func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
-	targetFunc, targetPkgPath := v.resolveTarget(call)
-	if targetFunc == "" {
+	var targetFunc, targetPkgPath, targetId string
+
+	switch expr := call.Fun.(type) {
+	case *ast.Ident:
+		targetFunc, targetPkgPath, targetId = v.resolveIdentCall(expr)
+	case *ast.SelectorExpr:
+		targetFunc, targetPkgPath, targetId = v.resolveSelectorCall(expr)
+	default:
 		return
 	}
 
-	// Filter only for internal module packages
-	if !strings.HasPrefix(targetPkgPath, v.modName) {
+	if targetFunc == "" || !v.isInternal(targetPkgPath) {
 		return
 	}
 
@@ -277,31 +282,30 @@ func (v *sequenceVisitor) handleCall(call *ast.CallExpr) {
 		Return:   retType,
 	}
 
-	// De-duplication: don't add if the exact same call was the last one added
-	if len(*v.frames) > 0 {
-		last := (*v.frames)[len(*v.frames)-1]
-		if last.From == frame.From && last.To == frame.To && last.Function == frame.Function {
-			return
-		}
+	if v.isDuplicate(frame) {
+		return
 	}
 
 	*v.frames = append(*v.frames, frame)
 
-	// Resolve the target ID for recursion
-	var targetId string
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if obj := v.pkg.TypesInfo.Uses[sel.Sel]; obj != nil {
-			targetId = getSymbolIdentity(obj)
-		}
-	} else if ident, ok := call.Fun.(*ast.Ident); ok {
-		if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
-			targetId = getSymbolIdentity(obj)
-		}
-	}
-
 	if targetId != "" {
 		v.tryRecurse(v.ctx, targetId, v.depth, v.maxDepth)
 	}
+}
+
+func (v *sequenceVisitor) isInternal(pkgPath string) bool {
+	if v.modName == "" {
+		return true
+	}
+	return strings.HasPrefix(pkgPath, v.modName)
+}
+
+func (v *sequenceVisitor) isDuplicate(frame callFrame) bool {
+	if len(*v.frames) == 0 {
+		return false
+	}
+	last := (*v.frames)[len(*v.frames)-1]
+	return last.From == frame.From && last.To == frame.To && last.Function == frame.Function
 }
 
 func (a *sequenceAnalyzer) getTypePkgPath(t types.Type) string {
@@ -444,37 +448,44 @@ func (a *sequenceAnalyzer) isMethodMatch(fd *ast.FuncDecl, remaining string) boo
 	return strings.Contains(cleanRemaining, cleanRecv)
 }
 
-func (v *sequenceVisitor) resolveTarget(call *ast.CallExpr) (string, string) {
-	var targetFunc string
+func (v *sequenceVisitor) resolveIdentCall(id *ast.Ident) (string, string, string) {
+	targetFunc := id.Name
 	var targetPkgPath string
+	var targetId string
 
-	switch expr := call.Fun.(type) {
-	case *ast.Ident:
-		targetFunc = expr.Name
-		if obj := v.pkg.TypesInfo.Uses[expr]; obj != nil {
-			if obj.Pkg() != nil {
-				targetPkgPath = obj.Pkg().Path()
-			}
-		} else {
-			targetPkgPath = v.pkg.PkgPath
+	if obj := v.pkg.TypesInfo.Uses[id]; obj != nil {
+		if obj.Pkg() != nil {
+			targetPkgPath = obj.Pkg().Path()
 		}
-	case *ast.SelectorExpr:
-		targetFunc = expr.Sel.Name
-		if ident, ok := expr.X.(*ast.Ident); ok {
-			if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
-				if p, ok := obj.(*types.PkgName); ok {
-					targetPkgPath = p.Imported().Path()
-				} else {
-					targetPkgPath = v.analyzer.getTypePkgPath(obj.Type())
-				}
-			}
-		} else {
-			if tv, ok := v.pkg.TypesInfo.Types[expr.X]; ok {
-				targetPkgPath = v.analyzer.getTypePkgPath(tv.Type)
-			}
-		}
+		targetId = getSymbolIdentity(obj)
+	} else {
+		targetPkgPath = v.pkg.PkgPath
 	}
-	return targetFunc, targetPkgPath
+	return targetFunc, targetPkgPath, targetId
+}
+
+func (v *sequenceVisitor) resolveSelectorCall(sel *ast.SelectorExpr) (string, string, string) {
+	targetFunc := sel.Sel.Name
+	var targetPkgPath string
+	var targetId string
+
+	if ident, ok := sel.X.(*ast.Ident); ok {
+		if obj := v.pkg.TypesInfo.Uses[ident]; obj != nil {
+			if p, ok := obj.(*types.PkgName); ok {
+				targetPkgPath = p.Imported().Path()
+			} else {
+				targetPkgPath = v.analyzer.getTypePkgPath(obj.Type())
+			}
+		}
+	} else if tv, ok := v.pkg.TypesInfo.Types[sel.X]; ok {
+		targetPkgPath = v.analyzer.getTypePkgPath(tv.Type)
+	}
+
+	if obj := v.pkg.TypesInfo.Uses[sel.Sel]; obj != nil {
+		targetId = getSymbolIdentity(obj)
+	}
+
+	return targetFunc, targetPkgPath, targetId
 }
 
 func (v *sequenceVisitor) resolveCallDetails(call *ast.CallExpr, targetFunc string) (string, string) {
