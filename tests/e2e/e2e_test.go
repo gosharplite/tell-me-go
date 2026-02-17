@@ -475,57 +475,14 @@ func TestWriteFileDenial(t *testing.T) {
 }
 
 func TestSecurityGate(t *testing.T) {
-	// 1. Setup Mock Server that forces a security violation
-	var receivedResponse string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
+	homeDir := t.TempDir()
 
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			var toolResponse map[string]interface{}
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						toolResponse = resp.(map[string]interface{})
-					}
-				}
-			}
-
-			if toolResponse == nil {
-				// Turn 1: Return a malicious function call
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "read_file",
-									"args": {"filepath": "/etc/passwd"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				// Turn 2: Capture the error response sent by the agent
-				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
-
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Security error caught."}]}}]}`)
-			}
-			return
-		}
-	}))
+	// Use helper to encapsulate mock server logic
+	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
+		"filepath": "/etc/passwd",
+	})
 	defer server.Close()
 
-	homeDir := t.TempDir()
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
@@ -537,65 +494,23 @@ func TestSecurityGate(t *testing.T) {
 		t.Fatalf("CLI failed: %v", err)
 	}
 
-	if !strings.Contains(receivedResponse, "security violation") {
-		t.Errorf("Expected security violation error to be sent back to model, got: %q", receivedResponse)
+	if !strings.Contains(*receivedResponse, "security violation") {
+		t.Errorf("Expected security violation error to be sent back to model, got: %q", *receivedResponse)
 	}
 }
 
 func TestSymlinkAttack(t *testing.T) {
-	// 1. Setup Mock Server
-	var receivedResponse string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			var toolResponse map[string]interface{}
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						toolResponse = resp.(map[string]interface{})
-					}
-				}
-			}
-
-			if toolResponse == nil {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "read_file",
-									"args": {"filepath": "evil_link"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
-			}
-			return
-		}
-	}))
-	defer server.Close()
-
 	homeDir := t.TempDir()
-	// Create a symlink in the homeDir
 	evilLink := filepath.Join(homeDir, "evil_link")
 	if err := os.Symlink("/etc/passwd", evilLink); err != nil {
 		t.Fatal(err)
 	}
+
+	// Use helper to encapsulate mock server logic
+	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
+		"filepath": "evil_link",
+	})
+	defer server.Close()
 
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
@@ -608,8 +523,8 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Fatalf("CLI failed: %v", err)
 	}
 
-	if !strings.Contains(receivedResponse, "security violation") {
-		t.Errorf("Expected security violation for symlink attack, got: %q", receivedResponse)
+	if !strings.Contains(*receivedResponse, "security violation") {
+		t.Errorf("Expected security violation for symlink attack, got: %q", *receivedResponse)
 	}
 }
 
@@ -748,5 +663,91 @@ func TestManageScratchpad(t *testing.T) {
 	content, _ := os.ReadFile(scratchpadFile)
 	if !strings.Contains(string(content), "# E2E Scratchpad") {
 		t.Errorf("Scratchpad mismatch. Got: %s", string(content))
+	}
+}
+
+// setupToolMockServer creates a mock HTTP server that simulates a tool call from the model
+// and captures the agent's response.
+func setupToolMockServer(t *testing.T, initialCall string, initialArgs map[string]interface{}) (*httptest.Server, *string) {
+	t.Helper()
+	receivedResponse := new(string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "generateContent") {
+			return
+		}
+
+		var body struct {
+			Contents []interface{} `json:"contents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		toolResponse := extractToolResponse(body.Contents)
+
+		if toolResponse == nil {
+			// Turn 1: Return the requested tool call
+			resp := createToolCallResponse(initialCall, initialArgs)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("failed to encode mock response: %v", err)
+			}
+		} else {
+			// Turn 2: Capture the response from the agent and return a final message
+			captureAgentResult(toolResponse, receivedResponse)
+			fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
+		}
+	}))
+	return server, receivedResponse
+}
+
+func extractToolResponse(contents []interface{}) map[string]interface{} {
+	if len(contents) == 0 {
+		return nil
+	}
+	lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	parts, ok := lastTurn["parts"].([]interface{})
+	if !ok || len(parts) == 0 {
+		return nil
+	}
+	part, ok := parts[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	resp, ok := part["functionResponse"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return resp
+}
+
+func captureAgentResult(toolResponse map[string]interface{}, out *string) {
+	if response, ok := toolResponse["response"].(map[string]interface{}); ok {
+		if result, ok := response["result"].(string); ok {
+			*out = result
+		}
+	}
+}
+
+func createToolCallResponse(name string, args map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"candidates": []interface{}{
+			map[string]interface{}{
+				"content": map[string]interface{}{
+					"role": "model",
+					"parts": []interface{}{
+						map[string]interface{}{
+							"functionCall": map[string]interface{}{
+								"name": name,
+								"args": args,
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }
