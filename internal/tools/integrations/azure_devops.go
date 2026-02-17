@@ -901,13 +901,28 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	// 1. Fetch Pull Request metadata to get the proper ArtifactID (targetId)
+	projectID, err := m.fetchPrProjectID(ctx, params.Organization, params.Project, params.Repository, params.PullRequestId)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	targetId := fmt.Sprintf("vstfs:///CodeReview/CodeReviewId/%s/%d", projectID, params.PullRequestId)
+
+	policyData, err := m.fetchPolicyEvaluations(ctx, params.Organization, params.Project, targetId)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
+}
+
+func (m *azureDevOpsManager) fetchPrProjectID(ctx context.Context, org, project, repo string, prID int) (string, error) {
 	prRequestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
 	if err != nil {
-		return tools.ToolResult{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -919,36 +934,31 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		} `json:"repository"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&prData); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to decode PR metadata: %w", err)
+		return "", fmt.Errorf("failed to decode PR metadata: %w", err)
 	}
 
 	if prData.Repository.Project.Id == "" {
-		return tools.ToolResult{}, fmt.Errorf("could not find project ID for pull request #%d", params.PullRequestId)
+		return "", fmt.Errorf("could not find project ID for pull request #%d", prID)
 	}
 
-	targetId := fmt.Sprintf("vstfs:///CodeReview/CodeReviewId/%s/%d",
-		prData.Repository.Project.Id, params.PullRequestId)
+	return prData.Repository.Project.Id, nil
+}
 
-	// 2. Use the platform-provided ArtifactId for Policy Evaluation
+func (m *azureDevOpsManager) fetchPolicyEvaluations(ctx context.Context, org, project, artifactID string) (adoPolicyResponse, error) {
 	baseURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/evaluations",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project))
+		url.PathEscape(org), url.PathEscape(project))
 
 	u, err := url.Parse(baseURL)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to parse policy base URL: %w", err)
+		return adoPolicyResponse{}, fmt.Errorf("failed to parse policy base URL: %w", err)
 	}
 
 	q := u.Query()
-	q.Set("artifactId", targetId)
+	q.Set("artifactId", artifactID)
 	q.Set("api-version", "7.1-preview.1")
 	u.RawQuery = q.Encode()
 
-	policyData, err := m.performPolicyEvaluationRequest(ctx, u.String())
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	return m.formatPolicyEvaluations(params.PullRequestId, policyData)
+	return m.performPolicyEvaluationRequest(ctx, u.String())
 }
 
 func (m *azureDevOpsManager) performPolicyEvaluationRequest(ctx context.Context, requestURL string) (adoPolicyResponse, error) {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
@@ -63,18 +64,23 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	}
 }
 
+type releaseReadinessTestCase struct {
+	name       string
+	files      func() map[string][]byte
+	runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
+	wantSubstr string
+}
+
 func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
 
-	tests := []struct {
-		name       string
-		files      func() map[string][]byte
-		exitCode   int
-		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
-		wantSubstr string
-	}{
+	successRunFunc := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("success"), nil
+	}
+
+	tests := []releaseReadinessTestCase{
 		{
 			name: "Secret found",
 			files: func() map[string][]byte {
@@ -84,6 +90,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod":                        []byte("module test"),
 				}
 			},
+			runFunc:    successRunFunc,
 			wantSubstr: "Potential secret",
 		},
 		{
@@ -93,6 +100,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod": []byte("module test\nreplace foo => ../foo"),
 				}
 			},
+			runFunc:    successRunFunc,
 			wantSubstr: "contains 'replace' directives",
 		},
 		{
@@ -102,7 +110,12 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 					"go.mod": []byte("module test"),
 				}
 			},
-			exitCode:   1,
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "go" && args[0] == "build" {
+					return []byte("failed"), fmt.Errorf("exit status 1")
+				}
+				return []byte("success"), nil
+			},
 			wantSubstr: "Clean build failed",
 		},
 		{
@@ -124,41 +137,34 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := storage.NewMockFileSystem()
-			fs.Files = tt.files()
-			runFunc := tt.runFunc
-			if runFunc == nil {
-				runFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					if tt.exitCode != 0 {
-						// Build or Test fail
-						if name == "go" && (args[0] == "build" || args[0] == "test") {
-							return []byte("failed"), fmt.Errorf("exit status %d", tt.exitCode)
-						}
-					}
-					return []byte("success"), nil
-				}
-			}
-			executor := &mockCommandExecutor{
-				runFunc: runFunc,
-			}
-
-			m := &releaseManager{
-				sm:       sm,
-				fs:       fs,
-				executor: executor,
-			}
-
-			res, err := m.verifyReleaseReadiness(context.Background(), nil)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !strings.Contains(res.Text, tt.wantSubstr) {
-				t.Errorf("expected substring %q in report, got:\n%s", tt.wantSubstr, res.Text)
-			}
-			if !strings.Contains(res.Text, "NOT READY") {
-				t.Errorf("expected NOT READY in report, got:\n%s", res.Text)
-			}
+			runReleaseReadinessTest(t, sm, tt.name, tt.files, tt.runFunc, tt.wantSubstr)
 		})
+	}
+}
+
+func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
+	fs := storage.NewMockFileSystem()
+	fs.Files = files()
+
+	executor := &mockCommandExecutor{
+		runFunc: runFunc,
+	}
+
+	m := &releaseManager{
+		sm:       sm,
+		fs:       fs,
+		executor: executor,
+	}
+
+	res, err := m.verifyReleaseReadiness(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(res.Text, wantSubstr) {
+		t.Errorf("expected substring %q in report, got:\n%s", wantSubstr, res.Text)
+	}
+	if !strings.Contains(res.Text, "NOT READY") {
+		t.Errorf("expected NOT READY in report, got:\n%s", res.Text)
 	}
 }
