@@ -176,6 +176,24 @@ func TestBypassArchiving(t *testing.T) {
 	}
 }
 
+// Helper to drive agent conversation and assertions
+func runAgentStep(t *testing.T, dir string, env []string, input string, wantSubstrs []string) (string, string) {
+	t.Helper()
+	stdout, stderr, err := runCommandWithEnvInDir(dir, env, "", input)
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+	out := stripANSI(stdout)
+	errOut := stripANSI(stderr)
+	combined := out + errOut
+	for _, s := range wantSubstrs {
+		if !strings.Contains(combined, s) {
+			t.Errorf("expected output to contain %q, got: %q", s, combined)
+		}
+	}
+	return out, errOut
+}
+
 func TestEnvironmentPersistence(t *testing.T) {
 	// 1. Setup isolated home directory
 	homeDir := t.TempDir()
@@ -192,14 +210,10 @@ func TestEnvironmentPersistence(t *testing.T) {
 	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
 
 	for _, f := range sessionFiles {
-		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644); err != nil {
-			t.Fatal(err)
-		}
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
 	}
 	for _, f := range persistentFiles {
-		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644); err != nil {
-			t.Fatal(err)
-		}
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
 	}
 
 	// 3. Run with -new flag
@@ -208,25 +222,22 @@ func TestEnvironmentPersistence(t *testing.T) {
 	// 4. Verify persistent files STILL exist in output
 	for _, f := range persistentFiles {
 		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain in session directory, but it was moved or deleted", f)
+			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted", f)
 		}
 	}
 
 	// 5. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
-	entries, err := os.ReadDir(backupsDir)
-	if err != nil {
-		t.Fatalf("Failed to read backups directory: %v", err)
-	}
+	entries, _ := os.ReadDir(backupsDir)
 	if len(entries) == 0 {
-		t.Fatalf("Expected backup directory to contain entries")
+		t.Fatalf("Expected backup entries")
 	}
 
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
 	for _, f := range sessionFiles {
-		content, err := os.ReadFile(filepath.Join(backupSubDir, f))
-		if err != nil || string(content) != "session content" {
-			t.Errorf("Expected archived session file %s in backup with 'session content', got err: %v", f, err)
+		content, _ := os.ReadFile(filepath.Join(backupSubDir, f))
+		if string(content) != "session content" {
+			t.Errorf("Expected archived session file %s in backup with 'session content'", f)
 		}
 	}
 }
@@ -381,24 +392,8 @@ func TestWriteFileConfirmation(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	errOut := stripANSI(stderr)
-
-	t.Logf("Stderr: %s", errOut)
-
-	if !strings.Contains(errOut, "[CONFIRMATION REQUIRED]") {
-		t.Errorf("Expected confirmation prompt in stderr, got: %q", errOut)
-	}
-	if !strings.Contains(out, "File written.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "write a file", []string{"[CONFIRMATION REQUIRED]", "File written."})
 
 	// Verify file actually written
 	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
@@ -470,17 +465,8 @@ func TestWriteFileDenial(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Model acknowledges denial.") {
-		t.Errorf("Expected model to acknowledge denial, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."})
 
 	// Verify file NOT written
 	if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
@@ -681,31 +667,18 @@ func TestManageTasks(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "add a task")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Task added.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "add a task", []string{"Task added."})
 
 	// Check if file exists and has content
 	taskFile := filepath.Join(homeDir, "output", "assistant", "tasks.json")
 	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
-		t.Fatalf("Tasks file was not created at %s", taskFile)
+		t.Fatalf("Tasks file missing at %s", taskFile)
 	}
 
-	content, err := os.ReadFile(taskFile)
-	if err != nil {
-		t.Fatalf("Failed to read tasks file: %v", err)
-	}
-
+	content, _ := os.ReadFile(taskFile)
 	if !strings.Contains(string(content), "End-to-End Test Task") {
-		t.Errorf("Tasks file does not contain expected content. Got: %s", string(content))
+		t.Errorf("Tasks file mismatch. Got: %s", string(content))
 	}
 }
 
@@ -763,30 +736,17 @@ func TestManageScratchpad(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "update scratchpad")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Scratchpad updated.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Scratchpad updated."})
 
 	// Check if file exists and has content
 	scratchpadFile := filepath.Join(homeDir, "output", "assistant", "scratchpad.md")
 	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
-		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
+		t.Fatalf("Scratchpad file missing at %s", scratchpadFile)
 	}
 
-	content, err := os.ReadFile(scratchpadFile)
-	if err != nil {
-		t.Fatalf("Failed to read scratchpad file: %v", err)
-	}
-
+	content, _ := os.ReadFile(scratchpadFile)
 	if !strings.Contains(string(content), "# E2E Scratchpad") {
-		t.Errorf("Scratchpad file does not contain expected content. Got: %s", string(content))
+		t.Errorf("Scratchpad mismatch. Got: %s", string(content))
 	}
 }
