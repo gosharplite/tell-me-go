@@ -296,7 +296,7 @@ func (c *chatCommand) parseFlags(args []string) (*cliOptions, *flag.FlagSet, err
 	fs := flag.NewFlagSet("tell-me-go", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	opts := &cliOptions{}
-	fs.StringVar(&opts.configPath, "c", "configs/vertex.yaml", "Path to the configuration file")
+	fs.StringVar(&opts.configPath, "c", "configs/assistant.yaml", "Path to the configuration file")
 	fs.BoolVar(&opts.newSession, "new", false, "Start a new session")
 	fs.BoolVar(&opts.showVersion, "v", false, "Show version information")
 	fs.IntVar(&opts.lastN, "l", 0, "Show the last N messages from history")

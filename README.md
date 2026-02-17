@@ -24,7 +24,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     *   **Git (Workspace)**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_show`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision (Integrations)**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, `summarize_history`, and `manage_history`.
-        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/vertex/tasks.json`, `output/vertex/scratchpad.md`, `output/vertex/config.json`) to prevent conflicts when switching environments.
+        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/assistant/tasks.json`, `output/assistant/scratchpad.md`, `output/assistant/config.json`) to prevent conflicts when switching environments.
         *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration (Integrations)**:
         *   **Atlassian Stack (Jira & Confluence)**: Enterprise-grade integration with centralized execution and **exponential back-off** for high reliability.
@@ -95,7 +95,7 @@ A lightweight, terminal-based interface for Google's Gemini models, powered by t
     ```
 
 ## 💻 Usage
-Run the assistant by passing your prompt as an argument. By default, it uses `configs/vertex.yaml`.
+Run the assistant by passing your prompt as an argument. By default, it uses `configs/assistant.yaml`.
 
 **Basic Usage:**
 ```bash
@@ -182,39 +182,50 @@ This allows you to maintain separate contexts (e.g., "Personal" vs "Work") simpl
 The tool is optimized for Google Vertex AI.
 
 ```yaml
-# configs/vertex.yaml
-MODE: "vertex"
-PERSON: "A helpful AI assistant using Google Vertex AI."
-AIMODEL: "gemini-3-flash-preview"
-AIURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1/publishers/google/models"
+# configs/assistant.yaml
+MODE: "assistant"
+PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "gemini_vertex"
+
+# --- Provider Registry ---
+PROVIDERS:
+  gemini_vertex:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global/publishers/google/models"
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-4o"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-3-5-sonnet-latest"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
 
 # --- Tools & Features ---
-USE_SEARCH: true
-THINKING_BUDGET: 0 # Max for gemini-3-flash-preview is 32768
-THINKING_LEVEL: "HIGH" # Options: LOW, MEDIUM, HIGH
-SHOW_THOUGHTS: true
+USE_SEARCH: false
+SHOW_THOUGHTS: false
 SHOW_TOOLS: true
 
 # --- Concurrent Execution ---
-MAX_CONCURRENT_TOOLS: 5   # Maximum number of tools to execute in parallel
-TOOL_TIMEOUT: 30          # Maximum duration (seconds) for any single tool call
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
 
 # --- Safety & History ---
-MAX_TURNS: 10              # Maximum tool calls per prompt (Recursion limit)
-MAX_HISTORY_TURNS: 20      # Number of turns to keep in history file (Pruning)
-MAX_HISTORY_TOKENS: 120000 # Max payload size before safety rollback (Headroom for 128k price cliff)
-
-# --- Authentication ---
-KEY_FILE: "" # Optional: Path to Service Account JSON key.
-
-# --- Model Specific Overrides ---
-MODELS:
-  gemini-3-flash-preview:
-    MAX_THINKING_BUDGET: 32768
-    CONTEXT_WINDOW: 1048576
-  gemini-3-pro-preview:
-    MAX_THINKING_BUDGET: 65536
-    CONTEXT_WINDOW: 2097152
+MAX_TURNS: 200
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 120000
 ```
 
 ### 🧠 Model-Specific Overrides
@@ -232,7 +243,7 @@ export TELL_ME_HOME="$HOME/tell-me-go"
 # 2. Main command alias (points to your preferred config)
 # Using a function allows passing flags and prompts easily
 b() {
-    tell-me-go -c "$TELL_ME_HOME/configs/vertex.yaml" "$@"
+    tell-me-go -c "$TELL_ME_HOME/configs/assistant.yaml" "$@"
 }
 export -f b
 

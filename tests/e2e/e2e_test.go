@@ -74,7 +74,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 	defer cancel()
 
 	// Ensure absolute path to default config
-	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs/vertex.yaml"))
+	configFlag := fmt.Sprintf("-c=%s", filepath.Join(projectRoot, "configs/assistant.yaml"))
 
 	// Prepend config flag to ensure it's always set to a valid location
 	finalArgs := append([]string{configFlag}, args...)
@@ -101,7 +101,7 @@ func TestSessionArchiving(t *testing.T) {
 
 	// 2. Create dummy session files
 	outputDir := filepath.Join(homeDir, "output")
-	modeDir := filepath.Join(outputDir, "vertex")
+	modeDir := filepath.Join(outputDir, "assistant")
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestBypassArchiving(t *testing.T) {
 
 	// 2. Create dummy session files including bypass
 	outputDir := filepath.Join(homeDir, "output")
-	modeDir := filepath.Join(outputDir, "vertex")
+	modeDir := filepath.Join(outputDir, "assistant")
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 
 	// 2. Create dummy persistent and session files
 	outputDir := filepath.Join(homeDir, "output")
-	modeDir := filepath.Join(outputDir, "vertex")
+	modeDir := filepath.Join(outputDir, "assistant")
 	if err := os.MkdirAll(modeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +694,7 @@ func TestManageTasks(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	taskFile := filepath.Join(homeDir, "output", "vertex", "tasks.json")
+	taskFile := filepath.Join(homeDir, "output", "assistant", "tasks.json")
 	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
 		t.Fatalf("Tasks file was not created at %s", taskFile)
 	}
@@ -776,7 +776,7 @@ func TestManageScratchpad(t *testing.T) {
 	}
 
 	// Check if file exists and has content
-	scratchpadFile := filepath.Join(homeDir, "output", "vertex", "scratchpad.md")
+	scratchpadFile := filepath.Join(homeDir, "output", "assistant", "scratchpad.md")
 	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
 		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
 	}

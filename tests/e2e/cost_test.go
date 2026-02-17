@@ -58,7 +58,7 @@ func TestCostLedgerSystem(t *testing.T) {
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	logFile := filepath.Join(logDir, "vertex-tokens.log")
+	logFile := filepath.Join(logDir, "assistant-tokens.log")
 
 	// Create a log that has enough info to generate cost
 	// Format matches internal/agent/agent.go: [Time] H: %d M: %d C: %d T: %d N: %d(%d%%) S: %d Th: %d [%.2fs]
