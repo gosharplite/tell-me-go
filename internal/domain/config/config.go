@@ -90,15 +90,8 @@ func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.Pricing
 		return mCfg.MaxThinkingBudget
 	}
 
-	// 2. Try Pricing defaults
-	if budget, ok := findBestMatch(pricingData.ThinkingBudgets, model, func(int) bool {
-		return true
-	}); ok {
-		return budget
-	}
-
-	// 3. Ultimate fallback
-	return pricingData.ThinkingBudgets["default"]
+	// 2. Try Pricing defaults (encapsulated in ModelPricing)
+	return pricingData.GetModelPricing(model).ThinkingBudget
 }
 
 // ResolveContextWindow returns the appropriate context window limit.
@@ -163,6 +156,14 @@ func DefaultPricing() pricing.PricingData {
 				Miss:            0.50,
 				Comp:            3.00,
 				TieredThreshold: 0,
+				ThinkingBudget:  32768,
+			},
+			"gemini-3-pro-preview": {
+				Hit:             0.3125,
+				Miss:            1.25,
+				Comp:            5.00,
+				TieredThreshold: 0,
+				ThinkingBudget:  65536,
 			},
 			"flash": {
 				Hit:             0.025,
@@ -171,6 +172,7 @@ func DefaultPricing() pricing.PricingData {
 				TieredThreshold: 0,
 				TieredMiss:      0.20,
 				TieredComp:      0.80,
+				ThinkingBudget:  0,
 			},
 			"pro": {
 				Hit:             0.125,
@@ -179,6 +181,7 @@ func DefaultPricing() pricing.PricingData {
 				TieredThreshold: 0,
 				TieredMiss:      2.50,
 				TieredComp:      15.00,
+				ThinkingBudget:  0,
 			},
 			"default": {
 				Hit:             0.125,
@@ -187,11 +190,8 @@ func DefaultPricing() pricing.PricingData {
 				TieredThreshold: 0,
 				TieredMiss:      2.50,
 				TieredComp:      15.00,
+				ThinkingBudget:  0,
 			},
-		},
-		ThinkingBudgets: map[string]int{
-			"gemini-3-flash-preview": 32768,
-			"gemini-3-pro-preview":   65536,
 		},
 		SearchQuery: 0.035,
 	}

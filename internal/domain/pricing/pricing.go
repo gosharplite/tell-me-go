@@ -38,10 +38,9 @@ type ModelPricing struct {
 
 // PricingData represents the global pricing information.
 type PricingData struct {
-	UpdatedAt       string                  `json:"updated_at"`
-	Models          map[string]ModelPricing `json:"models"`
-	ThinkingBudgets map[string]int          `json:"thinking_budgets,omitempty"`
-	SearchQuery     float64                 `json:"search_query"`
+	UpdatedAt   string                  `json:"updated_at"`
+	Models      map[string]ModelPricing `json:"models"`
+	SearchQuery float64                 `json:"search_query"`
 }
 
 // GetModelPricing finds the best pricing match for a model name.
