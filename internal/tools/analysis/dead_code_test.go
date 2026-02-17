@@ -281,6 +281,30 @@ func main() {}
 				{Symbol: "Target3", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 			},
 		},
+		{
+			name: "Well-Known Contracts",
+			files: map[string]string{
+				"errors/errors.go": `package errors
+type APIError struct{}
+func (e APIError) Error() string { return "error" }
+`,
+				"strings/strings.go": `package strings
+type MyStringer struct{}
+func (s MyStringer) String() string { return "string" }
+`,
+				"main.go": `package main
+import (
+	"example.com/test/errors"
+	"example.com/test/strings"
+)
+func main() {
+	_ = errors.APIError{}
+	_ = strings.MyStringer{}
+}
+`,
+			},
+			expected: nil, // Error() and String() should be protected
+		},
 	}
 
 	// Shared workspace setup
