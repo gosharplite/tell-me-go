@@ -194,7 +194,7 @@ func TestDefaultPricing(t *testing.T) {
 	pData := DefaultPricing()
 	assert.NotEmpty(t, pData.Models)
 	assert.True(t, pData.Models["default"].ThinkingBudget >= 0)
-	assert.True(t, pData.SearchQuery > 0)
+	assert.True(t, pData.Models["flash"].SearchQuery > 0)
 }
 
 func TestGetActiveProvider(t *testing.T) {

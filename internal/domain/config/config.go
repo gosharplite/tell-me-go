@@ -157,6 +157,7 @@ func DefaultPricing() pricing.PricingData {
 				Comp:            3.00,
 				TieredThreshold: 0,
 				ThinkingBudget:  32768,
+				SearchQuery:     0.035,
 			},
 			"gemini-3-pro-preview": {
 				Hit:             0.3125,
@@ -164,6 +165,7 @@ func DefaultPricing() pricing.PricingData {
 				Comp:            5.00,
 				TieredThreshold: 0,
 				ThinkingBudget:  65536,
+				SearchQuery:     0.035,
 			},
 			"flash": {
 				Hit:             0.025,
@@ -173,6 +175,7 @@ func DefaultPricing() pricing.PricingData {
 				TieredMiss:      0.20,
 				TieredComp:      0.80,
 				ThinkingBudget:  0,
+				SearchQuery:     0.035,
 			},
 			"pro": {
 				Hit:             0.125,
@@ -182,6 +185,7 @@ func DefaultPricing() pricing.PricingData {
 				TieredMiss:      2.50,
 				TieredComp:      15.00,
 				ThinkingBudget:  0,
+				SearchQuery:     0.035,
 			},
 			"default": {
 				Hit:             0.125,
@@ -193,6 +197,5 @@ func DefaultPricing() pricing.PricingData {
 				ThinkingBudget:  0,
 			},
 		},
-		SearchQuery: 0.035,
 	}
 }

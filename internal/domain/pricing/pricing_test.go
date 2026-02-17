@@ -37,13 +37,12 @@ func TestGetModelPricing(t *testing.T) {
 }
 
 func TestCostCalculator_Calculate(t *testing.T) {
-	p := PricingData{
-		SearchQuery: 0.01,
-	}
+	p := PricingData{}
 	mp := ModelPricing{
-		Miss: 10.0, // $10 per 1M tokens
-		Hit:  5.0,  // $5 per 1M tokens
-		Comp: 20.0, // $20 per 1M tokens
+		Miss:        10.0, // $10 per 1M tokens
+		Hit:         5.0,  // $5 per 1M tokens
+		Comp:        20.0, // $20 per 1M tokens
+		SearchQuery: 0.01,
 	}
 
 	calc := &CostCalculator{

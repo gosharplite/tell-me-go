@@ -25,6 +25,7 @@ last-*.json
 # Keys and Secrets
 *.json
 !assets/pricing.json
+!internal/infrastructure/telemetry/global_prices.json
 .env
 .config.yaml
 api_key.txt

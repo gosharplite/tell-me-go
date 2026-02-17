@@ -579,7 +579,7 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 	if stats.ThinkingTokens > 0 {
 		sb.WriteString(fmt.Sprintf("| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, thinkingRate, (float64(stats.ThinkingTokens) * thinkingRate / 1e6)))
 	}
-	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, pricing.SearchQuery, breakdown.SearchCost))
+	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, p.SearchQuery, breakdown.SearchCost))
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
 	return sb.String()

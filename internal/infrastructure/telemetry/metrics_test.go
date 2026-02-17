@@ -11,13 +11,12 @@ import (
 )
 
 func TestCostCalculator_Calculate(t *testing.T) {
-	pricingData := domain_pricing.PricingData{
-		SearchQuery: 0.01,
-	}
+	pricingData := domain_pricing.PricingData{}
 	modelPricing := domain_pricing.ModelPricing{
-		Hit:  0.1,
-		Miss: 1.0,
-		Comp: 2.0,
+		Hit:         0.1,
+		Miss:        1.0,
+		Comp:        2.0,
+		SearchQuery: 0.01,
 	}
 
 	calc := &domain_pricing.CostCalculator{
