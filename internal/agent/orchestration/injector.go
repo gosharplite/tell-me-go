@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -63,6 +64,29 @@ func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, t
 func (t *warningInjector) injectWarning(req *services.ContextRequest, combined string) {
 	if len(req.History) == 0 {
 		return
+	}
+
+	// [IDEMPOTENCY CHECK]
+	// Look back at the last 2 complete turns (approx 4 messages)
+	lookback := 4
+	if len(req.History) < lookback {
+		lookback = len(req.History)
+	}
+
+	for i := len(req.History) - 1; i >= len(req.History)-lookback; i-- {
+		msg := req.History[i]
+		for _, p := range msg.Parts {
+			if strings.Contains(p.Text, combined) {
+				// Warning already exists in recent history, skip injection
+				return
+			}
+		}
+		// Also check TransientParts in case they haven't been merged yet
+		for _, p := range msg.TransientParts {
+			if strings.Contains(p.Text, combined) {
+				return
+			}
+		}
 	}
 
 	lastIdx := len(req.History) - 1
