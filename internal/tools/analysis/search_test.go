@@ -12,69 +12,94 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestListTodos(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    map[string]string
+		path     string
+		expected []string
+		absent   []string
+	}{
+		{
+			name: "Standard Detection",
+			files: map[string]string{
+				"file1.go":  "// TODO: fix this\npackage main",
+				"file2.py":  "# FIXME: optimize this\nimport sys",
+				"file3.txt": "Nothing interesting here",
+			},
+			expected: []string{"TODO: fix this", "FIXME: optimize this"},
+			absent:   []string{"Nothing interesting here"},
+		},
+		{
+			name: "Case Insensitive and Patterns",
+			files: map[string]string{
+				"a.go": "// todo: lowcase\n// BUG: critical",
+			},
+			expected: []string{"todo: lowcase", "BUG: critical"},
+		},
+		{
+			name: "Empty Results",
+			files: map[string]string{
+				"clean.go": "package clean",
+			},
+			expected: []string{"No TODOs, FIXMEs, or BUGs found."},
+		},
+		{
+			name: "Truncated Results",
+			files: map[string]string{
+				"big.go": strings.Repeat("TODO: line\n", 600),
+			},
+			expected: []string{"TODO: line", "... (truncated)"},
+		},
+		{
+			name: "Recursive Scanning",
+			files: map[string]string{
+				"dir1/file.go": "// TODO: nested",
+			},
+			expected: []string{"dir1/file.go", "TODO: nested"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, tempDir := setupTodoWorkspace(t, tt.files)
+			path := tempDir
+			if tt.path != "" {
+				path = tt.path
+			}
+
+			res, err := m.ListTodos(context.Background(), map[string]interface{}{"path": path})
+			require.NoError(t, err)
+
+			for _, exp := range tt.expected {
+				assert.Contains(t, res.Text, exp)
+			}
+			for _, abs := range tt.absent {
+				assert.NotContains(t, res.Text, abs)
+			}
+		})
+	}
+}
+
+func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, string) {
 	sm := security.NewSecurityManager(nil)
 	fs := storage.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
-
-	tempDir := "/tmp/test"
-
-	// Create some files with TODOs in mock FS
-	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file1.go"), []byte("// TODO: fix this\npackage main"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file2.py"), []byte("# FIXME: optimize this\nimport sys"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "file3.txt"), []byte("No todos here"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Authorize path
+	tempDir := "/tmp/todo-test"
 	sm.RegisterSafePath(tempDir)
 
-	res, err := m.ListTodos(ctx, map[string]interface{}{"path": tempDir})
-	if err != nil {
-		t.Fatalf("ListTodos failed: %v", err)
+	for path, content := range files {
+		fullPath := filepath.Join(tempDir, path)
+		// Ensure parent directory exists in mock FS if it supports it,
+		// but storage.MockFileSystem usually just takes any path.
+		require.NoError(t, fs.WriteFile(ctx, fullPath, []byte(content), 0644))
 	}
-
-	if !strings.Contains(res.Text, "TODO: fix this") {
-		t.Errorf("expected result to contain 'TODO: fix this', got:\n%s", res.Text)
-	}
-	if !strings.Contains(res.Text, "FIXME: optimize this") {
-		t.Errorf("expected result to contain 'FIXME: optimize this', got:\n%s", res.Text)
-	}
-
-	// Test No results
-	sm.RegisterSafePath("/empty")
-	res2, err := m.ListTodos(ctx, map[string]interface{}{"path": "/empty"})
-	if err != nil {
-		t.Fatalf("ListTodos failed: %v", err)
-	}
-	if !strings.Contains(res2.Text, "No TODOs") {
-		t.Errorf("expected 'No TODOs' message, got: %s", res2.Text)
-	}
-
-	// Test too many results (limit is 500 in ListTodos)
-	tooManyDir := "/tmp/toomany"
-	sm.RegisterSafePath(tooManyDir)
-	var content strings.Builder
-	for i := 0; i < 600; i++ {
-		content.WriteString("TODO: line\n")
-	}
-	if err := fs.WriteFile(ctx, filepath.Join(tooManyDir, "big.go"), []byte(content.String()), 0644); err != nil {
-		t.Fatal(err)
-	}
-	res3, err := m.ListTodos(ctx, map[string]interface{}{"path": tooManyDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(res3.Text, "(truncated)") {
-		t.Errorf("expected truncated message for too many results")
-	}
+	return m, tempDir
 }
 
 func TestSearchUsagesGlobally(t *testing.T) {

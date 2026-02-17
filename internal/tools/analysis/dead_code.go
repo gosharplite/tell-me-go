@@ -174,7 +174,8 @@ func (a *deadCodeAnalyzer) isInterfaceSymbol(meta *symMeta) bool {
 		return a.isInterfaceType(meta.obj)
 	}
 	if meta.isMethod {
-		return a.isInterfaceMethod(meta.obj)
+		// Protect both interface definitions AND implementations of well-known contracts
+		return a.isInterfaceMethod(meta.obj) || a.isWellKnownContract(meta.obj)
 	}
 	return false
 }
@@ -199,6 +200,29 @@ func (a *deadCodeAnalyzer) isInterfaceMethod(obj types.Object) bool {
 	}
 	_, ok = sig.Recv().Type().Underlying().(*types.Interface)
 	return ok
+}
+
+func (a *deadCodeAnalyzer) isWellKnownContract(obj types.Object) bool {
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return false
+	}
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+
+	return a.isNoArgStringMethod(fn, sig, "Error") || a.isNoArgStringMethod(fn, sig, "String")
+}
+
+func (a *deadCodeAnalyzer) isNoArgStringMethod(fn *types.Func, sig *types.Signature, name string) bool {
+	if fn.Name() != name {
+		return false
+	}
+	if sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+		return false
+	}
+	return sig.Results().At(0).Type().String() == "string"
 }
 
 func (a *deadCodeAnalyzer) protectContractSymbol(state *scanState, id string) {

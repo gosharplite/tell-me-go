@@ -338,7 +338,7 @@ func TestToOpenAIMessages_EmptyContent(t *testing.T) {
 		},
 	}
 
-	messages := c.toOpenAIMessages(context.Background(), history, nil)
+	messages, _ := c.toOpenAIMessages(context.Background(), history, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -374,7 +374,7 @@ func TestDeepSeekHistoryWithToolCalls(t *testing.T) {
 		},
 	}
 
-	messages := client.toOpenAIMessages(context.Background(), history, nil)
+	messages, _ := client.toOpenAIMessages(context.Background(), history, nil)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -518,7 +518,7 @@ func TestToOpenAISchema(t *testing.T) {
 func TestInjectPersona(t *testing.T) {
 	t.Run("OpenAI Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "o1-mini", nil, nil, "Be helpful", 0, 0)
-		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 2 || messages[0].Role != "developer" {
 			t.Errorf("expected developer role for persona in OpenAI reasoner, got %+v", messages[0])
 		}
@@ -526,7 +526,7 @@ func TestInjectPersona(t *testing.T) {
 
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
-		messages := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
+		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
 		if len(messages) != 1 || !strings.Contains(messages[0].Content.(string), "Be helpful") {
 			t.Errorf("expected persona prepended for DeepSeek, got %+v", messages[0])
 		}
@@ -577,4 +577,76 @@ func TestRefreshAuth(t *testing.T) {
 	client := NewClient("", "", auth, nil, "", 0, 0)
 	_ = client.RefreshAuth()
 	// No easy way to check if invalidated without internal knowledge, but call it for coverage
+}
+
+func TestSendChat_MarshallingError(t *testing.T) {
+	client := NewClient("http://localhost", "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "model",
+			Parts: []*llm.Part{
+				{
+					FunctionCall: &llm.FunctionCall{
+						ID:   "call_123",
+						Name: "test_tool",
+						Args: map[string]interface{}{
+							"bad": make(chan int),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to marshal tool arguments") && !strings.Contains(err.Error(), "json: unsupported type: chan") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       "call_1",
+						Name:     "tool_1",
+						Response: map[string]interface{}{"result": "resp 1"},
+					},
+				},
+				{
+					FunctionResponse: &llm.FunctionResponse{
+						ID:       "call_2",
+						Name:     "tool_2",
+						Response: map[string]interface{}{"result": "resp 2"},
+					},
+				},
+			},
+		},
+	}
+
+	messages, err := c.toOpenAIMessages(context.Background(), history, nil)
+	if err != nil {
+		t.Fatalf("toOpenAIMessages failed: %v", err)
+	}
+
+	// We expect 2 messages, one for each tool response
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+
+	if messages[0].Role != "tool" || messages[0].ToolCallID != "call_1" || messages[0].Content != "resp 1" {
+		t.Errorf("unexpected first message: %+v", messages[0])
+	}
+
+	if messages[1].Role != "tool" || messages[1].ToolCallID != "call_2" || messages[1].Content != "resp 2" {
+		t.Errorf("unexpected second message: %+v", messages[1])
+	}
 }

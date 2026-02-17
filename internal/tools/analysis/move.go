@@ -35,28 +35,48 @@ func (t *moveTransform) Apply(ctx context.Context, fset *token.FileSet, files ma
 		return fmt.Errorf("destination file %s not loaded", t.Plan.DstFile)
 	}
 
-	var symbolDecl ast.Decl
-	var symbolIdx int = -1
+	var toMove []ast.Decl
+	var remaining []ast.Decl
+	symbolFound := false
 
-	for i, decl := range srcFile.Decls {
+	for _, decl := range srcFile.Decls {
 		if t.matchSymbol(decl) {
-			symbolDecl = decl
-			symbolIdx = i
-			break
+			toMove = append(toMove, decl)
+			symbolFound = true
+		} else if t.isMethodOf(decl, t.Plan.Symbol) {
+			toMove = append(toMove, decl)
+		} else {
+			remaining = append(remaining, decl)
 		}
 	}
 
-	if symbolDecl == nil {
+	if !symbolFound {
 		return fmt.Errorf("symbol %s not found in %s", t.Plan.Symbol, t.Plan.SrcFile)
 	}
 
-	// Remove from source
-	srcFile.Decls = append(srcFile.Decls[:symbolIdx], srcFile.Decls[symbolIdx+1:]...)
-
-	// Add to destination
-	dstFile.Decls = append(dstFile.Decls, symbolDecl)
+	// Update source and destination
+	srcFile.Decls = remaining
+	dstFile.Decls = append(dstFile.Decls, toMove...)
 
 	return nil
+}
+
+func (t *moveTransform) isMethodOf(decl ast.Decl, typeName string) bool {
+	fd, ok := decl.(*ast.FuncDecl)
+	if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+		return false
+	}
+	return t.matchesTypeName(fd.Recv.List[0].Type, typeName)
+}
+
+func (t *moveTransform) matchesTypeName(expr ast.Expr, typeName string) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name == typeName
+	case *ast.StarExpr:
+		return t.matchesTypeName(e.X, typeName)
+	}
+	return false
 }
 
 func (t *moveTransform) matchSymbol(decl ast.Decl) bool {

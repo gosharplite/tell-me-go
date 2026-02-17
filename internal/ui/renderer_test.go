@@ -108,7 +108,7 @@ func TestStdUIRenderer_BasicLogging(t *testing.T) {
 	})
 }
 
-func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
+func TestStdUIRenderer_StatusLogging(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	locker := &mockLocker{}
 	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
@@ -138,6 +138,13 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 			t.Errorf("expected stderr to contain 'Ready', got %q", output)
 		}
 	})
+}
+
+func TestStdUIRenderer_ToolLogging(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("LogToolCall_WithShowTools", func(t *testing.T) {
 		stderr.Reset()
@@ -161,6 +168,13 @@ func TestStdUIRenderer_AdvancedLogging(t *testing.T) {
 			t.Errorf("expected stderr to contain 'Tool Result' and 'image/png', got %q", stderr.String())
 		}
 	})
+}
+
+func TestStdUIRenderer_ResponseRendering(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	locker := &mockLocker{}
+	r := NewRenderer(locker, &stdout, &stderr).(*stdUIRenderer)
+	r.SetNow(func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) })
 
 	t.Run("renderResponse_Markdown", func(t *testing.T) {
 		stdout.Reset()

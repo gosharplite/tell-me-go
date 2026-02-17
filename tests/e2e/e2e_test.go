@@ -176,6 +176,24 @@ func TestBypassArchiving(t *testing.T) {
 	}
 }
 
+// Helper to drive agent conversation and assertions
+func runAgentStep(t *testing.T, dir string, env []string, input string, wantSubstrs []string) (string, string) {
+	t.Helper()
+	stdout, stderr, err := runCommandWithEnvInDir(dir, env, "", input)
+	if err != nil {
+		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+	}
+	out := stripANSI(stdout)
+	errOut := stripANSI(stderr)
+	combined := out + errOut
+	for _, s := range wantSubstrs {
+		if !strings.Contains(combined, s) {
+			t.Errorf("expected output to contain %q, got: %q", s, combined)
+		}
+	}
+	return out, errOut
+}
+
 func TestEnvironmentPersistence(t *testing.T) {
 	// 1. Setup isolated home directory
 	homeDir := t.TempDir()
@@ -192,14 +210,10 @@ func TestEnvironmentPersistence(t *testing.T) {
 	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
 
 	for _, f := range sessionFiles {
-		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644); err != nil {
-			t.Fatal(err)
-		}
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
 	}
 	for _, f := range persistentFiles {
-		if err := os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644); err != nil {
-			t.Fatal(err)
-		}
+		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("persistent content"), 0644)
 	}
 
 	// 3. Run with -new flag
@@ -208,25 +222,22 @@ func TestEnvironmentPersistence(t *testing.T) {
 	// 4. Verify persistent files STILL exist in output
 	for _, f := range persistentFiles {
 		if _, err := os.Stat(filepath.Join(modeDir, f)); os.IsNotExist(err) {
-			t.Errorf("Expected persistent file %s to remain in session directory, but it was moved or deleted", f)
+			t.Errorf("Expected persistent file %s to remain, but it was moved or deleted", f)
 		}
 	}
 
 	// 5. Verify session files are archived (check backup content)
 	backupsDir := filepath.Join(outputDir, "backups")
-	entries, err := os.ReadDir(backupsDir)
-	if err != nil {
-		t.Fatalf("Failed to read backups directory: %v", err)
-	}
+	entries, _ := os.ReadDir(backupsDir)
 	if len(entries) == 0 {
-		t.Fatalf("Expected backup directory to contain entries")
+		t.Fatalf("Expected backup entries")
 	}
 
 	backupSubDir := filepath.Join(backupsDir, entries[0].Name())
 	for _, f := range sessionFiles {
-		content, err := os.ReadFile(filepath.Join(backupSubDir, f))
-		if err != nil || string(content) != "session content" {
-			t.Errorf("Expected archived session file %s in backup with 'session content', got err: %v", f, err)
+		content, _ := os.ReadFile(filepath.Join(backupSubDir, f))
+		if string(content) != "session content" {
+			t.Errorf("Expected archived session file %s in backup with 'session content'", f)
 		}
 	}
 }
@@ -381,24 +392,8 @@ func TestWriteFileConfirmation(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	errOut := stripANSI(stderr)
-
-	t.Logf("Stderr: %s", errOut)
-
-	if !strings.Contains(errOut, "[CONFIRMATION REQUIRED]") {
-		t.Errorf("Expected confirmation prompt in stderr, got: %q", errOut)
-	}
-	if !strings.Contains(out, "File written.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "write a file", []string{"[CONFIRMATION REQUIRED]", "File written."})
 
 	// Verify file actually written
 	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
@@ -470,17 +465,8 @@ func TestWriteFileDenial(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "write a file")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Model acknowledges denial.") {
-		t.Errorf("Expected model to acknowledge denial, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."})
 
 	// Verify file NOT written
 	if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
@@ -489,57 +475,14 @@ func TestWriteFileDenial(t *testing.T) {
 }
 
 func TestSecurityGate(t *testing.T) {
-	// 1. Setup Mock Server that forces a security violation
-	var receivedResponse string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
+	homeDir := t.TempDir()
 
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			var toolResponse map[string]interface{}
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						toolResponse = resp.(map[string]interface{})
-					}
-				}
-			}
-
-			if toolResponse == nil {
-				// Turn 1: Return a malicious function call
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "read_file",
-									"args": {"filepath": "/etc/passwd"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				// Turn 2: Capture the error response sent by the agent
-				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
-
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Security error caught."}]}}]}`)
-			}
-			return
-		}
-	}))
+	// Use helper to encapsulate mock server logic
+	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
+		"filepath": "/etc/passwd",
+	})
 	defer server.Close()
 
-	homeDir := t.TempDir()
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
@@ -551,65 +494,23 @@ func TestSecurityGate(t *testing.T) {
 		t.Fatalf("CLI failed: %v", err)
 	}
 
-	if !strings.Contains(receivedResponse, "security violation") {
-		t.Errorf("Expected security violation error to be sent back to model, got: %q", receivedResponse)
+	if !strings.Contains(*receivedResponse, "security violation") {
+		t.Errorf("Expected security violation error to be sent back to model, got: %q", *receivedResponse)
 	}
 }
 
 func TestSymlinkAttack(t *testing.T) {
-	// 1. Setup Mock Server
-	var receivedResponse string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			var toolResponse map[string]interface{}
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						toolResponse = resp.(map[string]interface{})
-					}
-				}
-			}
-
-			if toolResponse == nil {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "read_file",
-									"args": {"filepath": "evil_link"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				receivedResponse = toolResponse["response"].(map[string]interface{})["result"].(string)
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
-			}
-			return
-		}
-	}))
-	defer server.Close()
-
 	homeDir := t.TempDir()
-	// Create a symlink in the homeDir
 	evilLink := filepath.Join(homeDir, "evil_link")
 	if err := os.Symlink("/etc/passwd", evilLink); err != nil {
 		t.Fatal(err)
 	}
+
+	// Use helper to encapsulate mock server logic
+	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
+		"filepath": "evil_link",
+	})
+	defer server.Close()
 
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
@@ -622,8 +523,8 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Fatalf("CLI failed: %v", err)
 	}
 
-	if !strings.Contains(receivedResponse, "security violation") {
-		t.Errorf("Expected security violation for symlink attack, got: %q", receivedResponse)
+	if !strings.Contains(*receivedResponse, "security violation") {
+		t.Errorf("Expected security violation for symlink attack, got: %q", *receivedResponse)
 	}
 }
 
@@ -681,31 +582,18 @@ func TestManageTasks(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "add a task")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Task added.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "add a task", []string{"Task added."})
 
 	// Check if file exists and has content
 	taskFile := filepath.Join(homeDir, "output", "assistant", "tasks.json")
 	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
-		t.Fatalf("Tasks file was not created at %s", taskFile)
+		t.Fatalf("Tasks file missing at %s", taskFile)
 	}
 
-	content, err := os.ReadFile(taskFile)
-	if err != nil {
-		t.Fatalf("Failed to read tasks file: %v", err)
-	}
-
+	content, _ := os.ReadFile(taskFile)
 	if !strings.Contains(string(content), "End-to-End Test Task") {
-		t.Errorf("Tasks file does not contain expected content. Got: %s", string(content))
+		t.Errorf("Tasks file mismatch. Got: %s", string(content))
 	}
 }
 
@@ -763,30 +651,103 @@ func TestManageScratchpad(t *testing.T) {
 		"TELL_ME_NO_STREAM=true",
 	}
 
-	// 2. Run CLI
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "update scratchpad")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	// 3. Verification
-	out := stripANSI(stdout)
-	if !strings.Contains(out, "Scratchpad updated.") {
-		t.Errorf("Expected success message, got: %q", out)
-	}
+	// 2. Run CLI and Verification
+	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Scratchpad updated."})
 
 	// Check if file exists and has content
 	scratchpadFile := filepath.Join(homeDir, "output", "assistant", "scratchpad.md")
 	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
-		t.Fatalf("Scratchpad file was not created at %s", scratchpadFile)
+		t.Fatalf("Scratchpad file missing at %s", scratchpadFile)
 	}
 
-	content, err := os.ReadFile(scratchpadFile)
-	if err != nil {
-		t.Fatalf("Failed to read scratchpad file: %v", err)
-	}
-
+	content, _ := os.ReadFile(scratchpadFile)
 	if !strings.Contains(string(content), "# E2E Scratchpad") {
-		t.Errorf("Scratchpad file does not contain expected content. Got: %s", string(content))
+		t.Errorf("Scratchpad mismatch. Got: %s", string(content))
+	}
+}
+
+// setupToolMockServer creates a mock HTTP server that simulates a tool call from the model
+// and captures the agent's response.
+func setupToolMockServer(t *testing.T, initialCall string, initialArgs map[string]interface{}) (*httptest.Server, *string) {
+	t.Helper()
+	receivedResponse := new(string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "generateContent") {
+			return
+		}
+
+		var body struct {
+			Contents []interface{} `json:"contents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		toolResponse := extractToolResponse(body.Contents)
+
+		if toolResponse == nil {
+			// Turn 1: Return the requested tool call
+			resp := createToolCallResponse(initialCall, initialArgs)
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Errorf("failed to encode mock response: %v", err)
+			}
+		} else {
+			// Turn 2: Capture the response from the agent and return a final message
+			captureAgentResult(toolResponse, receivedResponse)
+			fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
+		}
+	}))
+	return server, receivedResponse
+}
+
+func extractToolResponse(contents []interface{}) map[string]interface{} {
+	if len(contents) == 0 {
+		return nil
+	}
+	lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	parts, ok := lastTurn["parts"].([]interface{})
+	if !ok || len(parts) == 0 {
+		return nil
+	}
+	part, ok := parts[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	resp, ok := part["functionResponse"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return resp
+}
+
+func captureAgentResult(toolResponse map[string]interface{}, out *string) {
+	if response, ok := toolResponse["response"].(map[string]interface{}); ok {
+		if result, ok := response["result"].(string); ok {
+			*out = result
+		}
+	}
+}
+
+func createToolCallResponse(name string, args map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"candidates": []interface{}{
+			map[string]interface{}{
+				"content": map[string]interface{}{
+					"role": "model",
+					"parts": []interface{}{
+						map[string]interface{}{
+							"functionCall": map[string]interface{}{
+								"name": name,
+								"args": args,
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }

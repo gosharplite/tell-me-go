@@ -58,9 +58,12 @@ func (m *deadCodeSecurityProvider) ConfirmDestructiveAction(ctx context.Context,
 	return true, nil
 }
 
-func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
+func getFindOrphanedSymbolsTestCases() []struct {
+	name     string
+	files    map[string]string
+	expected []orphanReport
+} {
+	return []struct {
 		name     string
 		files    map[string]string
 		expected []orphanReport
@@ -281,24 +284,53 @@ func main() {}
 				{Symbol: "Target3", Pkg: "example.com/test/pkg1", Type: "Function", Severity: "PRIVATE"},
 			},
 		},
+		{
+			name: "Well-Known Contracts",
+			files: map[string]string{
+				"errors/errors.go": `package errors
+type APIError struct{}
+func (e APIError) Error() string { return "error" }
+`,
+				"strings/strings.go": `package strings
+type MyStringer struct{}
+func (s MyStringer) String() string { return "string" }
+`,
+				"main.go": `package main
+import (
+	"example.com/test/errors"
+	"example.com/test/strings"
+)
+func main() {
+	_ = errors.APIError{}
+	_ = strings.MyStringer{}
+}
+`,
+			},
+			expected: nil, // Error() and String() should be protected
+		},
 	}
+}
 
-	// Shared workspace setup
+func getSafeName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '_'
+	}, name)
+}
+
+func setupSharedWorkspace(t *testing.T, tests []struct {
+	name     string
+	files    map[string]string
+	expected []orphanReport
+}) (string, string) {
 	rootTmpDir, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 
 	const sharedModule = "shared.test"
 	err = os.WriteFile(filepath.Join(rootTmpDir, "go.mod"), []byte("module "+sharedModule+"\n\ngo 1.25"), 0644)
 	require.NoError(t, err)
-
-	getSafeName := func(name string) string {
-		return strings.Map(func(r rune) rune {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-				return r
-			}
-			return '_'
-		}, name)
-	}
 
 	for _, tt := range tests {
 		safeName := getSafeName(tt.name)
@@ -315,6 +347,14 @@ func main() {}
 			require.NoError(t, err)
 		}
 	}
+	return rootTmpDir, sharedModule
+}
+
+func TestDeadCodeAnalyzer_FindOrphanedSymbols(t *testing.T) {
+	t.Parallel()
+	tests := getFindOrphanedSymbolsTestCases()
+
+	rootTmpDir, sharedModule := setupSharedWorkspace(t, tests)
 
 	idx, err := newIndexer(rootTmpDir)
 	require.NoError(t, err)

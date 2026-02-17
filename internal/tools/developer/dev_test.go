@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockDevExecutor struct {
@@ -111,6 +113,30 @@ func TestCheckVulnerabilities(t *testing.T) {
 	}
 }
 
+func setupCoverageMock(t *testing.T, m *devManager, executor *mockDevExecutor, executeOut string, executeErr error, summaryOut string, summaryErr error, tempErr error) {
+	executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "go" && len(args) > 1 {
+			if args[0] == "test" {
+				return []byte(executeOut), executeErr
+			}
+			if args[1] == "cover" {
+				return []byte(summaryOut), summaryErr
+			}
+		}
+		return nil, nil
+	}
+	m.createTempFile = func(dir, pattern string) (*os.File, error) {
+		if tempErr != nil {
+			return nil, tempErr
+		}
+		f, err := os.CreateTemp(dir, pattern)
+		if err == nil {
+			t.Cleanup(func() { os.Remove(f.Name()) })
+		}
+		return f, err
+	}
+}
+
 func TestGetCoverage(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -118,18 +144,32 @@ func TestGetCoverage(t *testing.T) {
 		executeErr error
 		summaryOut string
 		summaryErr error
+		tempErr    error
 		wantSubstr string
 		wantErr    bool
 	}{
 		{
-			name:       "Success",
-			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 85.0% of statements",
-			summaryOut: "github.com/gosharplite/tell-me-go/internal/tools/go:35:	Register		100.0%\ntotal:			(statements)		85.0%",
-			wantSubstr: "total:",
+			name:       "Success with 100% coverage",
+			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 100.0% of statements",
+			summaryOut: "total:			(statements)		100.0%",
+			wantSubstr: "100.0%",
 		},
 		{
-			name:       "Test failure",
+			name:       "Success with partial coverage",
+			executeOut: "ok  	github.com/gosharplite/tell-me-go	0.100s	coverage: 85.0% of statements",
+			summaryOut: "github.com/gosharplite/tell-me-go/internal/tools/go:35:	Register		100.0%\ntotal:			(statements)		85.0%",
+			wantSubstr: "85.0%",
+		},
+		{
+			name:       "Failure due to test errors",
 			executeOut: "FAIL",
+			executeErr: errors.New("exit status 1"),
+			wantSubstr: "tests failed",
+			wantErr:    true,
+		},
+		{
+			name:       "Failure due to missing package",
+			executeOut: "can't load package",
 			executeErr: errors.New("exit status 1"),
 			wantSubstr: "tests failed",
 			wantErr:    true,
@@ -143,6 +183,7 @@ func TestGetCoverage(t *testing.T) {
 		},
 		{
 			name:       "Temp file failure",
+			tempErr:    errors.New("failed to create temp file"),
 			wantSubstr: "failed to create temp file",
 			wantErr:    true,
 		},
@@ -151,36 +192,15 @@ func TestGetCoverage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			m, executor, _ := setupDevManager(t)
-			executor.executeFunc = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-				if name == "go" && len(args) > 1 && args[0] == "test" {
-					return []byte(tt.executeOut), tt.executeErr
-				}
-				if name == "go" && len(args) > 1 && args[1] == "cover" {
-					return []byte(tt.summaryOut), tt.summaryErr
-				}
-				return nil, nil
-			}
-			m.createTempFile = func(dir, pattern string) (*os.File, error) {
-				if tt.name == "Temp file failure" {
-					return nil, errors.New("failed to create temp file")
-				}
-				f, err := os.CreateTemp(dir, pattern)
-				if err == nil {
-					t.Cleanup(func() { os.Remove(f.Name()) })
-				}
-				return f, err
-			}
+			setupCoverageMock(t, m, executor, tt.executeOut, tt.executeErr, tt.summaryOut, tt.summaryErr, tt.tempErr)
 
 			res, err := m.getCoverage(context.Background(), nil)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getCoverage() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			fullOutput := res.Text
-			if err != nil {
-				fullOutput += " " + err.Error()
-			}
-			if !strings.Contains(fullOutput, tt.wantSubstr) {
-				t.Errorf("expected substring %q, got res.Text=%q, err=%v", tt.wantSubstr, res.Text, err)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantSubstr)
+			} else {
+				require.NoError(t, err)
+				assert.Contains(t, res.Text, tt.wantSubstr)
 			}
 		})
 	}

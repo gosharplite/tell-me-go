@@ -7,81 +7,75 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIndexer_SymbolClassification(t *testing.T) {
-	tmpDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	code := `package test
-
 type MyStruct struct{}
-
-func (s *MyStruct) MyMethod() {}
-
+func (s *MyStruct) MyPointerMethod() {}
+func (s MyStruct) MyValueMethod() {}
+type MyInterface interface { M() }
 func MyFunc() {}
-
 var MyVar = 1
 const MyConst = 2
-
 type MyAlias = int
+func unexported() {}
 `
-	err = os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	idx, err := newIndexer(tmpDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	tmpDir, idx := setupIndexerWorkspace(t, code)
 	ctx := context.Background()
-	if err := idx.Refresh(ctx); err != nil {
-		t.Fatal(err)
-	}
 
 	tests := []struct {
 		name     string
 		kind     string
 		receiver string
 	}{
-		{"MyMethod", "func", "*MyStruct"},
+		{"MyPointerMethod", "func", "*MyStruct"},
+		{"MyValueMethod", "func", "MyStruct"},
 		{"MyFunc", "func", ""},
 		{"MyVar", "var", ""},
 		{"MyConst", "const", ""},
 		{"MyStruct", "type", ""},
 		{"MyAlias", "type", ""},
+		{"MyInterface", "type", ""},
+		{"unexported", "func", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syms, err := idx.SearchSymbols(ctx, tmpDir, tt.name, false)
-			if err != nil {
-				t.Fatalf("SearchSymbols failed: %v", err)
-			}
+			require.NoError(t, err)
 
-			found := false
-			for _, s := range syms {
-				if s.Name == tt.name {
-					found = true
-					if s.Kind != tt.kind {
-						t.Errorf("expected kind %s, got %s", tt.kind, s.Kind)
-					}
-					if s.Receiver != tt.receiver {
-						t.Errorf("expected receiver %q, got %q", tt.receiver, s.Receiver)
-					}
+			var found *symbolLocation
+			for i := range syms {
+				if syms[i].Name == tt.name {
+					found = &syms[i]
+					break
 				}
 			}
 
-			if !found {
-				t.Errorf("symbol %s not found", tt.name)
-			}
+			require.NotNil(t, found, "symbol %s not found", tt.name)
+			assert.Equal(t, tt.kind, found.Kind)
+			assert.Equal(t, tt.receiver, found.Receiver)
 		})
 	}
+}
+
+func setupIndexerWorkspace(t *testing.T, code string) (string, *indexer) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/test\n\ngo 1.25"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte(code), 0644))
+
+	idx, err := newIndexer(tmpDir)
+	require.NoError(t, err)
+
+	require.NoError(t, idx.Refresh(context.Background()))
+
+	return tmpDir, idx
 }
 
 func TestIndexer_FindImplementors(t *testing.T) {

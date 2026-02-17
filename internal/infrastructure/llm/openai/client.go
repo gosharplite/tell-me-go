@@ -123,10 +123,17 @@ type completionTokensDetails struct {
 	ReasoningTokens int32 `json:"reasoning_tokens"`
 }
 
-func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) *chatRequest {
+// prepareChatRequest constructs the chat request payload.
+// It returns an error if message conversion or JSON serialization fails.
+func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, stream bool) (*chatRequest, error) {
+	messages, err := c.toOpenAIMessages(ctx, history, resolver)
+	if err != nil {
+		return nil, err
+	}
+
 	reqPayload := chatRequest{
 		Model:    c.model,
-		Messages: c.toOpenAIMessages(ctx, history, resolver),
+		Messages: messages,
 		Tools:    c.toOpenAITools(toolDecls),
 		Stream:   stream,
 	}
@@ -153,7 +160,7 @@ func (c *client) prepareChatRequest(ctx context.Context, history []*llm.Content,
 		}
 	}
 
-	return &reqPayload
+	return &reqPayload, nil
 }
 
 func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, stream bool) (*http.Request, error) {
@@ -188,7 +195,10 @@ func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, str
 }
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
-	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, false)
+	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver, false)
+	if err != nil {
+		return nil, nil, err
+	}
 	req, err := c.createHTTPRequest(ctx, reqPayload, false)
 	if err != nil {
 		return nil, nil, err
@@ -216,47 +226,100 @@ func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls
 	return c.fromOpenAIResponse(&chatResp, duration)
 }
 
-func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []message {
+// toOpenAIMessages converts domain-level history to OpenAI-compatible messages.
+// It returns an error if any part of the history cannot be classified or marshalled to JSON.
+func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) ([]message, error) {
 	var messages []message
 	isDeepSeek, isOpenAI := c.getModelCapabilities()
-	personaInjected := false
 
-	// If not a reasoner, inject persona as standard system message
+	personaInjected := c.maybeInjectInitialPersona(&messages, isDeepSeek, isOpenAI)
+
+	for _, h := range history {
+		if err := c.appendMessagesFromHistoryItem(ctx, &messages, h, resolver, isDeepSeek, isOpenAI, &personaInjected); err != nil {
+			return nil, err
+		}
+	}
+	return messages, nil
+}
+
+func (c *client) maybeInjectInitialPersona(messages *[]message, isDeepSeek, isOpenAI bool) (personaInjected bool) {
 	if c.persona != "" && !isDeepSeek && !isOpenAI {
-		messages = append(messages, message{
+		*messages = append(*messages, message{
 			Role:    "system",
 			Content: c.persona,
 		})
-		personaInjected = true
+		return true
+	}
+	return false
+}
+
+func (c *client) appendMessagesFromHistoryItem(
+	ctx context.Context,
+	messages *[]message,
+	h *llm.Content,
+	resolver llm.AssetResolver,
+	isDeepSeek, isOpenAI bool,
+	personaInjected *bool,
+) error {
+	role := normalizeRole(h.Role)
+
+	toolResponseParts, otherParts := partitionParts(h.Parts)
+
+	if err := c.appendToolResponseMessages(messages, toolResponseParts); err != nil {
+		return err
 	}
 
-	for _, h := range history {
-		role := h.Role
-		if role == "model" {
-			role = "assistant"
+	if len(otherParts) == 0 {
+		return nil
+	}
+
+	text, reasoning, toolCalls, err := c.classifyParts(otherParts, isDeepSeek)
+	if err != nil {
+		return err
+	}
+
+	c.injectPersona(messages, personaInjected, role, &text, isOpenAI, isDeepSeek)
+
+	*messages = append(*messages, message{
+		Role:             role,
+		ToolCalls:        toolCalls,
+		Content:          text,
+		ReasoningContent: reasoning,
+	})
+	return nil
+}
+
+func normalizeRole(role string) string {
+	if role == "model" {
+		return "assistant"
+	}
+	return role
+}
+
+func partitionParts(parts []*llm.Part) (toolResponseParts []*llm.Part, otherParts []*llm.Part) {
+	for _, p := range parts {
+		if p.FunctionResponse != nil {
+			toolResponseParts = append(toolResponseParts, p)
+		} else {
+			otherParts = append(otherParts, p)
 		}
+	}
+	return
+}
 
-		text, reasoning, toolCalls, toolResponse := c.classifyParts(h.Parts, isDeepSeek)
-
-		if toolResponse != nil {
-			messages = append(messages, message{
-				Role:       "tool",
-				ToolCallID: toolResponse.ID,
-				Content:    marshalResponse(toolResponse.Response),
-			})
-			continue
+func (c *client) appendToolResponseMessages(messages *[]message, toolResponseParts []*llm.Part) error {
+	for _, p := range toolResponseParts {
+		res, err := marshalResponse(p.FunctionResponse.Response)
+		if err != nil {
+			return fmt.Errorf("failed to marshal tool response: %w", err)
 		}
-
-		c.injectPersona(&messages, &personaInjected, role, &text, isOpenAI, isDeepSeek)
-
-		messages = append(messages, message{
-			Role:             role,
-			ToolCalls:        toolCalls,
-			Content:          text,
-			ReasoningContent: reasoning,
+		*messages = append(*messages, message{
+			Role:       "tool",
+			ToolCallID: p.FunctionResponse.ID,
+			Content:    res,
 		})
 	}
-	return messages
+	return nil
 }
 
 func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
@@ -267,21 +330,25 @@ func (c *client) getModelCapabilities() (isDeepSeek bool, isOpenAI bool) {
 	return
 }
 
-func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, toolResponse *llm.FunctionResponse) {
+// classifyParts categorizes different parts of a message.
+// It returns an error if tool arguments cannot be marshalled to JSON.
+func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string, reasoning string, toolCalls []toolCall, err error) {
 	var textParts []string
 	var reasoningParts []string
 	for _, p := range parts {
 		if p.FunctionCall != nil {
+			args, err := marshalArgs(p.FunctionCall.Args)
+			if err != nil {
+				return "", "", nil, fmt.Errorf("failed to marshal tool arguments: %w", err)
+			}
 			toolCalls = append(toolCalls, toolCall{
 				ID:   p.FunctionCall.ID,
 				Type: "function",
 				Function: functionCall{
 					Name:      p.FunctionCall.Name,
-					Arguments: marshalArgs(p.FunctionCall.Args),
+					Arguments: args,
 				},
 			})
-		} else if p.FunctionResponse != nil {
-			toolResponse = p.FunctionResponse
 		} else if p.Text != "" {
 			if p.IsThought {
 				if isDeepSeek {
@@ -294,7 +361,7 @@ func (c *client) classifyParts(parts []*llm.Part, isDeepSeek bool) (text string,
 			}
 		}
 	}
-	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, toolResponse
+	return strings.Join(textParts, "\n"), strings.Join(reasoningParts, ""), toolCalls, nil
 }
 
 func (c *client) injectPersona(messages *[]message, personaInjected *bool, role string, text *string, isOpenAI, isDeepSeek bool) {
@@ -374,7 +441,9 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 		content.Parts = append(content.Parts, &llm.Part{Text: msg.ReasoningContent, IsThought: true})
 	}
 
-	c.parseResponseToolCalls(msg.ToolCalls, content)
+	if err := c.parseResponseToolCalls(msg.ToolCalls, content); err != nil {
+		return nil, nil, err
+	}
 
 	metrics := &llm.Metrics{
 		Model:          c.model,
@@ -423,10 +492,14 @@ func (c *client) parseContentPart(part interface{}, content *llm.Content) {
 	}
 }
 
-func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Content) {
+// parseResponseToolCalls extracts tool calls from the API response.
+// It returns an error if tool arguments cannot be unmarshalled from JSON.
+func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Content) error {
 	for _, tc := range toolCalls {
 		var args map[string]interface{}
-		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
+		}
 		content.Parts = append(content.Parts, &llm.Part{
 			FunctionCall: &llm.FunctionCall{
 				ID:   tc.ID,
@@ -435,6 +508,7 @@ func (c *client) parseResponseToolCalls(toolCalls []toolCall, content *llm.Conte
 			},
 		})
 	}
+	return nil
 }
 
 type toolCallState struct {
@@ -531,16 +605,20 @@ func (c *client) handleDeltaToolCalls(d delta, toolCallsByIndex map[int]*toolCal
 	}
 }
 
-func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) {
+// emitToolCalls sends accumulated tool calls back through the callback.
+// It returns an error if tool arguments cannot be unmarshalled from the accumulated buffer.
+func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) error {
 	if len(toolCallsByIndex) == 0 {
-		return
+		return nil
 	}
 	finalContent := &llm.Content{Role: "model"}
 	// Sort by index to maintain order
 	for i := 0; i < len(toolCallsByIndex); i++ {
 		if state, ok := toolCallsByIndex[i]; ok && state.name != "" {
 			var args map[string]interface{}
-			_ = json.Unmarshal([]byte(state.args.String()), &args)
+			if err := json.Unmarshal([]byte(state.args.String()), &args); err != nil {
+				return fmt.Errorf("failed to unmarshal tool arguments: %w", err)
+			}
 			finalContent.Parts = append(finalContent.Parts, &llm.Part{
 				FunctionCall: &llm.FunctionCall{
 					ID:   state.id,
@@ -553,10 +631,14 @@ func (c *client) emitToolCalls(toolCallsByIndex map[int]*toolCallState, callback
 	if len(finalContent.Parts) > 0 {
 		callback(finalContent)
 	}
+	return nil
 }
 
-func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
-	reqPayload := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
+func (c *client) executeStreamRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*http.Response, error) {
+	reqPayload, err := c.prepareChatRequest(ctx, history, toolDecls, resolver, true)
+	if err != nil {
+		return nil, err
+	}
 	req, err := c.createHTTPRequest(ctx, reqPayload, true)
 	if err != nil {
 		return nil, err
@@ -566,18 +648,17 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		return nil, &llmerr.APIError{Status: resp.StatusCode, Body: string(respBody)}
 	}
+	return resp, nil
+}
 
+func (c *client) scanStream(scanner *bufio.Scanner, toolCallsByIndex map[int]*toolCallState, callback func(*llm.Content)) (*llm.Metrics, error) {
 	var metrics *llm.Metrics
-	scanner := bufio.NewScanner(resp.Body)
-	startTime := time.Now()
-	toolCallsByIndex := make(map[int]*toolCallState)
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -597,15 +678,36 @@ func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDec
 			metrics = chunkMetrics
 		}
 	}
+	return metrics, scanner.Err()
+}
 
-	c.emitToolCalls(toolCallsByIndex, callback)
+func (c *client) StreamChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+	resp, err := c.executeStreamRequest(ctx, history, toolDecls, resolver)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	startTime := time.Now()
+	toolCallsByIndex := make(map[int]*toolCallState)
+	scanner := bufio.NewScanner(resp.Body)
+	// Use a 1MB max buffer size
+	const maxCapacity = 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	metrics, err := c.scanStream(scanner, toolCallsByIndex, callback)
+
+	if emitErr := c.emitToolCalls(toolCallsByIndex, callback); emitErr != nil {
+		return metrics, emitErr
+	}
 
 	if metrics != nil {
 		metrics.Duration = time.Since(startTime).Seconds()
 	}
 
-	if err := scanner.Err(); err != nil {
-		return metrics, fmt.Errorf("stream read error: %w", err)
+	if err != nil {
+		return metrics, fmt.Errorf("stream error: %w", err)
 	}
 
 	return metrics, nil
@@ -620,22 +722,32 @@ func (c *client) RefreshAuth() error {
 	return nil
 }
 
-func marshalArgs(args map[string]interface{}) string {
+// marshalArgs converts tool arguments map to a JSON string.
+// It returns an error if JSON marshalling fails.
+func marshalArgs(args map[string]interface{}) (string, error) {
 	if args == nil {
-		return "{}"
+		return "{}", nil
 	}
-	b, _ := json.Marshal(args)
-	return string(b)
+	b, err := json.Marshal(args)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
-func marshalResponse(res map[string]interface{}) string {
+// marshalResponse converts tool response map to a JSON string.
+// It returns an error if JSON marshalling fails.
+func marshalResponse(res map[string]interface{}) (string, error) {
 	if res == nil {
-		return ""
+		return "", nil
 	}
 	// Typically we want the 'result' field if it exists, otherwise the whole thing
 	if val, ok := res["result"].(string); ok {
-		return val
+		return val, nil
 	}
-	b, _ := json.Marshal(res)
-	return string(b)
+	b, err := json.Marshal(res)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

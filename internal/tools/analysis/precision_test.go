@@ -1,108 +1,125 @@
+// Copyright (c) 2026 gosharplite@gmail.com
+// SPDX-License-Identifier: MIT
+
 package analysis
 
 import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeadCodeAnalyzer_Precision(t *testing.T) {
 	t.Parallel()
-	// Setup temporary workspace
-	tmpDir, err := os.MkdirTemp("", "precision-test")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
 
-	// Create go.mod
-	goMod := `module precision.test
-
-go 1.21
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
-		t.Fatalf("failed to create go.mod: %v", err)
-	}
-
-	// Create pkg_a
-	pkgADir := filepath.Join(tmpDir, "pkg_a")
-	if err := os.MkdirAll(pkgADir, 0755); err != nil {
-		t.Fatalf("failed to create pkg_a dir: %v", err)
-	}
-	pkgAFunc := `package pkg_a
-
+	tests := []struct {
+		name     string
+		files    map[string]string
+		args     map[string]interface{}
+		expected []string
+		absent   []string
+	}{
+		{
+			name: "Used and Unused Exported Symbols",
+			files: map[string]string{
+				"go.mod": "module precision.test\n\ngo 1.25\n",
+				"pkg_a/a.go": `package pkg_a
 import "fmt"
-
-func Execute() {
-	fmt.Println("Executing A")
-}
-`
-	if err := os.WriteFile(filepath.Join(pkgADir, "a.go"), []byte(pkgAFunc), 0644); err != nil {
-		t.Fatalf("failed to create pkg_a/a.go: %v", err)
-	}
-
-	// Create pkg_b
-	pkgBDir := filepath.Join(tmpDir, "pkg_b")
-	if err := os.MkdirAll(pkgBDir, 0755); err != nil {
-		t.Fatalf("failed to create pkg_b dir: %v", err)
-	}
-	pkgBFunc := `package pkg_b
-
+func Execute() { fmt.Println("Executing A") }
+`,
+				"pkg_b/b.go": `package pkg_b
 import "fmt"
-
-func Execute() {
-	fmt.Println("Executing B")
-}
-`
-	if err := os.WriteFile(filepath.Join(pkgBDir, "b.go"), []byte(pkgBFunc), 0644); err != nil {
-		t.Fatalf("failed to create pkg_b/b.go: %v", err)
-	}
-
-	// Create main.go calling pkg_a.Execute but NOT pkg_b.Execute
-	mainFunc := `package main
-
+func Execute() { fmt.Println("Executing B") }
+`,
+				"main.go": `package main
 import "precision.test/pkg_a"
+func main() { pkg_a.Execute() }
+`,
+			},
+			expected: []string{
+				"[DEAD] Execute (Function)",
+				"Package: precision.test/pkg_b",
+			},
+			absent: []string{
+				"Package: precision.test/pkg_a",
+			},
+		},
+		{
+			name: "Empty Package",
+			files: map[string]string{
+				"go.mod": "module empty.test\n\ngo 1.25\n",
+				"pkg1/empty.go": `package pkg1
+`,
+			},
+			expected: []string{
+				"No dead or effectively private code found.",
+			},
+		},
+		{
+			name: "Excluded Packages",
+			files: map[string]string{
+				"go.mod": "module exclude.test\n\ngo 1.25\n",
+				"pkg1/a.go": `package pkg1
+func Dead() {}
+`,
+				"pkg2/b.go": `package pkg2
+func Dead() {}
+`,
+			},
+			args: map[string]interface{}{
+				"excluded_packages": []string{"exclude.test/pkg2"},
+			},
+			expected: []string{
+				"Package: exclude.test/pkg1",
+			},
+			absent: []string{
+				"Package: exclude.test/pkg2",
+			},
+		},
+	}
 
-func main() {
-	pkg_a.Execute()
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpDir, idx := setupPrecisionWorkspace(t, tt.files)
+
+			analyzer := newDeadCodeAnalyzer(&mockSecurityProvider{}, idx)
+			if tt.args == nil {
+				tt.args = make(map[string]interface{})
+			}
+			tt.args["path"] = tmpDir
+
+			result, err := analyzer.FindOrphanedSymbols(context.Background(), tt.args)
+			require.NoError(t, err)
+
+			for _, exp := range tt.expected {
+				assert.Contains(t, result.Text, exp)
+			}
+			for _, abs := range tt.absent {
+				assert.NotContains(t, result.Text, abs)
+			}
+		})
+	}
 }
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(mainFunc), 0644); err != nil {
-		t.Fatalf("failed to create main.go: %v", err)
+
+func setupPrecisionWorkspace(t *testing.T, files map[string]string) (string, *indexer) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	for path, content := range files {
+		fullPath := filepath.Join(tmpDir, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0644))
 	}
 
-	// Run Dead Code Analyzer
-	sp := &mockSecurityProvider{}
 	idx, err := newIndexer(tmpDir)
-	if err != nil {
-		t.Fatalf("failed to create indexer: %v", err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, idx.Refresh(context.Background()))
 
-	analyzer := newDeadCodeAnalyzer(sp, idx)
-	result, err := analyzer.FindOrphanedSymbols(context.Background(), map[string]interface{}{
-		"path": tmpDir,
-	})
-	if err != nil {
-		t.Fatalf("FindOrphanedSymbols failed: %v", err)
-	}
-
-	// Assertions
-	// pkg_b.Execute should be DEAD
-	// pkg_a.Execute should NOT be reported as DEAD (it's used in main)
-	// Actually pkg_a.Execute might be reported as PRIVATE if it's only used in its own module but not externally,
-	// but here main is in the same module.
-
-	// Wait, the analyzer identifies EXPORTED symbols with zero inbound references within the module.
-	// pkg_a.Execute is used in main.go (same module).
-	// pkg_b.Execute is NOT used.
-
-	if !strings.Contains(result.Text, "[DEAD] Execute (Function)") || !strings.Contains(result.Text, "Package: precision.test/pkg_b") {
-		t.Errorf("Expected pkg_b.Execute to be identified as DEAD. Result:\n%s", result.Text)
-	}
-
-	if strings.Contains(result.Text, "Package: precision.test/pkg_a") && strings.Contains(result.Text, "[DEAD] Execute") {
-		t.Errorf("pkg_a.Execute should NOT be identified as DEAD as it is used in main.go. Result:\n%s", result.Text)
-	}
+	return tmpDir, idx
 }

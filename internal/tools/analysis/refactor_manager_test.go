@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type refactorMockSecurityProvider struct {
@@ -84,12 +86,8 @@ func TestMoveDefinition(t *testing.T) {
 		}
 
 		res, err := mgr.MoveDefinition(ctx, args)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res.Text != "Action denied by user." {
-			t.Errorf("expected denial message, got %q", res.Text)
-		}
+		require.NoError(t, err)
+		assert.Equal(t, "Action denied by user.", res.Text)
 	})
 
 	t.Run("IsPathWritable error", func(t *testing.T) {
@@ -106,59 +104,111 @@ func TestMoveDefinition(t *testing.T) {
 			"reason":   "testing",
 		}
 		_, err := mgr.MoveDefinition(ctx, args)
-		if err == nil {
-			t.Error("expected error, got nil")
-		}
+		assert.Error(t, err)
 	})
 
-	t.Run("Successful Move", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "refactor-test")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer os.RemoveAll(tmpDir)
+	tests := []struct {
+		name           string
+		symbol         string
+		files          map[string]string
+		srcPath        string
+		dstPath        string
+		expectedInDst  []string
+		expectedInSrc  []string
+		absentInDst    []string
+		absentInSrc    []string
+		expectedResult string
+		wantErr        bool
+	}{
+		{
+			name:   "Move struct with methods",
+			symbol: "MyStruct",
+			files: map[string]string{
+				"src.go": "package test\ntype MyStruct struct{}\nfunc (s *MyStruct) PointerMethod() {}\nfunc (s MyStruct) ValueMethod() {}\n",
+				"dst.go": "package test\n",
+			},
+			srcPath:       "src.go",
+			dstPath:       "dst.go",
+			expectedInDst: []string{"type MyStruct struct", "func (s *MyStruct) PointerMethod()", "func (s MyStruct) ValueMethod()"},
+			absentInSrc:   []string{"type MyStruct struct", "PointerMethod", "ValueMethod"},
+		},
+		{
+			name:   "Move interface",
+			symbol: "MyInterface",
+			files: map[string]string{
+				"src.go": "package test\ntype MyInterface interface { M() }\n",
+				"dst.go": "package test\n",
+			},
+			srcPath:       "src.go",
+			dstPath:       "dst.go",
+			expectedInDst: []string{"type MyInterface interface"},
+			absentInSrc:   []string{"type MyInterface interface"},
+		},
+		{
+			name:   "Move function",
+			symbol: "MyFunc",
+			files: map[string]string{
+				"src.go": "package test\nfunc MyFunc() {}\n",
+				"dst.go": "package test\n",
+			},
+			srcPath:       "src.go",
+			dstPath:       "dst.go",
+			expectedInDst: []string{"func MyFunc()"},
+			absentInSrc:   []string{"func MyFunc()"},
+		},
+	}
 
-		srcPath := filepath.Join(tmpDir, "src.go")
-		dstPath := filepath.Join(tmpDir, "dst.go")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr, tmpDir := setupMoveWorkspace(t, tt.files)
+			srcPath := filepath.Join(tmpDir, tt.srcPath)
+			dstPath := filepath.Join(tmpDir, tt.dstPath)
 
-		err = os.WriteFile(srcPath, []byte("package test\n\nfunc MyFunc() {}\n"), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = os.WriteFile(dstPath, []byte("package test\n"), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
+			args := map[string]interface{}{
+				"symbol":   tt.symbol,
+				"src_file": srcPath,
+				"dst_file": dstPath,
+				"reason":   "refactoring",
+			}
 
-		sp := &refactorMockSecurityProvider{}
-		mgr := newRefactorManager(sp)
+			_, err := mgr.MoveDefinition(ctx, args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 
-		args := map[string]interface{}{
-			"symbol":   "MyFunc",
-			"src_file": srcPath,
-			"dst_file": dstPath,
-			"reason":   "testing",
-		}
+			verifyFileContent(t, srcPath, tt.expectedInSrc, tt.absentInSrc)
+			verifyFileContent(t, dstPath, tt.expectedInDst, tt.absentInDst)
+		})
+	}
+}
 
-		res, err := mgr.MoveDefinition(ctx, args)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res.Text == "" {
-			t.Error("expected success message, got empty")
-		}
+func setupMoveWorkspace(t *testing.T, files map[string]string) (*refactorManager, string) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 
-		// Verify content
-		srcContent, _ := os.ReadFile(srcPath)
-		dstContent, _ := os.ReadFile(dstPath)
+	for path, content := range files {
+		fullPath := filepath.Join(tmpDir, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0644))
+	}
 
-		if string(srcContent) == "package test\n\nfunc MyFunc() {}\n" {
-			t.Error("src file should have changed")
-		}
-		if string(dstContent) == "package test\n" {
-			t.Error("dst file should have changed")
-		}
-	})
+	sp := &refactorMockSecurityProvider{}
+	return newRefactorManager(sp), tmpDir
+}
+
+func verifyFileContent(t *testing.T, path string, expectedContains []string, expectedAbsent []string) {
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	sContent := string(content)
+
+	for _, exp := range expectedContains {
+		assert.Contains(t, sContent, exp, "File %s missing expected content %q", path, exp)
+	}
+	for _, abs := range expectedAbsent {
+		assert.NotContains(t, sContent, abs, "File %s should not contain %q", path, abs)
+	}
 }
 
 func TestRenameSymbol(t *testing.T) {

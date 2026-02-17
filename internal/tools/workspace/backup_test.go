@@ -63,81 +63,108 @@ func TestBackupManager_Undo(t *testing.T) {
 	}
 }
 
+type undoErrorTestCase struct {
+	name          string
+	setup         func(t *testing.T, tempDir string, sm *security.SecurityManager) func()
+	snapshotPath  string
+	snapshotOp    string
+	wantErrSubstr string
+	wantResSubstr string
+}
+
 func TestBackupManager_Undo_Errors(t *testing.T) {
+	tests := []undoErrorTestCase{
+		{
+			name: "NoSnapshots",
+			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+				return func() {}
+			},
+			wantResSubstr: "No snapshots available to undo.",
+		},
+		{
+			name: "PermissionDenied",
+			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+				return func() {}
+			},
+			snapshotPath:  "/unauthorized-path-for-test/denied.txt",
+			snapshotOp:    "WRITE",
+			wantErrSubstr: "security violation",
+		},
+		{
+			name: "RemoveFailed",
+			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+				sm.RegisterSafePath(tempDir)
+				dirPath := filepath.Join(tempDir, "is_a_dir")
+				if err := os.Mkdir(dirPath, 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dirPath, "file"), []byte("data"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return func() {}
+			},
+			snapshotPath:  "is_a_dir",
+			snapshotOp:    "WRITE",
+			wantErrSubstr: "failed to remove new file",
+		},
+		{
+			name: "AtomicWriteFailed",
+			setup: func(t *testing.T, tempDir string, sm *security.SecurityManager) func() {
+				sm.RegisterSafePath(tempDir)
+				path := filepath.Join(tempDir, "readonly.txt")
+				if err := os.WriteFile(path, []byte("initial"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(tempDir, 0555); err != nil {
+					t.Fatal(err)
+				}
+				return func() {
+					_ = os.Chmod(tempDir, 0755)
+				}
+			},
+			snapshotPath:  "readonly.txt",
+			snapshotOp:    "REPLACE",
+			wantErrSubstr: "failed to restore",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runUndoErrorTest(t, tc)
+		})
+	}
+}
+
+func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	bm := newBackupManager(sm, 10)
 	ctx := context.Background()
 
-	t.Run("NoSnapshots", func(t *testing.T) {
-		res, err := bm.undo(ctx, 1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res != "No snapshots available to undo." {
-			t.Errorf("expected no snapshots message, got %s", res)
-		}
-	})
+	cleanup := tc.setup(t, tempDir, sm)
+	defer cleanup()
 
-	t.Run("PermissionDenied", func(t *testing.T) {
-		// Use a path that is NOT in CWD or TempDir to trigger security violation
-		path := "/unauthorized-path-for-test/denied.txt"
-		// Snapshot it (it will resolve Abs, but BackupManager doesn't check security on Snapshot)
-		bm.snapshot(path, "WRITE")
-		// SecurityManager will deny this because it's not in CWD or TempDir
-		_, err := bm.undo(ctx, 1)
-		if err == nil {
-			t.Error("expected error due to permission denied, got nil")
-		} else if !strings.Contains(err.Error(), "security violation") {
-			t.Errorf("expected security violation error, got %v", err)
+	fullPath := tc.snapshotPath
+	if fullPath != "" {
+		if !filepath.IsAbs(fullPath) {
+			fullPath = filepath.Join(tempDir, fullPath)
 		}
-	})
+		bm.snapshot(fullPath, tc.snapshotOp)
+	}
 
-	t.Run("RemoveFailed", func(t *testing.T) {
-		sm.RegisterSafePath(tempDir)
-		// Create a directory where the file should be
-		dirPath := filepath.Join(tempDir, "is_a_dir")
-		if err := os.Mkdir(dirPath, 0755); err != nil {
-			t.Fatal(err)
-		}
+	res, err := bm.undo(ctx, 1)
 
-		bm.snapshot(dirPath, "WRITE")
-		// os.Remove on a non-empty directory or just a directory might fail depending on how it's called
-		// but here we just want to trigger an error in os.Remove.
-		// Actually, os.Remove works on empty dirs. Let's put a file in it.
-		if err := os.WriteFile(filepath.Join(dirPath, "file"), []byte("data"), 0644); err != nil {
-			t.Fatal(err)
+	if tc.wantErrSubstr != "" {
+		if err == nil || !strings.Contains(err.Error(), tc.wantErrSubstr) {
+			t.Errorf("expected error containing %q, got %v", tc.wantErrSubstr, err)
 		}
+		return
+	}
 
-		_, err := bm.undo(ctx, 1)
-		if err == nil {
-			t.Error("expected error removing non-empty directory, got nil")
-		}
-		if !strings.Contains(err.Error(), "failed to remove new file") {
-			t.Errorf("expected remove error, got %v", err)
-		}
-	})
-
-	t.Run("AtomicWriteFailed", func(t *testing.T) {
-		path := filepath.Join(tempDir, "readonly.txt")
-		if err := os.WriteFile(path, []byte("initial"), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		bm.snapshot(path, "REPLACE")
-
-		// Make the directory read-only to make AtomicWrite fail (it creates a temp file)
-		if err := os.Chmod(tempDir, 0555); err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = os.Chmod(tempDir, 0755) }()
-
-		_, err := bm.undo(ctx, 1)
-		if err == nil {
-			t.Error("expected error during atomic write, got nil")
-		}
-		if !strings.Contains(err.Error(), "failed to restore") {
-			t.Errorf("expected restore error, got %v", err)
-		}
-	})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if tc.wantResSubstr != "" && !strings.Contains(res, tc.wantResSubstr) {
+		t.Errorf("expected result containing %q, got %q", tc.wantResSubstr, res)
+	}
 }
