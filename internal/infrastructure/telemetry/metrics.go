@@ -223,7 +223,7 @@ type costSummaryArgs struct {
 	StartDate string `json:"start_date"`
 	EndDate   string `json:"end_date"`
 	Interval  string `json:"interval"` // "hour" or "day"
-	GroupBy   string `json:"group_by"` // NEW: "date" (default) or "model"
+	GroupBy   string `json:"group_by"` // NEW: "date" (default), "model", or "date,model"
 }
 
 type estimateCostArgs struct{}
@@ -275,7 +275,7 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 				},
 				"group_by": {
 					Type:        "STRING",
-					Description: "NEW: 'date' (default) or 'model'.",
+					Description: "NEW: 'date' (default), 'model', or 'date,model'.",
 				},
 			},
 		},
@@ -695,12 +695,20 @@ func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, en
 
 		// Determine the key for aggregation
 		var effectiveKey string
-		if groupBy == "model" {
+		switch groupBy {
+		case "model":
 			effectiveKey = r.Model
 			if effectiveKey == "" {
 				effectiveKey = "unknown"
 			}
-		} else {
+		case "date,model":
+			datePart := ts.In(loc).Format(format)
+			modelPart := r.Model
+			if modelPart == "" {
+				modelPart = "unknown"
+			}
+			effectiveKey = fmt.Sprintf("%s | %s", datePart, modelPart)
+		default:
 			effectiveKey = ts.In(loc).Format(format)
 		}
 
@@ -754,6 +762,9 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 	if args.GroupBy == "model" {
 		title = "AI Usage Cost Summary (by Model)"
 		headerName = "Model"
+	} else if args.GroupBy == "date,model" {
+		title = "AI Usage Cost Summary (by Date and Model)"
+		headerName = "Date | Model"
 	} else if args.Interval == "hour" {
 		title = "AI Usage Cost Summary (by Hour)"
 		headerName = "Date/Hour"

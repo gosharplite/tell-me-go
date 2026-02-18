@@ -474,3 +474,85 @@ func TestGetCostSummary_GroupByModel(t *testing.T) {
 		t.Errorf("summary missing expected grand total: %s", summary)
 	}
 }
+
+func TestGetCostSummary_GroupByDateModel(t *testing.T) {
+	tempDir := t.TempDir()
+
+	globalDir := tempDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	history := []sessionCostRecord{
+		{
+			Date:      "2023-10-27",
+			Session:   "session1",
+			Model:     "gemini-1.5-pro",
+			TotalCost: 1.5,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   1000,
+				CachedTokens:   200,
+				ResponseTokens: 300,
+			},
+		},
+		{
+			Date:      "2023-10-27",
+			Session:   "session2",
+			Model:     "gpt-4o",
+			TotalCost: 0.5,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   500,
+				CachedTokens:   0,
+				ResponseTokens: 100,
+			},
+		},
+		{
+			Date:      "2023-10-26",
+			Session:   "session3",
+			Model:     "gemini-1.5-pro",
+			TotalCost: 2.0,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   2000,
+				CachedTokens:   500,
+				ResponseTokens: 400,
+			},
+		},
+	}
+
+	data, _ := json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	m := &metricsManager{
+		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
+	}
+
+	summary, err := m.getCostSummary(context.Background(), costSummaryArgs{GroupBy: "date,model"})
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+
+	// Verify title and headers
+	if !strings.Contains(summary, "### AI Usage Cost Summary (by Date and Model)") {
+		t.Errorf("summary missing expected title: %s", summary)
+	}
+	if !strings.Contains(summary, "| Date | Model | Miss | Hit | Other | Eff % | Total Cost (USD) |") {
+		t.Errorf("summary missing expected header: %s", summary)
+	}
+
+	// Verify rows
+	// 2023-10-27 | gemini-1.5-pro: M=800, H=200, O=300, Cost=1.5
+	expected1 := "| 2023-10-27 | gemini-1.5-pro | 800 | 200 | 300 | 20.0% | $1.5000 |"
+	if !strings.Contains(summary, expected1) {
+		t.Errorf("summary missing expected row: %s", expected1)
+	}
+
+	// 2023-10-27 | gpt-4o: M=500, H=0, O=100, Cost=0.5
+	expected2 := "| 2023-10-27 | gpt-4o | 500 | 0 | 100 | 0.0% | $0.5000 |"
+	if !strings.Contains(summary, expected2) {
+		t.Errorf("summary missing expected row: %s", expected2)
+	}
+
+	// 2023-10-26 | gemini-1.5-pro: M=1500, H=500, O=400, Cost=2.0
+	expected3 := "| 2023-10-26 | gemini-1.5-pro | 1500 | 500 | 400 | 25.0% | $2.0000 |"
+	if !strings.Contains(summary, expected3) {
+		t.Errorf("summary missing expected row: %s", expected3)
+	}
+}
