@@ -32,6 +32,7 @@ type Request struct {
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
 type VertexAuth struct {
+	mu           sync.Mutex
 	Token        string
 	tokenCmdFunc func() ([]byte, error)
 }
@@ -61,6 +62,9 @@ func (a *VertexAuth) getCachePath() string {
 
 // getToken retrieves the OAuth2 access token with local caching.
 func (a *VertexAuth) getToken() (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	if a.Token != "" {
 		return a.Token, nil
 	}
@@ -98,6 +102,8 @@ func (a *VertexAuth) getToken() (string, error) {
 
 // Invalidate clears the current token and deletes the local cache file.
 func (a *VertexAuth) Invalidate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.Token = ""
 	_ = os.Remove(a.getCachePath())
 }

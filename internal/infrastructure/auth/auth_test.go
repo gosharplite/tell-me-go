@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,4 +136,38 @@ func TestServiceAccountAuth(t *testing.T) {
 			t.Errorf("got %s, want Bearer sa-token", req.Headers["Authorization"])
 		}
 	})
+}
+
+func TestVertexAuth_Concurrency(t *testing.T) {
+	auth := &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			// Simulate some work
+			time.Sleep(10 * time.Millisecond)
+			return []byte("concurrent-token"), nil
+		},
+	}
+	cachePath := auth.getCachePath()
+	_ = os.Remove(cachePath)
+	defer os.Remove(cachePath)
+
+	const n = 10
+	errChan := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			req := &Request{Headers: make(map[string]string)}
+			err := auth.Apply(req)
+			if err == nil {
+				if req.Headers["Authorization"] != "Bearer concurrent-token" {
+					err = fmt.Errorf("unexpected header: %s", req.Headers["Authorization"])
+				}
+			}
+			errChan <- err
+		}()
+	}
+
+	for i := 0; i < n; i++ {
+		if err := <-errChan; err != nil {
+			t.Errorf("concurrency error: %v", err)
+		}
+	}
 }
