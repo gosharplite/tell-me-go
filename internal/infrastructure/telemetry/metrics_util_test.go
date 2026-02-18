@@ -245,3 +245,58 @@ func TestCalculate_ThinkingRate(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPricing(t *testing.T) {
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatalf("failed to create assets dir: %v", err)
+	}
+	outputDir := filepath.Join(tmpDir, "output")
+
+	t.Run("Load from file", func(t *testing.T) {
+		pricingFile := filepath.Join(assetsDir, "pricing.json")
+		content := `{
+			"updated_at": "2026-02-03T12:00:00Z",
+			"models": {
+				"test-model": {
+					"hit": 1.0,
+					"miss": 2.0,
+					"comp": 3.0
+				}
+			}
+		}`
+		if err := os.WriteFile(pricingFile, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write pricing file: %v", err)
+		}
+
+		pd := GetPricing(nil, nil, outputDir)
+		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+			t.Errorf("expected UpdatedAt 2026-02-03T12:00:00Z, got %q", pd.UpdatedAt)
+		}
+		if mp, ok := pd.Models["test-model"]; !ok || mp.Hit != 1.0 {
+			t.Errorf("expected test-model hit 1.0, got %v", mp.Hit)
+		}
+	})
+
+	t.Run("Fallback on missing file", func(t *testing.T) {
+		// Use a different temp dir without assets
+		anotherDir := t.TempDir()
+		pd := GetPricing(nil, nil, filepath.Join(anotherDir, "output"))
+		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+			t.Errorf("expected hardcoded fallback, got %q", pd.UpdatedAt)
+		}
+	})
+
+	t.Run("Fallback on invalid JSON", func(t *testing.T) {
+		pricingFile := filepath.Join(assetsDir, "pricing.json")
+		if err := os.WriteFile(pricingFile, []byte("invalid json"), 0644); err != nil {
+			t.Fatalf("failed to write invalid pricing file: %v", err)
+		}
+
+		pd := GetPricing(nil, nil, outputDir)
+		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
+			t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
+		}
+	})
+}

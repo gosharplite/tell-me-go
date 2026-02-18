@@ -101,7 +101,7 @@ func TestVertexAuth_GetToken(t *testing.T) {
 func TestServiceAccountAuth(t *testing.T) {
 	t.Parallel()
 	auth := &ServiceAccountAuth{
-		token: "cached-sa-token",
+		token:  "cached-sa-token",
 		expiry: time.Now().Add(10 * time.Minute),
 	}
 
