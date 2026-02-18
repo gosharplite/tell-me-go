@@ -17,7 +17,9 @@ func TestVertexAuth(t *testing.T) {
 	req := &Request{
 		Headers: make(map[string]string),
 	}
-	auth.Apply(req)
+	if err := auth.Apply(req); err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
 
 	if req.Headers["Authorization"] != "Bearer test-token" {
 		t.Errorf("expected bearer token, got '%s'", req.Headers["Authorization"])
@@ -126,7 +128,9 @@ func TestServiceAccountAuth(t *testing.T) {
 		auth.token = "sa-token"
 		auth.expiry = time.Now().Add(10 * time.Minute)
 		req := &Request{Headers: make(map[string]string)}
-		auth.Apply(req)
+		if err := auth.Apply(req); err != nil {
+			t.Fatalf("Apply failed: %v", err)
+		}
 		if req.Headers["Authorization"] != "Bearer sa-token" {
 			t.Errorf("got %s, want Bearer sa-token", req.Headers["Authorization"])
 		}

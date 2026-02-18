@@ -22,7 +22,7 @@ import (
 type Authenticator interface {
 	getToken() (string, error)
 	Invalidate()
-	Apply(req *Request)
+	Apply(req *Request) error
 }
 
 // Request is a wrapper for the headers needed to apply authentication.
@@ -103,11 +103,15 @@ func (a *VertexAuth) Invalidate() {
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(req *Request) {
-	token, _ := a.getToken()
+func (a *VertexAuth) Apply(req *Request) error {
+	token, err := a.getToken()
+	if err != nil {
+		return err
+	}
 	if token != "" {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
+	return nil
 }
 
 // APIKeyAuth handles authentication using a static API key.
@@ -117,11 +121,12 @@ type APIKeyAuth struct {
 
 func (a *APIKeyAuth) getToken() (string, error) { return a.APIKey, nil }
 func (a *APIKeyAuth) Invalidate()               {}
-func (a *APIKeyAuth) Apply(req *Request) {
+func (a *APIKeyAuth) Apply(req *Request) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
 		req.Headers["x-goog-api-key"] = a.APIKey
 	}
+	return nil
 }
 
 // BearerAuth handles authentication using a Bearer token.
@@ -131,10 +136,11 @@ type BearerAuth struct {
 
 func (a *BearerAuth) getToken() (string, error) { return a.Token, nil }
 func (a *BearerAuth) Invalidate()               {}
-func (a *BearerAuth) Apply(req *Request) {
+func (a *BearerAuth) Apply(req *Request) error {
 	if a.Token != "" {
 		req.Headers["Authorization"] = "Bearer " + a.Token
 	}
+	return nil
 }
 
 // AnthropicAuth handles authentication using the x-api-key header.
@@ -144,10 +150,11 @@ type AnthropicAuth struct {
 
 func (a *AnthropicAuth) getToken() (string, error) { return a.APIKey, nil }
 func (a *AnthropicAuth) Invalidate()               {}
-func (a *AnthropicAuth) Apply(req *Request) {
+func (a *AnthropicAuth) Apply(req *Request) error {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
 	}
+	return nil
 }
 
 // ServiceAccountAuth handles authentication using a GCP Service Account JSON file.
@@ -201,9 +208,13 @@ func (a *ServiceAccountAuth) Invalidate() {
 	a.token = ""
 }
 
-func (a *ServiceAccountAuth) Apply(req *Request) {
-	token, _ := a.getToken()
+func (a *ServiceAccountAuth) Apply(req *Request) error {
+	token, err := a.getToken()
+	if err != nil {
+		return err
+	}
 	if token != "" {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
+	return nil
 }

@@ -195,7 +195,9 @@ func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, str
 
 	// Apply authentication
 	authReq := &auth.Request{Headers: make(map[string]string)}
-	c.authenticator.Apply(authReq)
+	if err := c.authenticator.Apply(authReq); err != nil {
+		return nil, err
+	}
 	for k, v := range authReq.Headers {
 		req.Header.Set(k, v)
 	}
