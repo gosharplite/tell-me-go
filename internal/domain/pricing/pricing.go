@@ -45,16 +45,30 @@ type PricingData struct {
 
 // GetModelPricing finds the best pricing match for a model name.
 func (p *PricingData) GetModelPricing(modelName string) ModelPricing {
-	// 1. Exact match
+	// 1. Exact match (highest priority)
 	if mp, ok := p.Models[modelName]; ok {
 		return mp
 	}
-	// 2. Substring match (e.g., "flash", "pro")
+
+	// 2. Deterministic Longest Substring match
+	var bestMatch ModelPricing
+	var maxLen int
+	var found bool
+
 	for k, v := range p.Models {
 		if k != "default" && strings.Contains(modelName, k) {
-			return v
+			if len(k) > maxLen {
+				maxLen = len(k)
+				bestMatch = v
+				found = true
+			}
 		}
 	}
+
+	if found {
+		return bestMatch
+	}
+
 	// 3. Fallback to default
 	return p.Models["default"]
 }
