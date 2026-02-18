@@ -385,3 +385,92 @@ func TestGetCostSummary_MalformedRecords(t *testing.T) {
 		t.Errorf("Grand total should be $1.0000, got summary:\n%s", summary)
 	}
 }
+
+func TestGetCostSummary_GroupByModel(t *testing.T) {
+	tempDir := t.TempDir()
+
+	globalDir := tempDir
+	historyPath := filepath.Join(globalDir, "global_costs.json")
+
+	history := []sessionCostRecord{
+		{
+			Date:      "2023-10-27",
+			Session:   "session1",
+			Model:     "gemini-1.5-pro",
+			TotalCost: 1.5,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   1000,
+				CachedTokens:   200,
+				ResponseTokens: 300,
+			},
+		},
+		{
+			Date:      "2023-10-27",
+			Session:   "session2",
+			Model:     "gpt-4o",
+			TotalCost: 0.5,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   500,
+				CachedTokens:   0,
+				ResponseTokens: 100,
+			},
+		},
+		{
+			Date:      "2023-10-26",
+			Session:   "session3",
+			Model:     "gemini-1.5-pro",
+			TotalCost: 2.0,
+			Usage: domain_pricing.UsageStats{
+				PromptTokens:   2000,
+				CachedTokens:   500,
+				ResponseTokens: 400,
+			},
+		},
+	}
+
+	data, _ := json.Marshal(history)
+	_ = os.WriteFile(historyPath, data, 0644)
+
+	m := &metricsManager{
+		logFile: filepath.Join(tempDir, "mode", "tokens.log"),
+	}
+
+	summary, err := m.getCostSummary(context.Background(), costSummaryArgs{GroupBy: "model"})
+	if err != nil {
+		t.Fatalf("getCostSummary failed: %v", err)
+	}
+
+	// Verify headers
+	if !strings.Contains(summary, "### AI Usage Cost Summary (by Model)") {
+		t.Errorf("summary missing expected title: %s", summary)
+	}
+	if !strings.Contains(summary, "| Model | Miss | Hit | Other | Eff % | Total Cost (USD) |") {
+		t.Errorf("summary missing expected header: %s", summary)
+	}
+
+	// Verify gemini-1.5-pro aggregates
+	// Session 1: M=800, H=200, O=300, Cost=1.5
+	// Session 3: M=1500, H=500, O=400, Cost=2.0
+	// Total: M=2300, H=700, O=700, Cost=3.5
+	// Eff: 700 / 3000 = 23.3%
+	expectedGemini := "| gemini-1.5-pro | 2300 | 700 | 700 | 23.3% | $3.5000 |"
+	if !strings.Contains(summary, expectedGemini) {
+		t.Errorf("summary missing expected row for gemini-1.5-pro: %s", summary)
+	}
+
+	// Verify gpt-4o aggregates
+	// Session 2: M=500, H=0, O=100, Cost=0.5
+	// Total: M=500, H=0, O=100, Cost=0.5
+	// Eff: 0%
+	expectedGPT := "| gpt-4o | 500 | 0 | 100 | 0.0% | $0.5000 |"
+	if !strings.Contains(summary, expectedGPT) {
+		t.Errorf("summary missing expected row for gpt-4o: %s", summary)
+	}
+
+	// Verify Grand Total
+	// Total Cost: 3.5 + 0.5 = 4.0
+	expectedGrand := "| **Grand Total** | **2800** | **700** | **800** | **20.0%** | **$4.0000** |"
+	if !strings.Contains(summary, expectedGrand) {
+		t.Errorf("summary missing expected grand total: %s", summary)
+	}
+}
