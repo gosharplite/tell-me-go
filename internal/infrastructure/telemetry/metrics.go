@@ -223,6 +223,7 @@ type costSummaryArgs struct {
 	StartDate string `json:"start_date"`
 	EndDate   string `json:"end_date"`
 	Interval  string `json:"interval"` // "hour" or "day"
+	GroupBy   string `json:"group_by"` // NEW: "date" (default), "model", or "date,model"
 }
 
 type estimateCostArgs struct{}
@@ -271,6 +272,10 @@ func RegisterMetrics(r tools.IToolRegistry, sm domain_security.ISecurityManager,
 				"interval": {
 					Type:        "STRING",
 					Description: "Aggregation interval: 'hour' or 'day' (default: 'day').",
+				},
+				"group_by": {
+					Type:        "STRING",
+					Description: "NEW: 'date' (default), 'model', or 'date,model'.",
 				},
 			},
 		},
@@ -579,7 +584,7 @@ func (m *metricsManager) renderReport(pricing domain_pricing.PricingData, breakd
 	if stats.ThinkingTokens > 0 {
 		sb.WriteString(fmt.Sprintf("| Thinking Tokens | %d | $%.2f | $%.6f |\n", stats.ThinkingTokens, thinkingRate, (float64(stats.ThinkingTokens) * thinkingRate / 1e6)))
 	}
-	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, pricing.SearchQuery, breakdown.SearchCost))
+	sb.WriteString(fmt.Sprintf("| Search Queries | %d | $%.3f/Q | $%.6f |\n", stats.SearchQueries, p.SearchQuery, breakdown.SearchCost))
 	sb.WriteString("| **Total** | | | **$" + fmt.Sprintf("%.4f", breakdown.TotalCost) + "** |\n")
 
 	return sb.String()
@@ -670,7 +675,43 @@ func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Locati
 	return startFilter, endFilter, nil
 }
 
-func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, end time.Time, loc *time.Location, format string) (map[string]float64, map[string]domain_pricing.UsageStats) {
+func (m *metricsManager) resolveGroupingKey(r sessionCostRecord, loc *time.Location, format, groupBy string) string {
+	ts := m.getRecordTimestamp(r)
+	if ts.IsZero() {
+		return ""
+	}
+
+	switch groupBy {
+	case "model":
+		effectiveKey := r.Model
+		if effectiveKey == "" {
+			effectiveKey = "unknown"
+		}
+		return effectiveKey
+	case "date,model":
+		datePart := ts.In(loc).Format(format)
+		modelPart := r.Model
+		if modelPart == "" {
+			modelPart = "unknown"
+		}
+		return fmt.Sprintf("%s | %s", datePart, modelPart)
+	default:
+		return ts.In(loc).Format(format)
+	}
+}
+
+func (m *metricsManager) accumulateRecord(totals map[string]float64, usage map[string]domain_pricing.UsageStats, key string, r sessionCostRecord) {
+	totals[key] += r.TotalCost
+	u := usage[key]
+	u.PromptTokens += r.Usage.PromptTokens
+	u.ResponseTokens += r.Usage.ResponseTokens
+	u.CachedTokens += r.Usage.CachedTokens
+	u.ThinkingTokens += r.Usage.ThinkingTokens
+	u.SearchQueries += r.Usage.SearchQueries
+	usage[key] = u
+}
+
+func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, end time.Time, loc *time.Location, format string, groupBy string) (map[string]float64, map[string]domain_pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
 	intervalUsage := make(map[string]domain_pricing.UsageStats)
 
@@ -688,16 +729,10 @@ func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, en
 			continue
 		}
 
-		// Determine the key for aggregation
-		effectiveKey := ts.In(loc).Format(format)
-
-		intervalTotals[effectiveKey] += r.TotalCost
-		u := intervalUsage[effectiveKey]
-		u.PromptTokens += r.Usage.PromptTokens
-		u.ResponseTokens += r.Usage.ResponseTokens
-		u.CachedTokens += r.Usage.CachedTokens
-		u.ThinkingTokens += r.Usage.ThinkingTokens
-		intervalUsage[effectiveKey] = u
+		key := m.resolveGroupingKey(r, loc, format, groupBy)
+		if key != "" {
+			m.accumulateRecord(intervalTotals, intervalUsage, key, r)
+		}
 	}
 	return intervalTotals, intervalUsage
 }
@@ -723,7 +758,7 @@ func (m *metricsManager) aggregateCosts(history []sessionCostRecord, args costSu
 		return nil, nil, nil, nil, fmt.Errorf("invalid interval %q: must be 'day' or 'hour'", args.Interval)
 	}
 
-	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format)
+	intervalTotals, intervalUsage := m.aggregateHistory(history, start, end, location, format, args.GroupBy)
 
 	// Sort keys descending
 	var keys []string
@@ -737,8 +772,16 @@ func (m *metricsManager) aggregateCosts(history []sessionCostRecord, args costSu
 
 func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals map[string]float64, intervalUsage map[string]domain_pricing.UsageStats, keys []string, location *time.Location) string {
 	title := "AI Usage Cost Summary (by Date)"
-	if args.Interval == "hour" {
+	headerName := "Date"
+	if args.GroupBy == "model" {
+		title = "AI Usage Cost Summary (by Model)"
+		headerName = "Model"
+	} else if args.GroupBy == "date,model" {
+		title = "AI Usage Cost Summary (by Date and Model)"
+		headerName = "Date | Model"
+	} else if args.Interval == "hour" {
 		title = "AI Usage Cost Summary (by Hour)"
+		headerName = "Date/Hour"
 	}
 	if args.Billing {
 		title += " - Google Billing Cycle (UTC-8)"
@@ -746,10 +789,6 @@ func (m *metricsManager) formatSummaryTable(args costSummaryArgs, intervalTotals
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("### %s\n\n", title))
-	headerName := "Date"
-	if args.Interval == "hour" {
-		headerName = "Date/Hour"
-	}
 	sb.WriteString(fmt.Sprintf("| %s | Miss | Hit | Other | Eff %% | Total Cost (USD) |\n", headerName))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 

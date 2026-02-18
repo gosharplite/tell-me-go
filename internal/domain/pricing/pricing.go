@@ -34,28 +34,41 @@ type ModelPricing struct {
 	TieredMiss      float64 `json:"tiered_miss" yaml:"TIERED_MISS"`
 	TieredComp      float64 `json:"tiered_comp" yaml:"TIERED_COMP"`
 	ThinkingBudget  int     `json:"thinking_budget,omitempty" yaml:"THINKING_BUDGET,omitempty"`
+	SearchQuery     float64 `json:"search_query,omitempty" yaml:"SEARCH_QUERY,omitempty"`
 }
 
 // PricingData represents the global pricing information.
 type PricingData struct {
-	UpdatedAt       string                  `json:"updated_at"`
-	Models          map[string]ModelPricing `json:"models"`
-	ThinkingBudgets map[string]int          `json:"thinking_budgets,omitempty"`
-	SearchQuery     float64                 `json:"search_query"`
+	UpdatedAt string                  `json:"updated_at"`
+	Models    map[string]ModelPricing `json:"models"`
 }
 
 // GetModelPricing finds the best pricing match for a model name.
 func (p *PricingData) GetModelPricing(modelName string) ModelPricing {
-	// 1. Exact match
+	// 1. Exact match (highest priority)
 	if mp, ok := p.Models[modelName]; ok {
 		return mp
 	}
-	// 2. Substring match (e.g., "flash", "pro")
+
+	// 2. Deterministic Longest Substring match
+	var bestMatch ModelPricing
+	var maxLen int
+	var found bool
+
 	for k, v := range p.Models {
 		if k != "default" && strings.Contains(modelName, k) {
-			return v
+			if len(k) > maxLen {
+				maxLen = len(k)
+				bestMatch = v
+				found = true
+			}
 		}
 	}
+
+	if found {
+		return bestMatch
+	}
+
 	// 3. Fallback to default
 	return p.Models["default"]
 }
@@ -84,7 +97,7 @@ func (c *CostCalculator) Calculate(stats UsageStats) CostBreakdown {
 	cb.InputCost = float64(inputTokens) * p.Miss / 1e6
 	cb.CacheCost = float64(stats.CachedTokens) * p.Hit / 1e6
 	cb.OutputCost = (float64(stats.ResponseTokens) * p.Comp / 1e6) + (float64(stats.ThinkingTokens) * thinkingRate / 1e6)
-	cb.SearchCost = float64(stats.SearchQueries) * c.Pricing.SearchQuery
+	cb.SearchCost = float64(stats.SearchQueries) * p.SearchQuery
 
 	cb.TotalCost = cb.InputCost + cb.CacheCost + cb.OutputCost + cb.SearchCost
 	return cb

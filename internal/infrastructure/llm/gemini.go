@@ -72,7 +72,10 @@ func (c *Client) initSDK() error {
 	c.mu.RUnlock()
 
 	backend, project, location, baseURL := c.determineBackend(apiURL)
-	headers := c.prepareAuthHeader()
+	headers, err := c.prepareAuthHeader(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to prepare auth headers: %w", err)
+	}
 
 	clientConfig := &genai.ClientConfig{
 		Backend:  backend,
@@ -136,7 +139,7 @@ func findInParts(parts []string, key string) string {
 	return ""
 }
 
-func (c *Client) prepareAuthHeader() http.Header {
+func (c *Client) prepareAuthHeader(ctx context.Context) (http.Header, error) {
 	authReq := &auth.Request{
 		Headers: make(map[string]string),
 	}
@@ -144,13 +147,15 @@ func (c *Client) prepareAuthHeader() http.Header {
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 
-	authenticator.Apply(authReq)
+	if err := authenticator.Apply(ctx, authReq); err != nil {
+		return nil, err
+	}
 
 	headers := make(http.Header)
 	for k, v := range authReq.Headers {
 		headers.Set(k, v)
 	}
-	return headers
+	return headers, nil
 }
 
 // RefreshAuth invalidates the current token and re-initializes the SDK client.

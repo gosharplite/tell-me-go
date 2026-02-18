@@ -21,27 +21,21 @@ import (
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
+func setupMockAnthropicServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	c := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "", 0)
+	return server, c
+}
+
 func TestSendChat(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/messages" {
-			t.Errorf("expected path /messages, got %s", r.URL.Path)
-		}
-		if r.Header.Get("x-api-key") != "test-key" {
-			t.Errorf("expected x-api-key test-key, got %s", r.Header.Get("x-api-key"))
-		}
-		if r.Header.Get("anthropic-version") != "2023-06-01" {
-			t.Errorf("expected version 2023-06-01, got %s", r.Header.Get("anthropic-version"))
-		}
+	t.Run("Successful Chat Response", testSuccessfulChatResponse)
+	t.Run("Request Headers and Body", testRequestHeadersAndBody)
+	t.Run("History Processing", testHistoryProcessing)
+}
 
-		var req messagesRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatal(err)
-		}
-
-		if req.Model != "claude-3-5-sonnet" {
-			t.Errorf("expected model claude-3-5-sonnet, got %s", req.Model)
-		}
-
+func testSuccessfulChatResponse(t *testing.T) {
+	server, client := setupMockAnthropicServer(t, func(w http.ResponseWriter, r *http.Request) {
 		resp := messagesResponse{
 			ID:   "msg_123",
 			Role: "assistant",
@@ -57,30 +51,97 @@ func TestSendChat(t *testing.T) {
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	})
 	defer server.Close()
 
-	client := NewClient(server.URL, "claude-3-5-sonnet", &auth.AnthropicAuth{APIKey: "test-key"}, nil, 0, "", 0)
-	history := []*llm.Content{
-		{
-			Role: "user",
-			Parts: []*llm.Part{
-				{Text: "Hi"},
-			},
-		},
-	}
-
-	resp, metrics, err := client.SendChat(context.Background(), history, nil, nil)
+	resp, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
 
 	if len(resp.Parts) != 1 || resp.Parts[0].Text != "Hello from Claude" {
-		t.Errorf("unexpected response: %+v", resp)
+		t.Errorf("unexpected response content: %+v", resp)
 	}
 
 	if metrics.TotalTokens != 40 {
 		t.Errorf("expected 40 total tokens, got %d", metrics.TotalTokens)
+	}
+}
+
+func testRequestHeadersAndBody(t *testing.T) {
+	server, client := setupMockAnthropicServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/messages" {
+			t.Errorf("expected path /messages, got %s", r.URL.Path)
+		}
+		if r.Header.Get("x-api-key") != "test-key" {
+			t.Errorf("expected x-api-key test-key, got %s", r.Header.Get("x-api-key"))
+		}
+		if r.Header.Get("anthropic-version") != "2023-06-01" {
+			t.Errorf("expected version 2023-06-01, got %s", r.Header.Get("anthropic-version"))
+		}
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta prompt-caching-2024-07-31, got %s", r.Header.Get("anthropic-beta"))
+		}
+
+		var req messagesRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+			return
+		}
+
+		if req.Model != "claude-3-5-sonnet" {
+			t.Errorf("expected model claude-3-5-sonnet, got %s", req.Model)
+		}
+
+		resp := messagesResponse{
+			Content: []contentBlock{{Type: "text", Text: "OK"}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	defer server.Close()
+
+	_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+}
+
+func testHistoryProcessing(t *testing.T) {
+	server, client := setupMockAnthropicServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req messagesRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		if len(req.Messages) != 2 {
+			t.Errorf("expected 2 messages, got %d", len(req.Messages))
+		}
+		if req.Messages[0].Role != "user" || req.Messages[0].Content[0].Text != "Hi" {
+			t.Errorf("unexpected user message: %+v", req.Messages[0])
+		}
+		if req.Messages[1].Role != "assistant" || req.Messages[1].Content[0].Text != "Hello" {
+			t.Errorf("unexpected assistant message: %+v", req.Messages[1])
+		}
+
+		resp := messagesResponse{
+			Content: []contentBlock{{Type: "text", Text: "Understood"}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	defer server.Close()
+
+	history := []*llm.Content{
+		{
+			Role:  "user",
+			Parts: []*llm.Part{{Text: "Hi"}},
+		},
+		{
+			Role:  "assistant",
+			Parts: []*llm.Part{{Text: "Hello"}},
+		},
+	}
+
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
 	}
 }
 
@@ -641,5 +702,84 @@ func TestStreamChat_MalformedEvents(t *testing.T) {
 	_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil {
 		t.Error("expected error from malformed error event")
+	}
+}
+
+func TestPromptCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta header, got %s", r.Header.Get("anthropic-beta"))
+		}
+
+		var req messagesRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		systemBlocks, ok := req.System.([]interface{})
+		if !ok || len(systemBlocks) != 1 {
+			t.Errorf("expected 1 system block, got %v", req.System)
+		} else {
+			block := systemBlocks[0].(map[string]interface{})
+			if block["type"] != "text" || block["text"] != "You are a helpful assistant" {
+				t.Errorf("unexpected system block text: %v", block["text"])
+			}
+			cache, ok := block["cache_control"].(map[string]interface{})
+			if !ok || cache["type"] != "ephemeral" {
+				t.Errorf("expected ephemeral cache control, got %v", block["cache_control"])
+			}
+		}
+
+		resp := messagesResponse{
+			Usage: usage{
+				InputTokens:          100,
+				CacheReadInputTokens: 80,
+				OutputTokens:         50,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "You are a helpful assistant", 0)
+	_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if metrics.CachedTokens != 80 {
+		t.Errorf("expected 80 cached tokens, got %d", metrics.CachedTokens)
+	}
+}
+
+func TestStreamPromptCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta header, got %s", r.Header.Get("anthropic-beta"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		events := []struct {
+			event string
+			data  string
+		}{
+			{"message_start", `{"message":{"usage":{"input_tokens":100, "cache_read_input_tokens": 80}}}`},
+			{"content_block_delta", `{"delta":{"type":"text_delta","text":"Hello"}}`},
+			{"message_delta", `{"usage":{"output_tokens":20}}`},
+		}
+
+		for _, e := range events {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+
+	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if metrics.PromptTokens != 100 || metrics.CachedTokens != 80 {
+		t.Errorf("unexpected metrics: %+v", metrics)
 	}
 }

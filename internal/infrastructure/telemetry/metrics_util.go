@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -17,8 +18,22 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 )
 
-// GetPricing returns the hardcoded fallback pricing data.
+// GetPricing attempts to load pricing data from $TELL_ME_HOME/assets/pricing.json,
+// falling back to hardcoded defaults if the file is missing or invalid.
 func GetPricing(ctx context.Context, sm domain_security.ISecurityManager, outputDir string) domain_pricing.PricingData {
+	// 1. Try to load from $TELL_ME_HOME/assets/pricing.json
+	// Use the parent of outputDir to find the assets folder
+	homeDir := filepath.Dir(outputDir)
+	pricingPath := filepath.Join(homeDir, "assets", "pricing.json")
+
+	if data, err := os.ReadFile(pricingPath); err == nil {
+		var pd domain_pricing.PricingData
+		if err := json.Unmarshal(data, &pd); err == nil {
+			return pd
+		}
+	}
+
+	// 2. Fallback to hardcoded defaults
 	return config.DefaultPricing()
 }
 

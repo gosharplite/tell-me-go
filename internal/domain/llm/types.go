@@ -52,6 +52,7 @@ type FunctionResponse struct {
 // Metrics represents the token usage and timing for a single API turn.
 type Metrics struct {
 	Timestamp              string  `json:"timestamp"`
+	Provider               string  `json:"provider,omitempty"`
 	Model                  string  `json:"model,omitempty"`
 	CachedTokens           int32   `json:"cached_tokens"`
 	PromptTokens           int32   `json:"prompt_tokens"`

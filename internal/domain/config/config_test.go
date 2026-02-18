@@ -18,9 +18,9 @@ func TestResolveThinkingBudget(t *testing.T) {
 		},
 	}
 	pData := pricing.PricingData{
-		ThinkingBudgets: map[string]int{
-			"default": 2000,
-			"extra":   10000,
+		Models: map[string]pricing.ModelPricing{
+			"default": {ThinkingBudget: 2000},
+			"extra":   {ThinkingBudget: 10000},
 		},
 	}
 
@@ -193,8 +193,8 @@ func TestFindBestMatch(t *testing.T) {
 func TestDefaultPricing(t *testing.T) {
 	pData := DefaultPricing()
 	assert.NotEmpty(t, pData.Models)
-	assert.NotEmpty(t, pData.ThinkingBudgets)
-	assert.True(t, pData.SearchQuery > 0)
+	assert.True(t, pData.Models["default"].ThinkingBudget >= 0)
+	assert.True(t, pData.Models["gemini-3-flash-preview"].SearchQuery > 0)
 }
 
 func TestGetActiveProvider(t *testing.T) {

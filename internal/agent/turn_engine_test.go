@@ -768,7 +768,7 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 	env := setupTurnEngineTest(t)
 
 	pricing := config.DefaultPricing()
-	modelName := "gemini-1.5-flash"
+	modelName := "gemini-3-flash-preview"
 	modelPricing := telemetry.GetModelPricing(modelName, pricing)
 	tracker := telemetry.NewSessionCostTracker(nil, "", "interactive", modelName, modelPricing, pricing)
 
@@ -799,11 +799,11 @@ func TestTurnEngine_TaskCostAccumulation(t *testing.T) {
 		t.Fatalf("Run failed: %v", err)
 	}
 
-	// Cost per turn: (1000 * 0.10 / 1e6) + (500 * 0.40 / 1e6) = 0.0001 + 0.0002 = 0.0003
-	// Total Task Cost (2 turns): 0.0006
-	expectedTaskCost := 0.0006
+	// Cost per turn: (1000 * 0.50 / 1e6) + (500 * 3.00 / 1e6) = 0.0005 + 0.0015 = 0.0020
+	// Total Task Cost (2 turns): 0.0040
+	expectedTaskCost := 0.0040
 	capturer.assertTaskCost(t, expectedTaskCost)
-	capturer.assertTurnCosts(t, []float64{0.0003, 0.0003})
+	capturer.assertTurnCosts(t, []float64{0.0020, 0.0020})
 
 	// Run again, taskCost should reset
 	turnCount = 0

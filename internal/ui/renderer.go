@@ -227,8 +227,12 @@ func (r *stdUIRenderer) renderMetricsLine(ui uiState, m *llm.Metrics, startTime 
 	}
 
 	modelStr := ""
-	if m.Model != "" {
-		modelStr = fmt.Sprintf(" [%s]", m.Model)
+	displayName := m.Provider
+	if displayName == "" {
+		displayName = m.Model
+	}
+	if displayName != "" {
+		modelStr = fmt.Sprintf(" [%s]", displayName)
 	}
 
 	totalTurnLatency := m.Duration + m.ToolDuration

@@ -50,7 +50,7 @@ type ChatterFactory func(
 	sm security.ISecurityManager,
 	disableStreaming bool,
 	bus events.EventBus,
-	model, mode, logPath string,
+	providerName, model, mode, logPath string,
 	pricingOverrides map[string]pricing.ModelPricing,
 	tracker pricing.ICostTracker,
 ) Chatter

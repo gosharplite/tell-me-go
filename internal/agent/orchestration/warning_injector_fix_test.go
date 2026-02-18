@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -55,6 +56,71 @@ func TestWarningInjector_SequenceBreak(t *testing.T) {
 		t.Errorf("expected 2 messages, got %d. Sequence was likely broken by inserted messages.", len(req.History))
 		for i, msg := range req.History {
 			t.Logf("Msg %d: Role=%s, Parts=%+v", i, msg.Role, msg.Parts)
+		}
+	}
+}
+
+func TestWarningInjector_Idempotency(t *testing.T) {
+	ctx := context.Background()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+	strategy.SetLimits(100, 10, 10) // 100 token limit
+	injector := &warningInjector{Strategy: strategy}
+
+	// Case 1: First turn reaches threshold (90% threshold -> > 90 tokens)
+	req1 := &request{
+		Turn: 0,
+		History: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+		},
+	}
+	req1.Metadata.FinalTokenCount = 91
+
+	if err := injector.Transform(ctx, req1); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify warning injected
+	lastMsg := req1.History[0]
+	found := false
+	for _, p := range lastMsg.TransientParts {
+		if strings.Contains(p.Text, "90% capacity") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected warning in first turn, but not found")
+	}
+
+	// Case 2: Second turn, same state. Should NOT inject duplicate warning.
+	// We'll simulate that the first turn was persisted.
+	historyWithWarning := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{Text: "hello"},
+				{Text: "\n\n" + strategy.getWarnings(0, 91, 0)[0].Message},
+			},
+		},
+		{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "how are you?"}}},
+	}
+
+	req2 := &request{
+		Turn:    1,
+		History: historyWithWarning,
+	}
+	req2.Metadata.FinalTokenCount = 91
+
+	if err := injector.Transform(ctx, req2); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify NO NEW warning in TransientParts of the last message
+	lastMsg2 := req2.History[2]
+	for _, p := range lastMsg2.TransientParts {
+		if strings.Contains(p.Text, "90% capacity") {
+			t.Error("duplicate warning injected in second turn")
 		}
 	}
 }

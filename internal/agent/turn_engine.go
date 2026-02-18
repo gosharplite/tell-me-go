@@ -133,6 +133,7 @@ type turn struct {
 	MaxToolTurns int
 	Clock        clock
 	CostTracker  domain_pricing.ICostTracker
+	ProviderName string
 	Model        string
 
 	// StreamHandler allows external handling of LLM response streams.
@@ -156,6 +157,7 @@ type turnEngine struct {
 	retryPolicy      retryPolicy
 	clock            clock
 	sm               domain_security.ISecurityManager
+	providerName     string
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
@@ -172,9 +174,10 @@ func withCostTracker(tracker domain_pricing.ICostTracker) engineOption {
 }
 
 // withConfig sets the security and usage configuration for the engine.
-func withConfig(sm domain_security.ISecurityManager, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
+func withConfig(sm domain_security.ISecurityManager, providerName, model string, pricingOverrides map[string]domain_pricing.ModelPricing) engineOption {
 	return func(e *turnEngine) {
 		e.sm = sm
+		e.providerName = providerName
 		e.model = model
 		e.pricingOverrides = pricingOverrides
 	}
@@ -193,6 +196,7 @@ func (e *turnEngine) ApplyOptions(opts ...engineOption) {
 func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICostTracker) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.providerName = cfg.ProviderName
 	e.model = cfg.Model
 	e.pricingOverrides = cfg.PricingOverrides
 	e.costTracker = tracker
@@ -284,21 +288,23 @@ func (e *turnEngine) prepareNextTurn(turn *turn) {
 func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 	e.mu.RLock()
 	tracker := e.costTracker
+	providerName := e.providerName
 	model := e.model
 	e.mu.RUnlock()
 
 	turn := &turn{
-		Index:       index,
-		StartTime:   startTime,
-		State:       &turnState{CurrentTurns: index, Phase: phaseGuard, RetryCount: 0},
-		CtxManager:  e.ctxManager,
-		Gateway:     e.gateway,
-		executor:    e.executor,
-		Registry:    e.registry,
-		Events:      e.events,
-		Clock:       e.clock,
-		CostTracker: tracker,
-		Model:       model,
+		Index:        index,
+		StartTime:    startTime,
+		State:        &turnState{CurrentTurns: index, Phase: phaseGuard, RetryCount: 0},
+		CtxManager:   e.ctxManager,
+		Gateway:      e.gateway,
+		executor:     e.executor,
+		Registry:     e.registry,
+		Events:       e.events,
+		Clock:        e.clock,
+		CostTracker:  tracker,
+		ProviderName: providerName,
+		Model:        model,
 	}
 	turn.MaxToolTurns = e.ctxManager.GetLimits().MaxToolTurns
 	return turn
@@ -497,6 +503,7 @@ func (p *inferenceStep) updateState(turn *turn, content *llm.Content, metrics *l
 	turn.State.Metrics = metrics
 	if metrics != nil {
 		metrics.Model = turn.Model
+		metrics.Provider = turn.ProviderName
 		turn.State.Tokens = int(metrics.PromptTokens)
 	}
 	turn.State.HasToolCalls = p.hasToolCalls(content)

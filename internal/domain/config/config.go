@@ -90,15 +90,8 @@ func (c *Config) ResolveThinkingBudget(model string, pricingData pricing.Pricing
 		return mCfg.MaxThinkingBudget
 	}
 
-	// 2. Try Pricing defaults
-	if budget, ok := findBestMatch(pricingData.ThinkingBudgets, model, func(int) bool {
-		return true
-	}); ok {
-		return budget
-	}
-
-	// 3. Ultimate fallback
-	return pricingData.ThinkingBudgets["default"]
+	// 2. Try Pricing defaults (encapsulated in ModelPricing)
+	return pricingData.GetModelPricing(model).ThinkingBudget
 }
 
 // ResolveContextWindow returns the appropriate context window limit.
@@ -156,43 +149,48 @@ func findBestMatch[T any](m map[string]T, key string, isValid func(T) bool) (T, 
 // DefaultPricing returns the hardcoded fallback pricing data.
 func DefaultPricing() pricing.PricingData {
 	return pricing.PricingData{
-		UpdatedAt: "Hardcoded Fallback",
+		UpdatedAt: "2026-02-03T12:00:00Z", // Sync with assets/pricing.json
 		Models: map[string]pricing.ModelPricing{
-			"gemini-3-flash-preview": {
-				Hit:             0.05,
-				Miss:            0.50,
-				Comp:            3.00,
-				TieredThreshold: 0,
-			},
-			"flash": {
-				Hit:             0.025,
-				Miss:            0.10,
-				Comp:            0.40,
-				TieredThreshold: 0,
-				TieredMiss:      0.20,
-				TieredComp:      0.80,
-			},
-			"pro": {
-				Hit:             0.125,
-				Miss:            1.25,
-				Comp:            10.00,
-				TieredThreshold: 0,
-				TieredMiss:      2.50,
-				TieredComp:      15.00,
-			},
 			"default": {
-				Hit:             0.125,
-				Miss:            1.25,
-				Comp:            10.00,
-				TieredThreshold: 0,
-				TieredMiss:      2.50,
-				TieredComp:      15.00,
+				Hit:  0.0,
+				Miss: 0.0,
+				Comp: 0.0,
+			},
+			"gpt-5": {
+				Hit:  0.175,
+				Miss: 1.75,
+				Comp: 14.00,
+			},
+			"deepseek-reasoner": {
+				Hit:      0.028,
+				Miss:     0.28,
+				Comp:     0.42,
+				Thinking: 0.42,
+			},
+			"claude-sonnet-4-6": {
+				Hit:  0.30,
+				Miss: 3.00,
+				Comp: 15.00,
+			},
+			"claude-opus-4-6": {
+				Hit:  0.50,
+				Miss: 5.00,
+				Comp: 25.00,
+			},
+			"gemini-3-flash-preview": {
+				Hit:            0.05,
+				Miss:           0.50,
+				Comp:           3.00,
+				ThinkingBudget: 32768,
+				SearchQuery:    0.014, // Updated from 0.035
+			},
+			"gemini-3-pro-preview": {
+				Hit:            0.20,  // Updated from 0.3125
+				Miss:           2.00,  // Updated from 1.25
+				Comp:           12.00, // Updated from 5.00
+				ThinkingBudget: 65536,
+				SearchQuery:    0.014, // Updated from 0.035
 			},
 		},
-		ThinkingBudgets: map[string]int{
-			"gemini-3-flash-preview": 32768,
-			"gemini-3-pro-preview":   65536,
-		},
-		SearchQuery: 0.035,
 	}
 }

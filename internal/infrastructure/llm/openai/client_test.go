@@ -19,24 +19,20 @@ import (
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
+func setupMockOpenAIServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
+	server := httptest.NewServer(handler)
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	return server, c
+}
+
 func TestSendChat(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Errorf("expected path /chat/completions, got %s", r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer test-key" {
-			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
-		}
+	t.Run("Successful Chat Response", testSuccessfulChatResponse)
+	t.Run("Request Headers and Body", testRequestHeadersAndBody)
+	t.Run("History Processing", testHistoryProcessing)
+}
 
-		var req chatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatal(err)
-		}
-
-		if req.Model != "gpt-4" {
-			t.Errorf("expected model gpt-4, got %s", req.Model)
-		}
-
+func testSuccessfulChatResponse(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		resp := chatResponse{
 			ID: "test-id",
 			Choices: []choice{
@@ -55,20 +51,11 @@ func TestSendChat(t *testing.T) {
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	}
+	server, client := setupMockOpenAIServer(t, handler)
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
-	history := []*llm.Content{
-		{
-			Role: "user",
-			Parts: []*llm.Part{
-				{Text: "Hi"},
-			},
-		},
-	}
-
-	resp, metrics, err := client.SendChat(context.Background(), history, nil, nil)
+	resp, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -79,6 +66,71 @@ func TestSendChat(t *testing.T) {
 
 	if metrics.TotalTokens != 30 {
 		t.Errorf("unexpected metrics: %+v", metrics)
+	}
+}
+
+func testRequestHeadersAndBody(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("expected path /chat/completions, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
+		}
+
+		var req chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+
+		if req.Model != "gpt-4" {
+			t.Errorf("expected model gpt-4, got %s", req.Model)
+		}
+
+		resp := chatResponse{
+			Choices: []choice{{Message: message{Role: "assistant", Content: "ok"}}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server, client := setupMockOpenAIServer(t, handler)
+	defer server.Close()
+
+	_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+}
+
+func testHistoryProcessing(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(req.Messages) != 1 || req.Messages[0].Content != "Hi" || req.Messages[0].Role != "user" {
+			t.Errorf("unexpected messages: %+v", req.Messages)
+		}
+
+		resp := chatResponse{
+			Choices: []choice{{Message: message{Role: "assistant", Content: "ok"}}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server, client := setupMockOpenAIServer(t, handler)
+	defer server.Close()
+
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{Text: "Hi"},
+			},
+		},
+	}
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
 	}
 }
 
@@ -527,8 +579,8 @@ func TestInjectPersona(t *testing.T) {
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
-		if len(messages) != 1 || !strings.Contains(messages[0].Content.(string), "Be helpful") {
-			t.Errorf("expected persona prepended for DeepSeek, got %+v", messages[0])
+		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
+			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
 		}
 	})
 }
@@ -649,4 +701,69 @@ func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
 	if messages[1].Role != "tool" || messages[1].ToolCallID != "call_2" || messages[1].Content != "resp 2" {
 		t.Errorf("unexpected second message: %+v", messages[1])
 	}
+}
+
+func TestCacheHitReporting(t *testing.T) {
+	t.Run("OpenAI Cache Hits", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := chatResponse{
+				Choices: []choice{{Message: message{Role: "assistant", Content: "Hello"}}},
+				Usage: usage{
+					PromptTokens:     100,
+					CompletionTokens: 50,
+					TotalTokens:      150,
+					PromptTokensDetails: &promptTokensDetails{
+						CachedTokens: 80,
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if metrics.CachedTokens != 80 {
+			t.Errorf("expected 80 cached tokens, got %d", metrics.CachedTokens)
+		}
+	})
+
+	t.Run("DeepSeek Cache Hits", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// DeepSeek style response (manually crafted based on requirements)
+			resp := map[string]interface{}{
+				"choices": []interface{}{
+					map[string]interface{}{
+						"message": map[string]interface{}{
+							"role":    "assistant",
+							"content": "Hello",
+						},
+					},
+				},
+				"usage": map[string]interface{}{
+					"prompt_tokens":            100,
+					"completion_tokens":        50,
+					"total_tokens":             150,
+					"prompt_cache_hit_tokens":  70,
+					"prompt_cache_miss_tokens": 30,
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if metrics.CachedTokens != 70 {
+			t.Errorf("expected 70 cached tokens, got %d", metrics.CachedTokens)
+		}
+	})
 }

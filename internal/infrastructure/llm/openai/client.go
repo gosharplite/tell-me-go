@@ -113,10 +113,19 @@ type choice struct {
 }
 
 type usage struct {
-	PromptTokens            int32                    `json:"prompt_tokens"`
-	CompletionTokens        int32                    `json:"completion_tokens"`
-	TotalTokens             int32                    `json:"total_tokens"`
+	PromptTokens     int32 `json:"prompt_tokens"`
+	CompletionTokens int32 `json:"completion_tokens"`
+	TotalTokens      int32 `json:"total_tokens"`
+	// OpenAI standard
+	PromptTokensDetails     *promptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *completionTokensDetails `json:"completion_tokens_details,omitempty"`
+	// DeepSeek standard
+	PromptCacheHitTokens  int32 `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens int32 `json:"prompt_cache_miss_tokens,omitempty"`
+}
+
+type promptTokensDetails struct {
+	CachedTokens int32 `json:"cached_tokens"`
 }
 
 type completionTokensDetails struct {
@@ -186,7 +195,9 @@ func (c *client) createHTTPRequest(ctx context.Context, payload interface{}, str
 
 	// Apply authentication
 	authReq := &auth.Request{Headers: make(map[string]string)}
-	c.authenticator.Apply(authReq)
+	if err := c.authenticator.Apply(ctx, authReq); err != nil {
+		return nil, err
+	}
 	for k, v := range authReq.Headers {
 		req.Header.Set(k, v)
 	}
@@ -243,7 +254,7 @@ func (c *client) toOpenAIMessages(ctx context.Context, history []*llm.Content, r
 }
 
 func (c *client) maybeInjectInitialPersona(messages *[]message, isDeepSeek, isOpenAI bool) (personaInjected bool) {
-	if c.persona != "" && !isDeepSeek && !isOpenAI {
+	if c.persona != "" && !isOpenAI { // DeepSeek supports 'system' at start
 		*messages = append(*messages, message{
 			Role:    "system",
 			Content: c.persona,
@@ -375,13 +386,6 @@ func (c *client) injectPersona(messages *[]message, personaInjected *bool, role 
 			Content: c.persona,
 		})
 		*personaInjected = true
-	} else if isDeepSeek {
-		if *text != "" {
-			*text = c.persona + "\n" + *text
-		} else {
-			*text = c.persona
-		}
-		*personaInjected = true
 	}
 }
 
@@ -451,6 +455,13 @@ func (c *client) fromOpenAIResponse(resp *chatResponse, duration float64) (*llm.
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
 		Duration:       duration,
+	}
+
+	if resp.Usage.PromptTokensDetails != nil {
+		metrics.CachedTokens = resp.Usage.PromptTokensDetails.CachedTokens
+	}
+	if resp.Usage.PromptCacheHitTokens > 0 {
+		metrics.CachedTokens = resp.Usage.PromptCacheHitTokens
 	}
 
 	if resp.Usage.CompletionTokensDetails != nil {
@@ -558,6 +569,12 @@ func (c *client) processStreamChunk(data []byte, toolCallsByIndex map[int]*toolC
 			PromptTokens:   chunk.Usage.PromptTokens,
 			ResponseTokens: chunk.Usage.CompletionTokens,
 			TotalTokens:    chunk.Usage.TotalTokens,
+		}
+		if chunk.Usage.PromptTokensDetails != nil {
+			metrics.CachedTokens = chunk.Usage.PromptTokensDetails.CachedTokens
+		}
+		if chunk.Usage.PromptCacheHitTokens > 0 {
+			metrics.CachedTokens = chunk.Usage.PromptCacheHitTokens
 		}
 		if chunk.Usage.CompletionTokensDetails != nil {
 			metrics.ThinkingTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens

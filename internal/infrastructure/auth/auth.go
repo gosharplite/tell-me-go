@@ -11,16 +11,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
-	getToken() (string, error)
+	getToken(ctx context.Context) (string, error)
 	Invalidate()
-	Apply(req *Request)
+	Apply(ctx context.Context, req *Request) error
 }
 
 // Request is a wrapper for the headers needed to apply authentication.
@@ -30,6 +33,7 @@ type Request struct {
 
 // VertexAuth handles authentication for Vertex AI using GCP tokens.
 type VertexAuth struct {
+	mu           sync.Mutex
 	Token        string
 	tokenCmdFunc func() ([]byte, error)
 }
@@ -58,7 +62,10 @@ func (a *VertexAuth) getCachePath() string {
 }
 
 // getToken retrieves the OAuth2 access token with local caching.
-func (a *VertexAuth) getToken() (string, error) {
+func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	if a.Token != "" {
 		return a.Token, nil
 	}
@@ -87,7 +94,7 @@ func (a *VertexAuth) getToken() (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = storage.AtomicWrite(context.Background(), cacheFile, []byte(token), 0600)
+		_ = storage.AtomicWrite(ctx, cacheFile, []byte(token), 0600)
 	}
 
 	a.Token = token
@@ -96,16 +103,22 @@ func (a *VertexAuth) getToken() (string, error) {
 
 // Invalidate clears the current token and deletes the local cache file.
 func (a *VertexAuth) Invalidate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.Token = ""
 	_ = os.Remove(a.getCachePath())
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(req *Request) {
-	token, _ := a.getToken()
+func (a *VertexAuth) Apply(ctx context.Context, req *Request) error {
+	token, err := a.getToken(ctx)
+	if err != nil {
+		return err
+	}
 	if token != "" {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
+	return nil
 }
 
 // APIKeyAuth handles authentication using a static API key.
@@ -113,13 +126,14 @@ type APIKeyAuth struct {
 	APIKey string
 }
 
-func (a *APIKeyAuth) getToken() (string, error) { return a.APIKey, nil }
-func (a *APIKeyAuth) Invalidate()               {}
-func (a *APIKeyAuth) Apply(req *Request) {
+func (a *APIKeyAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
+func (a *APIKeyAuth) Invalidate()                                  {}
+func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
 		req.Headers["x-goog-api-key"] = a.APIKey
 	}
+	return nil
 }
 
 // BearerAuth handles authentication using a Bearer token.
@@ -127,12 +141,13 @@ type BearerAuth struct {
 	Token string
 }
 
-func (a *BearerAuth) getToken() (string, error) { return a.Token, nil }
-func (a *BearerAuth) Invalidate()               {}
-func (a *BearerAuth) Apply(req *Request) {
+func (a *BearerAuth) getToken(ctx context.Context) (string, error) { return a.Token, nil }
+func (a *BearerAuth) Invalidate()                                  {}
+func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
 	if a.Token != "" {
 		req.Headers["Authorization"] = "Bearer " + a.Token
 	}
+	return nil
 }
 
 // AnthropicAuth handles authentication using the x-api-key header.
@@ -140,10 +155,83 @@ type AnthropicAuth struct {
 	APIKey string
 }
 
-func (a *AnthropicAuth) getToken() (string, error) { return a.APIKey, nil }
-func (a *AnthropicAuth) Invalidate()               {}
-func (a *AnthropicAuth) Apply(req *Request) {
+func (a *AnthropicAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
+func (a *AnthropicAuth) Invalidate()                                  {}
+func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
 	}
+	return nil
+}
+
+// ServiceAccountAuth handles authentication using a GCP Service Account JSON file.
+// It exchanges the long-lived JSON key for a short-lived (1-hour) OAuth2 access token.
+type ServiceAccountAuth struct {
+	KeyFilePath     string
+	tokenSourceFunc func() (*oauth2.Token, error)
+	mu              sync.Mutex
+	token           string
+	expiry          time.Time
+}
+
+// getToken performs the OAuth2 exchange and returns a valid access token.
+func (a *ServiceAccountAuth) getToken(ctx context.Context) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// 1. Check if cached token is still valid (with 5-minute buffer)
+	if a.token != "" && time.Now().Add(5*time.Minute).Before(a.expiry) {
+		return a.token, nil
+	}
+
+	var tok *oauth2.Token
+	var err error
+
+	if a.tokenSourceFunc != nil {
+		tok, err = a.tokenSourceFunc()
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch mock oauth2 token: %w", err)
+		}
+	} else {
+		// 2. Read the master secret (key.json) from disk
+		data, err := os.ReadFile(a.KeyFilePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read service account key: %w", err)
+		}
+
+		// 3. Exchange JSON key for a Bearer token via Google OAuth2
+		// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
+		creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return "", fmt.Errorf("failed to parse service account JSON: %w", err)
+		}
+
+		ts := creds.TokenSource
+		tok, err = ts.Token()
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch oauth2 token: %w", err)
+		}
+	}
+
+	// 4. Cache the resulting short-lived token
+	a.token = tok.AccessToken
+	a.expiry = tok.Expiry
+	return a.token, nil
+}
+
+func (a *ServiceAccountAuth) Invalidate() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.token = ""
+}
+
+func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
+	token, err := a.getToken(ctx)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		req.Headers["Authorization"] = "Bearer " + token
+	}
+	return nil
 }

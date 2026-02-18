@@ -37,13 +37,12 @@ func TestGetModelPricing(t *testing.T) {
 }
 
 func TestCostCalculator_Calculate(t *testing.T) {
-	p := PricingData{
-		SearchQuery: 0.01,
-	}
+	p := PricingData{}
 	mp := ModelPricing{
-		Miss: 10.0, // $10 per 1M tokens
-		Hit:  5.0,  // $5 per 1M tokens
-		Comp: 20.0, // $20 per 1M tokens
+		Miss:        10.0, // $10 per 1M tokens
+		Hit:         5.0,  // $5 per 1M tokens
+		Comp:        20.0, // $20 per 1M tokens
+		SearchQuery: 0.01,
 	}
 
 	calc := &CostCalculator{
@@ -84,4 +83,19 @@ func TestCostCalculator_Calculate_NegativeInput(t *testing.T) {
 	}
 	got := calc.Calculate(stats)
 	assert.Equal(t, 0.0, got.InputCost)
+}
+
+func TestGetModelPricing_LongestMatch(t *testing.T) {
+	p := PricingData{
+		Models: map[string]ModelPricing{
+			"default":        {Miss: 1.0},
+			"gemini":         {Miss: 2.0},
+			"gemini-3-flash": {Miss: 0.5},
+		},
+	}
+
+	// For "gemini-3-flash-preview", both "gemini" and "gemini-3-flash" match.
+	// "gemini-3-flash" is longer (14 chars) vs "gemini" (6 chars).
+	got := p.GetModelPricing("gemini-3-flash-preview")
+	assert.Equal(t, 0.5, got.Miss, "Should consistently choose the longest matching substring")
 }

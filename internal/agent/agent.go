@@ -22,6 +22,7 @@ import (
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
 	Limits           events.Limits
+	ProviderName     string
 	Model            string
 	Mode             string
 	PricingOverrides map[string]domain_pricing.ModelPricing
@@ -75,7 +76,7 @@ func WithLoader(loader domain_config.ConfigLoader) agentOption {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, options ...agentOption) *agent {
+func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, providerName string, options ...agentOption) *agent {
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	exec := executor.NewToolExecutor(reg, sm, bus)
 
@@ -89,6 +90,7 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 		events:        bus,
 		summarizer:    summarizer,
 		config: runtimeConfig{
+			ProviderName: providerName,
 			Limits: events.Limits{
 				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
 				MaxToolTurns:     domain_config.DefaultMaxToolTurns,
@@ -115,7 +117,7 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 
 	// Initialize engine
 	a.engine = newTurnEngine(client, exec, ctxManager, reg, bus,
-		withConfig(a.sm, a.config.Model, a.config.PricingOverrides),
+		withConfig(a.sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)
 
