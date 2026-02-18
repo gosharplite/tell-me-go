@@ -527,8 +527,8 @@ func TestInjectPersona(t *testing.T) {
 	t.Run("DeepSeek Reasoner Persona", func(t *testing.T) {
 		c := NewClient("", "deepseek-reasoner", nil, nil, "Be helpful", 0, 0)
 		messages, _ := c.toOpenAIMessages(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}}, nil)
-		if len(messages) != 1 || !strings.Contains(messages[0].Content.(string), "Be helpful") {
-			t.Errorf("expected persona prepended for DeepSeek, got %+v", messages[0])
+		if len(messages) != 2 || messages[0].Role != "system" || messages[0].Content != "Be helpful" {
+			t.Errorf("expected system role for persona in DeepSeek, got %+v", messages[0])
 		}
 	})
 }
@@ -649,4 +649,69 @@ func TestToOpenAIMessages_MultiToolResponse(t *testing.T) {
 	if messages[1].Role != "tool" || messages[1].ToolCallID != "call_2" || messages[1].Content != "resp 2" {
 		t.Errorf("unexpected second message: %+v", messages[1])
 	}
+}
+
+func TestCacheHitReporting(t *testing.T) {
+	t.Run("OpenAI Cache Hits", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := chatResponse{
+				Choices: []choice{{Message: message{Role: "assistant", Content: "Hello"}}},
+				Usage: usage{
+					PromptTokens:     100,
+					CompletionTokens: 50,
+					TotalTokens:      150,
+					PromptTokensDetails: &promptTokensDetails{
+						CachedTokens: 80,
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "gpt-5", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if metrics.CachedTokens != 80 {
+			t.Errorf("expected 80 cached tokens, got %d", metrics.CachedTokens)
+		}
+	})
+
+	t.Run("DeepSeek Cache Hits", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// DeepSeek style response (manually crafted based on requirements)
+			resp := map[string]interface{}{
+				"choices": []interface{}{
+					map[string]interface{}{
+						"message": map[string]interface{}{
+							"role":    "assistant",
+							"content": "Hello",
+						},
+					},
+				},
+				"usage": map[string]interface{}{
+					"prompt_tokens":            100,
+					"completion_tokens":        50,
+					"total_tokens":             150,
+					"prompt_cache_hit_tokens":  70,
+					"prompt_cache_miss_tokens": 30,
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewClient(server.URL, "deepseek-reasoner", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if metrics.CachedTokens != 70 {
+			t.Errorf("expected 70 cached tokens, got %d", metrics.CachedTokens)
+		}
+	})
 }
