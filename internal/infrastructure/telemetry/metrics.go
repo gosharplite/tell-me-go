@@ -675,6 +675,42 @@ func (m *metricsManager) parseTimeFilters(args costSummaryArgs, loc *time.Locati
 	return startFilter, endFilter, nil
 }
 
+func (m *metricsManager) resolveGroupingKey(r sessionCostRecord, loc *time.Location, format, groupBy string) string {
+	ts := m.getRecordTimestamp(r)
+	if ts.IsZero() {
+		return ""
+	}
+
+	switch groupBy {
+	case "model":
+		effectiveKey := r.Model
+		if effectiveKey == "" {
+			effectiveKey = "unknown"
+		}
+		return effectiveKey
+	case "date,model":
+		datePart := ts.In(loc).Format(format)
+		modelPart := r.Model
+		if modelPart == "" {
+			modelPart = "unknown"
+		}
+		return fmt.Sprintf("%s | %s", datePart, modelPart)
+	default:
+		return ts.In(loc).Format(format)
+	}
+}
+
+func (m *metricsManager) accumulateRecord(totals map[string]float64, usage map[string]domain_pricing.UsageStats, key string, r sessionCostRecord) {
+	totals[key] += r.TotalCost
+	u := usage[key]
+	u.PromptTokens += r.Usage.PromptTokens
+	u.ResponseTokens += r.Usage.ResponseTokens
+	u.CachedTokens += r.Usage.CachedTokens
+	u.ThinkingTokens += r.Usage.ThinkingTokens
+	u.SearchQueries += r.Usage.SearchQueries
+	usage[key] = u
+}
+
 func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, end time.Time, loc *time.Location, format string, groupBy string) (map[string]float64, map[string]domain_pricing.UsageStats) {
 	intervalTotals := make(map[string]float64)
 	intervalUsage := make(map[string]domain_pricing.UsageStats)
@@ -693,32 +729,10 @@ func (m *metricsManager) aggregateHistory(history []sessionCostRecord, start, en
 			continue
 		}
 
-		// Determine the key for aggregation
-		var effectiveKey string
-		switch groupBy {
-		case "model":
-			effectiveKey = r.Model
-			if effectiveKey == "" {
-				effectiveKey = "unknown"
-			}
-		case "date,model":
-			datePart := ts.In(loc).Format(format)
-			modelPart := r.Model
-			if modelPart == "" {
-				modelPart = "unknown"
-			}
-			effectiveKey = fmt.Sprintf("%s | %s", datePart, modelPart)
-		default:
-			effectiveKey = ts.In(loc).Format(format)
+		key := m.resolveGroupingKey(r, loc, format, groupBy)
+		if key != "" {
+			m.accumulateRecord(intervalTotals, intervalUsage, key, r)
 		}
-
-		intervalTotals[effectiveKey] += r.TotalCost
-		u := intervalUsage[effectiveKey]
-		u.PromptTokens += r.Usage.PromptTokens
-		u.ResponseTokens += r.Usage.ResponseTokens
-		u.CachedTokens += r.Usage.CachedTokens
-		u.ThinkingTokens += r.Usage.ThinkingTokens
-		intervalUsage[effectiveKey] = u
 	}
 	return intervalTotals, intervalUsage
 }
