@@ -350,7 +350,6 @@ func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
 	}
 }
 
-
 func TestOtherAuthenticators(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

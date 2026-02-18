@@ -127,7 +127,7 @@ type APIKeyAuth struct {
 }
 
 func (a *APIKeyAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
-func (a *APIKeyAuth) Invalidate()                           {}
+func (a *APIKeyAuth) Invalidate()                                  {}
 func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
@@ -142,7 +142,7 @@ type BearerAuth struct {
 }
 
 func (a *BearerAuth) getToken(ctx context.Context) (string, error) { return a.Token, nil }
-func (a *BearerAuth) Invalidate()                           {}
+func (a *BearerAuth) Invalidate()                                  {}
 func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
 	if a.Token != "" {
 		req.Headers["Authorization"] = "Bearer " + a.Token
@@ -156,7 +156,7 @@ type AnthropicAuth struct {
 }
 
 func (a *AnthropicAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
-func (a *AnthropicAuth) Invalidate()                           {}
+func (a *AnthropicAuth) Invalidate()                                  {}
 func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
