@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/shlex"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/pkg/stringsutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 )
 
 // commandValidator handles command validation and security checks.

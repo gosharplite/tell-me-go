@@ -13,7 +13,7 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/pkg/stringsutil"
+	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
 )
 
 type devManager struct {
