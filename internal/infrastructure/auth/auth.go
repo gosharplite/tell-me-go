@@ -21,9 +21,9 @@ import (
 
 // Authenticator defines the interface for injecting credentials into API requests.
 type Authenticator interface {
-	getToken() (string, error)
+	getToken(ctx context.Context) (string, error)
 	Invalidate()
-	Apply(req *Request) error
+	Apply(ctx context.Context, req *Request) error
 }
 
 // Request is a wrapper for the headers needed to apply authentication.
@@ -62,7 +62,7 @@ func (a *VertexAuth) getCachePath() string {
 }
 
 // getToken retrieves the OAuth2 access token with local caching.
-func (a *VertexAuth) getToken() (string, error) {
+func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -94,7 +94,7 @@ func (a *VertexAuth) getToken() (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = storage.AtomicWrite(context.Background(), cacheFile, []byte(token), 0600)
+		_ = storage.AtomicWrite(ctx, cacheFile, []byte(token), 0600)
 	}
 
 	a.Token = token
@@ -110,8 +110,8 @@ func (a *VertexAuth) Invalidate() {
 }
 
 // Apply injects the Bearer token into the request headers.
-func (a *VertexAuth) Apply(req *Request) error {
-	token, err := a.getToken()
+func (a *VertexAuth) Apply(ctx context.Context, req *Request) error {
+	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -126,9 +126,9 @@ type APIKeyAuth struct {
 	APIKey string
 }
 
-func (a *APIKeyAuth) getToken() (string, error) { return a.APIKey, nil }
-func (a *APIKeyAuth) Invalidate()               {}
-func (a *APIKeyAuth) Apply(req *Request) error {
+func (a *APIKeyAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
+func (a *APIKeyAuth) Invalidate()                           {}
+func (a *APIKeyAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		// Default to Gemini-style header; this will be specialized per provider in Phase 2
 		req.Headers["x-goog-api-key"] = a.APIKey
@@ -141,9 +141,9 @@ type BearerAuth struct {
 	Token string
 }
 
-func (a *BearerAuth) getToken() (string, error) { return a.Token, nil }
-func (a *BearerAuth) Invalidate()               {}
-func (a *BearerAuth) Apply(req *Request) error {
+func (a *BearerAuth) getToken(ctx context.Context) (string, error) { return a.Token, nil }
+func (a *BearerAuth) Invalidate()                           {}
+func (a *BearerAuth) Apply(ctx context.Context, req *Request) error {
 	if a.Token != "" {
 		req.Headers["Authorization"] = "Bearer " + a.Token
 	}
@@ -155,9 +155,9 @@ type AnthropicAuth struct {
 	APIKey string
 }
 
-func (a *AnthropicAuth) getToken() (string, error) { return a.APIKey, nil }
-func (a *AnthropicAuth) Invalidate()               {}
-func (a *AnthropicAuth) Apply(req *Request) error {
+func (a *AnthropicAuth) getToken(ctx context.Context) (string, error) { return a.APIKey, nil }
+func (a *AnthropicAuth) Invalidate()                           {}
+func (a *AnthropicAuth) Apply(ctx context.Context, req *Request) error {
 	if a.APIKey != "" {
 		req.Headers["x-api-key"] = a.APIKey
 	}
@@ -175,7 +175,7 @@ type ServiceAccountAuth struct {
 }
 
 // getToken performs the OAuth2 exchange and returns a valid access token.
-func (a *ServiceAccountAuth) getToken() (string, error) {
+func (a *ServiceAccountAuth) getToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -201,7 +201,6 @@ func (a *ServiceAccountAuth) getToken() (string, error) {
 
 		// 3. Exchange JSON key for a Bearer token via Google OAuth2
 		// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
-		ctx := context.Background()
 		creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
 		if err != nil {
 			return "", fmt.Errorf("failed to parse service account JSON: %w", err)
@@ -226,8 +225,8 @@ func (a *ServiceAccountAuth) Invalidate() {
 	a.token = ""
 }
 
-func (a *ServiceAccountAuth) Apply(req *Request) error {
-	token, err := a.getToken()
+func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
+	token, err := a.getToken(ctx)
 	if err != nil {
 		return err
 	}

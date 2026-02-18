@@ -72,7 +72,7 @@ func (c *Client) initSDK() error {
 	c.mu.RUnlock()
 
 	backend, project, location, baseURL := c.determineBackend(apiURL)
-	headers, err := c.prepareAuthHeader()
+	headers, err := c.prepareAuthHeader(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
 	}
@@ -139,7 +139,7 @@ func findInParts(parts []string, key string) string {
 	return ""
 }
 
-func (c *Client) prepareAuthHeader() (http.Header, error) {
+func (c *Client) prepareAuthHeader(ctx context.Context) (http.Header, error) {
 	authReq := &auth.Request{
 		Headers: make(map[string]string),
 	}
@@ -147,7 +147,7 @@ func (c *Client) prepareAuthHeader() (http.Header, error) {
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 
-	if err := authenticator.Apply(authReq); err != nil {
+	if err := authenticator.Apply(ctx, authReq); err != nil {
 		return nil, err
 	}
 

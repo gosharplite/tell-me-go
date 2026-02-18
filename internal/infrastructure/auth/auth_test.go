@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,11 +18,12 @@ import (
 
 func TestVertexAuth(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 	auth := &VertexAuth{Token: "test-token"}
 	req := &Request{
 		Headers: make(map[string]string),
 	}
-	if err := auth.Apply(req); err != nil {
+	if err := auth.Apply(ctx, req); err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
 
@@ -63,13 +65,14 @@ func TestVertexAuth_Invalidate(t *testing.T) {
 
 func TestVertexAuth_GetToken(t *testing.T) {
 	t.Run("Use cached token", func(t *testing.T) {
+		ctx := context.Background()
 		auth := &VertexAuth{}
 		cachePath := auth.getCachePath()
 		_ = os.MkdirAll(filepath.Dir(cachePath), 0700)
 		_ = os.WriteFile(cachePath, []byte("cached-token"), 0600)
 		defer os.Remove(cachePath)
 
-		token, err := auth.getToken()
+		token, err := auth.getToken(ctx)
 		if err != nil {
 			t.Fatalf("getToken failed: %v", err)
 		}
@@ -79,6 +82,7 @@ func TestVertexAuth_GetToken(t *testing.T) {
 	})
 
 	t.Run("Fetch from gcloud", func(t *testing.T) {
+		ctx := context.Background()
 		auth := &VertexAuth{
 			tokenCmdFunc: func() ([]byte, error) {
 				return []byte("gcloud-token"), nil
@@ -88,7 +92,7 @@ func TestVertexAuth_GetToken(t *testing.T) {
 		_ = os.Remove(cachePath) // ensure no cache
 		defer os.Remove(cachePath)
 
-		token, err := auth.getToken()
+		token, err := auth.getToken(ctx)
 		if err != nil {
 			t.Fatalf("getToken failed: %v", err)
 		}
@@ -106,13 +110,14 @@ func TestVertexAuth_GetToken(t *testing.T) {
 
 func TestServiceAccountAuth(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 	auth := &ServiceAccountAuth{
 		token:  "cached-sa-token",
 		expiry: time.Now().Add(10 * time.Minute),
 	}
 
 	t.Run("Use cached token", func(t *testing.T) {
-		token, err := auth.getToken()
+		token, err := auth.getToken(ctx)
 		if err != nil {
 			t.Fatalf("getToken failed: %v", err)
 		}
@@ -132,7 +137,7 @@ func TestServiceAccountAuth(t *testing.T) {
 		auth.token = "sa-token"
 		auth.expiry = time.Now().Add(10 * time.Minute)
 		req := &Request{Headers: make(map[string]string)}
-		if err := auth.Apply(req); err != nil {
+		if err := auth.Apply(ctx, req); err != nil {
 			t.Fatalf("Apply failed: %v", err)
 		}
 		if req.Headers["Authorization"] != "Bearer sa-token" {
@@ -142,6 +147,7 @@ func TestServiceAccountAuth(t *testing.T) {
 }
 
 func TestVertexAuth_Concurrency(t *testing.T) {
+	ctx := context.Background()
 	auth := &VertexAuth{
 		tokenCmdFunc: func() ([]byte, error) {
 			// Simulate some work
@@ -158,7 +164,7 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			req := &Request{Headers: make(map[string]string)}
-			err := auth.Apply(req)
+			err := auth.Apply(ctx, req)
 			if err == nil {
 				if req.Headers["Authorization"] != "Bearer concurrent-token" {
 					err = fmt.Errorf("unexpected header: %s", req.Headers["Authorization"])
@@ -188,6 +194,7 @@ func TestServiceAccountAuth_TokenExchange(t *testing.T) {
 }
 
 func testSA_SuccessfulExchange(t *testing.T) {
+	ctx := context.Background()
 	callCount := 0
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
@@ -200,7 +207,7 @@ func testSA_SuccessfulExchange(t *testing.T) {
 	}
 
 	req := &Request{Headers: make(map[string]string)}
-	if err := auth.Apply(req); err != nil {
+	if err := auth.Apply(ctx, req); err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
 
@@ -209,7 +216,7 @@ func testSA_SuccessfulExchange(t *testing.T) {
 	}
 
 	// Second call should use cache
-	if err := auth.Apply(req); err != nil {
+	if err := auth.Apply(ctx, req); err != nil {
 		t.Fatalf("Apply 2 failed: %v", err)
 	}
 	if callCount != 1 {
@@ -218,6 +225,7 @@ func testSA_SuccessfulExchange(t *testing.T) {
 }
 
 func testSA_ExpirationHandling(t *testing.T) {
+	ctx := context.Background()
 	callCount := 0
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
@@ -235,13 +243,13 @@ func testSA_ExpirationHandling(t *testing.T) {
 	}
 
 	// First call
-	token1, _ := auth.getToken()
+	token1, _ := auth.getToken(ctx)
 	if token1 != "token-1" {
 		t.Errorf("got %s, want token-1", token1)
 	}
 
 	// Second call should trigger refresh because token-1 is within 5-min buffer
-	token2, _ := auth.getToken()
+	token2, _ := auth.getToken(ctx)
 	if token2 != "token-2" {
 		t.Errorf("got %s, want token-2", token2)
 	}
@@ -251,18 +259,20 @@ func testSA_ExpirationHandling(t *testing.T) {
 }
 
 func testSA_ErrorHandling(t *testing.T) {
+	ctx := context.Background()
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
 			return nil, fmt.Errorf("provider error")
 		},
 	}
-	_, err := auth.getToken()
+	_, err := auth.getToken(ctx)
 	if err == nil || !strings.Contains(err.Error(), "provider error") {
 		t.Errorf("expected provider error, got %v", err)
 	}
 }
 
 func testSA_ThreadSafety(t *testing.T) {
+	ctx := context.Background()
 	callCount := 0
 	auth := &ServiceAccountAuth{
 		tokenSourceFunc: func() (*oauth2.Token, error) {
@@ -281,7 +291,7 @@ func testSA_ThreadSafety(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = auth.getToken()
+			_, _ = auth.getToken(ctx)
 		}()
 	}
 	wg.Wait()
@@ -292,16 +302,18 @@ func testSA_ThreadSafety(t *testing.T) {
 }
 
 func testSA_ProductionBranch_FileNotFound(t *testing.T) {
+	ctx := context.Background()
 	auth := &ServiceAccountAuth{
 		KeyFilePath: "non-existent.json",
 	}
-	_, err := auth.getToken()
+	_, err := auth.getToken(ctx)
 	if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
 		t.Errorf("expected file not found error, got %v", err)
 	}
 }
 
 func testSA_ProductionBranch_InvalidJSON(t *testing.T) {
+	ctx := context.Background()
 	tmpDir := t.TempDir()
 	keyFile := filepath.Join(tmpDir, "invalid-key.json")
 	_ = os.WriteFile(keyFile, []byte("invalid json"), 0600)
@@ -309,13 +321,14 @@ func testSA_ProductionBranch_InvalidJSON(t *testing.T) {
 	auth := &ServiceAccountAuth{
 		KeyFilePath: keyFile,
 	}
-	_, err := auth.getToken()
+	_, err := auth.getToken(ctx)
 	if err == nil || !strings.Contains(err.Error(), "failed to parse service account JSON") {
 		t.Errorf("expected parse error, got %v", err)
 	}
 }
 
 func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
+	ctx := context.Background()
 	tmpDir := t.TempDir()
 	keyFile := filepath.Join(tmpDir, "invalid-key.json")
 	content := `{
@@ -330,7 +343,7 @@ func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
 	auth := &ServiceAccountAuth{
 		KeyFilePath: keyFile,
 	}
-	_, err := auth.getToken()
+	_, err := auth.getToken(ctx)
 	// google-cloud-go's CredentialsFromJSON might fail to parse the key
 	if err == nil {
 		t.Errorf("expected error, got nil")
@@ -340,15 +353,16 @@ func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
 
 func TestOtherAuthenticators(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 
 	t.Run("APIKeyAuth", func(t *testing.T) {
 		auth := &APIKeyAuth{APIKey: "test-api-key"}
 		req := &Request{Headers: make(map[string]string)}
-		_ = auth.Apply(req)
+		_ = auth.Apply(ctx, req)
 		if req.Headers["x-goog-api-key"] != "test-api-key" {
 			t.Errorf("got %s, want test-api-key", req.Headers["x-goog-api-key"])
 		}
-		token, _ := auth.getToken()
+		token, _ := auth.getToken(ctx)
 		if token != "test-api-key" {
 			t.Errorf("got %s, want test-api-key", token)
 		}
@@ -358,11 +372,11 @@ func TestOtherAuthenticators(t *testing.T) {
 	t.Run("BearerAuth", func(t *testing.T) {
 		auth := &BearerAuth{Token: "test-bearer"}
 		req := &Request{Headers: make(map[string]string)}
-		_ = auth.Apply(req)
+		_ = auth.Apply(ctx, req)
 		if req.Headers["Authorization"] != "Bearer test-bearer" {
 			t.Errorf("got %s, want Bearer test-bearer", req.Headers["Authorization"])
 		}
-		token, _ := auth.getToken()
+		token, _ := auth.getToken(ctx)
 		if token != "test-bearer" {
 			t.Errorf("got %s, want test-bearer", token)
 		}
@@ -372,11 +386,11 @@ func TestOtherAuthenticators(t *testing.T) {
 	t.Run("AnthropicAuth", func(t *testing.T) {
 		auth := &AnthropicAuth{APIKey: "test-anthropic"}
 		req := &Request{Headers: make(map[string]string)}
-		_ = auth.Apply(req)
+		_ = auth.Apply(ctx, req)
 		if req.Headers["x-api-key"] != "test-anthropic" {
 			t.Errorf("got %s, want test-anthropic", req.Headers["x-api-key"])
 		}
-		token, _ := auth.getToken()
+		token, _ := auth.getToken(ctx)
 		if token != "test-anthropic" {
 			t.Errorf("got %s, want test-anthropic", token)
 		}
