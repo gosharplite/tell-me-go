@@ -178,156 +178,165 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 func TestServiceAccountAuth_TokenExchange(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Successful Exchange", func(t *testing.T) {
-		callCount := 0
-		auth := &ServiceAccountAuth{
-			tokenSourceFunc: func() (*oauth2.Token, error) {
-				callCount++
-				return &oauth2.Token{
-					AccessToken: "mock-token",
-					Expiry:      time.Now().Add(1 * time.Hour),
-				}, nil
-			},
-		}
+	t.Run("Successful Exchange", testSA_SuccessfulExchange)
+	t.Run("Expiration Handling", testSA_ExpirationHandling)
+	t.Run("Error Handling", testSA_ErrorHandling)
+	t.Run("Thread Safety", testSA_ThreadSafety)
+	t.Run("Production Branch - File Not Found", testSA_ProductionBranch_FileNotFound)
+	t.Run("Production Branch - Invalid JSON", testSA_ProductionBranch_InvalidJSON)
+	t.Run("Production Branch - Invalid Private Key", testSA_ProductionBranch_InvalidPrivateKey)
+}
 
-		req := &Request{Headers: make(map[string]string)}
-		if err := auth.Apply(req); err != nil {
-			t.Fatalf("Apply failed: %v", err)
-		}
+func testSA_SuccessfulExchange(t *testing.T) {
+	callCount := 0
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			callCount++
+			return &oauth2.Token{
+				AccessToken: "mock-token",
+				Expiry:      time.Now().Add(1 * time.Hour),
+			}, nil
+		},
+	}
 
-		if req.Headers["Authorization"] != "Bearer mock-token" {
-			t.Errorf("got %s, want Bearer mock-token", req.Headers["Authorization"])
-		}
+	req := &Request{Headers: make(map[string]string)}
+	if err := auth.Apply(req); err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
 
-		// Second call should use cache
-		if err := auth.Apply(req); err != nil {
-			t.Fatalf("Apply 2 failed: %v", err)
-		}
-		if callCount != 1 {
-			t.Errorf("expected 1 call to tokenSourceFunc, got %d", callCount)
-		}
-	})
+	if req.Headers["Authorization"] != "Bearer mock-token" {
+		t.Errorf("got %s, want Bearer mock-token", req.Headers["Authorization"])
+	}
 
-	t.Run("Expiration Handling", func(t *testing.T) {
-		callCount := 0
-		auth := &ServiceAccountAuth{
-			tokenSourceFunc: func() (*oauth2.Token, error) {
-				callCount++
-				// First token expires soon, second one is fresh
-				expiry := time.Now().Add(4 * time.Minute)
-				if callCount > 1 {
-					expiry = time.Now().Add(1 * time.Hour)
-				}
-				return &oauth2.Token{
-					AccessToken: fmt.Sprintf("token-%d", callCount),
-					Expiry:      expiry,
-				}, nil
-			},
-		}
+	// Second call should use cache
+	if err := auth.Apply(req); err != nil {
+		t.Fatalf("Apply 2 failed: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 call to tokenSourceFunc, got %d", callCount)
+	}
+}
 
-		// First call
-		token1, _ := auth.getToken()
-		if token1 != "token-1" {
-			t.Errorf("got %s, want token-1", token1)
-		}
+func testSA_ExpirationHandling(t *testing.T) {
+	callCount := 0
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			callCount++
+			// First token expires soon, second one is fresh
+			expiry := time.Now().Add(4 * time.Minute)
+			if callCount > 1 {
+				expiry = time.Now().Add(1 * time.Hour)
+			}
+			return &oauth2.Token{
+				AccessToken: fmt.Sprintf("token-%d", callCount),
+				Expiry:      expiry,
+			}, nil
+		},
+	}
 
-		// Second call should trigger refresh because token-1 is within 5-min buffer
-		token2, _ := auth.getToken()
-		if token2 != "token-2" {
-			t.Errorf("got %s, want token-2", token2)
-		}
-		if callCount != 2 {
-			t.Errorf("expected 2 calls, got %d", callCount)
-		}
-	})
+	// First call
+	token1, _ := auth.getToken()
+	if token1 != "token-1" {
+		t.Errorf("got %s, want token-1", token1)
+	}
 
-	t.Run("Error Handling", func(t *testing.T) {
-		auth := &ServiceAccountAuth{
-			tokenSourceFunc: func() (*oauth2.Token, error) {
-				return nil, fmt.Errorf("provider error")
-			},
-		}
-		_, err := auth.getToken()
-		if err == nil || !strings.Contains(err.Error(), "provider error") {
-			t.Errorf("expected provider error, got %v", err)
-		}
-	})
+	// Second call should trigger refresh because token-1 is within 5-min buffer
+	token2, _ := auth.getToken()
+	if token2 != "token-2" {
+		t.Errorf("got %s, want token-2", token2)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 calls, got %d", callCount)
+	}
+}
 
-	t.Run("Thread Safety", func(t *testing.T) {
-		callCount := 0
-		auth := &ServiceAccountAuth{
-			tokenSourceFunc: func() (*oauth2.Token, error) {
-				time.Sleep(10 * time.Millisecond) // Ensure overlap
-				callCount++
-				return &oauth2.Token{
-					AccessToken: "concurrent-token",
-					Expiry:      time.Now().Add(1 * time.Hour),
-				}, nil
-			},
-		}
+func testSA_ErrorHandling(t *testing.T) {
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			return nil, fmt.Errorf("provider error")
+		},
+	}
+	_, err := auth.getToken()
+	if err == nil || !strings.Contains(err.Error(), "provider error") {
+		t.Errorf("expected provider error, got %v", err)
+	}
+}
 
-		const n = 10
-		var wg sync.WaitGroup
-		wg.Add(n)
-		for i := 0; i < n; i++ {
-			go func() {
-				defer wg.Done()
-				_, _ = auth.getToken()
-			}()
-		}
-		wg.Wait()
+func testSA_ThreadSafety(t *testing.T) {
+	callCount := 0
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			time.Sleep(10 * time.Millisecond) // Ensure overlap
+			callCount++
+			return &oauth2.Token{
+				AccessToken: "concurrent-token",
+				Expiry:      time.Now().Add(1 * time.Hour),
+			}, nil
+		},
+	}
 
-		if callCount != 1 {
-			t.Errorf("expected only 1 call to tokenSourceFunc, got %d", callCount)
-		}
-	})
+	const n = 10
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			_, _ = auth.getToken()
+		}()
+	}
+	wg.Wait()
 
-	t.Run("Production Branch - File Not Found", func(t *testing.T) {
-		auth := &ServiceAccountAuth{
-			KeyFilePath: "non-existent.json",
-		}
-		_, err := auth.getToken()
-		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
-			t.Errorf("expected file not found error, got %v", err)
-		}
-	})
+	if callCount != 1 {
+		t.Errorf("expected only 1 call to tokenSourceFunc, got %d", callCount)
+	}
+}
 
-	t.Run("Production Branch - Invalid JSON", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		keyFile := filepath.Join(tmpDir, "invalid-key.json")
-		_ = os.WriteFile(keyFile, []byte("invalid json"), 0600)
+func testSA_ProductionBranch_FileNotFound(t *testing.T) {
+	auth := &ServiceAccountAuth{
+		KeyFilePath: "non-existent.json",
+	}
+	_, err := auth.getToken()
+	if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+		t.Errorf("expected file not found error, got %v", err)
+	}
+}
 
-		auth := &ServiceAccountAuth{
-			KeyFilePath: keyFile,
-		}
-		_, err := auth.getToken()
-		if err == nil || !strings.Contains(err.Error(), "failed to parse service account JSON") {
-			t.Errorf("expected parse error, got %v", err)
-		}
-	})
+func testSA_ProductionBranch_InvalidJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyFile := filepath.Join(tmpDir, "invalid-key.json")
+	_ = os.WriteFile(keyFile, []byte("invalid json"), 0600)
 
-	t.Run("Production Branch - Invalid Private Key", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		keyFile := filepath.Join(tmpDir, "invalid-key.json")
-		content := `{
+	auth := &ServiceAccountAuth{
+		KeyFilePath: keyFile,
+	}
+	_, err := auth.getToken()
+	if err == nil || !strings.Contains(err.Error(), "failed to parse service account JSON") {
+		t.Errorf("expected parse error, got %v", err)
+	}
+}
+
+func testSA_ProductionBranch_InvalidPrivateKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyFile := filepath.Join(tmpDir, "invalid-key.json")
+	content := `{
   "type": "service_account",
   "project_id": "test-project",
   "private_key": "not-a-pem-key",
   "client_email": "test@test-project.iam.gserviceaccount.com",
   "token_uri": "https://oauth2.googleapis.com/token"
 }`
-		_ = os.WriteFile(keyFile, []byte(content), 0600)
+	_ = os.WriteFile(keyFile, []byte(content), 0600)
 
-		auth := &ServiceAccountAuth{
-			KeyFilePath: keyFile,
-		}
-		_, err := auth.getToken()
-		// google-cloud-go's CredentialsFromJSON might fail to parse the key
-		if err == nil {
-			t.Errorf("expected error, got nil")
-		}
-	})
+	auth := &ServiceAccountAuth{
+		KeyFilePath: keyFile,
+	}
+	_, err := auth.getToken()
+	// google-cloud-go's CredentialsFromJSON might fail to parse the key
+	if err == nil {
+		t.Errorf("expected error, got nil")
+	}
 }
+
 
 func TestOtherAuthenticators(t *testing.T) {
 	t.Parallel()
