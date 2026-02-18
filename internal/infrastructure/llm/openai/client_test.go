@@ -19,24 +19,20 @@ import (
 	llmerr "github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 )
 
+func setupMockOpenAIServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *client) {
+	server := httptest.NewServer(handler)
+	c := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
+	return server, c
+}
+
 func TestSendChat(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Errorf("expected path /chat/completions, got %s", r.URL.Path)
-		}
-		if r.Header.Get("Authorization") != "Bearer test-key" {
-			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
-		}
+	t.Run("Successful Chat Response", testSuccessfulChatResponse)
+	t.Run("Request Headers and Body", testRequestHeadersAndBody)
+	t.Run("History Processing", testHistoryProcessing)
+}
 
-		var req chatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatal(err)
-		}
-
-		if req.Model != "gpt-4" {
-			t.Errorf("expected model gpt-4, got %s", req.Model)
-		}
-
+func testSuccessfulChatResponse(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		resp := chatResponse{
 			ID: "test-id",
 			Choices: []choice{
@@ -55,20 +51,11 @@ func TestSendChat(t *testing.T) {
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
-	}))
+	}
+	server, client := setupMockOpenAIServer(t, handler)
 	defer server.Close()
 
-	client := NewClient(server.URL, "gpt-4", &auth.BearerAuth{Token: "test-key"}, nil, "", 0, 0)
-	history := []*llm.Content{
-		{
-			Role: "user",
-			Parts: []*llm.Part{
-				{Text: "Hi"},
-			},
-		},
-	}
-
-	resp, metrics, err := client.SendChat(context.Background(), history, nil, nil)
+	resp, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
 	if err != nil {
 		t.Fatalf("SendChat failed: %v", err)
 	}
@@ -79,6 +66,71 @@ func TestSendChat(t *testing.T) {
 
 	if metrics.TotalTokens != 30 {
 		t.Errorf("unexpected metrics: %+v", metrics)
+	}
+}
+
+func testRequestHeadersAndBody(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("expected path /chat/completions, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
+		}
+
+		var req chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+
+		if req.Model != "gpt-4" {
+			t.Errorf("expected model gpt-4, got %s", req.Model)
+		}
+
+		resp := chatResponse{
+			Choices: []choice{{Message: message{Role: "assistant", Content: "ok"}}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server, client := setupMockOpenAIServer(t, handler)
+	defer server.Close()
+
+	_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+}
+
+func testHistoryProcessing(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(req.Messages) != 1 || req.Messages[0].Content != "Hi" || req.Messages[0].Role != "user" {
+			t.Errorf("unexpected messages: %+v", req.Messages)
+		}
+
+		resp := chatResponse{
+			Choices: []choice{{Message: message{Role: "assistant", Content: "ok"}}},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+	server, client := setupMockOpenAIServer(t, handler)
+	defer server.Close()
+
+	history := []*llm.Content{
+		{
+			Role: "user",
+			Parts: []*llm.Part{
+				{Text: "Hi"},
+			},
+		},
+	}
+	_, _, err := client.SendChat(context.Background(), history, nil, nil)
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
 	}
 }
 
