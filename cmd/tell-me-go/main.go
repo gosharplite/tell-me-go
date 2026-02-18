@@ -11,7 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-const version = "3.2.27"
+const version = "3.2.28"
 
 func main() {
 	app := cli.New(version, os.Stdin, os.Stdout, os.Stderr)
