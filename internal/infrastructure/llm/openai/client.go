@@ -113,15 +113,15 @@ type choice struct {
 }
 
 type usage struct {
-	PromptTokens            int32                    `json:"prompt_tokens"`
-	CompletionTokens        int32                    `json:"completion_tokens"`
-	TotalTokens             int32                    `json:"total_tokens"`
+	PromptTokens     int32 `json:"prompt_tokens"`
+	CompletionTokens int32 `json:"completion_tokens"`
+	TotalTokens      int32 `json:"total_tokens"`
 	// OpenAI standard
 	PromptTokensDetails     *promptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *completionTokensDetails `json:"completion_tokens_details,omitempty"`
 	// DeepSeek standard
-	PromptCacheHitTokens    int32                    `json:"prompt_cache_hit_tokens,omitempty"`
-	PromptCacheMissTokens   int32                    `json:"prompt_cache_miss_tokens,omitempty"`
+	PromptCacheHitTokens  int32 `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens int32 `json:"prompt_cache_miss_tokens,omitempty"`
 }
 
 type promptTokensDetails struct {
