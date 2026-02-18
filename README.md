@@ -3,12 +3,12 @@ Copyright (c) 2026 gosharplite@gmail.com
 SPDX-License-Identifier: MIT
 -->
 
-# tell-me-go: A Go Gemini CLI Assistant
+# tell-me-go: A Multi-Provider Reasoning Agent for the Terminal
 
-A lightweight, terminal-based interface for Google's Gemini models, powered by the official Google GenAI SDK.
+A high-performance, type-safe CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude**) under a single, resilient interface.
 
 ## Overview
-`tell-me-go` is a high-performance, type-safe assistant designed for developers. Originally built for Google's Gemini models, it is now a **production-ready multi-provider reasoning agent** that unifies the world's most powerful Chain-of-Thought models (Gemini, DeepSeek, Claude) under a single, resilient interface.
+`tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
 *   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 3.7**, and **Gemini 2.0/3.0**.
