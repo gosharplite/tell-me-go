@@ -4,6 +4,7 @@
 package telemetry
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -270,7 +271,7 @@ func TestGetPricing(t *testing.T) {
 			t.Fatalf("failed to write pricing file: %v", err)
 		}
 
-		pd := GetPricing(nil, nil, outputDir)
+		pd := GetPricing(context.Background(), nil, outputDir)
 		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
 			t.Errorf("expected UpdatedAt 2026-02-03T12:00:00Z, got %q", pd.UpdatedAt)
 		}
@@ -282,7 +283,7 @@ func TestGetPricing(t *testing.T) {
 	t.Run("Fallback on missing file", func(t *testing.T) {
 		// Use a different temp dir without assets
 		anotherDir := t.TempDir()
-		pd := GetPricing(nil, nil, filepath.Join(anotherDir, "output"))
+		pd := GetPricing(context.Background(), nil, filepath.Join(anotherDir, "output"))
 		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
 			t.Errorf("expected hardcoded fallback, got %q", pd.UpdatedAt)
 		}
@@ -294,7 +295,7 @@ func TestGetPricing(t *testing.T) {
 			t.Fatalf("failed to write invalid pricing file: %v", err)
 		}
 
-		pd := GetPricing(nil, nil, outputDir)
+		pd := GetPricing(context.Background(), nil, outputDir)
 		if pd.UpdatedAt != "2026-02-03T12:00:00Z" {
 			t.Errorf("expected hardcoded fallback on invalid JSON, got %q", pd.UpdatedAt)
 		}
