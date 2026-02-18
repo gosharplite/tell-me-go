@@ -48,13 +48,23 @@ func NewClient(baseURL, model string, authenticator auth.Authenticator, headers 
 }
 
 type messagesRequest struct {
-	Model     string    `json:"model"`
-	Messages  []message `json:"messages"`
-	System    string    `json:"system,omitempty"`
-	MaxTokens int       `json:"max_tokens"`
-	Tools     []tool    `json:"tools,omitempty"`
-	Thinking  *thinking `json:"thinking,omitempty"`
-	Stream    bool      `json:"stream,omitempty"`
+	Model     string      `json:"model"`
+	Messages  []message   `json:"messages"`
+	System    interface{} `json:"system,omitempty"`
+	MaxTokens int         `json:"max_tokens"`
+	Tools     []tool      `json:"tools,omitempty"`
+	Thinking  *thinking   `json:"thinking,omitempty"`
+	Stream    bool        `json:"stream,omitempty"`
+}
+
+type systemBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type cacheControl struct {
+	Type string `json:"type"` // "ephemeral"
 }
 
 type thinking struct {
@@ -95,9 +105,11 @@ type messagesResponse struct {
 }
 
 type usage struct {
-	InputTokens    int32 `json:"input_tokens"`
-	OutputTokens   int32 `json:"output_tokens"`
-	ThinkingTokens int32 `json:"thinking_tokens,omitempty"`
+	InputTokens              int32 `json:"input_tokens"`
+	OutputTokens             int32 `json:"output_tokens"`
+	ThinkingTokens           int32 `json:"thinking_tokens,omitempty"`
+	CacheCreationInputTokens int32 `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int32 `json:"cache_read_input_tokens,omitempty"`
 }
 
 func (c *client) SendChat(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -321,6 +333,7 @@ func (c *client) fromAnthropicResponse(resp *messagesResponse, duration float64)
 		PromptTokens:   resp.Usage.InputTokens,
 		ResponseTokens: resp.Usage.OutputTokens,
 		ThinkingTokens: resp.Usage.ThinkingTokens,
+		CachedTokens:   resp.Usage.CacheReadInputTokens,
 		TotalTokens:    resp.Usage.InputTokens + resp.Usage.OutputTokens,
 		Duration:       duration,
 	}
@@ -379,15 +392,26 @@ type streamState struct {
 }
 
 func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Content, toolDecls []*tools.ToolDeclaration, stream bool) (*http.Request, error) {
-	system, messages := c.toAnthropicMessages(history)
+	systemStr, messages := c.toAnthropicMessages(history)
 
 	reqPayload := messagesRequest{
 		Model:     c.model,
 		Messages:  messages,
-		System:    system,
 		MaxTokens: 4096, // Default for now
 		Tools:     c.toAnthropicTools(toolDecls),
 		Stream:    stream,
+	}
+
+	if systemStr != "" {
+		reqPayload.System = []systemBlock{
+			{
+				Type: "text",
+				Text: systemStr,
+				CacheControl: &cacheControl{
+					Type: "ephemeral",
+				},
+			},
+		}
 	}
 
 	if c.thinkingBudget > 0 {
@@ -413,6 +437,7 @@ func (c *client) prepareAnthropicRequest(ctx context.Context, history []*llm.Con
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
 	if stream {
 		req.Header.Set("Accept", "text/event-stream")
 	}
@@ -563,7 +588,8 @@ func (c *client) handleMessageStart(data string, state *streamState) error {
 	var ms struct {
 		Message struct {
 			Usage struct {
-				InputTokens int32 `json:"input_tokens"`
+				InputTokens          int32 `json:"input_tokens"`
+				CacheReadInputTokens int32 `json:"cache_read_input_tokens,omitempty"`
 			} `json:"usage"`
 		} `json:"message"`
 	}
@@ -573,6 +599,7 @@ func (c *client) handleMessageStart(data string, state *streamState) error {
 	state.metrics = &llm.Metrics{
 		Model:        c.model,
 		PromptTokens: ms.Message.Usage.InputTokens,
+		CachedTokens: ms.Message.Usage.CacheReadInputTokens,
 	}
 	return nil
 }

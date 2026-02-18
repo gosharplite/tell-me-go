@@ -32,6 +32,9 @@ func TestSendChat(t *testing.T) {
 		if r.Header.Get("anthropic-version") != "2023-06-01" {
 			t.Errorf("expected version 2023-06-01, got %s", r.Header.Get("anthropic-version"))
 		}
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta prompt-caching-2024-07-31, got %s", r.Header.Get("anthropic-beta"))
+		}
 
 		var req messagesRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -641,5 +644,84 @@ func TestStreamChat_MalformedEvents(t *testing.T) {
 	_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
 	if err == nil {
 		t.Error("expected error from malformed error event")
+	}
+}
+
+func TestPromptCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta header, got %s", r.Header.Get("anthropic-beta"))
+		}
+
+		var req messagesRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		systemBlocks, ok := req.System.([]interface{})
+		if !ok || len(systemBlocks) != 1 {
+			t.Errorf("expected 1 system block, got %v", req.System)
+		} else {
+			block := systemBlocks[0].(map[string]interface{})
+			if block["type"] != "text" || block["text"] != "You are a helpful assistant" {
+				t.Errorf("unexpected system block text: %v", block["text"])
+			}
+			cache, ok := block["cache_control"].(map[string]interface{})
+			if !ok || cache["type"] != "ephemeral" {
+				t.Errorf("expected ephemeral cache control, got %v", block["cache_control"])
+			}
+		}
+
+		resp := messagesResponse{
+			Usage: usage{
+				InputTokens:          100,
+				CacheReadInputTokens: 80,
+				OutputTokens:         50,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3-5", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "You are a helpful assistant", 0)
+	_, metrics, err := client.SendChat(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if metrics.CachedTokens != 80 {
+		t.Errorf("expected 80 cached tokens, got %d", metrics.CachedTokens)
+	}
+}
+
+func TestStreamPromptCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("anthropic-beta") != "prompt-caching-2024-07-31" {
+			t.Errorf("expected beta header, got %s", r.Header.Get("anthropic-beta"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		events := []struct {
+			event string
+			data  string
+		}{
+			{"message_start", `{"message":{"usage":{"input_tokens":100, "cache_read_input_tokens": 80}}}`},
+			{"content_block_delta", `{"delta":{"type":"text_delta","text":"Hello"}}`},
+			{"message_delta", `{"usage":{"output_tokens":20}}`},
+		}
+
+		for _, e := range events {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.event, e.data)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+
+	metrics, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if metrics.PromptTokens != 100 || metrics.CachedTokens != 80 {
+		t.Errorf("unexpected metrics: %+v", metrics)
 	}
 }
