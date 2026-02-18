@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func TestVertexAuth(t *testing.T) {
@@ -170,4 +173,204 @@ func TestVertexAuth_Concurrency(t *testing.T) {
 			t.Errorf("concurrency error: %v", err)
 		}
 	}
+}
+
+func TestServiceAccountAuth_TokenExchange(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Successful Exchange", func(t *testing.T) {
+		callCount := 0
+		auth := &ServiceAccountAuth{
+			tokenSourceFunc: func() (*oauth2.Token, error) {
+				callCount++
+				return &oauth2.Token{
+					AccessToken: "mock-token",
+					Expiry:      time.Now().Add(1 * time.Hour),
+				}, nil
+			},
+		}
+
+		req := &Request{Headers: make(map[string]string)}
+		if err := auth.Apply(req); err != nil {
+			t.Fatalf("Apply failed: %v", err)
+		}
+
+		if req.Headers["Authorization"] != "Bearer mock-token" {
+			t.Errorf("got %s, want Bearer mock-token", req.Headers["Authorization"])
+		}
+
+		// Second call should use cache
+		if err := auth.Apply(req); err != nil {
+			t.Fatalf("Apply 2 failed: %v", err)
+		}
+		if callCount != 1 {
+			t.Errorf("expected 1 call to tokenSourceFunc, got %d", callCount)
+		}
+	})
+
+	t.Run("Expiration Handling", func(t *testing.T) {
+		callCount := 0
+		auth := &ServiceAccountAuth{
+			tokenSourceFunc: func() (*oauth2.Token, error) {
+				callCount++
+				// First token expires soon, second one is fresh
+				expiry := time.Now().Add(4 * time.Minute)
+				if callCount > 1 {
+					expiry = time.Now().Add(1 * time.Hour)
+				}
+				return &oauth2.Token{
+					AccessToken: fmt.Sprintf("token-%d", callCount),
+					Expiry:      expiry,
+				}, nil
+			},
+		}
+
+		// First call
+		token1, _ := auth.getToken()
+		if token1 != "token-1" {
+			t.Errorf("got %s, want token-1", token1)
+		}
+
+		// Second call should trigger refresh because token-1 is within 5-min buffer
+		token2, _ := auth.getToken()
+		if token2 != "token-2" {
+			t.Errorf("got %s, want token-2", token2)
+		}
+		if callCount != 2 {
+			t.Errorf("expected 2 calls, got %d", callCount)
+		}
+	})
+
+	t.Run("Error Handling", func(t *testing.T) {
+		auth := &ServiceAccountAuth{
+			tokenSourceFunc: func() (*oauth2.Token, error) {
+				return nil, fmt.Errorf("provider error")
+			},
+		}
+		_, err := auth.getToken()
+		if err == nil || !strings.Contains(err.Error(), "provider error") {
+			t.Errorf("expected provider error, got %v", err)
+		}
+	})
+
+	t.Run("Thread Safety", func(t *testing.T) {
+		callCount := 0
+		auth := &ServiceAccountAuth{
+			tokenSourceFunc: func() (*oauth2.Token, error) {
+				time.Sleep(10 * time.Millisecond) // Ensure overlap
+				callCount++
+				return &oauth2.Token{
+					AccessToken: "concurrent-token",
+					Expiry:      time.Now().Add(1 * time.Hour),
+				}, nil
+			},
+		}
+
+		const n = 10
+		var wg sync.WaitGroup
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			go func() {
+				defer wg.Done()
+				_, _ = auth.getToken()
+			}()
+		}
+		wg.Wait()
+
+		if callCount != 1 {
+			t.Errorf("expected only 1 call to tokenSourceFunc, got %d", callCount)
+		}
+	})
+
+	t.Run("Production Branch - File Not Found", func(t *testing.T) {
+		auth := &ServiceAccountAuth{
+			KeyFilePath: "non-existent.json",
+		}
+		_, err := auth.getToken()
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected file not found error, got %v", err)
+		}
+	})
+
+	t.Run("Production Branch - Invalid JSON", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		keyFile := filepath.Join(tmpDir, "invalid-key.json")
+		_ = os.WriteFile(keyFile, []byte("invalid json"), 0600)
+
+		auth := &ServiceAccountAuth{
+			KeyFilePath: keyFile,
+		}
+		_, err := auth.getToken()
+		if err == nil || !strings.Contains(err.Error(), "failed to parse service account JSON") {
+			t.Errorf("expected parse error, got %v", err)
+		}
+	})
+
+	t.Run("Production Branch - Invalid Private Key", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		keyFile := filepath.Join(tmpDir, "invalid-key.json")
+		content := `{
+  "type": "service_account",
+  "project_id": "test-project",
+  "private_key": "not-a-pem-key",
+  "client_email": "test@test-project.iam.gserviceaccount.com",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}`
+		_ = os.WriteFile(keyFile, []byte(content), 0600)
+
+		auth := &ServiceAccountAuth{
+			KeyFilePath: keyFile,
+		}
+		_, err := auth.getToken()
+		// google-cloud-go's CredentialsFromJSON might fail to parse the key
+		if err == nil {
+			t.Errorf("expected error, got nil")
+		}
+	})
+}
+
+func TestOtherAuthenticators(t *testing.T) {
+	t.Parallel()
+
+	t.Run("APIKeyAuth", func(t *testing.T) {
+		auth := &APIKeyAuth{APIKey: "test-api-key"}
+		req := &Request{Headers: make(map[string]string)}
+		_ = auth.Apply(req)
+		if req.Headers["x-goog-api-key"] != "test-api-key" {
+			t.Errorf("got %s, want test-api-key", req.Headers["x-goog-api-key"])
+		}
+		token, _ := auth.getToken()
+		if token != "test-api-key" {
+			t.Errorf("got %s, want test-api-key", token)
+		}
+		auth.Invalidate() // should do nothing
+	})
+
+	t.Run("BearerAuth", func(t *testing.T) {
+		auth := &BearerAuth{Token: "test-bearer"}
+		req := &Request{Headers: make(map[string]string)}
+		_ = auth.Apply(req)
+		if req.Headers["Authorization"] != "Bearer test-bearer" {
+			t.Errorf("got %s, want Bearer test-bearer", req.Headers["Authorization"])
+		}
+		token, _ := auth.getToken()
+		if token != "test-bearer" {
+			t.Errorf("got %s, want test-bearer", token)
+		}
+		auth.Invalidate() // should do nothing
+	})
+
+	t.Run("AnthropicAuth", func(t *testing.T) {
+		auth := &AnthropicAuth{APIKey: "test-anthropic"}
+		req := &Request{Headers: make(map[string]string)}
+		_ = auth.Apply(req)
+		if req.Headers["x-api-key"] != "test-anthropic" {
+			t.Errorf("got %s, want test-anthropic", req.Headers["x-api-key"])
+		}
+		token, _ := auth.getToken()
+		if token != "test-anthropic" {
+			t.Errorf("got %s, want test-anthropic", token)
+		}
+		auth.Invalidate() // should do nothing
+	})
 }

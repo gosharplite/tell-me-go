@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
@@ -166,10 +167,11 @@ func (a *AnthropicAuth) Apply(req *Request) error {
 // ServiceAccountAuth handles authentication using a GCP Service Account JSON file.
 // It exchanges the long-lived JSON key for a short-lived (1-hour) OAuth2 access token.
 type ServiceAccountAuth struct {
-	KeyFilePath string
-	mu          sync.Mutex
-	token       string
-	expiry      time.Time
+	KeyFilePath     string
+	tokenSourceFunc func() (*oauth2.Token, error)
+	mu              sync.Mutex
+	token           string
+	expiry          time.Time
 }
 
 // getToken performs the OAuth2 exchange and returns a valid access token.
@@ -182,24 +184,34 @@ func (a *ServiceAccountAuth) getToken() (string, error) {
 		return a.token, nil
 	}
 
-	// 2. Read the master secret (key.json) from disk
-	data, err := os.ReadFile(a.KeyFilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read service account key: %w", err)
-	}
+	var tok *oauth2.Token
+	var err error
 
-	// 3. Exchange JSON key for a Bearer token via Google OAuth2
-	// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
-	ctx := context.Background()
-	creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return "", fmt.Errorf("failed to parse service account JSON: %w", err)
-	}
+	if a.tokenSourceFunc != nil {
+		tok, err = a.tokenSourceFunc()
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch mock oauth2 token: %w", err)
+		}
+	} else {
+		// 2. Read the master secret (key.json) from disk
+		data, err := os.ReadFile(a.KeyFilePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read service account key: %w", err)
+		}
 
-	ts := creds.TokenSource
-	tok, err := ts.Token()
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch oauth2 token: %w", err)
+		// 3. Exchange JSON key for a Bearer token via Google OAuth2
+		// Scope required for Vertex AI: "https://www.googleapis.com/auth/cloud-platform"
+		ctx := context.Background()
+		creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return "", fmt.Errorf("failed to parse service account JSON: %w", err)
+		}
+
+		ts := creds.TokenSource
+		tok, err = ts.Token()
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch oauth2 token: %w", err)
+		}
 	}
 
 	// 4. Cache the resulting short-lived token
