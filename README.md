@@ -11,9 +11,9 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 3.7**, and **Gemini 2.0/3.0**.
+*   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 4.6**, and **Gemini 3.0**.
 *   **Unified Domain Model**: Optimized for rich reasoning content with a provider-agnostic `Thought` architecture.
-*   **Official SDK & REST**: Built on `google.golang.org/genai` with native REST support for OpenAI-compatible (GPT-4o/5.2, DeepSeek-R1) and Anthropic (Claude 3.5/3.7/4) endpoints.
+*   **Official SDK & REST**: Built on `google.golang.org/genai` with native REST support for OpenAI-compatible (GPT-4o/5.2, DeepSeek-R1) and Anthropic (Claude 3.5/3.7/4.6) endpoints.
 *   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
     *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
     *   **Interactive Safety**: 
@@ -61,7 +61,6 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
     *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
 *   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), session-specific data (history and logs) is archived to `output/backups/`, while environment state (safepaths, tasks, and scratchpads) remains persistent.
     *   **Crash Resilience**: Automatically persists history after every turn (user prompt, model response, and tool results). If a system crash occurs during execution, a built-in **Auto-Repair** mechanism fixes the history on next startup to ensure the session remains valid and resumable.
-*   **Bash Compatibility**: Uses identical file naming and structures as the original Bash project for full interoperability.
 
 ## 🛡️ Wallet Protection & Billing Transparency
 `tell-me-go` is built to prevent the "hidden" cost spikes common in high-context AI development, specifically targeting **Vertex AI's tiered pricing model**.
@@ -187,21 +186,24 @@ MODE: "assistant"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
 # --- Active Provider ---
-SELECTED_PROVIDER: "gemini_vertex"
+SELECTED_PROVIDER: "google"
 
 # --- Provider Registry ---
 PROVIDERS:
-  gemini_vertex:
+  google:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
-    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global/publishers/google/models"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
   openai:
     TYPE: "openai"
-    MODEL: "gpt-4o"
+    MODEL: "gpt-5.2"
     URL: "https://api.openai.com/v1"
     API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
   deepseek:
     TYPE: "deepseek"
     MODEL: "deepseek-reasoner"
@@ -209,9 +211,10 @@ PROVIDERS:
     API_KEY: "${DEEPSEEK_API_KEY}"
   claude:
     TYPE: "anthropic"
-    MODEL: "claude-3-5-sonnet-latest"
+    MODEL: "claude-opus-4-6"
     URL: "https://api.anthropic.com/v1"
     API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
 
 # --- Tools & Features ---
 USE_SEARCH: false
