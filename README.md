@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 
 # tell-me-go: A Multi-Provider Reasoning Agent for the Terminal
 
-A high-performance, type-safe CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude**) under a single, resilient interface.
+A high-performance CLI assistant unifying the world's most powerful reasoning engines (**Gemini, OpenAI, DeepSeek, Claude**) under a single, resilient interface.
 
 ## Overview
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
@@ -13,42 +13,20 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
 ## 🚀 Features
 *   **Multi-Provider Reasoning**: Support for high-performance reasoning models.
 *   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture.
-*   **Agentic Tools**: Natively executes a vast library of local tools to solve complex tasks.
-    *   **FileSystem (Workspace)**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `get_file_diff`, `undo_file_change`.
-    *   **Intelligence (AST-Powered/Analysis)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `get_file_skeleton`, `search_usages_globally`, `get_semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `get_complexity_metrics`, `get_package_graph`, `generate_mermaid_diagram`, `move_definition`, `verify_architecture`, `get_code_health`, `get_detailed_coverage`, `analyze_sequence_flow`, `dead_code_graph`, `get_definitions`.
-    *   **Git (Workspace)**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_show`, `get_git_blame`, `git_commit`, `git_create_branch`.
-    *   **Media & Vision (Integrations)**: `create_image` (Imagen 3), `read_image` (Vision).
-    *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, `summarize_history`, and `manage_history`.
-    *   **External Integration (Integrations)**:
-        *   **Atlassian Stack (Jira & Confluence)**: Enterprise-grade integration with centralized execution and **exponential back-off** for high reliability.
-            *   **Jira**: `jira_search_issues` and `jira_get_issue` for discovering and retrieving issues. Supports **high-volume discovery** with configurable search limits.
-            *   **Confluence**: `confluence_search`, `confluence_read`, `confluence_write` for searching, reading, and updating Confluence pages with automatic Markdown/XHTML conversion and **search depth control**.
-        *   **Azure DevOps (ADO)**: Comprehensive integration for managing Pull Requests, Pipelines, and Repository items.
-            *   **Pull Requests**: `ado_list_pull_requests`, `ado_get_pull_request`, `ado_get_pr_diff`, `ado_get_pr_threads`, `ado_get_pr_statuses`, `ado_get_pr_policy_evaluations`.
-            *   **Pipelines & Builds**: `ado_list_pipeline_runs`, `ado_get_pipeline_run`, `ado_get_pipeline_logs`, `ado_get_build_timeline`, `ado_get_task_log`, `ado_get_build_changes`.
-            *   **Repositories & Branching**: `ado_list_repository_items`, `ado_get_file_content`, `ado_list_branch_policies`.
-        *   **Teams**: `send_teams_message` sends rich Adaptive Cards to Microsoft Teams channels via Power Automate webhooks.
-        *   **Network**: `http_request`, `read_external_docs`.
-    *   **System**: `execute_command`, `pipe_commands`, `ask_user`, `register_safepath`, `list_safepaths`, `remove_safepath`, `register_readpath`, `list_readpaths`, `remove_readpath`, `bypass_confirmation`, `revoke_bypass`.
-    *   **Dev Tools (Developer)**: `run_tests`, `go_tidy`, `get_coverage`, `run_linter`, `run_benchmark`, `check_vulnerabilities`, `verify_release_readiness`.
-    *   **Financial Metrics (Dynamic Pricing)**: 
-        *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
-        *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/global_costs.json`).
+*   **Agentic Tools**: Natively executes local and cloud tools to solve complex tasks.
+    *   **Workspace**: FileSystem (read/write/search/diff), Git (status/log/commit/branch), and AST-powered Go Analysis (usages, definitions, symbols, refactoring).
+    *   **Enterprise**: Deep integration with **Jira**, **Confluence**, **Azure DevOps** (PRs, Pipelines, Repos), and **Teams**.
+    *   **System & Dev**: Shell execution, interactive prompts, testing, linting, and vulnerability scanning.
+    *   **State & Finance**: Scratchpad, task tracking, and real-time USD cost auditing.
+    *   **Media**: Imagen 3 image generation and Vision analysis.
 *   **Safety Guardrails**: 
-    *   **Automatic Maintenance (Self-Healing)**: Prevents "Context Overflow" by automatically summarizing older unpinned conversation turns when the payload exceeds 90% of `MAX_HISTORY_TOKENS`. This relieves pressure without losing the semantic core of the session.
-    *   **Turn-Aligned Pinning**: Critical instructions and user-selected turns can be **pinned** (using `manage_history`) to protect them from pruning or summarization, ensuring they remain in the model's active context.
-    *   **Clogged Context Detection**: If the history becomes "clogged" with pinned turns and maintenance cannot reduce the size below 85% of capacity, the agent injects an **URGENT SYSTEM NOTICE** instructing the model to persist state and stop before a hard rollback occurs.
-    *   **Infinite Loop Protection**: 
-        *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
-        *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
-    *   **Internal Hard Budget**: Enforces a deterministic USD limit (Safe-by-Design) to halt sessions automatically if costs exceed safety thresholds.
-    *   **Recursion Limit**: Prevents excessive turns using the `MAX_TURNS` configuration.
-    *   **Descriptive Error Handling**: Automatically identifies and reports specific API block reasons (e.g., `SAFETY`, `RECITATION`) instead of generic "empty response" errors.
-    *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
-    *   **Secure Integrations**: Standardized URL construction and idiomatic error handling across Confluence, Jira, and Teams integrations to prevent injection and data leakage.
-    *   **Persistent Authorization**: The `register_safepath` tool allows you to permanently authorize specific directories or files outside the project root. This requires a double-confirmation handshake for maximum security.
-*   **Session Persistence & Archiving**: Automatically remembers conversation history. When starting a new session (`-new`), session-specific data (history and logs) is archived to `output/backups/`, while environment state (safepaths, tasks, and scratchpads) remains persistent.
-    *   **Crash Resilience**: Automatically persists history after every turn (user prompt, model response, and tool results). If a system crash occurs during execution, a built-in **Auto-Repair** mechanism fixes the history on next startup to ensure the session remains valid and resumable.
+    *   **Context Control**: Automatic "self-healing" summarization and turn pinning to prevent overflow without losing intent.
+    *   **Runaway Protection**: Hallucination loop detection (SHA-256 hashing), tool repetition guards, and recursion limits.
+    *   **Access Security**: Path-based shell validation, persistent directory authorization (`safepaths`), and secure API integration.
+    *   **Resilience**: Deterministic USD cost budgets, clogged context detection, and descriptive API error handling.
+*   **Persistence & Recovery**: 
+    *   **Durability**: Automatic history saving with built-in **Auto-Repair** for crash resilience and session continuity.
+    *   **Archiving**: New sessions (`-new`) archive history while preserving global state (tasks, scratchpads, and safepaths).
 
 ## 📋 Prerequisites
 *   **Go**: 1.25 or higher.
@@ -100,26 +78,30 @@ You can also use the `-r` flag with a regular prompt to receive raw text without
 **Pre-flight Status Log:**
 Before every request, the tool shows your current resource usage relative to configured limits:
 ```text
+────────────────────────────────────────────────────────────────────────────────
 ╭─⠿ Session: 3/20 turns
 [14:19:43] Payload: ~4549/120000 tokens
 ```
 *   **Session**: Current turn count / Max history turns.
-*   **Payload**: Estimated payload size / Max history tokens.
+*   **Payload**: Estimated payload size (pre-inference) / Max history tokens.
 
 **Post-turn Usage Metrics:**
 After the model responds, a detailed breakdown is provided:
 ```text
-[08:21:09] M: 31882 H: 1204 C: 402 Th: 0 [3.20s / 4.50s]
-╰─⠿ Ready ($0.0123 $0.0542 $1.4745 $2.1050 M: 31882 H: 1204 3.6% O: 402)
+[08:21:09] Payload: 33488/120000 tokens
+[08:21:09] [google] M: 31882 H: 1204 C: 402 Th: 0 ($0.0123) [3.20s (ΣT: 0.15s) / 4.50s]
+╰─⠿ Ready ($0.0123 $0.0123 $1.4745 $2.1050 M: 31882 H: 1204 3.6% O: 402)
 ```
+*   **Payload**: The final confirmed token count for the turn's input.
+*   **[Provider]**: The active LLM provider (e.g., `google`, `openai`).
 *   **M (Misses)**: Paid tokens (Input minus Hits).
-*   **H (Hits)**: Tokens served for free from Google's cache.
+*   **H (Hits)**: Tokens served for free from Google's cache (if supported).
 *   **C (Completion)**: Response tokens generated by the model.
-*   **Th (Thinking)**: Thinking tokens used.
-*   **[Time]**: `Model Latency / Total Turn Time`.
+*   **Th (Thinking)**: Thinking/Reasoning tokens used.
+*   **($0.0000)**: The calculated cost for this specific turn.
+*   **[Time]**: `(Turn Time (ΣT: Session Tool Time) / Session Duration)`.
 *   **($... $... $... $...)**: `Turn / Task / Session / Daily` costs.
-*   **M / H / %**: Aggregate Session Misses, Hits, and Hit Rate.
-*   **O (Output)**: Aggregate Session Output tokens.
+*   **M / H / % / O**: Aggregate Session metrics (Misses, Hits, Hit Rate, and Output tokens).
 
 **New Session:**
 ```bash
