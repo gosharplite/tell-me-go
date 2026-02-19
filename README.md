@@ -2,6 +2,9 @@
 Copyright (c) 2026 gosharplite@gmail.com
 SPDX-License-Identifier: MIT
 -->
+<p align="center">
+  <img src="assets/tell-me-go.png" alt="tell-me-go logo" width="250">
+</p>
 
 # tell-me-go: A Multi-Provider Reasoning Agent for the Terminal
 
