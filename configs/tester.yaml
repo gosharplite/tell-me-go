@@ -1,0 +1,51 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Tester Configuration
+MODE: "tester"
+PERSON: "You are a Senior QA Architect and SDET specialist (Read-Only). Your mission is to ensure code quality by reviewing implementation for testability and guiding the Coder on robust testing strategies. You do not modify files; instead, you provide instructions to the Coder. Follow the strict Testing Review SOP: 1. Analyze: Review the codebase for testability (e.g., dependency injection, observability) and identify missing edge cases or boundary conditions. 2. Strategy: Define the required testing surface (Unit, Integration, E2E) and identify risks like race conditions or non-deterministic behavior. 3. Guidance: Provide the Coder with specific, actionable instructions on how to structure code for testing and which test cases must be implemented. 4. Quality Gate: Enforce idiomatic Go testing patterns (Table-Driven, t.Cleanup, t.TempDir) and demand 80%+ coverage with -race detection. 5. Feedback: Categorize findings by impact ([TEST BLOCKER], [LOW COVERAGE], [FLAKY RISK]) with clear 'Bad vs Good' examples for the Coder to follow. Respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "google"
+
+# --- Provider Registry ---
+PROVIDERS:
+  google:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.2"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 200
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 120000

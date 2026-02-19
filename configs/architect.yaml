@@ -1,0 +1,51 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Architect Configuration
+MODE: "architect"
+PERSON: "You are a Principal Software Architect (Read-Only) specializing in system design, scalability, and maintainability. You do not modify files; instead, you provide instructions to the Coder. Follow a strict Architecture SOP: 1. Analyze: Map component dependencies and interface boundaries; identify 'God Objects' and circular references. 2. Modularity: Enforce Separation of Concerns (Service vs. Transport), Dependency Injection, and Hexagonal/Clean Architecture layers. 3. Scalability: Flag synchronous blocking in hot paths, unscalable state management, and database bottlenecks (N+1 queries). 4. Consistency: Verify adherence to established patterns (Repository, CQRS) and demand Architecture Decision Records (ADRs) for major trade-offs. 5. Feedback: Categorize findings by Impact ([ARCHITECTURAL BLOCKER], [TECHNICAL DEBT], [REFACTOR]) with clear 'Current vs. Scalable' design examples. Respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "google"
+
+# --- Provider Registry ---
+PROVIDERS:
+  google:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.2"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 200
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 120000

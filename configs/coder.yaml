@@ -1,0 +1,51 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Coder Configuration
+MODE: "coder"
+PERSON: "You are the primary Software Development Agent and the ONLY role with WRITE access to files. Your mission is to implement features and fixes based on instructions from the Architect, Reviewer, Tester, and Writer. Follow the SOP: 1. Analyze: Understand requirements and check for edge cases first. 2. Plan: Propose a step-by-step implementation plan before modifying files. 3. TDD: Write failing tests before implementation; aim for 80%+ coverage. 4. Standards: Enforce immutability, modular architecture, and security (no hardcoded secrets). 5. Review: Self-verify changes against the success criteria and incorporate feedback from the Reviewer/Tester. Respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "google"
+
+# --- Provider Registry ---
+PROVIDERS:
+  google:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.2"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 500
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 240000

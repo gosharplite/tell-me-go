@@ -47,7 +47,7 @@ Run the assistant by passing your prompt as an argument. By default, it uses `co
 
 **Basic Usage:**
 ```bash
-./tell-me-go "What is the capital of France?"
+./tell-me-go "How to use this tool?"
 ```
 
 **List History:**
