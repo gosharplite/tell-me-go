@@ -11,21 +11,14 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
 `tell-me-go` is a production-ready reasoning agent designed for complex developer workflows. By abstracting the complexities of diverse LLM providers (**Google Vertex AI, OpenAI, DeepSeek, Anthropic**) into a unified domain model, it provides a stable platform for tool-augmented intelligence and multi-turn reasoning. Built with the speed of Go, it prioritizes session durability through automated context maintenance and prevents "hidden" expenses with deterministic cost auditing and safety guardrails.
 
 ## 🚀 Features
-*   **Multi-Provider Reasoning**: Support for high-performance reasoning models including **DeepSeek-R1**, **Claude 4.6**, and **Gemini 3.0**.
-*   **Unified Domain Model**: Optimized for rich reasoning content with a provider-agnostic `Thought` architecture.
-*   **Official SDK & REST**: Built on `google.golang.org/genai` with native REST support for OpenAI-compatible (GPT-4o/5.2, DeepSeek-R1) and Anthropic (Claude 3.5/3.7/4.6) endpoints.
-*   **Agentic Tools**: Natively executes a vast library of local tools and Google Search to solve complex tasks.
-    *   **UI Controls**: Configurable visibility for thought processes (`SHOW_THOUGHTS`) and tool execution logs (`SHOW_TOOLS`) for a cleaner terminal experience.
-    *   **Interactive Safety**: 
-        *   **Serialized Prompts**: Tool headers are sequenced to prevent parallel execution logs from garbling interactive prompts.
-        *   **Persistent Bypass**: The `bypass_confirmation` state persists across executions in the same mode. No more re-authorizing every run.
+*   **Multi-Provider Reasoning**: Support for high-performance reasoning models.
+*   **Unified Domain Model**: Optimized for a provider-agnostic `Thought` architecture.
+*   **Agentic Tools**: Natively executes a vast library of local tools to solve complex tasks.
     *   **FileSystem (Workspace)**: `list_files`, `get_tree`, `read_file`, `write_file`, `append_text`, `search_files`, `replace_text`, `find_file`, `get_file_diff`, `undo_file_change`.
     *   **Intelligence (AST-Powered/Analysis)**: `find_usages`, `find_definitions`, `list_symbols`, `list_implementations`, `get_type_info`, `get_project_summary`, `get_file_skeleton`, `search_usages_globally`, `get_semantic_diff`, `rename_symbol`, `list_todos`, `go_doc`, `get_complexity_metrics`, `get_package_graph`, `generate_mermaid_diagram`, `move_definition`, `verify_architecture`, `get_code_health`, `get_detailed_coverage`, `analyze_sequence_flow`, `dead_code_graph`, `get_definitions`.
     *   **Git (Workspace)**: `get_git_status`, `get_git_diff`, `get_git_log`, `get_git_show`, `get_git_blame`, `git_commit`, `git_create_branch`.
     *   **Media & Vision (Integrations)**: `create_image` (Imagen 3), `read_image` (Vision).
     *   **State & Session**: `manage_scratchpad`, `manage_tasks`, `manage_config`, `get_session_info`, `summarize_history`, and `manage_history`.
-        *   **Mode-Scoped Storage**: State files are now scoped to the configuration `MODE` (e.g., `output/assistant/tasks.json`, `output/assistant/scratchpad.md`, `output/assistant/config.json`) to prevent conflicts when switching environments.
-        *   **Persistent Configuration**: `manage_config` allows storing key-value pairs (like webhook URLs) that persist across sessions for a specific mode.
     *   **External Integration (Integrations)**:
         *   **Atlassian Stack (Jira & Confluence)**: Enterprise-grade integration with centralized execution and **exponential back-off** for high reliability.
             *   **Jira**: `jira_search_issues` and `jira_get_issue` for discovering and retrieving issues. Supports **high-volume discovery** with configurable search limits.
@@ -41,10 +34,6 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
     *   **Financial Metrics (Dynamic Pricing)**: 
         *   `estimate_cost`: Provides a detailed session cost breakdown using live-synced Vertex AI rates.
         *   `get_cost_summary`: Generates a daily expenditure report from a local persistent ledger (`output/global_costs.json`).
-        *   **Auto-Recovery**: The system automatically reconstructs missing cost ledgers by scanning session logs and backups.
-*   **Vertex AI Optimized**: Native support for the official Google GenAI SDK, focused on Vertex AI for enterprise-grade security and performance.
-*   **Automatic Token Management**: Automatically retrieves access tokens via `gcloud` with local caching for high performance.
-*   **Single Binary**: No dependency on `jq`, `yq`, or `curl`.
 *   **Safety Guardrails**: 
     *   **Automatic Maintenance (Self-Healing)**: Prevents "Context Overflow" by automatically summarizing older unpinned conversation turns when the payload exceeds 90% of `MAX_HISTORY_TOKENS`. This relieves pressure without losing the semantic core of the session.
     *   **Turn-Aligned Pinning**: Critical instructions and user-selected turns can be **pinned** (using `manage_history`) to protect them from pruning or summarization, ensuring they remain in the model's active context.
@@ -53,7 +42,6 @@ A high-performance, type-safe CLI assistant unifying the world's most powerful r
         *   **SHA-256 Hashing**: Detects and breaks "Hallucination Loops" by hashing the model's full response (Thought + Text + Tools).
         *   **Repetition Guard**: Tracks identical tool calls with same arguments to prevent runaway execution cycles.
     *   **Internal Hard Budget**: Enforces a deterministic USD limit (Safe-by-Design) to halt sessions automatically if costs exceed safety thresholds.
-    *   **Atlassian Reliability**: Centralized execution for Jira and Confluence tools featuring **exponential back-off** and automatic request body recovery for failed network calls.
     *   **Recursion Limit**: Prevents excessive turns using the `MAX_TURNS` configuration.
     *   **Descriptive Error Handling**: Automatically identifies and reports specific API block reasons (e.g., `SAFETY`, `RECITATION`) instead of generic "empty response" errors.
     *   **Command Safety**: `execute_command` includes a path-based validation gate. Commands that access files outside the working directory (e.g., `cat /etc/passwd`) require manual confirmation, even for whitelisted "safe" commands.
