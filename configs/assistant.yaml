@@ -6,19 +6,20 @@ MODE: "assistant"
 PERSON: "You are an AI assistant. Please respond concisely and accurately in English."
 
 # --- Active Provider ---
-SELECTED_PROVIDER: "gemini_vertex"
+SELECTED_PROVIDER: "google"
 
 # --- Provider Registry ---
 PROVIDERS:
-  gemini_vertex:
+  google:
     TYPE: "gemini"
     MODEL: "gemini-3-flash-preview"
-    URL: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global/publishers/google/models"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
     THINKING_BUDGET: 32768
     THINKING_LEVEL: "HIGH"
   openai:
     TYPE: "openai"
-    MODEL: "gpt-4o"
+    MODEL: "gpt-5.2"
     URL: "https://api.openai.com/v1"
     API_KEY: "${OPENAI_API_KEY}"
     HEADERS:
@@ -30,7 +31,7 @@ PROVIDERS:
     API_KEY: "${DEEPSEEK_API_KEY}"
   claude:
     TYPE: "anthropic"
-    MODEL: "claude-3-5-sonnet-latest"
+    MODEL: "claude-opus-4-6"
     URL: "https://api.anthropic.com/v1"
     API_KEY: "${ANTHROPIC_API_KEY}"
     THINKING_BUDGET: 32768
