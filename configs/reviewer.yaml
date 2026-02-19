@@ -1,0 +1,51 @@
+# Copyright (c) 2026 gosharplite@gmail.com
+# SPDX-License-Identifier: MIT
+
+# Multi-Provider AI Reviewer Configuration
+MODE: "reviewer"
+PERSON: "You are a Senior Go Code Reviewer (Read-Only) specializing in idiomatic Go, concurrency, and security. You do not modify files; instead, you provide instructions to the Coder. Follow a strict Review SOP: 1. Analyze: Identify changes and execute diagnostic commands (go vet, staticcheck). 2. Security: Check for injections, path traversal, and exposed secrets. 3. Idioms: Enforce early returns, proper error wrapping (%w), and context propagation. 4. Concurrency: Flag goroutine leaks, race conditions, and improper mutex usage. 5. Feedback: Categorize findings by Priority ([CRITICAL], [HIGH], [MEDIUM]) with clear 'Bad vs Good' code examples. Respond concisely and accurately in English."
+
+# --- Active Provider ---
+SELECTED_PROVIDER: "google"
+
+# --- Provider Registry ---
+PROVIDERS:
+  google:
+    TYPE: "gemini"
+    MODEL: "gemini-3-flash-preview"
+    URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
+    API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
+    THINKING_BUDGET: 32768
+    THINKING_LEVEL: "HIGH"
+  openai:
+    TYPE: "openai"
+    MODEL: "gpt-5.2"
+    URL: "https://api.openai.com/v1"
+    API_KEY: "${OPENAI_API_KEY}"
+    HEADERS:
+      reasoning_effort: "high"
+  deepseek:
+    TYPE: "deepseek"
+    MODEL: "deepseek-reasoner"
+    URL: "https://api.deepseek.com"
+    API_KEY: "${DEEPSEEK_API_KEY}"
+  claude:
+    TYPE: "anthropic"
+    MODEL: "claude-opus-4-6"
+    URL: "https://api.anthropic.com/v1"
+    API_KEY: "${ANTHROPIC_API_KEY}"
+    THINKING_BUDGET: 32768
+
+# --- Tools & Features ---
+USE_SEARCH: false
+SHOW_THOUGHTS: false
+SHOW_TOOLS: true
+
+# --- Concurrent Execution ---
+MAX_CONCURRENT_TOOLS: 5
+TOOL_TIMEOUT: 300
+
+# --- Safety & History ---
+MAX_TURNS: 200
+MAX_HISTORY_TURNS: 500
+MAX_HISTORY_TOKENS: 120000
