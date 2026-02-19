@@ -113,6 +113,14 @@ func (c *Client) determineBackend(apiURL string) (genai.Backend, string, string,
 	// Support for local E2E mocking
 	if mockURL := os.Getenv("TELL_ME_MOCK_URL"); mockURL != "" {
 		baseURL = mockURL
+		if backend == genai.BackendVertexAI {
+			if project == "" {
+				project = "mock-project"
+			}
+			if location == "" {
+				location = "mock-location"
+			}
+		}
 	}
 
 	return backend, project, location, baseURL
