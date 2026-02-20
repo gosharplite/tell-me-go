@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -812,5 +813,192 @@ func assertInlineData(t *testing.T, part *llm.Part, expectedMime string, expecte
 	}
 	if string(part.InlineData.Data) != string(expectedData) {
 		t.Errorf("Expected data %q, got %q", expectedData, part.InlineData.Data)
+	}
+}
+
+func TestToolExecutor_SecurityAndConsentRejections(t *testing.T) {
+	t.Parallel()
+
+	t.Run("User Declined Return Error", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"decline_tool": {err: tools.ErrUserDeclined},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "decline_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.")
+	})
+
+	t.Run("Security Policy Blocked Return Error", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"security_tool": {err: tools.ErrSecurityPolicy},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "security_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.")
+	})
+
+	t.Run("User Declined Result Error", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"decline_result_tool": {result: tools.ToolResult{Error: tools.ErrUserDeclined}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "decline_result_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach.")
+	})
+
+	t.Run("Security Policy Blocked Result Error", func(t *testing.T) {
+		t.Parallel()
+		toolsMap := map[string]toolBehavior{
+			"security_result_tool": {result: tools.ToolResult{Error: tools.ErrSecurityPolicy}},
+		}
+		exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+		content := &llm.Content{Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "security_result_tool"}},
+		}}
+
+		resp, err := exec.Execute(context.Background(), content, 0, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		verifyErrorResponse(t, resp, "Action blocked by the system sandbox security policy. You are not authorized to perform this operation.")
+	})
+}
+
+func TestToolExecutor_CircuitBreaker(t *testing.T) {
+	t.Parallel()
+	var attempts int32
+	toolsMap := map[string]toolBehavior{
+		"flakey_tool": {
+			observe: func() { atomic.AddInt32(&attempts, 1) },
+			err:     errors.New("flakey error"),
+		},
+	}
+	exec, bus, _ := setupTestExecutor(t, toolsMap, nil)
+	exec.SetConcurrency(1, 0) // serial to ensure deterministic failure counting
+
+	content := &llm.Content{Parts: []*llm.Part{
+		{FunctionCall: &llm.FunctionCall{Name: "flakey_tool"}},
+	}}
+
+	// 1st failure
+	_, _ = exec.Execute(context.Background(), content, 0, 10)
+	// 2nd failure
+	_, _ = exec.Execute(context.Background(), content, 0, 10)
+	// 3rd failure
+	_, _ = exec.Execute(context.Background(), content, 0, 10)
+
+	// Circuit should now be open
+	resp, err := exec.Execute(context.Background(), content, 0, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	verifyErrorResponse(t, resp, "temporarily disabled due to multiple consecutive failures")
+
+	// Ensure SystemMessageEvent was published for circuit open
+	evs := bus.FilterEvents(reflect.TypeOf(events.SystemMessageEvent{}))
+	foundWarn := false
+	for _, ev := range evs {
+		sme := ev.(events.SystemMessageEvent)
+		if sme.Level == "warn" && strings.Contains(sme.Message, "temporarily disabled") {
+			foundWarn = true
+			break
+		}
+	}
+	if !foundWarn {
+		t.Errorf("Expected SystemMessageEvent with level 'warn' for circuit breaker")
+	}
+
+	if atomic.LoadInt32(&attempts) != 3 {
+		t.Errorf("Expected exactly 3 attempts, got %d", attempts)
+	}
+}
+
+func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
+	t.Parallel()
+	toolsMap := map[string]toolBehavior{
+		"tool1": {delay: 50 * time.Millisecond},
+		"tool2": {delay: 50 * time.Millisecond},
+		"tool3": {delay: 50 * time.Millisecond},
+	}
+	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+	// Limit concurrency so tool3 is queued and picked up after context is cancelled
+	exec.SetConcurrency(1, 0)
+
+	content := &llm.Content{Parts: []*llm.Part{
+		{FunctionCall: &llm.FunctionCall{Name: "tool1"}},
+		{FunctionCall: &llm.FunctionCall{Name: "tool2"}},
+		{FunctionCall: &llm.FunctionCall{Name: "tool3"}},
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// Cancel the context very early so queued tools see context cancelled
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	resp, err := exec.Execute(ctx, content, 0, 10)
+	// Execute might return context.Canceled from Wait, but if it doesn't and returns response,
+	// let's check parts. Wait returns error if context is cancelled.
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got %v", err)
+	}
+	
+	// Since collector.Wait returns context.Canceled, the response is nil.
+	if resp != nil {
+		t.Errorf("Expected nil response on context cancellation, got %v", resp)
+	}
+}
+
+func TestToolExecutor_ContextCancellation_Direct(t *testing.T) {
+	t.Parallel()
+	toolsMap := map[string]toolBehavior{
+		"tool1": {delay: 50 * time.Millisecond},
+	}
+	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+	exec.SetConcurrency(1, 0)
+
+	calls := []*llm.FunctionCall{{Name: "tool1"}}
+	
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	resChan := make(chan toolExecResult, 1)
+	
+	// Create wait group matching runExecutionPlan behavior manually
+	var wg sync.WaitGroup
+	exec.enqueueParallelTask(ctx, 0, calls[0], resChan, &wg)
+	
+	wg.Wait()
+	
+	res := <-resChan
+	if res.tr.Text != "Skipped: Context cancelled" {
+		t.Errorf("Expected 'Skipped: Context cancelled', got %q", res.tr.Text)
 	}
 }

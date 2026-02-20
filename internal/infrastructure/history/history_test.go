@@ -5,6 +5,7 @@ package history
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -259,3 +260,83 @@ func (s *mockStore) UpdateMetadata(ctx context.Context, index int, metadata map[
 }
 func (s *mockStore) Truncate(ctx context.Context, length int) error { return nil }
 func (s *mockStore) Compact(ctx context.Context) error              { return nil }
+
+type mockStoreErrorMetadata struct {
+	mockStore
+	err         error
+	failOnIndex int
+}
+
+func (s *mockStoreErrorMetadata) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
+	if index == s.failOnIndex {
+		return s.err
+	}
+	return nil
+}
+
+func TestHistoryManager_SetPinned_Error(t *testing.T) {
+	t.Parallel()
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
+
+	expectedErr := errors.New("update failed")
+
+	// Test failure on first UpdateMetadata
+	m.setStore(&mockStoreErrorMetadata{err: expectedErr, failOnIndex: 0})
+	err := m.SetPinned(ctx, 0, true)
+	if err == nil || err.Error() != expectedErr.Error() {
+		t.Errorf("expected error %v on first update, got %v", expectedErr, err)
+	}
+
+	// Test failure on second UpdateMetadata
+	m.setStore(&mockStoreErrorMetadata{err: expectedErr, failOnIndex: 1})
+	err = m.SetPinned(ctx, 0, true)
+	if err == nil || err.Error() != expectedErr.Error() {
+		t.Errorf("expected error %v on second update, got %v", expectedErr, err)
+	}
+}
+
+func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
+	t.Parallel()
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
+
+	// Invalid index (negative)
+	if err := m.SetPinned(ctx, -1, true); err == nil {
+		t.Error("expected error for negative index, got nil")
+	}
+
+	// Invalid index (out of bounds)
+	if err := m.SetPinned(ctx, 1, true); err == nil {
+		t.Error("expected error for out of bounds index, got nil")
+	}
+}
+
+func TestHistoryManager_SetContents(t *testing.T) {
+	t.Parallel()
+	m := NewManager(filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "Hi"}}},
+	}
+
+	if err := m.SetContents(ctx, contents); err != nil {
+		t.Fatalf("SetContents failed: %v", err)
+	}
+
+	loaded := m.GetContents()
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 contents, got %d", len(loaded))
+	}
+	if loaded[0].Role != "user" || loaded[1].Role != "model" {
+		t.Errorf("contents role mismatch")
+	}
+}

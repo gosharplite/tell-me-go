@@ -528,3 +528,184 @@ func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
 		t.Error("compacted file should not contain patches")
 	}
 }
+
+func TestJSONLStore_Load_EmptyFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "empty.jsonl")
+	
+	// Create an empty file
+	if err := os.WriteFile(filePath, []byte{}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	contents, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("expected no error for empty file, got %v", err)
+	}
+	if len(contents) != 0 {
+		t.Errorf("expected 0 contents, got %d", len(contents))
+	}
+}
+
+func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "legacy.json")
+	
+	// Valid JSON Array
+	content := `[{"Role":"user", "Parts":[{"Text":"hello legacy"}]}]`
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	contents, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("expected no error for legacy JSON array, got %v", err)
+	}
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(contents))
+	}
+	if contents[0].Parts[0].Text != "hello legacy" {
+		t.Errorf("expected 'hello legacy', got '%s'", contents[0].Parts[0].Text)
+	}
+}
+
+func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "invalid_legacy.json")
+	
+	// Invalid JSON Array (starts with '[' but is malformed)
+	content := `[{"Role":"user", `
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	_, err := store.Load(ctx)
+	// Fallback to JSONL decoder which will fail on '[' token
+	if err == nil {
+		t.Error("expected error for invalid legacy JSON array, got nil")
+	}
+}
+
+func TestJSONLStore_MarshalError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "marshal_error.jsonl")
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+
+	// Inject a channel into Parts to force a json.Marshal error
+	ch := make(chan int)
+	content := &llm.Content{
+		Role: "user",
+		Parts: []*llm.Part{
+			{FunctionResponse: &llm.FunctionResponse{Response: map[string]interface{}{"ch": ch}}},
+		},
+	}
+
+	err := store.Append(ctx, []*llm.Content{content})
+	if err == nil {
+		t.Error("expected error during Append due to marshal failure")
+	}
+
+	err = store.Save(ctx, []*llm.Content{content})
+	if err == nil {
+		t.Error("expected error during Save due to marshal failure")
+	}
+}
+
+func TestJSONLStore_MkdirAllError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	
+	// Create a file where a directory needs to be
+	filePath := filepath.Join(tmpDir, "file")
+	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filepath.Join(filePath, "history.jsonl"))
+	ctx := context.Background()
+
+	// Append requires directory
+	err := store.Append(ctx, []*llm.Content{{Role: "user"}})
+	if err == nil {
+		t.Error("expected error during Append due to MkdirAll failure")
+	}
+
+	// UpdateMetadata requires directory
+	err = store.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true})
+	if err == nil {
+		t.Error("expected error during UpdateMetadata due to MkdirAll failure")
+	}
+
+	// Truncate requires directory
+	err = store.Truncate(ctx, 1)
+	if err == nil {
+		t.Error("expected error during Truncate due to MkdirAll failure")
+	}
+}
+
+func TestJSONLStore_Load_ParseContentError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "parse_error.jsonl")
+	
+	// Valid JSON but invalid for llm.Content (role should be string)
+	content := `{"Role": 123}` + "\n"
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	_, err := store.Load(ctx)
+	if err == nil {
+		t.Error("expected error for invalid type in JSON, got nil")
+	}
+}
+
+func TestJSONLStore_CompactError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "compact_error.jsonl")
+	
+	// Write a file that will fail to load
+	content := `{"Role": 123}` + "\n"
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	err := store.Compact(ctx)
+	if err == nil {
+		t.Error("expected error during Compact due to Load failure")
+	}
+}
+
+func TestJSONLStore_Load_ReadFileError(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	
+	// Create a directory where the file should be
+	filePath := filepath.Join(tmpDir, "dir_not_file.jsonl")
+	if err := os.Mkdir(filePath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+	_, err := store.Load(ctx)
+	if err == nil {
+		t.Error("expected error when trying to read a directory, got nil")
+	}
+}
