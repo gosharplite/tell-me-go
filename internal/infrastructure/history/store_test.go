@@ -5,6 +5,7 @@ package history
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -707,5 +708,275 @@ func TestJSONLStore_Load_ReadFileError(t *testing.T) {
 	_, err := store.Load(ctx)
 	if err == nil {
 		t.Error("expected error when trying to read a directory, got nil")
+	}
+}
+
+type mockFS struct {
+	persistence.FileSystem
+	mkdirErrFunc func(string) error
+	writeErr     error
+	openErr      error
+}
+
+func (m *mockFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
+	if m.mkdirErrFunc != nil {
+		if err := m.mkdirErrFunc(name); err != nil {
+			return nil, os.ErrNotExist
+		}
+	}
+	return m.FileSystem.Stat(context.Background(), name)
+}
+
+func (m *mockFS) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	if m.mkdirErrFunc != nil {
+		if err := m.mkdirErrFunc(path); err != nil {
+			return err
+		}
+	}
+	return m.FileSystem.MkdirAll(context.Background(), path, perm)
+}
+
+func (m *mockFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	if m.openErr != nil {
+		return nil, m.openErr
+	}
+	f, err := m.FileSystem.OpenFile(context.Background(), name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	if m.writeErr != nil {
+		return &mockFileWithErr{File: f, writeErr: m.writeErr}, nil
+	}
+	return f, nil
+}
+
+func (m *mockFS) WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	if m.writeErr != nil {
+		return errors.New("write file failed")
+	}
+	return m.FileSystem.WriteFile(context.Background(), name, data, perm)
+}
+
+func (m *mockFS) ReadFile(ctx context.Context, name string) ([]byte, error) {
+	return m.FileSystem.ReadFile(context.Background(), name)
+}
+
+type mockFileWithErr struct {
+	persistence.File
+	writeErr error
+}
+
+func (f *mockFileWithErr) Write(p []byte) (n int, err error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return f.File.Write(p)
+}
+
+func TestJSONLStore_IOErrors(t *testing.T) {
+	t.Parallel()
+
+	dummyContent := []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}}
+
+	tests := []struct {
+		name      string
+		setupMock func(*mockFS)
+		action    func(context.Context, *jsonlStore) error
+		wantErr   string
+	}{
+		{
+			name: "MkdirAll Failure on Append",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Append(ctx, dummyContent)
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "MkdirAll Failure on Save",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Save(ctx, dummyContent)
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "MkdirAll Failure on UpdateMetadata",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.UpdateMetadata(ctx, 0, map[string]interface{}{})
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "MkdirAll Failure on Truncate",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error { return errors.New("mkdir failed") }
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Truncate(ctx, 1)
+			},
+			wantErr: "mkdir failed",
+		},
+		{
+			name: "OpenFile Failure on Append",
+			setupMock: func(m *mockFS) { m.openErr = errors.New("open failed") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Append(ctx, dummyContent)
+			},
+			wantErr: "open failed",
+		},
+		{
+			name: "Write Failure on Append",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("write failed") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Append(ctx, dummyContent)
+			},
+			wantErr: "write failed",
+		},
+		{
+			name: "WriteFile Failure on Save",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("write file failed") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Save(ctx, dummyContent)
+			},
+			wantErr: "write file failed",
+		},
+		{
+			name: "Write Failure on UpdateMetadata",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("write failed") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true})
+			},
+			wantErr: "write failed",
+		},
+		{
+			name: "Write Failure on Truncate",
+			setupMock: func(m *mockFS) { m.writeErr = errors.New("write failed") },
+			action: func(ctx context.Context, s *jsonlStore) error {
+				return s.Truncate(ctx, 1)
+			},
+			wantErr: "write failed",
+		},
+		{
+			name: "Context Canceled on Append",
+			setupMock: func(m *mockFS) {},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				return s.Append(ctxCanceled, dummyContent)
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "Context Canceled on UpdateMetadata",
+			setupMock: func(m *mockFS) {},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				return s.UpdateMetadata(ctxCanceled, 0, map[string]interface{}{"pinned": true})
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "Context Canceled on Truncate",
+			setupMock: func(m *mockFS) {},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				return s.Truncate(ctxCanceled, 1)
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "Context Canceled on Load",
+			setupMock: func(m *mockFS) {},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				_ = s.Append(context.Background(), dummyContent)
+				ctxCanceled, cancel := context.WithCancel(ctx)
+				cancel()
+				_, err := s.Load(ctxCanceled)
+				return err
+			},
+			wantErr: "context canceled",
+		},
+		{
+			name: "AssetStore Put Failure on Append",
+			setupMock: func(m *mockFS) {
+				m.mkdirErrFunc = func(path string) error {
+					if strings.Contains(path, "assets") {
+						return errors.New("asset mkdir failed")
+					}
+					return nil
+				}
+			},
+			action: func(ctx context.Context, s *jsonlStore) error {
+				// ensure history dir exists so ensureDirectory doesn't fail
+				dir := filepath.Dir(s.filePath)
+				_ = persistence.DefaultFileSystem.MkdirAll(context.Background(), dir, 0755)
+
+				contentWithAsset := []*llm.Content{
+					{Role: "user", Parts: []*llm.Part{
+						{InlineData: &llm.Blob{MIMEType: "image/png", Data: []byte("img")}},
+					}},
+				}
+				return s.Append(ctx, contentWithAsset)
+			},
+			wantErr: "asset mkdir failed",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "test.jsonl")
+			
+			baseFS := persistence.DefaultFileSystem
+			mfs := &mockFS{FileSystem: baseFS}
+			tt.setupMock(mfs)
+
+			store := newJSONLStore(filePath).withFileSystem(mfs)
+			
+			err := tt.action(context.Background(), store)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
+	}
+}
+
+func TestJSONLStore_UpdateMetadata_MarshalError(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.jsonl")
+	store := newJSONLStore(filePath)
+	
+	// Pass something unmarshalable (like a function or channel)
+	unmarshalable := map[string]interface{}{"bad": make(chan int)}
+	
+	err := store.UpdateMetadata(context.Background(), 0, unmarshalable)
+	if err == nil {
+		t.Error("expected error for unmarshalable metadata")
+	}
+}
+
+func TestJSONLStore_Append_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "empty_append.jsonl")
+	store := newJSONLStore(filePath)
+	
+	err := store.Append(context.Background(), []*llm.Content{})
+	if err != nil {
+		t.Errorf("expected no error for empty append, got %v", err)
 	}
 }

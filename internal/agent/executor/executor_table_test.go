@@ -940,8 +940,20 @@ func TestToolExecutor_CircuitBreaker(t *testing.T) {
 
 func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 	t.Parallel()
+
+	toolStarted := make(chan struct{})
+
 	toolsMap := map[string]toolBehavior{
-		"tool1": {delay: 50 * time.Millisecond},
+		"tool1": {
+			observe: func() {
+				select {
+				case <-toolStarted: // prevent double close
+				default:
+					close(toolStarted)
+				}
+			},
+			delay: 50 * time.Millisecond,
+		},
 		"tool2": {delay: 50 * time.Millisecond},
 		"tool3": {delay: 50 * time.Millisecond},
 	}
@@ -957,9 +969,9 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Cancel the context very early so queued tools see context cancelled
+	// Deterministic synchronization
 	go func() {
-		time.Sleep(10 * time.Millisecond)
+		<-toolStarted // Block until the scheduler actually starts the tool
 		cancel()
 	}()
 
