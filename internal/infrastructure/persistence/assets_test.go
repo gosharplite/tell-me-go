@@ -8,7 +8,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-
 )
 
 func TestAssetStore(t *testing.T) {

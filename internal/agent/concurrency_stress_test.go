@@ -17,16 +17,16 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 
@@ -175,7 +175,7 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 
 func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir + "/history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	bus := &events.SimpleEventBus{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil), bus)
 	factory := &orchestration.PipelineFactory{

@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
-	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	internaltools "github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 func TestAgent_EmptyPartProtection(t *testing.T) {
@@ -60,7 +60,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// Test that the agent prunes history when it reaches the limit
 	// via the orchestration pipeline.
 
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir() + "/history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir()+"/history.json")
 	registry := internaltools.New()
 	ctx := context.Background()
 
@@ -102,7 +102,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 		}, nil
 	})
 
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir() + "/history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir()+"/history.json")
 	sm := &mockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool

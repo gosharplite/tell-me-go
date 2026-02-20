@@ -7,7 +7,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-
 )
 
 func TestScratchpadRepository_SaveAndLoad(t *testing.T) {
@@ -35,7 +34,7 @@ func TestScratchpadRepository_LoadNonExistent(t *testing.T) {
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
-	
+
 	repo2 := newScratchpadRepository(fs, filepath.Join(tempDir, "none.md"))
 	loaded, err := repo2.Get(ctx, "content")
 	if err != nil {
@@ -56,12 +55,12 @@ func TestScratchpadRepository_DeleteExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	err = repo.Delete(ctx, "content")
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	loaded, err := repo.Get(ctx, "content")
 	if err != nil {
 		t.Fatal(err)
@@ -94,12 +93,12 @@ func TestScratchpadRepository_GetAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	all, err := repo.GetAll(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	if len(all) != 1 {
 		t.Fatalf("expected length 1, got %d", len(all))
 	}
