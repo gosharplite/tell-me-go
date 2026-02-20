@@ -13,7 +13,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // store defines the interface for history persistence.
@@ -37,7 +36,7 @@ type historyPatch struct {
 // jsonlStore implements Store using a JSON Lines file.
 type jsonlStore struct {
 	filePath   string
-	assetStore *storage.AssetStore
+	assetStore *persistence.AssetStore
 	fs         persistence.FileSystem
 }
 
@@ -46,7 +45,7 @@ func newJSONLStore(filePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
 	return &jsonlStore{
 		filePath:   filePath,
-		assetStore: storage.NewAssetStore(assetDir),
+		assetStore: persistence.NewAssetStore(assetDir),
 		fs:         persistence.DefaultFileSystem,
 	}
 }

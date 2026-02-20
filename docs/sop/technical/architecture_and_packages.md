@@ -35,7 +35,6 @@ The project is organized into the following top-level directories:
         - `internal/infrastructure/auth`: Authentication and token management (e.g., Google/Vertex).
         - `internal/infrastructure/llm`: Language model provider adapters.
         - `internal/infrastructure/history`: Conversation history persistence.
-        - `internal/infrastructure/storage`: File system and asset management.
         - `internal/infrastructure/security`: Sandbox, path guardrails, and confirmation gates.
         - `internal/infrastructure/telemetry`: Logging, metrics, and event tracking.
         - `internal/infrastructure/registry`: Tool and command registration.
