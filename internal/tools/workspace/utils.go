@@ -171,13 +171,6 @@ func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {
 	}
 }
 
-var bufferPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 64*1024)
-		return &b
-	},
-}
-
 func (p *searchPipeline) scanFile(path string) error {
 	file, err := p.fs.Open(p.ctx, path)
 	if err != nil {
@@ -188,13 +181,18 @@ func (p *searchPipeline) scanFile(path string) error {
 	if isBin, err := checkBinary(file); err == nil && !isBin {
 		const maxScannerCapacity = 10 * 1024 * 1024
 		scanner := bufio.NewScanner(file)
-		bufPtr := bufferPool.Get().(*[]byte)
-		buf := *bufPtr
-		defer bufferPool.Put(bufPtr)
+		// Replace sync.Pool with a simple local allocation.
+		// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
+		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, maxScannerCapacity)
 
 		lineNum := 0
 		for scanner.Scan() {
+			// Check for cancellation to prevent unbounded CPU burn on large files
+			if p.ctx.Err() != nil {
+				return p.ctx.Err()
+			}
+
 			lineNum++
 			line := scanner.Text()
 			if p.matcher(path, line) {
