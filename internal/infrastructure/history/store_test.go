@@ -449,30 +449,26 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	verifyPreparedContent(t, prepared)
 }
 
-func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
+func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches.jsonl")
 	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
 	ctx := context.Background()
 
-	// Initial contents
 	contents := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}},
 		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
 		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
 	}
-
 	if err := store.Save(ctx, contents); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
 
-	// Patch: Update metadata (pin first message)
 	if err := store.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true}); err != nil {
 		t.Fatalf("UpdateMetadata failed: %v", err)
 	}
 
-	// Load and verify
 	loaded, err := store.Load(ctx)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
@@ -486,14 +482,29 @@ func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
 	if loaded[1].Pinned {
 		t.Error("expected second entry to not be pinned")
 	}
+}
 
-	// Patch: Truncate to length 2
+func TestJSONLStore_UpdateMetadataAndTruncate_Truncate(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "patches_trunc.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
+	}
+	if err := store.Save(ctx, contents); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
 	if err := store.Truncate(ctx, 2); err != nil {
 		t.Fatalf("Truncate failed: %v", err)
 	}
 
-	// Load and verify
-	loaded, err = store.Load(ctx)
+	loaded, err := store.Load(ctx)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -503,14 +514,28 @@ func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
 	if !loaded[0].Pinned {
 		t.Error("expected first entry to still be pinned")
 	}
+}
 
-	// Compact
+func TestJSONLStore_UpdateMetadataAndTruncate_Compact(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "patches_compact.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}, Pinned: true},
+		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
+	}
+	if err := store.Save(ctx, contents); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
 	if err := store.Compact(ctx); err != nil {
 		t.Fatalf("Compact failed: %v", err)
 	}
 
-	// Load and verify after compact
-	loaded, err = store.Load(ctx)
+	loaded, err := store.Load(ctx)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -521,7 +546,6 @@ func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
 		t.Error("expected first entry to still be pinned after compact")
 	}
 
-	// Check file size / content
 	rawJSON, err := os.ReadFile(filePath)
 	if err != nil {
 		t.Fatal(err)

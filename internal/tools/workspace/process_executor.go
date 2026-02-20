@@ -80,6 +80,14 @@ func (e *processExecutor) RunCommand(ctx context.Context, parts []string, config
 	}, nil
 }
 
+func (e *processExecutor) prepareOutputFile(config executionConfig) *os.File {
+	file, ferr := e.openOutputFile(config)
+	if ferr != nil && config.Feedback != nil {
+		fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
+	}
+	return file
+}
+
 func (e *processExecutor) setupCommand(ctx context.Context, parts []string, config executionConfig) (*exec.Cmd, io.ReadCloser, io.ReadCloser, *os.File, error) {
 	if len(parts) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("empty command")
@@ -96,13 +104,7 @@ func (e *processExecutor) setupCommand(ctx context.Context, parts []string, conf
 		return nil, nil, nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
 	}
 
-	file, err := e.openOutputFile(config)
-	if err != nil {
-		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, err)
-		}
-	}
-	return cmd, stdout, stderr, file, nil
+	return cmd, stdout, stderr, e.prepareOutputFile(config), nil
 }
 
 func (e *processExecutor) captureOutput(sb *strings.Builder, stdout, stderr io.Reader, config executionConfig, file *os.File) *atomic.Bool {
@@ -193,12 +195,7 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	}
 	defer p.closePipes()
 
-	file, ferr := e.openOutputFile(config)
-	if ferr != nil {
-		if config.Feedback != nil {
-			fmt.Fprintf(config.Feedback, "\n[Warning] Failed to write to output file %q: %v\n", config.OutputFile, ferr)
-		}
-	}
+	file := e.prepareOutputFile(config)
 	if file != nil {
 		defer func() {
 			if cerr := file.Close(); cerr != nil && err == nil {
@@ -215,6 +212,10 @@ func (e *processExecutor) RunPipeline(ctx context.Context, pipedParts [][]string
 	stdoutStr, stderrStr, truncated := p.capture(config, file)
 	exitCode, waitErr := p.wait()
 
+	return e.formatPipelineResult(stdoutStr, stderrStr, truncated, exitCode, waitErr)
+}
+
+func (e *processExecutor) formatPipelineResult(stdoutStr, stderrStr string, truncated bool, exitCode int, waitErr error) (executionResult, error) {
 	output := stdoutStr
 	if stderrStr != "" {
 		output = fmt.Sprintf("Output:\n%s\nErrors:\n%s", stdoutStr, stderrStr)
