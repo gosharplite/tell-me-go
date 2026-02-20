@@ -21,6 +21,17 @@ type store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
 	Save(ctx context.Context, history []*llm.Content) error
 	Append(ctx context.Context, contents []*llm.Content) error
+	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
+	Truncate(ctx context.Context, length int) error
+	Compact(ctx context.Context) error
+}
+
+// HistoryPatch represents an append-only patch to history.
+type HistoryPatch struct {
+	IsPatch  bool                   `json:"_patch"`
+	Index    int                    `json:"index"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Truncate *int                   `json:"truncate,omitempty"`
 }
 
 // jsonlStore implements Store using a JSON Lines file.
@@ -80,9 +91,30 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 		default:
 		}
 
-		var content llm.Content
-		if err := decoder.Decode(&content); err != nil {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
+		}
+
+		var patch HistoryPatch
+		if err := json.Unmarshal(raw, &patch); err == nil && patch.IsPatch {
+			if patch.Truncate != nil {
+				if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
+					contents = contents[:*patch.Truncate]
+				}
+			} else if patch.Index >= 0 && patch.Index < len(contents) {
+				if pinned, ok := patch.Metadata["pinned"]; ok {
+					if pinnedBool, ok := pinned.(bool); ok {
+						contents[patch.Index].Pinned = pinnedBool
+					}
+				}
+			}
+			continue
+		}
+
+		var content llm.Content
+		if err := json.Unmarshal(raw, &content); err != nil {
+			return nil, fmt.Errorf("failed to decode JSONL content: %w", err)
 		}
 
 		contents = append(contents, &content)
@@ -204,4 +236,62 @@ func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 	}
 
 	return clone, nil
+}
+
+// UpdateMetadata appends a patch to update metadata of an existing entry.
+func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
+	}
+	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	patch := HistoryPatch{
+		IsPatch:  true,
+		Index:    index,
+		Metadata: metadata,
+	}
+	line, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+	_, err = f.Write(line)
+	return err
+}
+
+// Truncate appends a patch to rollback history to a specific length.
+func (s *jsonlStore) Truncate(ctx context.Context, length int) error {
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
+	}
+	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	patch := HistoryPatch{
+		IsPatch:  true,
+		Truncate: &length,
+	}
+	line, err := json.Marshal(patch)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+	_, err = f.Write(line)
+	return err
+}
+
+// Compact reads the patched history and overwrites the file without patches.
+func (s *jsonlStore) Compact(ctx context.Context) error {
+	contents, err := s.Load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.Save(ctx, contents)
 }

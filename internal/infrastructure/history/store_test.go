@@ -446,3 +446,85 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 
 	verifyPreparedContent(t, prepared)
 }
+
+func TestJSONLStore_UpdateMetadataAndTruncate(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "patches.jsonl")
+	store := newJSONLStore(filePath)
+	ctx := context.Background()
+
+	// Initial contents
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
+	}
+
+	if err := store.Save(ctx, contents); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Patch: Update metadata (pin first message)
+	if err := store.UpdateMetadata(ctx, 0, map[string]interface{}{"pinned": true}); err != nil {
+		t.Fatalf("UpdateMetadata failed: %v", err)
+	}
+
+	// Load and verify
+	loaded, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(loaded))
+	}
+	if !loaded[0].Pinned {
+		t.Error("expected first entry to be pinned")
+	}
+	if loaded[1].Pinned {
+		t.Error("expected second entry to not be pinned")
+	}
+
+	// Patch: Truncate to length 2
+	if err := store.Truncate(ctx, 2); err != nil {
+		t.Fatalf("Truncate failed: %v", err)
+	}
+
+	// Load and verify
+	loaded, err = store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(loaded))
+	}
+	if !loaded[0].Pinned {
+		t.Error("expected first entry to still be pinned")
+	}
+
+	// Compact
+	if err := store.Compact(ctx); err != nil {
+		t.Fatalf("Compact failed: %v", err)
+	}
+
+	// Load and verify after compact
+	loaded, err = store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 entries after compact, got %d", len(loaded))
+	}
+	if !loaded[0].Pinned {
+		t.Error("expected first entry to still be pinned after compact")
+	}
+
+	// Check file size / content
+	rawJSON, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawJSON), "_patch") {
+		t.Error("compacted file should not contain patches")
+	}
+}

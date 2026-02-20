@@ -143,7 +143,15 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	m.Contents[startIdx].Pinned = pinned
 	m.Contents[startIdx+1].Pinned = pinned
 
-	return m.store.Save(ctx, m.Contents)
+	metadata := map[string]interface{}{"pinned": pinned}
+	if err := m.store.UpdateMetadata(ctx, startIdx, metadata); err != nil {
+		return err
+	}
+	if err := m.store.UpdateMetadata(ctx, startIdx+1, metadata); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // snapshot takes a backup of the current state for potential rollback.
@@ -162,7 +170,7 @@ func (m *Manager) rollback(ctx context.Context) {
 	defer m.mu.Unlock()
 	if m.backup != nil {
 		m.Contents = m.backup
-		_ = m.store.Save(ctx, m.Contents) // Persist the rollback
+		_ = m.store.Truncate(ctx, len(m.backup)) // Persist the rollback
 	}
 }
 

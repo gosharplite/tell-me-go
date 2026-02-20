@@ -253,3 +253,9 @@ func TestHistoryManager_ClonePersistent(t *testing.T) {
 		t.Error("persistent parts should be preserved")
 	}
 }
+
+func (s *mockStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
+	return nil
+}
+func (s *mockStore) Truncate(ctx context.Context, length int) error { return nil }
+func (s *mockStore) Compact(ctx context.Context) error              { return nil }
