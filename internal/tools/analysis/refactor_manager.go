@@ -6,7 +6,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type refactorManager struct {
@@ -24,7 +23,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		DstFile string `json:"dst_file"`
 		Reason  string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -85,7 +84,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		Path    string `json:"path"`
 		Reason  string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

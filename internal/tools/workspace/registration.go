@@ -4,10 +4,10 @@
 package workspace
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileSystemManager struct {
@@ -26,9 +26,9 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager) {
 	bm := newBackupManager(sm, 10)
 	m := &fileSystemManager{
-		reader: &fileReader{sm: sm, fs: storage.DefaultFileSystem},
-		writer: &fileWriter{sm: sm, bm: bm, fs: storage.DefaultFileSystem},
-		search: &fileSearcher{sm: sm, fs: storage.DefaultFileSystem},
+		reader: &fileReader{sm: sm, fs: persistence.DefaultFileSystem},
+		writer: &fileWriter{sm: sm, bm: bm, fs: persistence.DefaultFileSystem},
+		search: &fileSearcher{sm: sm, fs: persistence.DefaultFileSystem},
 	}
 
 	r.Register(&tools.ToolDeclaration{

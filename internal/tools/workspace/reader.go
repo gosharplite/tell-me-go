@@ -10,22 +10,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileReader struct {
 	sm domain_security.ISecurityManager
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 func (r *fileReader) listFiles(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -62,7 +61,7 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 		Path     string `json:"path"`
 		MaxDepth int    `json:"max_depth"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -89,7 +88,7 @@ func (r *fileReader) getTree(ctx context.Context, args map[string]interface{}) (
 	return tools.ToolResult{Text: sb.String()}, nil
 }
 
-func buildTree(ctx context.Context, fs storage.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
+func buildTree(ctx context.Context, fs persistence.FileSystem, path, indent string, depth, maxDepth int, sb *strings.Builder) error {
 	if depth > maxDepth {
 		return nil
 	}
@@ -127,7 +126,7 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -158,7 +157,7 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 		Path    string `json:"path"`
 		Pattern string `json:"pattern"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -193,7 +192,7 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		File1 string `json:"file1"`
 		File2 string `json:"file2"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

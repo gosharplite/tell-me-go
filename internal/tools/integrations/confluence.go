@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"bytes"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"html"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 var (
@@ -205,7 +205,7 @@ func (m *confluenceManager) confluenceSearch(ctx context.Context, args map[strin
 		SpaceID string `json:"space_id"`
 		Limit   int    `json:"limit"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -376,7 +376,7 @@ func (m *confluenceManager) confluenceRead(ctx context.Context, args map[string]
 	var params struct {
 		PageID string `json:"page_id"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -523,7 +523,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 		MarkdownContent string `json:"markdown_content"`
 		UpdateMessage   string `json:"update_message"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

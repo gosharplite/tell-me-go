@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type teamsManager struct {
@@ -35,7 +34,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		Message    string `json:"message"`
 		Reason     string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

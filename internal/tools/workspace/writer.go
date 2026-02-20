@@ -10,16 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileWriter struct {
 	sm domain_security.ISecurityManager
 	bm *backupManager
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -28,7 +27,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 		Content  string `json:"content"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -73,7 +72,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 		NewText  string `json:"new_text"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -127,7 +126,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		Content  string `json:"content"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -174,7 +173,7 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 		N      int    `json:"n"`
 		Reason string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

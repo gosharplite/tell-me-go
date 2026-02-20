@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package persistence
 
 import (
 	"context"
@@ -75,7 +75,7 @@ func TestMockFileSystem(t *testing.T) {
 	t.Run("remove and removeAll", func(t *testing.T) {
 		fs := NewMockFileSystem()
 		_ = fs.WriteFile(ctx, "rem.txt", []byte("x"), 0644)
-		_ = fs.remove(ctx, "rem.txt")
+		_ = fs.Remove(ctx, "rem.txt")
 		if _, err := fs.ReadFile(ctx, "rem.txt"); err == nil {
 			t.Error("expected rem.txt to be removed")
 		}
@@ -83,7 +83,7 @@ func TestMockFileSystem(t *testing.T) {
 		_ = fs.WriteFile(ctx, "dir/a.txt", []byte("a"), 0644)
 		_ = fs.WriteFile(ctx, "dir/b.txt", []byte("b"), 0644)
 		_ = fs.WriteFile(ctx, "other.txt", []byte("o"), 0644)
-		_ = fs.removeAll(ctx, "dir")
+		_ = fs.RemoveAll(ctx, "dir")
 		if len(fs.Files) != 1 {
 			t.Errorf("expected 1 file left, got %d: %v", len(fs.Files), fs.Files)
 		}

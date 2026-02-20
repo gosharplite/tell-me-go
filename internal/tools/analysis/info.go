@@ -14,16 +14,15 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type infoManager struct {
 	SP     domain_security.ISecurityManager
 	Cache  *astCache
-	FS     storage.FileSystem
+	FS     persistence.FileSystem
 	Events events.EventBus
 	Exec   tools.CommandExecutor
 }
@@ -79,7 +78,7 @@ func (m *infoManager) collectFileStats(ctx context.Context) (map[string]int, map
 	return stats.fileCounts, stats.packages, stats.totalLOC, err
 }
 
-func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) storage.WalkFunc {
+func (m *infoManager) makeWalkFunc(ctx context.Context, stats *projectStats) persistence.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -149,7 +148,7 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 	var params struct {
 		Symbol string `json:"symbol"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -173,7 +172,7 @@ func (m *infoManager) GetFileSkeleton(ctx context.Context, args map[string]inter
 	var params struct {
 		Filepath string `json:"filepath"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package persistence
 
 import (
 	"context"
@@ -112,7 +112,7 @@ func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
 	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.remove(ctx, path); err != nil {
+	if err := fs.Remove(ctx, path); err != nil {
 		t.Fatalf("remove failed: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -124,7 +124,7 @@ func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
 	if err := os.MkdirAll(filepath.Join(dirPath, "sub"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.removeAll(ctx, dirPath); err != nil {
+	if err := fs.RemoveAll(ctx, dirPath); err != nil {
 		t.Fatalf("removeAll failed: %v", err)
 	}
 	if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
@@ -199,12 +199,12 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 		}
 	})
 	t.Run("remove cancelled", func(t *testing.T) {
-		if err := fs.remove(ctx, path); err == nil {
+		if err := fs.Remove(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("removeAll cancelled", func(t *testing.T) {
-		if err := fs.removeAll(ctx, path); err == nil {
+		if err := fs.RemoveAll(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})

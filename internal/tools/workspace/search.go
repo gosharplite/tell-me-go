@@ -10,15 +10,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileSearcher struct {
 	sm domain_security.ISecurityManager
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 // defPatterns defines regex patterns for detecting definitions in supported languages.
@@ -38,7 +37,7 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		Path  string `json:"path"`
 		Query string `json:"query"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -63,7 +62,7 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 		Path  string `json:"path"`
 		Query string `json:"query"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestIsIgnoredDir(t *testing.T) {
@@ -78,7 +78,7 @@ func TestWalkAndProcess(t *testing.T) {
 	}
 
 	t.Run("safe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, storage.DefaultFileSystem, tempDir, processor)
+		err := walkAndProcess(ctx, sm, persistence.DefaultFileSystem, tempDir, processor)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestWalkAndProcess(t *testing.T) {
 	})
 
 	t.Run("unsafe path", func(t *testing.T) {
-		err := walkAndProcess(ctx, sm, storage.DefaultFileSystem, "/etc", processor)
+		err := walkAndProcess(ctx, sm, persistence.DefaultFileSystem, "/etc", processor)
 		if err == nil {
 			t.Error("expected error for unsafe path")
 		}

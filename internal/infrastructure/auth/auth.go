@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -94,7 +94,7 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = storage.AtomicWrite(ctx, cacheFile, []byte(token), 0600)
+		_ = persistence.AtomicWrite(ctx, cacheFile, []byte(token), 0600)
 	}
 
 	a.Token = token

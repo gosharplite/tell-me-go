@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
@@ -26,7 +27,7 @@ type store interface {
 type jsonlStore struct {
 	filePath   string
 	assetStore *storage.AssetStore
-	fs         storage.FileSystem
+	fs         persistence.FileSystem
 }
 
 // newJSONLStore creates a new jsonlStore.
@@ -35,12 +36,12 @@ func newJSONLStore(filePath string) *jsonlStore {
 	return &jsonlStore{
 		filePath:   filePath,
 		assetStore: storage.NewAssetStore(assetDir),
-		fs:         storage.DefaultFileSystem,
+		fs:         persistence.DefaultFileSystem,
 	}
 }
 
 // withFileSystem sets the filesystem implementation.
-func (s *jsonlStore) withFileSystem(fs storage.FileSystem) *jsonlStore {
+func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
 	s.fs = fs
 	s.assetStore.WithFileSystem(fs)
 	return s
@@ -155,7 +156,7 @@ func (s *jsonlStore) ensureDirectory(ctx context.Context) error {
 	return nil
 }
 
-func (s *jsonlStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
+func (s *jsonlStore) appendSingleContent(ctx context.Context, f persistence.File, content *llm.Content) error {
 	prepared, err := s.prepareForStorage(ctx, content)
 	if err != nil {
 		return err

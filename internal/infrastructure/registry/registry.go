@@ -125,8 +125,3 @@ func (r *registry) IsLongRunning(name string) bool {
 	}
 	return false
 }
-
-// UnmarshalArgs helper converts map[string]interface{} to a target struct.
-func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
-	return tools.UnmarshalArgs(args, target)
-}

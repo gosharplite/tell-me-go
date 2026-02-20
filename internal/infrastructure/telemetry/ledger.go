@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // sessionCostRecord represents a single session's financial footprint.
@@ -236,7 +236,7 @@ func (ls *ledgerStore) persistMergedLedger(ctx context.Context, historyPath stri
 	merged := ls.mergeRecords(history, newRecords)
 
 	if bytes, err := json.Marshal(merged); err == nil {
-		if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+		if err := persistence.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
 			log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 		}
 	}

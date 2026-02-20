@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestConfigRepository(t *testing.T) {
 	ctx := context.Background()
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 	tempDir := t.TempDir()
 	file := filepath.Join(tempDir, "config.json")
 	repo := newConfigRepository(fs, file)

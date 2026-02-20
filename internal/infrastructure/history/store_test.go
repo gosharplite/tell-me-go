@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestJSONLStore_LargeLine(t *testing.T) {
@@ -167,7 +167,7 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 func TestJSONLStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 	store := newJSONLStore(filePath).withFileSystem(fs)
 
 	if store.fs != fs {

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 )
 
 func TestNewToolRegistry(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	r := registry.New()
+	r := domain_tools.NewMockRegistry()
 	tools.RegisterAll(r, sm, nil, nil, nil, "tokens.log", "model", "mode", nil, nil, t.TempDir(), nil)
 
 	if len(r.GetDeclarations()) == 0 {
@@ -25,7 +25,7 @@ func TestNewToolRegistry(t *testing.T) {
 
 func TestToolExecution(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	r := registry.New()
+	r := domain_tools.NewMockRegistry()
 	tools.RegisterAll(r, sm, nil, nil, nil, "tokens.log", "model", "mode", nil, nil, t.TempDir(), nil)
 
 	ctx := context.Background()
@@ -38,7 +38,7 @@ func TestToolExecution(t *testing.T) {
 
 func TestGenerateMermaidDiagram(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	r := registry.New()
+	r := domain_tools.NewMockRegistry()
 	tools.RegisterAll(r, sm, nil, nil, nil, "tokens.log", "model", "mode", nil, nil, t.TempDir(), nil)
 
 	ctx := context.Background()

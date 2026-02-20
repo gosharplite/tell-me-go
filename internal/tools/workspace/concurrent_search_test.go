@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type searchMockFile struct {
@@ -30,13 +30,13 @@ func (f *searchMockFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 type searchMockFS struct {
-	storage.FileSystem
+	persistence.FileSystem
 	files    map[string][]byte
 	walkErr  error
 	openErrs map[string]error
 }
 
-func (m *searchMockFS) Open(ctx context.Context, name string) (storage.File, error) {
+func (m *searchMockFS) Open(ctx context.Context, name string) (persistence.File, error) {
 	if err, ok := m.openErrs[name]; ok {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (m *searchMockFS) Stat(ctx context.Context, name string) (os.FileInfo, erro
 	return &searchMockFileInfo{name: name, size: int64(len(content))}, nil
 }
 
-func (m *searchMockFS) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
+func (m *searchMockFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
 	if m.walkErr != nil {
 		return m.walkErr
 	}

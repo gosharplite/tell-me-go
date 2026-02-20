@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestSearchFiles_SkipsBinary(t *testing.T) {
@@ -35,7 +35,7 @@ func TestSearchFiles_SkipsBinary(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
+	s := &fileSearcher{sm: sm, fs: persistence.DefaultFileSystem}
 
 	ctx := context.Background()
 	args := map[string]interface{}{
@@ -65,7 +65,7 @@ func TestGrepDefinitions(t *testing.T) {
 	t.Run("ErrorPaths", testGrepErrorPaths)
 }
 
-func setupGrepTest(t *testing.T, files map[string]string) (storage.FileSystem, string) {
+func setupGrepTest(t *testing.T, files map[string]string) (persistence.FileSystem, string) {
 	tempDir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(tempDir, name)
@@ -76,7 +76,7 @@ func setupGrepTest(t *testing.T, files map[string]string) (storage.FileSystem, s
 			t.Fatal(err)
 		}
 	}
-	return storage.DefaultFileSystem, tempDir
+	return persistence.DefaultFileSystem, tempDir
 }
 
 type grepResult struct {
@@ -218,7 +218,7 @@ func TestSearchFiles_TooManyResults(t *testing.T) {
 	}
 
 	sm := security.NewSecurityManager(nil)
-	s := &fileSearcher{sm: sm, fs: storage.DefaultFileSystem}
+	s := &fileSearcher{sm: sm, fs: persistence.DefaultFileSystem}
 	ctx := context.Background()
 
 	args := map[string]interface{}{

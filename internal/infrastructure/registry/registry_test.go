@@ -97,19 +97,3 @@ func TestRegistry_GetDeclarations(t *testing.T) {
 		t.Errorf("expected 2 declarations, got %d", len(decls))
 	}
 }
-
-func TestRegistry_UnmarshalArgs(t *testing.T) {
-	type Args struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
-	args := map[string]interface{}{"name": "Alice", "age": 30}
-	var target Args
-	err := registry.UnmarshalArgs(args, &target)
-	if err != nil {
-		t.Fatalf("UnmarshalArgs failed: %v", err)
-	}
-	if target.Name != "Alice" || target.Age != 30 {
-		t.Errorf("unexpected unmarshaled values: %+v", target)
-	}
-}

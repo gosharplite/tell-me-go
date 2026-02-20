@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // pathPolicy manages allowed boundaries and validates paths.
@@ -319,7 +319,7 @@ func (p *pathPolicy) SavePaths(ctx context.Context, writable bool) error {
 		return fmt.Errorf("failed to marshal paths: %w", err)
 	}
 
-	return storage.AtomicWrite(ctx, file, data, 0644)
+	return persistence.AtomicWrite(ctx, file, data, 0644)
 }
 
 func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {

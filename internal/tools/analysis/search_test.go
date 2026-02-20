@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -87,7 +87,7 @@ func TestListTodos(t *testing.T) {
 
 func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, string) {
 	sm := security.NewSecurityManager(nil)
-	fs := storage.NewMockFileSystem()
+	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 	tempDir := "/tmp/todo-test"
@@ -96,7 +96,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 	for path, content := range files {
 		fullPath := filepath.Join(tempDir, path)
 		// Ensure parent directory exists in mock FS if it supports it,
-		// but storage.MockFileSystem usually just takes any path.
+		// but persistence.MockFileSystem usually just takes any path.
 		require.NoError(t, fs.WriteFile(ctx, fullPath, []byte(content), 0644))
 	}
 	return m, tempDir
@@ -104,7 +104,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 
 func TestSearchUsagesGlobally(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	fs := storage.NewMockFileSystem()
+	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
@@ -154,7 +154,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 
 func TestSearchManager_Errors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
-	fs := storage.NewMockFileSystem()
+	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 

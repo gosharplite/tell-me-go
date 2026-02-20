@@ -11,7 +11,6 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type interactionTool struct {
@@ -29,7 +28,7 @@ func (t *interactionTool) askUser(ctx context.Context, args map[string]interface
 	var params struct {
 		Question string `json:"question"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

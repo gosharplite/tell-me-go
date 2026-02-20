@@ -14,7 +14,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type networkTool struct {
@@ -36,7 +35,7 @@ func (t *networkTool) HttpRequest(ctx context.Context, args map[string]interface
 		Headers map[string]string `json:"headers"`
 		Body    string            `json:"body"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -94,7 +93,7 @@ func (t *networkTool) ReadExternalDocs(ctx context.Context, args map[string]inte
 	var params struct {
 		URL string `json:"url"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

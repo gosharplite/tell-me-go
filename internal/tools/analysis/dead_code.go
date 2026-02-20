@@ -15,7 +15,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -65,7 +64,7 @@ func (a *deadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[str
 		Path             string   `json:"path"`
 		ExcludedPackages []string `json:"excluded_packages"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

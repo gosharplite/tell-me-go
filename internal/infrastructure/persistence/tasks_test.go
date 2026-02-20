@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 func TestTaskRepository_SaveAndLoad(t *testing.T) {
@@ -40,7 +40,7 @@ func TestTaskRepository_SaveAndLoad(t *testing.T) {
 
 func TestTaskRepository_LoadNonExistent(t *testing.T) {
 	_, ctx, _, tempDir := setupTaskRepo(t)
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 
 	repo2 := newTaskRepository(fs, filepath.Join(tempDir, "non-existent.json"))
 	loaded, err := repo2.ReadAll(ctx)
@@ -54,7 +54,7 @@ func TestTaskRepository_LoadNonExistent(t *testing.T) {
 
 func TestTaskRepository_JSONLFormat(t *testing.T) {
 	repo, ctx, tasksFile, _ := setupTaskRepo(t)
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 
 	tasks := []services.Task{
 		{ID: 1, Content: "Task 1"},
@@ -77,7 +77,7 @@ func TestTaskRepository_JSONLFormat(t *testing.T) {
 
 func TestTaskRepository_Append(t *testing.T) {
 	repo, ctx, tasksFile, _ := setupTaskRepo(t)
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 
 	tasks := []services.Task{
 		{ID: 1, Content: "Task 1"},
@@ -104,7 +104,7 @@ func TestTaskRepository_Append(t *testing.T) {
 
 func setupTaskRepo(t *testing.T) (*taskRepository, context.Context, string, string) {
 	ctx := context.Background()
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 	tempDir := t.TempDir()
 	tasksFile := filepath.Join(tempDir, "tasks.json")
 	repo := newTaskRepository(fs, tasksFile)
@@ -113,7 +113,7 @@ func setupTaskRepo(t *testing.T) (*taskRepository, context.Context, string, stri
 
 func TestTaskRepository_JSONArrayCompatibility(t *testing.T) {
 	repo, ctx, tasksFile, _ := setupTaskRepo(t)
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 
 	// Manually write a JSON array
 	content := `[{"id": 1, "content": "Array Task"}]`

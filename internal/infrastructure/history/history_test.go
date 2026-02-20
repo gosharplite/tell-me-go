@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestHistoryManager_Basic(t *testing.T) {
@@ -129,7 +129,7 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 		t.Error("GetResolver() should not be nil for JSONLStore")
 	}
 
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 	m.withFileSystem(fs)
 	// Verify it reached the store
 	if s, ok := m.store.(*jsonlStore); ok {

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // fileSnapshot represents a single file state in history.
@@ -101,7 +101,7 @@ func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 			}
 			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
 		} else {
-			if err := storage.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
+			if err := persistence.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
 				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Restored %s", snap.Path))

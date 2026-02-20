@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package persistence
 
 import (
 	"bytes"
@@ -124,12 +124,12 @@ func (m *mockFileSystem) OpenFile(ctx context.Context, name string, flag int, pe
 	return m.Open(ctx, name)
 }
 
-func (m *mockFileSystem) remove(ctx context.Context, name string) error {
+func (m *mockFileSystem) Remove(ctx context.Context, name string) error {
 	delete(m.Files, name)
 	return nil
 }
 
-func (m *mockFileSystem) removeAll(ctx context.Context, path string) error {
+func (m *mockFileSystem) RemoveAll(ctx context.Context, path string) error {
 	path = filepath.Clean(path)
 	// Handle exact matches and children
 	for p := range m.Files {

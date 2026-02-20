@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Analyzer interfaces for segregation and testing
@@ -68,7 +68,7 @@ type analysisManager struct {
 }
 
 func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),

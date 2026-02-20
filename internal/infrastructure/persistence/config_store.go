@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // ConfigRepository manages persistent configuration settings.
@@ -16,11 +16,11 @@ import (
 type configRepository struct {
 	mu       sync.RWMutex
 	filePath string
-	fs       storage.FileSystem
+	fs       persistence.FileSystem
 }
 
 // newConfigRepository creates a new configRepository.
-func newConfigRepository(fs storage.FileSystem, filePath string) *configRepository {
+func newConfigRepository(fs persistence.FileSystem, filePath string) *configRepository {
 	return &configRepository{
 		filePath: filePath,
 		fs:       fs,

@@ -4,9 +4,9 @@
 package developer
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Register adds all development workflow and release tools to the registry.
@@ -78,7 +78,7 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 	// Release Management
 	rel := &releaseManager{
 		sm:       sm,
-		fs:       storage.DefaultFileSystem,
+		fs:       persistence.DefaultFileSystem,
 		executor: exec,
 	}
 	r.RegisterWithOptions(&tools.ToolDeclaration{

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // TaskRepository manages a list of tasks with persistence.
@@ -20,11 +20,11 @@ import (
 type taskRepository struct {
 	mu       sync.RWMutex
 	filePath string
-	fs       storage.FileSystem
+	fs       persistence.FileSystem
 }
 
 // newTaskRepository creates a new taskRepository.
-func newTaskRepository(fs storage.FileSystem, filePath string) *taskRepository {
+func newTaskRepository(fs persistence.FileSystem, filePath string) *taskRepository {
 	return &taskRepository{
 		filePath: filePath,
 		fs:       fs,

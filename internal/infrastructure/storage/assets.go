@@ -8,24 +8,26 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // AssetStore manages binary blobs in a content-addressable storage.
 type AssetStore struct {
 	baseDir string
-	fs      FileSystem
+	fs      persistence.FileSystem
 }
 
 // NewAssetStore creates a new AssetStore.
 func NewAssetStore(baseDir string) *AssetStore {
 	return &AssetStore{
 		baseDir: baseDir,
-		fs:      DefaultFileSystem,
+		fs:      persistence.DefaultFileSystem,
 	}
 }
 
 // WithFileSystem sets the filesystem implementation.
-func (s *AssetStore) WithFileSystem(fs FileSystem) *AssetStore {
+func (s *AssetStore) WithFileSystem(fs persistence.FileSystem) *AssetStore {
 	s.fs = fs
 	return s
 }

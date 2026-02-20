@@ -11,14 +11,14 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type releaseManager struct {
 	sm       domain_security.ISecurityManager
-	fs       storage.FileSystem
+	fs       persistence.FileSystem
 	executor tools.CommandExecutor
 }
 
@@ -69,7 +69,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 // secretScanner implementation
 type secretScanner struct {
 	sm domain_security.ISecurityManager
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 func (s *secretScanner) Name() string { return "Security Scan" }
@@ -99,7 +99,7 @@ func (s *secretScanner) Run(ctx context.Context) checkResult {
 		if err != nil {
 			return nil
 		}
-		if storage.IsBinary(content) {
+		if persistence.IsBinary(content) {
 			return nil
 		}
 		s.scanContent(content, path, &findings, &secretsFound, compiledPatterns)
@@ -137,7 +137,7 @@ func (s *secretScanner) isIgnored(path string) bool {
 
 // dependencyChecker implementation
 type dependencyChecker struct {
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 func (c *dependencyChecker) Name() string { return "Dependency Check" }

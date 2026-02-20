@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -308,7 +308,7 @@ func TestNewTeamsManager(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	r := registry.New()
+	r := tools.NewMockRegistry()
 	sm := security.NewSecurityManager(nil)
 	RegisterAll(r, sm, nil, "")
 

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // sessionState manages all persistent services and session metadata.
@@ -68,7 +68,7 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths
 	}
 
-	fs := storage.DefaultFileSystem
+	fs := persistence.DefaultFileSystem
 	tasksPath := filepath.Join(configDir, "tasks.json")
 	configPath := filepath.Join(configDir, "config.json")
 	scratchPath := filepath.Join(configDir, "scratchpad.md")
