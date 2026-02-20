@@ -140,9 +140,6 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
 	}
 
-	m.Contents[startIdx].Pinned = pinned
-	m.Contents[startIdx+1].Pinned = pinned
-
 	metadata := map[string]interface{}{"pinned": pinned}
 	if err := m.store.UpdateMetadata(ctx, startIdx, metadata); err != nil {
 		return err
@@ -150,6 +147,9 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 	if err := m.store.UpdateMetadata(ctx, startIdx+1, metadata); err != nil {
 		return err
 	}
+
+	m.Contents[startIdx].Pinned = pinned
+	m.Contents[startIdx+1].Pinned = pinned
 
 	return nil
 }

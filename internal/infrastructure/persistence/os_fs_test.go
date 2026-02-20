@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestOSFileSystem(t *testing.T) {
@@ -28,7 +30,7 @@ func TestOSFileSystem(t *testing.T) {
 	})
 }
 
-func testWriteAndRead(t *testing.T, fs FileSystem, ctx context.Context) {
+func testWriteAndRead(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")
 	data := []byte("content")
@@ -53,7 +55,7 @@ func testWriteAndRead(t *testing.T, fs FileSystem, ctx context.Context) {
 	f.Close()
 }
 
-func testStatAndMetadata(t *testing.T, fs FileSystem, ctx context.Context) {
+func testStatAndMetadata(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "meta.txt")
 	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
@@ -72,7 +74,7 @@ func testStatAndMetadata(t *testing.T, fs FileSystem, ctx context.Context) {
 	}
 }
 
-func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
+func testDirectoryOps(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "a/b/c")
 	if err := fs.MkdirAll(ctx, path, 0755); err != nil {
@@ -104,7 +106,7 @@ func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
 	}
 }
 
-func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
+func testCleanup(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 
 	// Test remove
@@ -152,7 +154,7 @@ func TestIsBinary(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsBinary(tt.data); got != tt.want {
+			if got := persistence.IsBinary(tt.data); got != tt.want {
 				t.Errorf("IsBinary() = %v, want %v", got, tt.want)
 			}
 		})

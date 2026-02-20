@@ -7,6 +7,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // File combines common file operations.
@@ -53,14 +55,14 @@ func (f *osFileSystem) Stat(ctx context.Context, name string) (os.FileInfo, erro
 	return os.Stat(name)
 }
 
-func (f *osFileSystem) Open(ctx context.Context, name string) (File, error) {
+func (f *osFileSystem) Open(ctx context.Context, name string) (persistence.File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
 	return os.Open(name)
 }
 
-func (f *osFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (File, error) {
+func (f *osFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
 	if err := f.checkDone(ctx); err != nil {
 		return nil, err
 	}
@@ -81,7 +83,7 @@ func (f *osFileSystem) RemoveAll(ctx context.Context, path string) error {
 	return os.RemoveAll(path)
 }
 
-func (f *osFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error {
+func (f *osFileSystem) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err := f.checkDone(ctx); err != nil {
 			return err
@@ -92,5 +94,5 @@ func (f *osFileSystem) Walk(ctx context.Context, root string, fn WalkFunc) error
 
 // DefaultFileSystem is the global OS-based filesystem implementation.
 func init() {
-	DefaultFileSystem = &osFileSystem{}
+	persistence.DefaultFileSystem = &osFileSystem{}
 }

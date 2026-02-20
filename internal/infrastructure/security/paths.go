@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // pathPolicy manages allowed boundaries and validates paths.

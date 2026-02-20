@@ -533,7 +533,7 @@ func TestJSONLStore_Load_EmptyFile(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty.jsonl")
-	
+
 	// Create an empty file
 	if err := os.WriteFile(filePath, []byte{}, 0644); err != nil {
 		t.Fatal(err)
@@ -554,7 +554,7 @@ func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "legacy.json")
-	
+
 	// Valid JSON Array
 	content := `[{"Role":"user", "Parts":[{"Text":"hello legacy"}]}]`
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
@@ -579,7 +579,7 @@ func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "invalid_legacy.json")
-	
+
 	// Invalid JSON Array (starts with '[' but is malformed)
 	content := `[{"Role":"user", `
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
@@ -625,7 +625,7 @@ func TestJSONLStore_MarshalError(t *testing.T) {
 func TestJSONLStore_MkdirAllError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	
+
 	// Create a file where a directory needs to be
 	filePath := filepath.Join(tmpDir, "file")
 	if err := os.WriteFile(filePath, []byte("data"), 0644); err != nil {
@@ -658,7 +658,7 @@ func TestJSONLStore_Load_ParseContentError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "parse_error.jsonl")
-	
+
 	// Valid JSON but invalid for llm.Content (role should be string)
 	content := `{"Role": 123}` + "\n"
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
@@ -677,7 +677,7 @@ func TestJSONLStore_CompactError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "compact_error.jsonl")
-	
+
 	// Write a file that will fail to load
 	content := `{"Role": 123}` + "\n"
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
@@ -695,7 +695,7 @@ func TestJSONLStore_CompactError(t *testing.T) {
 func TestJSONLStore_Load_ReadFileError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	
+
 	// Create a directory where the file should be
 	filePath := filepath.Join(tmpDir, "dir_not_file.jsonl")
 	if err := os.Mkdir(filePath, 0755); err != nil {

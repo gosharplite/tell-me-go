@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // fileSnapshot represents a single file state in history.

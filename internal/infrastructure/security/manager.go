@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.

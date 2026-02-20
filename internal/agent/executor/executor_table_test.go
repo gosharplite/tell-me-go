@@ -956,7 +956,7 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 	}}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Cancel the context very early so queued tools see context cancelled
 	go func() {
 		time.Sleep(10 * time.Millisecond)
@@ -969,7 +969,7 @@ func TestToolExecutor_ContextCancellation_Parallel(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context.Canceled, got %v", err)
 	}
-	
+
 	// Since collector.Wait returns context.Canceled, the response is nil.
 	if resp != nil {
 		t.Errorf("Expected nil response on context cancellation, got %v", resp)
@@ -985,18 +985,18 @@ func TestToolExecutor_ContextCancellation_Direct(t *testing.T) {
 	exec.SetConcurrency(1, 0)
 
 	calls := []*llm.FunctionCall{{Name: "tool1"}}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
 	resChan := make(chan toolExecResult, 1)
-	
+
 	// Create wait group matching runExecutionPlan behavior manually
 	var wg sync.WaitGroup
 	exec.enqueueParallelTask(ctx, 0, calls[0], resChan, &wg)
-	
+
 	wg.Wait()
-	
+
 	res := <-resChan
 	if res.tr.Text != "Skipped: Context cancelled" {
 		t.Errorf("Expected 'Skipped: Context cancelled', got %q", res.tr.Text)
