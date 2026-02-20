@@ -30,12 +30,13 @@ The project is organized into the following top-level directories:
         - `internal/agent/executor`: Tool execution and worker pool management.
     - `internal/cli`: Flat CLI layer, flag parsing, and command orchestration. Handles the **Mode-Scoped Storage** logic.
     - `internal/domain`: Pure interfaces and entities (LLM, Tools, Pricing, Security, Events).
+    - `internal/domain/persistence`: File system and storage interface contracts.
     - `internal/infrastructure`: All external adapters and concrete implementations:
+        - `internal/infrastructure/persistence`: Concrete OS-level file system implementations.
         - `internal/infrastructure/config`: Configuration loading and defaults.
         - `internal/infrastructure/auth`: Authentication and token management (e.g., Google/Vertex).
         - `internal/infrastructure/llm`: Language model provider adapters.
         - `internal/infrastructure/history`: Conversation history persistence.
-        - `internal/infrastructure/storage`: File system and asset management.
         - `internal/infrastructure/security`: Sandbox, path guardrails, and confirmation gates.
         - `internal/infrastructure/telemetry`: Logging, metrics, and event tracking.
         - `internal/infrastructure/registry`: Tool and command registration.
@@ -77,13 +78,14 @@ tell-me-go/
 │   │   └── executor/     # Tool execution
 │   ├── cli/              # Flat CLI Layer
 │   ├── domain/           # Core Domain Models & Interfaces
+│   │   └── persistence/  # File system & storage contracts
 │   ├── infrastructure/   # External Adapters
 │   │   ├── auth/         # Token Management
 │   │   ├── config/       # Configuration
 │   │   ├── history/      # Persistence
 │   │   ├── llm/          # Gemini Adapter
+│   │   ├── persistence/  # Concrete OS-level FS implementations
 │   │   ├── security/     # Security Guardrails
-│   │   ├── storage/      # FS Utilities & Assets
 │   │   ├── telemetry/    # Observability
 │   │   └── testing/      # Shared Mocks
 │   ├── tools/            # Agent Capabilities

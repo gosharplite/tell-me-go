@@ -10,16 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileWriter struct {
-	sm domain_security.ISecurityManager
+	sm writerSecurity
 	bm *backupManager
-	fs storage.FileSystem
+	fs persistence.FileSystem
 }
 
 func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -28,7 +27,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 		Content  string `json:"content"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -47,7 +46,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "WRITE")
@@ -73,7 +72,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 		NewText  string `json:"new_text"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -93,7 +92,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "REPLACE")
@@ -121,13 +120,13 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: "File updated successfully."}, nil
 }
 
-func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}) (res tools.ToolResult, err error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
 		Reason   string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -146,24 +145,24 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "APPEND")
 
 	// Use OpenFile with O_APPEND
-	f, err := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", err)
+	f, oerr := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", oerr)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close file (data may be lost): %w", cerr)
+		}
+	}()
 
-	if _, err := f.Write([]byte(content)); err != nil {
+	if _, err = f.Write([]byte(content)); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to append: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to close file (data may be lost): %w", err)
 	}
 
 	return tools.ToolResult{Text: "Text appended successfully."}, nil
@@ -174,7 +173,7 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 		N      int    `json:"n"`
 		Reason string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -184,4 +183,9 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 	}
 	res, err := w.bm.undo(ctx, n)
 	return tools.ToolResult{Text: res}, err
+}
+
+type writerSecurity interface {
+	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }

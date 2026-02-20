@@ -14,8 +14,7 @@ import (
 	"testing"
 	"time"
 
-	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 type searchMockFile struct {
@@ -30,13 +29,13 @@ func (f *searchMockFile) Seek(offset int64, whence int) (int64, error) {
 }
 
 type searchMockFS struct {
-	storage.FileSystem
+	persistence.FileSystem
 	files    map[string][]byte
 	walkErr  error
 	openErrs map[string]error
 }
 
-func (m *searchMockFS) Open(ctx context.Context, name string) (storage.File, error) {
+func (m *searchMockFS) Open(ctx context.Context, name string) (persistence.File, error) {
 	if err, ok := m.openErrs[name]; ok {
 		return nil, err
 	}
@@ -55,7 +54,7 @@ func (m *searchMockFS) Stat(ctx context.Context, name string) (os.FileInfo, erro
 	return &searchMockFileInfo{name: name, size: int64(len(content))}, nil
 }
 
-func (m *searchMockFS) Walk(ctx context.Context, root string, fn storage.WalkFunc) error {
+func (m *searchMockFS) Walk(ctx context.Context, root string, fn persistence.WalkFunc) error {
 	if m.walkErr != nil {
 		return m.walkErr
 	}
@@ -93,30 +92,8 @@ func (s *mockSP) IsPathWritable(path string) (string, error) {
 func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSP) TerminalLock()                              {}
-func (s *mockSP) TerminalUnlock()                            {}
-func (s *mockSP) IsCommandAllowed(command string) bool       { return true }
-func (s *mockSP) LogAudit(label1, val1, label2, val2 string) {}
-func (s *mockSP) IsBypassActive() bool                       { return false }
-func (s *mockSP) Prompt(message string)                      {}
-func (s *mockSP) Warn(message string)                        {}
-func (s *mockSP) ReadLine(ctx context.Context) (string, error) {
-	return "", nil
-}
-func (s *mockSP) Confirm(ctx context.Context, message string) (bool, error) {
-	return true, nil
-}
-func (s *mockSP) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	return true, nil
-}
-
-func (s *mockSP) GetPolicy() *domain.Policy {
-	return domain.DefaultPolicy()
-}
-
-func (s *mockSP) GetSafetyService() *domain.SafetyService {
-	return domain.NewSafetyService(domain.DefaultPolicy())
-}
+func (s *mockSP) IsCommandAllowed(command string) bool { return true }
+func (s *mockSP) IsBypassActive() bool                 { return false }
 
 func setupSearchTest(t *testing.T) (*searchMockFS, *mockSP) {
 	t.Helper()

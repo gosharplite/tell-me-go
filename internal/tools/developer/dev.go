@@ -17,7 +17,7 @@ import (
 )
 
 type devManager struct {
-	sm             domain_security.ISecurityManager
+	sm             devSecurity
 	validator      domain_security.ICommandValidator
 	executor       executor
 	stderr         io.Writer
@@ -59,7 +59,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running Tests: %s", params.Command)
@@ -140,7 +140,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running go mod tidy and go fmt")
@@ -175,7 +175,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Getting test coverage for %s", path)
@@ -224,7 +224,7 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running linter: %s", fullCmd)
@@ -270,7 +270,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
@@ -294,7 +294,7 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Checking for vulnerabilities: %s", command)
@@ -323,7 +323,7 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-func newDevManager(sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) *devManager {
+func newDevManager(sm devSecurity, validator domain_security.ICommandValidator) *devManager {
 	return &devManager{
 		sm:             sm,
 		validator:      validator,
@@ -331,4 +331,10 @@ func newDevManager(sm domain_security.ISecurityManager, validator domain_securit
 		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,
 	}
+}
+
+type devSecurity interface {
+	domain_security.ActionConfirmer
+	domain_security.Auditor
+	domain_security.TerminalController
 }

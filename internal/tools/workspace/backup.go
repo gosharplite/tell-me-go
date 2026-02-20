@@ -13,7 +13,7 @@ import (
 	"time"
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // fileSnapshot represents a single file state in history.
@@ -29,11 +29,11 @@ type backupManager struct {
 	mu        sync.Mutex
 	backups   []fileSnapshot
 	maxStored int
-	sm        domain_security.ISecurityManager
+	sm        domain_security.PathValidator
 }
 
 // newBackupManager creates a new backupManager.
-func newBackupManager(sm domain_security.ISecurityManager, maxStored int) *backupManager {
+func newBackupManager(sm domain_security.PathValidator, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}
@@ -101,7 +101,7 @@ func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 			}
 			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
 		} else {
-			if err := storage.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
+			if err := persistence.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
 				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Restored %s", snap.Path))

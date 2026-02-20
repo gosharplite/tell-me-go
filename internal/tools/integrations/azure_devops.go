@@ -22,11 +22,10 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type azureDevOpsManager struct {
-	sm         security.ISecurityManager
+	sm         security.PathValidator
 	client     tools.HTTPClient
 	authHeader string
 	authErr    error
@@ -34,7 +33,7 @@ type azureDevOpsManager struct {
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm security.ISecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+func newazureDevOpsManager(sm security.PathValidator, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -125,7 +124,7 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -190,7 +189,7 @@ func (m *azureDevOpsManager) adoListPullRequests(ctx context.Context, args map[s
 		Top          int    `json:"top"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -276,7 +275,7 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -344,7 +343,7 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -419,7 +418,7 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 		Version      string `json:"version"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -476,7 +475,7 @@ func (m *azureDevOpsManager) adoListRepositoryItems(ctx context.Context, args ma
 		RecursionLevel string `json:"recursion_level"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -560,7 +559,7 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		Top          int    `json:"top"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -640,7 +639,7 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 		RunId        int    `json:"run_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -690,7 +689,7 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 		LogId        int    `json:"log_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -782,7 +781,7 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -893,7 +892,7 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 		PullRequestId int    `json:"pull_request_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -1020,7 +1019,7 @@ func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map
 		BranchName   string `json:"branch_name"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -1199,7 +1198,7 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 		BuildId      int    `json:"build_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -1240,7 +1239,7 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 		LogId        int    `json:"log_id"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -1273,7 +1272,7 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 		Top          int    `json:"top"`
 	}
 
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

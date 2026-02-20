@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -36,7 +37,7 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec)
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, infrapersistence.NewOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
 
 	ctx := context.Background()
@@ -65,7 +66,7 @@ func TestHealthManager_GetCodeHealth_Cancelled(t *testing.T) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
 	mockExec := &mockHealthExecutor{}
-	ana := newAnalysisManager(idx, cache, sm, nil, mockExec)
+	ana := newAnalysisManager(idx, cache, sm, nil, mockExec, infrapersistence.NewOSFileSystem())
 	hea := &healthManager{SP: sm, Ana: ana, Exec: mockExec}
 
 	ctx, cancel := context.WithCancel(context.Background())

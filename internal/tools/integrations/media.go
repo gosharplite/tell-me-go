@@ -17,7 +17,7 @@ import (
 )
 
 type mediaManager struct {
-	sm        security.ISecurityManager
+	sm        security.PathValidator
 	client    llm.LLMClient
 	assetsDir string
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type benchmarkSearchSecurityManager struct {
@@ -22,7 +22,7 @@ func (s *benchmarkSearchSecurityManager) IsPathSafe(path string) (string, error)
 func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 	ctx := context.Background()
 	sp := &benchmarkSearchSecurityManager{}
-	fs := storage.DefaultFileSystem
+	fs := infrapersistence.NewOSFileSystem()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -38,7 +38,7 @@ func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 func BenchmarkConcurrentSearch_EarlyStop(b *testing.B) {
 	ctx := context.Background()
 	sp := &benchmarkSearchSecurityManager{}
-	fs := storage.DefaultFileSystem
+	fs := infrapersistence.NewOSFileSystem()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

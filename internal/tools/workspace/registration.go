@@ -4,10 +4,10 @@
 package workspace
 
 import (
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type fileSystemManager struct {
@@ -17,18 +17,18 @@ type fileSystemManager struct {
 }
 
 // Register adds all workspace-related tools (file, git, system) to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator) {
-	registerFiles(r, sm)
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) {
+	registerFiles(r, sm, fs)
 	registerSystem(r, sm, validator)
 	registerGit(r, sm, exec)
 }
 
-func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager) {
+func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, fs persistence.FileSystem) {
 	bm := newBackupManager(sm, 10)
 	m := &fileSystemManager{
-		reader: &fileReader{sm: sm, fs: storage.DefaultFileSystem},
-		writer: &fileWriter{sm: sm, bm: bm, fs: storage.DefaultFileSystem},
-		search: &fileSearcher{sm: sm, fs: storage.DefaultFileSystem},
+		reader: &fileReader{sm: sm, fs: fs},
+		writer: &fileWriter{sm: sm, bm: bm, fs: fs},
+		search: &fileSearcher{sm: sm, fs: fs},
 	}
 
 	r.Register(&tools.ToolDeclaration{

@@ -1,13 +1,15 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package persistence
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestOSFileSystem(t *testing.T) {
@@ -28,7 +30,7 @@ func TestOSFileSystem(t *testing.T) {
 	})
 }
 
-func testWriteAndRead(t *testing.T, fs FileSystem, ctx context.Context) {
+func testWriteAndRead(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.txt")
 	data := []byte("content")
@@ -53,7 +55,7 @@ func testWriteAndRead(t *testing.T, fs FileSystem, ctx context.Context) {
 	f.Close()
 }
 
-func testStatAndMetadata(t *testing.T, fs FileSystem, ctx context.Context) {
+func testStatAndMetadata(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "meta.txt")
 	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
@@ -72,7 +74,7 @@ func testStatAndMetadata(t *testing.T, fs FileSystem, ctx context.Context) {
 	}
 }
 
-func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
+func testDirectoryOps(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "a/b/c")
 	if err := fs.MkdirAll(ctx, path, 0755); err != nil {
@@ -104,7 +106,7 @@ func testDirectoryOps(t *testing.T, fs FileSystem, ctx context.Context) {
 	}
 }
 
-func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
+func testCleanup(t *testing.T, fs persistence.FileSystem, ctx context.Context) {
 	tmpDir := t.TempDir()
 
 	// Test remove
@@ -112,7 +114,7 @@ func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
 	if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.remove(ctx, path); err != nil {
+	if err := fs.Remove(ctx, path); err != nil {
 		t.Fatalf("remove failed: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -124,7 +126,7 @@ func testCleanup(t *testing.T, fs FileSystem, ctx context.Context) {
 	if err := os.MkdirAll(filepath.Join(dirPath, "sub"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := fs.removeAll(ctx, dirPath); err != nil {
+	if err := fs.RemoveAll(ctx, dirPath); err != nil {
 		t.Fatalf("removeAll failed: %v", err)
 	}
 	if _, err := os.Stat(dirPath); !os.IsNotExist(err) {
@@ -152,7 +154,7 @@ func TestIsBinary(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsBinary(tt.data); got != tt.want {
+			if got := persistence.IsBinary(tt.data); got != tt.want {
 				t.Errorf("IsBinary() = %v, want %v", got, tt.want)
 			}
 		})
@@ -199,12 +201,12 @@ func TestOSFileSystem_ContextCancellation(t *testing.T) {
 		}
 	})
 	t.Run("remove cancelled", func(t *testing.T) {
-		if err := fs.remove(ctx, path); err == nil {
+		if err := fs.Remove(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})
 	t.Run("removeAll cancelled", func(t *testing.T) {
-		if err := fs.removeAll(ctx, path); err == nil {
+		if err := fs.RemoveAll(ctx, path); err == nil {
 			t.Error("expected error for cancelled context")
 		}
 	})

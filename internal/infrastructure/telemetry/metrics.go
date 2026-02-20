@@ -22,7 +22,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	domain_telemetry "github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // sessionCostTracker manages in-memory cost accumulation to avoid frequent log parsing.
@@ -454,7 +454,7 @@ func (m *metricsManager) updateLedgerHistory(ctx context.Context, historyPath, g
 		log.Printf("Warning: Failed to marshal ledger for %s: %v", historyPath, err)
 		return
 	}
-	if err := storage.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
+	if err := persistence.AtomicWrite(ctx, historyPath, bytes, 0644); err != nil {
 		log.Printf("Warning: Failed to write ledger %s: %v", historyPath, err)
 	}
 }
@@ -846,7 +846,11 @@ func logTrace(logFile string, trace *domain_telemetry.TurnTrace) {
 		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("Warning: Failed to close trace file %s: %v", traceFile, cerr)
+		}
+	}()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		log.Printf("Warning: Failed to write to trace file %s: %v", traceFile, err)

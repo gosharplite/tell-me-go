@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // scratchpadRepository manages a persistent scratchpad.
@@ -16,11 +16,11 @@ import (
 type scratchpadRepository struct {
 	mu       sync.RWMutex
 	filePath string
-	fs       storage.FileSystem
+	fs       persistence.FileSystem
 }
 
 // newScratchpadRepository creates a new scratchpadRepository.
-func newScratchpadRepository(fs storage.FileSystem, filePath string) *scratchpadRepository {
+func newScratchpadRepository(fs persistence.FileSystem, filePath string) *scratchpadRepository {
 	return &scratchpadRepository{
 		filePath: filePath,
 		fs:       fs,

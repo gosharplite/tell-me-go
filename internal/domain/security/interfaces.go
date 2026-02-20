@@ -5,20 +5,40 @@ package security
 
 import "context"
 
-type ISecurityManager interface {
-	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
+type PathValidator interface {
 	IsPathSafe(path string) (string, error)
 	IsPathWritable(path string) (string, error)
+}
+
+type ActionConfirmer interface {
+	ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error)
+	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+}
+
+type Auditor interface {
+	LogAudit(label1, val1, label2, val2 string)
+}
+
+type TerminalController interface {
 	TerminalLock()
 	TerminalUnlock()
-	IsBypassActive() bool
-	IsCommandAllowed(command string) bool
 	Prompt(message string)
 	Warn(message string)
 	Confirm(ctx context.Context, message string) (bool, error)
 	ReadLine(ctx context.Context) (string, error)
-	LogAudit(label1, val1, label2, val2 string)
-	Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error)
+}
+
+type PolicyEvaluator interface {
+	IsCommandAllowed(command string) bool
+	IsBypassActive() bool
+}
+
+type ISecurityManager interface {
+	PathValidator
+	ActionConfirmer
+	Auditor
+	TerminalController
+	PolicyEvaluator
 }
 
 // UserInteractor defines the interface for user interactions (confirmations, warnings).

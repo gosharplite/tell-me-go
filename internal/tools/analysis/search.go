@@ -9,16 +9,15 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
 type searchManager struct {
-	SP security.ISecurityManager
-	FS storage.FileSystem
+	SP security.PathValidator
+	FS persistence.FileSystem
 }
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
@@ -27,7 +26,7 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 	var params struct {
 		Path string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -60,7 +59,7 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		Query string `json:"query"`
 		Path  string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

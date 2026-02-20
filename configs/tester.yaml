@@ -12,7 +12,7 @@ SELECTED_PROVIDER: "google"
 PROVIDERS:
   google:
     TYPE: "gemini"
-    MODEL: "gemini-3-flash-preview"
+    MODEL: "gemini-3.1-pro-preview"
     URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
     THINKING_BUDGET: 32768
@@ -48,4 +48,4 @@ TOOL_TIMEOUT: 300
 # --- Safety & History ---
 MAX_TURNS: 200
 MAX_HISTORY_TURNS: 500
-MAX_HISTORY_TOKENS: 120000
+MAX_HISTORY_TOKENS: 180000

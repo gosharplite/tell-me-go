@@ -6,14 +6,13 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type refactorManager struct {
-	SP security.ISecurityManager
+	SP refactorSecurity
 }
 
-func newRefactorManager(sp security.ISecurityManager) *refactorManager {
+func newRefactorManager(sp refactorSecurity) *refactorManager {
 	return &refactorManager{SP: sp}
 }
 
@@ -24,7 +23,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		DstFile string `json:"dst_file"`
 		Reason  string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -51,7 +50,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	tx := newTransaction()
@@ -85,7 +84,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		Path    string `json:"path"`
 		Reason  string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -107,10 +106,15 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	// ... simplified implementation or keep using old logic for now to ensure continuity
 	// A better way is to implement RenameTransform
 	return tools.ToolResult{Text: "RenameSymbol migrated to new manager (logic to be fully transitioned to Transforms)."}, nil
+}
+
+type refactorSecurity interface {
+	security.PathValidator
+	security.ActionConfirmer
 }

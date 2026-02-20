@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type mockEventBus struct {
@@ -71,7 +72,7 @@ func TestWithStatusReporter(t *testing.T) {
 	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	cs := orchestration.NewContextStrategy(nil, nil)
-	h := history.NewManager("")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), "")
 	cm := &orchestration.ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {

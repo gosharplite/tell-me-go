@@ -14,12 +14,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
 )
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
@@ -118,7 +119,7 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	ctx := context.Background()
 
 	// 1. Fill history with 10 messages (5 turns)
@@ -180,7 +181,7 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	ctx := context.Background()
 
 	counter := &mockTokenCounter{}
@@ -209,7 +210,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	// Test case: Above threshold
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
-	hManager2 := history.NewManager(tmpDir + "/history2.json")
+	hManager2 := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history2.json")
 	for i := 0; i < 2; i++ {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
@@ -229,7 +230,7 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	ctx := context.Background()
 
 	// Initial history: 1 turn
@@ -280,7 +281,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 
 func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	ctx := context.Background()
 
 	// Initial history: 4 turns (8 messages)
@@ -368,7 +369,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
 	capturedInput := new([]*domain_llm.Content)
 	g := &mockGateway{
 		generateFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {

@@ -11,6 +11,9 @@ import (
 
 // Category definitions
 var (
+	// errLogic is strictly for agent loop/turn limits.
+	// Note: tool-level human rejections are handled via domaintools.ErrUserDeclined sentinels,
+	// which are NOT categorized as errLogic.
 	errLogic = errors.New("logic violation") // Should stop, indicates bug or limit
 )
 

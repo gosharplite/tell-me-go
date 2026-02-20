@@ -7,10 +7,11 @@ package history
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // Manager handles loading, saving, and basic manipulation of conversation history.
@@ -24,9 +25,9 @@ type Manager struct {
 }
 
 // NewManager creates a new history manager for the given file path.
-func NewManager(filePath string) *Manager {
+func NewManager(fs persistence.FileSystem, filePath string) *Manager {
 	return &Manager{
-		store:    newJSONLStore(filePath),
+		store:    newJSONLStore(fs, filePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
@@ -40,7 +41,7 @@ func (m *Manager) setStore(s store) {
 }
 
 // withFileSystem sets the filesystem implementation for the default store.
-func (m *Manager) withFileSystem(fs storage.FileSystem) *Manager {
+func (m *Manager) withFileSystem(fs persistence.FileSystem) *Manager {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.store.(*jsonlStore); ok {
@@ -140,10 +141,18 @@ func (m *Manager) SetPinned(ctx context.Context, turnIndex int, pinned bool) err
 		return fmt.Errorf("invalid turn index: %d (history length: %d)", turnIndex, len(m.Contents))
 	}
 
+	metadata := map[string]interface{}{"pinned": pinned}
+	if err := m.store.UpdateMetadata(ctx, startIdx, metadata); err != nil {
+		return err
+	}
+	if err := m.store.UpdateMetadata(ctx, startIdx+1, metadata); err != nil {
+		return err
+	}
+
 	m.Contents[startIdx].Pinned = pinned
 	m.Contents[startIdx+1].Pinned = pinned
 
-	return m.store.Save(ctx, m.Contents)
+	return nil
 }
 
 // snapshot takes a backup of the current state for potential rollback.
@@ -162,7 +171,9 @@ func (m *Manager) rollback(ctx context.Context) {
 	defer m.mu.Unlock()
 	if m.backup != nil {
 		m.Contents = m.backup
-		_ = m.store.Save(ctx, m.Contents) // Persist the rollback
+		if err := m.store.Truncate(ctx, len(m.backup)); err != nil {
+			log.Printf("Warning: failed to persist history rollback truncation: %v", err)
+		}
 	}
 }
 

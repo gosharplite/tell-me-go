@@ -14,15 +14,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type teamsManager struct {
-	sm     security.ISecurityManager
+	sm     teamsSecurity
 	client tools.HTTPClient
 }
 
-func newteamsManager(sm security.ISecurityManager, client tools.HTTPClient) *teamsManager {
+func newteamsManager(sm teamsSecurity, client tools.HTTPClient) *teamsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -35,7 +34,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		Message    string `json:"message"`
 		Reason     string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -56,7 +55,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action cancelled by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	body, err := buildTeamsRequestBody(message, params.Reason)
@@ -105,4 +104,8 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 	}
 
 	return resp.Status, nil
+}
+
+type teamsSecurity interface {
+	security.ActionConfirmer
 }

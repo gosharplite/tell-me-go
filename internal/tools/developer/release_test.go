@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 type mockCommandExecutor struct {
@@ -39,7 +39,7 @@ func TestVerifyReleaseReadiness_Success(t *testing.T) {
 	sm.RegisterSafePath(".")
 	cwd, _ := os.Getwd()
 
-	fs := storage.NewMockFileSystem()
+	fs := persistence.NewMockFileSystem()
 	fs.Files = map[string][]byte{
 		filepath.Join(cwd, "go.mod"):  []byte("module github.com/gosharplite/tell-me-go\n\ngo 1.21"),
 		filepath.Join(cwd, "main.go"): []byte("package main\nfunc main() {}"),
@@ -143,7 +143,7 @@ func TestVerifyReleaseReadiness_Failures(t *testing.T) {
 }
 
 func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, name string, files func() map[string][]byte, runFunc func(context.Context, string, ...string) ([]byte, error), wantSubstr string) {
-	fs := storage.NewMockFileSystem()
+	fs := persistence.NewMockFileSystem()
 	fs.Files = files()
 
 	executor := &mockCommandExecutor{

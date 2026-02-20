@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // Analyzer interfaces for segregation and testing
@@ -67,9 +67,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
-	fs := storage.DefaultFileSystem
-
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp analysisSecurity, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
 		Dependency: newDependencyAnalyzer(executor, sp, bus),
@@ -130,4 +128,10 @@ func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]inter
 
 func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.FindDefinitions(ctx, args)
+}
+
+type analysisSecurity interface {
+	domain_security.PathValidator
+	domain_security.PolicyEvaluator
+	domain_security.ActionConfirmer
 }

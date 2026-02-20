@@ -11,15 +11,14 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type complexityAnalyzer struct {
 	Cache *astCache
-	SP    security.ISecurityManager
+	SP    security.PathValidator
 }
 
-func newComplexityAnalyzer(cache *astCache, sp security.ISecurityManager) *complexityAnalyzer {
+func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *complexityAnalyzer {
 	return &complexityAnalyzer{
 		Cache: cache,
 		SP:    sp,
@@ -37,7 +36,7 @@ func (a *complexityAnalyzer) Analyze(ctx context.Context, args map[string]interf
 	var params struct {
 		Path string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

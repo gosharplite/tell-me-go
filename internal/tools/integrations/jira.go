@@ -16,17 +16,16 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type jiraManager struct {
-	sm       security.ISecurityManager
+	sm       security.PathValidator
 	client   tools.HTTPClient
 	provider *atlassianProvider
 }
 
 // newjiraManager creates a new instance of jiraManager.
-func newjiraManager(sm security.ISecurityManager, client tools.HTTPClient) *jiraManager {
+func newjiraManager(sm security.PathValidator, client tools.HTTPClient) *jiraManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -42,7 +41,7 @@ func (m *jiraManager) jiraSearchIssues(ctx context.Context, args map[string]inte
 		JQL   string `json:"jql"`
 		Limit int    `json:"limit"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -151,7 +150,7 @@ func (m *jiraManager) jiraGetIssue(ctx context.Context, args map[string]interfac
 	var params struct {
 		IssueKey string `json:"issue_key"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

@@ -14,15 +14,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
 )
 
 // fileProcessor is a callback function for processing a file during a walk.
 type fileProcessor func(filePath string) error
 
 // walkAndProcess handles the generic filesystem traversal, safety checks, and directory filtering.
-func walkAndProcess(ctx context.Context, sm domain_security.ISecurityManager, fs storage.FileSystem, path string, fn fileProcessor) error {
+func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs persistence.FileSystem, path string, fn fileProcessor) error {
 	if path == "" {
 		path = "."
 	}
@@ -52,7 +52,7 @@ func walkAndProcess(ctx context.Context, sm domain_security.ISecurityManager, fs
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp domain_security.ISecurityManager, fs storage.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
+func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -85,7 +85,7 @@ func ConcurrentSearch(ctx context.Context, sp domain_security.ISecurityManager, 
 }
 
 type searchPipeline struct {
-	fs          storage.FileSystem
+	fs          persistence.FileSystem
 	matcher     func(path, line string) bool
 	limit       int
 	pathsChan   chan string
@@ -171,13 +171,6 @@ func (p *searchPipeline) startWorkers(wg *sync.WaitGroup) {
 	}
 }
 
-var bufferPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 64*1024)
-		return &b
-	},
-}
-
 func (p *searchPipeline) scanFile(path string) error {
 	file, err := p.fs.Open(p.ctx, path)
 	if err != nil {
@@ -188,13 +181,18 @@ func (p *searchPipeline) scanFile(path string) error {
 	if isBin, err := checkBinary(file); err == nil && !isBin {
 		const maxScannerCapacity = 10 * 1024 * 1024
 		scanner := bufio.NewScanner(file)
-		bufPtr := bufferPool.Get().(*[]byte)
-		buf := *bufPtr
-		defer bufferPool.Put(bufPtr)
+		// Replace sync.Pool with a simple local allocation.
+		// Go's GC handles short-lived 64KB buffers incredibly fast, and this avoids the pointer-growth leak.
+		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, maxScannerCapacity)
 
 		lineNum := 0
 		for scanner.Scan() {
+			// Check for cancellation to prevent unbounded CPU burn on large files
+			if p.ctx.Err() != nil {
+				return p.ctx.Err()
+			}
+
 			lineNum++
 			line := scanner.Text()
 			if p.matcher(path, line) {
@@ -254,7 +252,7 @@ func (p *searchPipeline) handleDone(results []string, finalErr error) ([]string,
 }
 
 // checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.
-func checkBinary(file storage.File) (bool, error) {
+func checkBinary(file persistence.File) (bool, error) {
 	buf := make([]byte, 1024)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
@@ -263,7 +261,7 @@ func checkBinary(file storage.File) (bool, error) {
 	if _, err := file.Seek(0, 0); err != nil {
 		return false, err
 	}
-	return storage.IsBinary(buf[:n]), nil
+	return persistence.IsBinary(buf[:n]), nil
 }
 
 func isIgnoredDir(name string) bool {

@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -35,22 +34,8 @@ func (s *mockSecurityProvider) IsPathWritable(path string) (string, error) { ret
 func (s *mockSecurityProvider) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSecurityProvider) TerminalLock()                              {}
-func (s *mockSecurityProvider) TerminalUnlock()                            {}
-func (s *mockSecurityProvider) IsCommandAllowed(command string) bool       { return true }
-func (s *mockSecurityProvider) LogAudit(label1, val1, label2, val2 string) {}
-func (s *mockSecurityProvider) IsBypassActive() bool                       { return false }
-func (s *mockSecurityProvider) Prompt(message string)                      {}
-func (s *mockSecurityProvider) Warn(message string)                        {}
-func (s *mockSecurityProvider) ReadLine(ctx context.Context) (string, error) {
-	return "", nil
-}
-func (s *mockSecurityProvider) Confirm(ctx context.Context, message string) (bool, error) {
-	return true, nil
-}
-func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	return true, nil
-}
+func (s *mockSecurityProvider) IsCommandAllowed(command string) bool { return true }
+func (s *mockSecurityProvider) IsBypassActive() bool                 { return false }
 
 type mockExecutor struct {
 	OutputFunc         func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -69,10 +54,6 @@ func (m *mockExecutor) CombinedOutput(ctx context.Context, name string, args ...
 		return m.CombinedOutputFunc(ctx, name, args...)
 	}
 	return nil, nil
-}
-
-func (s *mockSecurityProvider) GetSafetyService() *domain.SafetyService {
-	return domain.NewSafetyService(domain.DefaultPolicy())
 }
 
 type mockIndexer struct {
@@ -95,4 +76,8 @@ func (m *mockIndexer) Refresh(ctx context.Context) error {
 
 func (m *mockIndexer) GetImplementations(ctx context.Context, id string) []string {
 	return m.impls[id]
+}
+
+func (s *mockSecurityProvider) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
+	return true, nil
 }

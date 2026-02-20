@@ -7,6 +7,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -94,7 +95,11 @@ func (a *VertexAuth) getToken(ctx context.Context) (string, error) {
 	// 3. Save to cache
 	cacheDir := filepath.Dir(cacheFile)
 	if err := os.MkdirAll(cacheDir, 0700); err == nil {
-		_ = storage.AtomicWrite(ctx, cacheFile, []byte(token), 0600)
+		if writeErr := persistence.AtomicWrite(ctx, cacheFile, []byte(token), 0600); writeErr != nil {
+			log.Printf("failed to write auth cache: %v", writeErr)
+		}
+	} else {
+		log.Printf("failed to create auth cache directory: %v", err)
 	}
 
 	a.Token = token

@@ -8,13 +8,15 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
+
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestRegister(t *testing.T) {
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
-	Register(reg, sm, &exec.RealExecutor{}, security.NewCommandValidator(sm, nil))
+	Register(reg, sm, &exec.RealExecutor{}, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
 
 	decls := reg.GetDeclarations()
 	found := make(map[string]bool)

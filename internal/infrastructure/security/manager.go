@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // SecurityManager coordinates path validation, user interaction, and auditing.
@@ -147,7 +147,7 @@ func (sm *SecurityManager) saveBypassState(ctx context.Context) {
 	if active {
 		val = "true"
 	}
-	_ = storage.AtomicWrite(ctx, file, []byte(val), 0644)
+	_ = persistence.AtomicWrite(ctx, file, []byte(val), 0644)
 }
 
 // SetBypassActive sets the bypass state.

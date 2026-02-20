@@ -12,7 +12,8 @@ import (
 	"path/filepath"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/storage"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // store defines the interface for history persistence.
@@ -20,27 +21,38 @@ type store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
 	Save(ctx context.Context, history []*llm.Content) error
 	Append(ctx context.Context, contents []*llm.Content) error
+	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
+	Truncate(ctx context.Context, length int) error
+	Compact(ctx context.Context) error
+}
+
+// historyPatch represents an append-only patch to history.
+type historyPatch struct {
+	IsPatch  bool                   `json:"_patch"`
+	Index    int                    `json:"index"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Truncate *int                   `json:"truncate,omitempty"`
 }
 
 // jsonlStore implements Store using a JSON Lines file.
 type jsonlStore struct {
 	filePath   string
-	assetStore *storage.AssetStore
-	fs         storage.FileSystem
+	assetStore *infrapersistence.AssetStore
+	fs         persistence.FileSystem
 }
 
 // newJSONLStore creates a new jsonlStore.
-func newJSONLStore(filePath string) *jsonlStore {
+func newJSONLStore(fs persistence.FileSystem, filePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
 	return &jsonlStore{
 		filePath:   filePath,
-		assetStore: storage.NewAssetStore(assetDir),
-		fs:         storage.DefaultFileSystem,
+		assetStore: infrapersistence.NewAssetStore(assetDir).WithFileSystem(fs),
+		fs:         fs,
 	}
 }
 
 // withFileSystem sets the filesystem implementation.
-func (s *jsonlStore) withFileSystem(fs storage.FileSystem) *jsonlStore {
+func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
 	s.fs = fs
 	s.assetStore.WithFileSystem(fs)
 	return s
@@ -70,7 +82,11 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	}
 
 	// Fallback to JSONL format
-	contents = nil
+	return s.loadJSONL(ctx, data)
+}
+
+func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content, error) {
+	var contents []*llm.Content
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	for decoder.More() {
 		select {
@@ -79,15 +95,48 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 		default:
 		}
 
-		var content llm.Content
-		if err := decoder.Decode(&content); err != nil {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
 
-		contents = append(contents, &content)
+		var patch historyPatch
+		if err := json.Unmarshal(raw, &patch); err == nil && patch.IsPatch {
+			contents = s.applyPatch(patch, contents)
+			continue
+		}
+
+		content, err := s.parseContent(raw)
+		if err != nil {
+			return nil, err
+		}
+		contents = append(contents, content)
 	}
 
 	return contents, nil
+}
+
+func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*llm.Content {
+	if patch.Truncate != nil {
+		if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
+			contents = contents[:*patch.Truncate]
+		}
+	} else if patch.Index >= 0 && patch.Index < len(contents) {
+		if pinned, ok := patch.Metadata["pinned"]; ok {
+			if pinnedBool, ok := pinned.(bool); ok {
+				contents[patch.Index].Pinned = pinnedBool
+			}
+		}
+	}
+	return contents
+}
+
+func (s *jsonlStore) parseContent(raw json.RawMessage) (*llm.Content, error) {
+	var content llm.Content
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return nil, fmt.Errorf("failed to decode JSONL content: %w", err)
+	}
+	return &content, nil
 }
 
 // Resolve implements llm.AssetResolver.
@@ -122,7 +171,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 }
 
 // Append appends multiple content entries to the history file.
-func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) error {
+func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err error) {
 	if len(contents) == 0 {
 		return nil
 	}
@@ -131,14 +180,18 @@ func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) error 
 		return err
 	}
 
-	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	for _, content := range contents {
-		if err := s.appendSingleContent(ctx, f, content); err != nil {
+		if err = s.appendSingleContent(ctx, f, content); err != nil {
 			return err
 		}
 	}
@@ -155,7 +208,7 @@ func (s *jsonlStore) ensureDirectory(ctx context.Context) error {
 	return nil
 }
 
-func (s *jsonlStore) appendSingleContent(ctx context.Context, f storage.File, content *llm.Content) error {
+func (s *jsonlStore) appendSingleContent(ctx context.Context, f persistence.File, content *llm.Content) error {
 	prepared, err := s.prepareForStorage(ctx, content)
 	if err != nil {
 		return err
@@ -203,4 +256,84 @@ func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 	}
 
 	return clone, nil
+}
+
+// UpdateMetadata appends a patch to update metadata of an existing entry.
+func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) (err error) {
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
+	}
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	patch := historyPatch{
+		IsPatch:  true,
+		Index:    index,
+		Metadata: metadata,
+	}
+	line, merr := json.Marshal(patch)
+	if merr != nil {
+		return merr
+	}
+	line = append(line, '\n')
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	_, err = f.Write(line)
+	return err
+}
+
+// Truncate appends a patch to rollback history to a specific length.
+func (s *jsonlStore) Truncate(ctx context.Context, length int) (err error) {
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
+	}
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	patch := historyPatch{
+		IsPatch:  true,
+		Truncate: &length,
+	}
+	line, merr := json.Marshal(patch)
+	if merr != nil {
+		return merr
+	}
+	line = append(line, '\n')
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	_, err = f.Write(line)
+	return err
+}
+
+// Compact reads the patched history and overwrites the file without patches.
+func (s *jsonlStore) Compact(ctx context.Context) error {
+	contents, err := s.Load(ctx)
+	if err != nil {
+		return err
+	}
+	return s.Save(ctx, contents)
 }

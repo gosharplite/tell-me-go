@@ -10,11 +10,10 @@ import (
 
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type gitManager struct {
-	sm   domain_security.ISecurityManager
+	sm   gitSecurity
 	Exec tools.CommandExecutor
 }
 
@@ -27,7 +26,7 @@ func (m *gitManager) getGitDiff(ctx context.Context, args map[string]interface{}
 	var params struct {
 		Staged bool `json:"staged"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -45,7 +44,7 @@ func (m *gitManager) getGitLog(ctx context.Context, args map[string]interface{})
 	var params struct {
 		Limit int `json:"limit"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -61,7 +60,7 @@ func (m *gitManager) getGitCommit(ctx context.Context, args map[string]interface
 	var params struct {
 		Hash string `json:"hash"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -85,7 +84,7 @@ func (m *gitManager) getGitBlame(ctx context.Context, args map[string]interface{
 	var params struct {
 		FilePath string `json:"filepath"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -108,7 +107,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		Message string `json:"message"`
 		Reason  string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -123,7 +122,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	res, err := m.runGitCommand(ctx, "commit", "-m", message)
@@ -135,7 +134,7 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		Name   string `json:"name"`
 		Reason string `json:"reason"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -149,7 +148,7 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	res, err := m.runGitCommand(ctx, "checkout", "-b", name)
@@ -162,4 +161,9 @@ func (m *gitManager) runGitCommand(ctx context.Context, args ...string) (string,
 		return string(out), fmt.Errorf("git command failed: %w", err)
 	}
 	return string(out), nil
+}
+
+type gitSecurity interface {
+	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }

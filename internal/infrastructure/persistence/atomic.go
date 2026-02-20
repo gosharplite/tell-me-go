@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package storage provides shared file system utilities.
-package storage
+package persistence
 
 import (
 	"context"

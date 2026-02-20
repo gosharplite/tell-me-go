@@ -101,7 +101,7 @@ func (r *registry) Execute(ctx context.Context, name string, args map[string]int
 	}
 	res, err := entry.Handler(ctx, args)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("tool execution failed: %s: %w", name, err)
+		return res, fmt.Errorf("tool execution failed: %s: %w", name, err)
 	}
 	return res, nil
 }
@@ -124,9 +124,4 @@ func (r *registry) IsLongRunning(name string) bool {
 		return entry.Options.LongRunning
 	}
 	return false
-}
-
-// UnmarshalArgs helper converts map[string]interface{} to a target struct.
-func UnmarshalArgs(args map[string]interface{}, target interface{}) error {
-	return tools.UnmarshalArgs(args, target)
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -520,8 +521,8 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		}
 
 		result, err := m.confluenceWrite(context.Background(), args)
-		assert.NoError(t, err)
-		assert.Equal(t, "Action cancelled by user.", result.Text)
+		assert.ErrorIs(t, err, tools.ErrUserDeclined)
+		assert.Equal(t, "Action denied by user.", result.Text)
 	})
 
 	t.Run("Conflict 409", func(t *testing.T) {

@@ -11,13 +11,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
 type typeManager struct {
 	Indexer symbolIndex
 	Cache   *astCache
-	SP      security.ISecurityManager
+	SP      security.PathValidator
 }
 
 type typeDefinition struct {
@@ -35,7 +34,7 @@ type fieldInfo struct {
 	Tag   string
 }
 
-func newTypeManager(idx symbolIndex, cache *astCache, sp security.ISecurityManager) *typeManager {
+func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *typeManager {
 	return &typeManager{
 		Indexer: idx,
 		Cache:   cache,
@@ -48,7 +47,7 @@ func (m *typeManager) GetTypeInfo(ctx context.Context, args map[string]interface
 		Typename string `json:"typename"`
 		Path     string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -88,7 +87,7 @@ func (m *typeManager) ListSymbols(ctx context.Context, args map[string]interface
 		Path         string `json:"path"`
 		ExportedOnly bool   `json:"exported_only"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -109,7 +108,7 @@ func (m *typeManager) ListImplementations(ctx context.Context, args map[string]i
 	var params struct {
 		InterfaceName string `json:"interface_name"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -140,7 +139,7 @@ func (m *typeManager) FindUsages(ctx context.Context, args map[string]interface{
 		Query string `json:"query"`
 		Path  string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 
@@ -176,7 +175,7 @@ func (m *typeManager) FindDefinitions(ctx context.Context, args map[string]inter
 		Query string `json:"query"`
 		Path  string `json:"path"`
 	}
-	if err := registry.UnmarshalArgs(args, &params); err != nil {
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
 		return tools.ToolResult{}, err
 	}
 

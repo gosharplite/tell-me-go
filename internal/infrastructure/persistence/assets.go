@@ -1,31 +1,33 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package storage
+package persistence
 
 import (
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 // AssetStore manages binary blobs in a content-addressable storage.
 type AssetStore struct {
 	baseDir string
-	fs      FileSystem
+	fs      persistence.FileSystem
 }
 
 // NewAssetStore creates a new AssetStore.
 func NewAssetStore(baseDir string) *AssetStore {
 	return &AssetStore{
 		baseDir: baseDir,
-		fs:      DefaultFileSystem,
+		fs:      NewOSFileSystem(),
 	}
 }
 
 // WithFileSystem sets the filesystem implementation.
-func (s *AssetStore) WithFileSystem(fs FileSystem) *AssetStore {
+func (s *AssetStore) WithFileSystem(fs persistence.FileSystem) *AssetStore {
 	s.fs = fs
 	return s
 }

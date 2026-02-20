@@ -366,7 +366,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 	}
 
 	return domaintools.ToolResult{
-		Text:  fmt.Sprintf("Error: Panic detected: %v (in tool %q)", r, toolName),
+		Text:  fmt.Sprintf("System Error (Panic) in %q: %v", toolName, r),
 		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
 	}
 }
@@ -418,25 +418,53 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		return tr
 	}
 
-	// 3. Execute (with recovery/timeout)
+	// 4. Execute (with recovery/timeout)
 	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
 
-	status := "success"
+	// 5. Finalize
+	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
+}
+
+func classifyToolError(err error, resultErr error) (string, string) {
+	if errors.Is(err, domaintools.ErrUserDeclined) || (resultErr != nil && errors.Is(resultErr, domaintools.ErrUserDeclined)) {
+		return "user_declined", "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
+	}
+	if errors.Is(err, domaintools.ErrSecurityPolicy) || (resultErr != nil && errors.Is(resultErr, domaintools.ErrSecurityPolicy)) {
+		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
+	}
+	if err != nil || resultErr != nil {
+		return "error", ""
+	}
+	return "success", ""
+}
+
+func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) domaintools.ToolResult {
+	status, msg := classifyToolError(err, result.Error)
+
+	if status == "user_declined" || status == "security_blocked" {
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  callName,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    status,
+		})
+		return domaintools.ToolResult{Text: msg, Error: nil}
+	}
+
 	var errStr string
-	if err != nil || result.Error != nil {
-		status = "error"
+	if status == "error" {
 		if err != nil {
 			errStr = err.Error()
 		} else {
 			errStr = result.Error.Error()
 		}
-		e.failures.recordFailure(call.Name)
+		e.failures.recordFailure(callName)
 	} else {
-		e.failures.recordSuccess(call.Name)
+		e.failures.recordSuccess(callName)
 	}
 
 	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-		ToolName:  call.Name,
+		ToolName:  callName,
 		StartTime: startTime,
 		Duration:  time.Since(startTime),
 		Status:    status,
@@ -546,18 +574,30 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 		// Spawn watcher for the "Zombie" tool
 		go func(toolName string, startTime time.Time) {
-			// This goroutine waits indefinitely for the non-compliant tool to return
-			<-resChan
-			actualDuration := time.Since(startTime)
+			// Wait for the non-compliant tool to return or hard timeout
+			select {
+			case <-resChan:
+				actualDuration := time.Since(startTime)
 
-			e.mu.RLock()
-			bus := e.events
-			e.mu.RUnlock()
-			if bus != nil {
-				bus.Publish(events.SystemMessageEvent{
-					Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-					Level:   "warn",
-				})
+				e.mu.RLock()
+				bus := e.events
+				e.mu.RUnlock()
+				if bus != nil {
+					bus.Publish(events.SystemMessageEvent{
+						Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
+						Level:   "warn",
+					})
+				}
+			case <-time.After(5 * time.Minute):
+				e.mu.RLock()
+				bus := e.events
+				e.mu.RUnlock()
+				if bus != nil {
+					bus.Publish(events.SystemMessageEvent{
+						Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
+						Level:   "error",
+					})
+				}
 			}
 		}(tool.Name, startTime)
 
