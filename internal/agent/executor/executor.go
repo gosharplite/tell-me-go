@@ -425,33 +425,34 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
 }
 
+func classifyToolError(err error, resultErr error) (string, string) {
+	if errors.Is(err, domaintools.ErrUserDeclined) || (resultErr != nil && errors.Is(resultErr, domaintools.ErrUserDeclined)) {
+		return "user_declined", "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
+	}
+	if errors.Is(err, domaintools.ErrSecurityPolicy) || (resultErr != nil && errors.Is(resultErr, domaintools.ErrSecurityPolicy)) {
+		return "security_blocked", "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
+	}
+	if err != nil || resultErr != nil {
+		return "error", ""
+	}
+	return "success", ""
+}
+
 func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) domaintools.ToolResult {
-	if errors.Is(err, domaintools.ErrUserDeclined) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrUserDeclined)) {
-		msg := "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
+	status, msg := classifyToolError(err, result.Error)
+
+	if status == "user_declined" || status == "security_blocked" {
 		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
 			ToolName:  callName,
 			StartTime: startTime,
 			Duration:  time.Since(startTime),
-			Status:    "user_declined",
+			Status:    status,
 		})
 		return domaintools.ToolResult{Text: msg, Error: nil}
 	}
 
-	if errors.Is(err, domaintools.ErrSecurityPolicy) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrSecurityPolicy)) {
-		msg := "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  callName,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "security_blocked",
-		})
-		return domaintools.ToolResult{Text: msg, Error: nil}
-	}
-
-	status := "success"
 	var errStr string
-	if err != nil || result.Error != nil {
-		status = "error"
+	if status == "error" {
 		if err != nil {
 			errStr = err.Error()
 		} else {

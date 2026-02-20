@@ -42,4 +42,54 @@ func TestScratchpadRepository(t *testing.T) {
 			t.Error("expected empty string for non-existent file")
 		}
 	})
+
+	t.Run("Delete existing key", func(t *testing.T) {
+		repo := newScratchpadRepository(fs, filepath.Join(tempDir, "delete_test.md"))
+		err := repo.Set(ctx, "content", "initial data")
+		if err != nil {
+			t.Fatal(err)
+		}
+		
+		err = repo.Delete(ctx, "content")
+		if err != nil {
+			t.Fatal(err)
+		}
+		
+		loaded, err := repo.Get(ctx, "content")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded != "" {
+			t.Errorf("expected empty string after delete, got %q", loaded)
+		}
+	})
+
+	t.Run("Delete non-existent key fails gracefully", func(t *testing.T) {
+		repo := newScratchpadRepository(fs, filepath.Join(tempDir, "delete_non_existent.md"))
+		err := repo.Delete(ctx, "invalid_key")
+		if err != nil {
+			t.Errorf("expected no error deleting non-existent key, got %v", err)
+		}
+	})
+
+	t.Run("GetAll correctly returns underlying map", func(t *testing.T) {
+		repo := newScratchpadRepository(fs, filepath.Join(tempDir, "getall_test.md"))
+		content := "all content here"
+		err := repo.Set(ctx, "content", content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		
+		all, err := repo.GetAll(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		
+		if len(all) != 1 {
+			t.Fatalf("expected length 1, got %d", len(all))
+		}
+		if all["content"] != content {
+			t.Errorf("expected content %q, got %q", content, all["content"])
+		}
+	})
 }
