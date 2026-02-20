@@ -18,7 +18,7 @@ import (
 )
 
 type healthManager struct {
-	SP   security.ISecurityManager
+	SP   security.PolicyEvaluator
 	Exec tools.CommandExecutor
 	Ana  *analysisManager
 }

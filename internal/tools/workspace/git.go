@@ -13,7 +13,7 @@ import (
 )
 
 type gitManager struct {
-	sm   domain_security.ISecurityManager
+	sm   gitSecurity
 	Exec tools.CommandExecutor
 }
 
@@ -161,4 +161,9 @@ func (m *gitManager) runGitCommand(ctx context.Context, args ...string) (string,
 		return string(out), fmt.Errorf("git command failed: %w", err)
 	}
 	return string(out), nil
+}
+
+type gitSecurity interface {
+	domain_security.PathValidator
+	domain_security.ActionConfirmer
 }

@@ -17,11 +17,11 @@ import (
 )
 
 type networkTool struct {
-	sm     security.ISecurityManager
+	sm     security.TerminalController
 	client tools.HTTPClient
 }
 
-func newnetworkTool(sm security.ISecurityManager, client tools.HTTPClient) *networkTool {
+func newnetworkTool(sm security.TerminalController, client tools.HTTPClient) *networkTool {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

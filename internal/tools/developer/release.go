@@ -17,7 +17,7 @@ import (
 )
 
 type releaseManager struct {
-	sm       domain_security.ISecurityManager
+	sm       domain_security.PathValidator
 	fs       persistence.FileSystem
 	executor tools.CommandExecutor
 }
@@ -68,7 +68,7 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 
 // secretScanner implementation
 type secretScanner struct {
-	sm domain_security.ISecurityManager
+	sm domain_security.PathValidator
 	fs persistence.FileSystem
 }
 

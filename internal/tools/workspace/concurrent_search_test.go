@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
 )
 
 type searchMockFile struct {
@@ -93,30 +92,8 @@ func (s *mockSP) IsPathWritable(path string) (string, error) {
 func (s *mockSP) ConfirmDestructiveAction(ctx context.Context, action, target, detail string) (bool, error) {
 	return true, nil
 }
-func (s *mockSP) TerminalLock()                              {}
-func (s *mockSP) TerminalUnlock()                            {}
-func (s *mockSP) IsCommandAllowed(command string) bool       { return true }
-func (s *mockSP) LogAudit(label1, val1, label2, val2 string) {}
-func (s *mockSP) IsBypassActive() bool                       { return false }
-func (s *mockSP) Prompt(message string)                      {}
-func (s *mockSP) Warn(message string)                        {}
-func (s *mockSP) ReadLine(ctx context.Context) (string, error) {
-	return "", nil
-}
-func (s *mockSP) Confirm(ctx context.Context, message string) (bool, error) {
-	return true, nil
-}
-func (s *mockSP) Authorize(ctx context.Context, label, detail, reason string, isSafe bool) (bool, error) {
-	return true, nil
-}
-
-func (s *mockSP) GetPolicy() *domain.Policy {
-	return domain.DefaultPolicy()
-}
-
-func (s *mockSP) GetSafetyService() *domain.SafetyService {
-	return domain.NewSafetyService(domain.DefaultPolicy())
-}
+func (s *mockSP) IsCommandAllowed(command string) bool { return true }
+func (s *mockSP) IsBypassActive() bool                 { return false }
 
 func setupSearchTest(t *testing.T) (*searchMockFS, *mockSP) {
 	t.Helper()

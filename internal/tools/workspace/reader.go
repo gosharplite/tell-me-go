@@ -16,7 +16,7 @@ import (
 )
 
 type fileReader struct {
-	sm domain_security.ISecurityManager
+	sm domain_security.PathValidator
 	fs persistence.FileSystem
 }
 

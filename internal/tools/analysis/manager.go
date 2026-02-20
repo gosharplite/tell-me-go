@@ -67,7 +67,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp analysisSecurity, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
 	fs := persistence.DefaultFileSystem
 
 	m := &analysisManager{
@@ -130,4 +130,10 @@ func (m *analysisManager) GetTypeInfo(ctx context.Context, args map[string]inter
 
 func (m *analysisManager) FindDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	return m.Types.FindDefinitions(ctx, args)
+}
+
+type analysisSecurity interface {
+	domain_security.PathValidator
+	domain_security.PolicyEvaluator
+	domain_security.ActionConfirmer
 }

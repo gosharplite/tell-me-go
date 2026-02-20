@@ -15,10 +15,10 @@ import (
 
 type complexityAnalyzer struct {
 	Cache *astCache
-	SP    security.ISecurityManager
+	SP    security.PathValidator
 }
 
-func newComplexityAnalyzer(cache *astCache, sp security.ISecurityManager) *complexityAnalyzer {
+func newComplexityAnalyzer(cache *astCache, sp security.PathValidator) *complexityAnalyzer {
 	return &complexityAnalyzer{
 		Cache: cache,
 		SP:    sp,

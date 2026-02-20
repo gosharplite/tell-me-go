@@ -17,11 +17,11 @@ import (
 )
 
 type teamsManager struct {
-	sm     security.ISecurityManager
+	sm     teamsSecurity
 	client tools.HTTPClient
 }
 
-func newteamsManager(sm security.ISecurityManager, client tools.HTTPClient) *teamsManager {
+func newteamsManager(sm teamsSecurity, client tools.HTTPClient) *teamsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -104,4 +104,8 @@ func (m *teamsManager) postToWebhook(ctx context.Context, url string, body []byt
 	}
 
 	return resp.Status, nil
+}
+
+type teamsSecurity interface {
+	security.ActionConfirmer
 }

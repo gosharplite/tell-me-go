@@ -47,13 +47,13 @@ var (
 )
 
 type confluenceManager struct {
-	sm       security.ISecurityManager
+	sm       confluenceSecurity
 	client   tools.HTTPClient
 	provider *atlassianProvider
 }
 
 // newconfluenceManager creates a new instance of confluenceManager.
-func newconfluenceManager(sm security.ISecurityManager, client tools.HTTPClient) *confluenceManager {
+func newconfluenceManager(sm confluenceSecurity, client tools.HTTPClient) *confluenceManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -623,4 +623,8 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+type confluenceSecurity interface {
+	security.ActionConfirmer
 }

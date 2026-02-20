@@ -25,7 +25,7 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm         security.ISecurityManager
+	sm         security.PathValidator
 	client     tools.HTTPClient
 	authHeader string
 	authErr    error
@@ -33,7 +33,7 @@ type azureDevOpsManager struct {
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
-func newazureDevOpsManager(sm security.ISecurityManager, client tools.HTTPClient) *azureDevOpsManager {
+func newazureDevOpsManager(sm security.PathValidator, client tools.HTTPClient) *azureDevOpsManager {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}

@@ -16,7 +16,7 @@ import (
 )
 
 type searchManager struct {
-	SP security.ISecurityManager
+	SP security.PathValidator
 	FS persistence.FileSystem
 }
 

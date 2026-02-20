@@ -20,7 +20,7 @@ import (
 )
 
 type infoManager struct {
-	SP     domain_security.ISecurityManager
+	SP     domain_security.PathValidator
 	Cache  *astCache
 	FS     persistence.FileSystem
 	Events events.EventBus

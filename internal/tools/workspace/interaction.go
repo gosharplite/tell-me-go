@@ -14,10 +14,10 @@ import (
 )
 
 type interactionTool struct {
-	sm domain_security.ISecurityManager
+	sm domain_security.TerminalController
 }
 
-func newinteractionTool(sm domain_security.ISecurityManager) *interactionTool {
+func newinteractionTool(sm domain_security.TerminalController) *interactionTool {
 	return &interactionTool{sm: sm}
 }
 

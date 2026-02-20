@@ -32,7 +32,7 @@ type packageProvider interface {
 
 // architectureManager validates the project's architectural integrity.
 type architectureManager struct {
-	SP         domain_security.ISecurityManager
+	SP         domain_security.PolicyEvaluator
 	Exec       tools.CommandExecutor
 	idx        symbolIndex
 	ModulePath string

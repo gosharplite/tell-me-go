@@ -20,7 +20,7 @@ import (
 
 // deadCodeAnalyzer holds the configuration for identifying technical debt via orphaned symbols.
 type deadCodeAnalyzer struct {
-	SP  security.ISecurityManager
+	SP  security.PathValidator
 	idx symbolIndex
 }
 
@@ -54,7 +54,7 @@ type scanState struct {
 	externalUses     map[string]int
 }
 
-func newDeadCodeAnalyzer(sp security.ISecurityManager, idx symbolIndex) *deadCodeAnalyzer {
+func newDeadCodeAnalyzer(sp security.PathValidator, idx symbolIndex) *deadCodeAnalyzer {
 	return &deadCodeAnalyzer{SP: sp, idx: idx}
 }
 

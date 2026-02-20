@@ -24,7 +24,7 @@ type funcInfo struct {
 
 // sequenceAnalyzer performs static analysis to trace function call flows.
 type sequenceAnalyzer struct {
-	SP        security.ISecurityManager
+	SP        security.PathValidator
 	Exec      tools.CommandExecutor
 	idx       symbolIndex
 	Formatter *mermaidFormatter
@@ -39,7 +39,7 @@ type sequenceAnalyzer struct {
 }
 
 // newSequenceAnalyzer creates a new sequenceAnalyzer with default dependencies.
-func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.ISecurityManager, idx symbolIndex) *sequenceAnalyzer {
+func newSequenceAnalyzer(exec tools.CommandExecutor, sp security.PathValidator, idx symbolIndex) *sequenceAnalyzer {
 	return &sequenceAnalyzer{
 		SP:        sp,
 		Exec:      exec,

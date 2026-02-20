@@ -16,7 +16,7 @@ import (
 type typeManager struct {
 	Indexer symbolIndex
 	Cache   *astCache
-	SP      security.ISecurityManager
+	SP      security.PathValidator
 }
 
 type typeDefinition struct {
@@ -34,7 +34,7 @@ type fieldInfo struct {
 	Tag   string
 }
 
-func newTypeManager(idx symbolIndex, cache *astCache, sp security.ISecurityManager) *typeManager {
+func newTypeManager(idx symbolIndex, cache *astCache, sp security.PathValidator) *typeManager {
 	return &typeManager{
 		Indexer: idx,
 		Cache:   cache,

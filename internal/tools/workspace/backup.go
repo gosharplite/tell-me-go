@@ -29,11 +29,11 @@ type backupManager struct {
 	mu        sync.Mutex
 	backups   []fileSnapshot
 	maxStored int
-	sm        domain_security.ISecurityManager
+	sm        domain_security.PathValidator
 }
 
 // newBackupManager creates a new backupManager.
-func newBackupManager(sm domain_security.ISecurityManager, maxStored int) *backupManager {
+func newBackupManager(sm domain_security.PathValidator, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}

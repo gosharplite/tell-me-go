@@ -9,10 +9,10 @@ import (
 )
 
 type refactorManager struct {
-	SP security.ISecurityManager
+	SP refactorSecurity
 }
 
-func newRefactorManager(sp security.ISecurityManager) *refactorManager {
+func newRefactorManager(sp refactorSecurity) *refactorManager {
 	return &refactorManager{SP: sp}
 }
 
@@ -112,4 +112,9 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 	// ... simplified implementation or keep using old logic for now to ensure continuity
 	// A better way is to implement RenameTransform
 	return tools.ToolResult{Text: "RenameSymbol migrated to new manager (logic to be fully transitioned to Transforms)."}, nil
+}
+
+type refactorSecurity interface {
+	security.PathValidator
+	security.ActionConfirmer
 }
