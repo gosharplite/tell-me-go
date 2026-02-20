@@ -13,12 +13,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestHistory_Rendering(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
-	h := history.NewManager(filepath.Join(tmp, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmp, "history.json"))
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "hello"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestHistory_Rendering(t *testing.T) {
 
 func TestHistory_Empty(t *testing.T) {
 	tmp := t.TempDir()
-	h := history.NewManager(filepath.Join(tmp, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmp, "history.json"))
 	var buf bytes.Buffer
 	renderHistory(&buf, h, 10, services.HistoryRenderOptions{Raw: true})
 
@@ -77,7 +78,7 @@ func TestHistory_Empty(t *testing.T) {
 func TestHistory_RenderPart_Tool(t *testing.T) {
 	ctx := context.Background()
 	tmp := t.TempDir()
-	h := history.NewManager(filepath.Join(tmp, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmp, "history.json"))
 	if err := h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "call tool"}}}); err != nil {
 		t.Fatal(err)
 	}

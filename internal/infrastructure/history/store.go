@@ -42,12 +42,12 @@ type jsonlStore struct {
 }
 
 // newJSONLStore creates a new jsonlStore.
-func newJSONLStore(filePath string) *jsonlStore {
+func newJSONLStore(fs persistence.FileSystem, filePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
 	return &jsonlStore{
 		filePath:   filePath,
-		assetStore: infrapersistence.NewAssetStore(assetDir),
-		fs:         persistence.DefaultFileSystem,
+		assetStore: infrapersistence.NewAssetStore(assetDir).WithFileSystem(fs),
+		fs:         fs,
 	}
 }
 

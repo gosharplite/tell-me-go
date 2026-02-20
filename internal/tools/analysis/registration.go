@@ -5,15 +5,16 @@ package analysis
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // Register adds all consolidated analysis tools to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) {
 	idx, _ := newIndexer(".")
 	cache := newASTCache()
-	m := newAnalysisManager(idx, cache, sm, bus, executor)
+	m := newAnalysisManager(idx, cache, sm, bus, executor, fs)
 
 	// Code Analysis Tools
 	r.RegisterWithOptions(&tools.ToolDeclaration{

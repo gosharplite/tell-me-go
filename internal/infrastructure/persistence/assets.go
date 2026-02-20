@@ -22,7 +22,7 @@ type AssetStore struct {
 func NewAssetStore(baseDir string) *AssetStore {
 	return &AssetStore{
 		baseDir: baseDir,
-		fs:      persistence.DefaultFileSystem,
+		fs:      NewOSFileSystem(),
 	}
 }
 

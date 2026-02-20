@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -163,7 +164,7 @@ func TestGitTools(t *testing.T) {
 			}
 
 			reg := registry.New()
-			Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
+			Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
 			if (err != nil) != tt.wantErr {
@@ -262,7 +263,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			}
 
 			reg := registry.New()
-			Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
+			Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
 			if (err != nil) != tt.wantErr {
@@ -287,7 +288,7 @@ func TestGitBlameSafety(t *testing.T) {
 	}
 
 	reg := registry.New()
-	Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
+	Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
 
 	// Try to blame a file outside of allowed paths (assuming default policy denies it)
 	_, err := reg.Execute(context.Background(), "get_git_blame", map[string]interface{}{"filepath": "/etc/passwd"})
@@ -325,7 +326,7 @@ func TestGitConfirmError(t *testing.T) {
 	}
 
 	reg := registry.New()
-	Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
+	Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
 
 	_, err := reg.Execute(context.Background(), "git_commit", map[string]interface{}{"message": "test"})
 	if err == nil {

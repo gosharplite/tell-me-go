@@ -14,11 +14,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	h := history.NewManager(t.TempDir() + "/history.jsonl")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir() + "/history.jsonl")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
 	gw := &limitMockLLMGateway{}
@@ -75,7 +76,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	h := history.NewManager(t.TempDir() + "/history.jsonl")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir() + "/history.jsonl")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
 	gw := &limitMockLLMGateway{}

@@ -32,6 +32,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/tools"
 	"github.com/gosharplite/tell-me-go/internal/ui"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func init() {
@@ -167,7 +168,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	hManager := history.NewManager(paths.HistoryPath)
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, fmt.Errorf("error loading history: %w", err)
 	}
@@ -215,6 +216,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		client,
 		filepath.Join(c.HomeDir, "assets/generated"),
 		bus,
+		infrapersistence.NewOSFileSystem(),
 	)
 
 	// Infrastructure-specific tool registration

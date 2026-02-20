@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestReplaceText_Uniqueness(t *testing.T) {
@@ -32,7 +33,7 @@ func TestReplaceText_Uniqueness(t *testing.T) {
 	sm.RegisterSafePath(tmpDir)
 	sm.SetBypassActive(true) // Avoid interactive prompts
 
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: persistence.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
 	// 1. Test failure when old_text appears multiple times
@@ -67,7 +68,7 @@ func TestWriteFile(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: persistence.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "new.txt")
@@ -91,7 +92,7 @@ func TestAppendText(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: persistence.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "append.txt")
@@ -195,7 +196,7 @@ func TestUndoFileChange(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
 	bm := newBackupManager(sm, 10)
-	w := &fileWriter{sm: sm, bm: bm, fs: persistence.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: bm, fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
 	// Perform a write
@@ -239,7 +240,7 @@ func TestReplaceText_NotFound(t *testing.T) {
 
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
-	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: persistence.DefaultFileSystem}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: infrapersistence.NewOSFileSystem()}
 	ctx := context.Background()
 
 	_, err := w.replaceText(ctx, map[string]interface{}{
@@ -258,7 +259,7 @@ func TestAppendText_Failures(t *testing.T) {
 	sm.SetBypassActive(true)
 
 	t.Run("open failure", func(t *testing.T) {
-		mfs := &mockFS_Append{FileSystem: persistence.DefaultFileSystem, openErr: fmt.Errorf("open error")}
+		mfs := &mockFS_Append{FileSystem: infrapersistence.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
 			"filepath": "/tmp/any.txt",

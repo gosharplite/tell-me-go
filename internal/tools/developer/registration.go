@@ -10,7 +10,7 @@ import (
 )
 
 // Register adds all development workflow and release tools to the registry.
-func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator) {
+func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec tools.CommandExecutor, validator domain_security.ICommandValidator, fs persistence.FileSystem) {
 	dev := newDevManager(sm, validator)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
@@ -78,7 +78,7 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 	// Release Management
 	rel := &releaseManager{
 		sm:       sm,
-		fs:       persistence.DefaultFileSystem,
+		fs:       fs,
 		executor: exec,
 	}
 	r.RegisterWithOptions(&tools.ToolDeclaration{

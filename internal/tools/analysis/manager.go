@@ -67,9 +67,7 @@ type analysisManager struct {
 	Events events.EventBus
 }
 
-func newAnalysisManager(idx symbolIndex, cache *astCache, sp analysisSecurity, bus events.EventBus, executor tools.CommandExecutor) *analysisManager {
-	fs := persistence.DefaultFileSystem
-
+func newAnalysisManager(idx symbolIndex, cache *astCache, sp analysisSecurity, bus events.EventBus, executor tools.CommandExecutor, fs persistence.FileSystem) *analysisManager {
 	m := &analysisManager{
 		Complexity: newComplexityAnalyzer(cache, sp),
 		Dependency: newDependencyAnalyzer(executor, sp, bus),

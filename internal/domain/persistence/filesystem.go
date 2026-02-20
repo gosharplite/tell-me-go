@@ -43,6 +43,3 @@ func IsBinary(data []byte) bool {
 	}
 	return false
 }
-
-// DefaultFileSystem is the global filesystem implementation. It is initialized by the infrastructure layer.
-var DefaultFileSystem FileSystem

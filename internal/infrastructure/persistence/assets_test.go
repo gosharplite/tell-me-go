@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
 func TestAssetStore(t *testing.T) {
@@ -170,7 +169,7 @@ func createTestAsset(t *testing.T, store *AssetStore, content []byte) string {
 
 func TestAssetStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
-	fs := persistence.DefaultFileSystem
+	fs := NewOSFileSystem()
 	store := NewAssetStore(tmpDir).WithFileSystem(fs)
 	if store.fs != fs {
 		t.Error("WithFileSystem failed to set filesystem")

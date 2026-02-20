@@ -16,6 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type errorPhaseTracker struct {
@@ -47,7 +48,7 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(fmt.Sprintf("%s/history.json", tmpDir))
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), fmt.Sprintf("%s/history.json", tmpDir))
 	strategy := orchestration.NewContextStrategy(&mockTokenCounter{}, bus)
 	factory := &orchestration.PipelineFactory{
 		History:   hManager,

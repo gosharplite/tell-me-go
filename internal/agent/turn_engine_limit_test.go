@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 type limitMockLLMGateway struct {
@@ -62,7 +63,7 @@ func (m *limitMockExecutor) Execute(ctx context.Context, respContent *llm.Conten
 
 func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	h := history.NewManager(t.TempDir() + "/history.jsonl")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir() + "/history.jsonl")
 
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
@@ -68,7 +67,7 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths
 	}
 
-	fs := persistence.DefaultFileSystem
+	fs := NewOSFileSystem()
 	tasksPath := filepath.Join(configDir, "tasks.json")
 	configPath := filepath.Join(configDir, "config.json")
 	scratchPath := filepath.Join(configDir, "scratchpad.md")

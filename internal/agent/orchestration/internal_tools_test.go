@@ -10,11 +10,12 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestAgent_ManageHistory(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)

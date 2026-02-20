@@ -20,12 +20,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(tmpDir + "/history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir + "/history.json")
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 
@@ -174,7 +175,7 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 
 func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(tmpDir + "/history.json")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir + "/history.json")
 	bus := &events.SimpleEventBus{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil), bus)
 	factory := &orchestration.PipelineFactory{
@@ -261,7 +262,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 		},
 	}
 
-	h := history.NewManager("")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), "")
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
 	cm := orchestration.NewContextManager(strategy, h, bus, nil)
 	cm.Pipeline = orchestration.NewContextPipeline()

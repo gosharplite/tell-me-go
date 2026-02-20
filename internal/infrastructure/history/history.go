@@ -7,6 +7,7 @@ package history
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -24,9 +25,9 @@ type Manager struct {
 }
 
 // NewManager creates a new history manager for the given file path.
-func NewManager(filePath string) *Manager {
+func NewManager(fs persistence.FileSystem, filePath string) *Manager {
 	return &Manager{
-		store:    newJSONLStore(filePath),
+		store:    newJSONLStore(fs, filePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
@@ -170,7 +171,9 @@ func (m *Manager) rollback(ctx context.Context) {
 	defer m.mu.Unlock()
 	if m.backup != nil {
 		m.Contents = m.backup
-		_ = m.store.Truncate(ctx, len(m.backup)) // Persist the rollback
+		if err := m.store.Truncate(ctx, len(m.backup)); err != nil {
+			log.Printf("Warning: failed to persist history rollback truncation: %v", err)
+		}
 	}
 }
 

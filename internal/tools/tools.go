@@ -8,6 +8,7 @@ package tools
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -32,12 +33,13 @@ func RegisterAll(
 	client llm.LLMClient,
 	assetsDir string,
 	bus events.EventBus,
+	fs persistence.FileSystem,
 ) {
-	workspace.Register(r, sm, executor, validator)
+	workspace.Register(r, sm, executor, validator, fs)
 	if state != nil {
 		workspace.RegisterPersistence(r, state)
 	}
-	analysis.Register(r, sm, bus, executor)
-	developer.Register(r, sm, executor, validator)
+	analysis.Register(r, sm, bus, executor, fs)
+	developer.Register(r, sm, executor, validator, fs)
 	integrations.RegisterAll(r, sm, client, assetsDir)
 }

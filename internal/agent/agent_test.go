@@ -22,11 +22,12 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	security_impl "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 func TestAgent_SetLimits(t *testing.T) {
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
@@ -45,7 +46,7 @@ func TestAgent_SetLimits(t *testing.T) {
 func TestAgent_Chat(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
-	h := history.NewManager(historyFile)
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile)
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 
@@ -85,7 +86,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	}
 
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
@@ -105,7 +106,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 
 func TestAgent_TieredThreshold(t *testing.T) {
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
@@ -121,7 +122,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 
 func TestAgent_ToolFlow_Retry(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 
@@ -195,7 +196,7 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 
 func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(filepath.Join(tmpDir, "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 
@@ -280,7 +281,7 @@ func setupPinningFlowTest(t *testing.T) (*agent, services.HistoryManager, contex
 	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
-	h := history.NewManager(filepath.Join(t.TempDir(), "history_pinning.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history_pinning.json"))
 	ctx := context.Background()
 
 	// Add 2 turns
@@ -328,7 +329,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 
 func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(filepath.Join(tmpDir, "pin_prune.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	ctx := context.Background()
@@ -369,7 +370,7 @@ func verifyPinningResults(t *testing.T, meta *orchestration.Metadata, prepared [
 
 func TestAgent_Reconfiguration(t *testing.T) {
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 
@@ -488,7 +489,7 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 
 func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
@@ -508,7 +509,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 func TestAgent_Shutdown(t *testing.T) {
 	// 1. Setup minimal dependencies
 	client := &mockLLMClient{}
-	h := history.NewManager(filepath.Join(t.TempDir(), "history.json"))
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()

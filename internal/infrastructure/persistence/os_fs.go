@@ -92,7 +92,7 @@ func (f *osFileSystem) Walk(ctx context.Context, root string, fn persistence.Wal
 	})
 }
 
-// DefaultFileSystem is the global OS-based filesystem implementation.
-func init() {
-	persistence.DefaultFileSystem = &osFileSystem{}
+// NewOSFileSystem returns a new instance of the OS-based filesystem implementation.
+func NewOSFileSystem() persistence.FileSystem {
+	return &osFileSystem{}
 }
