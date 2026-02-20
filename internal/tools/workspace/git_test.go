@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -162,7 +162,7 @@ func TestGitTools(t *testing.T) {
 				},
 			}
 
-			reg := tools.NewMockRegistry()
+			reg := registry.New()
 			Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
@@ -261,7 +261,7 @@ func TestGitDestructiveActions(t *testing.T) {
 				},
 			}
 
-			reg := tools.NewMockRegistry()
+			reg := registry.New()
 			Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
 
 			res, err := reg.Execute(context.Background(), tt.toolName, tt.args)
@@ -286,7 +286,7 @@ func TestGitBlameSafety(t *testing.T) {
 		},
 	}
 
-	reg := tools.NewMockRegistry()
+	reg := registry.New()
 	Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
 
 	// Try to blame a file outside of allowed paths (assuming default policy denies it)
@@ -324,7 +324,7 @@ func TestGitConfirmError(t *testing.T) {
 		},
 	}
 
-	reg := tools.NewMockRegistry()
+	reg := registry.New()
 	Register(reg, sm, executor, security.NewCommandValidator(sm, nil))
 
 	_, err := reg.Execute(context.Background(), "git_commit", map[string]interface{}{"message": "test"})

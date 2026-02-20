@@ -26,8 +26,8 @@ type store interface {
 	Compact(ctx context.Context) error
 }
 
-// HistoryPatch represents an append-only patch to history.
-type HistoryPatch struct {
+// historyPatch represents an append-only patch to history.
+type historyPatch struct {
 	IsPatch  bool                   `json:"_patch"`
 	Index    int                    `json:"index"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
@@ -96,31 +96,43 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 			return nil, fmt.Errorf("failed to decode JSONL: %w", err)
 		}
 
-		var patch HistoryPatch
+		var patch historyPatch
 		if err := json.Unmarshal(raw, &patch); err == nil && patch.IsPatch {
-			if patch.Truncate != nil {
-				if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
-					contents = contents[:*patch.Truncate]
-				}
-			} else if patch.Index >= 0 && patch.Index < len(contents) {
-				if pinned, ok := patch.Metadata["pinned"]; ok {
-					if pinnedBool, ok := pinned.(bool); ok {
-						contents[patch.Index].Pinned = pinnedBool
-					}
-				}
-			}
+			contents = s.applyPatch(patch, contents)
 			continue
 		}
 
-		var content llm.Content
-		if err := json.Unmarshal(raw, &content); err != nil {
-			return nil, fmt.Errorf("failed to decode JSONL content: %w", err)
+		content, err := s.parseContent(raw)
+		if err != nil {
+			return nil, err
 		}
-
-		contents = append(contents, &content)
+		contents = append(contents, content)
 	}
 
 	return contents, nil
+}
+
+func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*llm.Content {
+	if patch.Truncate != nil {
+		if *patch.Truncate >= 0 && *patch.Truncate <= len(contents) {
+			contents = contents[:*patch.Truncate]
+		}
+	} else if patch.Index >= 0 && patch.Index < len(contents) {
+		if pinned, ok := patch.Metadata["pinned"]; ok {
+			if pinnedBool, ok := pinned.(bool); ok {
+				contents[patch.Index].Pinned = pinnedBool
+			}
+		}
+	}
+	return contents
+}
+
+func (s *jsonlStore) parseContent(raw json.RawMessage) (*llm.Content, error) {
+	var content llm.Content
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return nil, fmt.Errorf("failed to decode JSONL content: %w", err)
+	}
+	return &content, nil
 }
 
 // Resolve implements llm.AssetResolver.
@@ -249,7 +261,7 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 	}
 	defer f.Close()
 
-	patch := HistoryPatch{
+	patch := historyPatch{
 		IsPatch:  true,
 		Index:    index,
 		Metadata: metadata,
@@ -274,7 +286,7 @@ func (s *jsonlStore) Truncate(ctx context.Context, length int) error {
 	}
 	defer f.Close()
 
-	patch := HistoryPatch{
+	patch := historyPatch{
 		IsPatch:  true,
 		Truncate: &length,
 	}

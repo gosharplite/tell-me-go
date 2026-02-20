@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -29,7 +29,7 @@ func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string
 
 func TestMediaTools(t *testing.T) {
 	ctx := context.Background()
-	r := tools.NewMockRegistry()
+	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 	client := &mockLLMClient{
 		generateImagesFunc: func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
@@ -63,7 +63,7 @@ func TestMediaTools(t *testing.T) {
 
 func TestMediaTools_NoClient(t *testing.T) {
 	ctx := context.Background()
-	r := tools.NewMockRegistry()
+	r := registry.New()
 	sm := security.NewSecurityManager(nil)
 
 	RegisterAll(r, sm, nil, "")

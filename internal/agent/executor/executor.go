@@ -418,13 +418,18 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		return tr
 	}
 
-	// 3. Execute (with recovery/timeout)
+	// 4. Execute (with recovery/timeout)
 	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
 
+	// 5. Finalize
+	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
+}
+
+func (e *ToolExecutor) finalizeToolExecution(callName string, result domaintools.ToolResult, err error, startTime time.Time, trace *telemetry.TurnTrace) domaintools.ToolResult {
 	if errors.Is(err, domaintools.ErrUserDeclined) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrUserDeclined)) {
 		msg := "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
 		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
+			ToolName:  callName,
 			StartTime: startTime,
 			Duration:  time.Since(startTime),
 			Status:    "user_declined",
@@ -435,7 +440,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	if errors.Is(err, domaintools.ErrSecurityPolicy) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrSecurityPolicy)) {
 		msg := "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
 		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
+			ToolName:  callName,
 			StartTime: startTime,
 			Duration:  time.Since(startTime),
 			Status:    "security_blocked",
@@ -452,13 +457,13 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 		} else {
 			errStr = result.Error.Error()
 		}
-		e.failures.recordFailure(call.Name)
+		e.failures.recordFailure(callName)
 	} else {
-		e.failures.recordSuccess(call.Name)
+		e.failures.recordSuccess(callName)
 	}
 
 	trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-		ToolName:  call.Name,
+		ToolName:  callName,
 		StartTime: startTime,
 		Duration:  time.Since(startTime),
 		Status:    status,

@@ -6,14 +6,14 @@ package workspace
 import (
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 func TestRegister(t *testing.T) {
-	reg := tools.NewMockRegistry()
+	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 	Register(reg, sm, &exec.RealExecutor{}, security.NewCommandValidator(sm, nil))
 

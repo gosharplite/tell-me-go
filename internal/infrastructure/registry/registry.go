@@ -101,7 +101,7 @@ func (r *registry) Execute(ctx context.Context, name string, args map[string]int
 	}
 	res, err := entry.Handler(ctx, args)
 	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("tool execution failed: %s: %w", name, err)
+		return res, fmt.Errorf("tool execution failed: %s: %w", name, err)
 	}
 	return res, nil
 }
