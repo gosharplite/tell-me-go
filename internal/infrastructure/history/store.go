@@ -82,7 +82,11 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	}
 
 	// Fallback to JSONL format
-	contents = nil
+	return s.loadJSONL(ctx, data)
+}
+
+func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content, error) {
+	var contents []*llm.Content
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	for decoder.More() {
 		select {
@@ -167,7 +171,7 @@ func (s *jsonlStore) Save(ctx context.Context, contents []*llm.Content) error {
 }
 
 // Append appends multiple content entries to the history file.
-func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) error {
+func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) (err error) {
 	if len(contents) == 0 {
 		return nil
 	}
@@ -176,14 +180,18 @@ func (s *jsonlStore) Append(ctx context.Context, contents []*llm.Content) error 
 		return err
 	}
 
-	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	for _, content := range contents {
-		if err := s.appendSingleContent(ctx, f, content); err != nil {
+		if err = s.appendSingleContent(ctx, f, content); err != nil {
 			return err
 		}
 	}
@@ -251,24 +259,28 @@ func (s *jsonlStore) prepareForStorage(ctx context.Context, c *llm.Content) (*ll
 }
 
 // UpdateMetadata appends a patch to update metadata of an existing entry.
-func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error {
+func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) (err error) {
 	if err := s.ensureDirectory(ctx); err != nil {
 		return err
 	}
-	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	patch := historyPatch{
 		IsPatch:  true,
 		Index:    index,
 		Metadata: metadata,
 	}
-	line, err := json.Marshal(patch)
-	if err != nil {
-		return err
+	line, merr := json.Marshal(patch)
+	if merr != nil {
+		return merr
 	}
 	line = append(line, '\n')
 
@@ -283,23 +295,27 @@ func (s *jsonlStore) UpdateMetadata(ctx context.Context, index int, metadata map
 }
 
 // Truncate appends a patch to rollback history to a specific length.
-func (s *jsonlStore) Truncate(ctx context.Context, length int) error {
+func (s *jsonlStore) Truncate(ctx context.Context, length int) (err error) {
 	if err := s.ensureDirectory(ctx); err != nil {
 		return err
 	}
-	f, err := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	patch := historyPatch{
 		IsPatch:  true,
 		Truncate: &length,
 	}
-	line, err := json.Marshal(patch)
-	if err != nil {
-		return err
+	line, merr := json.Marshal(patch)
+	if merr != nil {
+		return merr
 	}
 	line = append(line, '\n')
 

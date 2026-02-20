@@ -846,7 +846,11 @@ func logTrace(logFile string, trace *domain_telemetry.TurnTrace) {
 		log.Printf("Warning: Failed to open trace file %s: %v", traceFile, err)
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("Warning: Failed to close trace file %s: %v", traceFile, cerr)
+		}
+	}()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		log.Printf("Warning: Failed to write to trace file %s: %v", traceFile, err)

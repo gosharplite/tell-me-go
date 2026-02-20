@@ -64,7 +64,11 @@ func (a *auditor) LogAudit(label1, val1, label2, val2 string) {
 		}
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && interactor != nil {
+			interactor.Warn(fmt.Sprintf("[Warning] Failed to close command log file: %v", cerr))
+		}
+	}()
 
 	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label1, val1)
 	fmt.Fprintf(f, "[%s] %s: %s\n", timestamp, label2, val2)

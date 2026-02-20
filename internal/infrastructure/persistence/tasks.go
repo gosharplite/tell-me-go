@@ -95,19 +95,23 @@ func (r *taskRepository) WriteAll(ctx context.Context, tasks []services.Task) er
 }
 
 // Append appends a single task to disk.
-func (r *taskRepository) Append(ctx context.Context, task services.Task) error {
+func (r *taskRepository) Append(ctx context.Context, task services.Task) (err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	f, err := r.fs.OpenFile(ctx, r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
+	f, oerr := r.fs.OpenFile(ctx, r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
-	line, err := json.Marshal(task)
-	if err != nil {
-		return err
+	line, merr := json.Marshal(task)
+	if merr != nil {
+		return merr
 	}
 	line = append(line, '\n')
 

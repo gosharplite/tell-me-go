@@ -197,7 +197,9 @@ func (r *stdUIRenderer) LogUsage(ctx context.Context, m *llm.Metrics, logFile st
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	_, _ = f.Write(data)
 	_, _ = f.WriteString("\n")
 

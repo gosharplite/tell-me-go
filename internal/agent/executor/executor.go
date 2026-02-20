@@ -574,18 +574,30 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 
 		// Spawn watcher for the "Zombie" tool
 		go func(toolName string, startTime time.Time) {
-			// This goroutine waits indefinitely for the non-compliant tool to return
-			<-resChan
-			actualDuration := time.Since(startTime)
+			// Wait for the non-compliant tool to return or hard timeout
+			select {
+			case <-resChan:
+				actualDuration := time.Since(startTime)
 
-			e.mu.RLock()
-			bus := e.events
-			e.mu.RUnlock()
-			if bus != nil {
-				bus.Publish(events.SystemMessageEvent{
-					Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-					Level:   "warn",
-				})
+				e.mu.RLock()
+				bus := e.events
+				e.mu.RUnlock()
+				if bus != nil {
+					bus.Publish(events.SystemMessageEvent{
+						Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
+						Level:   "warn",
+					})
+				}
+			case <-time.After(5 * time.Minute):
+				e.mu.RLock()
+				bus := e.events
+				e.mu.RUnlock()
+				if bus != nil {
+					bus.Publish(events.SystemMessageEvent{
+						Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
+						Level:   "error",
+					})
+				}
 			}
 		}(tool.Name, startTime)
 

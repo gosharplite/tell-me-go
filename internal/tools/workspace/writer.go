@@ -120,7 +120,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 	return tools.ToolResult{Text: "File updated successfully."}, nil
 }
 
-func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}) (res tools.ToolResult, err error) {
 	var params struct {
 		FilePath string `json:"filepath"`
 		Content  string `json:"content"`
@@ -151,18 +151,18 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 	w.bm.snapshot(resolvedPath, "APPEND")
 
 	// Use OpenFile with O_APPEND
-	f, err := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", err)
+	f, oerr := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to open file: %w", oerr)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close file (data may be lost): %w", cerr)
+		}
+	}()
 
-	if _, err := f.Write([]byte(content)); err != nil {
+	if _, err = f.Write([]byte(content)); err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to append: %w", err)
-	}
-
-	if err := f.Close(); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to close file (data may be lost): %w", err)
 	}
 
 	return tools.ToolResult{Text: "Text appended successfully."}, nil
