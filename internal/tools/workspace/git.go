@@ -122,7 +122,7 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	res, err := m.runGitCommand(ctx, "commit", "-m", message)
@@ -148,7 +148,7 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	res, err := m.runGitCommand(ctx, "checkout", "-b", name)

@@ -200,6 +200,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			toolName: "git_commit",
 			args:     map[string]interface{}{"message": "feat: test"},
 			approved: false,
+			wantErr:  true,
 			expected: "Action denied by user.",
 		},
 		{
@@ -215,6 +216,7 @@ func TestGitDestructiveActions(t *testing.T) {
 			toolName: "git_create_branch",
 			args:     map[string]interface{}{"name": "new-branch", "reason": "test"},
 			approved: false,
+			wantErr:  true,
 			expected: "Action denied by user.",
 		},
 		{
@@ -267,7 +269,7 @@ func TestGitDestructiveActions(t *testing.T) {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && res.Text != tt.expected {
+			if res.Text != tt.expected {
 				t.Errorf("Execute() got = %v, want %v", res.Text, tt.expected)
 			}
 		})

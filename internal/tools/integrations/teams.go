@@ -55,7 +55,7 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action cancelled by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	body, err := buildTeamsRequestBody(message, params.Reason)

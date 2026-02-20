@@ -366,7 +366,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 	}
 
 	return domaintools.ToolResult{
-		Text:  fmt.Sprintf("Error: Panic detected: %v (in tool %q)", r, toolName),
+		Text:  fmt.Sprintf("System Error (Panic) in %q: %v", toolName, r),
 		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
 	}
 }
@@ -420,6 +420,28 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 
 	// 3. Execute (with recovery/timeout)
 	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
+
+	if errors.Is(err, domaintools.ErrUserDeclined) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrUserDeclined)) {
+		msg := "The user explicitly denied this action. Do not attempt this exact action again. Ask the user for clarification or propose an alternative approach."
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  call.Name,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    "user_declined",
+		})
+		return domaintools.ToolResult{Text: msg, Error: nil}
+	}
+
+	if errors.Is(err, domaintools.ErrSecurityPolicy) || (result.Error != nil && errors.Is(result.Error, domaintools.ErrSecurityPolicy)) {
+		msg := "Action blocked by the system sandbox security policy. You are not authorized to perform this operation."
+		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
+			ToolName:  call.Name,
+			StartTime: startTime,
+			Duration:  time.Since(startTime),
+			Status:    "security_blocked",
+		})
+		return domaintools.ToolResult{Text: msg, Error: nil}
+	}
 
 	status := "success"
 	var errStr string

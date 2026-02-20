@@ -227,7 +227,8 @@ func TestSendTeamsMessage(t *testing.T) {
 				"reason":      "testing",
 			},
 			confirm:    false,
-			wantInText: []string{"Action cancelled by user."},
+			wantErr:    true,
+			wantInText: []string{"Action denied by user."},
 		},
 		{
 			name: "Failed request",

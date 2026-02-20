@@ -50,7 +50,7 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	tx := newTransaction()
@@ -106,7 +106,7 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	// ... simplified implementation or keep using old logic for now to ensure continuity

@@ -549,7 +549,7 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action cancelled by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	updatePayload := map[string]interface{}{

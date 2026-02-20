@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,7 +88,7 @@ func TestMoveDefinition(t *testing.T) {
 		}
 
 		res, err := mgr.MoveDefinition(ctx, args)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, tools.ErrUserDeclined)
 		assert.Equal(t, "Action denied by user.", res.Text)
 	})
 
@@ -230,8 +232,8 @@ func TestRenameSymbol(t *testing.T) {
 		}
 
 		res, err := mgr.RenameSymbol(ctx, args)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		if !errors.Is(err, tools.ErrUserDeclined) {
+			t.Fatalf("expected ErrUserDeclined, got: %v", err)
 		}
 		if res.Text != "Action denied by user." {
 			t.Errorf("expected denial message, got %q", res.Text)

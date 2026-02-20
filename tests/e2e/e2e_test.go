@@ -446,7 +446,7 @@ func TestWriteFileDenial(t *testing.T) {
 				// We check the tool response
 				result := toolResponse["response"].(map[string]interface{})["result"].(string)
 
-				if result == "Action denied by user." {
+				if strings.Contains(result, "The user explicitly denied this action.") {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
 				} else {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Error: Denial failed."}]}}]}`)

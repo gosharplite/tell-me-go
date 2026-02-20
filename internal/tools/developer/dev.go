@@ -59,7 +59,7 @@ func (m *devManager) runTests(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running Tests: %s", params.Command)
@@ -140,7 +140,7 @@ func (m *devManager) goTidy(ctx context.Context, args map[string]interface{}) (t
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running go mod tidy and go fmt")
@@ -175,7 +175,7 @@ func (m *devManager) getCoverage(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Getting test coverage for %s", path)
@@ -224,7 +224,7 @@ func (m *devManager) runLinter(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running linter: %s", fullCmd)
@@ -270,7 +270,7 @@ func (m *devManager) runBenchmark(ctx context.Context, args map[string]interface
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Running benchmarks (%s) in %s", bench, path)
@@ -294,7 +294,7 @@ func (m *devManager) checkVulnerabilities(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Unauthorized by user"}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	m.logToolAction("Checking for vulnerabilities: %s", command)

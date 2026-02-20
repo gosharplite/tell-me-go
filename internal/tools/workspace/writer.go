@@ -46,7 +46,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "WRITE")
@@ -92,7 +92,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "REPLACE")
@@ -145,7 +145,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 		return tools.ToolResult{}, err
 	}
 	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, nil
+		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	w.bm.snapshot(resolvedPath, "APPEND")

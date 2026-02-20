@@ -171,7 +171,7 @@ func (t *shellTool) handleAuthResult(approved bool, err error, label string) (to
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	return t.deniedResult(label), nil
+	return t.deniedResult(label), tools.ErrUserDeclined
 }
 
 func (t *shellTool) authorize(ctx context.Context, label, detail, reason string, isSafe bool, outputFile string, append bool) (bool, error) {
