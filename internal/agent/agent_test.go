@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -540,5 +541,29 @@ func TestAgent_Shutdown_NilDeps(t *testing.T) {
 	err := a.Shutdown(context.Background())
 	if err != nil {
 		t.Errorf("Expected nil error for nil dependencies, got %v", err)
+	}
+}
+
+func TestAgent_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+
+	client := &mockLLMClient{}
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
+
+	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	sess := services.NewSession("test-cancel", h)
+
+	err := a.applyConfig(ctx)
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled from applyConfig, got %v", err)
+	}
+
+	err = a.Chat(ctx, sess, "Hello")
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled from Chat, got %v", err)
 	}
 }
