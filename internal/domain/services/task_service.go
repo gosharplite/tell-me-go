@@ -145,8 +145,3 @@ func (s *TaskService) ClearTasks(ctx context.Context) error {
 	s.tasks = make(map[float64]Task)
 	return nil
 }
-
-// GetTasksPage returns a paginated list of tasks directly from the store.
-func (s *TaskService) GetTasksPage(ctx context.Context, limit, offset int) ([]Task, error) {
-	return s.store.ReadPage(ctx, limit, offset)
-}
