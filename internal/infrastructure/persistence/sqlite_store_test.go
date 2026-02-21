@@ -271,7 +271,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 func TestStoreErrors(t *testing.T) {
 	db := setupTestDB(t)
 	db.Close() // Close DB to force errors
-	
+
 	ctx := context.Background()
 
 	// Config Store Errors

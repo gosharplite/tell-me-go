@@ -75,18 +75,8 @@ func initRepositories(ctx context.Context, configDir, storageType string) (servi
 	configPath := filepath.Join(configDir, "config.json")
 	scratchPath := filepath.Join(configDir, "scratchpad.md")
 
-	if storageType == "file" {
-		// Legacy flat file storage (for tests mostly)
-		paths["tasks_file"] = tasksPath
-		paths["config_file"] = configPath
-		paths["scratch_file"] = scratchPath
-
-		return newTaskRepository(fs, tasksPath),
-			newConfigRepository(fs, configPath),
-			newScratchpadRepository(fs, scratchPath),
-			paths, nil
-	}
-
+	// Legacy flat file storage is completely obsolete for active use.
+	// Only SQLite and Memory are supported for full operations.
 	// SQLite implementation
 	dbPath := filepath.Join(configDir, "tellmego.db")
 	paths["db_file"] = dbPath

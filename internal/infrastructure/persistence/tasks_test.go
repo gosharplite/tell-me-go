@@ -4,26 +4,21 @@
 package persistence
 
 import (
-	"bytes"
 	"context"
 	"path/filepath"
 	"testing"
-
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
-func TestTaskRepository_SaveAndLoad(t *testing.T) {
-	repo, ctx, _, _ := setupTaskRepo(t)
+func TestTaskRepository_LoadJSONL(t *testing.T) {
+	repo, ctx, tasksFile, _ := setupTaskRepo(t)
+	fs := NewOSFileSystem()
 
-	tasks := []services.Task{
-		{ID: 1, Content: "Task 1", Status: "pending"},
-		{ID: 2, Content: "Task 2", Status: "completed"},
-	}
-
-	for _, task := range tasks {
-		if err := repo.Append(ctx, task); err != nil {
-			t.Fatal(err)
-		}
+	// Manually write JSONL
+	content := `{"id": 1, "content": "Task 1"}
+{"id": 2, "content": "Task 2"}
+`
+	if err := fs.WriteFile(ctx, tasksFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
 	}
 
 	loaded, err := repo.ReadAll(ctx)
@@ -32,7 +27,7 @@ func TestTaskRepository_SaveAndLoad(t *testing.T) {
 	}
 
 	if len(loaded) != 2 {
-		t.Errorf("expected 2 tasks, got %d", len(loaded))
+		t.Fatalf("expected 2 tasks, got %d", len(loaded))
 	}
 	if loaded[0].Content != "Task 1" || loaded[1].Content != "Task 2" {
 		t.Error("tasks content mismatch")
@@ -50,60 +45,6 @@ func TestTaskRepository_LoadNonExistent(t *testing.T) {
 	}
 	if loaded != nil {
 		t.Error("expected nil for non-existent file")
-	}
-}
-
-func TestTaskRepository_JSONLFormat(t *testing.T) {
-	repo, ctx, tasksFile, _ := setupTaskRepo(t)
-	fs := NewOSFileSystem()
-
-	tasks := []services.Task{
-		{ID: 1, Content: "Task 1"},
-		{ID: 2, Content: "Task 2"},
-	}
-	for _, task := range tasks {
-		if err := repo.Append(ctx, task); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	content, err := fs.ReadFile(ctx, tasksFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	count := bytes.Count(content, []byte("\n"))
-	if count != 2 {
-		t.Errorf("expected 2 lines in JSONL, got %d", count)
-	}
-}
-
-func TestTaskRepository_Append(t *testing.T) {
-	repo, ctx, tasksFile, _ := setupTaskRepo(t)
-	fs := NewOSFileSystem()
-
-	tasks := []services.Task{
-		{ID: 1, Content: "Task 1"},
-		{ID: 2, Content: "Task 2"},
-	}
-	for _, task := range tasks {
-		if err := repo.Append(ctx, task); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := repo.Append(ctx, services.Task{ID: 3, Content: "Task 3"}); err != nil {
-		t.Fatal(err)
-	}
-
-	content, err := fs.ReadFile(ctx, tasksFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	count := bytes.Count(content, []byte("\n"))
-	if count != 3 {
-		t.Errorf("expected 3 lines in JSONL after append, got %d", count)
 	}
 }
 

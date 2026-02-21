@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestScratchpadRepository_SaveAndLoad(t *testing.T) {
+func TestScratchpadRepository_Load(t *testing.T) {
 	ctx := context.Background()
 	fs := NewOSFileSystem()
 	tempDir := t.TempDir()
@@ -17,7 +17,7 @@ func TestScratchpadRepository_SaveAndLoad(t *testing.T) {
 	repo := newScratchpadRepository(fs, file)
 
 	content := "Hello, world!"
-	if err := repo.Set(ctx, "content", content); err != nil {
+	if err := fs.WriteFile(ctx, file, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,43 +45,6 @@ func TestScratchpadRepository_LoadNonExistent(t *testing.T) {
 	}
 }
 
-func TestScratchpadRepository_DeleteExisting(t *testing.T) {
-	ctx := context.Background()
-	fs := NewOSFileSystem()
-	tempDir := t.TempDir()
-
-	repo := newScratchpadRepository(fs, filepath.Join(tempDir, "delete_test.md"))
-	err := repo.Set(ctx, "content", "initial data")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = repo.Delete(ctx, "content")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	loaded, err := repo.Get(ctx, "content")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded != "" {
-		t.Errorf("expected empty string after delete, got %q", loaded)
-	}
-}
-
-func TestScratchpadRepository_DeleteNonExistent(t *testing.T) {
-	ctx := context.Background()
-	fs := NewOSFileSystem()
-	tempDir := t.TempDir()
-
-	repo := newScratchpadRepository(fs, filepath.Join(tempDir, "delete_non_existent.md"))
-	err := repo.Delete(ctx, "invalid_key")
-	if err != nil {
-		t.Errorf("expected no error deleting non-existent key, got %v", err)
-	}
-}
-
 func TestScratchpadRepository_GetAll(t *testing.T) {
 	ctx := context.Background()
 	fs := NewOSFileSystem()
@@ -89,8 +52,7 @@ func TestScratchpadRepository_GetAll(t *testing.T) {
 
 	repo := newScratchpadRepository(fs, filepath.Join(tempDir, "getall_test.md"))
 	content := "all content here"
-	err := repo.Set(ctx, "content", content)
-	if err != nil {
+	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "getall_test.md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
