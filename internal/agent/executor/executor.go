@@ -596,11 +596,29 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	}
 	defer cancel()
 
-	// Execute synchronously. The tool MUST respect ctx.Done()
-	result, err := reg.Execute(ctx, tool.Name, args)
+	type toolOutput struct {
+		result domaintools.ToolResult
+		err    error
+	}
+	// Buffered channel prevents goroutine leak if the tool finishes after timeout
+	outCh := make(chan toolOutput, 1)
 
-	// If the context was cancelled or timed out during execution
-	if ctx.Err() != nil {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				outCh <- toolOutput{
+					result: e.handlePanic(r, tool.Name),
+					err:    nil,
+				}
+			}
+		}()
+		res, execErr := reg.Execute(ctx, tool.Name, args)
+		outCh <- toolOutput{result: res, err: execErr}
+	}()
+
+	select {
+	case <-ctx.Done():
+		// The context expired (timeout or parent cancellation) before the tool finished
 		errCtx := ctx.Err()
 		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
 		if errCtx == context.DeadlineExceeded {
@@ -610,9 +628,11 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 			Text:  msg,
 			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
 		}, nil
-	}
 
-	return result, err
+	case out := <-outCh:
+		// Tool finished successfully within the deadline
+		return out.result, out.err
+	}
 }
 
 func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
