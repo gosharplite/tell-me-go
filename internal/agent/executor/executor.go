@@ -178,50 +178,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	bus := e.events
 	e.mu.RUnlock()
 
-	declinedMap := make(map[int]bool)
-	var consentIndices []int
-
-	func() {
-		defer func() {
-			_ = recover() // Ignore panics during pre-flight; they will be caught during execution
-		}()
-		for i, call := range calls {
-			tool, err := e.resolveTool(call)
-			if err == nil && tool.RequiresConsent {
-				consentIndices = append(consentIndices, i)
-			}
-		}
-	}()
-
-	if len(consentIndices) > 0 {
-		var sb strings.Builder
-		sb.WriteString("The agent requested the following actions requiring approval:\n")
-		for idx, i := range consentIndices {
-			c := calls[i]
-			sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
-		}
-		sb.WriteString("\nDo you approve all?")
-
-		e.mu.RLock()
-		sm := e.sm
-		e.mu.RUnlock()
-
-		if sm != nil {
-			if sm.IsBypassActive() {
-				// Auto-approve if bypass is active
-			} else {
-				sm.TerminalLock()
-				approved, _ := sm.Confirm(ctx, sb.String())
-				sm.TerminalUnlock()
-
-				if !approved {
-					for _, i := range consentIndices {
-						declinedMap[i] = true
-					}
-				}
-			}
-		}
-	}
+	declinedMap := e.requestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
@@ -751,4 +708,53 @@ func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, r
 			})
 		}
 	}
+}
+
+func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
+	declinedMap := make(map[int]bool)
+	var consentIndices []int
+
+	func() {
+		defer func() {
+			_ = recover() // Ignore panics during pre-flight; they will be caught during execution
+		}()
+		for i, call := range calls {
+			tool, err := e.resolveTool(call)
+			if err == nil && tool.RequiresConsent {
+				consentIndices = append(consentIndices, i)
+			}
+		}
+	}()
+
+	if len(consentIndices) == 0 {
+		return declinedMap
+	}
+
+	var sb strings.Builder
+	sb.WriteString("The agent requested the following actions requiring approval:\n")
+	for idx, i := range consentIndices {
+		c := calls[i]
+		sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
+	}
+	sb.WriteString("\nDo you approve all?")
+
+	e.mu.RLock()
+	sm := e.sm
+	e.mu.RUnlock()
+
+	if sm != nil {
+		if !sm.IsBypassActive() {
+			sm.TerminalLock()
+			approved, _ := sm.Confirm(ctx, sb.String())
+			sm.TerminalUnlock()
+
+			if !approved {
+				for _, i := range consentIndices {
+					declinedMap[i] = true
+				}
+			}
+		}
+	}
+
+	return declinedMap
 }
