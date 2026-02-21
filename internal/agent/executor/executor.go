@@ -720,17 +720,21 @@ func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.Fun
 	declinedMap := make(map[int]bool)
 	var consentIndices []int
 
-	func() {
-		defer func() {
-			_ = recover() // Ignore panics during pre-flight; they will be caught during execution
-		}()
-		for i, call := range calls {
+	for i, call := range calls {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Fail closed: If we panic evaluating a tool, do not allow it to execute.
+					declinedMap[i] = true
+				}
+			}()
+
 			tool, err := e.resolveTool(call)
 			if err == nil && tool.RequiresConsent {
 				consentIndices = append(consentIndices, i)
 			}
-		}
-	}()
+		}()
+	}
 
 	if len(consentIndices) == 0 {
 		return declinedMap

@@ -725,15 +725,12 @@ func (s *mockStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *
 
 type panicRegistry struct {
 	tools.IToolRegistry
-	panicOnGet bool
-	serial     bool
+	panicOnExec bool
+	serial      bool
 }
 
 func (r *panicRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	if r.panicOnGet {
-		panic("registry GetDeclarations panic")
-	}
-	return []*tools.ToolDeclaration{{Name: "panic_tool"}}
+	return []*tools.ToolDeclaration{{Name: "any"}}
 }
 
 func (r *panicRegistry) IsSerial(name string) bool {
@@ -745,6 +742,9 @@ func (r *panicRegistry) IsLongRunning(name string) bool {
 }
 
 func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
+	if r.panicOnExec {
+		panic("registry Execute panic")
+	}
 	return tools.ToolResult{}, nil
 }
 
@@ -753,7 +753,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 
 	t.Run("Serial executeTool Panic", func(t *testing.T) {
 		t.Parallel()
-		reg := &panicRegistry{panicOnGet: true, serial: true}
+		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
@@ -767,13 +767,13 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry GetDeclarations panic")
+		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry Execute panic")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
 	t.Run("Parallel executeTool Panic", func(t *testing.T) {
 		t.Parallel()
-		reg := &panicRegistry{panicOnGet: true, serial: false}
+		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
 		defer exec.Shutdown()
@@ -787,7 +787,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry GetDeclarations panic")
+		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry Execute panic")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
