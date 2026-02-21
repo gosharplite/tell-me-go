@@ -90,6 +90,10 @@ func (m *mockFileSystem) WriteFile(ctx context.Context, name string, data []byte
 	return nil
 }
 
+func (m *mockFileSystem) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	return m.WriteFile(ctx, name, data, perm)
+}
+
 func (m *mockFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	return nil
 }

@@ -41,6 +41,10 @@ func (f *osFileSystem) WriteFile(ctx context.Context, name string, data []byte, 
 	return AtomicWrite(ctx, name, data, perm)
 }
 
+func (f *osFileSystem) AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error {
+	return AtomicWrite(ctx, name, data, perm)
+}
+
 func (f *osFileSystem) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
 	if err := f.checkDone(ctx); err != nil {
 		return err

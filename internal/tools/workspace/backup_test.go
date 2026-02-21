@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -17,19 +18,19 @@ func TestBackupManager_Undo(t *testing.T) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(tempDir)
-	bm := newBackupManager(sm, 10)
+	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
 	ctx := context.Background()
 
 	path := filepath.Join(tempDir, "test.txt")
 
 	// 1. Snapshot new file creation
-	bm.snapshot(path, "WRITE")
+	bm.snapshot(ctx, path, "WRITE")
 	if err := os.WriteFile(path, []byte("v1"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Snapshot modification
-	bm.snapshot(path, "REPLACE")
+	bm.snapshot(ctx, path, "REPLACE")
 	if err := os.WriteFile(path, []byte("v2"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestBackupManager_Undo_Errors(t *testing.T) {
 func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 	tempDir := t.TempDir()
 	sm := security.NewSecurityManager(nil)
-	bm := newBackupManager(sm, 10)
+	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
 	ctx := context.Background()
 
 	cleanup := tc.setup(t, tempDir, sm)
@@ -149,7 +150,7 @@ func runUndoErrorTest(t *testing.T, tc undoErrorTestCase) {
 		if !filepath.IsAbs(fullPath) {
 			fullPath = filepath.Join(tempDir, fullPath)
 		}
-		bm.snapshot(fullPath, tc.snapshotOp)
+		bm.snapshot(ctx, fullPath, tc.snapshotOp)
 	}
 
 	res, err := bm.undo(ctx, 1)

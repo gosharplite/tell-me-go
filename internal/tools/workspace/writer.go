@@ -41,7 +41,7 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 
 	// Confirmation Gate
 
-	w.bm.snapshot(resolvedPath, "WRITE")
+	w.bm.snapshot(ctx, resolvedPath, "WRITE")
 
 	// Create parent directories if they don't exist
 	dir := filepath.Dir(resolvedPath)
@@ -79,7 +79,7 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 
 	// Confirmation Gate
 
-	w.bm.snapshot(resolvedPath, "REPLACE")
+	w.bm.snapshot(ctx, resolvedPath, "REPLACE")
 
 	contentBytes, err := w.fs.ReadFile(ctx, resolvedPath)
 	if err != nil {
@@ -124,7 +124,7 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 
 	// Confirmation Gate
 
-	w.bm.snapshot(resolvedPath, "APPEND")
+	w.bm.snapshot(ctx, resolvedPath, "APPEND")
 
 	// Use OpenFile with O_APPEND
 	f, oerr := w.fs.OpenFile(ctx, resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

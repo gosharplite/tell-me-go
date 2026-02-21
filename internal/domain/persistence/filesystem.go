@@ -25,6 +25,7 @@ type FileSystem interface {
 	ReadDir(ctx context.Context, name string) ([]os.DirEntry, error)
 	ReadFile(ctx context.Context, name string) ([]byte, error)
 	WriteFile(ctx context.Context, name string, data []byte, perm os.FileMode) error
+	AtomicWrite(ctx context.Context, name string, data []byte, perm os.FileMode) error
 	MkdirAll(ctx context.Context, path string, perm os.FileMode) error
 	Stat(ctx context.Context, name string) (os.FileInfo, error)
 	Open(ctx context.Context, name string) (File, error)

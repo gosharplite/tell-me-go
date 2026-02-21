@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 )
 
 // fileSnapshot represents a single file state in history.
@@ -30,21 +30,23 @@ type backupManager struct {
 	backups   []fileSnapshot
 	maxStored int
 	sm        domain_security.PathValidator
+	fs        domain_persistence.FileSystem
 }
 
 // newBackupManager creates a new backupManager.
-func newBackupManager(sm domain_security.PathValidator, maxStored int) *backupManager {
+func newBackupManager(sm domain_security.PathValidator, fs domain_persistence.FileSystem, maxStored int) *backupManager {
 	if maxStored <= 0 {
 		maxStored = 10
 	}
 	return &backupManager{
 		maxStored: maxStored,
 		sm:        sm,
+		fs:        fs,
 	}
 }
 
 // snapshot records the current state of a file before it is modified.
-func (b *backupManager) snapshot(path string, action string) {
+func (b *backupManager) snapshot(ctx context.Context, path string, action string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -53,7 +55,7 @@ func (b *backupManager) snapshot(path string, action string) {
 		return
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := b.fs.ReadFile(ctx, absPath)
 	if err != nil {
 		// If file doesn't exist, we store nil content to represent "new file"
 		content = nil
@@ -96,12 +98,12 @@ func (b *backupManager) undo(ctx context.Context, n int) (string, error) {
 
 		if snap.Content == nil {
 			// Original state was "not exists"
-			if err := os.Remove(snap.Path); err != nil && !os.IsNotExist(err) {
+			if err := b.fs.Remove(ctx, snap.Path); err != nil && !os.IsNotExist(err) {
 				return "", fmt.Errorf("failed to remove new file %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Removed %s (was new file)", snap.Path))
 		} else {
-			if err := persistence.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
+			if err := b.fs.AtomicWrite(ctx, snap.Path, snap.Content, 0644); err != nil {
 				return "", fmt.Errorf("failed to restore %s: %w", snap.Path, err)
 			}
 			results = append(results, fmt.Sprintf("Restored %s", snap.Path))
