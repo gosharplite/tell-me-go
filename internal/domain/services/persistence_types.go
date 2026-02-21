@@ -31,4 +31,5 @@ type ISessionProvider interface {
 	GetScratchpad() *ScratchpadService
 	GetInfo() SessionInfo
 	SetInfo(info SessionInfo)
+	Close() error
 }

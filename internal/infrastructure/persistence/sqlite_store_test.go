@@ -17,7 +17,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
-	if err := createTables(db); err != nil {
+	if err := createTables(context.Background(), db); err != nil {
 		t.Fatalf("Failed to create tables: %v", err)
 	}
 

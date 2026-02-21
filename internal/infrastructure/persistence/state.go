@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 
@@ -17,6 +18,7 @@ type sessionState struct {
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
 	Info       services.SessionInfo
+	db         *sql.DB
 }
 
 func (s *sessionState) GetTasks() *services.TaskService            { return s.Tasks }
@@ -28,6 +30,13 @@ func (s *sessionState) SetInfo(info services.SessionInfo) {
 	s.Info = info
 }
 
+func (s *sessionState) Close() error {
+	if s.db != nil {
+		return s.db.Close()
+	}
+	return nil
+}
+
 // NewSessionState initializes repositories and services.
 func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
@@ -35,7 +44,7 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 		storageType = "sqlite" // Set sqlite as default storage
 	}
 
-	taskStore, configStore, scratchStore, paths, err := initRepositories(ctx, configDir, storageType)
+	taskStore, configStore, scratchStore, db, paths, err := initRepositories(ctx, configDir, storageType)
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +58,7 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 		Tasks:      tasks,
 		Config:     config,
 		Scratchpad: scratch,
+		db:         db,
 	}
 
 	state.Info = services.SessionInfo{
@@ -63,11 +73,11 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 	return state, nil
 }
 
-func initRepositories(ctx context.Context, configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, map[string]string, error) {
+func initRepositories(ctx context.Context, configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, *sql.DB, map[string]string, error) {
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths, nil
+		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), nil, paths, nil
 	}
 
 	fs := NewOSFileSystem()
@@ -81,20 +91,21 @@ func initRepositories(ctx context.Context, configDir, storageType string) (servi
 	dbPath := filepath.Join(configDir, "tellmego.db")
 	paths["db_file"] = dbPath
 
-	db, err := initSQLiteDB(dbPath)
+	db, err := initSQLiteDB(ctx, dbPath) // We will pass ctx here!
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Perform migration if needed
 	err = migrateFromJSON(ctx, db, fs, tasksPath, configPath, scratchPath)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	return newSQLiteTaskStore(db),
 		newSQLiteConfigStore(db),
 		newSQLiteScratchpadStore(db),
+		db,
 		paths, nil
 }
 

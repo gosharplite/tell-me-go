@@ -6,6 +6,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
@@ -138,7 +139,11 @@ func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]services.Task, error) 
 		if err := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); err != nil {
 			return nil, err
 		}
-		t.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAtStr)
+		var err error
+		t.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), err)
+		}
 		res = append(res, t)
 	}
 	return res, rows.Err()

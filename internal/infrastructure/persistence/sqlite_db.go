@@ -15,19 +15,19 @@ import (
 )
 
 // initSQLiteDB opens the SQLite database and runs migrations.
-func initSQLiteDB(dbPath string) (*sql.DB, error) {
+func initSQLiteDB(ctx context.Context, dbPath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db: %w", err)
 	}
 
 	// Apply WAL pragma
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
 	}
 
 	// Run schema migrations
-	err = createTables(db)
+	err = createTables(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
@@ -35,7 +35,7 @@ func initSQLiteDB(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-func createTables(db *sql.DB) error {
+func createTables(ctx context.Context, db *sql.DB) error {
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS config (
 			key TEXT PRIMARY KEY,
@@ -54,7 +54,7 @@ func createTables(db *sql.DB) error {
 	}
 
 	for _, query := range queries {
-		if _, err := db.Exec(query); err != nil {
+		if _, err := db.ExecContext(ctx, query); err != nil {
 			return err
 		}
 	}

@@ -38,7 +38,7 @@ func TestSQLiteMigrations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err := initSQLiteDB(dbPath)
+	db, err := initSQLiteDB(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestSQLiteMigrations_MissingFiles(t *testing.T) {
 	scratchFile := filepath.Join(tempDir, "missing_scratchpad.md")
 	dbPath := filepath.Join(tempDir, "test2.db")
 
-	db, err := initSQLiteDB(dbPath)
+	db, err := initSQLiteDB(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err := initSQLiteDB(dbPath)
+	db, err := initSQLiteDB(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestSQLiteMigrations_CorruptedData(t *testing.T) {
 }
 
 func TestSQLiteMigrations_InvalidDBPath(t *testing.T) {
-	_, err := initSQLiteDB("/invalid/path/db.sqlite")
+	_, err := initSQLiteDB(context.Background(), "/invalid/path/db.sqlite")
 	if err == nil {
 		t.Error("expected error for invalid db path")
 	}
@@ -149,7 +149,7 @@ func TestSQLiteMigrations_InvalidJSONConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err := initSQLiteDB(dbPath)
+	db, err := initSQLiteDB(ctx, dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

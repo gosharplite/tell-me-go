@@ -104,10 +104,12 @@ func (c *chatCommand) Execute(ctx stdctx.Context, args []string) error {
 		return err
 	}
 
-	deps, hManager, err := c.buildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))
+	deps, hManager, cleanup, err := c.buildSessionDependencies(ctx, cfg, opts.configPath, opts.newSession, capturer.(domain_security.UserInteractor))
 	if err != nil {
 		return err
 	}
+
+	defer cleanup()
 
 	defer func() {
 		if shutdownErr := deps.GetEventBus().Shutdown(ctx); shutdownErr != nil {
@@ -155,10 +157,10 @@ func (c *chatCommand) finalizeCLI(ctx stdctx.Context, hManager services.HistoryM
 	}
 }
 
-func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, error) {
+func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
 	paths, err := infra_persistence.InitializePaths(c.HomeDir, cfg.Mode)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	pricingOverrides := c.getPricingOverrides(cfg)
@@ -169,7 +171,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 
 	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
-		return nil, nil, fmt.Errorf("error loading history: %w", err)
+		return nil, nil, nil, fmt.Errorf("error loading history: %w", err)
 	}
 
 	bus := events.NewSimpleEventBus()
@@ -178,12 +180,12 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 
 	client, err := c.ClientFactory(cfg, pricingData, bus)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating client: %w", err)
+		return nil, nil, nil, fmt.Errorf("error creating client: %w", err)
 	}
 
 	gw, ok := client.(domain_llm.LLMGateway)
 	if !ok {
-		return nil, nil, fmt.Errorf("client does not implement LLMGateway")
+		return nil, nil, nil, fmt.Errorf("client does not implement LLMGateway")
 	}
 
 	reg := registry.New()
@@ -201,6 +203,14 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		fmt.Fprintf(c.Stderr, "Warning: Failed to initialize session state: %v\n", err)
 	}
 	validator := internal_security.NewCommandValidator(c.SM, capturer)
+
+	cleanup := func() {
+		if sessionProvider != nil {
+			if err := sessionProvider.Close(); err != nil {
+				fmt.Fprintf(c.Stderr, "Warning: Failed to close session provider: %v\n", err)
+			}
+		}
+	}
 
 	tools.RegisterAll(
 		reg,
@@ -230,7 +240,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 
 	deps := orchestration.NewSessionDependencies(paths, hManager, client, gw, reg, tracker, pricingData, pricingOverrides, bus)
 
-	return deps, hManager, nil
+	return deps, hManager, cleanup, nil
 }
 
 func (c *chatCommand) getPricingOverrides(cfg *domain_config.Config) map[string]domain_pricing.ModelPricing {

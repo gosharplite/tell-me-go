@@ -27,7 +27,7 @@ func main() {
 
 	app := cli.New(version, os.Stdin, os.Stdout, os.Stderr)
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %vn", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
