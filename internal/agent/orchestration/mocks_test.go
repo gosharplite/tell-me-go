@@ -85,6 +85,12 @@ func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Conten
 	m.contents = append(m.contents, content)
 	return nil
 }
+func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	if index >= 0 && index < len(m.contents) {
+		m.contents[index].Parts = append(m.contents[index].Parts, parts...)
+	}
+	return nil
+}
 func (m *mockHistoryManager) GetResolver() llm.AssetResolver { return m.resolver }
 func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {
 	return nil

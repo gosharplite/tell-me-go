@@ -21,6 +21,7 @@ type store interface {
 	Load(ctx context.Context) ([]*llm.Content, error)
 	Save(ctx context.Context, history []*llm.Content) error
 	Append(ctx context.Context, contents []*llm.Content) error
+	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	UpdateMetadata(ctx context.Context, index int, metadata map[string]interface{}) error
 	Truncate(ctx context.Context, length int) error
 	Compact(ctx context.Context) error
@@ -28,10 +29,11 @@ type store interface {
 
 // historyPatch represents an append-only patch to history.
 type historyPatch struct {
-	IsPatch  bool                   `json:"_patch"`
-	Index    int                    `json:"index"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-	Truncate *int                   `json:"truncate,omitempty"`
+	IsPatch     bool                   `json:"_patch"`
+	Index       int                    `json:"index"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Truncate    *int                   `json:"truncate,omitempty"`
+	AppendParts []*llm.Part            `json:"append_parts,omitempty"`
 }
 
 // jsonlStore implements Store using a JSON Lines file.
@@ -122,6 +124,9 @@ func (s *jsonlStore) applyPatch(patch historyPatch, contents []*llm.Content) []*
 			contents = contents[:*patch.Truncate]
 		}
 	} else if patch.Index >= 0 && patch.Index < len(contents) {
+		if len(patch.AppendParts) > 0 {
+			contents[patch.Index].Parts = append(contents[patch.Index].Parts, patch.AppendParts...)
+		}
 		if pinned, ok := patch.Metadata["pinned"]; ok {
 			if pinnedBool, ok := pinned.(bool); ok {
 				contents[patch.Index].Pinned = pinnedBool
@@ -336,4 +341,50 @@ func (s *jsonlStore) Compact(ctx context.Context) error {
 		return err
 	}
 	return s.Save(ctx, contents)
+}
+
+// AppendParts appends a patch to add parts to an existing entry.
+func (s *jsonlStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) (err error) {
+	if err := s.ensureDirectory(ctx); err != nil {
+		return err
+	}
+	f, oerr := s.fs.OpenFile(ctx, s.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if oerr != nil {
+		return oerr
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	preparedParts := make([]*llm.Part, len(parts))
+	for i, p := range parts {
+		dummy := &llm.Content{Parts: []*llm.Part{p}}
+		prepared, err := s.prepareForStorage(ctx, dummy)
+		if err != nil {
+			return err
+		}
+		preparedParts[i] = prepared.Parts[0]
+	}
+
+	patch := historyPatch{
+		IsPatch:     true,
+		Index:       index,
+		AppendParts: preparedParts,
+	}
+	line, merr := json.Marshal(patch)
+	if merr != nil {
+		return merr
+	}
+	line = append(line, '\n')
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	_, err = f.Write(line)
+	return err
 }

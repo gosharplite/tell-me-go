@@ -117,3 +117,21 @@ func (s *memoryListStore[T]) Append(ctx context.Context, item T) error {
 	s.data = append(s.data, item)
 	return nil
 }
+
+func (s *memoryListStore[T]) ReadPage(ctx context.Context, limit, offset int) ([]T, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if offset >= len(s.data) {
+		return nil, nil
+	}
+
+	end := offset + limit
+	if end > len(s.data) {
+		end = len(s.data)
+	}
+
+	res := make([]T, end-offset)
+	copy(res, s.data[offset:end])
+	return res, nil
+}

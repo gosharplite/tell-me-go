@@ -5,9 +5,11 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	_ "modernc.org/sqlite"
 )
 
@@ -23,7 +25,63 @@ func TestSQLiteMigrations(t *testing.T) {
 	scratchFile := filepath.Join(tempDir, "scratchpad.md")
 	dbPath := filepath.Join(tempDir, "test.db")
 
-	// Seed legacy files
+	seedLegacyFiles(t, ctx, fs, tasksFile, configFile, scratchFile)
+
+	db, err := initSQLiteDB(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
+		t.Fatalf("migrateFromJSON failed: %v", err)
+	}
+
+	t.Run("Config Migration", func(t *testing.T) { testConfigMigration(t, ctx, db) })
+	t.Run("Scratchpad Migration", func(t *testing.T) { testScratchpadMigration(t, ctx, db) })
+	t.Run("Tasks Migration", func(t *testing.T) { testTasksMigration(t, ctx, db) })
+	t.Run("Idempotency", func(t *testing.T) { testMigrationIdempotency(t, ctx, db, fs, tasksFile, configFile, scratchFile) })
+}
+
+func testConfigMigration(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	var configVal string
+	if err := db.QueryRowContext(ctx, "SELECT value FROM config WHERE key = ?", "legacy_key").Scan(&configVal); err != nil {
+		t.Errorf("Failed to read migrated config: %v", err)
+	} else if configVal != "legacy_val" {
+		t.Errorf("Config migration mismatch: expected 'legacy_val', got %q", configVal)
+	}
+}
+
+func testScratchpadMigration(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	var scratchVal string
+	if err := db.QueryRowContext(ctx, "SELECT content FROM scratchpad WHERE id = 1").Scan(&scratchVal); err != nil {
+		t.Errorf("Failed to read migrated scratchpad: %v", err)
+	} else if scratchVal != "Migrated scratchpad content" {
+		t.Errorf("Scratchpad migration mismatch: expected 'Migrated scratchpad content', got %q", scratchVal)
+	}
+}
+
+func testTasksMigration(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	var taskContent string
+	if err := db.QueryRowContext(ctx, "SELECT content FROM tasks WHERE id = 1").Scan(&taskContent); err != nil {
+		t.Errorf("Failed to read migrated task: %v", err)
+	} else if taskContent != "Migrated Task 1" {
+		t.Errorf("Task migration mismatch: expected 'Migrated Task 1', got %q", taskContent)
+	}
+}
+
+func testMigrationIdempotency(t *testing.T, ctx context.Context, db *sql.DB, fs persistence.FileSystem, tasksFile, configFile, scratchFile string) {
+	t.Helper()
+	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
+		t.Fatalf("migrateFromJSON second run failed: %v", err)
+	}
+}
+
+func seedLegacyFiles(t *testing.T, ctx context.Context, fs persistence.FileSystem, tasksFile, configFile, scratchFile string) {
+	t.Helper()
 	tasksJSON := `[{"id": 1, "content": "Migrated Task 1", "status": "pending", "created_at": "2025-01-01T00:00:00Z"}]`
 	configJSON := `{"legacy_key": "legacy_val"}`
 	scratchMD := "Migrated scratchpad content"
@@ -36,46 +94,6 @@ func TestSQLiteMigrations(t *testing.T) {
 	}
 	if err := fs.WriteFile(ctx, scratchFile, []byte(scratchMD), 0644); err != nil {
 		t.Fatal(err)
-	}
-
-	db, err := initSQLiteDB(ctx, dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	// Test migrateFromJSON
-	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
-		t.Fatalf("migrateFromJSON failed: %v", err)
-	}
-
-	// Assert Config Migration
-	var configVal string
-	if err := db.QueryRowContext(ctx, "SELECT value FROM config WHERE key = ?", "legacy_key").Scan(&configVal); err != nil {
-		t.Errorf("Failed to read migrated config: %v", err)
-	} else if configVal != "legacy_val" {
-		t.Errorf("Config migration mismatch: expected 'legacy_val', got %q", configVal)
-	}
-
-	// Assert Scratchpad Migration
-	var scratchVal string
-	if err := db.QueryRowContext(ctx, "SELECT content FROM scratchpad WHERE id = 1").Scan(&scratchVal); err != nil {
-		t.Errorf("Failed to read migrated scratchpad: %v", err)
-	} else if scratchVal != "Migrated scratchpad content" {
-		t.Errorf("Scratchpad migration mismatch: expected 'Migrated scratchpad content', got %q", scratchVal)
-	}
-
-	// Assert Tasks Migration
-	var taskContent string
-	if err := db.QueryRowContext(ctx, "SELECT content FROM tasks WHERE id = 1").Scan(&taskContent); err != nil {
-		t.Errorf("Failed to read migrated task: %v", err)
-	} else if taskContent != "Migrated Task 1" {
-		t.Errorf("Task migration mismatch: expected 'Migrated Task 1', got %q", taskContent)
-	}
-
-	// Run migration again to ensure it skips early return condition
-	if err := migrateFromJSON(ctx, db, fs, tasksFile, configFile, scratchFile); err != nil {
-		t.Fatalf("migrateFromJSON second run failed: %v", err)
 	}
 }
 

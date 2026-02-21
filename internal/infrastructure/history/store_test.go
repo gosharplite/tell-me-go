@@ -1005,3 +1005,56 @@ func TestJSONLStore_Append_Empty(t *testing.T) {
 		t.Errorf("expected no error for empty append, got %v", err)
 	}
 }
+
+func TestJSONLStore_AppendParts(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "append_parts_history.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	ctx := context.Background()
+
+	// 1. Initial history
+	content := &llm.Content{
+		Role:  "user",
+		Parts: []*llm.Part{{Text: "initial part"}},
+	}
+	err := store.Append(ctx, []*llm.Content{content})
+	if err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+
+	// 2. Append parts
+	err = store.AppendParts(ctx, 0, []*llm.Part{{Text: " appended part"}})
+	if err != nil {
+		t.Fatalf("AppendParts failed: %v", err)
+	}
+
+	// 3. Load and verify
+	loaded, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(loaded) != 1 {
+		t.Fatalf("expected 1 content, got %d", len(loaded))
+	}
+	if len(loaded[0].Parts) != 2 {
+		t.Fatalf("expected 2 parts, got %d", len(loaded[0].Parts))
+	}
+	if loaded[0].Parts[0].Text != "initial part" {
+		t.Errorf("expected 'initial part', got %q", loaded[0].Parts[0].Text)
+	}
+	if loaded[0].Parts[1].Text != " appended part" {
+		t.Errorf("expected ' appended part', got %q", loaded[0].Parts[1].Text)
+	}
+}
+
+func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
+	t.Parallel()
+	// Create an invalid store path
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl")
+	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
+	if err == nil {
+		t.Error("expected error appending parts to invalid directory")
+	}
+}

@@ -24,7 +24,7 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, exec t
 }
 
 func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, fs persistence.FileSystem) {
-	bm := newBackupManager(sm, 10)
+	bm := newBackupManager(sm, fs, 10)
 	m := &fileSystemManager{
 		reader: &fileReader{sm: sm, fs: fs},
 		writer: &fileWriter{sm: sm, bm: bm, fs: fs},

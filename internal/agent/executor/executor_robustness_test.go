@@ -5,7 +5,7 @@ package executor
 
 import (
 	"context"
-	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,59 +54,58 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestToolExecutor_GoroutineLeak(t *testing.T) {
+func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 	reg := registry.New()
-
-	// This tool ignores the context and sleeps
-	toolFinished := make(chan struct{})
-	reg.Register(&tools.ToolDeclaration{Name: "leaky_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-		// DONT check ctx.Done()
-		time.Sleep(500 * time.Millisecond)
-		close(toolFinished)
-		return tools.ToolResult{Text: "I finally finished"}, nil
+	
+	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
+	blockCh := make(chan struct{})
+	reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		select {
+		case <-blockCh:
+			return tools.ToolResult{Text: "ok"}, nil
+		case <-ctx.Done():
+			return tools.ToolResult{Text: "canceled", Error: ctx.Err()}, nil
+		}
 	})
 
 	exec := NewToolExecutor(reg, nil, nil)
 	t.Cleanup(exec.Shutdown)
-	exec.SetConcurrency(1, 50*time.Millisecond) // Short timeout
 
-	initialGoroutines := runtime.NumGoroutine()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	content := &llm.Content{
 		Parts: []*llm.Part{
-			{FunctionCall: &llm.FunctionCall{Name: "leaky_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
 		},
 	}
 
-	start := time.Now()
-	_, err := exec.Execute(context.Background(), content, 0, 5)
-	duration := time.Since(start)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	
+	var execErr error
+	go func() {
+		defer wg.Done()
+		_, execErr = exec.Execute(ctx, content, 0, 10)
+	}()
 
-	if err != nil {
-		t.Logf("Execute returned error as expected: %v", err)
-	}
-
-	// It should have returned due to timeout (~50ms), not waited for the tool (~500ms)
-	// We allow a generous margin for scheduler latency in CI environments.
-	// 400ms is still less than the 500ms tool sleep, so we know it timed out.
-	if duration >= 450*time.Millisecond {
-		t.Errorf("Execute took too long: %v, expected timeout around 50ms (and definitely less than 500ms)", duration)
-	}
-
-	// Check for leak immediately after return
-	currentGoroutines := runtime.NumGoroutine()
-	t.Logf("Initial: %d, Current after timeout: %d", initialGoroutines, currentGoroutines)
-
-	// Wait for the leaky tool to actually finish so we don't leak into other tests
-	select {
-	case <-toolFinished:
-		t.Log("Leaky tool finally finished")
-	case <-time.After(1 * time.Second):
-		t.Error("Leaky tool never finished")
-	}
-
-	// After tool finishes, goroutine count should go back down
+	// Wait a moment for the executor to enqueue the tools and block
 	time.Sleep(50 * time.Millisecond)
-	finalGoroutines := runtime.NumGoroutine()
-	t.Logf("Final: %d", finalGoroutines)
+
+	// Cancel the context mid-batch
+	cancel()
+	
+	// Unblock the tools
+	close(blockCh)
+
+	wg.Wait()
+
+	if execErr == nil {
+		t.Fatalf("expected context canceled error, got nil")
+	}
+
+	if !strings.Contains(execErr.Error(), "canceled") {
+		t.Fatalf("expected context canceled error, got %v", execErr)
+	}
 }

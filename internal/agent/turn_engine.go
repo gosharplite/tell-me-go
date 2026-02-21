@@ -579,10 +579,10 @@ func (p *executionStep) injectCircuitBreakerWarning(ctx context.Context, turn *t
 		if part.FunctionResponse != nil {
 			if res, ok := part.FunctionResponse.Response["result"].(string); ok {
 				if strings.Contains(res, "temporarily disabled") && strings.Contains(res, "multiple consecutive failures") {
-					// Inject a safety warning into the history for the LLM
-					_ = turn.CtxManager.AddContent(ctx, &llm.Content{
-						Role:  "user",
-						Parts: []*llm.Part{{Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again."}},
+					// Append the safety warning directly to the tool response
+					// so it gets persisted in the correct chronological order during the persistenceStep.
+					toolResponse.Parts = append(toolResponse.Parts, &llm.Part{
+						Text: "SYSTEM WARNING: A tool has been temporarily disabled due to multiple consecutive failures. Please continue the task without attempting to use that specific tool again.",
 					})
 					break
 				}

@@ -275,6 +275,23 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	batches := e.buildExecutionBatches(calls, declinedMap, resChan)
 
 	for batchIdx, batch := range batches {
+		if err := ctx.Err(); err != nil {
+			// SCALABLE (GOOD): Shedding load immediately upon cancellation
+			for j := batchIdx; j < len(batches); j++ {
+				for _, skippedIdx := range batches[j].tasks {
+					resChan <- toolExecResult{
+						index: skippedIdx,
+						name:  calls[skippedIdx].Name,
+						tr: domaintools.ToolResult{
+							Text:  fmt.Sprintf("batch interrupted: %v", err),
+							Error: fmt.Errorf("batch interrupted: %w", err),
+						},
+					}
+				}
+			}
+			return
+		}
+
 		if batch.isSerial {
 			taskIdx := batch.tasks[0]
 			fc := calls[taskIdx]
@@ -297,6 +314,17 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		} else {
 			var wg sync.WaitGroup
 			for _, taskIdx := range batch.tasks {
+				if err := ctx.Err(); err != nil {
+					resChan <- toolExecResult{
+						index: taskIdx,
+						name:  calls[taskIdx].Name,
+						tr: domaintools.ToolResult{
+							Text:  fmt.Sprintf("batch interrupted: %v", err),
+							Error: fmt.Errorf("batch interrupted: %w", err),
+						},
+					}
+					continue
+				}
 				fc := calls[taskIdx]
 				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
 			}
@@ -586,7 +614,6 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()
 
-	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
@@ -597,38 +624,42 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	}
 	defer cancel()
 
-	resChan := make(chan asyncToolResult, 1)
-	startTime := time.Now()
+	// Buffered channel prevents goroutine leak if the tool finishes after timeout
+	outCh := make(chan toolOutput, 1)
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- asyncToolResult{
-					tr: e.handlePanic(r, tool.Name),
+				outCh <- toolOutput{
+					result: e.handlePanic(r, tool.Name),
+					err:    nil,
 				}
 			}
 		}()
-		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
-		result, err := reg.Execute(ctx, tool.Name, args)
-		resChan <- asyncToolResult{tr: result, err: err}
+		res, execErr := reg.Execute(ctx, tool.Name, args)
+		outCh <- toolOutput{result: res, err: execErr}
 	}()
 
 	select {
 	case <-ctx.Done():
-		err := ctx.Err()
-		msg := fmt.Sprintf("Error: Tool execution failed: %v", err)
-		if err == context.DeadlineExceeded {
+		// The context expired (timeout or parent cancellation) before the tool finished
+		errCtx := ctx.Err()
+		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
+		if errCtx == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
 		}
-
-		// Spawn watcher for the "Zombie" tool
-		go e.monitorZombieTool(tool.Name, startTime, resChan)
+		
+		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
+		go e.monitorZombieTool(parentCtx, tool.Name, time.Now(), outCh)
 
 		return domaintools.ToolResult{
 			Text:  msg,
 			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
 		}, nil
-	case r := <-resChan:
-		return r.tr, r.err
+
+	case out := <-outCh:
+		// Tool finished successfully within the deadline
+		return out.result, out.err
 	}
 }
 
@@ -667,39 +698,6 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 		}
 	}
 	return closest
-}
-
-type asyncToolResult struct {
-	tr  domaintools.ToolResult
-	err error
-}
-
-func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, resChan <-chan asyncToolResult) {
-	// Wait for the non-compliant tool to return or hard timeout
-	select {
-	case <-resChan:
-		actualDuration := time.Since(startTime)
-
-		e.mu.RLock()
-		bus := e.events
-		e.mu.RUnlock()
-		if bus != nil {
-			bus.Publish(events.SystemMessageEvent{
-				Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-				Level:   "warn",
-			})
-		}
-	case <-time.After(5 * time.Minute):
-		e.mu.RLock()
-		bus := e.events
-		e.mu.RUnlock()
-		if bus != nil {
-			bus.Publish(events.SystemMessageEvent{
-				Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
-				Level:   "error",
-			})
-		}
-	}
 }
 
 func (e *ToolExecutor) identifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
@@ -759,4 +757,20 @@ func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.Fun
 	}
 
 	return declinedMap
+}
+
+func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {
+	select {
+	case <-outCh:
+		// Tool eventually finished, log the extreme latency
+		telemetry.RecordLateCompletion(name, time.Since(start))
+	case <-time.After(5 * time.Minute):
+		// Tool is permanently deadlocked
+		telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
+	}
+}
+
+type toolOutput struct {
+	result domaintools.ToolResult
+	err    error
 }

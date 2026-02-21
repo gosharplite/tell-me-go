@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -29,11 +30,19 @@ func setupTestDB(t *testing.T) *sql.DB {
 }
 
 func TestSQLiteConfigStore(t *testing.T) {
+	t.Run("Get Non-Existent Key", testConfigStoreGetNonExistent)
+	t.Run("Set and Get Key", testConfigStoreSetAndGet)
+	t.Run("Update Existing Key", testConfigStoreUpdateExisting)
+	t.Run("Get All Keys", testConfigStoreGetAll)
+	t.Run("Delete Key", testConfigStoreDelete)
+}
+
+func testConfigStoreGetNonExistent(t *testing.T) {
 	db := setupTestDB(t)
+	defer db.Close()
 	store := newSQLiteConfigStore(db)
 	ctx := context.Background()
 
-	// Test Get on empty db
 	val, err := store.Get(ctx, "nonexistent")
 	if err != nil {
 		t.Errorf("Expected nil error for nonexistent key, got %v", err)
@@ -41,38 +50,55 @@ func TestSQLiteConfigStore(t *testing.T) {
 	if val != "" {
 		t.Errorf("Expected empty string for nonexistent key, got %q", val)
 	}
+}
 
-	// Test Set
+func testConfigStoreSetAndGet(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteConfigStore(db)
+	ctx := context.Background()
+
 	if err := store.Set(ctx, "key1", "value1"); err != nil {
 		t.Errorf("Failed to set key1: %v", err)
 	}
-
-	// Test Get existing
-	val, err = store.Get(ctx, "key1")
+	val, err := store.Get(ctx, "key1")
 	if err != nil {
 		t.Errorf("Failed to get key1: %v", err)
 	}
 	if val != "value1" {
 		t.Errorf("Expected 'value1', got %q", val)
 	}
+}
 
-	// Test Set update
+func testConfigStoreUpdateExisting(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteConfigStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "key1", "value1") // initial setup
 	if err := store.Set(ctx, "key1", "value2"); err != nil {
 		t.Errorf("Failed to update key1: %v", err)
 	}
-	val, err = store.Get(ctx, "key1")
+	val, err := store.Get(ctx, "key1")
 	if err != nil {
 		t.Errorf("Failed to get key1 after update: %v", err)
 	}
 	if val != "value2" {
 		t.Errorf("Expected 'value2' after update, got %q", val)
 	}
+}
 
-	// Test GetAll
+func testConfigStoreGetAll(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteConfigStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "key1", "value2") // initial setup
 	if err := store.Set(ctx, "key2", "value3"); err != nil {
 		t.Errorf("Failed to set key2: %v", err)
 	}
-
 	all, err := store.GetAll(ctx)
 	if err != nil {
 		t.Errorf("Failed to get all configs: %v", err)
@@ -83,12 +109,19 @@ func TestSQLiteConfigStore(t *testing.T) {
 	if all["key1"] != "value2" || all["key2"] != "value3" {
 		t.Errorf("GetAll returned unexpected map: %v", all)
 	}
+}
 
-	// Test Delete
+func testConfigStoreDelete(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteConfigStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "key1", "value1") // initial setup
 	if err := store.Delete(ctx, "key1"); err != nil {
 		t.Errorf("Failed to delete key1: %v", err)
 	}
-	val, err = store.Get(ctx, "key1")
+	val, err := store.Get(ctx, "key1")
 	if err != nil {
 		t.Errorf("Expected nil error after delete, got %v", err)
 	}
@@ -98,11 +131,37 @@ func TestSQLiteConfigStore(t *testing.T) {
 }
 
 func TestSQLiteScratchpadStore(t *testing.T) {
+	t.Run("Get Empty Scratchpad", testScratchpadGetEmpty)
+	t.Run("Get Invalid Key", testScratchpadGetInvalidKey)
+	t.Run("Set Invalid Key", testScratchpadSetInvalidKey)
+	t.Run("Set and Get Scratchpad Content", testScratchpadSetAndGet)
+	t.Run("Update Scratchpad Content", testScratchpadUpdate)
+	t.Run("Get All Returns Content Map", testScratchpadGetAll)
+	t.Run("Delete Invalid Key", testScratchpadDeleteInvalidKey)
+	t.Run("Delete Scratchpad Content", testScratchpadDelete)
+}
+
+func testScratchpadGetEmpty(t *testing.T) {
 	db := setupTestDB(t)
+	defer db.Close()
 	store := newSQLiteScratchpadStore(db)
 	ctx := context.Background()
 
-	// Test Get with wrong key
+	val, err := store.Get(ctx, "content")
+	if err != nil {
+		t.Errorf("Expected nil error for empty content, got %v", err)
+	}
+	if val != "" {
+		t.Errorf("Expected empty string for empty content, got %q", val)
+	}
+}
+
+func testScratchpadGetInvalidKey(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
 	val, err := store.Get(ctx, "wrong")
 	if err != nil {
 		t.Errorf("Expected nil error for wrong key, got %v", err)
@@ -110,50 +169,67 @@ func TestSQLiteScratchpadStore(t *testing.T) {
 	if val != "" {
 		t.Errorf("Expected empty string for wrong key, got %q", val)
 	}
+}
 
-	// Test Get when empty
-	val, err = store.Get(ctx, "content")
-	if err != nil {
-		t.Errorf("Expected nil error for empty content, got %v", err)
-	}
-	if val != "" {
-		t.Errorf("Expected empty string for empty content, got %q", val)
-	}
+func testScratchpadSetInvalidKey(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
 
-	// Test Set with wrong key
 	if err := store.Set(ctx, "wrong", "ignore this"); err != nil {
 		t.Errorf("Expected nil error for setting wrong key, got %v", err)
 	}
-	val, _ = store.Get(ctx, "content")
+	val, _ := store.Get(ctx, "content")
 	if val != "" {
 		t.Errorf("Setting wrong key should not affect content, got %q", val)
 	}
+}
 
-	// Test Set
+func testScratchpadSetAndGet(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
 	if err := store.Set(ctx, "content", "initial content"); err != nil {
 		t.Errorf("Failed to set content: %v", err)
 	}
-	val, err = store.Get(ctx, "content")
+	val, err := store.Get(ctx, "content")
 	if err != nil {
 		t.Errorf("Failed to get content: %v", err)
 	}
 	if val != "initial content" {
 		t.Errorf("Expected 'initial content', got %q", val)
 	}
+}
 
-	// Test Set update
+func testScratchpadUpdate(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "content", "initial content") // initial
 	if err := store.Set(ctx, "content", "updated content"); err != nil {
 		t.Errorf("Failed to update content: %v", err)
 	}
-	val, err = store.Get(ctx, "content")
+	val, err := store.Get(ctx, "content")
 	if err != nil {
 		t.Errorf("Failed to get content after update: %v", err)
 	}
 	if val != "updated content" {
 		t.Errorf("Expected 'updated content', got %q", val)
 	}
+}
 
-	// Test GetAll
+func testScratchpadGetAll(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "content", "updated content") // initial
 	all, err := store.GetAll(ctx)
 	if err != nil {
 		t.Errorf("Failed to get all scratchpad: %v", err)
@@ -161,21 +237,35 @@ func TestSQLiteScratchpadStore(t *testing.T) {
 	if len(all) != 1 || all["content"] != "updated content" {
 		t.Errorf("GetAll returned unexpected map: %v", all)
 	}
+}
 
-	// Test Delete with wrong key
+func testScratchpadDeleteInvalidKey(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "content", "updated content") // initial
 	if err := store.Delete(ctx, "wrong"); err != nil {
 		t.Errorf("Expected nil error for deleting wrong key, got %v", err)
 	}
-	val, _ = store.Get(ctx, "content")
+	val, _ := store.Get(ctx, "content")
 	if val != "updated content" {
 		t.Errorf("Deleting wrong key should not affect content, got %q", val)
 	}
+}
 
-	// Test Delete
+func testScratchpadDelete(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteScratchpadStore(db)
+	ctx := context.Background()
+
+	_ = store.Set(ctx, "content", "updated content") // initial
 	if err := store.Delete(ctx, "content"); err != nil {
 		t.Errorf("Failed to delete content: %v", err)
 	}
-	val, err = store.Get(ctx, "content")
+	val, err := store.Get(ctx, "content")
 	if err != nil {
 		t.Errorf("Failed to get content after delete: %v", err)
 	}
@@ -185,11 +275,19 @@ func TestSQLiteScratchpadStore(t *testing.T) {
 }
 
 func TestSQLiteTaskStore(t *testing.T) {
+	t.Run("Read Empty Store", testTaskStoreReadEmpty)
+	t.Run("Append and Read Tasks", testTaskStoreAppendAndRead)
+	t.Run("Update Task", testTaskStoreUpdate)
+	t.Run("Delete Task", testTaskStoreDelete)
+	t.Run("Delete All Tasks", testTaskStoreDeleteAll)
+}
+
+func testTaskStoreReadEmpty(t *testing.T) {
 	db := setupTestDB(t)
+	defer db.Close()
 	store := newSQLiteTaskStore(db)
 	ctx := context.Background()
 
-	// Test ReadAll when empty
 	tasks, err := store.ReadAll(ctx)
 	if err != nil {
 		t.Errorf("Expected nil error on ReadAll when empty, got %v", err)
@@ -197,23 +295,18 @@ func TestSQLiteTaskStore(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("Expected 0 tasks, got %d", len(tasks))
 	}
+}
+
+func testTaskStoreAppendAndRead(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Millisecond)
+	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task2 := services.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
 
-	task1 := services.Task{
-		ID:        1,
-		Content:   "task 1",
-		Status:    "pending",
-		CreatedAt: now,
-	}
-	task2 := services.Task{
-		ID:        2,
-		Content:   "task 2",
-		Status:    "completed",
-		CreatedAt: now.Add(time.Hour),
-	}
-
-	// Test Append
 	if err := store.Append(ctx, task1); err != nil {
 		t.Errorf("Failed to append task1: %v", err)
 	}
@@ -221,8 +314,7 @@ func TestSQLiteTaskStore(t *testing.T) {
 		t.Errorf("Failed to append task2: %v", err)
 	}
 
-	// Test ReadAll
-	tasks, err = store.ReadAll(ctx)
+	tasks, err := store.ReadAll(ctx)
 	if err != nil {
 		t.Errorf("Failed to read all tasks: %v", err)
 	}
@@ -235,8 +327,18 @@ func TestSQLiteTaskStore(t *testing.T) {
 	if !tasks[0].CreatedAt.Equal(task1.CreatedAt) {
 		t.Errorf("CreatedAt mismatched: expected %v, got %v", task1.CreatedAt, tasks[0].CreatedAt)
 	}
+}
 
-	// Test Update
+func testTaskStoreUpdate(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Millisecond)
+	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	_ = store.Append(ctx, task1) // initial
+
 	task1Updated := task1
 	task1Updated.Content = "task 1 updated"
 	task1Updated.Status = "in_progress"
@@ -244,25 +346,47 @@ func TestSQLiteTaskStore(t *testing.T) {
 		t.Errorf("Failed to update task 1: %v", err)
 	}
 
-	tasks, _ = store.ReadAll(ctx)
+	tasks, _ := store.ReadAll(ctx)
 	if len(tasks) > 0 && (tasks[0].Content != "task 1 updated" || tasks[0].Status != "in_progress") {
 		t.Errorf("Task 1 not updated correctly: %v", tasks[0])
 	}
+}
 
-	// Test Delete
+func testTaskStoreDelete(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Millisecond)
+	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task2 := services.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
+	_ = store.Append(ctx, task1)
+	_ = store.Append(ctx, task2)
+
 	if err := store.Delete(ctx, 1); err != nil {
 		t.Errorf("Failed to delete task 1: %v", err)
 	}
-	tasks, _ = store.ReadAll(ctx)
+	tasks, _ := store.ReadAll(ctx)
 	if len(tasks) != 1 || tasks[0].ID != 2 {
 		t.Errorf("Delete failed, remaining tasks: %v", tasks)
 	}
+}
 
-	// Test DeleteAll
+func testTaskStoreDeleteAll(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Millisecond)
+	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	_ = store.Append(ctx, task1)
+
 	if err := store.DeleteAll(ctx); err != nil {
 		t.Errorf("Failed to delete all tasks: %v", err)
 	}
-	tasks, _ = store.ReadAll(ctx)
+	tasks, _ := store.ReadAll(ctx)
 	if len(tasks) != 0 {
 		t.Errorf("DeleteAll failed, remaining tasks: %d", len(tasks))
 	}
@@ -296,5 +420,51 @@ func TestStoreErrors(t *testing.T) {
 	taskStore := newSQLiteTaskStore(db)
 	if _, err := taskStore.ReadAll(ctx); err == nil {
 		t.Errorf("Expected error on closed db ReadAll")
+	}
+}
+
+func TestSQLiteTaskStore_ReadPage(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	// Insert 5 tasks
+	for i := 1; i <= 5; i++ {
+		task := services.Task{
+			ID:        float64(i),
+			Content:   fmt.Sprintf("task %d", i),
+			Status:    "pending",
+			CreatedAt: time.Now(),
+		}
+		err := store.Append(ctx, task)
+		if err != nil {
+			t.Fatalf("failed to append task %d: %v", i, err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		limit    int
+		offset   int
+		expected int // Expected number of results
+	}{
+		{"Page 1", 2, 0, 2},
+		{"Page 2", 2, 2, 2},
+		{"Page 3", 2, 4, 1},
+		{"Out of Bounds", 2, 10, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := store.ReadPage(ctx, tt.limit, tt.offset)
+			if err != nil {
+				t.Fatalf("failed to read page: %v", err)
+			}
+			if len(res) != tt.expected {
+				t.Errorf("expected %d results, got %d", tt.expected, len(res))
+			}
+		})
 	}
 }

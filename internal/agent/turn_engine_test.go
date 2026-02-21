@@ -1189,3 +1189,97 @@ func withClock(c clock) engineOption {
 		e.clock = c
 	}
 }
+
+// mockBlockingClock for testing select blocks with ctx.Done()
+type mockBlockingClock struct {
+	afterChan chan time.Time
+	onAfter   func()
+}
+
+func (m *mockBlockingClock) Now() time.Time { return time.Now() }
+func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
+	if m.onAfter != nil {
+		m.onAfter()
+	}
+	return m.afterChan
+}
+
+func TestTurnEngine_ContextCancellation(t *testing.T) {
+	t.Run("GuardStep", testContextCancellation_GuardStep)
+	t.Run("ExecutionStep", testContextCancellation_ExecutionStep)
+	t.Run("RecoveryStep_DoneChannel", testContextCancellation_RecoveryStep_DoneChannel)
+}
+
+func testContextCancellation_GuardStep(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := &guardStep{}
+	tr := &turn{}
+	res, err := p.process(ctx, tr)
+
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if res.NextPhase != "" {
+		t.Errorf("expected empty processResult, got %v", res)
+	}
+}
+
+func testContextCancellation_ExecutionStep(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ex := &mockExecutor{
+		ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turnIdx int, maxToolTurns int) (*llm.Content, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		},
+	}
+	tr := &turn{
+		State: &turnState{
+			HasToolCalls: true,
+		},
+		executor: ex,
+		Clock:    realClock{},
+	}
+
+	p := &executionStep{}
+	res, err := p.process(ctx, tr)
+
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+	if res.NextPhase != "" {
+		t.Errorf("expected empty processResult, got %v", res)
+	}
+}
+
+func testContextCancellation_RecoveryStep_DoneChannel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mc := &mockBlockingClock{
+		afterChan: make(chan time.Time),
+		onAfter:   func() { cancel() },
+	}
+	p := &recoveryStep{
+		Policy: &defaultRetryPolicy{MaxRetries: 3, Backoff: 10 * time.Millisecond},
+	}
+	tr := &turn{
+		State: &turnState{
+			LastError:  &agentError{Category: llm.ErrTransient, Message: "retryable"},
+			RetryCount: 0,
+		},
+		Clock: mc,
+	}
+
+	res, err := p.process(ctx, tr)
+
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled from <-ctx.Done(), got %v", err)
+	}
+	if res.NextPhase != "" {
+		t.Errorf("expected empty processResult, got %v", res)
+	}
+}
