@@ -207,13 +207,17 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 		e.mu.RUnlock()
 
 		if sm != nil {
-			sm.TerminalLock()
-			approved, _ := sm.Confirm(ctx, sb.String())
-			sm.TerminalUnlock()
+			if sm.IsBypassActive() {
+				// Auto-approve if bypass is active
+			} else {
+				sm.TerminalLock()
+				approved, _ := sm.Confirm(ctx, sb.String())
+				sm.TerminalUnlock()
 
-			if !approved {
-				for _, i := range consentIndices {
-					declinedMap[i] = true
+				if !approved {
+					for _, i := range consentIndices {
+						declinedMap[i] = true
+					}
 				}
 			}
 		}
