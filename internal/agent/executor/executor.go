@@ -264,36 +264,76 @@ func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []dom
 	}
 }
 
+type taskBatch struct {
+	isSerial bool
+	tasks    []int // Contains indices into the 'calls' slice
+}
+
 func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
-	var wg sync.WaitGroup
+	e.mu.RLock()
+	reg := e.registry
+	e.mu.RUnlock()
+
+	var batches []taskBatch
+	var currentBatch *taskBatch
 
 	for i, fc := range calls {
-		e.mu.RLock()
-		reg := e.registry
-		e.mu.RUnlock()
-
 		if reg.IsSerial(fc.Name) {
-			if !e.executeSerialTask(ctx, i, fc, resChan, &wg) {
+			if currentBatch != nil {
+				batches = append(batches, *currentBatch)
+				currentBatch = nil
+			}
+			batches = append(batches, taskBatch{
+				isSerial: true,
+				tasks:    []int{i},
+			})
+		} else {
+			if currentBatch == nil {
+				currentBatch = &taskBatch{
+					isSerial: false,
+					tasks:    []int{i},
+				}
+			} else {
+				currentBatch.tasks = append(currentBatch.tasks, i)
+			}
+		}
+	}
+	if currentBatch != nil {
+		batches = append(batches, *currentBatch)
+	}
+
+	for batchIdx, batch := range batches {
+		if batch.isSerial {
+			taskIdx := batch.tasks[0]
+			fc := calls[taskIdx]
+			if !e.executeSerialTask(ctx, taskIdx, fc, resChan) {
 				// Fill remaining slots in resChan so the collector doesn't hang
-				for j := i + 1; j < len(calls); j++ {
-					resChan <- toolExecResult{
-						index: j,
-						name:  calls[j].Name,
-						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+				for j := batchIdx; j < len(batches); j++ {
+					for _, skippedIdx := range batches[j].tasks {
+						if j == batchIdx && skippedIdx <= taskIdx {
+							continue // Already executed or failed
+						}
+						resChan <- toolExecResult{
+							index: skippedIdx,
+							name:  calls[skippedIdx].Name,
+							tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+						}
 					}
 				}
 				return // Exit the execution plan early
 			}
 		} else {
-			e.enqueueParallelTask(ctx, i, fc, resChan, &wg)
+			var wg sync.WaitGroup
+			for _, taskIdx := range batch.tasks {
+				fc := calls[taskIdx]
+				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
+			}
+			wg.Wait()
 		}
 	}
-	wg.Wait()
 }
 
-func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult, wg *sync.WaitGroup) bool {
-	// Wait for all previous tools to finish before starting serial tool
-	wg.Wait()
+func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
 	var tr domaintools.ToolResult
 	func() {
 		defer func() {
