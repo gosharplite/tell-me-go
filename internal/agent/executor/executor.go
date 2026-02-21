@@ -586,7 +586,6 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	toolTimeout := e.toolTimeout
 	e.mu.RUnlock()
 
-	// Execute with timeout (exclude interactive/long-running tools)
 	var ctx context.Context
 	var cancel context.CancelFunc
 
@@ -597,39 +596,23 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	}
 	defer cancel()
 
-	resChan := make(chan asyncToolResult, 1)
-	startTime := time.Now()
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				resChan <- asyncToolResult{
-					tr: e.handlePanic(r, tool.Name),
-				}
-			}
-		}()
-		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
-		result, err := reg.Execute(ctx, tool.Name, args)
-		resChan <- asyncToolResult{tr: result, err: err}
-	}()
+	// Execute synchronously. The tool MUST respect ctx.Done()
+	result, err := reg.Execute(ctx, tool.Name, args)
 
-	select {
-	case <-ctx.Done():
-		err := ctx.Err()
-		msg := fmt.Sprintf("Error: Tool execution failed: %v", err)
-		if err == context.DeadlineExceeded {
+	// If the context was cancelled or timed out during execution
+	if ctx.Err() != nil {
+		errCtx := ctx.Err()
+		msg := fmt.Sprintf("Error: Tool execution failed: %v", errCtx)
+		if errCtx == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
 		}
-
-		// Spawn watcher for the "Zombie" tool
-		go e.monitorZombieTool(tool.Name, startTime, resChan)
-
 		return domaintools.ToolResult{
 			Text:  msg,
 			Error: fmt.Errorf("%w: %s", llm.ErrTransient, msg),
 		}, nil
-	case r := <-resChan:
-		return r.tr, r.err
 	}
+
+	return result, err
 }
 
 func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
@@ -667,39 +650,6 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 		}
 	}
 	return closest
-}
-
-type asyncToolResult struct {
-	tr  domaintools.ToolResult
-	err error
-}
-
-func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, resChan <-chan asyncToolResult) {
-	// Wait for the non-compliant tool to return or hard timeout
-	select {
-	case <-resChan:
-		actualDuration := time.Since(startTime)
-
-		e.mu.RLock()
-		bus := e.events
-		e.mu.RUnlock()
-		if bus != nil {
-			bus.Publish(events.SystemMessageEvent{
-				Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-				Level:   "warn",
-			})
-		}
-	case <-time.After(5 * time.Minute):
-		e.mu.RLock()
-		bus := e.events
-		e.mu.RUnlock()
-		if bus != nil {
-			bus.Publish(events.SystemMessageEvent{
-				Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
-				Level:   "error",
-			})
-		}
-	}
 }
 
 func (e *ToolExecutor) identifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
