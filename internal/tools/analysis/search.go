@@ -35,12 +35,33 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
-		return todoRegex.MatchString(line)
-	}, 500)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
+	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+		return todoRegex.MatchString(line)
+	})
+
+	var results []string
+	limit := 500
+	truncated := false
+	for res := range resChan {
+		if len(results) >= limit {
+			truncated = true
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+	if finalErr != nil {
+		return tools.ToolResult{}, finalErr
 	}
 
 	if len(results) == 0 {
@@ -48,7 +69,7 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 	}
 
 	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
+	if truncated {
 		out += "\n... (truncated)"
 	}
 	return tools.ToolResult{Text: out}, nil
@@ -73,12 +94,33 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		path = "."
 	}
 
-	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
-		return re.MatchString(line)
-	}, 100)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
+	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+		return re.MatchString(line)
+	})
+
+	var results []string
+	limit := 100
+	truncated := false
+	for res := range resChan {
+		if len(results) >= limit {
+			truncated = true
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+	if finalErr != nil {
+		return tools.ToolResult{}, finalErr
 	}
 
 	if len(results) == 0 {
@@ -86,7 +128,7 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 	}
 
 	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
+	if truncated {
 		out += "\n... (truncated)"
 	}
 	return tools.ToolResult{Text: out}, nil

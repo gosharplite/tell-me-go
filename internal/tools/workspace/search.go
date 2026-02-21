@@ -50,11 +50,37 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 		return tools.ToolResult{}, fmt.Errorf("invalid regex: %w", err)
 	}
 
-	results, err := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) bool {
-		return re.MatchString(line)
-	}, 100)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	return s.formatSearchResults(results, err, "No matches found.")
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) bool {
+		return re.MatchString(line)
+	})
+
+	var results []string
+	limit := 100
+	truncated := false
+	for res := range resChan {
+		if len(results) >= limit {
+			truncated = true
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	// Check for errors
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+	if finalErr != nil {
+		return tools.ToolResult{}, finalErr
+	}
+
+	return s.formatSearchResults(results, truncated, "No matches found.")
 }
 
 func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -77,9 +103,35 @@ func (s *fileSearcher) grepDefinitions(ctx context.Context, args map[string]inte
 	}
 
 	matcher := getDefinitionMatcher(reQuery, getCompiledPatterns())
-	results, err := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher, 100)
 
-	return s.formatSearchResults(results, err, "No definitions found.")
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, path, matcher)
+
+	var results []string
+	limit := 100
+	truncated := false
+	for res := range resChan {
+		if len(results) >= limit {
+			truncated = true
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+	if finalErr != nil {
+		return tools.ToolResult{}, finalErr
+	}
+
+	return s.formatSearchResults(results, truncated, "No definitions found.")
 }
 
 func getCompiledPatterns() []*regexp.Regexp {
@@ -112,17 +164,13 @@ func getDefinitionMatcher(reQuery *regexp.Regexp, compiledDefs []*regexp.Regexp)
 	}
 }
 
-func (s *fileSearcher) formatSearchResults(results []string, err error, emptyMsg string) (tools.ToolResult, error) {
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
-	}
-
+func (s *fileSearcher) formatSearchResults(results []string, truncated bool, emptyMsg string) (tools.ToolResult, error) {
 	if len(results) == 0 {
 		return tools.ToolResult{Text: emptyMsg}, nil
 	}
 
 	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
+	if truncated {
 		out += "\n... (truncated)"
 	}
 	return tools.ToolResult{Text: out}, nil

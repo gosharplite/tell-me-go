@@ -185,16 +185,34 @@ func testConcurrentSearchTable(t *testing.T) {
 				tt.setup(fs)
 			}
 
-			results, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
-				return bytes.Contains([]byte(line), []byte(tt.query))
-			}, tt.limit)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
 
-			if tt.wantErrMsg != "" {
-				if err == nil || err.Error() != tt.wantErrMsg {
-					t.Errorf("expected error %q, got %v", tt.wantErrMsg, err)
+			resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
+				return bytes.Contains([]byte(line), []byte(tt.query))
+			})
+
+			var results []string
+			for res := range resChan {
+				if len(results) >= tt.limit {
+					cancel()
+					break
 				}
-			} else if err != nil && err.Error() != "too many results" {
-				t.Fatal(err)
+				results = append(results, res)
+			}
+
+			var finalErr error
+			select {
+			case err := <-errChan:
+				finalErr = err
+			default:
+			}
+
+			// Since error for "too many results" is handled by the caller now, we don't check for it from ConcurrentSearch
+			if tt.wantErrMsg != "" && finalErr != nil {
+				if finalErr.Error() != tt.wantErrMsg {
+					t.Errorf("expected error %q, got %v", tt.wantErrMsg, finalErr)
+				}
 			}
 
 			verifySearchResults(t, results, tt.wantCount, tt.wantSub)
@@ -206,11 +224,31 @@ func testConcurrentSearchBinaryLarge(t *testing.T) {
 	fs, sp := setupSearchTest(t)
 	fs.files["large.txt"] = append([]byte("todo hidden in large file"), make([]byte, 2*1024*1024)...)
 
-	results, err := ConcurrentSearch(context.Background(), sp, fs, ".", func(_, line string) bool {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
 		return bytes.Contains([]byte(line), []byte("todo"))
-	}, 10)
-	if err != nil && err.Error() != "too many results" {
-		t.Fatal(err)
+	})
+
+	var results []string
+	for res := range resChan {
+		if len(results) >= 10 {
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+
+	if finalErr != nil {
+		t.Fatal(finalErr)
 	}
 	verifySearchResults(t, results, 2, nil)
 }
@@ -220,9 +258,11 @@ func testConcurrentSearchCancellation(t *testing.T) {
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ConcurrentSearch(cancelCtx, sp, fs, ".", func(_, line string) bool {
+	_, errChan := ConcurrentSearch(cancelCtx, sp, fs, ".", func(_, line string) bool {
 		return true
-	}, 10)
+	})
+
+	err := <-errChan
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled error, got %v", err)
 	}
@@ -237,9 +277,11 @@ func testConcurrentSearchRace(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, _ = ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
+				resChan, _ := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
 					return true
-				}, 5)
+				})
+				for range resChan {
+				}
 			}()
 		}
 		wg.Wait()

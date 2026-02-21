@@ -26,11 +26,30 @@ func BenchmarkConcurrentSearch_FullProject(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
+		ctx, cancel := context.WithCancel(ctx)
+		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
 			return strings.Contains(line, "func ")
-		}, 1000)
-		if err != nil && err.Error() != "too many results" {
-			b.Fatal(err)
+		})
+
+		var results []string
+		for res := range resChan {
+			if len(results) >= 1000 {
+				cancel()
+				break
+			}
+			results = append(results, res)
+		}
+		cancel()
+
+		var finalErr error
+		select {
+		case err := <-errChan:
+			finalErr = err
+		default:
+		}
+
+		if finalErr != nil {
+			b.Fatal(finalErr)
 		}
 	}
 }
@@ -42,11 +61,30 @@ func BenchmarkConcurrentSearch_EarlyStop(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
+		ctx, cancel := context.WithCancel(ctx)
+		resChan, errChan := ConcurrentSearch(ctx, sp, fs, ".", func(_, line string) bool {
 			return strings.Contains(line, "func ")
-		}, 1)
-		if err != nil && err.Error() != "too many results" {
-			b.Fatal(err)
+		})
+
+		var results []string
+		for res := range resChan {
+			if len(results) >= 1 {
+				cancel()
+				break
+			}
+			results = append(results, res)
+		}
+		cancel()
+
+		var finalErr error
+		select {
+		case err := <-errChan:
+			finalErr = err
+		default:
+		}
+
+		if finalErr != nil {
+			b.Fatal(finalErr)
 		}
 	}
 }
