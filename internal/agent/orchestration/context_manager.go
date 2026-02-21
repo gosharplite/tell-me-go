@@ -71,7 +71,6 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	cm.mu.Lock()
-	snapshotVersion := cm.version
 	contents := cm.History.GetContents()
 	history := make([]*llm.Content, len(contents))
 	for i, c := range contents {
@@ -90,19 +89,11 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		return req.History, &req.Metadata, nil
 	}
 
-	// We execute the pipeline. Since some transformers might modify history
-	// and want it persisted (Pruner, Gatekeeper), but others only want it
-	// for the API (warningInjector), we handle persistence carefully through the pipeline.
+	// We execute the pipeline to prepare the Read-Model (context window).
+	// We DO NOT persist the pruned/transformed history back to the store,
+	// preserving the user's full Event Sourced history safely on disk.
 	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
-		cm.mu.Lock()
-		defer cm.mu.Unlock()
-
-		if cm.version != snapshotVersion {
-			return fmt.Errorf("%w: concurrent history modification detected", llm.ErrTransient)
-		}
-
-		cm.version++
-		return cm.History.SetContents(ctx, h)
+		return nil
 	})
 	if err != nil {
 		return nil, nil, err

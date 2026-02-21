@@ -39,20 +39,19 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	a := New(client, h, registry, sm, bus, nil, "test-provider")
 
 	// Prepare should trigger the contentCleaner transformer
-	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	// Verify history was cleaned and persisted
-	contents := h.GetContents()
-	if len(contents) == 0 {
+	// Verify history was cleaned for the context window
+	if len(preparedHistory) == 0 {
 		t.Fatal("History is empty")
 	}
-	if len(contents[0].Parts) == 0 {
+	if len(preparedHistory[0].Parts) == 0 {
 		t.Error("Pipeline failed to inject placeholder for empty parts")
-	} else if contents[0].Parts[0].Text != "[empty response]" {
-		t.Errorf("Expected placeholder text, got: %s", contents[0].Parts[0].Text)
+	} else if preparedHistory[0].Parts[0].Text != "[empty response]" {
+		t.Errorf("Expected placeholder text, got: %s", preparedHistory[0].Parts[0].Text)
 	}
 }
 
@@ -77,14 +76,13 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
-	_, _, err := a.ctxManager.Prepare(ctx, 1)
+	preparedHistory, _, err := a.ctxManager.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	contents := h.GetContents()
-	if len(contents) > 2 {
-		t.Errorf("History not pruned correctly, got %d messages, expected <= 2 (1 turn)", len(contents))
+	if len(preparedHistory) > 2 {
+		t.Errorf("History not pruned correctly, got %d messages, expected <= 2 (1 turn)", len(preparedHistory))
 	}
 }
 

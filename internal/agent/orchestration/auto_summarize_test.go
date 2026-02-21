@@ -85,27 +85,31 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Fatalf("expected 18 messages, got %d", len(initialContents))
 	}
 
-	// Call Prepare, which should trigger AutoSummarize
-	_, metadata, err := cm.Prepare(ctx, 1)
+	// Call Prepare, which should trigger AutoSummarize on the context window
+	preparedHistory, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
 	t.Logf("Tokens after Prepare: %d", metadata.FinalTokenCount)
 
-	// Check if history was replaced
-	newContents := hManager.GetContents()
+	// Check if the returned context window was replaced
 	// Initial 18 messages (9 turns).
 	// maxTurnsToSummarize = 9 / 2 = 4.
 	// 4 turns (8 messages) replaced by 2.
 	// Total: 18 - 8 + 2 = 12 messages.
-	if len(newContents) != 12 {
-		t.Errorf("expected 12 messages after auto-summarization, got %d", len(newContents))
+	if len(preparedHistory) != 12 {
+		t.Errorf("expected 12 messages after auto-summarization, got %d", len(preparedHistory))
 	}
 
-	// Index 0 should be the auto-summary user message
-	if !strings.Contains(newContents[0].Parts[0].Text, "System Auto-Summary") {
-		t.Errorf("first message should be auto-summary, got: %s", newContents[0].Parts[0].Text)
+	// Index 0 should be the auto-summary user message in the returned context window
+	if !strings.Contains(preparedHistory[0].Parts[0].Text, "System Auto-Summary") {
+		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
+	}
+
+	// Verify that the persistent store remains untouched
+	if len(hManager.GetContents()) != 18 {
+		t.Errorf("expected 18 messages in persistent store, got %d", len(hManager.GetContents()))
 	}
 }
 
@@ -239,28 +243,32 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	}
 
 	// Trigger Prepare
-	_, _, err := cm.Prepare(ctx, 1)
+	preparedHistory, _, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 
-	newContents := hManager.GetContents()
 	// Should have summarized 6/2 = 3 turns (6 messages) replaced by 2 messages.
 	// Total: 12 - 6 + 2 = 8 messages.
-	if len(newContents) != 8 {
-		t.Errorf("expected 8 messages, got %d", len(newContents))
+	if len(preparedHistory) != 8 {
+		t.Errorf("expected 8 messages in context window, got %d", len(preparedHistory))
 	}
 
 	// First message should be the auto-summary
-	if !strings.Contains(newContents[0].Parts[0].Text, "System Auto-Summary") {
-		t.Errorf("first message should be auto-summary, got: %s", newContents[0].Parts[0].Text)
+	if !strings.Contains(preparedHistory[0].Parts[0].Text, "System Auto-Summary") {
+		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
 	}
 
 	// Ensure no "system" role messages in history (system instructions are client-side)
-	for _, c := range newContents {
+	for _, c := range preparedHistory {
 		if c.Role == "system" {
-			t.Errorf("found system role message in history, which should be avoided")
+			t.Errorf("found system role message in context window, which should be avoided")
 		}
+	}
+
+	// Verify persistent store remains untouched
+	if len(hManager.GetContents()) != 12 {
+		t.Errorf("expected 12 messages in persistent store, got %d", len(hManager.GetContents()))
 	}
 }
 
@@ -330,7 +338,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	// Total messages = 2 + 8 = 10.
 
 	// 5. Call Prepare. It should trigger auto-summarize because of tool schema injection.
-	_, metadata, err := cm.Prepare(ctx, 1)
+	preparedHistory, metadata, err := cm.Prepare(ctx, 1)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
 	}
@@ -339,10 +347,14 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 		t.Errorf("Expected auto-summarization to be attempted due to tool schema token pressure, but it wasn't.")
 	}
 
-	// Verify that the resulting history is shorter
-	newContents := hManager.GetContents()
-	if len(newContents) >= 10 {
-		t.Errorf("Expected history to be pruned/summarized, but still have %d messages", len(newContents))
+	// Verify that the resulting context window is shorter
+	if len(preparedHistory) >= 10 {
+		t.Errorf("Expected context window to be pruned/summarized, but still have %d messages", len(preparedHistory))
+	}
+
+	// Verify the persistent store is unchanged
+	if len(hManager.GetContents()) < 10 {
+		t.Errorf("Expected persistent store to be untouched, got %d messages", len(hManager.GetContents()))
 	}
 }
 
