@@ -272,6 +272,40 @@ type taskBatch struct {
 }
 
 func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) {
+	batches := e.buildExecutionBatches(calls, declinedMap, resChan)
+
+	for batchIdx, batch := range batches {
+		if batch.isSerial {
+			taskIdx := batch.tasks[0]
+			fc := calls[taskIdx]
+			if !e.executeSerialTask(ctx, taskIdx, fc, resChan) {
+				// Fill remaining slots in resChan so the collector doesn't hang
+				for j := batchIdx; j < len(batches); j++ {
+					for _, skippedIdx := range batches[j].tasks {
+						if j == batchIdx && skippedIdx <= taskIdx {
+							continue // Already executed or failed
+						}
+						resChan <- toolExecResult{
+							index: skippedIdx,
+							name:  calls[skippedIdx].Name,
+							tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+						}
+					}
+				}
+				return // Exit the execution plan early
+			}
+		} else {
+			var wg sync.WaitGroup
+			for _, taskIdx := range batch.tasks {
+				fc := calls[taskIdx]
+				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
+			}
+			wg.Wait()
+		}
+	}
+}
+
+func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, resChan chan<- toolExecResult) []taskBatch {
 	e.mu.RLock()
 	reg := e.registry
 	e.mu.RUnlock()
@@ -316,35 +350,7 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 		batches = append(batches, *currentBatch)
 	}
 
-	for batchIdx, batch := range batches {
-		if batch.isSerial {
-			taskIdx := batch.tasks[0]
-			fc := calls[taskIdx]
-			if !e.executeSerialTask(ctx, taskIdx, fc, resChan) {
-				// Fill remaining slots in resChan so the collector doesn't hang
-				for j := batchIdx; j < len(batches); j++ {
-					for _, skippedIdx := range batches[j].tasks {
-						if j == batchIdx && skippedIdx <= taskIdx {
-							continue // Already executed or failed
-						}
-						resChan <- toolExecResult{
-							index: skippedIdx,
-							name:  calls[skippedIdx].Name,
-							tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
-						}
-					}
-				}
-				return // Exit the execution plan early
-			}
-		} else {
-			var wg sync.WaitGroup
-			for _, taskIdx := range batch.tasks {
-				fc := calls[taskIdx]
-				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
-			}
-			wg.Wait()
-		}
-	}
+	return batches
 }
 
 func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
