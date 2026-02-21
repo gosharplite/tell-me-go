@@ -702,7 +702,7 @@ func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, r
 	}
 }
 
-func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
+func (e *ToolExecutor) identifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
 	declinedMap := make(map[int]bool)
 	var consentIndices []int
 
@@ -721,6 +721,12 @@ func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.Fun
 			}
 		}()
 	}
+
+	return consentIndices, declinedMap
+}
+
+func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
+	consentIndices, declinedMap := e.identifyConsentItems(calls)
 
 	if len(consentIndices) == 0 {
 		return declinedMap
