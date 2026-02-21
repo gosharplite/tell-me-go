@@ -32,10 +32,13 @@ func (s *sessionState) SetInfo(info services.SessionInfo) {
 func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
-		storageType = "file"
+		storageType = "sqlite" // Set sqlite as default storage
 	}
 
-	taskStore, configStore, scratchStore, paths := initRepositories(configDir, storageType)
+	taskStore, configStore, scratchStore, paths, err := initRepositories(ctx, configDir, storageType)
+	if err != nil {
+		return nil, err
+	}
 
 	tasks, config, scratch, err := initServices(ctx, taskStore, configStore, scratchStore)
 	if err != nil {
@@ -60,11 +63,11 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 	return state, nil
 }
 
-func initRepositories(configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, map[string]string) {
+func initRepositories(ctx context.Context, configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, map[string]string, error) {
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths
+		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), paths, nil
 	}
 
 	fs := NewOSFileSystem()
@@ -72,14 +75,37 @@ func initRepositories(configDir, storageType string) (services.ListStore[service
 	configPath := filepath.Join(configDir, "config.json")
 	scratchPath := filepath.Join(configDir, "scratchpad.md")
 
-	paths["tasks_file"] = tasksPath
-	paths["config_file"] = configPath
-	paths["scratch_file"] = scratchPath
+	if storageType == "file" {
+		// Legacy flat file storage (for tests mostly)
+		paths["tasks_file"] = tasksPath
+		paths["config_file"] = configPath
+		paths["scratch_file"] = scratchPath
 
-	return newTaskRepository(fs, tasksPath),
-		newConfigRepository(fs, configPath),
-		newScratchpadRepository(fs, scratchPath),
-		paths
+		return newTaskRepository(fs, tasksPath),
+			newConfigRepository(fs, configPath),
+			newScratchpadRepository(fs, scratchPath),
+			paths, nil
+	}
+
+	// SQLite implementation
+	dbPath := filepath.Join(configDir, "tellmego.db")
+	paths["db_file"] = dbPath
+
+	db, err := InitSQLiteDB(dbPath)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	// Perform migration if needed
+	err = MigrateFromJSON(ctx, db, fs, tasksPath, configPath, scratchPath)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	return newSQLiteTaskStore(db),
+		newSQLiteConfigStore(db),
+		newSQLiteScratchpadStore(db),
+		paths, nil
 }
 
 func initServices(ctx context.Context, taskStore services.ListStore[services.Task], configStore, scratchStore services.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {

@@ -6,6 +6,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 var binPath string
@@ -207,7 +210,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 	}
 
 	sessionFiles := []string{"history.json", "tokens.log", "commands.log"}
-	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
+	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log", "tellmego.db"}
 
 	for _, f := range sessionFiles {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
@@ -585,15 +588,24 @@ func TestManageTasks(t *testing.T) {
 	// 2. Run CLI and Verification
 	runAgentStep(t, homeDir, env, "add a task", []string{"Task added."})
 
-	// Check if file exists and has content
-	taskFile := filepath.Join(homeDir, "output", "assistant", "tasks.json")
-	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
-		t.Fatalf("Tasks file missing at %s", taskFile)
+	// Check if database exists and has content
+	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		t.Fatalf("SQLite database missing at %s", dbFile)
 	}
 
-	content, _ := os.ReadFile(taskFile)
-	if !strings.Contains(string(content), "End-to-End Test Task") {
-		t.Errorf("Tasks file mismatch. Got: %s", string(content))
+	importSQL := true
+	if importSQL {
+		db, err := sql.Open("sqlite", dbFile)
+		if err != nil {
+			t.Fatalf("Failed to open sqlite db: %v", err)
+		}
+		defer db.Close()
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE content LIKE '%End-to-End Test Task%'").Scan(&count)
+		if err != nil || count == 0 {
+			t.Errorf("Task not found in sqlite database")
+		}
 	}
 }
 
@@ -654,15 +666,21 @@ func TestManageScratchpad(t *testing.T) {
 	// 2. Run CLI and Verification
 	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Scratchpad updated."})
 
-	// Check if file exists and has content
-	scratchpadFile := filepath.Join(homeDir, "output", "assistant", "scratchpad.md")
-	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
-		t.Fatalf("Scratchpad file missing at %s", scratchpadFile)
+	// Check if database exists and has content
+	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		t.Fatalf("SQLite database missing at %s", dbFile)
 	}
 
-	content, _ := os.ReadFile(scratchpadFile)
-	if !strings.Contains(string(content), "# E2E Scratchpad") {
-		t.Errorf("Scratchpad mismatch. Got: %s", string(content))
+	db, err := sql.Open("sqlite", dbFile)
+	if err != nil {
+		t.Fatalf("Failed to open sqlite db: %v", err)
+	}
+	defer db.Close()
+	var contentStr string
+	err = db.QueryRow("SELECT content FROM scratchpad WHERE id = 1").Scan(&contentStr)
+	if err != nil || !strings.Contains(contentStr, "# E2E Scratchpad") {
+		t.Errorf("Scratchpad mismatch. Got: %v (err: %v)", contentStr, err)
 	}
 }
 

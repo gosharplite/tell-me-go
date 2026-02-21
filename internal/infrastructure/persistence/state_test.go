@@ -29,8 +29,8 @@ func TestNewSessionState_FileStorage(t *testing.T) {
 	verifyStateInitialization(t, state)
 
 	info := state.GetInfo()
-	if info.Env["STORAGE_TYPE"] != "file" {
-		t.Errorf("expected STORAGE_TYPE to be file, got %s", info.Env["STORAGE_TYPE"])
+	if info.Env["STORAGE_TYPE"] != "sqlite" {
+		t.Errorf("expected STORAGE_TYPE to be sqlite, got %s", info.Env["STORAGE_TYPE"])
 	}
 
 	if info.Paths["config_dir"] != tempDir {
