@@ -85,6 +85,7 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	close(blockCh)
 	wg.Wait()
 
-	// 5. Assert result is NO error, because Prepare no longer persists history
-	require.NoError(t, prepareErr)
+	// 5. Assert result is an error, because Prepare detects concurrent history update
+	require.ErrorIs(t, prepareErr, llm.ErrTransient)
+	require.Contains(t, prepareErr.Error(), "concurrent history modification detected")
 }

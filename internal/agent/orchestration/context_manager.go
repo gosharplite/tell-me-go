@@ -141,33 +141,37 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 
 	// 4. UPDATE CACHE: Store the Materialized View
 	cm.mu.Lock()
-	if cm.version == snapshotVersion {
-		cm.cachedWindow = make([]*llm.Content, len(req.History))
-		for i, c := range req.History {
-			cm.cachedWindow[i] = llm.CloneContent(c)
-		}
-
-		clonedMeta := req.Metadata
-		if req.Metadata.Warnings != nil {
-			clonedMeta.Warnings = make([]string, len(req.Metadata.Warnings))
-			copy(clonedMeta.Warnings, req.Metadata.Warnings)
-		}
-		if req.Metadata.KeptByPolicy != nil {
-			clonedMeta.KeptByPolicy = make(map[string]int)
-			for k, v := range req.Metadata.KeptByPolicy {
-				clonedMeta.KeptByPolicy[k] = v
-			}
-		}
-		if req.Metadata.History != nil {
-			clonedMeta.History = make([]*llm.Content, len(req.Metadata.History))
-			for i, c := range req.Metadata.History {
-				clonedMeta.History[i] = llm.CloneContent(c)
-			}
-		}
-
-		cm.cachedMetadata = &clonedMeta
-		cm.cachedVersion = cm.version
+	if cm.version != snapshotVersion {
+		currentVersion := cm.version
+		cm.mu.Unlock()
+		return nil, nil, fmt.Errorf("%w: concurrent history modification detected (expected %d, got %d)", llm.ErrTransient, snapshotVersion, currentVersion)
 	}
+
+	cm.cachedWindow = make([]*llm.Content, len(req.History))
+	for i, c := range req.History {
+		cm.cachedWindow[i] = llm.CloneContent(c)
+	}
+
+	clonedMeta := req.Metadata
+	if req.Metadata.Warnings != nil {
+		clonedMeta.Warnings = make([]string, len(req.Metadata.Warnings))
+		copy(clonedMeta.Warnings, req.Metadata.Warnings)
+	}
+	if req.Metadata.KeptByPolicy != nil {
+		clonedMeta.KeptByPolicy = make(map[string]int)
+		for k, v := range req.Metadata.KeptByPolicy {
+			clonedMeta.KeptByPolicy[k] = v
+		}
+	}
+	if req.Metadata.History != nil {
+		clonedMeta.History = make([]*llm.Content, len(req.Metadata.History))
+		for i, c := range req.Metadata.History {
+			clonedMeta.History[i] = llm.CloneContent(c)
+		}
+	}
+
+	cm.cachedMetadata = &clonedMeta
+	cm.cachedVersion = cm.version
 	cm.mu.Unlock()
 
 	return req.History, &req.Metadata, nil

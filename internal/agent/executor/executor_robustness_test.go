@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,4 +52,60 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
+	reg := registry.New()
+	
+	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
+	blockCh := make(chan struct{})
+	reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+		select {
+		case <-blockCh:
+			return tools.ToolResult{Text: "ok"}, nil
+		case <-ctx.Done():
+			return tools.ToolResult{Text: "canceled", Error: ctx.Err()}, nil
+		}
+	})
+
+	exec := NewToolExecutor(reg, nil, nil)
+	t.Cleanup(exec.Shutdown)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	content := &llm.Content{
+		Parts: []*llm.Part{
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
+			{FunctionCall: &llm.FunctionCall{Name: "blocking_tool"}},
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	
+	var execErr error
+	go func() {
+		defer wg.Done()
+		_, execErr = exec.Execute(ctx, content, 0, 10)
+	}()
+
+	// Wait a moment for the executor to enqueue the tools and block
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the context mid-batch
+	cancel()
+	
+	// Unblock the tools
+	close(blockCh)
+
+	wg.Wait()
+
+	if execErr == nil {
+		t.Fatalf("expected context canceled error, got nil")
+	}
+
+	if !strings.Contains(execErr.Error(), "canceled") {
+		t.Fatalf("expected context canceled error, got %v", execErr)
+	}
 }
