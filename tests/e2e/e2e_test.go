@@ -87,7 +87,7 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Env = append(cmd.Env, "GEMINI_API_KEY=dummy")
-	
+
 	// If a mock server is spun up, TELL_ME_MOCK_URL might be needed by gemini.go
 	// we will inject it where necessary inside the tests.
 
@@ -440,7 +440,7 @@ func TestSymlinkAttack(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
@@ -466,7 +466,7 @@ func TestManageTasks(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI and Verification
@@ -506,7 +506,7 @@ func TestManageScratchpad(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL,
-				"TELL_ME_NO_STREAM=true",
+		"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI and Verification
@@ -570,7 +570,7 @@ func setupProviderMockServer(t *testing.T, provider string, toolName string, too
 		if err != nil {
 			return
 		}
-		
+
 		t.Logf("MOCK_SERVER_REQUEST [%s]: %s\n", provider, string(bodyBytes))
 
 		w.Header().Set("Content-Type", "application/json")
@@ -689,10 +689,10 @@ func createToolCallResponse(provider string, name string, args map[string]interf
 						"role": "assistant",
 						"tool_calls": []interface{}{
 							map[string]interface{}{
-								"id": "call_123",
+								"id":   "call_123",
 								"type": "function",
 								"function": map[string]interface{}{
-									"name": name,
+									"name":      name,
 									"arguments": argsStr,
 								},
 							},
@@ -708,9 +708,9 @@ func createToolCallResponse(provider string, name string, args map[string]interf
 			"role": "assistant",
 			"content": []interface{}{
 				map[string]interface{}{
-					"type": "tool_use",
-					"id": "tool_123",
-					"name": name,
+					"type":  "tool_use",
+					"id":    "tool_123",
+					"name":  name,
 					"input": args,
 				},
 			},
@@ -732,4 +732,3 @@ func createTextResponse(provider string, text string) string {
 	}
 	return ""
 }
-

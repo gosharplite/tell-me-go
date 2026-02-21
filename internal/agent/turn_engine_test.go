@@ -1289,7 +1289,7 @@ func TestTurnEngine_ContextCancellation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			
+
 			p, tr := tt.setup(ctx, cancel)
 			res, err := p.process(ctx, tr)
 			tt.validate(t, res, err)
