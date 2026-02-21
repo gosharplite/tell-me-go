@@ -90,7 +90,7 @@ func setupTodoWorkspace(t *testing.T, files map[string]string) (*searchManager, 
 	fs := persistence.NewMockFileSystem()
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
-	tempDir := "/tmp/todo-test"
+	tempDir := "/mock/todo-test"
 	sm.RegisterSafePath(tempDir)
 
 	for path, content := range files {
@@ -108,7 +108,7 @@ func TestSearchUsagesGlobally(t *testing.T) {
 	m := &searchManager{SP: sm, FS: fs}
 	ctx := context.Background()
 
-	tempDir := "/tmp/usages"
+	tempDir := "/mock/usages"
 
 	// Create some files in mock FS
 	if err := fs.WriteFile(ctx, filepath.Join(tempDir, "a.go"), []byte("package a\nfunc MyFunc() {}"), 0644); err != nil {

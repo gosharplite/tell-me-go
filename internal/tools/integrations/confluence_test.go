@@ -598,6 +598,8 @@ func TestConfluenceManager_MarkdownToXhtml(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	mockClient := new(mockConfluenceClient)
 	m := newconfluenceManager(nil, mockClient)
 
@@ -617,6 +619,8 @@ func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	t.Run("Null Results", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := newconfluenceManager(nil, mockClient)

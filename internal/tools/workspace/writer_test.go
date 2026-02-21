@@ -154,12 +154,15 @@ func (m *mockFS) WriteFile(ctx context.Context, filename string, data []byte, pe
 func TestWriteFile_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
+	sm.RegisterSafePath("/tmp")
+	sm.RegisterSafePath("/private/tmp") // For macOS symlinks
+	sm.RegisterSafePath("/mock")
 
 	t.Run("mkdir failure", func(t *testing.T) {
 		mfs := &mockFS{mkdirErr: fmt.Errorf("disk full")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: mfs}
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
-			"filepath": "/tmp/any/file.txt",
+			"filepath": "/mock/any/file.txt",
 			"content":  "test",
 			"reason":   "testing",
 		})
@@ -172,6 +175,7 @@ func TestWriteFile_Failures(t *testing.T) {
 		mfs := &mockFS{writeErr: fmt.Errorf("write error")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: mfs}
 		tempDir := t.TempDir()
+		sm.RegisterSafePath(tempDir)
 		path := filepath.Join(tempDir, "file.txt")
 		_, err := w.writeFile(context.Background(), map[string]interface{}{
 			"filepath": path,
@@ -257,12 +261,15 @@ func TestReplaceText_NotFound(t *testing.T) {
 func TestAppendText_Failures(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.SetBypassActive(true)
+	sm.RegisterSafePath("/tmp")
+	sm.RegisterSafePath("/private/tmp")
+	sm.RegisterSafePath("/mock")
 
 	t.Run("open failure", func(t *testing.T) {
 		mfs := &mockFS_Append{FileSystem: infrapersistence.NewOSFileSystem(), openErr: fmt.Errorf("open error")}
 		w := &fileWriter{sm: sm, bm: newBackupManager(sm, 10), fs: mfs}
 		_, err := w.appendText(context.Background(), map[string]interface{}{
-			"filepath": "/tmp/any.txt",
+			"filepath": "/mock/any.txt",
 			"content":  "test",
 			"reason":   "testing",
 		})
