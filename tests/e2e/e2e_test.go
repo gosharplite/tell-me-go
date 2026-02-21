@@ -604,72 +604,82 @@ func extractToolResult(reqBody []byte, provider string) *string {
 
 	switch provider {
 	case "google":
-		contents, ok := body["contents"].([]interface{})
-		if !ok || len(contents) == 0 {
-			return nil
-		}
-		lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		parts, ok := lastTurn["parts"].([]interface{})
-		if !ok || len(parts) == 0 {
-			return nil
-		}
-		part, ok := parts[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		functionResponse, ok := part["functionResponse"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		responseMap, ok := functionResponse["response"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		result, _ := responseMap["result"].(string)
-		return &result
-
+		return extractGoogleToolResult(body)
 	case "openai":
-		messages, ok := body["messages"].([]interface{})
-		if !ok || len(messages) == 0 {
-			return nil
-		}
-		lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		if role, _ := lastMsg["role"].(string); role != "tool" {
-			return nil
-		}
-		content, _ := lastMsg["content"].(string)
-		return &content
-
+		return extractOpenAIToolResult(body)
 	case "anthropic":
-		messages, ok := body["messages"].([]interface{})
-		if !ok || len(messages) == 0 {
-			return nil
-		}
-		lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		contents, ok := lastMsg["content"].([]interface{})
-		if !ok || len(contents) == 0 {
-			return nil
-		}
-		for _, c := range contents {
-			block, ok := c.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if typ, _ := block["type"].(string); typ == "tool_result" {
-				contentStr, _ := block["content"].(string)
-				return &contentStr
-			}
-		}
+		return extractAnthropicToolResult(body)
+	}
+	return nil
+}
+
+func extractGoogleToolResult(body map[string]interface{}) *string {
+	contents, ok := body["contents"].([]interface{})
+	if !ok || len(contents) == 0 {
 		return nil
+	}
+	lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	parts, ok := lastTurn["parts"].([]interface{})
+	if !ok || len(parts) == 0 {
+		return nil
+	}
+	part, ok := parts[0].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	functionResponse, ok := part["functionResponse"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	responseMap, ok := functionResponse["response"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	result, _ := responseMap["result"].(string)
+	return &result
+}
+
+func extractOpenAIToolResult(body map[string]interface{}) *string {
+	messages, ok := body["messages"].([]interface{})
+	if !ok || len(messages) == 0 {
+		return nil
+	}
+	lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	if role, _ := lastMsg["role"].(string); role != "tool" {
+		return nil
+	}
+	content, _ := lastMsg["content"].(string)
+	return &content
+}
+
+func extractAnthropicToolResult(body map[string]interface{}) *string {
+	messages, ok := body["messages"].([]interface{})
+	if !ok || len(messages) == 0 {
+		return nil
+	}
+	lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	contents, ok := lastMsg["content"].([]interface{})
+	if !ok || len(contents) == 0 {
+		return nil
+	}
+	for _, c := range contents {
+		block, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if typ, _ := block["type"].(string); typ == "tool_result" {
+			contentStr, _ := block["content"].(string)
+			return &contentStr
+		}
 	}
 	return nil
 }
