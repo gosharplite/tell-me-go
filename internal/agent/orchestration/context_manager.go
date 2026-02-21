@@ -16,8 +16,13 @@ import (
 
 // ContextManager handles the preparation of context for the LLM.
 type ContextManager struct {
-	mu         sync.Mutex
-	version    int
+	mu      sync.Mutex
+	version int
+
+	cachedVersion  int
+	cachedWindow   []*llm.Content
+	cachedMetadata *Metadata
+
 	Strategy   *ContextStrategy
 	History    services.HistoryManager
 	Events     events.EventBus
@@ -58,6 +63,7 @@ func NewContextManager(strategy *ContextStrategy, history services.HistoryManage
 func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	cm.version++
 	if cm.Strategy != nil {
 		cm.Strategy.SetLimits(limits.MaxHistoryTokens, limits.MaxToolTurns, limits.MaxHistoryTurns)
 		cm.Strategy.setContextWindow(limits.ContextWindow)
@@ -71,6 +77,39 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	cm.mu.Lock()
+	snapshotVersion := cm.version
+
+	// 1. CACHE HIT: Return cached Read-Model if version hasn't changed
+	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
+		cachedHistory := make([]*llm.Content, len(cm.cachedWindow))
+		for i, c := range cm.cachedWindow {
+			cachedHistory[i] = llm.CloneContent(c)
+		}
+
+		// Clone metadata safely
+		clonedMeta := *cm.cachedMetadata
+		if cm.cachedMetadata.Warnings != nil {
+			clonedMeta.Warnings = make([]string, len(cm.cachedMetadata.Warnings))
+			copy(clonedMeta.Warnings, cm.cachedMetadata.Warnings)
+		}
+		if cm.cachedMetadata.KeptByPolicy != nil {
+			clonedMeta.KeptByPolicy = make(map[string]int)
+			for k, v := range cm.cachedMetadata.KeptByPolicy {
+				clonedMeta.KeptByPolicy[k] = v
+			}
+		}
+		if cm.cachedMetadata.History != nil {
+			clonedMeta.History = make([]*llm.Content, len(cm.cachedMetadata.History))
+			for i, c := range cm.cachedMetadata.History {
+				clonedMeta.History[i] = llm.CloneContent(c)
+			}
+		}
+
+		cm.mu.Unlock()
+		return cachedHistory, &clonedMeta, nil
+	}
+
+	// 2. CACHE MISS: Load raw history
 	contents := cm.History.GetContents()
 	history := make([]*llm.Content, len(contents))
 	for i, c := range contents {
@@ -89,6 +128,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 		return req.History, &req.Metadata, nil
 	}
 
+	// 3. Execute Pipeline
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
@@ -98,6 +138,37 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// 4. UPDATE CACHE: Store the Materialized View
+	cm.mu.Lock()
+	if cm.version == snapshotVersion {
+		cm.cachedWindow = make([]*llm.Content, len(req.History))
+		for i, c := range req.History {
+			cm.cachedWindow[i] = llm.CloneContent(c)
+		}
+
+		clonedMeta := req.Metadata
+		if req.Metadata.Warnings != nil {
+			clonedMeta.Warnings = make([]string, len(req.Metadata.Warnings))
+			copy(clonedMeta.Warnings, req.Metadata.Warnings)
+		}
+		if req.Metadata.KeptByPolicy != nil {
+			clonedMeta.KeptByPolicy = make(map[string]int)
+			for k, v := range req.Metadata.KeptByPolicy {
+				clonedMeta.KeptByPolicy[k] = v
+			}
+		}
+		if req.Metadata.History != nil {
+			clonedMeta.History = make([]*llm.Content, len(req.Metadata.History))
+			for i, c := range req.Metadata.History {
+				clonedMeta.History[i] = llm.CloneContent(c)
+			}
+		}
+
+		cm.cachedMetadata = &clonedMeta
+		cm.cachedVersion = cm.version
+	}
+	cm.mu.Unlock()
 
 	return req.History, &req.Metadata, nil
 }
@@ -128,6 +199,7 @@ func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) 
 func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	cm.version++
 	cm.Pipeline = p
 }
 
