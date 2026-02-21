@@ -543,7 +543,6 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 	nextVersion := currentData.Version.Number + 1
 	xhtml := m.markdownToXhtml(params.MarkdownContent)
 
-
 	updatePayload := map[string]interface{}{
 		"id":     params.PageID,
 		"status": "current",

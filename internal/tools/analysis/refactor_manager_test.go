@@ -70,7 +70,6 @@ func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {
 func TestMoveDefinition(t *testing.T) {
 	ctx := context.Background()
 
-
 	t.Run("IsPathWritable error", func(t *testing.T) {
 		sp := &refactorMockSecurityProvider{
 			IsPathWritableFunc: func(path string) (string, error) {
@@ -194,7 +193,6 @@ func verifyFileContent(t *testing.T, path string, expectedContains []string, exp
 
 func TestRenameSymbol(t *testing.T) {
 	ctx := context.Background()
-
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
 		sp := &refactorMockSecurityProvider{}

@@ -298,4 +298,3 @@ func TestGitManagerInternal(t *testing.T) {
 		t.Errorf("expected output 'error detail', got %q", out)
 	}
 }
-

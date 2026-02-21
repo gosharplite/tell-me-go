@@ -45,7 +45,6 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	plan.SrcFile = resolvedSrc
 	plan.DstFile = resolvedDst
 
-
 	tx := newTransaction()
 	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
 		return tools.ToolResult{}, err

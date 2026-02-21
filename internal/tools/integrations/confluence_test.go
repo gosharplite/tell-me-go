@@ -499,7 +499,6 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		mockClient.AssertExpectations(t)
 	})
 
-
 	t.Run("Conflict 409", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		input := "y\n"

@@ -116,7 +116,6 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
 
-
 	res, err := m.runGitCommand(ctx, "commit", "-m", message)
 	return tools.ToolResult{Text: res}, err
 }
@@ -134,7 +133,6 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 	if name == "" {
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
 	}
-
 
 	res, err := m.runGitCommand(ctx, "checkout", "-b", name)
 	return tools.ToolResult{Text: res}, err
