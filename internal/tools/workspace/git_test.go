@@ -197,28 +197,12 @@ func TestGitDestructiveActions(t *testing.T) {
 			expected: "[main abc] feat: test",
 		},
 		{
-			name:     "git_commit denied",
-			toolName: "git_commit",
-			args:     map[string]interface{}{"message": "feat: test"},
-			approved: false,
-			wantErr:  true,
-			expected: "Action denied by user.",
-		},
-		{
 			name:     "git_create_branch approved",
 			toolName: "git_create_branch",
 			args:     map[string]interface{}{"name": "new-branch", "reason": "test"},
 			approved: true,
 			mockOut:  "Switched to a new branch 'new-branch'",
 			expected: "Switched to a new branch 'new-branch'",
-		},
-		{
-			name:     "git_create_branch denied",
-			toolName: "git_create_branch",
-			args:     map[string]interface{}{"name": "new-branch", "reason": "test"},
-			approved: false,
-			wantErr:  true,
-			expected: "Action denied by user.",
 		},
 		{
 			name:     "git_commit missing message",
@@ -315,21 +299,3 @@ func TestGitManagerInternal(t *testing.T) {
 	}
 }
 
-func TestGitConfirmError(t *testing.T) {
-	// An interactor that always returns an error
-	sm := security.NewSecurityManager(&security.MockInteractor{Err: fmt.Errorf("read error")})
-
-	executor := &mockGitExecutor{
-		handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-			return []byte("ok"), nil
-		},
-	}
-
-	reg := registry.New()
-	Register(reg, sm, executor, security.NewCommandValidator(sm, nil), infrapersistence.NewOSFileSystem())
-
-	_, err := reg.Execute(context.Background(), "git_commit", map[string]interface{}{"message": "test"})
-	if err == nil {
-		t.Error("expected error from ConfirmDestructiveAction, got nil")
-	}
-}

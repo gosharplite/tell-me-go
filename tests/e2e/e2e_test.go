@@ -396,7 +396,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "write a file", []string{"[CONFIRMATION REQUIRED]", "File written."})
+	runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."})
 
 	// Verify file actually written
 	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
@@ -449,7 +449,7 @@ func TestWriteFileDenial(t *testing.T) {
 				// We check the tool response
 				result := toolResponse["response"].(map[string]interface{})["result"].(string)
 
-				if strings.Contains(result, "The user explicitly denied this action.") {
+				if strings.Contains(result, "User explicitly denied this action.") {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
 				} else {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Error: Denial failed."}]}}]}`)

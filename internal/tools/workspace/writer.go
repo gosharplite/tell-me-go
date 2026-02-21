@@ -40,14 +40,6 @@ func (w *fileWriter) writeFile(ctx context.Context, args map[string]interface{})
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Reason: %s\n\nContent (full):\n%s", params.Reason, content)
-	approved, err := w.sm.ConfirmDestructiveAction(ctx, "WRITE FILE", resolvedPath, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	w.bm.snapshot(resolvedPath, "WRITE")
 
@@ -86,14 +78,6 @@ func (w *fileWriter) replaceText(ctx context.Context, args map[string]interface{
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Reason: %s\n\nReplace (first occurrence):\n%s\nWith:\n%s", params.Reason, oldText, newText)
-	approved, err := w.sm.ConfirmDestructiveAction(ctx, "REPLACE TEXT", resolvedPath, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	w.bm.snapshot(resolvedPath, "REPLACE")
 
@@ -139,14 +123,6 @@ func (w *fileWriter) appendText(ctx context.Context, args map[string]interface{}
 	}
 
 	// Confirmation Gate
-	detail := fmt.Sprintf("Reason: %s\n\nContent:\n%s", params.Reason, content)
-	approved, err := w.sm.ConfirmDestructiveAction(ctx, "APPEND TEXT", resolvedPath, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	w.bm.snapshot(resolvedPath, "APPEND")
 

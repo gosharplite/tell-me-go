@@ -178,9 +178,50 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	bus := e.events
 	e.mu.RUnlock()
 
+	declinedMap := make(map[int]bool)
+	var consentIndices []int
+
+	func() {
+		defer func() {
+			_ = recover() // Ignore panics during pre-flight; they will be caught during execution
+		}()
+		for i, call := range calls {
+			tool, err := e.resolveTool(call)
+			if err == nil && tool.RequiresConsent {
+				consentIndices = append(consentIndices, i)
+			}
+		}
+	}()
+
+	if len(consentIndices) > 0 {
+		var sb strings.Builder
+		sb.WriteString("The agent requested the following actions requiring approval:\n")
+		for idx, i := range consentIndices {
+			c := calls[i]
+			sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
+		}
+		sb.WriteString("\nDo you approve all?")
+
+		e.mu.RLock()
+		sm := e.sm
+		e.mu.RUnlock()
+
+		if sm != nil {
+			sm.TerminalLock()
+			approved, _ := sm.Confirm(ctx, sb.String())
+			sm.TerminalUnlock()
+
+			if !approved {
+				for _, i := range consentIndices {
+					declinedMap[i] = true
+				}
+			}
+		}
+	}
+
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
-	go e.runExecutionPlan(ctx, calls, collector.ch)
+	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
 	results, err := collector.Wait(ctx)
 	if err != nil {
@@ -269,7 +310,7 @@ type taskBatch struct {
 	tasks    []int // Contains indices into the 'calls' slice
 }
 
-func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
+func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) {
 	e.mu.RLock()
 	reg := e.registry
 	e.mu.RUnlock()
@@ -278,6 +319,18 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 	var currentBatch *taskBatch
 
 	for i, fc := range calls {
+		if declinedMap[i] {
+			resChan <- toolExecResult{
+				index: i,
+				name:  fc.Name,
+				tr: domaintools.ToolResult{
+					Text:  "User explicitly denied this action.",
+					Error: domaintools.ErrUserDeclined,
+				},
+			}
+			continue
+		}
+
 		if reg.IsSerial(fc.Name) {
 			if currentBatch != nil {
 				batches = append(batches, *currentBatch)

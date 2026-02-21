@@ -219,17 +219,7 @@ func TestSendTeamsMessage(t *testing.T) {
 			confirm:    true,
 			wantInText: []string{"Successfully sent message to Teams", "200 OK"},
 		},
-		{
-			name: "Cancelled by user",
-			args: map[string]interface{}{
-				"webhook_url": "https://outlook.office.com/webhook/...",
-				"message":     "Hello Teams",
-				"reason":      "testing",
-			},
-			confirm:    false,
-			wantErr:    true,
-			wantInText: []string{"Action denied by user."},
-		},
+
 		{
 			name: "Failed request",
 			args: map[string]interface{}{

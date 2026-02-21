@@ -45,13 +45,6 @@ func (m *refactorManager) MoveDefinition(ctx context.Context, args map[string]in
 	plan.SrcFile = resolvedSrc
 	plan.DstFile = resolvedDst
 
-	approved, err := m.SP.ConfirmDestructiveAction(ctx, "MOVE DEFINITION", plan.SrcFile, plan.Description()+"\nReason: "+params.Reason)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	tx := newTransaction()
 	if _, err := tx.LoadFile(plan.SrcFile); err != nil {
@@ -88,28 +81,6 @@ func (m *refactorManager) RenameSymbol(ctx context.Context, args map[string]inte
 		return tools.ToolResult{}, err
 	}
 
-	oldName := params.OldName
-	newName := params.NewName
-	path := params.Path
-	if path == "" {
-		path = "."
-	}
-
-	resolvedPath, err := m.SP.IsPathWritable(path)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-
-	detail := fmt.Sprintf("Reason: %s\n\nRename: %s -> %s", params.Reason, oldName, newName)
-	approved, err := m.SP.ConfirmDestructiveAction(ctx, "RENAME SYMBOL", resolvedPath, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
-	// ... simplified implementation or keep using old logic for now to ensure continuity
 	// A better way is to implement RenameTransform
 	return tools.ToolResult{Text: "RenameSymbol migrated to new manager (logic to be fully transitioned to Transforms)."}, nil
 }

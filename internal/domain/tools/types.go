@@ -10,9 +10,10 @@ import (
 
 // ToolDeclaration represents a function that can be called by the model.
 type ToolDeclaration struct {
-	Name        string
-	Description string
-	Parameters  *Schema
+	Name            string
+	Description     string
+	Parameters      *Schema
+	RequiresConsent bool
 }
 
 // Schema represents the parameters of a tool.

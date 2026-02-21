@@ -543,14 +543,6 @@ func (m *confluenceManager) confluenceWrite(ctx context.Context, args map[string
 	nextVersion := currentData.Version.Number + 1
 	xhtml := m.markdownToXhtml(params.MarkdownContent)
 
-	detail := fmt.Sprintf("Update Message: %s\n\nNew Content Snippet:\n%s", params.UpdateMessage, truncate(params.MarkdownContent, 200))
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "update Confluence page", params.PageID, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	updatePayload := map[string]interface{}{
 		"id":     params.PageID,

@@ -98,8 +98,9 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 	}, m.search.searchFiles)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "replace_text",
-		Description: "Replaces the first occurrence of a specific text block in a file with new content.",
+		Name:            "replace_text",
+		Description:     "Replaces the first occurrence of a specific text block in a file with new content.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -162,8 +163,9 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 	}, m.search.grepDefinitions)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "write_file",
-		Description: "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
+		Name:            "write_file",
+		Description:     "Creates a new file or overwrites an existing one with the provided content. Automatically creates parent directories.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -185,8 +187,9 @@ func registerFiles(r tools.IToolRegistry, sm domain_security.ISecurityManager, f
 	}, m.writer.writeFile, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "append_text",
-		Description: "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
+		Name:            "append_text",
+		Description:     "Appends text to the end of a file. Efficient for logs or lists; avoids reading the whole file.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -251,8 +254,9 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 	interaction := newinteractionTool(sm)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "execute_command",
-		Description: "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
+		Name:            "execute_command",
+		Description:     "Executes a single shell command as if in a terminal without shell interpretation (direct binary call). Security: Only whitelisted commands are auto-approved; others require user confirmation.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -278,8 +282,9 @@ func registerSystem(r tools.IToolRegistry, sm domain_security.ISecurityManager, 
 	}, shell.ExecuteCommand, tools.ToolOptions{Serial: true, LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "pipe_commands",
-		Description: "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
+		Name:            "pipe_commands",
+		Description:     "Executes a sequence of commands by piping the output of each to the next. Security: All commands in the pipe must be whitelisted for auto-approval.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -390,8 +395,9 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 	}, m.getGitBlame)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "git_commit",
-		Description: "Commits staged changes with a message.",
+		Name:            "git_commit",
+		Description:     "Commits staged changes with a message.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -409,8 +415,9 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 	}, m.gitCommit, tools.ToolOptions{Serial: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "git_create_branch",
-		Description: "Creates and checks out a new git branch.",
+		Name:            "git_create_branch",
+		Description:     "Creates and checks out a new git branch.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{

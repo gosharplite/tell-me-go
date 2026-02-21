@@ -123,8 +123,9 @@ func registerNetwork(r tools.IToolRegistry, net *networkTool) {
 func registerTeams(r tools.IToolRegistry, sm domain_security.ISecurityManager, client tools.HTTPClient) {
 	m := newteamsManager(sm, client)
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "send_teams_message",
-		Description: "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
+		Name:            "send_teams_message",
+		Description:     "Sends a message to a Microsoft Teams channel using a Power Automate workflow webhook.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -187,8 +188,9 @@ func registerConfluence(r tools.IToolRegistry, sm domain_security.ISecurityManag
 	}, m.confluenceRead)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "confluence_write",
-		Description: "Updates a Confluence page. Handles versioning and Markdown-to-XHTML conversion internally. Triggers security confirmation.",
+		Name:            "confluence_write",
+		Description:     "Updates a Confluence page. Handles versioning and Markdown-to-XHTML conversion internally. Triggers security confirmation.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
