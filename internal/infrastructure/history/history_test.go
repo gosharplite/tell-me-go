@@ -146,9 +146,10 @@ func TestHistoryManager_Interfaces(t *testing.T) {
 
 type mockStore struct{}
 
-func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)          { return nil, nil }
-func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error   { return nil }
-func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error { return nil }
+func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)                    { return nil, nil }
+func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error             { return nil }
+func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error           { return nil }
+func (s *mockStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) error { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
 	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
@@ -338,5 +339,43 @@ func TestHistoryManager_SetContents(t *testing.T) {
 	}
 	if loaded[0].Role != "user" || loaded[1].Role != "model" {
 		t.Errorf("contents role mismatch")
+	}
+}
+
+func TestHistoryManager_AppendParts(t *testing.T) {
+	t.Parallel()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	ctx := context.Background()
+
+	_ = m.addEntry(ctx, "user", "U1")
+	_ = m.addEntry(ctx, "model", "M1")
+
+	// Append parts to existing index
+	err := m.AppendParts(ctx, 1, []*llm.Part{{Text: " appended M1"}})
+	if err != nil {
+		t.Fatalf("expected nil err, got %v", err)
+	}
+
+	contents := m.GetContents()
+	if len(contents) != 2 {
+		t.Fatalf("expected 2 contents, got %d", len(contents))
+	}
+
+	if len(contents[1].Parts) != 2 {
+		t.Fatalf("expected 2 parts in model message, got %d", len(contents[1].Parts))
+	}
+
+	if contents[1].Parts[0].Text != "M1" || contents[1].Parts[1].Text != " appended M1" {
+		t.Errorf("got wrong parts: %v", contents[1].Parts)
+	}
+
+	// Test invalid index
+	err = m.AppendParts(ctx, -1, []*llm.Part{{Text: "test"}})
+	if err == nil {
+		t.Error("expected error for negative index")
+	}
+	err = m.AppendParts(ctx, 5, []*llm.Part{{Text: "test"}})
+	if err == nil {
+		t.Error("expected error for out of bounds index")
 	}
 }

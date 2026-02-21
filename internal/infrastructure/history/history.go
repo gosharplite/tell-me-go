@@ -184,3 +184,22 @@ func (m *Manager) addEntry(ctx context.Context, role, text string) error {
 		Parts: []*llm.Part{{Text: text}},
 	})
 }
+
+// AppendParts appends parts to an existing content entry at the specified index.
+func (m *Manager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if index < 0 || index >= len(m.Contents) {
+		return fmt.Errorf("invalid index: %d", index)
+	}
+
+	clonedParts := make([]*llm.Part, len(parts))
+	for i, p := range parts {
+		dummy := llm.CloneContent(&llm.Content{Parts: []*llm.Part{p}})
+		clonedParts[i] = dummy.Parts[0]
+	}
+
+	m.Contents[index].Parts = append(m.Contents[index].Parts, clonedParts...)
+	return m.store.AppendParts(ctx, index, clonedParts)
+}

@@ -42,3 +42,7 @@ func TestNewSession(t *testing.T) {
 		t.Errorf("StartTime %v is outside expected range [%v, %v]", session.StartTime, before, after)
 	}
 }
+
+func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	return nil
+}

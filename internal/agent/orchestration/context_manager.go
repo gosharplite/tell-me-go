@@ -109,12 +109,12 @@ func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) 
 
 	contents := cm.History.GetContents()
 	if len(contents) > 0 {
-		last := contents[len(contents)-1]
+		lastIdx := len(contents) - 1
+		last := contents[lastIdx]
 		if last.Role == content.Role {
-			// Merge parts to maintain role alternation
-			last.Parts = append(last.Parts, content.Parts...)
+			// Fast path: use O(1) AppendParts instead of O(N) SetContents
 			cm.version++
-			return cm.History.SetContents(ctx, contents)
+			return cm.History.AppendParts(ctx, lastIdx, content.Parts)
 		}
 	} else if content.Role != "user" {
 		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)

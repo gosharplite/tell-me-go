@@ -323,3 +323,12 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 	}
 	return turn
 }
+
+func (m *mockHistoryManager) AppendParts(ctx context.Context, index int, parts []*llm.Part) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if index >= 0 && index < len(m.Contents) {
+		m.Contents[index].Parts = append(m.Contents[index].Parts, parts...)
+	}
+	return nil
+}
