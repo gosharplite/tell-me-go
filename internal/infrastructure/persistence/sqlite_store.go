@@ -170,3 +170,27 @@ func (s *sqliteTaskStore) Append(ctx context.Context, item services.Task) error 
 		int64(item.ID), item.Content, item.Status, item.CreatedAt.Format(time.RFC3339Nano))
 	return err
 }
+
+func (s *sqliteTaskStore) ReadPage(ctx context.Context, limit, offset int) ([]services.Task, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, content, status, created_at FROM tasks ORDER BY id LIMIT ? OFFSET ?", limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var res []services.Task
+	for rows.Next() {
+		var t services.Task
+		var createdAtStr string
+		if err := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); err != nil {
+			return nil, err
+		}
+		var err error
+		t.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse created_at for task %d: %w", int(t.ID), err)
+		}
+		res = append(res, t)
+	}
+	return res, rows.Err()
+}

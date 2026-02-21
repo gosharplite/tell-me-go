@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -296,5 +297,63 @@ func TestStoreErrors(t *testing.T) {
 	taskStore := newSQLiteTaskStore(db)
 	if _, err := taskStore.ReadAll(ctx); err == nil {
 		t.Errorf("Expected error on closed db ReadAll")
+	}
+}
+
+func TestSQLiteTaskStore_ReadPage(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	store := newSQLiteTaskStore(db)
+	ctx := context.Background()
+
+	// Insert 5 tasks
+	for i := 1; i <= 5; i++ {
+		task := services.Task{
+			ID:        float64(i),
+			Content:   fmt.Sprintf("task %d", i),
+			Status:    "pending",
+			CreatedAt: time.Now(),
+		}
+		err := store.Append(ctx, task)
+		if err != nil {
+			t.Fatalf("failed to append task %d: %v", i, err)
+		}
+	}
+
+	// Read page 1: limit 2, offset 0 -> IDs 1, 2
+	page1, err := store.ReadPage(ctx, 2, 0)
+	if err != nil {
+		t.Fatalf("failed to read page 1: %v", err)
+	}
+	if len(page1) != 2 || page1[0].ID != 1 || page1[1].ID != 2 {
+		t.Errorf("unexpected page 1: %+v", page1)
+	}
+
+	// Read page 2: limit 2, offset 2 -> IDs 3, 4
+	page2, err := store.ReadPage(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("failed to read page 2: %v", err)
+	}
+	if len(page2) != 2 || page2[0].ID != 3 || page2[1].ID != 4 {
+		t.Errorf("unexpected page 2: %+v", page2)
+	}
+
+	// Read page 3: limit 2, offset 4 -> ID 5
+	page3, err := store.ReadPage(ctx, 2, 4)
+	if err != nil {
+		t.Fatalf("failed to read page 3: %v", err)
+	}
+	if len(page3) != 1 || page3[0].ID != 5 {
+		t.Errorf("unexpected page 3: %+v", page3)
+	}
+
+	// Read page out of bounds: limit 2, offset 6 -> empty
+	page4, err := store.ReadPage(ctx, 2, 6)
+	if err != nil {
+		t.Fatalf("failed to read page 4: %v", err)
+	}
+	if len(page4) != 0 {
+		t.Errorf("unexpected page 4: %+v", page4)
 	}
 }
