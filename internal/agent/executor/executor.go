@@ -551,23 +551,19 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	}
 	defer cancel()
 
-	type res struct {
-		tr  domaintools.ToolResult
-		err error
-	}
-	resChan := make(chan res, 1)
+	resChan := make(chan asyncToolResult, 1)
 	startTime := time.Now()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- res{
+				resChan <- asyncToolResult{
 					tr: e.handlePanic(r, tool.Name),
 				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
 		result, err := reg.Execute(ctx, tool.Name, args)
-		resChan <- res{tr: result, err: err}
+		resChan <- asyncToolResult{tr: result, err: err}
 	}()
 
 	select {
@@ -579,33 +575,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		}
 
 		// Spawn watcher for the "Zombie" tool
-		go func(toolName string, startTime time.Time) {
-			// Wait for the non-compliant tool to return or hard timeout
-			select {
-			case <-resChan:
-				actualDuration := time.Since(startTime)
-
-				e.mu.RLock()
-				bus := e.events
-				e.mu.RUnlock()
-				if bus != nil {
-					bus.Publish(events.SystemMessageEvent{
-						Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-						Level:   "warn",
-					})
-				}
-			case <-time.After(5 * time.Minute):
-				e.mu.RLock()
-				bus := e.events
-				e.mu.RUnlock()
-				if bus != nil {
-					bus.Publish(events.SystemMessageEvent{
-						Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
-						Level:   "error",
-					})
-				}
-			}
-		}(tool.Name, startTime)
+		go e.monitorZombieTool(tool.Name, startTime, resChan)
 
 		return domaintools.ToolResult{
 			Text:  msg,
@@ -651,4 +621,37 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 		}
 	}
 	return closest
+}
+
+type asyncToolResult struct {
+	tr  domaintools.ToolResult
+	err error
+}
+
+func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, resChan <-chan asyncToolResult) {
+	// Wait for the non-compliant tool to return or hard timeout
+	select {
+	case <-resChan:
+		actualDuration := time.Since(startTime)
+
+		e.mu.RLock()
+		bus := e.events
+		e.mu.RUnlock()
+		if bus != nil {
+			bus.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
+				Level:   "warn",
+			})
+		}
+	case <-time.After(5 * time.Minute):
+		e.mu.RLock()
+		bus := e.events
+		e.mu.RUnlock()
+		if bus != nil {
+			bus.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
+				Level:   "error",
+			})
+		}
+	}
 }

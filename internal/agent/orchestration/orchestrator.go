@@ -105,7 +105,7 @@ func NewSessionDependencies(paths *persistence.Paths, hManager services.HistoryM
 }
 
 // NewOrchestrator creates a new orchestrator.
-func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory services.ChatterFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) *orchestrator {
+func NewOrchestrator(homeDir, version string, loader config.ConfigLoader, sm domain_security.ISecurityManager, stdout, stderr io.Writer, factory services.ChatterFactory, historyRenderer services.HistoryRenderer, uiRenderer services.UIRenderer) Orchestrator {
 	return &orchestrator{
 		HomeDir:         homeDir,
 		Version:         version,
