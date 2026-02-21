@@ -16,8 +16,9 @@ func TestConfigRepository(t *testing.T) {
 	file := filepath.Join(tempDir, "config.json")
 	repo := newConfigRepository(fs, file)
 
-	t.Run("Save and Load Config", func(t *testing.T) {
-		if err := repo.Set(ctx, "key", "val"); err != nil {
+	t.Run("Load Config", func(t *testing.T) {
+		content := `{"key": "val"}`
+		if err := fs.WriteFile(ctx, file, []byte(content), 0644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -41,19 +42,14 @@ func TestConfigRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("Get and Delete", func(t *testing.T) {
-		_ = repo.Set(ctx, "k2", "v2")
+	t.Run("Get", func(t *testing.T) {
+		content := `{"k2": "v2"}`
+		if err := fs.WriteFile(ctx, file, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
 		val, _ := repo.Get(ctx, "k2")
 		if val != "v2" {
 			t.Errorf("expected v2, got %s", val)
-		}
-
-		if err := repo.Delete(ctx, "k2"); err != nil {
-			t.Fatal(err)
-		}
-		val, _ = repo.Get(ctx, "k2")
-		if val != "" {
-			t.Error("expected empty string after delete")
 		}
 	})
 }

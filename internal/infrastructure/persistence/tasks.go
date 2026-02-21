@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -31,11 +30,7 @@ func newTaskRepository(fs persistence.FileSystem, filePath string) *taskReposito
 	}
 }
 
-// ReadAll loads tasks from disk.
-func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
+func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, error) {
 	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -72,49 +67,9 @@ func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	return loaded, nil
 }
 
-// WriteAll saves tasks to disk.
-func (r *taskRepository) WriteAll(ctx context.Context, tasks []services.Task) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Sort by ID stable
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].ID < tasks[j].ID
-	})
-
-	var data []byte
-	for _, t := range tasks {
-		line, err := json.Marshal(t)
-		if err != nil {
-			return err
-		}
-		data = append(data, line...)
-		data = append(data, '\n')
-	}
-	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
-}
-
-// Append appends a single task to disk.
-func (r *taskRepository) Append(ctx context.Context, task services.Task) (err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	f, oerr := r.fs.OpenFile(ctx, r.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if oerr != nil {
-		return oerr
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
-	}()
-
-	line, merr := json.Marshal(task)
-	if merr != nil {
-		return merr
-	}
-	line = append(line, '\n')
-
-	_, err = f.Write(line)
-	return err
+// ReadAll loads tasks from disk.
+func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.readAllInternal(ctx)
 }

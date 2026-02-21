@@ -88,17 +88,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, statu
 		t.Status = status
 	}
 
-	// Prepare next state
-	nextTasks := make([]Task, 0, len(s.tasks))
-	for tid, task := range s.tasks {
-		if tid == id {
-			nextTasks = append(nextTasks, t)
-		} else {
-			nextTasks = append(nextTasks, task)
-		}
-	}
-
-	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
+	if err := s.store.Update(ctx, id, t); err != nil {
 		return Task{}, err
 	}
 
@@ -115,15 +105,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
 		return fmt.Errorf("task not found: %.0f", id)
 	}
 
-	// Prepare next state
-	nextTasks := make([]Task, 0, len(s.tasks)-1)
-	for tid, task := range s.tasks {
-		if tid != id {
-			nextTasks = append(nextTasks, task)
-		}
-	}
-
-	if err := s.store.WriteAll(ctx, nextTasks); err != nil {
+	if err := s.store.Delete(ctx, id); err != nil {
 		return err
 	}
 
@@ -156,7 +138,7 @@ func (s *TaskService) ClearTasks(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.store.WriteAll(ctx, []Task{}); err != nil {
+	if err := s.store.DeleteAll(ctx); err != nil {
 		return err
 	}
 

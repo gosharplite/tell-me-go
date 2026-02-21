@@ -49,6 +49,7 @@ func TestPipeCommandsTool(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_MOCK_ANSWER=y",
 		"TELL_ME_NO_STREAM=true",
 	}
 
@@ -105,6 +106,7 @@ func TestExecuteCommandWithRedirection(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_MOCK_ANSWER=y",
 		"TELL_ME_NO_STREAM=true",
 	}
 
@@ -169,6 +171,7 @@ func TestPipeCommandsWithRedirectionAndAppend(t *testing.T) {
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
 		"TELL_ME_MOCK_URL=" + server.URL + "/",
+		"TELL_ME_MOCK_ANSWER=y",
 		"TELL_ME_NO_STREAM=true",
 	}
 

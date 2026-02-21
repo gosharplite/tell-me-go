@@ -49,14 +49,6 @@ func (m *teamsManager) sendTeamsMessage(ctx context.Context, args map[string]int
 	}
 
 	// Safety confirmation (unless bypassed)
-	detail := fmt.Sprintf("Reason: %s\n\nMessage:\n%s", params.Reason, message)
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "send message to Teams", webhookURL, detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
 
 	body, err := buildTeamsRequestBody(message, params.Reason)
 	if err != nil {

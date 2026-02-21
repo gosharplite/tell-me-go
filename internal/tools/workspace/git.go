@@ -116,15 +116,6 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 		return tools.ToolResult{}, fmt.Errorf("message is required")
 	}
 
-	detail := fmt.Sprintf("Reason: %s\nMessage: %s", params.Reason, message)
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT COMMIT", "current staged changes", detail)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
-	}
-
 	res, err := m.runGitCommand(ctx, "commit", "-m", message)
 	return tools.ToolResult{Text: res}, err
 }
@@ -141,14 +132,6 @@ func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interf
 	name := params.Name
 	if name == "" {
 		return tools.ToolResult{}, fmt.Errorf("branch name is required")
-	}
-
-	approved, err := m.sm.ConfirmDestructiveAction(ctx, "GIT CREATE BRANCH", name, params.Reason)
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
-	if !approved {
-		return tools.ToolResult{Text: "Action denied by user."}, tools.ErrUserDeclined
 	}
 
 	res, err := m.runGitCommand(ctx, "checkout", "-b", name)

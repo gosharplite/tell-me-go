@@ -5,6 +5,7 @@ package persistence
 
 import (
 	"context"
+	"reflect"
 	"sync"
 )
 
@@ -68,11 +69,45 @@ func (s *memoryListStore[T]) ReadAll(ctx context.Context) ([]T, error) {
 	return res, nil
 }
 
-func (s *memoryListStore[T]) WriteAll(ctx context.Context, items []T) error {
+func (s *memoryListStore[T]) getID(item T) float64 {
+	val := reflect.ValueOf(item)
+	if val.Kind() == reflect.Struct {
+		field := val.FieldByName("ID")
+		if field.IsValid() && field.CanFloat() {
+			return field.Float()
+		}
+	}
+	return 0
+}
+
+func (s *memoryListStore[T]) Update(ctx context.Context, id float64, item T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = make([]T, len(items))
-	copy(s.data, items)
+	for i, v := range s.data {
+		if s.getID(v) == id {
+			s.data[i] = item
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *memoryListStore[T]) Delete(ctx context.Context, id float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, v := range s.data {
+		if s.getID(v) == id {
+			s.data = append(s.data[:i], s.data[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *memoryListStore[T]) DeleteAll(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data = nil
 	return nil
 }
 

@@ -389,7 +389,7 @@ func TestOrchestrator_ApplyConfiguration_Error(t *testing.T) {
 	mChatter.On("Subscribe", mock.Anything).Return()
 	mChatter.On("SetLimits", mock.Anything, 10, mock.Anything, mock.Anything).Return(fmt.Errorf("limits error"))
 
-	err := orch.applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
+	err := orch.(*orchestrator).applyConfiguration(context.Background(), mChatter, sCfg, paths, pData, mCapturer)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "limits error")
 }

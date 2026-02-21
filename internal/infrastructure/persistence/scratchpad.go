@@ -48,27 +48,6 @@ func (r *scratchpadRepository) Get(ctx context.Context, key string) (string, err
 	return string(data), nil
 }
 
-// Set saves the value for a key. Only "content" is supported.
-func (r *scratchpadRepository) Set(ctx context.Context, key, val string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if key != "content" {
-		return nil // Ignore other keys for now or return error? Let's stay compatible.
-	}
-
-	data := []byte(val)
-	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
-}
-
-// Delete clears the scratchpad.
-func (r *scratchpadRepository) Delete(ctx context.Context, key string) error {
-	if key != "content" {
-		return nil
-	}
-	return r.Set(ctx, key, "")
-}
-
 // GetAll returns all keys.
 func (r *scratchpadRepository) GetAll(ctx context.Context) (map[string]string, error) {
 	val, err := r.Get(ctx, "content")

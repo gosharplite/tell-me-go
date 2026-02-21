@@ -5,7 +5,6 @@ package analysis
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"testing"
 
 	domain "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,26 +69,6 @@ func (m *refactorMockSecurityProvider) IsPathSafe(path string) (string, error) {
 
 func TestMoveDefinition(t *testing.T) {
 	ctx := context.Background()
-
-	t.Run("Action Denied", func(t *testing.T) {
-		sp := &refactorMockSecurityProvider{
-			ConfirmDestructiveActionFunc: func(ctx context.Context, action, target, detail string) (bool, error) {
-				return false, nil
-			},
-		}
-		mgr := newRefactorManager(sp)
-
-		args := map[string]interface{}{
-			"symbol":   "MyFunc",
-			"src_file": "src.go",
-			"dst_file": "dst.go",
-			"reason":   "testing",
-		}
-
-		res, err := mgr.MoveDefinition(ctx, args)
-		require.ErrorIs(t, err, tools.ErrUserDeclined)
-		assert.Equal(t, "Action denied by user.", res.Text)
-	})
 
 	t.Run("IsPathWritable error", func(t *testing.T) {
 		sp := &refactorMockSecurityProvider{
@@ -215,30 +193,6 @@ func verifyFileContent(t *testing.T, path string, expectedContains []string, exp
 
 func TestRenameSymbol(t *testing.T) {
 	ctx := context.Background()
-
-	t.Run("Action Denied", func(t *testing.T) {
-		sp := &refactorMockSecurityProvider{
-			ConfirmDestructiveActionFunc: func(ctx context.Context, action, target, detail string) (bool, error) {
-				return false, nil
-			},
-		}
-		mgr := newRefactorManager(sp)
-
-		args := map[string]interface{}{
-			"old_name": "Old",
-			"new_name": "New",
-			"path":     ".",
-			"reason":   "testing",
-		}
-
-		res, err := mgr.RenameSymbol(ctx, args)
-		if !errors.Is(err, tools.ErrUserDeclined) {
-			t.Fatalf("expected ErrUserDeclined, got: %v", err)
-		}
-		if res.Text != "Action denied by user." {
-			t.Errorf("expected denial message, got %q", res.Text)
-		}
-	})
 
 	t.Run("Successful Orchestration", func(t *testing.T) {
 		sp := &refactorMockSecurityProvider{}

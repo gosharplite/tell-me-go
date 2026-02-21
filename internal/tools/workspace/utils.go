@@ -52,33 +52,34 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) bool, limit int) ([]string, error) {
+func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) bool) (<-chan string, <-chan error) {
+	errChan := make(chan error, 1)
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if limit <= 0 {
-		limit = 100
+		errChan <- ctx.Err()
+		close(errChan)
+		resChan := make(chan string)
+		close(resChan)
+		return resChan, errChan
 	}
 
 	// Safety check
 	resolvedRoot, err := sp.IsPathSafe(root)
 	if err != nil {
-		return nil, err
+		errChan <- err
+		close(errChan)
+		resChan := make(chan string)
+		close(resChan)
+		return resChan, errChan
 	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	p := &searchPipeline{
 		fs:          fs,
 		matcher:     matcher,
-		limit:       limit,
 		pathsChan:   make(chan string, 100),
 		resultsChan: make(chan string, 100),
-		errChan:     make(chan error, 1),
+		errChan:     errChan,
 		root:        resolvedRoot,
 		ctx:         ctx,
-		cancel:      cancel,
 	}
 
 	return p.Execute()
@@ -87,16 +88,14 @@ func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs 
 type searchPipeline struct {
 	fs          persistence.FileSystem
 	matcher     func(path, line string) bool
-	limit       int
 	pathsChan   chan string
 	resultsChan chan string
 	errChan     chan error
 	root        string
 	ctx         context.Context
-	cancel      context.CancelFunc
 }
 
-func (p *searchPipeline) Execute() ([]string, error) {
+func (p *searchPipeline) Execute() (<-chan string, <-chan error) {
 	p.startWalker()
 
 	var wg sync.WaitGroup
@@ -107,12 +106,13 @@ func (p *searchPipeline) Execute() ([]string, error) {
 		close(p.resultsChan)
 	}()
 
-	return p.collectResults()
+	return p.resultsChan, p.errChan
 }
 
 func (p *searchPipeline) startWalker() {
 	go func() {
 		defer close(p.pathsChan)
+		defer close(p.errChan)
 		err := p.fs.Walk(p.ctx, p.root, p.walkFunc)
 		if err != nil && err != context.Canceled {
 			select {
@@ -206,49 +206,6 @@ func (p *searchPipeline) scanFile(path string) error {
 		return scanner.Err()
 	}
 	return nil
-}
-
-func (p *searchPipeline) collectResults() ([]string, error) {
-	var results []string
-	var finalErr error
-	for {
-		select {
-		case res, ok := <-p.resultsChan:
-			if !ok {
-				return results, finalErr
-			}
-			results, finalErr = p.handleResult(res, results, finalErr)
-		case err := <-p.errChan:
-			finalErr = err
-			p.cancel()
-		case <-p.ctx.Done():
-			return p.handleDone(results, finalErr)
-		}
-	}
-}
-
-func (p *searchPipeline) handleResult(res string, results []string, finalErr error) ([]string, error) {
-	if len(results) < p.limit {
-		results = append(results, res)
-	}
-	if len(results) >= p.limit && finalErr == nil {
-		p.cancel()
-		finalErr = fmt.Errorf("too many results")
-	}
-	return results, finalErr
-}
-
-func (p *searchPipeline) handleDone(results []string, finalErr error) ([]string, error) {
-	if finalErr == nil {
-		finalErr = p.ctx.Err()
-	}
-	// Drain remaining results if any
-	for res := range p.resultsChan {
-		if len(results) < p.limit {
-			results = append(results, res)
-		}
-	}
-	return results, finalErr
 }
 
 // checkBinary reads the beginning of the file to check for binary content and rewinds the cursor.

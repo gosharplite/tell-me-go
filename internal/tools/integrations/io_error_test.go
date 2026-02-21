@@ -54,6 +54,8 @@ func TestAzureDevOps_IOError(t *testing.T) {
 }
 
 func TestJira_IOError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	mockClient := new(mockHttpClient)
 	m := newjiraManager(nil, mockClient)
 	m.provider.baseURL = "https://jira.com"
@@ -78,6 +80,8 @@ func TestJira_IOError(t *testing.T) {
 }
 
 func TestConfluence_IOError(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	mockClient := new(mockHttpClient)
 	m := newconfluenceManager(nil, mockClient)
 	m.provider.baseURL = "https://confluence.com"

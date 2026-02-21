@@ -82,7 +82,7 @@ func (t *persistenceTools) Register(r tools.IToolRegistry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageScratchpad, tools.ToolOptions{Serial: true})
+	}, t.ManageScratchpad, tools.ToolOptions{Serial: false})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_config",
@@ -106,7 +106,7 @@ func (t *persistenceTools) Register(r tools.IToolRegistry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageConfig, tools.ToolOptions{Serial: true})
+	}, t.ManageConfig, tools.ToolOptions{Serial: false})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
 		Name:        "manage_tasks",
@@ -134,7 +134,7 @@ func (t *persistenceTools) Register(r tools.IToolRegistry) {
 			},
 			Required: []string{"action"},
 		},
-	}, t.ManageTasks, tools.ToolOptions{Serial: true})
+	}, t.ManageTasks, tools.ToolOptions{Serial: false})
 }
 
 // ManageTasks handles the manage_tasks tool.

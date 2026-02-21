@@ -6,6 +6,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 var binPath string
@@ -207,7 +210,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 	}
 
 	sessionFiles := []string{"history.json", "tokens.log", "commands.log"}
-	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log"}
+	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log", "tellmego.db"}
 
 	for _, f := range sessionFiles {
 		_ = os.WriteFile(filepath.Join(modeDir, f), []byte("session content"), 0644)
@@ -393,7 +396,7 @@ func TestWriteFileConfirmation(t *testing.T) {
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "write a file", []string{"[CONFIRMATION REQUIRED]", "File written."})
+	runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."})
 
 	// Verify file actually written
 	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
@@ -446,7 +449,7 @@ func TestWriteFileDenial(t *testing.T) {
 				// We check the tool response
 				result := toolResponse["response"].(map[string]interface{})["result"].(string)
 
-				if strings.Contains(result, "The user explicitly denied this action.") {
+				if strings.Contains(result, "User explicitly denied this action.") {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
 				} else {
 					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Error: Denial failed."}]}}]}`)
@@ -529,50 +532,10 @@ func TestSymlinkAttack(t *testing.T) {
 }
 
 func TestManageTasks(t *testing.T) {
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			isToolResponse := false
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						isToolResponse = true
-					}
-				}
-			}
-
-			if !isToolResponse {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "manage_tasks",
-									"args": {"action": "add", "content": "End-to-End Test Task"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				// Turn 2
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Task added."}]}}]}`)
-			}
-			return
-		}
-	}))
+	server, _ := setupToolMockServer(t, "manage_tasks", map[string]interface{}{
+		"action":  "add",
+		"content": "End-to-End Test Task",
+	})
 	defer server.Close()
 
 	homeDir := t.TempDir()
@@ -583,65 +546,34 @@ func TestManageTasks(t *testing.T) {
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "add a task", []string{"Task added."})
+	runAgentStep(t, homeDir, env, "add a task", []string{"Done."})
 
-	// Check if file exists and has content
-	taskFile := filepath.Join(homeDir, "output", "assistant", "tasks.json")
-	if _, err := os.Stat(taskFile); os.IsNotExist(err) {
-		t.Fatalf("Tasks file missing at %s", taskFile)
+	// Check if database exists and has content
+	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		t.Fatalf("SQLite database missing at %s", dbFile)
 	}
 
-	content, _ := os.ReadFile(taskFile)
-	if !strings.Contains(string(content), "End-to-End Test Task") {
-		t.Errorf("Tasks file mismatch. Got: %s", string(content))
+	importSQL := true
+	if importSQL {
+		db, err := sql.Open("sqlite", dbFile)
+		if err != nil {
+			t.Fatalf("Failed to open sqlite db: %v", err)
+		}
+		defer db.Close()
+		var count int
+		err = db.QueryRow("SELECT COUNT(*) FROM tasks WHERE content LIKE '%End-to-End Test Task%'").Scan(&count)
+		if err != nil || count == 0 {
+			t.Errorf("Task not found in sqlite database")
+		}
 	}
 }
 
 func TestManageScratchpad(t *testing.T) {
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			isToolResponse := false
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						isToolResponse = true
-					}
-				}
-			}
-
-			if !isToolResponse {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "manage_scratchpad",
-									"args": {"action": "write", "content": "# E2E Scratchpad"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				// Turn 2
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Scratchpad updated."}]}}]}`)
-			}
-			return
-		}
-	}))
+	server, _ := setupToolMockServer(t, "manage_scratchpad", map[string]interface{}{
+		"action":  "write",
+		"content": "# E2E Scratchpad",
+	})
 	defer server.Close()
 
 	homeDir := t.TempDir()
@@ -652,17 +584,23 @@ func TestManageScratchpad(t *testing.T) {
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Scratchpad updated."})
+	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Done."})
 
-	// Check if file exists and has content
-	scratchpadFile := filepath.Join(homeDir, "output", "assistant", "scratchpad.md")
-	if _, err := os.Stat(scratchpadFile); os.IsNotExist(err) {
-		t.Fatalf("Scratchpad file missing at %s", scratchpadFile)
+	// Check if database exists and has content
+	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		t.Fatalf("SQLite database missing at %s", dbFile)
 	}
 
-	content, _ := os.ReadFile(scratchpadFile)
-	if !strings.Contains(string(content), "# E2E Scratchpad") {
-		t.Errorf("Scratchpad mismatch. Got: %s", string(content))
+	db, err := sql.Open("sqlite", dbFile)
+	if err != nil {
+		t.Fatalf("Failed to open sqlite db: %v", err)
+	}
+	defer db.Close()
+	var contentStr string
+	err = db.QueryRow("SELECT content FROM scratchpad WHERE id = 1").Scan(&contentStr)
+	if err != nil || !strings.Contains(contentStr, "# E2E Scratchpad") {
+		t.Errorf("Scratchpad mismatch. Got: %v (err: %v)", contentStr, err)
 	}
 }
 

@@ -22,6 +22,44 @@ type searchManager struct {
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 
+func (m *searchManager) executeSearch(ctx context.Context, path string, limit int, emptyMsg string, matchFunc func(string, string) bool) (tools.ToolResult, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	resChan, errChan := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, matchFunc)
+
+	var results []string
+	truncated := false
+	for res := range resChan {
+		if len(results) >= limit {
+			truncated = true
+			cancel()
+			break
+		}
+		results = append(results, res)
+	}
+
+	var finalErr error
+	select {
+	case err := <-errChan:
+		finalErr = err
+	default:
+	}
+	if finalErr != nil {
+		return tools.ToolResult{}, finalErr
+	}
+
+	if len(results) == 0 {
+		return tools.ToolResult{Text: emptyMsg}, nil
+	}
+
+	out := strings.Join(results, "\n")
+	if truncated {
+		out += "\n... (truncated)"
+	}
+	return tools.ToolResult{Text: out}, nil
+}
+
 func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		Path string `json:"path"`
@@ -35,23 +73,9 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+	return m.executeSearch(ctx, path, 500, "No TODOs, FIXMEs, or BUGs found.", func(_, line string) bool {
 		return todoRegex.MatchString(line)
-	}, 500)
-
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
-	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: "No TODOs, FIXMEs, or BUGs found."}, nil
-	}
-
-	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
-		out += "\n... (truncated)"
-	}
-	return tools.ToolResult{Text: out}, nil
+	})
 }
 
 func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -73,21 +97,7 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		path = "."
 	}
 
-	results, err := workspace.ConcurrentSearch(ctx, m.SP, m.FS, path, func(_, line string) bool {
+	return m.executeSearch(ctx, path, 100, "No matches found.", func(_, line string) bool {
 		return re.MatchString(line)
-	}, 100)
-
-	if err != nil && err.Error() != "too many results" {
-		return tools.ToolResult{}, err
-	}
-
-	if len(results) == 0 {
-		return tools.ToolResult{Text: "No matches found."}, nil
-	}
-
-	out := strings.Join(results, "\n")
-	if err != nil && err.Error() == "too many results" {
-		out += "\n... (truncated)"
-	}
-	return tools.ToolResult{Text: out}, nil
+	})
 }

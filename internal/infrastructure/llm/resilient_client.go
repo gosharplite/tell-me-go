@@ -11,6 +11,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -59,7 +60,9 @@ type result struct {
 }
 
 // Generate handles the LLM interaction logic, returning a stream and a finalizer.
-func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+func (r *resilientClient) Generate(parentCtx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+	ctx, span := otel.Tracer("llm").Start(parentCtx, "llm.generate_content")
+
 	outCh := make(chan *llm.Content, 100)
 	resCh := make(chan result, 1)
 
@@ -70,6 +73,7 @@ func (r *resilientClient) Generate(ctx context.Context, input []*llm.Content, to
 	}()
 
 	finalize := func() (*llm.Content, *llm.Metrics, error) {
+		defer span.End()
 		select {
 		case res := <-resCh:
 			return res.content, res.metrics, res.err

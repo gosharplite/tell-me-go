@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -500,31 +499,6 @@ func TestConfluenceManager_ConfluenceWrite(t *testing.T) {
 		mockClient.AssertExpectations(t)
 	})
 
-	t.Run("Cancelled by user", func(t *testing.T) {
-		mockClient := new(mockConfluenceClient)
-		input := "n\n"
-		sm := security.NewSecurityManager(&security.MockInteractor{Answer: input})
-		m := newconfluenceManager(sm, mockClient)
-
-		// Mock GET version
-		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.Method == http.MethodGet
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
-		}, nil)
-
-		args := map[string]interface{}{
-			"page_id":          "123",
-			"markdown_content": "some content",
-		}
-
-		result, err := m.confluenceWrite(context.Background(), args)
-		assert.ErrorIs(t, err, tools.ErrUserDeclined)
-		assert.Equal(t, "Action denied by user.", result.Text)
-	})
-
 	t.Run("Conflict 409", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		input := "y\n"
@@ -598,6 +572,8 @@ func TestConfluenceManager_MarkdownToXhtml(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	mockClient := new(mockConfluenceClient)
 	m := newconfluenceManager(nil, mockClient)
 
@@ -617,6 +593,8 @@ func TestConfluenceManager_ConfluenceRead_LargePayload(t *testing.T) {
 }
 
 func TestConfluenceManager_ConfluenceSearch_EmptyResults(t *testing.T) {
+	t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
+	t.Setenv("ATLASSIAN_TOKEN", "mock-token")
 	t.Run("Null Results", func(t *testing.T) {
 		mockClient := new(mockConfluenceClient)
 		m := newconfluenceManager(nil, mockClient)
@@ -1013,36 +991,6 @@ func TestConfluenceManager_ExhaustiveErrors(t *testing.T) {
 		assert.Contains(t, m.markdownToXhtml("#### H4"), "<h4>H4</h4>")
 		assert.Contains(t, m.markdownToXhtml("##### H5"), "<h5>H5</h5>")
 		assert.Contains(t, m.markdownToXhtml("###### H6"), "<h6>H6</h6>")
-	})
-
-	t.Run("Security Manager Error Write", func(t *testing.T) {
-		t.Setenv("ATLASSIAN_EMAIL", "test@example.com")
-		t.Setenv("ATLASSIAN_TOKEN", "api-token")
-		mockClient := new(mockConfluenceClient)
-
-		// 1. Mock GET version
-		jsonVersion := `{"id": "123", "title": "Old Title", "version": {"number": 5}}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.Method == http.MethodGet
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonVersion)),
-		}, nil)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Triggers context.Canceled in ConfirmAction
-
-		sm := security.NewSecurityManager(&security.MockInteractor{Answer: "y"})
-		m := newconfluenceManager(sm, mockClient)
-
-		args := map[string]interface{}{
-			"page_id":          "123",
-			"markdown_content": "some content",
-		}
-
-		_, err := m.confluenceWrite(ctx, args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), context.Canceled.Error())
 	})
 }
 

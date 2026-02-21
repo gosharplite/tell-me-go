@@ -104,6 +104,7 @@ func TestCommandValidator_Go(t *testing.T) {
 
 func TestCommandValidator_Git(t *testing.T) {
 	sm := NewSecurityManager(nil)
+	sm.RegisterReadOnlyPath("/tmp")
 	v := NewCommandValidator(sm, nil)
 
 	tests := []struct {

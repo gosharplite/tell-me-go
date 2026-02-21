@@ -20,6 +20,8 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type toolExecResult struct {
@@ -176,9 +178,11 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	bus := e.events
 	e.mu.RUnlock()
 
+	declinedMap := e.requestBatchConsent(ctx, calls)
+
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
-	go e.runExecutionPlan(ctx, calls, collector.ch)
+	go e.runExecutionPlan(ctx, calls, collector.ch, declinedMap)
 
 	results, err := collector.Wait(ctx)
 	if err != nil {
@@ -262,36 +266,94 @@ func (e *ToolExecutor) assembleResponse(calls []*llm.FunctionCall, results []dom
 	}
 }
 
-func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
-	var wg sync.WaitGroup
+type taskBatch struct {
+	isSerial bool
+	tasks    []int // Contains indices into the 'calls' slice
+}
 
-	for i, fc := range calls {
-		e.mu.RLock()
-		reg := e.registry
-		e.mu.RUnlock()
+func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.FunctionCall, resChan chan<- toolExecResult, declinedMap map[int]bool) {
+	batches := e.buildExecutionBatches(calls, declinedMap, resChan)
 
-		if reg.IsSerial(fc.Name) {
-			if !e.executeSerialTask(ctx, i, fc, resChan, &wg) {
+	for batchIdx, batch := range batches {
+		if batch.isSerial {
+			taskIdx := batch.tasks[0]
+			fc := calls[taskIdx]
+			if !e.executeSerialTask(ctx, taskIdx, fc, resChan) {
 				// Fill remaining slots in resChan so the collector doesn't hang
-				for j := i + 1; j < len(calls); j++ {
-					resChan <- toolExecResult{
-						index: j,
-						name:  calls[j].Name,
-						tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+				for j := batchIdx; j < len(batches); j++ {
+					for _, skippedIdx := range batches[j].tasks {
+						if j == batchIdx && skippedIdx <= taskIdx {
+							continue // Already executed or failed
+						}
+						resChan <- toolExecResult{
+							index: skippedIdx,
+							name:  calls[skippedIdx].Name,
+							tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
+						}
 					}
 				}
 				return // Exit the execution plan early
 			}
 		} else {
-			e.enqueueParallelTask(ctx, i, fc, resChan, &wg)
+			var wg sync.WaitGroup
+			for _, taskIdx := range batch.tasks {
+				fc := calls[taskIdx]
+				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
+			}
+			wg.Wait()
 		}
 	}
-	wg.Wait()
 }
 
-func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult, wg *sync.WaitGroup) bool {
-	// Wait for all previous tools to finish before starting serial tool
-	wg.Wait()
+func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, resChan chan<- toolExecResult) []taskBatch {
+	e.mu.RLock()
+	reg := e.registry
+	e.mu.RUnlock()
+
+	var batches []taskBatch
+	var currentBatch *taskBatch
+
+	for i, fc := range calls {
+		if declinedMap[i] {
+			resChan <- toolExecResult{
+				index: i,
+				name:  fc.Name,
+				tr: domaintools.ToolResult{
+					Text:  "User explicitly denied this action.",
+					Error: domaintools.ErrUserDeclined,
+				},
+			}
+			continue
+		}
+
+		if reg.IsSerial(fc.Name) {
+			if currentBatch != nil {
+				batches = append(batches, *currentBatch)
+				currentBatch = nil
+			}
+			batches = append(batches, taskBatch{
+				isSerial: true,
+				tasks:    []int{i},
+			})
+		} else {
+			if currentBatch == nil {
+				currentBatch = &taskBatch{
+					isSerial: false,
+					tasks:    []int{i},
+				}
+			} else {
+				currentBatch.tasks = append(currentBatch.tasks, i)
+			}
+		}
+	}
+	if currentBatch != nil {
+		batches = append(batches, *currentBatch)
+	}
+
+	return batches
+}
+
+func (e *ToolExecutor) executeSerialTask(ctx context.Context, i int, fc *llm.FunctionCall, resChan chan<- toolExecResult) bool {
 	var tr domaintools.ToolResult
 	func() {
 		defer func() {
@@ -372,8 +434,12 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
+	span.SetAttributes(attribute.String("tool.name", call.Name))
+	defer span.End()
+
 	startTime := time.Now()
-	trace := telemetry.TraceFromContext(parentCtx)
+	trace := telemetry.TraceFromContext(ctx)
 
 	// Check Circuit Breaker
 	if e.failures.isOpen(call.Name) {
@@ -395,31 +461,17 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	tool, err := e.resolveTool(call)
 	if err != nil {
 		tr := e.errorToToolResult(err)
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "error",
-			Error:     err.Error(),
-		})
-		return tr
+		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
 	}
 
 	// 2. Authorize
 	if err := e.authorizeTool(tool, call); err != nil {
 		tr := e.errorToToolResult(err)
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "error",
-			Error:     err.Error(),
-		})
-		return tr
+		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
 	}
 
 	// 4. Execute (with recovery/timeout)
-	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
+	result, err := e.runWithTimeout(ctx, tool, call.Args)
 
 	// 5. Finalize
 	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
@@ -545,23 +597,19 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 	}
 	defer cancel()
 
-	type res struct {
-		tr  domaintools.ToolResult
-		err error
-	}
-	resChan := make(chan res, 1)
+	resChan := make(chan asyncToolResult, 1)
 	startTime := time.Now()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				resChan <- res{
+				resChan <- asyncToolResult{
 					tr: e.handlePanic(r, tool.Name),
 				}
 			}
 		}()
 		// Tool implementations MUST respect the context (ctx) to prevent goroutine leaks.
 		result, err := reg.Execute(ctx, tool.Name, args)
-		resChan <- res{tr: result, err: err}
+		resChan <- asyncToolResult{tr: result, err: err}
 	}()
 
 	select {
@@ -573,33 +621,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		}
 
 		// Spawn watcher for the "Zombie" tool
-		go func(toolName string, startTime time.Time) {
-			// Wait for the non-compliant tool to return or hard timeout
-			select {
-			case <-resChan:
-				actualDuration := time.Since(startTime)
-
-				e.mu.RLock()
-				bus := e.events
-				e.mu.RUnlock()
-				if bus != nil {
-					bus.Publish(events.SystemMessageEvent{
-						Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
-						Level:   "warn",
-					})
-				}
-			case <-time.After(5 * time.Minute):
-				e.mu.RLock()
-				bus := e.events
-				e.mu.RUnlock()
-				if bus != nil {
-					bus.Publish(events.SystemMessageEvent{
-						Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
-						Level:   "error",
-					})
-				}
-			}
-		}(tool.Name, startTime)
+		go e.monitorZombieTool(tool.Name, startTime, resChan)
 
 		return domaintools.ToolResult{
 			Text:  msg,
@@ -645,4 +667,96 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 		}
 	}
 	return closest
+}
+
+type asyncToolResult struct {
+	tr  domaintools.ToolResult
+	err error
+}
+
+func (e *ToolExecutor) monitorZombieTool(toolName string, startTime time.Time, resChan <-chan asyncToolResult) {
+	// Wait for the non-compliant tool to return or hard timeout
+	select {
+	case <-resChan:
+		actualDuration := time.Since(startTime)
+
+		e.mu.RLock()
+		bus := e.events
+		e.mu.RUnlock()
+		if bus != nil {
+			bus.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Telemetry: Non-compliant tool %q finally finished after %v (exceeded timeout)", toolName, actualDuration),
+				Level:   "warn",
+			})
+		}
+	case <-time.After(5 * time.Minute):
+		e.mu.RLock()
+		bus := e.events
+		e.mu.RUnlock()
+		if bus != nil {
+			bus.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Telemetry: Tool %q appears to be permanently deadlocked (leaked goroutine).", toolName),
+				Level:   "error",
+			})
+		}
+	}
+}
+
+func (e *ToolExecutor) identifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
+	declinedMap := make(map[int]bool)
+	var consentIndices []int
+
+	for i, call := range calls {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Fail closed: If we panic evaluating a tool, do not allow it to execute.
+					declinedMap[i] = true
+				}
+			}()
+
+			tool, err := e.resolveTool(call)
+			if err == nil && tool.RequiresConsent {
+				consentIndices = append(consentIndices, i)
+			}
+		}()
+	}
+
+	return consentIndices, declinedMap
+}
+
+func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
+	consentIndices, declinedMap := e.identifyConsentItems(calls)
+
+	if len(consentIndices) == 0 {
+		return declinedMap
+	}
+
+	var sb strings.Builder
+	sb.WriteString("The agent requested the following actions requiring approval:\n")
+	for idx, i := range consentIndices {
+		c := calls[i]
+		sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
+	}
+	sb.WriteString("\nDo you approve all?")
+
+	e.mu.RLock()
+	sm := e.sm
+	e.mu.RUnlock()
+
+	if sm != nil {
+		if !sm.IsBypassActive() {
+			sm.TerminalLock()
+			approved, _ := sm.Confirm(ctx, sb.String())
+			sm.TerminalUnlock()
+
+			if !approved {
+				for _, i := range consentIndices {
+					declinedMap[i] = true
+				}
+			}
+		}
+	}
+
+	return declinedMap
 }

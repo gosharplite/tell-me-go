@@ -187,8 +187,9 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 	}, m.SemanticDiff)
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "rename_symbol",
-		Description: "Safely renames a Go symbol (function, type, variable) across the project using AST.",
+		Name:            "rename_symbol",
+		Description:     "Safely renames a Go symbol (function, type, variable) across the project using AST.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{
@@ -313,8 +314,9 @@ func Register(r tools.IToolRegistry, sm domain_security.ISecurityManager, bus ev
 	}, m.FindOrphanedSymbols, tools.ToolOptions{LongRunning: true})
 
 	r.RegisterWithOptions(&tools.ToolDeclaration{
-		Name:        "move_definition",
-		Description: "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
+		Name:            "move_definition",
+		Description:     "Moves a Go symbol (struct, interface, function) and its associated methods from one file to another.",
+		RequiresConsent: true,
 		Parameters: &tools.Schema{
 			Type: "OBJECT",
 			Properties: map[string]*tools.Schema{

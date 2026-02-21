@@ -16,6 +16,8 @@ type KVStore interface {
 // ListStore defines a generic list storage interface.
 type ListStore[T any] interface {
 	ReadAll(ctx context.Context) ([]T, error)
-	WriteAll(ctx context.Context, items []T) error
 	Append(ctx context.Context, item T) error
+	Update(ctx context.Context, id float64, item T) error
+	Delete(ctx context.Context, id float64) error
+	DeleteAll(ctx context.Context) error
 }

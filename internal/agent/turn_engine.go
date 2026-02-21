@@ -17,6 +17,8 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+
+	"go.opentelemetry.io/otel"
 )
 
 // clock provides a way to get the current time and handle delays, facilitating deterministic testing.
@@ -326,7 +328,10 @@ func (e *turnEngine) shouldStopRunning(turn *turn) bool {
 	return !turn.State.HasToolCalls || turn.Stop
 }
 
-func (e *turnEngine) executeTurn(ctx context.Context, turn *turn) error {
+func (e *turnEngine) executeTurn(parentCtx context.Context, turn *turn) error {
+	ctx, span := otel.Tracer("agent").Start(parentCtx, "agent.turn")
+	defer span.End()
+
 	trace := telemetry.NewTurnTrace()
 	ctxWithTrace := telemetry.ContextWithTrace(ctx, trace)
 
