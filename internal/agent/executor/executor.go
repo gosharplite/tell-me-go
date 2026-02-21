@@ -461,27 +461,13 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	tool, err := e.resolveTool(call)
 	if err != nil {
 		tr := e.errorToToolResult(err)
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "error",
-			Error:     err.Error(),
-		})
-		return tr
+		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
 	}
 
 	// 2. Authorize
 	if err := e.authorizeTool(tool, call); err != nil {
 		tr := e.errorToToolResult(err)
-		trace.RecordToolExecution(telemetry.ToolExecutionTrace{
-			ToolName:  call.Name,
-			StartTime: startTime,
-			Duration:  time.Since(startTime),
-			Status:    "error",
-			Error:     err.Error(),
-		})
-		return tr
+		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
 	}
 
 	// 4. Execute (with recovery/timeout)
