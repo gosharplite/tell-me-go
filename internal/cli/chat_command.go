@@ -27,7 +27,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
 	infra_persistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
-	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
@@ -168,7 +167,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), paths.HistoryPath)
+	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, fmt.Errorf("error loading history: %w", err)
 	}
@@ -216,7 +215,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		client,
 		filepath.Join(c.HomeDir, "assets/generated"),
 		bus,
-		infrapersistence.NewOSFileSystem(),
+		infra_persistence.NewOSFileSystem(),
 	)
 
 	// Infrastructure-specific tool registration

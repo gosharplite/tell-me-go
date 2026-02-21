@@ -95,19 +95,19 @@ func migrateConfig(ctx context.Context, db *sql.DB, fs persistence.FileSystem, c
 	if err != nil || len(configs) == 0 {
 		return err
 	}
-	
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	
+
 	for k, v := range configs {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", k, v); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return err
 		}
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -120,20 +120,20 @@ func migrateTasks(ctx context.Context, db *sql.DB, fs persistence.FileSystem, ta
 	if err != nil || len(tasks) == 0 {
 		return err
 	}
-	
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	
+
 	for _, t := range tasks {
 		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
 			int64(t.ID), t.Content, t.Status, t.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return err
 		}
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -146,7 +146,7 @@ func migrateScratchpad(ctx context.Context, db *sql.DB, fs persistence.FileSyste
 	if err != nil || scratch == "" {
 		return err
 	}
-	
+
 	_, err = db.ExecContext(ctx, "INSERT OR REPLACE INTO scratchpad (id, content) VALUES (1, ?)", scratch)
 	return err
 }
