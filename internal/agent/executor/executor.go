@@ -20,6 +20,8 @@ import (
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/gosharplite/tell-me-go/internal/pkg/stringsutil"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type toolExecResult struct {
@@ -372,8 +374,12 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 }
 
 func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.FunctionCall) domaintools.ToolResult {
+	ctx, span := otel.Tracer("agent").Start(parentCtx, "tool.execute."+call.Name)
+	span.SetAttributes(attribute.String("tool.name", call.Name))
+	defer span.End()
+
 	startTime := time.Now()
-	trace := telemetry.TraceFromContext(parentCtx)
+	trace := telemetry.TraceFromContext(ctx)
 
 	// Check Circuit Breaker
 	if e.failures.isOpen(call.Name) {
@@ -419,7 +425,7 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	}
 
 	// 4. Execute (with recovery/timeout)
-	result, err := e.runWithTimeout(parentCtx, tool, call.Args)
+	result, err := e.runWithTimeout(ctx, tool, call.Args)
 
 	// 5. Finalize
 	return e.finalizeToolExecution(call.Name, result, err, startTime, trace)
