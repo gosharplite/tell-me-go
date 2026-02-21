@@ -91,13 +91,13 @@ func initRepositories(ctx context.Context, configDir, storageType string) (servi
 	dbPath := filepath.Join(configDir, "tellmego.db")
 	paths["db_file"] = dbPath
 
-	db, err := InitSQLiteDB(dbPath)
+	db, err := initSQLiteDB(dbPath)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	// Perform migration if needed
-	err = MigrateFromJSON(ctx, db, fs, tasksPath, configPath, scratchPath)
+	err = migrateFromJSON(ctx, db, fs, tasksPath, configPath, scratchPath)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
