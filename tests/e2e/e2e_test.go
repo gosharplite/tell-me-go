@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -85,6 +86,10 @@ func runCommandWithEnvInDir(dir string, env []string, stdin string, args ...stri
 	cmd := exec.CommandContext(ctx, binPath, finalArgs...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(cmd.Env, "GEMINI_API_KEY=dummy")
+	
+	// If a mock server is spun up, TELL_ME_MOCK_URL might be needed by gemini.go
+	// we will inject it where necessary inside the tests.
 
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -180,9 +185,10 @@ func TestBypassArchiving(t *testing.T) {
 }
 
 // Helper to drive agent conversation and assertions
-func runAgentStep(t *testing.T, dir string, env []string, input string, wantSubstrs []string) (string, string) {
+func runAgentStep(t *testing.T, dir string, env []string, input string, wantSubstrs []string, args ...string) (string, string) {
 	t.Helper()
-	stdout, stderr, err := runCommandWithEnvInDir(dir, env, "", input)
+	cmdArgs := append(args, input)
+	stdout, stderr, err := runCommandWithEnvInDir(dir, env, "", cmdArgs...)
 	if err != nil {
 		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
 	}
@@ -287,218 +293,132 @@ func TestHelpOutput(t *testing.T) {
 }
 
 func TestToolOrchestrationLoop(t *testing.T) {
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	providers := []string{"google", "openai", "anthropic"}
+	for _, provider := range providers {
+		t.Run(provider, func(t *testing.T) {
+			server, _ := setupProviderMockServer(t, provider, "list_files", map[string]interface{}{"path": "."}, func(res string) string {
+				return "I have listed the files."
+			})
+			defer server.Close()
 
-		var body struct {
-			Contents []interface{} `json:"contents"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("Failed to decode request body: %v", err)
-			return
-		}
-
-		// State-based detection
-		isToolResponse := false
-		if len(body.Contents) > 0 {
-			lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-			if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-				if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-					isToolResponse = true
-				}
+			homeDir := t.TempDir()
+			configPath := createTempConfig(t, provider, server.URL)
+			env := []string{
+				"TELL_ME_HOME=" + homeDir,
+				"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 			}
-		}
 
-		response := `{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"list_files","args":{"path":"."}}}]}}]}`
-		if isToolResponse {
-			response = `{"candidates":[{"content":{"role":"model","parts":[{"text":"I have listed the files."}]}}]}`
-		}
-		fmt.Fprint(w, response)
-	}))
-	defer server.Close()
+			stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "list the files")
+			if err != nil {
+				t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
+			}
 
-	homeDir := t.TempDir()
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_NO_STREAM=true",
-	}
+			out := stripANSI(stdout)
+			errOut := stripANSI(stderr)
 
-	stdout, stderr, err := runCommandWithEnvInDir(homeDir, env, "", "list the files")
-	if err != nil {
-		t.Fatalf("CLI failed: %v\nStderr: %s", err, stderr)
-	}
-
-	out := stripANSI(stdout)
-	errOut := stripANSI(stderr)
-
-	if !strings.Contains(errOut, "Calling: list_files") {
-		t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
-	}
-	if !strings.Contains(out, "I have listed the files.") {
-		t.Errorf("Expected final answer in stdout, got: %q", out)
+			if !strings.Contains(errOut, "Calling: list_files") {
+				t.Errorf("Expected tool engine log in stderr, got: %q", errOut)
+			}
+			if !strings.Contains(out, "I have listed the files.") {
+				t.Errorf("Expected final answer in stdout, got: %q", out)
+			}
+		})
 	}
 }
 
 func TestWriteFileConfirmation(t *testing.T) {
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
+	providers := []string{"google", "openai", "anthropic"}
+	for _, provider := range providers {
+		t.Run(provider, func(t *testing.T) {
+			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "test.txt", "content": "hello world"}, func(result string) string {
+				return "File written."
+			})
+			defer server.Close()
 
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			isToolResponse := false
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if _, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						isToolResponse = true
-					}
-				}
+			homeDir := t.TempDir()
+			configPath := createTempConfig(t, provider, server.URL)
+			env := []string{
+				"TELL_ME_HOME=" + homeDir,
+				"TELL_ME_MOCK_ANSWER=y",
+				"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 			}
 
-			if !isToolResponse {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "write_file",
-									"args": {"filepath": "test.txt", "content": "hello world"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "File written."}]}}]}`)
+			// 2. Run CLI and Verification
+			runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."}, "-c", configPath)
+
+			// Verify file actually written
+			content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
+			if err != nil {
+				t.Errorf("File was not written: %v", err)
+			} else if string(content) != "hello world" {
+				t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
 			}
-			return
-		}
-	}))
-	defer server.Close()
-
-	homeDir := t.TempDir()
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_MOCK_ANSWER=y",
-		"TELL_ME_NO_STREAM=true",
-	}
-
-	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "write a file", []string{"Do you approve all?", "File written."})
-
-	// Verify file actually written
-	content, err := os.ReadFile(filepath.Join(homeDir, "test.txt"))
-	if err != nil {
-		t.Errorf("File was not written: %v", err)
-	} else if string(content) != "hello world" {
-		t.Errorf("File content mismatch. Expected 'hello world', got %q", string(content))
+		})
 	}
 }
 
 func TestWriteFileDenial(t *testing.T) {
-	// 1. Setup Mock Server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "generateContent") {
-			var body struct {
-				Contents []interface{} `json:"contents"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-
-			// State-based detection
-			var toolResponse map[string]interface{}
-			if len(body.Contents) > 0 {
-				lastTurn := body.Contents[len(body.Contents)-1].(map[string]interface{})
-				if parts, ok := lastTurn["parts"].([]interface{}); ok && len(parts) > 0 {
-					if resp, ok := parts[0].(map[string]interface{})["functionResponse"]; ok {
-						toolResponse = resp.(map[string]interface{})
-					}
-				}
-			}
-
-			if toolResponse == nil {
-				fmt.Fprint(w, `{
-					"candidates": [{
-						"content": {
-							"role": "model",
-							"parts": [{
-								"functionCall": {
-									"name": "write_file",
-									"args": {"filepath": "denied.txt", "content": "should not exist"}
-								}
-							}]
-						}
-					}]
-				}`)
-			} else {
-				// We check the tool response
-				result := toolResponse["response"].(map[string]interface{})["result"].(string)
-
+	providers := []string{"google", "openai", "anthropic"}
+	for _, provider := range providers {
+		t.Run(provider, func(t *testing.T) {
+			server, _ := setupProviderMockServer(t, provider, "write_file", map[string]interface{}{"filepath": "denied.txt", "content": "should not exist"}, func(result string) string {
 				if strings.Contains(result, "User explicitly denied this action.") {
-					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Model acknowledges denial."}]}}]}`)
-				} else {
-					fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Error: Denial failed."}]}}]}`)
+					return "Model acknowledges denial."
 				}
+				return "Error: Denial failed."
+			})
+			defer server.Close()
+
+			homeDir := t.TempDir()
+			configPath := createTempConfig(t, provider, server.URL)
+			env := []string{
+				"TELL_ME_HOME=" + homeDir,
+				"TELL_ME_MOCK_ANSWER=n",
+				"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 			}
-			return
-		}
-	}))
-	defer server.Close()
 
-	homeDir := t.TempDir()
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_MOCK_ANSWER=n",
-		"TELL_ME_NO_STREAM=true",
-	}
+			// 2. Run CLI and Verification
+			runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."}, "-c", configPath)
 
-	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "write a file", []string{"Model acknowledges denial."})
-
-	// Verify file NOT written
-	if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
-		t.Errorf("File 'denied.txt' should not have been created")
+			// Verify file NOT written
+			if _, err := os.Stat(filepath.Join(homeDir, "denied.txt")); !os.IsNotExist(err) {
+				t.Errorf("File 'denied.txt' should not have been created")
+			}
+		})
 	}
 }
 
 func TestSecurityGate(t *testing.T) {
-	homeDir := t.TempDir()
+	providers := []string{"google", "openai", "anthropic"}
+	for _, provider := range providers {
+		t.Run(provider, func(t *testing.T) {
+			homeDir := t.TempDir()
 
-	// Use helper to encapsulate mock server logic
-	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
-		"filepath": "/etc/passwd",
-	})
-	defer server.Close()
+			// Use helper to encapsulate mock server logic
+			server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
+				"filepath": "/etc/passwd",
+			}, nil)
+			defer server.Close()
 
-	env := []string{
-		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_NO_STREAM=true",
-	}
+			configPath := createTempConfig(t, provider, server.URL)
+			env := []string{
+				"TELL_ME_HOME=" + homeDir,
+				"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
+			}
 
-	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read /etc/passwd")
-	if err != nil {
-		t.Fatalf("CLI failed: %v", err)
-	}
+			_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read /etc/passwd")
+			if err != nil {
+				t.Fatalf("CLI failed: %v", err)
+			}
 
-	if !strings.Contains(*receivedResponse, "security violation") {
-		t.Errorf("Expected security violation error to be sent back to model, got: %q", *receivedResponse)
+			if !strings.Contains(*receivedResponse, "security violation") {
+				t.Errorf("Expected security violation error to be sent back to model, got: %q", *receivedResponse)
+			}
+		})
 	}
 }
 
@@ -509,19 +429,21 @@ func TestSymlinkAttack(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	provider := "google"
 	// Use helper to encapsulate mock server logic
-	server, receivedResponse := setupToolMockServer(t, "read_file", map[string]interface{}{
+	server, receivedResponse := setupProviderMockServer(t, provider, "read_file", map[string]interface{}{
 		"filepath": "evil_link",
-	})
+	}, nil)
 	defer server.Close()
 
+	configPath := createTempConfig(t, provider, server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_NO_STREAM=true",
+		"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 	}
 
-	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "read evil_link")
+	_, _, err := runCommandWithEnvInDir(homeDir, env, "", "-c", configPath, "read evil_link")
 	if err != nil {
 		t.Fatalf("CLI failed: %v", err)
 	}
@@ -532,21 +454,23 @@ func TestSymlinkAttack(t *testing.T) {
 }
 
 func TestManageTasks(t *testing.T) {
-	server, _ := setupToolMockServer(t, "manage_tasks", map[string]interface{}{
+	provider := "google"
+	server, _ := setupProviderMockServer(t, provider, "manage_tasks", map[string]interface{}{
 		"action":  "add",
 		"content": "End-to-End Test Task",
-	})
+	}, nil)
 	defer server.Close()
 
 	homeDir := t.TempDir()
+	configPath := createTempConfig(t, provider, server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_NO_STREAM=true",
+		"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "add a task", []string{"Done."})
+	runAgentStep(t, homeDir, env, "add a task", []string{"Done."}, "-c", configPath)
 
 	// Check if database exists and has content
 	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
@@ -570,21 +494,23 @@ func TestManageTasks(t *testing.T) {
 }
 
 func TestManageScratchpad(t *testing.T) {
-	server, _ := setupToolMockServer(t, "manage_scratchpad", map[string]interface{}{
+	provider := "google"
+	server, _ := setupProviderMockServer(t, provider, "manage_scratchpad", map[string]interface{}{
 		"action":  "write",
 		"content": "# E2E Scratchpad",
-	})
+	}, nil)
 	defer server.Close()
 
 	homeDir := t.TempDir()
+	configPath := createTempConfig(t, provider, server.URL)
 	env := []string{
 		"TELL_ME_HOME=" + homeDir,
-		"TELL_ME_MOCK_URL=" + server.URL + "/",
-		"TELL_ME_NO_STREAM=true",
+		"TELL_ME_MOCK_URL=" + server.URL,
+				"TELL_ME_NO_STREAM=true",
 	}
 
 	// 2. Run CLI and Verification
-	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Done."})
+	runAgentStep(t, homeDir, env, "update scratchpad", []string{"Done."}, "-c", configPath)
 
 	// Check if database exists and has content
 	dbFile := filepath.Join(homeDir, "output", "assistant", "tellmego.db")
@@ -604,88 +530,206 @@ func TestManageScratchpad(t *testing.T) {
 	}
 }
 
-// setupToolMockServer creates a mock HTTP server that simulates a tool call from the model
-// and captures the agent's response.
-func setupToolMockServer(t *testing.T, initialCall string, initialArgs map[string]interface{}) (*httptest.Server, *string) {
+func createTempConfig(t *testing.T, providerType, mockURL string) string {
+	content := fmt.Sprintf(`
+MODE: "assistant"
+SELECTED_PROVIDER: "mock"
+PROVIDERS:
+  mock:
+    TYPE: "%s"
+    URL: "%s"
+    API_KEY: "dummy"
+    MODEL: "gpt-4"
+`, providerType, mockURL)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write temp config: %v", err)
+	}
+	return path
+}
+
+func setupProviderMockServer(t *testing.T, provider string, toolName string, toolArgs map[string]interface{}, onToolResponse func(string) string) (*httptest.Server, *string) {
 	t.Helper()
 	receivedResponse := new(string)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "generateContent") {
+		// Validate endpoint mapping based on provider
+		if provider == "google" && !strings.Contains(r.URL.Path, "generateContent") {
+			t.Errorf("Google provider should use generateContent endpoint, got: %s", r.URL.Path)
+			return
+		}
+		if provider == "openai" && !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			t.Errorf("OpenAI provider should use /chat/completions endpoint, got: %s", r.URL.Path)
+			return
+		}
+		if provider == "anthropic" && !strings.HasSuffix(r.URL.Path, "/messages") {
+			t.Errorf("Anthropic provider should use /messages endpoint, got: %s", r.URL.Path)
 			return
 		}
 
-		var body struct {
-			Contents []interface{} `json:"contents"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
 			return
 		}
+		
+		t.Logf("MOCK_SERVER_REQUEST [%s]: %s\n", provider, string(bodyBytes))
 
 		w.Header().Set("Content-Type", "application/json")
-		toolResponse := extractToolResponse(body.Contents)
+		toolResult := extractToolResult(bodyBytes, provider)
 
-		if toolResponse == nil {
+		if toolResult == nil {
 			// Turn 1: Return the requested tool call
-			resp := createToolCallResponse(initialCall, initialArgs)
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				t.Errorf("failed to encode mock response: %v", err)
-			}
+			resStr := createToolCallResponse(provider, toolName, toolArgs)
+			t.Logf("MOCK_SERVER_RESPONSE [%s]: %s\n", provider, resStr)
+			fmt.Fprint(w, resStr)
 		} else {
 			// Turn 2: Capture the response from the agent and return a final message
-			captureAgentResult(toolResponse, receivedResponse)
-			fmt.Fprint(w, `{"candidates": [{"content": {"role": "model", "parts": [{"text": "Done."}]}}]}`)
+			*receivedResponse = *toolResult
+			finalText := "Done."
+			if onToolResponse != nil {
+				finalText = onToolResponse(*toolResult)
+			}
+			resStr := createTextResponse(provider, finalText)
+			t.Logf("MOCK_SERVER_RESPONSE [%s]: %s\n", provider, resStr)
+			fmt.Fprint(w, resStr)
 		}
 	}))
 	return server, receivedResponse
 }
 
-func extractToolResponse(contents []interface{}) map[string]interface{} {
-	if len(contents) == 0 {
+func extractToolResult(reqBody []byte, provider string) *string {
+	var body map[string]interface{}
+	if err := json.Unmarshal(reqBody, &body); err != nil {
 		return nil
 	}
-	lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	parts, ok := lastTurn["parts"].([]interface{})
-	if !ok || len(parts) == 0 {
-		return nil
-	}
-	part, ok := parts[0].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	resp, ok := part["functionResponse"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	return resp
-}
 
-func captureAgentResult(toolResponse map[string]interface{}, out *string) {
-	if response, ok := toolResponse["response"].(map[string]interface{}); ok {
-		if result, ok := response["result"].(string); ok {
-			*out = result
+	switch provider {
+	case "google":
+		contents, ok := body["contents"].([]interface{})
+		if !ok || len(contents) == 0 {
+			return nil
 		}
+		lastTurn, ok := contents[len(contents)-1].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		parts, ok := lastTurn["parts"].([]interface{})
+		if !ok || len(parts) == 0 {
+			return nil
+		}
+		part, ok := parts[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		functionResponse, ok := part["functionResponse"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		responseMap, ok := functionResponse["response"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		result, _ := responseMap["result"].(string)
+		return &result
+
+	case "openai":
+		messages, ok := body["messages"].([]interface{})
+		if !ok || len(messages) == 0 {
+			return nil
+		}
+		lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		if role, _ := lastMsg["role"].(string); role != "tool" {
+			return nil
+		}
+		content, _ := lastMsg["content"].(string)
+		return &content
+
+	case "anthropic":
+		messages, ok := body["messages"].([]interface{})
+		if !ok || len(messages) == 0 {
+			return nil
+		}
+		lastMsg, ok := messages[len(messages)-1].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		contents, ok := lastMsg["content"].([]interface{})
+		if !ok || len(contents) == 0 {
+			return nil
+		}
+		for _, c := range contents {
+			block, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if typ, _ := block["type"].(string); typ == "tool_result" {
+				contentStr, _ := block["content"].(string)
+				return &contentStr
+			}
+		}
+		return nil
 	}
+	return nil
 }
 
-func createToolCallResponse(name string, args map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
-		"candidates": []interface{}{
-			map[string]interface{}{
-				"content": map[string]interface{}{
-					"role": "model",
-					"parts": []interface{}{
-						map[string]interface{}{
-							"functionCall": map[string]interface{}{
-								"name": name,
-								"args": args,
+func createToolCallResponse(provider string, name string, args map[string]interface{}) string {
+	argsBytes, _ := json.Marshal(args)
+	argsStr := string(argsBytes) // For OpenAI
+
+	switch provider {
+	case "google":
+		return fmt.Sprintf(`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":%q,"args":%s}}]}}]}`, name, string(argsBytes))
+	case "openai":
+		resp := map[string]interface{}{
+			"choices": []interface{}{
+				map[string]interface{}{
+					"message": map[string]interface{}{
+						"role": "assistant",
+						"tool_calls": []interface{}{
+							map[string]interface{}{
+								"id": "call_123",
+								"type": "function",
+								"function": map[string]interface{}{
+									"name": name,
+									"arguments": argsStr,
+								},
 							},
 						},
 					},
 				},
 			},
-		},
+		}
+		b, _ := json.Marshal(resp)
+		return string(b)
+	case "anthropic":
+		resp := map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "tool_use",
+					"id": "tool_123",
+					"name": name,
+					"input": args,
+				},
+			},
+		}
+		b, _ := json.Marshal(resp)
+		return string(b)
 	}
+	return ""
 }
+
+func createTextResponse(provider string, text string) string {
+	switch provider {
+	case "google":
+		return fmt.Sprintf(`{"candidates":[{"content":{"role":"model","parts":[{"text":%q}]}}]}`, text)
+	case "openai":
+		return fmt.Sprintf(`{"choices": [{"message": {"role": "assistant", "content": %q}}]}`, text)
+	case "anthropic":
+		return fmt.Sprintf(`{"role": "assistant", "content": [{"type": "text", "text": %q}]}`, text)
+	}
+	return ""
+}
+
