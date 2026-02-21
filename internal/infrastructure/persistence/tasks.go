@@ -31,11 +31,7 @@ func newTaskRepository(fs persistence.FileSystem, filePath string) *taskReposito
 	}
 }
 
-// ReadAll loads tasks from disk.
-func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
+func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, error) {
 	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -72,11 +68,14 @@ func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	return loaded, nil
 }
 
-// WriteAll saves tasks to disk.
-func (r *taskRepository) WriteAll(ctx context.Context, tasks []services.Task) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// ReadAll loads tasks from disk.
+func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.readAllInternal(ctx)
+}
 
+func (r *taskRepository) writeAllInternal(ctx context.Context, tasks []services.Task) error {
 	// Sort by ID stable
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].ID < tasks[j].ID
@@ -92,6 +91,51 @@ func (r *taskRepository) WriteAll(ctx context.Context, tasks []services.Task) er
 		data = append(data, '\n')
 	}
 	return r.fs.WriteFile(ctx, r.filePath, data, 0644)
+}
+
+// Update modifies an existing task on disk.
+func (r *taskRepository) Update(ctx context.Context, id float64, item services.Task) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tasks, err := r.readAllInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	for i, t := range tasks {
+		if t.ID == id {
+			tasks[i] = item
+			return r.writeAllInternal(ctx, tasks)
+		}
+	}
+	return nil
+}
+
+// Delete removes a task from disk.
+func (r *taskRepository) Delete(ctx context.Context, id float64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tasks, err := r.readAllInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	var next []services.Task
+	for _, t := range tasks {
+		if t.ID != id {
+			next = append(next, t)
+		}
+	}
+	return r.writeAllInternal(ctx, next)
+}
+
+// DeleteAll removes all tasks from disk.
+func (r *taskRepository) DeleteAll(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.writeAllInternal(ctx, nil)
 }
 
 // Append appends a single task to disk.

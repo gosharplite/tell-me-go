@@ -16,11 +16,38 @@ type mockTaskRepo struct {
 }
 
 func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]Task, error) { return m.tasks, m.readErr }
-func (m *mockTaskRepo) WriteAll(ctx context.Context, tasks []Task) error {
+func (m *mockTaskRepo) Update(ctx context.Context, id float64, task Task) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
-	m.tasks = tasks
+	for i, t := range m.tasks {
+		if t.ID == id {
+			m.tasks[i] = task
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *mockTaskRepo) Delete(ctx context.Context, id float64) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	var next []Task
+	for _, t := range m.tasks {
+		if t.ID != id {
+			next = append(next, t)
+		}
+	}
+	m.tasks = next
+	return nil
+}
+
+func (m *mockTaskRepo) DeleteAll(ctx context.Context) error {
+	if m.writeErr != nil {
+		return m.writeErr
+	}
+	m.tasks = nil
 	return nil
 }
 

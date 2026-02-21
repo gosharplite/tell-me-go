@@ -7,6 +7,8 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 func TestMemoryKVStore(t *testing.T) {
@@ -107,9 +109,9 @@ func TestMemoryListStore(t *testing.T) {
 		t.Parallel()
 		runListAppendAndReadAll(t, ctx)
 	})
-	t.Run("WriteAllOverwrites", func(t *testing.T) {
+	t.Run("UpdateAndDelete", func(t *testing.T) {
 		t.Parallel()
-		runListWriteAllOverwrites(t, ctx)
+		runListUpdateAndDelete(t, ctx)
 	})
 	t.Run("Concurrency", func(t *testing.T) {
 		t.Parallel()
@@ -134,42 +136,59 @@ func runListAppendAndReadAll(t *testing.T, ctx context.Context) {
 	}
 }
 
-func runListWriteAllOverwrites(t *testing.T, ctx context.Context) {
-	store := newMemoryListStore[string]()
-	_ = store.Append(ctx, "old")
+func runListUpdateAndDelete(t *testing.T, ctx context.Context) {
+	store := newMemoryListStore[services.Task]()
+	_ = store.Append(ctx, services.Task{ID: 1, Content: "old"})
 
-	newItems := []string{"new1", "new2"}
-	if err := store.WriteAll(ctx, newItems); err != nil {
-		t.Fatalf("WriteAll failed: %v", err)
+	if err := store.Update(ctx, 1, services.Task{ID: 1, Content: "new"}); err != nil {
+		t.Fatalf("Update failed: %v", err)
 	}
 
 	items, _ := store.ReadAll(ctx)
-	if len(items) != 2 || items[0] != "new1" || items[1] != "new2" {
-		t.Errorf("WriteAll did not overwrite correctly: %v", items)
+	if len(items) != 1 || items[0].Content != "new" {
+		t.Errorf("Update did not overwrite correctly: %v", items)
+	}
+
+	if err := store.Delete(ctx, 1); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	items, _ = store.ReadAll(ctx)
+	if len(items) != 0 {
+		t.Errorf("Delete did not remove correctly: %v", items)
+	}
+
+	_ = store.Append(ctx, services.Task{ID: 2, Content: "item"})
+	if err := store.DeleteAll(ctx); err != nil {
+		t.Fatalf("DeleteAll failed: %v", err)
+	}
+	items, _ = store.ReadAll(ctx)
+	if len(items) != 0 {
+		t.Errorf("DeleteAll did not clear items")
 	}
 }
 
 func runListConcurrency(t *testing.T, ctx context.Context) {
-	store := newMemoryListStore[int]()
+	store := newMemoryListStore[services.Task]()
 	var wg sync.WaitGroup
 	count := 100
 
 	// Concurrent appends
 	for i := 0; i < count; i++ {
 		wg.Add(1)
-		go func(val int) {
+		go func(val float64) {
 			defer wg.Done()
-			_ = store.Append(ctx, val)
-		}(i)
+			_ = store.Append(ctx, services.Task{ID: val})
+		}(float64(i))
 	}
 
-	// Concurrent writes
+	// Concurrent updates
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
-		go func() {
+		go func(val float64) {
 			defer wg.Done()
-			_ = store.WriteAll(ctx, []int{1, 2, 3})
-		}()
+			_ = store.Update(ctx, val, services.Task{ID: val, Content: "updated"})
+		}(float64(i))
 	}
 
 	// Concurrent reads

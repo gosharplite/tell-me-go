@@ -144,27 +144,20 @@ func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]services.Task, error) 
 	return res, rows.Err()
 }
 
-func (s *sqliteTaskStore) WriteAll(ctx context.Context, items []services.Task) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+func (s *sqliteTaskStore) Update(ctx context.Context, id float64, item services.Task) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE tasks SET content = ?, status = ? WHERE id = ?",
+		item.Content, item.Status, int64(id))
+	return err
+}
 
-	_, err = tx.ExecContext(ctx, "DELETE FROM tasks")
-	if err != nil {
-		return err
-	}
+func (s *sqliteTaskStore) Delete(ctx context.Context, id float64) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", int64(id))
+	return err
+}
 
-	for _, item := range items {
-		_, err = tx.ExecContext(ctx, "INSERT INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
-			int64(item.ID), item.Content, item.Status, item.CreatedAt.Format(time.RFC3339Nano))
-		if err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
+func (s *sqliteTaskStore) DeleteAll(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM tasks")
+	return err
 }
 
 func (s *sqliteTaskStore) Append(ctx context.Context, item services.Task) error {

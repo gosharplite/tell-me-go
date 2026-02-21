@@ -20,8 +20,10 @@ func TestTaskRepository_SaveAndLoad(t *testing.T) {
 		{ID: 2, Content: "Task 2", Status: "completed"},
 	}
 
-	if err := repo.WriteAll(ctx, tasks); err != nil {
-		t.Fatal(err)
+	for _, task := range tasks {
+		if err := repo.Append(ctx, task); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	loaded, err := repo.ReadAll(ctx)
@@ -59,8 +61,10 @@ func TestTaskRepository_JSONLFormat(t *testing.T) {
 		{ID: 1, Content: "Task 1"},
 		{ID: 2, Content: "Task 2"},
 	}
-	if err := repo.WriteAll(ctx, tasks); err != nil {
-		t.Fatal(err)
+	for _, task := range tasks {
+		if err := repo.Append(ctx, task); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	content, err := fs.ReadFile(ctx, tasksFile)
@@ -82,8 +86,10 @@ func TestTaskRepository_Append(t *testing.T) {
 		{ID: 1, Content: "Task 1"},
 		{ID: 2, Content: "Task 2"},
 	}
-	if err := repo.WriteAll(ctx, tasks); err != nil {
-		t.Fatal(err)
+	for _, task := range tasks {
+		if err := repo.Append(ctx, task); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if err := repo.Append(ctx, services.Task{ID: 3, Content: "Task 3"}); err != nil {
