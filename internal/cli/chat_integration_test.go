@@ -71,7 +71,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	t.Run("Archiving", func(t *testing.T) {
 		verifyArchiving(t, stdout.String(), tmpDir)
 		if _, err := os.Stat(historyPath); err != nil {
-			t.Errorf("new history.json not found: %v", err)
+			t.Errorf("new history.jsonl not found: %v", err)
 		}
 	})
 
@@ -99,7 +99,7 @@ MAX_HISTORY_TURNS: 10
 		t.Fatalf("failed to create mode dir: %v", err)
 	}
 
-	historyPath = filepath.Join(modeDir, "history.json")
+	historyPath = filepath.Join(modeDir, "history.jsonl")
 	if err := os.WriteFile(historyPath, []byte("[]"), 0644); err != nil {
 		t.Fatalf("failed to write history: %v", err)
 	}
@@ -126,8 +126,8 @@ func verifyArchiving(t *testing.T, stdout string, tmpDir string) {
 		t.Error("expected at least one backup directory")
 	} else {
 		backupPath := filepath.Join(backupsDir, entries[0].Name())
-		if _, err := os.Stat(filepath.Join(backupPath, "history.json")); err != nil {
-			t.Errorf("history.json not found in backup: %v", err)
+		if _, err := os.Stat(filepath.Join(backupPath, "history.jsonl")); err != nil {
+			t.Errorf("history.jsonl not found in backup: %v", err)
 		}
 		if _, err := os.Stat(filepath.Join(backupPath, "tokens.log")); err != nil {
 			t.Errorf("tokens.log not found in backup: %v", err)

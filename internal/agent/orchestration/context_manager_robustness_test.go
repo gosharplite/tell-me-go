@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -469,5 +470,57 @@ func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content)
 	}
 	if !found {
 		t.Error("Binary data transformation not found in model turn")
+	}
+}
+
+func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
+	tmpDir := t.TempDir()
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.jsonl")
+	ctx := context.Background()
+
+	// Initial message
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
+
+	bus := events.NewSimpleEventBus()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
+	cm := NewContextManager(strategy, hManager, bus, nil)
+
+	// Custom transformer that blocks mid-execution
+	prepareStarted := make(chan struct{})
+	prepareResume := make(chan struct{})
+	blockingTransformer := &mockTransformer{
+		transformFn: func(ctx context.Context, req *services.ContextRequest) error {
+			close(prepareStarted)
+			<-prepareResume
+			return nil
+		},
+	}
+
+	cm.Pipeline = NewContextPipeline(blockingTransformer)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var prepareErr error
+	go func() {
+		defer wg.Done()
+		// We expect this to fail eventually when it resumes
+		_, _, prepareErr = cm.Prepare(ctx, 1)
+	}()
+
+	<-prepareStarted
+	// Concurrent modification while Prepare is blocked in the pipeline
+	_ = cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "concurrent"}}})
+	
+	close(prepareResume)
+	wg.Wait()
+
+	if prepareErr == nil {
+		t.Fatal("expected error due to concurrent modification, got nil")
+	}
+	if !strings.Contains(prepareErr.Error(), "concurrent history modification detected") {
+		t.Errorf("expected concurrent modification error, got: %v", prepareErr)
+	}
+	if !domain_llm.IsTransient(prepareErr) {
+		t.Errorf("expected transient error, got: %v", prepareErr)
 	}
 }

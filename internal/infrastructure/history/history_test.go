@@ -149,6 +149,7 @@ type mockStore struct{}
 func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)                    { return nil, nil }
 func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error             { return nil }
 func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error           { return nil }
+func (s *mockStore) Archive(ctx context.Context, contents []*llm.Content) error          { return nil }
 func (s *mockStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) error { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
@@ -377,5 +378,27 @@ func TestHistoryManager_AppendParts(t *testing.T) {
 	err = m.AppendParts(ctx, 5, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error for out of bounds index")
+	}
+}
+
+func TestHistoryManager_Archive(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.json")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Initial message"}}},
+	}
+
+	if err := m.Archive(ctx, contents); err != nil {
+		t.Fatalf("Archive failed: %v", err)
+	}
+
+	// Verify archive exists
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	if _, err := os.Stat(archiveFile); os.IsNotExist(err) {
+		t.Error("archive file was not created")
 	}
 }

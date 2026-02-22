@@ -70,6 +70,13 @@ func (m *Manager) Save(ctx context.Context) error {
 	return m.store.Save(ctx, m.Contents)
 }
 
+// Archive appends content entries to the archive file.
+func (m *Manager) Archive(ctx context.Context, contents []*llm.Content) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.store.Archive(ctx, contents)
+}
+
 // AddContent appends a full api.Content object to the history.
 // Note: It does NOT validate role alternation or clean content;
 // these are responsibilities of the Orchestration layer.

@@ -322,6 +322,17 @@ func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*l
 	// Reconstruct history using the robust helper
 	newHistory := applySummaryToHistory(currentContents, 0, endIdx, summary)
 	cm.version++
+
+	// ✅ SCALABLE (Event-Sourced Archival):
+	// Ensure the removed history is archived before overwriting the main file.
+	if err := cm.History.Archive(ctx, subset); err != nil {
+		category := llm.ErrTerminal
+		if llm.IsTransient(err) {
+			category = llm.ErrTransient
+		}
+		return fmt.Errorf("%w: failed to archive history before summarization: %v", category, err)
+	}
+
 	if err := cm.History.SetContents(ctx, newHistory); err != nil {
 		category := llm.ErrTerminal
 		if llm.IsTransient(err) {

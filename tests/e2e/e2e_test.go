@@ -114,7 +114,7 @@ func TestSessionArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	histFile := filepath.Join(modeDir, "history.json")
+	histFile := filepath.Join(modeDir, "history.jsonl")
 	logFile := filepath.Join(modeDir, "tokens.log")
 
 	if err := os.WriteFile(histFile, []byte("[]"), 0644); err != nil {
@@ -155,7 +155,7 @@ func TestBypassArchiving(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	histFile := filepath.Join(modeDir, "history.json")
+	histFile := filepath.Join(modeDir, "history.jsonl")
 	bypassFile := filepath.Join(modeDir, "bypass.log")
 
 	if err := os.WriteFile(histFile, []byte("[]"), 0644); err != nil {
@@ -215,7 +215,7 @@ func TestEnvironmentPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessionFiles := []string{"history.json", "tokens.log", "commands.log"}
+	sessionFiles := []string{"history.jsonl", "tokens.log", "commands.log"}
 	persistentFiles := []string{"safepaths.json", "scratchpad.md", "tasks.json", "bypass.log", "tellmego.db"}
 
 	for _, f := range sessionFiles {

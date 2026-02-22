@@ -1058,3 +1058,104 @@ func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 		t.Error("expected error appending parts to invalid directory")
 	}
 }
+
+func TestJSONLStore_Archive(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "history.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 1"}}},
+		{Role: "model", Parts: []*llm.Part{{Text: "Msg 2"}}},
+	}
+
+	// 1. Test Archive empty contents
+	if err := store.Archive(ctx, []*llm.Content{}); err != nil {
+		t.Errorf("expected no error for empty archive, got %v", err)
+	}
+
+	// 2. Test Archive contents
+	if err := store.Archive(ctx, contents); err != nil {
+		t.Fatalf("Archive failed: %v", err)
+	}
+
+	// 3. Verify archive file exists and contains contents
+	archivePath := filepath.Join(tmpDir, "history.archive.jsonl")
+	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
+		t.Fatal("archive file does not exist")
+	}
+
+	// Use a temporary store to load the archive file
+	archiveStore := newJSONLStore(infrapersistence.NewOSFileSystem(), archivePath)
+	archivedContents, err := archiveStore.Load(ctx)
+	if err != nil {
+		t.Fatalf("failed to load archive: %v", err)
+	}
+
+	if len(archivedContents) != 2 {
+		t.Fatalf("expected 2 archived entries, got %d", len(archivedContents))
+	}
+
+	if archivedContents[0].Parts[0].Text != "Msg 1" {
+		t.Errorf("expected 'Msg 1', got %q", archivedContents[0].Parts[0].Text)
+	}
+
+	// 4. Test Archive more contents (append mode)
+	moreContents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Msg 3"}}},
+	}
+	if err := store.Archive(ctx, moreContents); err != nil {
+		t.Fatalf("Archive failed: %v", err)
+	}
+
+	archivedContents, err = archiveStore.Load(ctx)
+	if err != nil {
+		t.Fatalf("failed to load archive again: %v", err)
+	}
+
+	if len(archivedContents) != 3 {
+		t.Fatalf("expected 3 archived entries, got %d", len(archivedContents))
+	}
+}
+
+func TestJSONLStore_Migration(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	jsonPath := filepath.Join(tmpDir, "history.json")
+	jsonlPath := filepath.Join(tmpDir, "history.jsonl")
+
+	// 1. Create legacy history.json
+	content := `[{"Role":"user", "Parts":[{"Text":"migrated"}]}]`
+	if err := os.WriteFile(jsonPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Initialize store with .jsonl path
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), jsonlPath)
+	ctx := context.Background()
+
+	// 3. Load should trigger migration
+	contents, err := store.Load(ctx)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(contents) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(contents))
+	}
+	if contents[0].Parts[0].Text != "migrated" {
+		t.Errorf("expected 'migrated', got %q", contents[0].Parts[0].Text)
+	}
+
+	// 4. Verify history.jsonl exists
+	if _, err := os.Stat(jsonlPath); os.IsNotExist(err) {
+		t.Error("history.jsonl was not created during migration")
+	}
+
+	// 5. Verify history.json is removed
+	if _, err := os.Stat(jsonPath); err == nil {
+		t.Error("legacy history.json was not removed after migration")
+	}
+}
