@@ -25,9 +25,9 @@ type Manager struct {
 }
 
 // NewManager creates a new history manager for the given file path.
-func NewManager(fs persistence.FileSystem, filePath string) *Manager {
+func NewManager(fs persistence.FileSystem, filePath string, archivePath string) *Manager {
 	return &Manager{
-		store:    newJSONLStore(fs, filePath),
+		store:    newJSONLStore(fs, filePath, archivePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}

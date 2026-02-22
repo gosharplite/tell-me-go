@@ -39,18 +39,20 @@ type historyPatch struct {
 
 // jsonlStore implements Store using a JSON Lines file.
 type jsonlStore struct {
-	filePath   string
-	assetStore *infrapersistence.AssetStore
-	fs         persistence.FileSystem
+	filePath    string
+	archivePath string
+	assetStore  *infrapersistence.AssetStore
+	fs          persistence.FileSystem
 }
 
 // newJSONLStore creates a new jsonlStore.
-func newJSONLStore(fs persistence.FileSystem, filePath string) *jsonlStore {
+func newJSONLStore(fs persistence.FileSystem, filePath string, archivePath string) *jsonlStore {
 	assetDir := filepath.Join(filepath.Dir(filePath), "assets")
 	return &jsonlStore{
-		filePath:   filePath,
-		assetStore: infrapersistence.NewAssetStore(assetDir).WithFileSystem(fs),
-		fs:         fs,
+		filePath:    filePath,
+		archivePath: archivePath,
+		assetStore:  infrapersistence.NewAssetStore(assetDir).WithFileSystem(fs),
+		fs:          fs,
 	}
 }
 
@@ -63,9 +65,19 @@ func (s *jsonlStore) withFileSystem(fs persistence.FileSystem) *jsonlStore {
 
 // Load reads the history from the JSONL file.
 func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
-	s.migrateLegacyJSONFile(ctx)
+	_ = s.migrateLegacyJSONFile(ctx)
 
 	if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
+		// Fallback: Check if old .json file exists
+		if filepath.Ext(s.filePath) == ".jsonl" {
+			oldPath := s.filePath[:len(s.filePath)-1] // .jsonl -> .json
+			if _, err := s.fs.Stat(ctx, oldPath); err == nil {
+				data, readErr := s.fs.ReadFile(ctx, oldPath)
+				if readErr == nil {
+					return s.loadLegacyJSON(ctx, data)
+				}
+			}
+		}
 		return []*llm.Content{}, nil
 	}
 
@@ -90,7 +102,15 @@ func (s *jsonlStore) Load(ctx context.Context) ([]*llm.Content, error) {
 	return s.loadJSONL(ctx, data)
 }
 
-func (s *jsonlStore) migrateLegacyJSONFile(ctx context.Context) {
+func (s *jsonlStore) loadLegacyJSON(ctx context.Context, data []byte) ([]*llm.Content, error) {
+	var contents []*llm.Content
+	if err := json.Unmarshal(data, &contents); err != nil {
+		return nil, fmt.Errorf("failed to decode legacy JSON: %w", err)
+	}
+	return contents, nil
+}
+
+func (s *jsonlStore) migrateLegacyJSONFile(ctx context.Context) error {
 	// Fallback/Migration: If history.json exists but history.jsonl doesn't, rename it.
 	if filepath.Ext(s.filePath) == ".jsonl" {
 		oldPath := s.filePath[:len(s.filePath)-1] // .jsonl -> .json
@@ -98,14 +118,19 @@ func (s *jsonlStore) migrateLegacyJSONFile(ctx context.Context) {
 			if _, err := s.fs.Stat(ctx, s.filePath); os.IsNotExist(err) {
 				// We don't have an os.Rename in the FileSystem interface, so we read and write.
 				data, err := s.fs.ReadFile(ctx, oldPath)
-				if err == nil {
-					if err := s.fs.WriteFile(ctx, s.filePath, data, 0644); err == nil {
-						_ = s.fs.Remove(ctx, oldPath)
-					}
+				if err != nil {
+					return err
 				}
+
+				if err := s.fs.WriteFile(ctx, s.filePath, data, 0644); err != nil {
+					return err
+				}
+
+				_ = s.fs.Remove(ctx, oldPath)
 			}
 		}
 	}
+	return nil
 }
 
 func (s *jsonlStore) loadJSONL(ctx context.Context, data []byte) ([]*llm.Content, error) {
@@ -234,8 +259,7 @@ func (s *jsonlStore) Archive(ctx context.Context, contents []*llm.Content) (err 
 		return err
 	}
 
-	archivePath := filepath.Join(filepath.Dir(s.filePath), "history.archive.jsonl")
-	f, oerr := s.fs.OpenFile(ctx, archivePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, oerr := s.fs.OpenFile(ctx, s.archivePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if oerr != nil {
 		return oerr
 	}

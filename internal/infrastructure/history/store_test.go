@@ -20,7 +20,7 @@ func TestJSONLStore_LargeLine(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "large_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// Create a very large entry (e.g., 200KB, which is > 64KB default bufio.Scanner limit)
@@ -54,7 +54,7 @@ func TestJSONLStore_AssetExternalization(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	data := []byte("fake-image-data")
@@ -158,7 +158,7 @@ func TestJSONLStore_MalformedLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -170,7 +170,7 @@ func TestJSONLStore_WithFileSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "fs_test.jsonl")
 	fs := infrapersistence.NewOSFileSystem()
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath).withFileSystem(fs)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(fs)
 
 	if store.fs != fs {
 		t.Error("withFileSystem failed to set filesystem on jsonlStore")
@@ -180,7 +180,7 @@ func TestJSONLStore_WithFileSystem(t *testing.T) {
 func TestJSONLStore_Append_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -193,7 +193,7 @@ func TestJSONLStore_Append_Cancel(t *testing.T) {
 func TestJSONLStore_Load_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_load.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_ = store.Save(ctx, []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hi"}}}})
 
@@ -208,7 +208,7 @@ func TestJSONLStore_Load_Cancel(t *testing.T) {
 func TestJSONLStore_Save_Cancel(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "cancel_save.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -230,7 +230,7 @@ func TestJSONLStore_PinnedPersistence(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "pinned_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -286,7 +286,7 @@ func TestJSONLStore_NoTransientPartsLeaking(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "transient_test.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -328,7 +328,7 @@ func TestJSONLStore_PrepareForStorage_EmptyInput(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_input.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	prepared, err := store.prepareForStorage(ctx, nil)
@@ -344,7 +344,7 @@ func TestJSONLStore_PrepareForStorage_MalformedJSON(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "malformed_json.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// prepareForStorage itself doesn't parse JSON, but we test preservation of nil parts
@@ -369,7 +369,7 @@ func TestJSONLStore_PrepareForStorage_PathPermissionErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	badStore := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "history.jsonl"))
+	badStore := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(invalidDir, "history.jsonl"), filepath.Join(invalidDir, "history.archive.jsonl"))
 	ctx := context.Background()
 	content := &llm.Content{
 		Parts: []*llm.Part{
@@ -417,7 +417,7 @@ func TestJSONLStore_PrepareForStorage_MixedContentParts(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "mixed_parts.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -453,7 +453,7 @@ func TestJSONLStore_UpdateMetadataAndTruncate_SaveAndPatch(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -488,7 +488,7 @@ func TestJSONLStore_UpdateMetadataAndTruncate_Truncate(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_trunc.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -520,7 +520,7 @@ func TestJSONLStore_UpdateMetadataAndTruncate_Compact(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "patches_compact.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -565,7 +565,7 @@ func TestJSONLStore_Load_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	contents, err := store.Load(ctx)
 	if err != nil {
@@ -587,7 +587,7 @@ func TestJSONLStore_Load_LegacyJSONArray(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	contents, err := store.Load(ctx)
 	if err != nil {
@@ -612,7 +612,7 @@ func TestJSONLStore_Load_InvalidLegacyJSONArray(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	// Fallback to JSONL decoder which will fail on '[' token
@@ -625,7 +625,7 @@ func TestJSONLStore_MarshalError(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "marshal_error.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// Inject a channel into Parts to force a json.Marshal error
@@ -658,7 +658,7 @@ func TestJSONLStore_MkdirAllError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(filePath, "history.jsonl"))
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filepath.Join(filePath, "history.jsonl"), filepath.Join(filePath, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	// Append requires directory
@@ -691,7 +691,7 @@ func TestJSONLStore_Load_ParseContentError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -710,7 +710,7 @@ func TestJSONLStore_CompactError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	err := store.Compact(ctx)
 	if err == nil {
@@ -728,7 +728,7 @@ func TestJSONLStore_Load_ReadFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 	_, err := store.Load(ctx)
 	if err == nil {
@@ -968,7 +968,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 			mfs := &mockFS{FileSystem: baseFS}
 			tt.setupMock(mfs)
 
-			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath).withFileSystem(mfs)
+			store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl")).withFileSystem(mfs)
 
 			err := tt.action(context.Background(), store)
 			if err == nil {
@@ -984,7 +984,7 @@ func TestJSONLStore_IOErrors(t *testing.T) {
 func TestJSONLStore_UpdateMetadata_MarshalError(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	// Pass something unmarshalable (like a function or channel)
 	unmarshalable := map[string]interface{}{"bad": make(chan int)}
@@ -998,7 +998,7 @@ func TestJSONLStore_UpdateMetadata_MarshalError(t *testing.T) {
 func TestJSONLStore_Append_Empty(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "empty_append.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 
 	err := store.Append(context.Background(), []*llm.Content{})
 	if err != nil {
@@ -1010,7 +1010,7 @@ func TestJSONLStore_AppendParts(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "append_parts_history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// 1. Initial history
@@ -1052,7 +1052,7 @@ func TestJSONLStore_AppendParts(t *testing.T) {
 func TestJSONLStore_AppendParts_ErrorDir(t *testing.T) {
 	t.Parallel()
 	// Create an invalid store path
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl")
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), "/invalid_dir/file.jsonl", filepath.Join(filepath.Dir("/invalid_dir/file.jsonl"), "archive.jsonl"))
 	err := store.AppendParts(context.Background(), 0, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error appending parts to invalid directory")
@@ -1063,7 +1063,7 @@ func TestJSONLStore_Archive(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "history.jsonl")
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), filePath, filepath.Join(filepath.Dir(filePath), "archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -1082,13 +1082,13 @@ func TestJSONLStore_Archive(t *testing.T) {
 	}
 
 	// 3. Verify archive file exists and contains contents
-	archivePath := filepath.Join(tmpDir, "history.archive.jsonl")
+	archivePath := filepath.Join(tmpDir, "archive.jsonl")
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		t.Fatal("archive file does not exist")
 	}
 
 	// Use a temporary store to load the archive file
-	archiveStore := newJSONLStore(infrapersistence.NewOSFileSystem(), archivePath)
+	archiveStore := newJSONLStore(infrapersistence.NewOSFileSystem(), archivePath, filepath.Join(filepath.Dir(archivePath), "archive.jsonl"))
 	archivedContents, err := archiveStore.Load(ctx)
 	if err != nil {
 		t.Fatalf("failed to load archive: %v", err)
@@ -1133,7 +1133,7 @@ func TestJSONLStore_Migration(t *testing.T) {
 	}
 
 	// 2. Initialize store with .jsonl path
-	store := newJSONLStore(infrapersistence.NewOSFileSystem(), jsonlPath)
+	store := newJSONLStore(infrapersistence.NewOSFileSystem(), jsonlPath, filepath.Join(filepath.Dir(jsonlPath), "archive.jsonl"))
 	ctx := context.Background()
 
 	// 3. Load should trigger migration

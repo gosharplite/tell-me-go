@@ -20,7 +20,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
 	
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// 1. Add some history (2 turns = 4 messages)
@@ -63,7 +63,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	}
 
 	// Load archive and verify contents
-	archiveStore := history.NewManager(infrapersistence.NewOSFileSystem(), archiveFile)
+	archiveStore := history.NewManager(infrapersistence.NewOSFileSystem(), archiveFile, archiveFile+".archive")
 	if err := archiveStore.Load(ctx); err != nil {
 		t.Fatalf("failed to load archive: %v", err)
 	}

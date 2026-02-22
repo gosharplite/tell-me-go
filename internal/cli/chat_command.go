@@ -169,7 +169,7 @@ func (c *chatCommand) buildSessionDependencies(ctx stdctx.Context, cfg *domain_c
 		c.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
-	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath)
+	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
 	if err := hManager.Load(ctx); err != nil {
 		return nil, nil, nil, fmt.Errorf("error loading history: %w", err)
 	}

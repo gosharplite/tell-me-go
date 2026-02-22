@@ -23,7 +23,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	// to prevent API errors.
 
 	tmpFile := t.TempDir() + "/history.json"
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpFile)
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpFile, tmpFile+".archive")
 	ctx := context.Background()
 
 	// Manually add a content with no parts
@@ -59,7 +59,8 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	// Test that the agent prunes history when it reaches the limit
 	// via the orchestration pipeline.
 
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir()+"/history.json")
+	historyPath := t.TempDir() + "/history.json"
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	registry := internaltools.New()
 	ctx := context.Background()
 
@@ -100,7 +101,8 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 		}, nil
 	})
 
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), t.TempDir()+"/history.json")
+	historyPath := t.TempDir() + "/history.json"
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	sm := &mockSecurityManager{AllowAll: true}
 
 	// Mock client that triggers the tool

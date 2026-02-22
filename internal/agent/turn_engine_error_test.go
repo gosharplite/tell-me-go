@@ -48,7 +48,8 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 	reg := &mockToolRegistry{}
 
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), fmt.Sprintf("%s/history.json", tmpDir))
+	historyPath := fmt.Sprintf("%s/history.json", tmpDir)
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	strategy := orchestration.NewContextStrategy(&mockTokenCounter{}, bus)
 	factory := &orchestration.PipelineFactory{
 		History:   hManager,
