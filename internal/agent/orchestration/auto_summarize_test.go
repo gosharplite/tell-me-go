@@ -107,9 +107,9 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		t.Errorf("first message should be auto-summary, got: %s", preparedHistory[0].Parts[0].Text)
 	}
 
-	// Verify that the persistent store remains untouched
-	if len(hManager.GetContents()) != 18 {
-		t.Errorf("expected 18 messages in persistent store, got %d", len(hManager.GetContents()))
+	// Verify that the persistent store was updated with the summary
+	if len(hManager.GetContents()) != 12 {
+		t.Errorf("expected 12 messages in persistent store after auto-summarization, got %d", len(hManager.GetContents()))
 	}
 }
 
@@ -266,9 +266,9 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 		}
 	}
 
-	// Verify persistent store remains untouched
-	if len(hManager.GetContents()) != 12 {
-		t.Errorf("expected 12 messages in persistent store, got %d", len(hManager.GetContents()))
+	// Verify persistent store was updated
+	if len(hManager.GetContents()) != 8 {
+		t.Errorf("expected 8 messages in persistent store after auto-summarization, got %d", len(hManager.GetContents()))
 	}
 }
 
@@ -352,9 +352,9 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 		t.Errorf("Expected context window to be pruned/summarized, but still have %d messages", len(preparedHistory))
 	}
 
-	// Verify the persistent store is unchanged
-	if len(hManager.GetContents()) < 10 {
-		t.Errorf("Expected persistent store to be untouched, got %d messages", len(hManager.GetContents()))
+	// Verify that the persistent store was updated
+	if len(hManager.GetContents()) != 8 {
+		t.Errorf("Expected persistent store to be updated after auto-summarization, got %d messages", len(hManager.GetContents()))
 	}
 }
 

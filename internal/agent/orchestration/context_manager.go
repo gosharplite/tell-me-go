@@ -142,15 +142,31 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	// We execute the pipeline to prepare the Read-Model (context window).
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
+	var persisted bool
 	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
-		return nil
+		cm.mu.Lock()
+		defer cm.mu.Unlock()
+
+		// Safety: ensure history hasn't changed (e.g., via AddContent)
+		// while the slow LLM summarization was running.
+		if cm.version != snapshotVersion {
+			return fmt.Errorf("%w: concurrent history modification detected during context preparation", llm.ErrTransient)
+		}
+
+		cm.version++
+		persisted = true
+		return cm.History.SetContents(ctx, h)
 	})
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// 4. UPDATE CACHE: Store the Materialized View
-	if err := cm.updateCache(snapshotVersion, req); err != nil {
+	expectedVersion := snapshotVersion
+	if persisted {
+		expectedVersion++
+	}
+	if err := cm.updateCache(expectedVersion, req); err != nil {
 		return nil, nil, err
 	}
 
