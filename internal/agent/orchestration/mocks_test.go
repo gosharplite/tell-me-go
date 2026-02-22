@@ -9,6 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
@@ -79,6 +80,9 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 		return m.setContentsErr
 	}
 	m.contents = contents
+	return nil
+}
+func (m *mockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
 func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
@@ -154,3 +158,19 @@ func (m *mockEventBus) Publish(e events.Event) {
 func (m *mockEventBus) Subscribe(f func(events.Event))     {}
 func (m *mockEventBus) Shutdown(ctx context.Context) error { return nil }
 func (m *mockEventBus) Flush(ctx context.Context) error    { return nil }
+
+type mockTransformer struct {
+	priority    int
+	transformFn func(ctx context.Context, req *services.ContextRequest) error
+}
+
+func (m *mockTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
+	if m.transformFn != nil {
+		return m.transformFn(ctx, req)
+	}
+	return nil
+}
+
+func (m *mockTransformer) Priority() int {
+	return m.priority
+}

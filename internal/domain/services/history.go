@@ -13,6 +13,7 @@ import (
 type HistoryManager interface {
 	GetContents() []*llm.Content
 	SetContents(ctx context.Context, contents []*llm.Content) error
+	Archive(ctx context.Context, contents []*llm.Content) error
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error
 	AddContent(ctx context.Context, content *llm.Content) error
 	GetResolver() llm.AssetResolver

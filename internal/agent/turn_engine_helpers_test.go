@@ -58,6 +58,10 @@ func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Co
 	return nil
 }
 
+func (m *mockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
+	return nil
+}
+
 func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error {
 	if m.AddContentFunc != nil {
 		return m.AddContentFunc(ctx, content)

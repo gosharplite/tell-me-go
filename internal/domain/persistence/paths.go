@@ -7,6 +7,7 @@ package persistence
 type Paths struct {
 	ModeDir              string
 	HistoryPath          string
+	HistoryArchivePath   string
 	LogPath              string
 	CommandsLogPath      string
 	SafePathsPath        string

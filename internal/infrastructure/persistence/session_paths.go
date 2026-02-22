@@ -27,7 +27,8 @@ func InitializePaths(homeDir string, mode string) (*persistence.Paths, error) {
 
 	return &persistence.Paths{
 		ModeDir:              modeDir,
-		HistoryPath:          filepath.Join(modeDir, "history.json"),
+		HistoryPath:          filepath.Join(modeDir, "history.jsonl"),
+		HistoryArchivePath:   filepath.Join(modeDir, "history.archive.jsonl"),
 		LogPath:              filepath.Join(modeDir, "tokens.log"),
 		CommandsLogPath:      filepath.Join(modeDir, "commands.log"),
 		SafePathsPath:        filepath.Join(modeDir, "safepaths.json"),

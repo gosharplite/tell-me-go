@@ -29,7 +29,8 @@ import (
 
 func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
+	historyPath := filepath.Join(tmpDir, "history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	reg.Register(&tools.ToolDeclaration{
 		Name:        "dummy_tool",
@@ -147,7 +148,8 @@ func TestAutoSummarize_Logging(t *testing.T) {
 func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "log_test_history.json"))
+	historyPath := filepath.Join(tmpDir, "log_test_history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	bus := &events.SimpleEventBus{}
 
@@ -202,7 +204,8 @@ func verifyAutoSummarizeLog(t *testing.T, logCh <-chan string) {
 
 func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_sys.json"))
+	historyPath := filepath.Join(tmpDir, "history_sys.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
 	bus := &events.SimpleEventBus{}
@@ -274,7 +277,8 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 
 func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "tool_pressure_history.json"))
+	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	bus := &events.SimpleEventBus{}
 

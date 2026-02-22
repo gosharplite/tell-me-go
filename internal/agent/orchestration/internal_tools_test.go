@@ -15,7 +15,8 @@ import (
 
 func TestAgent_ManageHistory(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"))
+	historyPath := filepath.Join(tmpDir, "history.json")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Fill history with 2 turns (4 messages)

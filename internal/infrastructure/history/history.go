@@ -25,9 +25,9 @@ type Manager struct {
 }
 
 // NewManager creates a new history manager for the given file path.
-func NewManager(fs persistence.FileSystem, filePath string) *Manager {
+func NewManager(fs persistence.FileSystem, filePath string, archivePath string) *Manager {
 	return &Manager{
-		store:    newJSONLStore(fs, filePath),
+		store:    newJSONLStore(fs, filePath, archivePath),
 		FilePath: filePath,
 		Contents: []*llm.Content{},
 	}
@@ -68,6 +68,13 @@ func (m *Manager) Save(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.store.Save(ctx, m.Contents)
+}
+
+// Archive appends content entries to the archive file.
+func (m *Manager) Archive(ctx context.Context, contents []*llm.Content) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.store.Archive(ctx, contents)
 }
 
 // AddContent appends a full api.Content object to the history.

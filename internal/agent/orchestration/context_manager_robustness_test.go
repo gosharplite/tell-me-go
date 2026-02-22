@@ -11,6 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -20,7 +21,8 @@ import (
 
 func TestContextManager_Prepare_SafetyInjection(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Setup history ending in FunctionResponse
@@ -119,7 +121,8 @@ func TestContextManager_PerformSummarization_TextOnly(t *testing.T) {
 
 func TestContextManager_Prepare_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// 1. Fill history with 10 messages (5 turns)
@@ -181,7 +184,8 @@ func TestContextManager_Prepare_Concurrency(t *testing.T) {
 
 func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	counter := &mockTokenCounter{}
@@ -210,7 +214,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 	// Test case: Above threshold
 	// Use a fresh manager to ensure we have exactly 2 turns and no interference from previous call
-	hManager2 := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history2.json")
+	historyPath2 := tmpDir + "/history2.json"
+	hManager2 := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath2, historyPath2+".archive")
 	for i := 0; i < 2; i++ {
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "msg"}}})
 		_ = hManager2.AddContent(ctx, &domain_llm.Content{Role: "model", Parts: []*domain_llm.Part{{Text: "msg"}}})
@@ -230,7 +235,8 @@ func TestContextManager_SummarizeRange_SafetyLimit(t *testing.T) {
 
 func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 1 turn
@@ -281,7 +287,8 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 
 func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	ctx := context.Background()
 
 	// Initial history: 4 turns (8 messages)
@@ -369,7 +376,8 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 func setupSummarizationTest(t *testing.T) (*ContextManager, *[]*domain_llm.Content) {
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json")
+	historyPath := tmpDir + "/history.json"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	capturedInput := new([]*domain_llm.Content)
 	g := &mockGateway{
 		generateFn: func(ctx context.Context, input []*domain_llm.Content, tools []*tools.ToolDeclaration, resolver domain_llm.AssetResolver) (<-chan *domain_llm.Content, func() (*domain_llm.Content, *domain_llm.Metrics, error)) {
@@ -469,5 +477,58 @@ func verifyBinaryDataMapping(t *testing.T, capturedInput *[]*domain_llm.Content)
 	}
 	if !found {
 		t.Error("Binary data transformation not found in model turn")
+	}
+}
+
+func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
+	tmpDir := t.TempDir()
+	historyPath := tmpDir + "/history.jsonl"
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
+	ctx := context.Background()
+
+	// Initial message
+	_ = hManager.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "initial"}}})
+
+	bus := events.NewSimpleEventBus()
+	strategy := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), bus)
+	cm := NewContextManager(strategy, hManager, bus, nil)
+
+	// Custom transformer that blocks mid-execution
+	prepareStarted := make(chan struct{})
+	prepareResume := make(chan struct{})
+	blockingTransformer := &mockTransformer{
+		transformFn: func(ctx context.Context, req *services.ContextRequest) error {
+			close(prepareStarted)
+			<-prepareResume
+			return nil
+		},
+	}
+
+	cm.Pipeline = NewContextPipeline(blockingTransformer)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	var prepareErr error
+	go func() {
+		defer wg.Done()
+		// We expect this to fail eventually when it resumes
+		_, _, prepareErr = cm.Prepare(ctx, 1)
+	}()
+
+	<-prepareStarted
+	// Concurrent modification while Prepare is blocked in the pipeline
+	_ = cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "concurrent"}}})
+
+	close(prepareResume)
+	wg.Wait()
+
+	if prepareErr == nil {
+		t.Fatal("expected error due to concurrent modification, got nil")
+	}
+	if !strings.Contains(prepareErr.Error(), "concurrent history modification detected") {
+		t.Errorf("expected concurrent modification error, got: %v", prepareErr)
+	}
+	if !domain_llm.IsTransient(prepareErr) {
+		t.Errorf("expected transient error, got: %v", prepareErr)
 	}
 }

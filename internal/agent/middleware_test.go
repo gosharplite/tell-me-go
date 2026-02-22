@@ -72,7 +72,7 @@ func TestWithStatusReporter(t *testing.T) {
 	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
 
 	cs := orchestration.NewContextStrategy(nil, nil)
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), "")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), "", "")
 	cm := &orchestration.ContextManager{Strategy: cs, History: h}
 
 	tests := []struct {

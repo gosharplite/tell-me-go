@@ -17,6 +17,9 @@ func (m *mockHistoryManager) GetContents() []*llm.Content { return nil }
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
+func (m *mockHistoryManager) Archive(ctx context.Context, contents []*llm.Content) error {
+	return nil
+}
 func (m *mockHistoryManager) AddContent(ctx context.Context, content *llm.Content) error { return nil }
 func (m *mockHistoryManager) GetResolver() llm.AssetResolver                             { return nil }
 func (m *mockHistoryManager) SetPinned(ctx context.Context, turnIndex int, pinned bool) error {

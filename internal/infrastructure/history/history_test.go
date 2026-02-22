@@ -19,7 +19,8 @@ func TestHistoryManager_Basic(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Test AddEntry - Note: Dumb manager does not validate role alternation
@@ -36,7 +37,7 @@ func TestHistoryManager_Basic(t *testing.T) {
 		t.Fatalf("failed to save history: %v", err)
 	}
 
-	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	m2 := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	if err := m2.Load(ctx); err != nil {
 		t.Fatalf("failed to load history: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestHistoryManager_Basic(t *testing.T) {
 
 func TestHistoryManager_Load_NonExistent(t *testing.T) {
 	t.Parallel()
-	m := NewManager(infrapersistence.NewOSFileSystem(), "non-existent.json")
+	m := NewManager(infrapersistence.NewOSFileSystem(), "non-existent.json", "non-existent.archive.jsonl")
 	ctx := context.Background()
 	if err := m.Load(ctx); err != nil {
 		t.Errorf("expected no error for non-existent file, got %v", err)
@@ -62,11 +63,12 @@ func TestHistoryManager_Load_Corrupted(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "corrupted.json")
+	archiveFile := filepath.Join(tmpDir, "corrupted.archive.jsonl")
 	if err := os.WriteFile(historyFile, []byte("{invalid json}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 	if err := m.Load(ctx); err == nil {
 		t.Error("expected error for corrupted JSON, got nil")
@@ -82,7 +84,9 @@ func TestHistoryManager_Save_Error(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(filePath, "history.json"))
+	historyPath := filepath.Join(filePath, "history.json")
+	archivePath := filepath.Join(filePath, "history.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyPath, archivePath)
 	ctx := context.Background()
 	if err := m.Save(ctx); err == nil {
 		t.Error("expected error when directory creation fails, got nil")
@@ -93,7 +97,8 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.json")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "Initial")
@@ -113,14 +118,15 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	}
 
 	// rollback with no snapshot should do nothing (or at least not crash)
-	m3 := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "m3.json"))
+	m3 := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "m3.json"), filepath.Join(tmpDir, "m3.archive.jsonl"))
 	m3.rollback(ctx)
 }
 
 func TestHistoryManager_Interfaces(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "interfaces.json")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	archiveFile := filepath.Join(tmpDir, "interfaces.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 
 	if m.getPath() != historyFile {
 		t.Errorf("getPath() = %s, want %s", m.getPath(), historyFile)
@@ -149,10 +155,12 @@ type mockStore struct{}
 func (s *mockStore) Load(ctx context.Context) ([]*llm.Content, error)                    { return nil, nil }
 func (s *mockStore) Save(ctx context.Context, contents []*llm.Content) error             { return nil }
 func (s *mockStore) Append(ctx context.Context, contents []*llm.Content) error           { return nil }
+func (s *mockStore) Archive(ctx context.Context, contents []*llm.Content) error          { return nil }
 func (s *mockStore) AppendParts(ctx context.Context, index int, parts []*llm.Part) error { return nil }
 
 func TestHistoryManager_GetResolver_Nil(t *testing.T) {
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	m.setStore(&mockStore{})
 	if m.GetResolver() != nil {
 		t.Error("expected nil resolver for mockStore")
@@ -162,8 +170,9 @@ func TestHistoryManager_GetResolver_Nil(t *testing.T) {
 func TestHistoryManager_FileCreation(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "new_subdir", "history.jsonL")
+	archiveFile := filepath.Join(tmpDir, "new_subdir", "history.archive.jsonl")
 
-	h := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	h := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Add an entry to trigger a save
@@ -182,7 +191,8 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "pin_valid.json")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	archiveFile := filepath.Join(tmpDir, "pin_valid.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Setup: 2 turns (4 messages)
@@ -208,7 +218,8 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "unpin.json")
-	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile)
+	archiveFile := filepath.Join(tmpDir, "unpin.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
 	// Setup: 1 turn pinned
@@ -228,7 +239,8 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 }
 
 func TestHistoryManager_ClonePersistent(t *testing.T) {
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	content := &llm.Content{
@@ -277,7 +289,8 @@ func (s *mockStoreErrorMetadata) UpdateMetadata(ctx context.Context, index int, 
 
 func TestHistoryManager_SetPinned_Error(t *testing.T) {
 	t.Parallel()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -302,7 +315,8 @@ func TestHistoryManager_SetPinned_Error(t *testing.T) {
 
 func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 	t.Parallel()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -321,7 +335,8 @@ func TestHistoryManager_SetPinned_InvalidIndex(t *testing.T) {
 
 func TestHistoryManager_SetContents(t *testing.T) {
 	t.Parallel()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	contents := []*llm.Content{
@@ -344,7 +359,8 @@ func TestHistoryManager_SetContents(t *testing.T) {
 
 func TestHistoryManager_AppendParts(t *testing.T) {
 	t.Parallel()
-	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(t.TempDir(), "history.json"))
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	ctx := context.Background()
 
 	_ = m.addEntry(ctx, "user", "U1")
@@ -377,5 +393,27 @@ func TestHistoryManager_AppendParts(t *testing.T) {
 	err = m.AppendParts(ctx, 5, []*llm.Part{{Text: "test"}})
 	if err == nil {
 		t.Error("expected error for out of bounds index")
+	}
+}
+
+func TestHistoryManager_Archive(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	historyFile := filepath.Join(tmpDir, "history.json")
+	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
+	m := NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
+	ctx := context.Background()
+
+	contents := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Initial message"}}},
+	}
+
+	if err := m.Archive(ctx, contents); err != nil {
+		t.Fatalf("Archive failed: %v", err)
+	}
+
+	// Verify archive exists
+	if _, err := os.Stat(archiveFile); os.IsNotExist(err) {
+		t.Error("archive file was not created")
 	}
 }
