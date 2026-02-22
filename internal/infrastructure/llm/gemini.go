@@ -38,7 +38,7 @@ type Client struct {
 }
 
 // NewGeminiClient returns a new Gemini API client.
-func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, eventBus events.EventBus) (*Client, error) {
+func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
@@ -47,7 +47,7 @@ func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thi
 		thinkingLevel:     thinkingLevel,
 		maxThinkingBudget: maxThinkingBudget,
 		useSearch:         useSearch,
-		eventBus:          eventBus,
+		eventBus:          bus,
 	}
 
 	if systemInstruction != "" {
@@ -57,14 +57,14 @@ func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thi
 		}
 	}
 
-	if err := c.initSDK(); err != nil {
+	if err := c.initSDK(timeout); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *Client) initSDK() error {
+func (c *Client) initSDK(timeout time.Duration) error {
 	ctx := context.Background()
 
 	c.mu.RLock()
@@ -77,6 +77,10 @@ func (c *Client) initSDK() error {
 		return fmt.Errorf("failed to prepare auth headers: %w", err)
 	}
 
+	httpClient := &http.Client{
+		Timeout: timeout,
+	}
+
 	clientConfig := &genai.ClientConfig{
 		Backend:  backend,
 		Project:  project,
@@ -85,7 +89,7 @@ func (c *Client) initSDK() error {
 			BaseURL: baseURL,
 			Headers: headers,
 		},
-		HTTPClient: http.DefaultClient,
+		HTTPClient: httpClient,
 	}
 
 	sdkClient, err := genai.NewClient(ctx, clientConfig)
@@ -172,7 +176,8 @@ func (c *Client) RefreshAuth() error {
 	authenticator := c.authenticator
 	c.mu.RUnlock()
 	authenticator.Invalidate()
-	return c.initSDK()
+	// Using a default 5m timeout for RefreshAuth if not stored
+	return c.initSDK(5 * time.Minute)
 }
 
 // SendChat sends the conversation history to the Gemini API and returns the full response content and metrics.

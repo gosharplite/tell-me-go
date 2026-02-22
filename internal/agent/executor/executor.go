@@ -276,61 +276,74 @@ func (e *ToolExecutor) runExecutionPlan(ctx context.Context, calls []*llm.Functi
 
 	for batchIdx, batch := range batches {
 		if err := ctx.Err(); err != nil {
-			// SCALABLE (GOOD): Shedding load immediately upon cancellation
-			for j := batchIdx; j < len(batches); j++ {
-				for _, skippedIdx := range batches[j].tasks {
-					resChan <- toolExecResult{
-						index: skippedIdx,
-						name:  calls[skippedIdx].Name,
-						tr: domaintools.ToolResult{
-							Text:  fmt.Sprintf("batch interrupted: %v", err),
-							Error: fmt.Errorf("batch interrupted: %w", err),
-						},
-					}
-				}
-			}
+			e.failRemainingTasks(batches, batchIdx, -1, calls, resChan, err, "batch interrupted")
 			return
 		}
 
 		if batch.isSerial {
-			taskIdx := batch.tasks[0]
-			fc := calls[taskIdx]
-			if !e.executeSerialTask(ctx, taskIdx, fc, resChan) {
-				// Fill remaining slots in resChan so the collector doesn't hang
-				for j := batchIdx; j < len(batches); j++ {
-					for _, skippedIdx := range batches[j].tasks {
-						if j == batchIdx && skippedIdx <= taskIdx {
-							continue // Already executed or failed
-						}
-						resChan <- toolExecResult{
-							index: skippedIdx,
-							name:  calls[skippedIdx].Name,
-							tr:    domaintools.ToolResult{Text: "Skipped: Execution halted due to previous serial tool error, timeout or cancellation."},
-						}
-					}
-				}
+			if !e.executeSerialBatch(ctx, batch, calls, resChan) {
+				e.failRemainingTasks(batches, batchIdx, batch.tasks[0], calls, resChan, nil, "Skipped: Execution halted due to previous serial tool error, timeout or cancellation.")
 				return // Exit the execution plan early
 			}
 		} else {
-			var wg sync.WaitGroup
-			for _, taskIdx := range batch.tasks {
-				if err := ctx.Err(); err != nil {
-					resChan <- toolExecResult{
-						index: taskIdx,
-						name:  calls[taskIdx].Name,
-						tr: domaintools.ToolResult{
-							Text:  fmt.Sprintf("batch interrupted: %v", err),
-							Error: fmt.Errorf("batch interrupted: %w", err),
-						},
-					}
-					continue
-				}
-				fc := calls[taskIdx]
-				e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
-			}
-			wg.Wait()
+			e.executeParallelBatch(ctx, batch, calls, resChan)
 		}
 	}
+}
+
+func (e *ToolExecutor) failRemainingTasks(batches []taskBatch, startBatchIdx int, skipTaskIdx int, calls []*llm.FunctionCall, resChan chan<- toolExecResult, err error, reason string) {
+	for j := startBatchIdx; j < len(batches); j++ {
+		for _, skippedIdx := range batches[j].tasks {
+			if j == startBatchIdx && skippedIdx <= skipTaskIdx {
+				continue // Already executed or failed
+			}
+
+			var text string
+			var resErr error
+			if err != nil {
+				text = fmt.Sprintf("%s: %v", reason, err)
+				resErr = fmt.Errorf("%s: %w", reason, err)
+			} else {
+				text = reason
+				resErr = nil
+			}
+
+			resChan <- toolExecResult{
+				index: skippedIdx,
+				name:  calls[skippedIdx].Name,
+				tr: domaintools.ToolResult{
+					Text:  text,
+					Error: resErr,
+				},
+			}
+		}
+	}
+}
+
+func (e *ToolExecutor) executeSerialBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resChan chan<- toolExecResult) bool {
+	taskIdx := batch.tasks[0]
+	fc := calls[taskIdx]
+	return e.executeSerialTask(ctx, taskIdx, fc, resChan)
+}
+
+func (e *ToolExecutor) executeParallelBatch(ctx context.Context, batch taskBatch, calls []*llm.FunctionCall, resChan chan<- toolExecResult) {
+	var wg sync.WaitGroup
+	for _, taskIdx := range batch.tasks {
+		if err := ctx.Err(); err != nil {
+			resChan <- toolExecResult{
+				index: taskIdx,
+				name:  calls[taskIdx].Name,
+				tr: domaintools.ToolResult{
+					Text:  fmt.Sprintf("batch interrupted: %v", err),
+					Error: fmt.Errorf("batch interrupted: %w", err),
+				},
+			}
+			continue
+		}
+		fc := calls[taskIdx]
+		e.enqueueParallelTask(ctx, taskIdx, fc, resChan, &wg)
+	}
+	wg.Wait()
 }
 
 func (e *ToolExecutor) buildExecutionBatches(calls []*llm.FunctionCall, declinedMap map[int]bool, resChan chan<- toolExecResult) []taskBatch {
@@ -648,7 +661,7 @@ func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintoo
 		if errCtx == context.DeadlineExceeded {
 			msg = fmt.Sprintf("Error: Tool execution timed out after %v", toolTimeout)
 		}
-		
+
 		// SCALABLE (GOOD): Implementing a telemetry watchdog for abandoned goroutines
 		go e.monitorZombieTool(parentCtx, tool.Name, time.Now(), outCh)
 

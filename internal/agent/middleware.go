@@ -38,7 +38,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 				return res, err
 			}
 
-			if turn.State.Phase == phaseRefining || turn.State.Phase == phasePersisting {
+			if (turn.State.Phase == phaseRefining && turn.State.RetryCount == 0) || turn.State.Phase == phasePersisting {
 				limits := turn.CtxManager.GetLimits()
 				maxTokens := limits.MaxHistoryTokens
 				maxHistTurns := limits.MaxHistoryTurns

@@ -49,3 +49,25 @@ type ContextTransformer interface {
 type ResultStrategy interface {
 	Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part
 }
+
+// Clone creates a deep copy of the ContextMetadata.
+func (m *ContextMetadata) Clone() *ContextMetadata {
+	cloned := *m
+	if m.Warnings != nil {
+		cloned.Warnings = make([]string, len(m.Warnings))
+		copy(cloned.Warnings, m.Warnings)
+	}
+	if m.KeptByPolicy != nil {
+		cloned.KeptByPolicy = make(map[string]int)
+		for k, v := range m.KeptByPolicy {
+			cloned.KeptByPolicy[k] = v
+		}
+	}
+	if m.History != nil {
+		cloned.History = make([]*llm.Content, len(m.History))
+		for i, c := range m.History {
+			cloned.History[i] = llm.CloneContent(c)
+		}
+	}
+	return &cloned
+}
