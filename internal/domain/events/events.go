@@ -112,43 +112,32 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 // Flush waits for all currently queued events to be dispatched.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
-	subs := make([]chan Event, len(b.subscribers))
-	copy(subs, b.subscribers)
-	closed := b.closed
-	b.mu.RUnlock()
-
-	if closed {
+	if b.closed {
+		b.mu.RUnlock()
 		return fmt.Errorf("event bus is closed")
 	}
 
-	if len(subs) == 0 {
+	if len(b.subscribers) == 0 {
+		b.mu.RUnlock()
 		return nil
 	}
 
-	dones := make([]chan struct{}, 0, len(subs))
-	for _, ch := range subs {
+	dones := make([]chan struct{}, 0, len(b.subscribers))
+	
+	// Hold RLock while sending to prevent Shutdown from closing channels under us
+	for _, ch := range b.subscribers {
 		done := make(chan struct{})
-		
-		err := func() error {
-			defer func() {
-				if r := recover(); r != nil {
-					// Channel was closed during Flush
-				}
-			}()
-			select {
-			case ch <- flushEvent{done: done}:
-				dones = append(dones, done)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			return nil
-		}()
-		
-		if err != nil {
-			return err
+		select {
+		case ch <- flushEvent{done: done}:
+			dones = append(dones, done)
+		case <-ctx.Done():
+			b.mu.RUnlock()
+			return ctx.Err()
 		}
 	}
+	b.mu.RUnlock() // Release lock BEFORE waiting for subscribers to process the events
 
+	// Wait for all queued events to be processed
 	for _, done := range dones {
 		select {
 		case <-done:
