@@ -74,47 +74,56 @@ func (cm *ContextManager) Reconfigure(limits events.Limits) {
 	}
 }
 
+// cloneContentSlice creates a deep clone of a slice of Content.
+func cloneContentSlice(contents []*llm.Content) []*llm.Content {
+	if contents == nil {
+		return nil
+	}
+	cloned := make([]*llm.Content, len(contents))
+	for i, c := range contents {
+		cloned[i] = llm.CloneContent(c)
+	}
+	return cloned
+}
+
+// getCachedView checks if the current version matches the cached version. Must be called with lock held.
+func (cm *ContextManager) getCachedView(snapshotVersion int) ([]*llm.Content, *Metadata, bool) {
+	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
+		cachedHistory := cloneContentSlice(cm.cachedWindow)
+		clonedMeta := cm.cachedMetadata.Clone()
+		return cachedHistory, clonedMeta, true
+	}
+	return nil, nil, false
+}
+
+// updateCache stores the processed context window back into the cache.
+func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.version != snapshotVersion {
+		return fmt.Errorf("%w: concurrent history modification detected (expected %d, got %d)", llm.ErrTransient, snapshotVersion, cm.version)
+	}
+
+	cm.cachedWindow = cloneContentSlice(req.History)
+	cm.cachedMetadata = req.Metadata.Clone()
+	cm.cachedVersion = cm.version
+	return nil
+}
+
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
 	cm.mu.Lock()
 	snapshotVersion := cm.version
 
 	// 1. CACHE HIT: Return cached Read-Model if version hasn't changed
-	if cm.cachedWindow != nil && cm.cachedVersion == snapshotVersion {
-		cachedHistory := make([]*llm.Content, len(cm.cachedWindow))
-		for i, c := range cm.cachedWindow {
-			cachedHistory[i] = llm.CloneContent(c)
-		}
-
-		// Clone metadata safely
-		clonedMeta := *cm.cachedMetadata
-		if cm.cachedMetadata.Warnings != nil {
-			clonedMeta.Warnings = make([]string, len(cm.cachedMetadata.Warnings))
-			copy(clonedMeta.Warnings, cm.cachedMetadata.Warnings)
-		}
-		if cm.cachedMetadata.KeptByPolicy != nil {
-			clonedMeta.KeptByPolicy = make(map[string]int)
-			for k, v := range cm.cachedMetadata.KeptByPolicy {
-				clonedMeta.KeptByPolicy[k] = v
-			}
-		}
-		if cm.cachedMetadata.History != nil {
-			clonedMeta.History = make([]*llm.Content, len(cm.cachedMetadata.History))
-			for i, c := range cm.cachedMetadata.History {
-				clonedMeta.History[i] = llm.CloneContent(c)
-			}
-		}
-
+	if history, meta, ok := cm.getCachedView(snapshotVersion); ok {
 		cm.mu.Unlock()
-		return cachedHistory, &clonedMeta, nil
+		return history, meta, nil
 	}
 
 	// 2. CACHE MISS: Load raw history
 	contents := cm.History.GetContents()
-	history := make([]*llm.Content, len(contents))
-	for i, c := range contents {
-		history[i] = llm.CloneContent(c) // Deep clone each element for thread safety
-	}
+	history := cloneContentSlice(contents)
 	pipeline := cm.Pipeline
 	cm.mu.Unlock()
 
@@ -125,7 +134,8 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	if pipeline == nil {
-		return req.History, &req.Metadata, nil
+		clonedMeta := req.Metadata.Clone()
+		return req.History, clonedMeta, nil
 	}
 
 	// 3. Execute Pipeline
@@ -140,39 +150,9 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	// 4. UPDATE CACHE: Store the Materialized View
-	cm.mu.Lock()
-	if cm.version != snapshotVersion {
-		currentVersion := cm.version
-		cm.mu.Unlock()
-		return nil, nil, fmt.Errorf("%w: concurrent history modification detected (expected %d, got %d)", llm.ErrTransient, snapshotVersion, currentVersion)
+	if err := cm.updateCache(snapshotVersion, req); err != nil {
+		return nil, nil, err
 	}
-
-	cm.cachedWindow = make([]*llm.Content, len(req.History))
-	for i, c := range req.History {
-		cm.cachedWindow[i] = llm.CloneContent(c)
-	}
-
-	clonedMeta := req.Metadata
-	if req.Metadata.Warnings != nil {
-		clonedMeta.Warnings = make([]string, len(req.Metadata.Warnings))
-		copy(clonedMeta.Warnings, req.Metadata.Warnings)
-	}
-	if req.Metadata.KeptByPolicy != nil {
-		clonedMeta.KeptByPolicy = make(map[string]int)
-		for k, v := range req.Metadata.KeptByPolicy {
-			clonedMeta.KeptByPolicy[k] = v
-		}
-	}
-	if req.Metadata.History != nil {
-		clonedMeta.History = make([]*llm.Content, len(req.Metadata.History))
-		for i, c := range req.Metadata.History {
-			clonedMeta.History[i] = llm.CloneContent(c)
-		}
-	}
-
-	cm.cachedMetadata = &clonedMeta
-	cm.cachedVersion = cm.version
-	cm.mu.Unlock()
 
 	return req.History, &req.Metadata, nil
 }
@@ -295,10 +275,7 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	}
 
 	// Deep clone the subset to ensure mutation safety during the slow LLM call
-	subset = make([]*llm.Content, endIdx)
-	for i := 0; i < endIdx; i++ {
-		subset[i] = llm.CloneContent(contents[i])
-	}
+	subset = cloneContentSlice(contents[:endIdx])
 
 	tokens = cm.Strategy.EstimateTokens(subset)
 
