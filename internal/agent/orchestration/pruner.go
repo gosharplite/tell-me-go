@@ -56,7 +56,6 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 	if prunedCount > 0 {
 		req.History = newHistory
 		req.Metadata.PrunedTurns += prunedCount
-		req.PersistHistory = true
 
 		if t.Events != nil {
 			t.Events.Publish(events.SystemMessageEvent{
@@ -69,7 +68,7 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 	return nil
 }
 
-func (t *historyPruner) Priority() int { return 10 }
+func (t *historyPruner) Priority() int { return 110 }
 
 // compositePruningPolicy aggregates multiple policies using OR logic.
 type compositePruningPolicy struct {

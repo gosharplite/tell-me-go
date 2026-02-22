@@ -71,9 +71,6 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			t.Fatalf("Transform failed: %v", err)
 		}
 
-		if !req.PersistHistory {
-			t.Error("expected PersistHistory to be true")
-		}
 		if len(req.History) != 2 {
 			t.Errorf("expected 2 messages remaining, got %d", len(req.History))
 		}
@@ -514,7 +511,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	// Second run with higher limit to trigger clogged warning instead of error
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
-	tg := pipeline.transformers[1].(*tokenGatekeeper)
+	tg := pipeline.transformers[0].(*tokenGatekeeper)
 	tg.MaxTokens = maxTokens
 
 	req2 := &request{
