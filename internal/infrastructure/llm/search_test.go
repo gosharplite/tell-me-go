@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -81,7 +82,7 @@ func TestSearchToolSelection(t *testing.T) {
 
 			t.Setenv("TELL_ME_MOCK_URL", server.URL)
 
-			client, err := NewGeminiClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", true, events.NewSimpleEventBus())
+			client, err := NewGeminiClient(tt.apiURL, "model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", true, events.NewSimpleEventBus(), 5*time.Second)
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}

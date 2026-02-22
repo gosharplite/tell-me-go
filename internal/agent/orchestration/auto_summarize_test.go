@@ -52,7 +52,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := llm.NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, bus)
+	client, err := llm.NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, bus, 5*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -161,7 +161,7 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextMana
 	}))
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus)
+	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)
@@ -221,7 +221,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
 	// Set initial system instructions
-	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus)
+	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "Initial System Instruction", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)
@@ -301,7 +301,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus)
+	client, _ := llm.NewGeminiClient(apiURL, "test", &auth.VertexAuth{Token: "t"}, 0, "", 0, "", false, bus, 5*time.Second)
 
 	strategy := NewContextStrategy(NewHeuristicTokenCounter(reg), bus)
 	gw := llm.NewResilientClient(client, true)
