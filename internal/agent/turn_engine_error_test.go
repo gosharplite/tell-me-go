@@ -268,3 +268,203 @@ func TestTurnEngine_MaxRetriesExhausted(t *testing.T) {
 		t.Errorf("Expected RetryCount 2, got %d", tracker.lastState.RetryCount)
 	}
 }
+
+func TestTurnEngine_UnknownPhaseError(t *testing.T) {
+	gw := &mockGateway{}
+	exec := &errorMockExecutor{}
+	engine, _ := setupEngineForErrors(t, gw, exec, &errorPhaseTracker{})
+
+	turn := &turn{
+		State: &turnState{
+			Phase: "phaseNonExistent",
+		},
+	}
+	
+	_, err := engine.executePhase(context.Background(), turn)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no processor for phase") {
+		t.Errorf("Expected 'no processor for phase' in error message, got: %v", err)
+	}
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
+	}
+}
+
+func TestTurnEngine_NilLLMResponse(t *testing.T) {
+	gw := &mockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			ch := make(chan *llm.Content)
+			close(ch)
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				return nil, nil, nil // No error, but nil content
+			}
+		},
+	}
+	
+	step := &inferenceStep{}
+	
+	hm := &mockHistoryManager{}
+	cm := &orchestration.ContextManager{
+		History: hm,
+	}
+	reg := &mockToolRegistry{}
+	
+	turn := &turn{
+		Gateway:    gw,
+		Registry:   reg,
+		CtxManager: cm,
+		State: &turnState{
+			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
+		},
+	}
+	
+	_, err := step.process(context.Background(), turn)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "api returned nil content") {
+		t.Errorf("Expected 'api returned nil content' in error message, got: %v", err)
+	}
+	if !errors.Is(err, errLogic) {
+		t.Errorf("Expected errLogic, got: %v", err)
+	}
+}
+
+func TestTurnEngine_PersistenceFailure(t *testing.T) {
+	expectedErr := errors.New("mock db failure")
+	
+	hm := &mockHistoryManager{
+		Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
+		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
+			return expectedErr
+		},
+	}
+	
+	step := &persistenceStep{}
+	
+	turn := &turn{
+		CtxManager: &orchestration.ContextManager{
+			History: hm,
+		},
+		State: &turnState{
+			Response:     &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Response"}}},
+			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
+		},
+	}
+	
+	_, err := step.process(context.Background(), turn)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Expected expectedErr, got: %v", err)
+	}
+}
+
+func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
+	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
+	
+	hm := &mockHistoryManager{
+		Contents: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "Model"}}},
+		},
+		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
+			return expectedErr // Fail immediately
+		},
+	}
+	
+	step := &persistenceStep{}
+	
+	turn := &turn{
+		CtxManager: &orchestration.ContextManager{
+			History: hm,
+		},
+		State: &turnState{
+			// Skip Response to isolate ToolResponse test
+			Response:     nil,
+			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
+		},
+	}
+	
+	_, err := step.process(context.Background(), turn)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Expected expectedErr, got: %v", err)
+	}
+}
+
+func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
+	step := &executionStep{}
+	
+	ctx := context.Background()
+	turnObj := &turn{
+		State: &turnState{
+			HasToolCalls: true,
+			Response:     &llm.Content{},
+		},
+		executor: &errorMockExecutor{
+			executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				return &llm.Content{
+					Role: "user",
+					Parts: []*llm.Part{
+						{
+							FunctionResponse: &llm.FunctionResponse{
+								Name: "failing_tool",
+								Response: map[string]interface{}{
+									"result": "temporarily disabled after multiple consecutive failures",
+								},
+							},
+						},
+					},
+				}, nil
+			},
+		},
+		Clock: &realClock{},
+	}
+	
+	_, err := step.process(ctx, turnObj)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	
+	// Check if the warning was appended
+	parts := turnObj.State.ToolResponse.Parts
+	if len(parts) != 2 {
+		t.Errorf("Expected 2 parts after warning injection, got %d", len(parts))
+	} else if !strings.Contains(parts[1].Text, "SYSTEM WARNING") {
+		t.Errorf("Expected SYSTEM WARNING injected, got: %s", parts[1].Text)
+	}
+}
+
+func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
+	step := &executionStep{}
+	
+	expectedErr := llm.ErrTransient // Is transient
+	
+	ctx := context.Background()
+	turnObj := &turn{
+		State: &turnState{
+			HasToolCalls: true,
+			Response:     &llm.Content{},
+		},
+		executor: &errorMockExecutor{
+			executeFn: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
+				return nil, expectedErr
+			},
+		},
+		Clock: &realClock{},
+	}
+	
+	_, err := step.process(ctx, turnObj)
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Expected expectedErr, got: %v", err)
+	}
+}
