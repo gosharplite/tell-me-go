@@ -9,17 +9,22 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
 )
 
 type mockToolRegistry struct {
-	executeFn func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
-	isSerial  bool
+	executeFn         func(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error)
+	getDeclarationsFn func() []*tools.ToolDeclaration
+	isSerial          bool
 }
 
 func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
+	if m.getDeclarationsFn != nil {
+		return m.getDeclarationsFn()
+	}
 	return []*tools.ToolDeclaration{{Name: "test_tool"}}
 }
 func (m *mockToolRegistry) Register(d *tools.ToolDeclaration, f tools.ToolFunc) {}
@@ -140,4 +145,61 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Worker pool became unresponsive after task cancellation")
 	}
+}
+
+func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
+	reg := &mockToolRegistry{}
+	exec := NewToolExecutor(reg, nil, nil)
+	defer exec.Shutdown()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	batch := taskBatch{
+		isSerial: false,
+		tasks:    []int{0},
+	}
+	calls := []*llm.FunctionCall{
+		{Name: "test_tool"},
+	}
+	resChan := make(chan toolExecResult, 1)
+
+	exec.executeParallelBatch(ctx, batch, calls, resChan)
+
+	select {
+	case res := <-resChan:
+		assert.Equal(t, 0, res.index)
+		assert.Equal(t, "test_tool", res.name)
+		assert.ErrorContains(t, res.tr.Error, "batch interrupted")
+	case <-time.After(1 * time.Second):
+		t.Fatal("Expected result on resChan, but got none")
+	}
+}
+
+type mockConsentSecurityManager struct {
+	domain_security.ISecurityManager
+	confirmResult bool
+}
+
+func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
+func (m *mockConsentSecurityManager) TerminalLock() {}
+func (m *mockConsentSecurityManager) TerminalUnlock() {}
+func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
+	return m.confirmResult, nil
+}
+
+func TestRequestBatchConsent_Denied(t *testing.T) {
+	reg := &mockToolRegistry{
+		getDeclarationsFn: func() []*tools.ToolDeclaration {
+			return []*tools.ToolDeclaration{{Name: "dangerous_tool", RequiresConsent: true}}
+		},
+	}
+	sm := &mockConsentSecurityManager{confirmResult: false}
+	exec := NewToolExecutor(reg, sm, nil)
+	defer exec.Shutdown()
+
+	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
+	declined := exec.requestBatchConsent(context.Background(), calls)
+
+	assert.True(t, declined[0], "Expected the tool to be declined by user")
 }
