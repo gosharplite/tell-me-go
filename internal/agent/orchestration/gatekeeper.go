@@ -171,6 +171,14 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *services.Conte
 		return 0, err
 	}
 
+	// Signal completion to the UI
+	if t.Events != nil {
+		t.Events.Publish(events.SystemMessageEvent{
+			Message: "Auto-summarization complete. Context successfully compressed.",
+			Level:   "info",
+		})
+	}
+
 	// 4. State Mutation
 	req.History = applySummaryToHistory(req.History, start, end, summary)
 	req.Metadata.SummarizationAttempted = true
