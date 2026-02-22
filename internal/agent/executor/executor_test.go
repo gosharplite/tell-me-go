@@ -182,8 +182,8 @@ type mockConsentSecurityManager struct {
 }
 
 func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
-func (m *mockConsentSecurityManager) TerminalLock() {}
-func (m *mockConsentSecurityManager) TerminalUnlock() {}
+func (m *mockConsentSecurityManager) TerminalLock()        {}
+func (m *mockConsentSecurityManager) TerminalUnlock()      {}
 func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
 	return m.confirmResult, nil
 }

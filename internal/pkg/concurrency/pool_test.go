@@ -172,7 +172,7 @@ func TestWorkerPool_SubmitFailFast(t *testing.T) {
 	t.Parallel()
 
 	p := NewWorkerPool(1)
-	
+
 	// Ensure the first task starts running and blocks
 	startCh := make(chan struct{})
 	p.Submit(func(ctx context.Context) {

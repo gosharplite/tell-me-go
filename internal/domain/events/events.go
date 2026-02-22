@@ -123,7 +123,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	}
 
 	dones := make([]chan struct{}, 0, len(b.subscribers))
-	
+
 	// Hold RLock while sending to prevent Shutdown from closing channels under us
 	for _, ch := range b.subscribers {
 		done := make(chan struct{})

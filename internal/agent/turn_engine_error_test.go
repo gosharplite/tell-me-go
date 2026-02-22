@@ -279,7 +279,7 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 			Phase: "phaseNonExistent",
 		},
 	}
-	
+
 	_, err := engine.executePhase(context.Background(), turn)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -302,15 +302,15 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 			}
 		},
 	}
-	
+
 	step := &inferenceStep{}
-	
+
 	hm := &mockHistoryManager{}
 	cm := &orchestration.ContextManager{
 		History: hm,
 	}
 	reg := &mockToolRegistry{}
-	
+
 	turn := &turn{
 		Gateway:    gw,
 		Registry:   reg,
@@ -319,7 +319,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
 	}
-	
+
 	_, err := step.process(context.Background(), turn)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -334,16 +334,16 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 
 func TestTurnEngine_PersistenceFailure(t *testing.T) {
 	expectedErr := errors.New("mock db failure")
-	
+
 	hm := &mockHistoryManager{
 		Contents: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		AddContentFunc: func(ctx context.Context, content *llm.Content) error {
 			return expectedErr
 		},
 	}
-	
+
 	step := &persistenceStep{}
-	
+
 	turn := &turn{
 		CtxManager: &orchestration.ContextManager{
 			History: hm,
@@ -353,7 +353,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
 		},
 	}
-	
+
 	_, err := step.process(context.Background(), turn)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -365,7 +365,7 @@ func TestTurnEngine_PersistenceFailure(t *testing.T) {
 
 func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 	expectedErr := llm.ErrTransient // Use transient error to hit the 'if isTransient' block
-	
+
 	hm := &mockHistoryManager{
 		Contents: []*llm.Content{
 			{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
@@ -375,9 +375,9 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 			return expectedErr // Fail immediately
 		},
 	}
-	
+
 	step := &persistenceStep{}
-	
+
 	turn := &turn{
 		CtxManager: &orchestration.ContextManager{
 			History: hm,
@@ -388,7 +388,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 			ToolResponse: &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Result"}}},
 		},
 	}
-	
+
 	_, err := step.process(context.Background(), turn)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
@@ -400,7 +400,7 @@ func TestTurnEngine_PersistenceToolFailure(t *testing.T) {
 
 func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 	step := &executionStep{}
-	
+
 	ctx := context.Background()
 	turnObj := &turn{
 		State: &turnState{
@@ -426,12 +426,12 @@ func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 		},
 		Clock: &realClock{},
 	}
-	
+
 	_, err := step.process(ctx, turnObj)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-	
+
 	// Check if the warning was appended
 	parts := turnObj.State.ToolResponse.Parts
 	if len(parts) != 2 {
@@ -443,9 +443,9 @@ func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 
 func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 	step := &executionStep{}
-	
+
 	expectedErr := llm.ErrTransient // Is transient
-	
+
 	ctx := context.Background()
 	turnObj := &turn{
 		State: &turnState{
@@ -459,7 +459,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 		},
 		Clock: &realClock{},
 	}
-	
+
 	_, err := step.process(ctx, turnObj)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
