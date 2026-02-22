@@ -69,6 +69,9 @@ func (p *WorkerPool) Submit(task func(ctx context.Context)) bool {
 		return false
 	case <-p.ctx.Done():
 		return false
+	default:
+		// [SCALABILITY FIX] Fail-fast: prevents caller deadlock when pool is saturated.
+		return false
 	}
 }
 

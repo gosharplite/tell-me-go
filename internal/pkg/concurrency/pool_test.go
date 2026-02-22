@@ -154,10 +154,12 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 	counter := make(chan int, numTasks)
 
 	for i := 0; i < numTasks; i++ {
-		p.Submit(func(ctx context.Context) {
+		for !p.Submit(func(ctx context.Context) {
 			defer wg.Done()
 			counter <- 1
-		})
+		}) {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	wg.Wait()
@@ -166,35 +168,32 @@ func TestWorkerPool_Concurrency(t *testing.T) {
 	}
 }
 
-func TestWorkerPool_SubmitBlocking(t *testing.T) {
+func TestWorkerPool_SubmitFailFast(t *testing.T) {
 	t.Parallel()
 
 	p := NewWorkerPool(1)
-	// Task 1: starts running and blocks
+	
+	// Ensure the first task starts running and blocks
+	startCh := make(chan struct{})
 	p.Submit(func(ctx context.Context) {
-		time.Sleep(200 * time.Millisecond)
+		close(startCh)
+		time.Sleep(300 * time.Millisecond)
 	})
-	// Task 2 & 3: fill the channel (size is 1*2 = 2)
-	p.Submit(func(ctx context.Context) {})
-	p.Submit(func(ctx context.Context) {})
+	<-startCh
 
-	// Task 4: Should block in Submit's select
-	submitResult := make(chan bool)
-	go func() {
-		submitResult <- p.Submit(func(ctx context.Context) {})
-	}()
+	// Task 2 & 3: fill the channel buffer (size is 1*2 = 2)
+	ok2 := p.Submit(func(ctx context.Context) {})
+	ok3 := p.Submit(func(ctx context.Context) {})
 
-	// Ensure the goroutine is likely blocked in select
-	time.Sleep(50 * time.Millisecond)
+	if !ok2 || !ok3 {
+		t.Errorf("Expected tasks 2 and 3 to be submitted successfully, got %v, %v", ok2, ok3)
+	}
+
+	// Task 4: Should fail fast
+	ok4 := p.Submit(func(ctx context.Context) {})
+	if ok4 {
+		t.Error("Expected task 4 to fail fast and return false")
+	}
 
 	p.Shutdown()
-
-	select {
-	case ok := <-submitResult:
-		if ok {
-			t.Error("Submit should return false when pool is shut down while blocked")
-		}
-	case <-time.After(1 * time.Second):
-		t.Error("Submit did not unblock after Shutdown")
-	}
 }
