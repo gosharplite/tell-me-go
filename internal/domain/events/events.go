@@ -28,9 +28,7 @@ type EventBus interface {
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
 	mu          sync.RWMutex
-	subscribers []func(Event)
-	queue       chan Event
-	stop        chan struct{}
+	subscribers []chan Event
 	wg          sync.WaitGroup
 	once        sync.Once
 	closed      bool
@@ -42,74 +40,58 @@ type flushEvent struct {
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus.
 func NewSimpleEventBus() *SimpleEventBus {
-	b := &SimpleEventBus{
-		queue: make(chan Event, 100),
-		stop:  make(chan struct{}),
-	}
-	b.wg.Add(1)
-	go b.worker()
-	return b
-}
-
-func (b *SimpleEventBus) worker() {
-	defer b.wg.Done()
-	for e := range b.queue {
-		b.dispatch(e)
-	}
-}
-
-func (b *SimpleEventBus) dispatch(e Event) {
-	if fe, ok := e.(flushEvent); ok {
-		close(fe.done)
-		return
-	}
-
-	b.mu.RLock()
-	subs := make([]func(Event), len(b.subscribers))
-	copy(subs, b.subscribers)
-	b.mu.RUnlock()
-
-	for _, sub := range subs {
-		sub(e)
-	}
+	return &SimpleEventBus{}
 }
 
 func (b *SimpleEventBus) Publish(e Event) {
-	if b.queue == nil {
-		b.dispatch(e)
-		return
-	}
-
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+
 	if b.closed {
 		return
 	}
 
-	select {
-	case b.queue <- e:
-	default:
-		// Buffer full, drop event to avoid blocking the caller
+	for _, ch := range b.subscribers {
+		select {
+		case ch <- e:
+		default:
+			// Buffer full, drop event to avoid blocking the caller
+		}
 	}
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.subscribers = append(b.subscribers, sub)
+
+	if b.closed {
+		return
+	}
+
+	ch := make(chan Event, 100)
+	b.subscribers = append(b.subscribers, ch)
+
+	b.wg.Add(1)
+	go func() {
+		defer b.wg.Done()
+		for e := range ch {
+			if fe, ok := e.(flushEvent); ok {
+				close(fe.done)
+				continue
+			}
+			sub(e)
+		}
+	}()
 }
 
 // Shutdown gracefully stops the event bus, flushing pending events.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
-	if b.queue == nil {
-		return nil
-	}
-
 	b.once.Do(func() {
 		b.mu.Lock()
 		b.closed = true
-		close(b.stop)
-		close(b.queue)
+		for _, ch := range b.subscribers {
+			close(ch)
+		}
 		b.mu.Unlock()
 	})
 
@@ -129,25 +111,53 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 
 // Flush waits for all currently queued events to be dispatched.
 func (b *SimpleEventBus) Flush(ctx context.Context) error {
-	if b.queue == nil {
-		return nil
-	}
+	b.mu.RLock()
+	subs := make([]chan Event, len(b.subscribers))
+	copy(subs, b.subscribers)
+	closed := b.closed
+	b.mu.RUnlock()
 
-	done := make(chan struct{})
-	select {
-	case b.queue <- flushEvent{done: done}:
-	case <-b.stop:
+	if closed {
 		return fmt.Errorf("event bus is closed")
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 
-	select {
-	case <-done:
+	if len(subs) == 0 {
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	}
+
+	dones := make([]chan struct{}, 0, len(subs))
+	for _, ch := range subs {
+		done := make(chan struct{})
+		
+		err := func() error {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel was closed during Flush
+				}
+			}()
+			select {
+			case ch <- flushEvent{done: done}:
+				dones = append(dones, done)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			return nil
+		}()
+		
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, done := range dones {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 // StatusUpdate signals a change in the agent's internal state or progress.
