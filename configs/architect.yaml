@@ -12,7 +12,7 @@ SELECTED_PROVIDER: "google"
 PROVIDERS:
   google:
     TYPE: "gemini"
-    MODEL: "gemini-3.1-pro-preview"
+    MODEL: "gemini-3-flash-preview"
     URL: "https://aiplatform.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}/locations/global/publishers/google/models"
     API_KEY: "${GOOGLE_APPLICATION_CREDENTIALS}" # Optional - fall back to gcloud auth
     THINKING_BUDGET: 32768
