@@ -518,7 +518,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	<-prepareStarted
 	// Concurrent modification while Prepare is blocked in the pipeline
 	_ = cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "concurrent"}}})
-	
+
 	close(prepareResume)
 	wg.Wait()
 

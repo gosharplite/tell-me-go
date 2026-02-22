@@ -19,7 +19,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	tmpDir := t.TempDir()
 	historyFile := filepath.Join(tmpDir, "history.jsonl")
 	archiveFile := filepath.Join(tmpDir, "history.archive.jsonl")
-	
+
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyFile, archiveFile)
 	ctx := context.Background()
 
@@ -30,10 +30,10 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn 2 Model"}}})
 
 	strategy := NewContextStrategy(&mockTokenCounter{tokens: 100}, nil)
-	
+
 	cm := &ContextManager{
-		Strategy:   strategy,
-		History:    hManager,
+		Strategy: strategy,
+		History:  hManager,
 		Summarizer: &mockSummarizer{
 			summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
 				return "Summary of history", &llm.Metrics{}, nil
@@ -45,12 +45,12 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	// Actually, prepareSummarizationMetadata says:
 	// if numTurns >= totalTurns { numTurns = totalTurns - 1 }
 	// Total turns is 2. So numTurns becomes 1.
-	
+
 	// Let's add more turns to see reduction.
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Turn 3 User"}}})
 	_ = hManager.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "Turn 3 Model"}}})
 	// Total turns: 3 (6 messages).
-	
+
 	// Summarize 2 turns (4 messages).
 	_, _, err := cm.SummarizeRange(ctx, 2, "")
 	if err != nil {
@@ -83,7 +83,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	if len(mainContents) != 4 {
 		t.Fatalf("expected 4 messages in main history, got %d", len(mainContents))
 	}
-	
+
 	if mainContents[0].Role != "user" || !strings.Contains(mainContents[0].Parts[0].Text, "Summary of history") {
 		t.Errorf("expected summary message at index 0, got %v", mainContents[0])
 	}
