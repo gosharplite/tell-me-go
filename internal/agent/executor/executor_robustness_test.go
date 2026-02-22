@@ -56,7 +56,7 @@ func TestToolExecutor_ConfigRace(t *testing.T) {
 
 func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 	reg := registry.New()
-	
+
 	// Create a tool that blocks until told to proceed, so we can reliably cancel context mid-batch
 	blockCh := make(chan struct{})
 	reg.Register(&tools.ToolDeclaration{Name: "blocking_tool"}, func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -83,7 +83,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	
+
 	var execErr error
 	go func() {
 		defer wg.Done()
@@ -95,7 +95,7 @@ func TestToolExecutor_ContextCancellation_MidBatch(t *testing.T) {
 
 	// Cancel the context mid-batch
 	cancel()
-	
+
 	// Unblock the tools
 	close(blockCh)
 

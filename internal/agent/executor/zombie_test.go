@@ -18,17 +18,18 @@ func (m *mockZombieRegistry) GetDeclarations() []*domaintools.ToolDeclaration {
 	return []*domaintools.ToolDeclaration{{Name: "hanging_tool"}}
 }
 func (m *mockZombieRegistry) Register(d *domaintools.ToolDeclaration, f domaintools.ToolFunc) {}
-func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) {}
+func (m *mockZombieRegistry) RegisterWithOptions(def *domaintools.ToolDeclaration, handler domaintools.ToolFunc, opts domaintools.ToolOptions) {
+}
 func (m *mockZombieRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
 	if m.executeFn != nil {
 		return m.executeFn(ctx, name, args)
 	}
 	return domaintools.ToolResult{}, nil
 }
-func (m *mockZombieRegistry) GetLongRunningTools() []string { return nil }
-func (m *mockZombieRegistry) GetSerialTools() []string { return nil }
+func (m *mockZombieRegistry) GetLongRunningTools() []string  { return nil }
+func (m *mockZombieRegistry) GetSerialTools() []string       { return nil }
 func (m *mockZombieRegistry) IsLongRunning(name string) bool { return false }
-func (m *mockZombieRegistry) IsSerial(name string) bool { return false }
+func (m *mockZombieRegistry) IsSerial(name string) bool      { return false }
 
 func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	// A simple tool that sleeps longer than the timeout
@@ -39,7 +40,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 
 	reg := &mockZombieRegistry{
 		executeFn: func(ctx context.Context, name string, args map[string]interface{}) (domaintools.ToolResult, error) {
-			<-ctx.Done() // Block until context canceled
+			<-ctx.Done()                      // Block until context canceled
 			time.Sleep(10 * time.Millisecond) // Simulate some cleanup that ignores ctx
 			return domaintools.ToolResult{Text: "done"}, nil
 		},
@@ -49,7 +50,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	defer exec.Shutdown()
 	// mock the toolTimeout since NewToolExecutor sets it to default
 	exec.toolTimeout = 5 * time.Millisecond
-	
+
 	ctx := context.Background()
 
 	result, err := exec.runWithTimeout(ctx, hangingTool, nil)
