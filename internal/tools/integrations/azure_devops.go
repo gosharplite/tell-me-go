@@ -1472,6 +1472,9 @@ func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) (string, error)
 }
 
 func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) (string, error) {
+	if n <= 0 {
+		return "", nil
+	}
 	if n > 10000 {
 		n = 10000
 	}
