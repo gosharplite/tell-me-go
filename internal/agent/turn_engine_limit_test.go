@@ -133,3 +133,76 @@ func (m *limitMockRegistry) IsSerial(name string) bool {
 func (m *limitMockRegistry) IsLongRunning(name string) bool {
 	return false
 }
+
+func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
+	tests := []struct {
+		name              string
+		maxTokens         int
+		existingTokens    int
+		toolTokens        int
+		expectedTruncated bool
+	}{
+		{
+			name:              "Under Limit",
+			maxTokens:         1000,
+			existingTokens:    500, // 50%
+			toolTokens:        200, // 20%
+			expectedTruncated: false,
+		},
+		{
+			name:              "Individual Breach",
+			maxTokens:         1000,
+			existingTokens:    100,
+			toolTokens:        501, // > 50% of 1000
+			expectedTruncated: true,
+		},
+		{
+			name:              "Cumulative Breach",
+			maxTokens:         1000,
+			existingTokens:    800, // 80%
+			toolTokens:        200, // 20%
+			// Total = 1000. 90% of 1000 is 900. 1000 > 900.
+			expectedTruncated: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			counter := &mockTokenCounter{tokens: tt.toolTokens}
+			strategy := orchestration.NewContextStrategy(counter, nil)
+			strategy.SetLimits(tt.maxTokens, 10, 10)
+
+			cm := orchestration.NewContextManager(strategy, nil, nil, nil)
+
+			turn := &turn{
+				CtxManager: cm,
+				State: &turnState{
+					Tokens: tt.existingTokens,
+				},
+				Events: &events.SimpleEventBus{},
+			}
+
+			toolResponse := &llm.Content{
+				Parts: []*llm.Part{
+					{
+						FunctionResponse: &llm.FunctionResponse{
+							Name:     "test_tool",
+							Response: map[string]any{"result": "some data"},
+						},
+					},
+				},
+			}
+
+			p := &executionStep{}
+			p.validatePayloadLimits(context.Background(), turn, toolResponse)
+
+			if tt.expectedTruncated {
+				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")
+				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "exceeds safety limit")
+			} else {
+				assert.NotContains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")
+				assert.Equal(t, "some data", toolResponse.Parts[0].FunctionResponse.Response["result"])
+			}
+		})
+	}
+}

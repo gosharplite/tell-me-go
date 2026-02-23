@@ -32,6 +32,14 @@ type azureDevOpsManager struct {
 	authHeader string
 	authErr    error
 	authOnce   sync.Once
+	baseURL    string // For testing
+}
+
+func (m *azureDevOpsManager) getBaseURL() string {
+	if m.baseURL != "" {
+		return m.baseURL
+	}
+	return "https://dev.azure.com"
 }
 
 // newazureDevOpsManager creates a new instance of azureDevOpsManager.
@@ -134,8 +142,8 @@ func (m *azureDevOpsManager) adoGetPullRequest(ctx context.Context, args map[str
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
@@ -239,8 +247,8 @@ func (m *azureDevOpsManager) buildListPullRequestsURL(org, project, repo, status
 		top = 50
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests",
-		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -285,8 +293,8 @@ func (m *azureDevOpsManager) adoGetPrDiff(ctx context.Context, args map[string]i
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/iterations/1/changes?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
@@ -353,8 +361,8 @@ func (m *azureDevOpsManager) adoGetPrThreads(ctx context.Context, args map[strin
 		return tools.ToolResult{}, fmt.Errorf("organization, project, repository, and pull_request_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/threads?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository), params.PullRequestId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
@@ -432,8 +440,8 @@ func (m *azureDevOpsManager) adoGetFileContent(ctx context.Context, args map[str
 		params.Version = "main"
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), url.PathEscape(params.Repository)))
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -515,8 +523,8 @@ func (m *azureDevOpsManager) buildListRepositoryItemsURL(org, project, repo, sco
 		recursionLevel = "none"
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/items",
-		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/items",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -604,8 +612,8 @@ func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipel
 		top = 10
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs",
-		url.PathEscape(org), url.PathEscape(project), pipelineId))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
@@ -649,8 +657,8 @@ func (m *azureDevOpsManager) adoGetPipelineRun(ctx context.Context, args map[str
 		return tools.ToolResult{}, fmt.Errorf("organization, project, pipeline_id, and run_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.PipelineId, params.RunId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
@@ -713,8 +721,8 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 }
 
 func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
-	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
+	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId, runId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, nil)
 	if err != nil {
@@ -747,8 +755,8 @@ func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project 
 }
 
 func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) (tools.ToolResult, error) {
-	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
+	u := fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
@@ -805,8 +813,8 @@ func (m *azureDevOpsManager) adoGetPrStatuses(ctx context.Context, args map[stri
 }
 
 func (m *azureDevOpsManager) fetchPrStatuses(ctx context.Context, org, project, repo string, prID int) (adoStatusResponse, error) {
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
-		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d/statuses",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID))
 	if err != nil {
 		return adoStatusResponse{}, fmt.Errorf("failed to parse statuses base URL: %w", err)
 	}
@@ -923,8 +931,8 @@ func (m *azureDevOpsManager) adoGetPrPolicyEvaluations(ctx context.Context, args
 }
 
 func (m *azureDevOpsManager) fetchPrProjectID(ctx context.Context, org, project, repo string, prID int) (string, error) {
-	prRequestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
+	prRequestURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s/pullrequests/%d?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo), prID)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, prRequestURL, nil, nil)
 	if err != nil {
@@ -951,8 +959,8 @@ func (m *azureDevOpsManager) fetchPrProjectID(ctx context.Context, org, project,
 }
 
 func (m *azureDevOpsManager) fetchPolicyEvaluations(ctx context.Context, org, project, artifactID string) (adoPolicyResponse, error) {
-	baseURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/evaluations",
-		url.PathEscape(org), url.PathEscape(project))
+	baseURL := fmt.Sprintf("%s/%s/%s/_apis/policy/evaluations",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
 
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -1048,8 +1056,8 @@ func (m *azureDevOpsManager) adoListBranchPolicies(ctx context.Context, args map
 }
 
 func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project, repo string) (string, error) {
-	repoURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories/%s?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
+	repoURL := fmt.Sprintf("%s/%s/%s/_apis/git/repositories/%s?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), url.PathEscape(repo))
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, repoURL, nil, nil)
 	if err != nil {
@@ -1067,8 +1075,8 @@ func (m *azureDevOpsManager) fetchRepositoryId(ctx context.Context, org, project
 }
 
 func (m *azureDevOpsManager) fetchPolicyConfigurations(ctx context.Context, org, project string) ([]adoPolicyConfig, error) {
-	policyURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/policy/configurations?api-version=7.1",
-		url.PathEscape(org), url.PathEscape(project))
+	policyURL := fmt.Sprintf("%s/%s/%s/_apis/policy/configurations?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, policyURL, nil, nil)
 	if err != nil {
@@ -1213,8 +1221,8 @@ func (m *azureDevOpsManager) adoGetBuildTimeline(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("organization, project, and build_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/timeline?api-version=7.0",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
 	if err != nil {
@@ -1260,8 +1268,8 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("organization, project, build_id, and log_id are required")
 	}
 
-	requestURL := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/logs/%d?api-version=7.0",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId, params.LogId)
 
 	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, map[string]string{"Accept": "*/*"})
 	if err != nil {
@@ -1528,8 +1536,8 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 		params.Top = 50
 	}
 
-	u, err := url.Parse(fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/build/builds/%d/changes",
-		url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds/%d/changes",
+		m.getBaseURL(), url.PathEscape(params.Organization), url.PathEscape(params.Project), params.BuildId))
 	if err != nil {
 		return tools.ToolResult{}, fmt.Errorf("failed to parse base URL: %w", err)
 	}

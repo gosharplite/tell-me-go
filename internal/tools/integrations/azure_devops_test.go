@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -1790,4 +1791,60 @@ func TestFormatKey(t *testing.T) {
 			assert.Equal(t, tt.expected, formatKey(tt.input))
 		})
 	}
+}
+
+func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{ invalid json"))
+	}))
+	defer server.Close()
+
+	m := newazureDevOpsManager(sm, nil)
+	m.baseURL = server.URL
+
+	ctx := context.Background()
+	commonArgs := map[string]interface{}{
+		"organization": "myorg",
+		"project":      "myproj",
+		"repository":   "myrepo",
+	}
+
+	t.Run("adoListPullRequests", func(t *testing.T) {
+		_, err := m.adoListPullRequests(ctx, commonArgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("adoListRepositoryItems", func(t *testing.T) {
+		_, err := m.adoListRepositoryItems(ctx, commonArgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("adoListPipelineRuns", func(t *testing.T) {
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  123,
+		}
+		_, err := m.adoListPipelineRuns(ctx, args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode response")
+	})
+
+	t.Run("adoGetPipelineLogs_List", func(t *testing.T) {
+		args := map[string]interface{}{
+			"organization": "myorg",
+			"project":      "myproj",
+			"pipeline_id":  123,
+			"run_id":       456,
+		}
+		_, err := m.adoGetPipelineLogs(ctx, args)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to decode logs list")
+	})
 }
