@@ -4,6 +4,7 @@
 package integrations
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -755,12 +756,7 @@ func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, p
 	}
 	defer resp.Body.Close()
 
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to read log content: %w", err)
-	}
-
-	processedContent := m.processLogContent(string(content), tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	processedContent := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
@@ -1270,101 +1266,217 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 	}
 	defer resp.Body.Close()
 
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return tools.ToolResult{}, fmt.Errorf("failed to read log content: %w", err)
-	}
-
-	processedContent := m.processLogContent(string(content), params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	processedContent := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
-func (m *azureDevOpsManager) processLogContent(content string, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) string {
-	content = strings.TrimRight(content, "\r\n")
-	if content == "" {
-		return ""
-	}
-	lines := strings.Split(content, "\n")
-	totalLines := len(lines)
-
+func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) string {
 	if filterQuery != "" {
-		re, err := regexp.Compile(filterQuery)
-		if err != nil {
-			return fmt.Sprintf("Error: invalid filter_query regex: %v", err)
-		}
-
-		if contextLines <= 0 {
-			contextLines = 5
-		}
-
-		var matchedIndices []int
-		for i, line := range lines {
-			if re.MatchString(line) {
-				matchedIndices = append(matchedIndices, i)
-			}
-		}
-
-		if len(matchedIndices) == 0 {
-			return "No matches found for filter_query."
-		}
-
-		var resultLines []string
-		included := make(map[int]bool)
-		for _, idx := range matchedIndices {
-			start := idx - contextLines
-			if start < 0 {
-				start = 0
-			}
-			end := idx + contextLines
-			if end >= totalLines {
-				end = totalLines - 1
-			}
-
-			for i := start; i <= end; i++ {
-				if !included[i] {
-					if i > 0 && !included[i-1] && len(resultLines) > 0 {
-						resultLines = append(resultLines, "...")
-					}
-					resultLines = append(resultLines, lines[i])
-					included[i] = true
-				}
-			}
-		}
-		return strings.Join(resultLines, "\n")
+		return m.streamRegexFilter(reader, filterQuery, contextLines)
 	}
 
 	if startLine > 0 || maxLines > 0 {
-		if startLine <= 0 {
-			startLine = 1
-		}
-		startIdx := startLine - 1
-		if startIdx >= totalLines {
-			return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, totalLines)
-		}
-		endIdx := totalLines
-		if maxLines > 0 {
-			endIdx = startIdx + maxLines
-			if endIdx > totalLines {
-				endIdx = totalLines
-			}
-		}
-		return strings.Join(lines[startIdx:endIdx], "\n")
+		return m.streamPagination(reader, startLine, maxLines)
 	}
 
 	if headLines > 0 {
-		if totalLines <= headLines {
-			return content
-		}
-		return strings.Join(lines[:headLines], "\n")
+		return m.streamHead(reader, headLines)
 	}
 
 	if tailLines <= 0 {
 		tailLines = 200
 	}
-	if totalLines <= tailLines {
-		return content
+	return m.streamTail(reader, tailLines)
+}
+
+func (m *azureDevOpsManager) streamRegexFilter(reader io.Reader, query string, contextLines int) string {
+	re, err := regexp.Compile(query)
+	if err != nil {
+		return fmt.Sprintf("Error: invalid filter_query regex: %v", err)
 	}
-	return strings.Join(lines[totalLines-tailLines:], "\n")
+
+	state := newLogFilterState(contextLines)
+	scanner := bufio.NewScanner(reader)
+	const maxCapacity = 1 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if re.MatchString(line) {
+			state.addMatch(line)
+		} else {
+			state.addNonMatch(line)
+		}
+		state.updateWindow(line)
+	}
+
+	if state.result.Len() == 0 {
+		return "No matches found for filter_query."
+	}
+
+	return state.result.String()
+}
+
+type logFilterState struct {
+	preWindow          []string
+	preCount           int
+	postLinesRemaining int
+	lastPrintedLineNum int
+	currentLineNum     int
+	contextLines       int
+	result             strings.Builder
+}
+
+func newLogFilterState(contextLines int) *logFilterState {
+	if contextLines <= 0 {
+		contextLines = 5
+	}
+	return &logFilterState{
+		preWindow:          make([]string, contextLines),
+		contextLines:       contextLines,
+		lastPrintedLineNum: -1,
+	}
+}
+
+func (s *logFilterState) addMatch(line string) {
+	s.printPreWindow()
+	s.printLine(line, s.currentLineNum)
+	s.postLinesRemaining = s.contextLines
+}
+
+func (s *logFilterState) addNonMatch(line string) {
+	if s.postLinesRemaining > 0 {
+		s.printLine(line, s.currentLineNum)
+		s.postLinesRemaining--
+	}
+}
+
+func (s *logFilterState) updateWindow(line string) {
+	s.preWindow[s.preCount%s.contextLines] = line
+	s.preCount++
+	s.currentLineNum++
+}
+
+func (s *logFilterState) printPreWindow() {
+	limitPre := s.contextLines
+	if s.preCount < s.contextLines {
+		limitPre = s.preCount
+	}
+
+	startPre := 0
+	if s.preCount >= s.contextLines {
+		startPre = s.preCount % s.contextLines
+	}
+
+	for i := 0; i < limitPre; i++ {
+		lineNum := s.currentLineNum - (limitPre - i)
+		s.printLine(s.preWindow[(startPre+i)%s.contextLines], lineNum)
+	}
+}
+
+func (s *logFilterState) printLine(line string, lineNum int) {
+	if lineNum <= s.lastPrintedLineNum {
+		return
+	}
+	if s.lastPrintedLineNum != -1 && lineNum > s.lastPrintedLineNum+1 {
+		s.result.WriteString("\n...")
+	}
+	if s.result.Len() > 0 {
+		s.result.WriteString("\n")
+	}
+	s.result.WriteString(line)
+	s.lastPrintedLineNum = lineNum
+}
+
+func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLines int) string {
+	if startLine <= 0 {
+		startLine = 1
+	}
+	scanner := bufio.NewScanner(reader)
+	const maxCapacity = 1 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	var result strings.Builder
+	count := 0
+	printed := 0
+	for scanner.Scan() {
+		count++
+		if count < startLine {
+			continue
+		}
+		if maxLines > 0 && printed >= maxLines {
+			break
+		}
+		if printed > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(scanner.Text())
+		printed++
+	}
+
+	if count < startLine && count > 0 {
+		return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count)
+	}
+
+	return result.String()
+}
+
+func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) string {
+	scanner := bufio.NewScanner(reader)
+	const maxCapacity = 1 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	var result strings.Builder
+	count := 0
+	for scanner.Scan() && count < n {
+		if count > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(scanner.Text())
+		count++
+	}
+	return result.String()
+}
+
+func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) string {
+	scanner := bufio.NewScanner(reader)
+	const maxCapacity = 1 * 1024 * 1024
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, maxCapacity)
+
+	ring := make([]string, n)
+	count := 0
+	for scanner.Scan() {
+		ring[count%n] = scanner.Text()
+		count++
+	}
+
+	if count == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+	start := 0
+	if count > n {
+		start = count % n
+	}
+
+	limit := n
+	if count < n {
+		limit = count
+	}
+
+	for i := 0; i < limit; i++ {
+		if i > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString(ring[(start+i)%n])
+	}
+
+	return result.String()
 }
 
 func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

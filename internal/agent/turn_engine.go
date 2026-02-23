@@ -697,15 +697,8 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, t
 	}
 
 	if isTooLarge {
-		// Truncate the response to avoid poisoning the context
-		for _, part := range toolResponse.Parts {
-			if part.FunctionResponse != nil {
-				// Replace the content
-				part.FunctionResponse.Response = map[string]any{
-					"error": fmt.Sprintf("Tool response payload estimate (~%d tokens) exceeds safety limit. To prevent context poisoning, the result was discarded. Please run the tool again using proper boundaries (e.g., 'tail_lines', 'max_lines', 'limit', or 'grep').", toolTokens),
-				}
-			}
-		}
+		// Delegate mutation to the utility
+		truncateOversizedResponse(toolResponse, toolTokens)
 
 		if turn.Events != nil {
 			turn.Events.Publish(events.SystemMessageEvent{
