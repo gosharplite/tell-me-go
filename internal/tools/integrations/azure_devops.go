@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -687,6 +688,12 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 		PipelineId   int    `json:"pipeline_id"`
 		RunId        int    `json:"run_id"`
 		LogId        int    `json:"log_id"`
+		TailLines    int    `json:"tail_lines"`
+		HeadLines    int    `json:"head_lines"`
+		FilterQuery  string `json:"filter_query"`
+		ContextLines int    `json:"context_lines"`
+		StartLine    int    `json:"start_line"`
+		MaxLines     int    `json:"max_lines"`
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
@@ -701,7 +708,7 @@ func (m *azureDevOpsManager) adoGetPipelineLogs(ctx context.Context, args map[st
 		return m.listPipelineLogs(ctx, params.Organization, params.Project, params.PipelineId, params.RunId)
 	}
 
-	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId)
+	return m.fetchPipelineLogContent(ctx, params.Organization, params.Project, params.PipelineId, params.RunId, params.LogId, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
 }
 
 func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project string, pipelineId, runId int) (tools.ToolResult, error) {
@@ -738,7 +745,7 @@ func (m *azureDevOpsManager) listPipelineLogs(ctx context.Context, org, project 
 	return tools.ToolResult{Text: resultText.String()}, nil
 }
 
-func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int) (tools.ToolResult, error) {
+func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, project string, pipelineId, runId, logId int, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) (tools.ToolResult, error) {
 	u := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1",
 		url.PathEscape(org), url.PathEscape(project), pipelineId, runId, logId)
 
@@ -753,7 +760,8 @@ func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, p
 		return tools.ToolResult{}, fmt.Errorf("failed to read log content: %w", err)
 	}
 
-	return tools.ToolResult{Text: string(content)}, nil
+	processedContent := m.processLogContent(string(content), tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	return tools.ToolResult{Text: processedContent}, nil
 }
 
 type adoStatusResponse struct {
@@ -1237,6 +1245,12 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 		Project      string `json:"project"`
 		BuildId      int    `json:"build_id"`
 		LogId        int    `json:"log_id"`
+		TailLines    int    `json:"tail_lines"`
+		HeadLines    int    `json:"head_lines"`
+		FilterQuery  string `json:"filter_query"`
+		ContextLines int    `json:"context_lines"`
+		StartLine    int    `json:"start_line"`
+		MaxLines     int    `json:"max_lines"`
 	}
 
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
@@ -1261,7 +1275,96 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 		return tools.ToolResult{}, fmt.Errorf("failed to read log content: %w", err)
 	}
 
-	return tools.ToolResult{Text: string(content)}, nil
+	processedContent := m.processLogContent(string(content), params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	return tools.ToolResult{Text: processedContent}, nil
+}
+
+func (m *azureDevOpsManager) processLogContent(content string, tailLines int, headLines int, filterQuery string, contextLines int, startLine int, maxLines int) string {
+	content = strings.TrimRight(content, "\r\n")
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	if filterQuery != "" {
+		re, err := regexp.Compile(filterQuery)
+		if err != nil {
+			return fmt.Sprintf("Error: invalid filter_query regex: %v", err)
+		}
+
+		if contextLines <= 0 {
+			contextLines = 5
+		}
+
+		var matchedIndices []int
+		for i, line := range lines {
+			if re.MatchString(line) {
+				matchedIndices = append(matchedIndices, i)
+			}
+		}
+
+		if len(matchedIndices) == 0 {
+			return "No matches found for filter_query."
+		}
+
+		var resultLines []string
+		included := make(map[int]bool)
+		for _, idx := range matchedIndices {
+			start := idx - contextLines
+			if start < 0 {
+				start = 0
+			}
+			end := idx + contextLines
+			if end >= totalLines {
+				end = totalLines - 1
+			}
+
+			for i := start; i <= end; i++ {
+				if !included[i] {
+					if i > 0 && !included[i-1] && len(resultLines) > 0 {
+						resultLines = append(resultLines, "...")
+					}
+					resultLines = append(resultLines, lines[i])
+					included[i] = true
+				}
+			}
+		}
+		return strings.Join(resultLines, "\n")
+	}
+
+	if startLine > 0 || maxLines > 0 {
+		if startLine <= 0 {
+			startLine = 1
+		}
+		startIdx := startLine - 1
+		if startIdx >= totalLines {
+			return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, totalLines)
+		}
+		endIdx := totalLines
+		if maxLines > 0 {
+			endIdx = startIdx + maxLines
+			if endIdx > totalLines {
+				endIdx = totalLines
+			}
+		}
+		return strings.Join(lines[startIdx:endIdx], "\n")
+	}
+
+	if headLines > 0 {
+		if totalLines <= headLines {
+			return content
+		}
+		return strings.Join(lines[:headLines], "\n")
+	}
+
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+	if totalLines <= tailLines {
+		return content
+	}
+	return strings.Join(lines[totalLines-tailLines:], "\n")
 }
 
 func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
