@@ -83,6 +83,21 @@ func TestProcessLogContent(t *testing.T) {
 		expected := "line 9\nline 10"
 		assert.Equal(t, expected, result)
 	})
+
+	t.Run("ArgumentPriority", func(t *testing.T) {
+		content := "line 1\nerror: critical\nline 3\nline 4\nline 5\nerror: fatal\nline 7"
+
+		// Pass ALL stream manipulators at once.
+		// filterQuery="error" should take precedence over startLine, maxLines, headLines, tailLines.
+		result, err := m.processLogContent(strings.NewReader(content), 2, 2, "error", 0, 5, 2)
+
+		assert.NoError(t, err)
+		// It should only return the filtered lines, ignoring the head/tail/pagination logic
+		assert.Contains(t, result, "error: critical")
+		assert.Contains(t, result, "error: fatal")
+		assert.NotContains(t, result, "line 1")
+		assert.NotContains(t, result, "line 7")
+	})
 }
 
 func TestOOMSafety(t *testing.T) {
@@ -140,4 +155,18 @@ func TestLogIOError(t *testing.T) {
 		assert.Contains(t, err.Error(), "log stream interrupted")
 		assert.Empty(t, result)
 	})
+}
+
+func TestProcessLogContent_BufferTooLong(t *testing.T) {
+	m := &azureDevOpsManager{}
+
+	// Create a single line of text that exceeds the 1MB bufio.Scanner maxCapacity limit
+	massiveLine := strings.Repeat("A", (1*1024*1024)+100)
+
+	result, err := m.processLogContent(strings.NewReader(massiveLine), 0, 0, "", 0, 0, 0)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "log stream interrupted")
+	assert.Contains(t, err.Error(), "token too long")
+	assert.Empty(t, result)
 }

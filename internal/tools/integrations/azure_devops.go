@@ -1347,14 +1347,18 @@ type logFilterState struct {
 }
 
 func newLogFilterState(contextLines int) *logFilterState {
-	if contextLines <= 0 {
+	if contextLines < 0 {
 		contextLines = 5
 	}
 	if contextLines > 100 {
 		contextLines = 100
 	}
+	var preWindow []string
+	if contextLines > 0 {
+		preWindow = make([]string, contextLines)
+	}
 	return &logFilterState{
-		preWindow:          make([]string, contextLines),
+		preWindow:          preWindow,
 		contextLines:       contextLines,
 		lastPrintedLineNum: -1,
 	}
@@ -1374,12 +1378,17 @@ func (s *logFilterState) addNonMatch(line string) {
 }
 
 func (s *logFilterState) updateWindow(line string) {
-	s.preWindow[s.preCount%s.contextLines] = line
+	if s.contextLines > 0 {
+		s.preWindow[s.preCount%s.contextLines] = line
+	}
 	s.preCount++
 	s.currentLineNum++
 }
 
 func (s *logFilterState) printPreWindow() {
+	if s.contextLines <= 0 {
+		return
+	}
 	limitPre := s.contextLines
 	if s.preCount < s.contextLines {
 		limitPre = s.preCount

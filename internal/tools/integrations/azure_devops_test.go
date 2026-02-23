@@ -1805,46 +1805,46 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 
 	m := newazureDevOpsManager(sm, nil)
 	m.baseURL = server.URL
-
 	ctx := context.Background()
-	commonArgs := map[string]interface{}{
-		"organization": "myorg",
-		"project":      "myproj",
-		"repository":   "myrepo",
+
+	// Define standard args that satisfy validation for most endpoints
+	args := map[string]interface{}{
+		"organization":    "myorg",
+		"project":         "myproj",
+		"repository":      "myrepo",
+		"pull_request_id": 123,
+		"pipeline_id":     123,
+		"run_id":          456,
+		"build_id":        789,
+		"path":            "/src/main.go",
+		"branch_name":     "main",
 	}
 
-	t.Run("adoListPullRequests", func(t *testing.T) {
-		_, err := m.adoListPullRequests(ctx, commonArgs)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
-	})
+	tests := []struct {
+		name string
+		call func() (tools.ToolResult, error)
+	}{
+		{"adoListPullRequests", func() (tools.ToolResult, error) { return m.adoListPullRequests(ctx, args) }},
+		{"adoGetPullRequest", func() (tools.ToolResult, error) { return m.adoGetPullRequest(ctx, args) }},
+		{"adoGetPrDiff", func() (tools.ToolResult, error) { return m.adoGetPrDiff(ctx, args) }},
+		{"adoGetPrThreads", func() (tools.ToolResult, error) { return m.adoGetPrThreads(ctx, args) }},
+		{"adoListRepositoryItems", func() (tools.ToolResult, error) { return m.adoListRepositoryItems(ctx, args) }},
+		{"adoListPipelineRuns", func() (tools.ToolResult, error) { return m.adoListPipelineRuns(ctx, args) }},
+		{"adoGetPipelineRun", func() (tools.ToolResult, error) { return m.adoGetPipelineRun(ctx, args) }},
+		{"adoGetPipelineLogs", func() (tools.ToolResult, error) { return m.adoGetPipelineLogs(ctx, args) }},
+		{"adoGetPrStatuses", func() (tools.ToolResult, error) { return m.adoGetPrStatuses(ctx, args) }},
+		{"adoGetPrPolicyEvaluations", func() (tools.ToolResult, error) { return m.adoGetPrPolicyEvaluations(ctx, args) }},
+		{"adoListBranchPolicies", func() (tools.ToolResult, error) { return m.adoListBranchPolicies(ctx, args) }},
+		{"adoGetBuildTimeline", func() (tools.ToolResult, error) { return m.adoGetBuildTimeline(ctx, args) }},
+		{"adoGetBuildChanges", func() (tools.ToolResult, error) { return m.adoGetBuildChanges(ctx, args) }},
+	}
 
-	t.Run("adoListRepositoryItems", func(t *testing.T) {
-		_, err := m.adoListRepositoryItems(ctx, commonArgs)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
-	})
-
-	t.Run("adoListPipelineRuns", func(t *testing.T) {
-		args := map[string]interface{}{
-			"organization": "myorg",
-			"project":      "myproj",
-			"pipeline_id":  123,
-		}
-		_, err := m.adoListPipelineRuns(ctx, args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode response")
-	})
-
-	t.Run("adoGetPipelineLogs_List", func(t *testing.T) {
-		args := map[string]interface{}{
-			"organization": "myorg",
-			"project":      "myproj",
-			"pipeline_id":  123,
-			"run_id":       456,
-		}
-		_, err := m.adoGetPipelineLogs(ctx, args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to decode logs list")
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.call()
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "decode")
+			}
+		})
+	}
 }
