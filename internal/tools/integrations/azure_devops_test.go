@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,17 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
-
-type mockAzureDevOpsClient struct {
-	mock.Mock
-}
-
-func (m *mockAzureDevOpsClient) Do(req *http.Request) (*http.Response, error) {
-	args := m.Called(req)
-	return args.Get(0).(*http.Response), args.Error(1)
-}
 
 func TestAdoGetPullRequest(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
@@ -35,9 +24,6 @@ func TestAdoGetPullRequest(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		jsonResponse := `{
 			"title": "Fix bug",
 			"status": "active",
@@ -49,14 +35,20 @@ func TestAdoGetPullRequest(t *testing.T) {
 			"repository": {"id": "repo-id", "name": "repo-name"}
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			expectedAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(":test-pat"))
-			expectedURL := "https://dev.azure.com/myorg/myproj/_apis/git/repositories/myrepo/pullrequests/123?api-version=7.1"
-			return req.URL.String() == expectedURL && req.Header.Get("Authorization") == expectedAuth
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+			expectedPath := "/myorg/myproj/_apis/git/repositories/myrepo/pullrequests/123"
+			assert.Equal(t, expectedPath, r.URL.Path)
+			assert.Equal(t, "7.1", r.URL.Query().Get("api-version"))
+			assert.Equal(t, expectedAuth, r.Header.Get("Authorization"))
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -72,17 +64,16 @@ func TestAdoGetPullRequest(t *testing.T) {
 		assert.Contains(t, result.Text, "active")
 		assert.Contains(t, result.Text, "John Doe")
 		assert.Contains(t, result.Text, "Repository: repo-name (repo-id)")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Unauthorized", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Body:       io.NopCloser(strings.NewReader("")),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -97,13 +88,13 @@ func TestAdoGetPullRequest(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -150,9 +141,6 @@ func TestAdoListPullRequests(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		jsonResponse := `{
 			"value": [
 				{
@@ -171,15 +159,19 @@ func TestAdoListPullRequests(t *testing.T) {
 			"count": 2
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			q := req.URL.Query()
-			return strings.Contains(req.URL.String(), "/pullrequests") &&
-				q.Get("searchCriteria.status") == "active" &&
-				q.Get("$top") == "50"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			assert.Contains(t, r.URL.Path, "/pullrequests")
+			assert.Equal(t, "active", q.Get("searchCriteria.status"))
+			assert.Equal(t, "50", q.Get("$top"))
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -193,19 +185,17 @@ func TestAdoListPullRequests(t *testing.T) {
 		assert.Contains(t, result.Text, "Found 2 pull requests")
 		assert.Contains(t, result.Text, "[#123] Fix bug")
 		assert.Contains(t, result.Text, "[#124] Add feature")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Empty Results", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": [], "count": 0}`))
+		}))
+		defer server.Close()
 
-		jsonResponse := `{"value": [], "count": 0}`
-
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -219,16 +209,18 @@ func TestAdoListPullRequests(t *testing.T) {
 	})
 
 	t.Run("Filters and Top", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			assert.Equal(t, "completed", q.Get("searchCriteria.status"))
+			assert.Equal(t, "10", q.Get("$top"))
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			q := req.URL.Query()
-			return q.Get("searchCriteria.status") == "completed" && q.Get("$top") == "10"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": []}`))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -240,7 +232,6 @@ func TestAdoListPullRequests(t *testing.T) {
 
 		_, err := m.adoListPullRequests(context.Background(), args)
 		assert.NoError(t, err)
-		mockClient.AssertExpectations(t)
 	})
 }
 
@@ -250,9 +241,6 @@ func TestAdoGetPrDiff(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		jsonResponse := `{
 			"changeEntries": [
 				{
@@ -266,12 +254,15 @@ func TestAdoGetPrDiff(t *testing.T) {
 			]
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullrequests/123/iterations/1/changes")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/pullrequests/123/iterations/1/changes")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -286,17 +277,17 @@ func TestAdoGetPrDiff(t *testing.T) {
 		assert.Contains(t, result.Text, "Total files changed: 2")
 		assert.Contains(t, result.Text, "[Edit] /src/main.go")
 		assert.Contains(t, result.Text, "[Add] /src/utils.go")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("No Changes", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"changeEntries": []}`))
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"changeEntries": []}`)),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -317,9 +308,6 @@ func TestAdoGetPrThreads(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		jsonResponse := `{
 			"value": [
 				{
@@ -353,12 +341,15 @@ func TestAdoGetPrThreads(t *testing.T) {
 			]
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullrequests/123/threads")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/pullrequests/123/threads")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -374,17 +365,17 @@ func TestAdoGetPrThreads(t *testing.T) {
 		assert.Contains(t, result.Text, "Please check this logic.")
 		assert.Contains(t, result.Text, "Jane Doe: Looks good to me.")
 		assert.NotContains(t, result.Text, "Build succeeded.") // System thread filtered
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("No Threads", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": []}`))
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -405,21 +396,22 @@ func TestAdoGetFileContent(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		fileContent := "package main\n\nfunc main() {}"
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			q := req.URL.Query()
-			return strings.Contains(req.URL.String(), "/items") &&
-				q.Get("path") == "/src/main.go" &&
-				q.Get("versionDescriptor.version") == "develop" &&
-				q.Get("$format") == "text"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(fileContent)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			assert.Contains(t, r.URL.Path, "/items")
+			assert.Equal(t, "/src/main.go", q.Get("path"))
+			assert.Equal(t, "develop", q.Get("versionDescriptor.version"))
+			assert.Equal(t, "text", q.Get("$format"))
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(fileContent))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -433,19 +425,18 @@ func TestAdoGetFileContent(t *testing.T) {
 		result, err := m.adoGetFileContent(ctx, args)
 		assert.NoError(t, err)
 		assert.Equal(t, fileContent, result.Text)
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Default Version", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "main", r.URL.Query().Get("versionDescriptor.version"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("content"))
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return req.URL.Query().Get("versionDescriptor.version") == "main"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("content")),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -456,18 +447,16 @@ func TestAdoGetFileContent(t *testing.T) {
 
 		_, err := m.adoGetFileContent(context.Background(), args)
 		assert.NoError(t, err)
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("File Not Found", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -488,9 +477,6 @@ func TestAdoListRepositoryItems(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-
 		jsonResponse := `{
 			"value": [
 				{"path": "/src", "isFolder": true},
@@ -500,15 +486,19 @@ func TestAdoListRepositoryItems(t *testing.T) {
 			"count": 3
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			q := req.URL.Query()
-			return strings.Contains(req.URL.String(), "/items") &&
-				q.Get("scopePath") == "/" &&
-				q.Get("recursionLevel") == "oneLevel"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query()
+			assert.Contains(t, r.URL.Path, "/items")
+			assert.Equal(t, "/", q.Get("scopePath"))
+			assert.Equal(t, "oneLevel", q.Get("recursionLevel"))
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		ctx := context.Background()
 		args := map[string]interface{}{
@@ -523,17 +513,17 @@ func TestAdoListRepositoryItems(t *testing.T) {
 		assert.Contains(t, result.Text, "[DIR]  /src")
 		assert.Contains(t, result.Text, "[FILE] /src/main.go")
 		assert.Contains(t, result.Text, "[FILE] /README.md")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Empty Results", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": []}`))
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil)
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -549,17 +539,19 @@ func TestAdoListRepositoryItems(t *testing.T) {
 
 func TestAdoListPipelineRuns(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01"}]}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pipelines/1/runs")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/pipelines/1/runs")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1}
 		result, err := m.adoListPipelineRuns(context.Background(), args)
@@ -570,17 +562,19 @@ func TestAdoListPipelineRuns(t *testing.T) {
 
 func TestAdoGetPipelineRun(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01", "url": "http://run"}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pipelines/1/runs/101")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/pipelines/1/runs/101")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
 		result, err := m.adoGetPipelineRun(context.Background(), args)
@@ -591,17 +585,20 @@ func TestAdoGetPipelineRun(t *testing.T) {
 
 func TestAdoGetPipelineLogs(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("List Logs", func(t *testing.T) {
 		jsonResponse := `{"value": [{"id": 1, "lineCount": 10}]}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/runs/101/logs") && !strings.Contains(req.URL.String(), "/logs/1")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/runs/101/logs")
+			assert.NotContains(t, r.URL.Path, "/logs/1")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101}
 		result, err := m.adoGetPipelineLogs(context.Background(), args)
@@ -611,12 +608,15 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 
 	t.Run("Fetch Log Content", func(t *testing.T) {
 		logContent := "build output"
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/runs/101/logs/1")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(logContent)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/runs/101/logs/1")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(logContent))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 101, "log_id": 1}
 		result, err := m.adoGetPipelineLogs(context.Background(), args)
@@ -627,8 +627,7 @@ func TestAdoGetPipelineLogs(t *testing.T) {
 
 func TestAdoGetPrStatuses(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -650,12 +649,15 @@ func TestAdoGetPrStatuses(t *testing.T) {
 			]
 		}`
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullrequests/123/statuses")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/pullrequests/123/statuses")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -670,15 +672,16 @@ func TestAdoGetPrStatuses(t *testing.T) {
 		assert.Contains(t, result.Text, "✅ **Build/CI**: succeeded")
 		assert.Contains(t, result.Text, "❌ **Style/Linter**: failed")
 		assert.Contains(t, result.Text, "Details: http://ci/linter/1")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -695,6 +698,7 @@ func TestAdoGetPrStatuses(t *testing.T) {
 
 func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
 
 	jsonResponse := `{
 		"value": [
@@ -720,26 +724,23 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	}`
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/pullrequests/123") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/policy/evaluations") {
+				assert.Equal(t, "vstfs:///CodeReview/CodeReviewId/proj-guid/123", r.URL.Query().Get("artifactId"))
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(jsonResponse))
+				return
+			}
+		}))
+		defer server.Close()
 
-		// Mock PR metadata lookup to get project ID
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
-		}, nil).Once()
-
-		// Mock policy evaluations lookup using the CodeReview artifact ID
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/myorg/myproj/_apis/policy/evaluations") &&
-				req.URL.Query().Get("artifactId") == "vstfs:///CodeReview/CodeReviewId/proj-guid/123" &&
-				req.URL.Query().Get("api-version") == "7.1-preview.1"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -752,26 +753,25 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Pull Request #123 Policy Evaluations")
 		assert.Contains(t, result.Text, "❌ **Build Validation** [REQUIRED]: broken")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/pullrequests/123") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/policy/evaluations") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"value": []}`))
+				return
+			}
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
-		}, nil).Once()
-
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/policy/evaluations")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -786,20 +786,21 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 	})
 
 	t.Run("Error", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/pullrequests/123") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/policy/evaluations") {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo/pullrequests/123")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
-		}, nil).Once()
-
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Body:       io.NopCloser(strings.NewReader("")),
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -816,42 +817,41 @@ func TestAdoGetPrPolicyEvaluations(t *testing.T) {
 
 func TestAdoListBranchPolicies(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/policy/configurations") {
+				policyResponse := `{
+					"value": [
+						{
+							"isEnabled": true,
+							"isBlocking": true,
+							"type": {"displayName": "Build"},
+							"settings": {
+								"scope": [
+									{"repositoryId": "repo-guid", "refName": "refs/heads/main"}
+								],
+								"buildDefinitionId": 19,
+								"queueOnSourceUpdateOnly": true
+							}
+						}
+					]
+				}`
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(policyResponse))
+				return
+			}
+		}))
+		defer server.Close()
 
-		// Mock repository lookup
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
-		}, nil).Once()
-
-		// Mock policy configurations lookup
-		policyResponse := `{
-			"value": [
-				{
-					"isEnabled": true,
-					"isBlocking": true,
-					"type": {"displayName": "Build"},
-					"settings": {
-						"scope": [
-							{"repositoryId": "repo-guid", "refName": "refs/heads/main"}
-						],
-						"buildDefinitionId": 19,
-						"queueOnSourceUpdateOnly": true
-					}
-				}
-			]
-		}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(policyResponse)),
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -866,26 +866,25 @@ func TestAdoListBranchPolicies(t *testing.T) {
 		assert.Contains(t, result.Text, "- Type: Build [REQUIRED]")
 		assert.Contains(t, result.Text, "Build Definition ID: 19")
 		assert.Contains(t, result.Text, "Queue On Source Update Only: true")
-		mockClient.AssertExpectations(t)
 	})
 
 	t.Run("No Policies", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/policy/configurations") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"value": []}`))
+				return
+			}
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
-		}, nil).Once()
-
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -902,8 +901,7 @@ func TestAdoListBranchPolicies(t *testing.T) {
 
 func TestAdoGetBuildTimeline(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -917,12 +915,15 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 				}
 			]
 		}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/build/builds/123/timeline")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/build/builds/123/timeline")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
 		result, err := m.adoGetBuildTimeline(context.Background(), args)
@@ -933,16 +934,13 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
 
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/build/builds/123/timeline")
-		})).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123}
 		_, err := m.adoGetBuildTimeline(context.Background(), args)
@@ -953,17 +951,19 @@ func TestAdoGetBuildTimeline(t *testing.T) {
 
 func TestAdoGetTaskLog(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		logContent := "Successfully completed task"
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/build/builds/123/logs/10")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(logContent)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/build/builds/123/logs/10")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(logContent))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -977,11 +977,13 @@ func TestAdoGetTaskLog(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "o",
@@ -997,8 +999,7 @@ func TestAdoGetTaskLog(t *testing.T) {
 
 func TestAdoGetBuildChanges(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
+	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
 		jsonResponse := `{
@@ -1010,12 +1011,16 @@ func TestAdoGetBuildChanges(t *testing.T) {
 				}
 			]
 		}`
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/build/builds/123/changes") && req.URL.Query().Get("$top") == "10"
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(jsonResponse)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Contains(t, r.URL.Path, "/build/builds/123/changes")
+			assert.Equal(t, "10", r.URL.Query().Get("$top"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(jsonResponse))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 123, "top": 10}
 		result, err := m.adoGetBuildChanges(context.Background(), args)
@@ -1025,11 +1030,13 @@ func TestAdoGetBuildChanges(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{"organization": "o", "project": "p", "build_id": 999}
 		_, err := m.adoGetBuildChanges(context.Background(), args)
@@ -1394,18 +1401,26 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 				t.Setenv("AZURE_PAT_ALL", "test-pat")
 			}
 
-			mockClient := new(mockAzureDevOpsClient)
-			m := newazureDevOpsManager(sm, mockClient)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.httpStatus != 0 {
+					w.WriteHeader(tt.httpStatus)
+				} else {
+					w.WriteHeader(http.StatusOK)
+				}
+				if tt.respBody != "" {
+					_, _ = w.Write([]byte(tt.respBody))
+				}
+			}))
+			defer server.Close()
+
+			m := newazureDevOpsManager(sm, nil)
+			m.baseURL = server.URL
 
 			if tt.doErr != nil {
-				mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), tt.doErr)
-			} else if tt.respBody != "" || tt.httpStatus != 0 {
-				resp := &http.Response{
-					StatusCode: tt.httpStatus,
-					Body:       io.NopCloser(strings.NewReader(tt.respBody)),
-					Status:     fmt.Sprintf("%d %s", tt.httpStatus, http.StatusText(tt.httpStatus)),
-				}
-				mockClient.On("Do", mock.Anything).Return(resp, nil)
+				// To simulate transport error, we can close the server immediately
+				// or use a client that always returns error.
+				// Since we want to test actual transport, let's close the server.
+				server.Close()
 			}
 
 			_, err := tt.toolFunc(m, context.Background(), tt.args)
@@ -1415,25 +1430,20 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 	}
 
 	t.Run("adoGetPrPolicyEvaluations - Policy List Failure", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/pullrequests/123") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"repository": {"project": {"id": "proj-guid"}}}`))
+				return
+			}
+			// Second call fails
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("internal error"))
+		}))
+		defer server.Close()
 
-		// First call succeeds
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/pullrequests/123")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"repository": {"project": {"id": "proj-guid"}}}`)),
-		}, nil).Once()
-
-		// Second call fails
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/policy/evaluations")
-		})).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("internal error")),
-			Status:     "500 Internal Server Error",
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization":    "myorg",
@@ -1448,25 +1458,20 @@ func TestAdoTools_DetailedErrors(t *testing.T) {
 	})
 
 	t.Run("adoListBranchPolicies - Policy Config Fetch Failure", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/_apis/git/repositories/myrepo") {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id": "repo-guid"}`))
+				return
+			}
+			// Second call fails
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("internal error"))
+		}))
+		defer server.Close()
 
-		// First call succeeds
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/git/repositories/myrepo")
-		})).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"id": "repo-guid"}`)),
-		}, nil).Once()
-
-		// Second call fails
-		mockClient.On("Do", mock.MatchedBy(func(req *http.Request) bool {
-			return strings.Contains(req.URL.String(), "/_apis/policy/configurations")
-		})).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("internal error")),
-			Status:     "500 Internal Server Error",
-		}, nil).Once()
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
 
 		args := map[string]interface{}{
 			"organization": "myorg",
@@ -1533,43 +1538,51 @@ func TestAdoGetPipelineLogs_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("List Path - Request Failure", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+		server.Close() // Force failure
+
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
 	})
 
 	t.Run("List Path - Non-200 Status", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("err")),
-			Status:     "500 Internal Error",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
 	})
 
 	t.Run("List Path - Empty Logs", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"value": []}`))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		result, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1})
 		assert.NoError(t, err)
 		assert.Equal(t, "No logs found for this run.", result.Text)
 	})
 
 	t.Run("Content Path - Request Failure", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return((*http.Response)(nil), fmt.Errorf("fail")).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+		server.Close() // Force failure
+
 		_, err := m.adoGetPipelineLogs(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "run_id": 1, "log_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "request failed")
@@ -1581,26 +1594,28 @@ func TestAdoGetPrStatuses_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("fetchPrStatuses - 404", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("fetchPrStatuses - 500", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("err")),
-			Status:     "500 Internal Error",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoGetPrStatuses(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "pull_request_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
@@ -1612,25 +1627,29 @@ func TestAdoListBranchPolicies_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("fetchRepositoryId - 404", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("fetchRepositoryId - Decode Error", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{invalid}`)),
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{invalid}`))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoListBranchPolicies(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "branch_name": "b"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode repository metadata")
@@ -1642,27 +1661,29 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("401", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusUnauthorized,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "401 Unauthorized",
-		}, nil).Once()
-		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unauthorized")
 	})
 
 	t.Run("404", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
-		_, err := m.performPolicyEvaluationRequest(context.Background(), "http://url")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		_, err := m.performPolicyEvaluationRequest(context.Background(), server.URL)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
@@ -1670,13 +1691,15 @@ func TestPerformPolicyEvaluationRequest_DetailedErrors(t *testing.T) {
 
 func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
-	mockClient.On("Do", mock.Anything).Return(&http.Response{
-		StatusCode: http.StatusTeapot,
-		Body:       io.NopCloser(strings.NewReader("teapot")),
-		Status:     "418 I'm a teapot",
-	}, nil).Once()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte("teapot"))
+	}))
+	defer server.Close()
+
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), nil)
+	m.baseURL = server.URL
+
 	_, err := m.adoGetFileContent(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "repository": "r", "path": "f"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "returned status: 418")
@@ -1684,12 +1707,15 @@ func TestAdoGetFileContent_DefaultStatus(t *testing.T) {
 
 func TestAdoListPipelineRuns_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
-	mockClient.On("Do", mock.Anything).Return(&http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-	}, nil).Once()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"value": []}`))
+	}))
+	defer server.Close()
+
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), nil)
+	m.baseURL = server.URL
+
 	result, err := m.adoListPipelineRuns(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
 	assert.NoError(t, err)
 	assert.Equal(t, "No pipeline runs found.", result.Text)
@@ -1700,26 +1726,28 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("404", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "404 Not Found",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource not found")
 	})
 
 	t.Run("Default", func(t *testing.T) {
-		mockClient := new(mockAzureDevOpsClient)
-		m := newazureDevOpsManager(sm, mockClient)
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
-			StatusCode: http.StatusInternalServerError,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Status:     "500 Internal Error",
-		}, nil).Once()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
 		_, err := m.adoGetBuildTimeline(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "returned status: 500")
@@ -1728,12 +1756,15 @@ func TestAdoGetBuildTimeline_Detailed(t *testing.T) {
 
 func TestAdoGetBuildChanges_Empty(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
-	mockClient := new(mockAzureDevOpsClient)
-	m := newazureDevOpsManager(security.NewSecurityManager(nil), mockClient)
-	mockClient.On("Do", mock.Anything).Return(&http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(strings.NewReader(`{"value": []}`)),
-	}, nil).Once()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"value": []}`))
+	}))
+	defer server.Close()
+
+	m := newazureDevOpsManager(security.NewSecurityManager(nil), nil)
+	m.baseURL = server.URL
+
 	result, err := m.adoGetBuildChanges(context.Background(), map[string]interface{}{"organization": "o", "project": "p", "build_id": 1})
 	assert.NoError(t, err)
 	assert.Equal(t, "[]", result.Text)
