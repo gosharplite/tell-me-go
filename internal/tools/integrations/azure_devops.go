@@ -756,7 +756,10 @@ func (m *azureDevOpsManager) fetchPipelineLogContent(ctx context.Context, org, p
 	}
 	defer resp.Body.Close()
 
-	processedContent := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	processedContent, err := m.processLogContent(resp.Body, tailLines, headLines, filterQuery, contextLines, startLine, maxLines)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
+	}
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
@@ -1266,11 +1269,14 @@ func (m *azureDevOpsManager) adoGetTaskLog(ctx context.Context, args map[string]
 	}
 	defer resp.Body.Close()
 
-	processedContent := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	processedContent, err := m.processLogContent(resp.Body, params.TailLines, params.HeadLines, params.FilterQuery, params.ContextLines, params.StartLine, params.MaxLines)
+	if err != nil {
+		return tools.ToolResult{}, fmt.Errorf("failed to process log content: %w", err)
+	}
 	return tools.ToolResult{Text: processedContent}, nil
 }
 
-func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) string {
+func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, headLines int, filterQuery string, contextLines, startLine, maxLines int) (string, error) {
 	if filterQuery != "" {
 		return m.streamRegexFilter(reader, filterQuery, contextLines)
 	}
@@ -1289,10 +1295,10 @@ func (m *azureDevOpsManager) processLogContent(reader io.Reader, tailLines, head
 	return m.streamTail(reader, tailLines)
 }
 
-func (m *azureDevOpsManager) streamRegexFilter(reader io.Reader, query string, contextLines int) string {
+func (m *azureDevOpsManager) streamRegexFilter(reader io.Reader, query string, contextLines int) (string, error) {
 	re, err := regexp.Compile(query)
 	if err != nil {
-		return fmt.Sprintf("Error: invalid filter_query regex: %v", err)
+		return "", fmt.Errorf("invalid filter_query regex: %w", err)
 	}
 
 	state := newLogFilterState(contextLines)
@@ -1311,11 +1317,15 @@ func (m *azureDevOpsManager) streamRegexFilter(reader io.Reader, query string, c
 		state.updateWindow(line)
 	}
 
-	if state.result.Len() == 0 {
-		return "No matches found for filter_query."
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("log stream interrupted: %w", err)
 	}
 
-	return state.result.String()
+	if state.result.Len() == 0 {
+		return "No matches found for filter_query.", nil
+	}
+
+	return state.result.String(), nil
 }
 
 type logFilterState struct {
@@ -1331,6 +1341,9 @@ type logFilterState struct {
 func newLogFilterState(contextLines int) *logFilterState {
 	if contextLines <= 0 {
 		contextLines = 5
+	}
+	if contextLines > 100 {
+		contextLines = 100
 	}
 	return &logFilterState{
 		preWindow:          make([]string, contextLines),
@@ -1389,7 +1402,7 @@ func (s *logFilterState) printLine(line string, lineNum int) {
 	s.lastPrintedLineNum = lineNum
 }
 
-func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLines int) string {
+func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLines int) (string, error) {
 	if startLine <= 0 {
 		startLine = 1
 	}
@@ -1416,14 +1429,18 @@ func (m *azureDevOpsManager) streamPagination(reader io.Reader, startLine, maxLi
 		printed++
 	}
 
-	if count < startLine && count > 0 {
-		return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count)
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("log stream interrupted: %w", err)
 	}
 
-	return result.String()
+	if count < startLine && count > 0 {
+		return fmt.Sprintf("Start line %d is beyond total lines %d.", startLine, count), nil
+	}
+
+	return result.String(), nil
 }
 
-func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) string {
+func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) (string, error) {
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -1438,10 +1455,18 @@ func (m *azureDevOpsManager) streamHead(reader io.Reader, n int) string {
 		result.WriteString(scanner.Text())
 		count++
 	}
-	return result.String()
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("log stream interrupted: %w", err)
+	}
+
+	return result.String(), nil
 }
 
-func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) string {
+func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) (string, error) {
+	if n > 10000 {
+		n = 10000
+	}
 	scanner := bufio.NewScanner(reader)
 	const maxCapacity = 1 * 1024 * 1024
 	buf := make([]byte, 64*1024)
@@ -1454,8 +1479,12 @@ func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) string {
 		count++
 	}
 
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("log stream interrupted: %w", err)
+	}
+
 	if count == 0 {
-		return ""
+		return "", nil
 	}
 
 	var result strings.Builder
@@ -1476,7 +1505,7 @@ func (m *azureDevOpsManager) streamTail(reader io.Reader, n int) string {
 		result.WriteString(ring[(start+i)%n])
 	}
 
-	return result.String()
+	return result.String(), nil
 }
 
 func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {

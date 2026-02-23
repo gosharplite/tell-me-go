@@ -4,6 +4,7 @@
 package integrations
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,13 +16,15 @@ func TestProcessLogContent(t *testing.T) {
 	content := "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10"
 
 	t.Run("TailLines", func(t *testing.T) {
-		result := m.processLogContent(strings.NewReader(content), 3, 0, "", 0, 0, 0)
+		result, err := m.processLogContent(strings.NewReader(content), 3, 0, "", 0, 0, 0)
+		assert.NoError(t, err)
 		expected := "line 8\nline 9\nline 10"
 		assert.Equal(t, expected, result)
 	})
 
 	t.Run("HeadLines", func(t *testing.T) {
-		result := m.processLogContent(strings.NewReader(content), 0, 3, "", 0, 0, 0)
+		result, err := m.processLogContent(strings.NewReader(content), 0, 3, "", 0, 0, 0)
+		assert.NoError(t, err)
 		expected := "line 1\nline 2\nline 3"
 		assert.Equal(t, expected, result)
 	})
@@ -33,14 +36,16 @@ func TestProcessLogContent(t *testing.T) {
 			lines = append(lines, "line contents")
 		}
 		longContent := strings.Join(lines, "\n")
-		result := m.processLogContent(strings.NewReader(longContent), 0, 0, "", 0, 0, 0)
+		result, err := m.processLogContent(strings.NewReader(longContent), 0, 0, "", 0, 0, 0)
+		assert.NoError(t, err)
 		resultLines := strings.Split(result, "\n")
 		assert.Equal(t, 200, len(resultLines))
 	})
 
 	t.Run("FilterQuery", func(t *testing.T) {
 		contentWithErrors := "info: start\nerror: something failed\ninfo: middle\nerror: another failure\ninfo: end"
-		result := m.processLogContent(strings.NewReader(contentWithErrors), 0, 0, "error", 1, 0, 0)
+		result, err := m.processLogContent(strings.NewReader(contentWithErrors), 0, 0, "error", 1, 0, 0)
+		assert.NoError(t, err)
 		assert.Contains(t, result, "error: something failed")
 		assert.Contains(t, result, "error: another failure")
 		assert.Contains(t, result, "info: start")
@@ -50,7 +55,8 @@ func TestProcessLogContent(t *testing.T) {
 
 	t.Run("FilterQueryWithGaps", func(t *testing.T) {
 		contentWithErrors := "line 1\nline 2\nline 3\nerror: match\nline 5\nline 6\nline 7\nline 8\nline 9\nerror: match 2\nline 11\nline 12"
-		result := m.processLogContent(strings.NewReader(contentWithErrors), 0, 0, "error", 1, 0, 0)
+		result, err := m.processLogContent(strings.NewReader(contentWithErrors), 0, 0, "error", 1, 0, 0)
+		assert.NoError(t, err)
 		resultLines := strings.Split(result, "\n")
 		
 		assert.Contains(t, result, "error: match")
@@ -65,14 +71,73 @@ func TestProcessLogContent(t *testing.T) {
 	})
 
 	t.Run("Pagination", func(t *testing.T) {
-		result := m.processLogContent(strings.NewReader(content), 0, 0, "", 0, 2, 3)
+		result, err := m.processLogContent(strings.NewReader(content), 0, 0, "", 0, 2, 3)
+		assert.NoError(t, err)
 		expected := "line 2\nline 3\nline 4"
 		assert.Equal(t, expected, result)
 	})
 
 	t.Run("PaginationBeyondEnd", func(t *testing.T) {
-		result := m.processLogContent(strings.NewReader(content), 0, 0, "", 0, 9, 5)
+		result, err := m.processLogContent(strings.NewReader(content), 0, 0, "", 0, 9, 5)
+		assert.NoError(t, err)
 		expected := "line 9\nline 10"
 		assert.Equal(t, expected, result)
+	})
+}
+
+func TestOOMSafety(t *testing.T) {
+	m := &azureDevOpsManager{}
+	
+	t.Run("ClampTailLines", func(t *testing.T) {
+		content := "line 1\nline 2"
+		result, err := m.streamTail(strings.NewReader(content), 1000000)
+		assert.NoError(t, err)
+		assert.Equal(t, "line 1\nline 2", result)
+	})
+
+	t.Run("ClampFilterContextLines", func(t *testing.T) {
+		content := "match"
+		result, err := m.streamRegexFilter(strings.NewReader(content), "match", 1000000)
+		assert.NoError(t, err)
+		assert.Equal(t, "match", result)
+	})
+}
+
+type logErrorReader struct{}
+
+func (e *logErrorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("read error")
+}
+
+func TestLogIOError(t *testing.T) {
+	m := &azureDevOpsManager{}
+	errReader := &logErrorReader{}
+
+	t.Run("streamTail", func(t *testing.T) {
+		result, err := m.streamTail(errReader, 10)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+		assert.Empty(t, result)
+	})
+
+	t.Run("streamHead", func(t *testing.T) {
+		result, err := m.streamHead(errReader, 10)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+		assert.Empty(t, result)
+	})
+
+	t.Run("streamPagination", func(t *testing.T) {
+		result, err := m.streamPagination(errReader, 1, 10)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+		assert.Empty(t, result)
+	})
+
+	t.Run("streamRegexFilter", func(t *testing.T) {
+		result, err := m.streamRegexFilter(errReader, "match", 5)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "log stream interrupted")
+		assert.Empty(t, result)
 	})
 }
