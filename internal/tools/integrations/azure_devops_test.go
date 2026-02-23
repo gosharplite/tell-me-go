@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
@@ -1844,6 +1845,131 @@ func TestAzureDevOps_JSONDecodeErrors(t *testing.T) {
 			_, err := tt.call()
 			if assert.Error(t, err) {
 				assert.Contains(t, err.Error(), "decode")
+			}
+		})
+	}
+}
+
+func TestAzureDevOps_HTTPIntegration(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+	ctx := context.Background()
+
+	tests := []struct {
+		name         string
+		handler      func(w http.ResponseWriter, r *http.Request)
+		call         func(m *azureDevOpsManager) (tools.ToolResult, error)
+		expectedText string
+		expectedErr  string
+	}{
+		{
+			name: "Success - GetPullRequest",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"title": "PR Title", "status": "active", "createdBy": {"displayName": "User"}, "creationDate": "2023-01-01", "repository": {"name": "repo"}}`))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoGetPullRequest(ctx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedText: "PR Title",
+		},
+		{
+			name: "Success - ListPipelineRuns",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"value": [{"id": 1, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01"}]}`))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})
+			},
+			expectedText: "Run ID: 1",
+		},
+		{
+			name: "Error - 500 Internal Server Error",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("internal error"))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoGetPullRequest(ctx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedErr: "returned status: 500",
+		},
+		{
+			name: "Error - 503 Service Unavailable",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("service unavailable"))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoGetPullRequest(ctx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedErr: "returned status: 503",
+		},
+		{
+			name: "Error - 504 Gateway Timeout",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusGatewayTimeout)
+				_, _ = w.Write([]byte("gateway timeout"))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoGetPullRequest(ctx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedErr: "returned status: 504",
+		},
+		{
+			name: "Error - Context Cancellation",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				time.Sleep(100 * time.Millisecond)
+				w.WriteHeader(http.StatusOK)
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				childCtx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+				defer cancel()
+				return m.adoGetPullRequest(childCtx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedErr: "context deadline exceeded",
+		},
+		{
+			name: "Error - Malformed JSON",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{ malformed`))
+			},
+			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
+				return m.adoGetPullRequest(ctx, map[string]interface{}{
+					"organization": "o", "project": "p", "repository": "r", "pull_request_id": 123,
+				})
+			},
+			expectedErr: "failed to decode response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(tt.handler))
+			defer server.Close()
+
+			m := newazureDevOpsManager(sm, nil)
+			m.baseURL = server.URL
+
+			result, err := tt.call(m)
+			if tt.expectedErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+			} else {
+				assert.NoError(t, err)
+				assert.Contains(t, result.Text, tt.expectedText)
 			}
 		})
 	}
