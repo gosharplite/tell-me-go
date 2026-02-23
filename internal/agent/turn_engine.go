@@ -551,6 +551,7 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
 		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
+		p.validatePayloadLimits(ctx, turn, toolResponse)
 	}
 
 	if turn.State.Metrics != nil {
@@ -668,4 +669,49 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	}
 
 	return processResult{NextPhase: phaseRefining}, nil
+}
+
+func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, toolResponse *llm.Content) {
+	if toolResponse == nil || turn.CtxManager == nil || turn.CtxManager.Strategy == nil {
+		return
+	}
+
+	limits := turn.CtxManager.GetLimits()
+	if limits.MaxHistoryTokens <= 0 {
+		return
+	}
+
+	// Estimate tokens for the new tool response
+	toolTokens := turn.CtxManager.Strategy.EstimateTokens([]*llm.Content{toolResponse})
+
+	// We use the remaining buffer, accounting for the 10% system reservation
+	maxAllowed := int(float64(limits.MaxHistoryTokens) * 0.90)
+
+	// Cap individual tool response size to 50% of total limit just in case,
+	// AND ensure it doesn't push the total over the cliff.
+	isTooLarge := false
+	if toolTokens > int(float64(limits.MaxHistoryTokens)*0.50) {
+		isTooLarge = true
+	} else if turn.State.Tokens+toolTokens > maxAllowed {
+		isTooLarge = true
+	}
+
+	if isTooLarge {
+		// Truncate the response to avoid poisoning the context
+		for _, part := range toolResponse.Parts {
+			if part.FunctionResponse != nil {
+				// Replace the content
+				part.FunctionResponse.Response = map[string]any{
+					"error": fmt.Sprintf("Tool response payload estimate (~%d tokens) exceeds safety limit. To prevent context poisoning, the result was discarded. Please run the tool again using proper boundaries (e.g., 'tail_lines', 'max_lines', 'limit', or 'grep').", toolTokens),
+				}
+			}
+		}
+
+		if turn.Events != nil {
+			turn.Events.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
+				Level:   "error",
+			})
+		}
+	}
 }
