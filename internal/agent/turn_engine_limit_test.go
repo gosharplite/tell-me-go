@@ -157,10 +157,10 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			expectedTruncated: true,
 		},
 		{
-			name:              "Cumulative Breach",
-			maxTokens:         1000,
-			existingTokens:    800, // 80%
-			toolTokens:        200, // 20%
+			name:           "Cumulative Breach",
+			maxTokens:      1000,
+			existingTokens: 800, // 80%
+			toolTokens:     200, // 20%
 			// Total = 1000. 90% of 1000 is 900. 1000 > 900.
 			expectedTruncated: true,
 		},

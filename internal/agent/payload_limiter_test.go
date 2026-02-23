@@ -65,13 +65,13 @@ func TestTruncateOversizedResponse(t *testing.T) {
 				Parts: []*llm.Part{
 					{
 						FunctionResponse: &llm.FunctionResponse{
-							Name: "tool1",
+							Name:     "tool1",
 							Response: map[string]any{"key": "val"},
 						},
 					},
 					{
 						FunctionResponse: &llm.FunctionResponse{
-							Name: "tool2",
+							Name:     "tool2",
 							Response: map[string]any{"key": "val"},
 						},
 					},
@@ -92,7 +92,7 @@ func TestTruncateOversizedResponse(t *testing.T) {
 					nil,
 					{
 						FunctionResponse: &llm.FunctionResponse{
-							Name: "tool1",
+							Name:     "tool1",
 							Response: map[string]any{"key": "val"},
 						},
 					},

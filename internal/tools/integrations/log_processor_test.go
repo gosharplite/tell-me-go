@@ -58,11 +58,11 @@ func TestProcessLogContent(t *testing.T) {
 		result, err := m.processLogContent(strings.NewReader(contentWithErrors), 0, 0, "error", 1, 0, 0)
 		assert.NoError(t, err)
 		resultLines := strings.Split(result, "\n")
-		
+
 		assert.Contains(t, result, "error: match")
 		assert.Contains(t, result, "error: match 2")
 		assert.Contains(t, result, "...")
-		
+
 		// Check that line 1 is not present as a full line
 		for _, line := range resultLines {
 			assert.NotEqual(t, "line 1", line)
@@ -102,7 +102,7 @@ func TestProcessLogContent(t *testing.T) {
 
 func TestOOMSafety(t *testing.T) {
 	m := &azureDevOpsManager{}
-	
+
 	t.Run("ClampTailLines", func(t *testing.T) {
 		content := "line 1\nline 2"
 		result, err := m.streamTail(strings.NewReader(content), 1000000)
