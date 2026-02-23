@@ -551,6 +551,7 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
 		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
+		p.validatePayloadLimits(ctx, turn, toolResponse)
 	}
 
 	if turn.State.Metrics != nil {
@@ -668,4 +669,42 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	}
 
 	return processResult{NextPhase: phaseRefining}, nil
+}
+
+func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, toolResponse *llm.Content) {
+	if toolResponse == nil || turn.CtxManager == nil || turn.CtxManager.Strategy == nil {
+		return
+	}
+
+	limits := turn.CtxManager.GetLimits()
+	if limits.MaxHistoryTokens <= 0 {
+		return
+	}
+
+	// Estimate tokens for the new tool response
+	toolTokens := turn.CtxManager.Strategy.EstimateTokens([]*llm.Content{toolResponse})
+
+	// We use the remaining buffer, accounting for the 10% system reservation
+	maxAllowed := int(float64(limits.MaxHistoryTokens) * 0.90)
+
+	// Cap individual tool response size to 50% of total limit just in case,
+	// AND ensure it doesn't push the total over the cliff.
+	isTooLarge := false
+	if toolTokens > int(float64(limits.MaxHistoryTokens)*0.50) {
+		isTooLarge = true
+	} else if turn.State.Tokens+toolTokens > maxAllowed {
+		isTooLarge = true
+	}
+
+	if isTooLarge {
+		// Delegate mutation to the utility
+		truncateOversizedResponse(toolResponse, toolTokens)
+
+		if turn.Events != nil {
+			turn.Events.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Tool output truncated (~%d tokens) to prevent exceeding safety limit.", toolTokens),
+				Level:   "error",
+			})
+		}
+	}
 }

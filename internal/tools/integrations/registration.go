@@ -515,6 +515,30 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 					Type:        "INTEGER",
 					Description: "The specific log ID. If omitted, the tool lists available logs.",
 				},
+				"tail_lines": {
+					Type:        "INTEGER",
+					Description: "Return the last N lines. Default: 200",
+				},
+				"head_lines": {
+					Type:        "INTEGER",
+					Description: "Return the first N lines (optional).",
+				},
+				"filter_query": {
+					Type:        "STRING",
+					Description: "Regex to filter log lines (e.g. 'error|failed').",
+				},
+				"context_lines": {
+					Type:        "INTEGER",
+					Description: "Lines of context around filter matches. Default: 5",
+				},
+				"start_line": {
+					Type:        "INTEGER",
+					Description: "Start line for pagination.",
+				},
+				"max_lines": {
+					Type:        "INTEGER",
+					Description: "Maximum lines for pagination.",
+				},
 			},
 			Required: []string{"organization", "project", "pipeline_id", "run_id"},
 		},
@@ -645,6 +669,30 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				"log_id": {
 					Type:        "INTEGER",
 					Description: "The numeric ID of the specific log record (retrieved from the build timeline).",
+				},
+				"tail_lines": {
+					Type:        "INTEGER",
+					Description: "Return the last N lines. Default: 200",
+				},
+				"head_lines": {
+					Type:        "INTEGER",
+					Description: "Return the first N lines (optional).",
+				},
+				"filter_query": {
+					Type:        "STRING",
+					Description: "Regex to filter log lines (e.g. 'error|failed').",
+				},
+				"context_lines": {
+					Type:        "INTEGER",
+					Description: "Lines of context around filter matches. Default: 5",
+				},
+				"start_line": {
+					Type:        "INTEGER",
+					Description: "Start line for pagination.",
+				},
+				"max_lines": {
+					Type:        "INTEGER",
+					Description: "Maximum lines for pagination.",
 				},
 			},
 			Required: []string{"organization", "project", "build_id", "log_id"},
