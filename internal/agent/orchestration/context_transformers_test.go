@@ -511,7 +511,7 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	// Second run with higher limit to trigger clogged warning instead of error
 	maxTokens = 20000
 	strategy.SetLimits(maxTokens, 10, 20)
-	tg := pipeline.transformers[0].(*tokenGatekeeper)
+	tg := pipeline.transformers[0].(*tokenGatekeeper) // tokenGatekeeper is first after sorting (80)
 	tg.MaxTokens = maxTokens
 
 	req2 := &request{
@@ -1093,10 +1093,11 @@ type mockTransformerEventBus struct {
 	publishFn func(event events.Event)
 }
 
-func (m *mockTransformerEventBus) Publish(event events.Event) {
+func (m *mockTransformerEventBus) Publish(event events.Event) error {
 	if m.publishFn != nil {
 		m.publishFn(event)
 	}
+	return nil
 }
 
 func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}

@@ -33,8 +33,9 @@ type mockEventBus struct {
 	mock.Mock
 }
 
-func (m *mockEventBus) Publish(event events.Event) {
-	m.Called(event)
+func (m *mockEventBus) Publish(event events.Event) error {
+	args := m.Called(event)
+	return args.Error(0)
 }
 
 func (m *mockEventBus) Subscribe(sub func(events.Event)) {
@@ -107,7 +108,7 @@ func TestSummarizer_Summarize(t *testing.T) {
 		bus.On("Publish", mock.MatchedBy(func(event events.Event) bool {
 			e, ok := event.(events.UsageMetricsEvent)
 			return ok && e.Metrics.IsSummary && e.Metrics.PromptTokens == 10
-		})).Return()
+		})).Return(nil)
 
 		summary, m, err := s.Summarize(ctx, subset, "architecture")
 		assert.NoError(t, err)

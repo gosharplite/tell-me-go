@@ -27,7 +27,7 @@ func newDependencyAnalyzer(exec tools.CommandExecutor, sp domain_security.Policy
 
 func (a *dependencyAnalyzer) GetPackageGraph(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	if a.Events != nil {
-		a.Events.Publish(events.SystemMessageEvent{
+		_ = a.Events.Publish(events.SystemMessageEvent{
 			Message: "[Tool Action] Analyzing package dependencies",
 			Level:   "info",
 		})

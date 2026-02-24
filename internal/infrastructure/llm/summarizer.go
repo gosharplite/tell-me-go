@@ -103,7 +103,7 @@ func (s *summarizer) transformPartToText(content *llm.Content, p *llm.Part) {
 func (s *summarizer) emitSummarizationMetrics(ctx context.Context, metrics *llm.Metrics, start time.Time) {
 	if s.events != nil && metrics != nil {
 		metrics.IsSummary = true
-		s.events.Publish(events.UsageMetricsEvent{
+		_ = s.events.Publish(events.UsageMetricsEvent{
 			Context:   ctx,
 			Metrics:   metrics,
 			StartTime: start,

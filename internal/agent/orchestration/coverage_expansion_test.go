@@ -94,7 +94,10 @@ type mockExpEventBus struct {
 	events []events.Event
 }
 
-func (m *mockExpEventBus) Publish(e events.Event)             { m.events = append(m.events, e) }
+func (m *mockExpEventBus) Publish(e events.Event) error {
+	m.events = append(m.events, e)
+	return nil
+}
 func (m *mockExpEventBus) Subscribe(sub func(events.Event))   {}
 func (m *mockExpEventBus) Shutdown(ctx context.Context) error { return nil }
 func (m *mockExpEventBus) Flush(ctx context.Context) error    { return nil }
@@ -217,7 +220,7 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 
 	// Case 2: Tokens under 90%
 	tg.MaxTokens = 1000
-	tokens, err = tg.handleSafetyPressure(context.Background(), &request{}, 800)
+	tokens, err = tg.handleSafetyPressure(context.Background(), req(), 800)
 	assert.NoError(t, err)
 	assert.Equal(t, 800, tokens)
 
@@ -228,4 +231,8 @@ func TestTokenGatekeeper_HandleSafetyPressure_EdgeCases(t *testing.T) {
 	tokens, err = tg.handleSafetyPressure(context.Background(), req, 950)
 	assert.NoError(t, err)
 	assert.Equal(t, 950, tokens)
+}
+
+func req() *request {
+	return &request{}
 }

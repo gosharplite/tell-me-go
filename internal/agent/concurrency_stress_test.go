@@ -214,7 +214,7 @@ func TestContextManager_Race(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
-			bus.Publish(events.ConfigUpdated{
+			_ = bus.Publish(events.ConfigUpdated{
 				Limits: events.Limits{
 					MaxHistoryTokens: 1000 + i,
 					MaxToolTurns:     10,

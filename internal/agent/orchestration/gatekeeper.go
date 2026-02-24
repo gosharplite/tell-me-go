@@ -52,7 +52,7 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *servic
 		tiered := cs.GetTieredThreshold()
 		if tiered > 0 && tokens > tiered && !req.Metadata.SummarizationAttempted {
 			if t.Events != nil {
-				t.Events.Publish(events.SummarizationRequired{
+				_ = t.Events.Publish(events.SummarizationRequired{
 					Tokens:   tokens,
 					MaxLimit: tiered,
 					Reason:   "High-tier pricing threshold reached",
@@ -81,7 +81,7 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *service
 
 	if tokens > int(float64(t.MaxTokens)*0.9) {
 		if t.Events != nil {
-			t.Events.Publish(events.SummarizationRequired{
+			_ = t.Events.Publish(events.SummarizationRequired{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
 				Reason:   "Safety limit pressure (> 90%)",
@@ -121,11 +121,11 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *services.
 
 	if tokens > limit {
 		if t.Events != nil {
-			t.Events.Publish(events.TokenLimitReachedEvent{
+			_ = t.Events.Publish(events.TokenLimitReachedEvent{
 				Tokens:   tokens,
 				MaxLimit: t.MaxTokens,
 			})
-			t.Events.Publish(events.SystemMessageEvent{
+			_ = t.Events.Publish(events.SystemMessageEvent{
 				Message: fmt.Sprintf("Payload estimate (%d tokens) exceeds safety limit (%d) including system overhead buffer!", tokens, limit),
 				Level:   "error",
 			})
@@ -154,7 +154,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *services.Conte
 	// 2. Logging
 	if t.Events != nil {
 		subsetTokens := t.Estimator.EstimateTokens(req.History[start:end])
-		t.Events.Publish(events.SystemMessageEvent{
+		_ = t.Events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("Auto-summarizing %d turns in range [%d:%d] (~%d tokens) due to context pressure...", numTurns, start, end, subsetTokens),
 			Level:   "info",
 		})
@@ -173,7 +173,7 @@ func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *services.Conte
 
 	// Signal completion to the UI
 	if t.Events != nil {
-		t.Events.Publish(events.SystemMessageEvent{
+		_ = t.Events.Publish(events.SystemMessageEvent{
 			Message: "Auto-summarization complete. Context successfully compressed.",
 			Level:   "info",
 		})

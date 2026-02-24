@@ -154,7 +154,7 @@ func (m *infoManager) GoDoc(ctx context.Context, args map[string]interface{}) (t
 
 	symbol := params.Symbol
 	if m.Events != nil {
-		m.Events.Publish(events.SystemMessageEvent{
+		_ = m.Events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("[Tool Action] Running go doc %s", symbol),
 			Level:   "info",
 		})

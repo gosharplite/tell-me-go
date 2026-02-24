@@ -21,7 +21,7 @@ func (e *turnEngine) WithStreaming() turnMiddleware {
 		return turnProcessorFunc(func(ctx context.Context, turn *turn) (processResult, error) {
 			if turn.State.Phase == phaseInference && e.events != nil {
 				turn.StreamHandler = func(ctx context.Context, stream <-chan *llm.Content) {
-					e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
+					_ = e.events.Publish(events.ResponseStreamEvent{Context: ctx, Stream: stream})
 				}
 			}
 			return next.process(ctx, turn)
@@ -56,7 +56,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 					totalO = stats.ResponseTokens + stats.ThinkingTokens
 				}
 
-				e.events.Publish(events.TurnStatusEvent{
+				_ = e.events.Publish(events.TurnStatusEvent{
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
@@ -97,7 +97,7 @@ func (e *turnEngine) WithMetrics() turnMiddleware {
 					turn.State.TaskCost += turnCost
 				}
 
-				e.events.Publish(events.UsageMetricsEvent{
+				_ = e.events.Publish(events.UsageMetricsEvent{
 					Context:   ctx,
 					Metrics:   turn.State.Metrics,
 					StartTime: turn.StartTime,
