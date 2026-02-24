@@ -136,3 +136,92 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 		t.Errorf("ValidatePath failed for symlinked boundary: %v", err)
 	}
 }
+
+func setupSymlinkTestEnv(t *testing.T) (*pathPolicy, string) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	p := newPathPolicy()
+	p.RegisterPath(tmpDir, true)
+
+	// Check if symlinks are supported
+	link := filepath.Join(tmpDir, "check_symlink")
+	if err := os.Symlink(tmpDir, link); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+	_ = os.Remove(link)
+
+	return p, tmpDir
+}
+
+func TestPathPolicy_SymlinkBypass_DirectAccess(t *testing.T) {
+	p, workspace := setupSymlinkTestEnv(t)
+
+	// Test symlink to a forbidden system file
+	passwdLink := filepath.Join(workspace, "passwd_link")
+	target := "/etc/passwd"
+
+	// Create symlink. If it fails, we might be on a platform that requires admin for symlinks
+	// or doesn't support this path.
+	if err := os.Symlink(target, passwdLink); err != nil {
+		// Fallback to a non-existent path that is outside our boundaries
+		target = "/nonexistent_outside_path"
+		if err := os.Symlink(target, passwdLink); err != nil {
+			t.Skip("failed to create symlink for test")
+		}
+	}
+
+	if _, err := p.ValidatePath(passwdLink, false); err == nil {
+		t.Errorf("ValidatePath allowed access to %s via symlink", target)
+	}
+}
+
+func TestPathPolicy_SymlinkBypass_ValidWorkspaceLink(t *testing.T) {
+	p, workspace := setupSymlinkTestEnv(t)
+
+	internalFile := filepath.Join(workspace, "internal.txt")
+	if err := os.WriteFile(internalFile, []byte("internal"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	internalLink := filepath.Join(workspace, "internal_link")
+	if err := os.Symlink(internalFile, internalLink); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.ValidatePath(internalLink, false); err != nil {
+		t.Errorf("ValidatePath denied valid symlink: %v", err)
+	}
+}
+
+func TestPathPolicy_SymlinkBypass_NonExistentTarget(t *testing.T) {
+	p, workspace := setupSymlinkTestEnv(t)
+
+	// Link inside workspace to /etc (which is forbidden)
+	linkToEtc := filepath.Join(workspace, "etc_link")
+	if err := os.Symlink("/etc", linkToEtc); err != nil {
+		t.Skip("failed to create link to /etc")
+	}
+
+	// Path to non-existent file via the link
+	targetPath := filepath.Join(linkToEtc, "new_file.txt")
+
+	if _, err := p.ValidatePath(targetPath, true); err == nil {
+		t.Error("ValidatePath allowed creation of file in /etc via symlink")
+	}
+}
+
+func TestPathPolicy_SymlinkBypass_MultiLevelNonExistent(t *testing.T) {
+	p, workspace := setupSymlinkTestEnv(t)
+
+	linkToEtc := filepath.Join(workspace, "etc_link_multi")
+	if err := os.Symlink("/etc", linkToEtc); err != nil {
+		t.Skip("failed to create link to /etc")
+	}
+
+	// Two levels of non-existence
+	targetPath := filepath.Join(linkToEtc, "nonexistent_dir", "new_file.txt")
+
+	if _, err := p.ValidatePath(targetPath, true); err == nil {
+		t.Error("ValidatePath allowed creation of file in /etc/nonexistent_dir via symlink")
+	}
+}

@@ -306,10 +306,12 @@ func (c *Client) configureThinking(config *genai.GenerateContentConfig) {
 func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBudget int, model string) {
 	actualBudget := budget
 	if maxBudget > 0 && actualBudget > maxBudget {
-		c.eventBus.Publish(events.SystemMessageEvent{
-			Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
-			Level:   "warning",
-		})
+		if c.eventBus != nil {
+			c.eventBus.Publish(events.SystemMessageEvent{
+				Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
+				Level:   "warning",
+			})
+		}
 		actualBudget = maxBudget
 	}
 	config.ThinkingBudget = genai.Ptr(int32(actualBudget))

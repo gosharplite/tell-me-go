@@ -318,7 +318,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "System Error (Panic) in \"panic_tool\": kaboom")
+		verifyErrorResponse(t, resp, "Tool \"panic_tool\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
@@ -342,7 +342,7 @@ func TestToolExecutor_PanicRecovery(t *testing.T) {
 			t.Fatalf("expected at least 2 parts, got %v", resp)
 		}
 		res0 := resp.Parts[0].FunctionResponse.Response["result"].(string)
-		if !strings.Contains(res0, "System Error (Panic) in \"serial_panic\": serial kaboom") {
+		if !strings.Contains(res0, "Tool \"serial_panic\" encountered an internal fatal error (panic) and was terminated.") {
 			t.Errorf("expected serial panic error, got %s", res0)
 		}
 		res1 := resp.Parts[1].FunctionResponse.Response["result"].(string)
@@ -767,7 +767,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry Execute panic")
+		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 
@@ -787,7 +787,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		verifyErrorResponse(t, resp, "System Error (Panic) in \"any\": registry Execute panic")
+		verifyErrorResponse(t, resp, "Tool \"any\" encountered an internal fatal error (panic) and was terminated.")
 		verifyToolEventError(t, bus, llm.ErrTerminal)
 	})
 }
