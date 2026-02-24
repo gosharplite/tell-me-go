@@ -136,3 +136,87 @@ func TestPathPolicy_SymlinkBoundary(t *testing.T) {
 		t.Errorf("ValidatePath failed for symlinked boundary: %v", err)
 	}
 }
+
+func TestPathPolicy_SymlinkBypass(t *testing.T) {
+	tmpDir := t.TempDir()
+	
+	// Create a forbidden file outside the workspace
+	forbiddenDir := t.TempDir()
+	forbiddenFile := filepath.Join(forbiddenDir, "forbidden.txt")
+	if err := os.WriteFile(forbiddenFile, []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Setup path policy with tmpDir as safe boundary
+	p := newPathPolicy()
+	p.RegisterPath(tmpDir, true)
+
+	// Create a symlink INSIDE tmpDir pointing to the forbidden file OUTSIDE
+	linkPath := filepath.Join(tmpDir, "malicious_link")
+	if err := os.Symlink(forbiddenFile, linkPath); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+
+	// 1. Test Symlink Bypass (Should be denied)
+	t.Run("Symlink bypass to /etc/passwd", func(t *testing.T) {
+		passwdLink := filepath.Join(tmpDir, "passwd_link")
+		if err := os.Symlink("/etc/passwd", passwdLink); err != nil {
+			t.Skip("symlinks not supported or failed to create")
+		}
+		_, err := p.ValidatePath(passwdLink, false)
+		if err == nil {
+			t.Error("ValidatePath allowed access to /etc/passwd via symlink")
+		}
+	})
+
+	// 2. Test Valid Symlink (Should be allowed)
+	t.Run("Valid symlink within workspace", func(t *testing.T) {
+		internalFile := filepath.Join(tmpDir, "internal.txt")
+		if err := os.WriteFile(internalFile, []byte("internal"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		
+		internalLink := filepath.Join(tmpDir, "internal_link")
+		if err := os.Symlink(internalFile, internalLink); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := p.ValidatePath(internalLink, false)
+		if err != nil {
+			t.Errorf("ValidatePath denied valid symlink: %v", err)
+		}
+	})
+	
+	// 3. Test non-existent file with symlink in path
+	t.Run("Symlink in path to non-existent file", func(t *testing.T) {
+		// Link inside tmpDir to /etc (which is forbidden)
+		linkToEtc := filepath.Join(tmpDir, "etc_link")
+		if err := os.Symlink("/etc", linkToEtc); err != nil {
+			t.Skip("symlinks not supported or failed to create")
+		}
+		
+		// Path to non-existent file via the link
+		targetPath := filepath.Join(linkToEtc, "new_file.txt")
+		
+		_, err := p.ValidatePath(targetPath, true)
+		if err == nil {
+			t.Error("ValidatePath allowed creation of file in /etc via symlink")
+		}
+	})
+
+	// 4. Test multi-level non-existent path with symlink
+	t.Run("Multi-level non-existent path with symlink", func(t *testing.T) {
+		linkToEtc := filepath.Join(tmpDir, "etc_link_multi")
+		if err := os.Symlink("/etc", linkToEtc); err != nil {
+			t.Skip("symlinks not supported or failed to create")
+		}
+
+		// Two levels of non-existence
+		targetPath := filepath.Join(linkToEtc, "nonexistent_dir", "new_file.txt")
+
+		_, err := p.ValidatePath(targetPath, true)
+		if err == nil {
+			t.Error("ValidatePath allowed creation of file in /etc/nonexistent_dir via symlink")
+		}
+	})
+}

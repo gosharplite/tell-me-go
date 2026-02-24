@@ -330,16 +330,21 @@ func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 	realBoundary := p.resolveSymlinks(absBoundary)
 
 	rel, err := filepath.Rel(realBoundary, target)
-	return err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel), nil
+	ok := err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
+	// fmt.Printf("DEBUG: checkBoundary target=%s boundary=%s realBoundary=%s rel=%s ok=%v\n", target, boundary, realBoundary, rel, ok)
+	return ok, nil
 }
 
 func (p *pathPolicy) resolveSymlinks(path string) string {
 	if realPath, err := filepath.EvalSymlinks(path); err == nil {
 		return realPath
 	}
+
 	dir := filepath.Dir(path)
-	if realDir, err := filepath.EvalSymlinks(dir); err == nil {
-		return filepath.Join(realDir, filepath.Base(path))
+	if dir == path || dir == "." {
+		return path
 	}
-	return path
+
+	resolvedDir := p.resolveSymlinks(dir)
+	return filepath.Join(resolvedDir, filepath.Base(path))
 }
