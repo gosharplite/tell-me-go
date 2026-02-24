@@ -5,6 +5,7 @@ package gemini
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -26,6 +27,10 @@ func TestPart_Conversion(t *testing.T) {
 		Text:             "hello",
 		Thought:          true,
 		ThoughtSignature: signature,
+		InlineData: &genai.Blob{
+			MIMEType: "image/jpeg",
+			Data:     []byte("fake-jpeg"),
+		},
 	}
 
 	internalPart := fromSDKPart(sdkPart)
@@ -38,6 +43,15 @@ func TestPart_Conversion(t *testing.T) {
 	}
 	if !reflect.DeepEqual(internalPart.ThoughtSignature, sdkPart.ThoughtSignature) {
 		t.Errorf("expected signature %v, got %v", sdkPart.ThoughtSignature, internalPart.ThoughtSignature)
+	}
+	if internalPart.InlineData == nil {
+		t.Fatal("expected InlineData to be populated")
+	}
+	if internalPart.InlineData.MIMEType != "image/jpeg" {
+		t.Errorf("expected image/jpeg, got %s", internalPart.InlineData.MIMEType)
+	}
+	if !reflect.DeepEqual(internalPart.InlineData.Data, sdkPart.InlineData.Data) {
+		t.Errorf("expected data %v, got %v", sdkPart.InlineData.Data, internalPart.InlineData.Data)
 	}
 
 	backToSDK := toSDKPart(context.Background(), internalPart, nil)
@@ -194,4 +208,52 @@ func TestPart_ToSDK_LazyHydration_NoInlineData(t *testing.T) {
 	if sdkPart.InlineData == nil || !reflect.DeepEqual(sdkPart.InlineData.Data, assetData) {
 		t.Error("failed to hydrate without pre-existing InlineData")
 	}
+}
+
+func TestHydrateAsset_Errors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Resolver Error", func(t *testing.T) {
+		ctx := context.Background()
+		p := &llm.Part{AssetID: "fail-me"}
+		res := &genai.Part{}
+		resolver := &mockResolver{
+			resolveFunc: func(ctx context.Context, assetID string) ([]byte, error) {
+				return nil, fmt.Errorf("asset not found")
+			},
+		}
+
+		hydrateAsset(ctx, p, res, resolver)
+
+		if res.InlineData != nil {
+			t.Errorf("expected InlineData to remain nil on resolver error, got %v", res.InlineData)
+		}
+	})
+
+	t.Run("Already Hydrated", func(t *testing.T) {
+		ctx := context.Background()
+		p := &llm.Part{AssetID: "id1"}
+		res := &genai.Part{
+			InlineData: &genai.Blob{
+				Data: []byte("already-here"),
+			},
+		}
+
+		resolverCalled := false
+		resolver := &mockResolver{
+			resolveFunc: func(ctx context.Context, assetID string) ([]byte, error) {
+				resolverCalled = true
+				return []byte("new-data"), nil
+			},
+		}
+
+		hydrateAsset(ctx, p, res, resolver)
+
+		if resolverCalled {
+			t.Error("resolver should not have been called for already hydrated part")
+		}
+		if string(res.InlineData.Data) != "already-here" {
+			t.Errorf("expected already-here, got %s", string(res.InlineData.Data))
+		}
+	})
 }

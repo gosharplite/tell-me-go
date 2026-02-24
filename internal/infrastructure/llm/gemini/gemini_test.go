@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -538,4 +539,221 @@ func TestClassifyError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToSDKTool(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    []*tools.ToolDeclaration
+		validate func(t *testing.T, result []*genai.Tool)
+	}{
+		{
+			name:  "Empty Declarations",
+			input: nil,
+			validate: func(t *testing.T, result []*genai.Tool) {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+			},
+		},
+		{
+			name: "Valid Tool Declaration",
+			input: []*tools.ToolDeclaration{
+				{
+					Name:        "get_weather",
+					Description: "Gets the current weather",
+					Parameters: &tools.Schema{
+						Type: "object",
+						Properties: map[string]*tools.Schema{
+							"location": {Type: "string"},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, result []*genai.Tool) {
+				if len(result) != 1 || len(result[0].FunctionDeclarations) != 1 {
+					t.Fatalf("expected 1 tool with 1 declaration, got %v", result)
+				}
+				decl := result[0].FunctionDeclarations[0]
+				if decl.Name != "get_weather" {
+					t.Errorf("expected name get_weather, got %s", decl.Name)
+				}
+				if decl.Description != "Gets the current weather" {
+					t.Errorf("expected correct description, got %s", decl.Description)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toSDKTool(tt.input)
+			tt.validate(t, result)
+		})
+	}
+}
+
+func TestApplyThinkingBudget(t *testing.T) {
+	t.Parallel()
+
+	bus := events.NewSimpleEventBus()
+	client := &Client{eventBus: bus}
+
+	t.Run("Under Budget", func(t *testing.T) {
+		config := &genai.ThinkingConfig{}
+		client.applyThinkingBudget(config, 1000, 2000, "test-model")
+
+		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1000 {
+			t.Errorf("expected budget 1000, got %v", config.ThinkingBudget)
+		}
+	})
+
+	t.Run("Exceeds Max Budget", func(t *testing.T) {
+		localBus := events.NewSimpleEventBus()
+		localClient := &Client{eventBus: localBus}
+
+		var mu sync.Mutex
+		var publishedEvents []events.Event
+		localBus.Subscribe(func(e events.Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			publishedEvents = append(publishedEvents, e)
+		})
+
+		config := &genai.ThinkingConfig{}
+		localClient.applyThinkingBudget(config, 3000, 1024, "test-model")
+
+		// Flush to ensure the event is processed
+		if err := localBus.Flush(context.Background()); err != nil {
+			t.Fatalf("failed to flush event bus: %v", err)
+		}
+
+		if config.ThinkingBudget == nil || *config.ThinkingBudget != 1024 {
+			t.Errorf("expected budget to be capped at 1024, got %v", config.ThinkingBudget)
+		}
+
+		mu.Lock()
+		count := len(publishedEvents)
+		var firstEvent events.Event
+		if count > 0 {
+			firstEvent = publishedEvents[0]
+		}
+		mu.Unlock()
+
+		if count != 1 {
+			t.Fatalf("expected 1 warning event, got %d", count)
+		}
+
+		msgEvent, ok := firstEvent.(events.SystemMessageEvent)
+		if !ok || msgEvent.Level != "warning" {
+			t.Errorf("expected warning SystemMessageEvent")
+		}
+	})
+}
+
+func TestHandleEmptyContent(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+
+	t.Run("FinishReason Other", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			FinishReason: genai.FinishReasonSafety,
+		}
+		err := client.handleEmptyContent(candidate)
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "safety") {
+			t.Errorf("expected error containing safety, got %v", err)
+		}
+	})
+
+	t.Run("FinishReason Stop", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			FinishReason: genai.FinishReasonStop,
+		}
+		err := client.handleEmptyContent(candidate)
+		if err == nil || !strings.Contains(err.Error(), "empty response from api") {
+			t.Errorf("expected generic empty response error, got %v", err)
+		}
+	})
+}
+
+func TestHandleNoCandidates(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+
+	t.Run("With BlockReason", func(t *testing.T) {
+		resp := &genai.GenerateContentResponse{
+			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
+				BlockReason: "OTHER",
+			},
+		}
+		err := client.handleNoCandidates(resp)
+		if err == nil || !strings.Contains(err.Error(), "blocked by safety filters") {
+			t.Errorf("expected blocked error, got %v", err)
+		}
+	})
+
+	t.Run("Without BlockReason", func(t *testing.T) {
+		resp := &genai.GenerateContentResponse{}
+		err := client.handleNoCandidates(resp)
+		if err == nil || !strings.Contains(err.Error(), "empty response from api") {
+			t.Errorf("expected generic empty response error, got %v", err)
+		}
+	})
+}
+
+func TestHandleSafetyBlock(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+
+	t.Run("With BlockReason", func(t *testing.T) {
+		resp := &genai.GenerateContentResponse{
+			PromptFeedback: &genai.GenerateContentResponsePromptFeedback{
+				BlockReason: "SAFETY",
+			},
+		}
+		err := client.handleSafetyBlock(resp)
+		if err == nil || !strings.Contains(err.Error(), "blocked by safety filters") {
+			t.Errorf("expected blocked error, got %v", err)
+		}
+	})
+
+	t.Run("Without BlockReason", func(t *testing.T) {
+		resp := &genai.GenerateContentResponse{}
+		err := client.handleSafetyBlock(resp)
+		if err != nil {
+			t.Errorf("expected nil error, got %v", err)
+		}
+	})
+}
+
+func TestFormatFinishError(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+
+	t.Run("Without FinishMessage", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			FinishReason: genai.FinishReasonSafety,
+		}
+		err := client.formatFinishError(candidate, "test prefix")
+		if err == nil || !strings.Contains(err.Error(), "test prefix (Finish Reason: SAFETY)") {
+			t.Errorf("expected correctly formatted error, got %v", err)
+		}
+	})
+
+	t.Run("With FinishMessage", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			FinishReason:  genai.FinishReasonSafety,
+			FinishMessage: "something went wrong",
+		}
+		err := client.formatFinishError(candidate, "test prefix")
+		if err == nil || !strings.Contains(err.Error(), "test prefix (Finish Reason: SAFETY - something went wrong)") {
+			t.Errorf("expected correctly formatted error with message, got %v", err)
+		}
+	})
 }
