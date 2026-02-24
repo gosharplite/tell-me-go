@@ -27,12 +27,14 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm         security.PathValidator
-	client     tools.HTTPClient
-	authHeader string
-	authErr    error
-	authOnce   sync.Once
-	baseURL    string // For testing
+	sm              security.PathValidator
+	client          tools.HTTPClient
+	authHeader      string
+	authErr         error
+	authOnce        sync.Once
+	baseURL         string // For testing
+	pipelineCache   map[string][]adoPipeline
+	pipelineCacheMu sync.RWMutex
 }
 
 func (m *azureDevOpsManager) getBaseURL() string {
@@ -1643,6 +1645,17 @@ type adoPipeline struct {
 }
 
 func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
+	cacheKey := org + "/" + project
+
+	// 1. Check Read Lock
+	m.pipelineCacheMu.RLock()
+	if cached, exists := m.pipelineCache[cacheKey]; exists {
+		m.pipelineCacheMu.RUnlock()
+		return cached, nil
+	}
+	m.pipelineCacheMu.RUnlock()
+
+	// 2. Perform Network Call
 	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
 		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
 
@@ -1659,6 +1672,14 @@ func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project st
 	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+
+	// 3. Write to Cache
+	m.pipelineCacheMu.Lock()
+	if m.pipelineCache == nil {
+		m.pipelineCache = make(map[string][]adoPipeline)
+	}
+	m.pipelineCache[cacheKey] = responseData.Value
+	m.pipelineCacheMu.Unlock()
 
 	return responseData.Value, nil
 }
