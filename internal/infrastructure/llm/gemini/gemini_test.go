@@ -428,7 +428,9 @@ func handleGenerateImagesMock(t *testing.T, w http.ResponseWriter, r *http.Reque
 				{"bytesBase64Encoded": "aW1hZ2Uy", "mimeType": "image/png"},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode mock response: %v", err)
+		}
 		return
 	}
 
