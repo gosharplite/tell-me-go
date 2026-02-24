@@ -590,7 +590,7 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		}
 		found := false
 		for _, p := range pipelines {
-			if strings.EqualFold(p.Name, params.PipelineName) {
+			if strings.Contains(strings.ToLower(p.Name), strings.ToLower(params.PipelineName)) {
 				params.PipelineId = p.Id
 				found = true
 				break

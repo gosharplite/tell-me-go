@@ -478,7 +478,7 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 				},
 				"repository": {
 					Type:        "STRING",
-					Description: "Filter runs by repository name or ID.",
+					Description: "Filter runs by repository ID (UUID) or exact internal reference name, as raw names are often omitted in run resource metadata.",
 				},
 				"top": {
 					Type:        "INTEGER",

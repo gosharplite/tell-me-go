@@ -136,6 +136,7 @@ func DefaultPolicy() *Policy {
 			"ado_get_pr_threads":            true,
 			"ado_get_file_content":          true,
 			"ado_list_repository_items":     true,
+			"ado_list_pipelines":            true,
 			"ado_list_pipeline_runs":        true,
 			"ado_get_pipeline_run":          true,
 			"ado_get_pipeline_logs":         true,
