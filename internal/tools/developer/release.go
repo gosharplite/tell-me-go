@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
@@ -44,10 +47,38 @@ func (m *releaseManager) verifyReleaseReadiness(ctx context.Context, _ map[strin
 	var report strings.Builder
 	report.WriteString("### Release Readiness Report\n\n")
 
-	allOK := true
+	results := make([]checkResult, len(pipeline))
+	var wg sync.WaitGroup
+
+	// Limit concurrent execution to 2 processes to prevent CPU/RAM exhaustion
+	// and avoid build cache locking collisions in CI.
+	sem := semaphore.NewWeighted(2)
+
+	wg.Add(len(pipeline))
 	for i, check := range pipeline {
+		go func(i int, c readinessCheck) {
+			defer wg.Done()
+
+			// Acquire semaphore before executing heavy checks
+			if err := sem.Acquire(ctx, 1); err != nil {
+				results[i] = checkResult{
+					OK:      false,
+					Message: fmt.Sprintf("failed to acquire semaphore: %v", err),
+				}
+				return
+			}
+			defer sem.Release(1)
+
+			results[i] = c.Run(ctx)
+		}(i, check)
+	}
+
+	wg.Wait()
+
+	allOK := true
+	for i, result := range results {
+		check := pipeline[i]
 		report.WriteString(fmt.Sprintf("#### %d. %s\n", i+1, check.Name()))
-		result := check.Run(ctx)
 		if result.OK {
 			report.WriteString(fmt.Sprintf("- [OK] %s\n", result.Message))
 		} else {

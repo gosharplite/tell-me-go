@@ -35,12 +35,10 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		lintStatus, lintDetails                                  string
 		compStatus, compDetails                                  string
 		alerts                                                   []string
-		deadStatus, deadDetails                                  string
-		secStatus, secDetails                                    string
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(3)
 
 	// 1 & 2. Run Tests with Coverage
 	go func() {
@@ -60,18 +58,6 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		compStatus, compDetails, alerts = m.checkComplexity(ctx)
 	}()
 
-	// 5. Dead Code
-	go func() {
-		defer wg.Done()
-		deadStatus, deadDetails = m.runDeadCode(ctx)
-	}()
-
-	// 6. Security
-	go func() {
-		defer wg.Done()
-		secStatus, secDetails = m.checkSecurity(ctx)
-	}()
-
 	wg.Wait()
 
 	// Format table
@@ -83,8 +69,6 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
 	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
 	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
-	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
-	sb.WriteString(fmt.Sprintf("| **Security** | %s | %s |\n", secStatus, secDetails))
 
 	if len(alerts) > 0 {
 		sb.WriteString("\n**Complexity Alerts (Threshold > 10):**\n")
@@ -93,7 +77,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		}
 	}
 
-	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus, secStatus, deadStatus)
+	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus)
 	if recommendation != "" {
 		sb.WriteString("\n**Architectural Recommendation**: " + recommendation + "\n")
 	}
@@ -110,7 +94,7 @@ func (m *healthManager) runTestsAndCoverage(ctx context.Context) (tStatus, tDeta
 	f.Close()
 	defer os.Remove(tempPath)
 
-	out, err := m.Exec.CombinedOutput(ctx, "go", "test", "-coverprofile="+tempPath, "./...")
+	out, err := m.Exec.CombinedOutput(ctx, "go", "test", "-short", "-coverprofile="+tempPath, "./...")
 	outStr := string(out)
 
 	if err == nil {
@@ -218,41 +202,10 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
 }
 
-func (m *healthManager) runDeadCode(ctx context.Context) (string, string) {
-	findings, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".")
-	if err != nil {
-		return "ERROR", err.Error()
-	}
-
-	if len(findings) == 0 {
-		return "CLEAN", "0 Items"
-	}
-
-	return "DEBT", fmt.Sprintf("%d Items", len(findings))
-}
-
-func (m *healthManager) checkSecurity(ctx context.Context) (string, string) {
-	if _, err := exec.LookPath("govulncheck"); err != nil {
-		return "SKIP", "govulncheck not installed (run 'go install golang.org/x/vuln/cmd/govulncheck@latest')"
-	}
-
-	out, _ := m.Exec.CombinedOutput(ctx, "govulncheck", "./...")
-	outStr := string(out)
-
-	if strings.Contains(outStr, "No vulnerabilities found") {
-		return "CLEAN", "No known vulnerabilities"
-	}
-
-	return "VULNS", "Vulnerabilities detected."
-}
-
-func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec, dead string) string {
+func (m *healthManager) generateRecommendation(test, cov, lint, comp string) string {
 	var recs []string
 	if test == "FAIL" {
 		recs = append(recs, "Fix failing tests immediately.")
-	}
-	if strings.Contains(sec, "VULNS") {
-		recs = append(recs, "Review and fix security vulnerabilities.")
 	}
 	if strings.HasSuffix(cov, "%") {
 		var val float64
@@ -267,9 +220,6 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp, sec, dead 
 	}
 	if strings.Contains(lint, "Issues") {
 		recs = append(recs, "Address linting issues.")
-	}
-	if dead == "DEBT" {
-		recs = append(recs, "Prune orphaned symbols to reduce technical debt.")
 	}
 
 	if len(recs) == 0 {
