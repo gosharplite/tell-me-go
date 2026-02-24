@@ -173,16 +173,12 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 	bus.Publish("init")
 	<-ready
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
 
 	err := bus.Flush(ctx)
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
+	if err != context.DeadlineExceeded {
+		t.Errorf("expected context.DeadlineExceeded, got %v", err)
 	}
 	close(block)
 }

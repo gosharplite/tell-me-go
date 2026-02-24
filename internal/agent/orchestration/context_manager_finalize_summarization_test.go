@@ -69,18 +69,23 @@ func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr 
 	}
 }
 
-func TestFinalizeSummarization_ArchiveTerminalError(t *testing.T) {
-	runFinalizeSummarizationErrorTest(t, errors.New("terminal disk error"), nil, llm.ErrTerminal, false)
-}
+func TestFinalizeSummarization_Errors(t *testing.T) {
+	tests := []struct {
+		name             string
+		archiveErr       error
+		setContentsErr   error
+		expectedErr      error
+		checkSetContents bool
+	}{
+		{"ArchiveTerminalError", errors.New("terminal disk error"), nil, llm.ErrTerminal, false},
+		{"ArchiveTransientError", fmt.Errorf("%w: transient disk error", llm.ErrTransient), nil, llm.ErrTransient, false},
+		{"SetContentsTerminalError", nil, errors.New("terminal disk error"), llm.ErrTerminal, true},
+		{"SetContentsTransientError", nil, fmt.Errorf("%w: transient disk error", llm.ErrTransient), llm.ErrTransient, true},
+	}
 
-func TestFinalizeSummarization_ArchiveTransientError(t *testing.T) {
-	runFinalizeSummarizationErrorTest(t, fmt.Errorf("%w: transient disk error", llm.ErrTransient), nil, llm.ErrTransient, false)
-}
-
-func TestFinalizeSummarization_SetContentsTerminalError(t *testing.T) {
-	runFinalizeSummarizationErrorTest(t, nil, errors.New("terminal disk error"), llm.ErrTerminal, true)
-}
-
-func TestFinalizeSummarization_SetContentsTransientError(t *testing.T) {
-	runFinalizeSummarizationErrorTest(t, nil, fmt.Errorf("%w: transient disk error", llm.ErrTransient), llm.ErrTransient, true)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runFinalizeSummarizationErrorTest(t, tt.archiveErr, tt.setContentsErr, tt.expectedErr, tt.checkSetContents)
+		})
+	}
 }
