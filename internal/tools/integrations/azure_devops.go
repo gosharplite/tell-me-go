@@ -566,6 +566,8 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		Organization string `json:"organization"`
 		Project      string `json:"project"`
 		PipelineId   int    `json:"pipeline_id"`
+		PipelineName string `json:"pipeline_name"`
+		Repository   string `json:"repository"`
 		Top          int    `json:"top"`
 	}
 
@@ -573,11 +575,43 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		return tools.ToolResult{}, err
 	}
 
-	if params.Organization == "" || params.Project == "" || params.PipelineId == 0 {
-		return tools.ToolResult{}, fmt.Errorf("organization, project, and pipeline_id are required")
+	if params.Organization == "" || params.Project == "" {
+		return tools.ToolResult{}, fmt.Errorf("organization and project are required")
 	}
 
-	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.Top)
+	if params.PipelineId == 0 && params.PipelineName == "" {
+		return tools.ToolResult{}, fmt.Errorf("either pipeline_id or pipeline_name must be provided")
+	}
+
+	if params.PipelineId == 0 && params.PipelineName != "" {
+		pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
+		if err != nil {
+			return tools.ToolResult{}, fmt.Errorf("failed to fetch pipelines for name resolution: %w", err)
+		}
+		found := false
+		for _, p := range pipelines {
+			if strings.EqualFold(p.Name, params.PipelineName) {
+				params.PipelineId = p.Id
+				found = true
+				break
+			}
+		}
+		if !found {
+			return tools.ToolResult{}, fmt.Errorf("pipeline with name '%s' not found", params.PipelineName)
+		}
+	}
+
+	originalTop := params.Top
+	if originalTop <= 0 {
+		originalTop = 10
+	}
+
+	fetchTop := originalTop
+	if params.Repository != "" {
+		fetchTop = 100 // Increased limit for manual filtering
+	}
+
+	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, fetchTop)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -596,15 +630,33 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return tools.ToolResult{Text: m.formatPipelineRunsList(params.PipelineId, responseData.Value)}, nil
+	runs := responseData.Value
+	if params.Repository != "" {
+		var filteredRuns []adoPipelineRun
+		repoFilter := strings.ToLower(params.Repository)
+		for _, run := range runs {
+			resourcesJSON, _ := json.Marshal(run.Resources)
+			if strings.Contains(strings.ToLower(string(resourcesJSON)), repoFilter) {
+				filteredRuns = append(filteredRuns, run)
+			}
+		}
+		runs = filteredRuns
+	}
+
+	if len(runs) > originalTop {
+		runs = runs[:originalTop]
+	}
+
+	return tools.ToolResult{Text: m.formatPipelineRunsList(params.PipelineId, runs)}, nil
 }
 
 type adoPipelineRun struct {
-	Id      int    `json:"id"`
-	Name    string `json:"name"`
-	State   string `json:"state"`
-	Result  string `json:"result"`
-	Created string `json:"createdDate"`
+	Id        int                    `json:"id"`
+	Name      string                 `json:"name"`
+	State     string                 `json:"state"`
+	Result    string                 `json:"result"`
+	Created   string                 `json:"createdDate"`
+	Resources map[string]interface{} `json:"resources"`
 }
 
 func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
@@ -1579,4 +1631,62 @@ func (m *azureDevOpsManager) adoGetBuildChanges(ctx context.Context, args map[st
 	}
 
 	return tools.ToolResult{Text: string(output)}, nil
+}
+
+type adoPipeline struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (m *azureDevOpsManager) fetchPipelines(ctx context.Context, org, project string) ([]adoPipeline, error) {
+	requestURL := fmt.Sprintf("%s/%s/%s/_apis/pipelines?api-version=7.1",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project))
+
+	resp, err := m.executeRequest(ctx, http.MethodGet, requestURL, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var responseData struct {
+		Value []adoPipeline `json:"value"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return responseData.Value, nil
+}
+
+func (m *azureDevOpsManager) adoListPipelines(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	var params struct {
+		Organization string `json:"organization"`
+		Project      string `json:"project"`
+	}
+
+	if err := tools.UnmarshalArgs(args, &params); err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if params.Organization == "" || params.Project == "" {
+		return tools.ToolResult{}, fmt.Errorf("organization and project are required")
+	}
+
+	pipelines, err := m.fetchPipelines(ctx, params.Organization, params.Project)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+
+	if len(pipelines) == 0 {
+		return tools.ToolResult{Text: "No pipelines found."}, nil
+	}
+
+	var resultText strings.Builder
+	resultText.WriteString(fmt.Sprintf("Found %d pipelines:\n", len(pipelines)))
+	for _, p := range pipelines {
+		resultText.WriteString(fmt.Sprintf("- [%d] %s\n", p.Id, p.Name))
+	}
+
+	return tools.ToolResult{Text: resultText.String()}, nil
 }
