@@ -18,26 +18,50 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
-	var params struct {
-		Organization string `json:"organization"`
-		Project      string `json:"project"`
-		PipelineId   int    `json:"pipeline_id"`
-		PipelineName string `json:"pipeline_name"`
-		Repository   string `json:"repository"`
-		Top          int    `json:"top"`
-	}
+type adoListPipelineRunsParams struct {
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+	PipelineId   int    `json:"pipeline_id"`
+	PipelineName string `json:"pipeline_name"`
+	Repository   string `json:"repository"`
+	Top          int    `json:"top"`
 
+	// Computed fields
+	OriginalTop int
+	FetchTop    int
+}
+
+func parseListPipelineRunsArgs(args map[string]interface{}) (adoListPipelineRunsParams, error) {
+	var params adoListPipelineRunsParams
 	if err := tools.UnmarshalArgs(args, &params); err != nil {
-		return tools.ToolResult{}, err
+		return params, err
 	}
 
 	if params.Organization == "" || params.Project == "" {
-		return tools.ToolResult{}, fmt.Errorf("organization and project are required")
+		return params, fmt.Errorf("organization and project are required")
 	}
 
 	if params.PipelineId == 0 && params.PipelineName == "" {
-		return tools.ToolResult{}, fmt.Errorf("either pipeline_id or pipeline_name must be provided")
+		return params, fmt.Errorf("either pipeline_id or pipeline_name must be provided")
+	}
+
+	params.OriginalTop = params.Top
+	if params.OriginalTop <= 0 {
+		params.OriginalTop = 10
+	}
+
+	params.FetchTop = params.OriginalTop
+	if params.Repository != "" {
+		params.FetchTop = 100 // Increased limit for manual filtering
+	}
+
+	return params, nil
+}
+
+func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	params, err := parseListPipelineRunsArgs(args)
+	if err != nil {
+		return tools.ToolResult{}, err
 	}
 
 	if params.PipelineId == 0 && params.PipelineName != "" {
@@ -48,17 +72,7 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		}
 	}
 
-	originalTop := params.Top
-	if originalTop <= 0 {
-		originalTop = 10
-	}
-
-	fetchTop := originalTop
-	if params.Repository != "" {
-		fetchTop = 100 // Increased limit for manual filtering
-	}
-
-	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, fetchTop)
+	requestURL, err := m.buildListPipelineRunsURL(params.Organization, params.Project, params.PipelineId, params.FetchTop)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -77,7 +91,7 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		return tools.ToolResult{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	runs := filterAndLimitRuns(responseData.Value, params.Repository, originalTop)
+	runs := filterAndLimitRuns(responseData.Value, params.Repository, params.OriginalTop)
 
 	return tools.ToolResult{Text: m.formatPipelineRunsList(params.PipelineId, runs)}, nil
 }
