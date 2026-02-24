@@ -542,9 +542,10 @@ func TestAdoListPipelineRuns(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 
 	t.Run("Success", func(t *testing.T) {
-		jsonResponse := `{"value": [{"id": 101, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01"}]}`
+		jsonResponse := `{"value": [{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "myrepo"}}]}`
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Contains(t, r.URL.Path, "/pipelines/1/runs")
+			assert.Contains(t, r.URL.Path, "/_apis/build/builds")
+			assert.Equal(t, "1", r.URL.Query().Get("definitions"))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(jsonResponse))
 		}))
@@ -557,6 +558,7 @@ func TestAdoListPipelineRuns(t *testing.T) {
 		result, err := m.adoListPipelineRuns(context.Background(), args)
 		assert.NoError(t, err)
 		assert.Contains(t, result.Text, "Run ID: 101")
+		assert.Contains(t, result.Text, "Repo: myrepo")
 	})
 }
 
@@ -1910,7 +1912,7 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 			name: "Success - ListPipelineRuns",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"value": [{"id": 1, "name": "run1", "state": "completed", "result": "succeeded", "createdDate": "2023-10-01"}]}`))
+				_, _ = w.Write([]byte(`{"value": [{"id": 1, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo"}}]}`))
 			},
 			call: func(m *azureDevOpsManager) (tools.ToolResult, error) {
 				return m.adoListPipelineRuns(ctx, map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1})

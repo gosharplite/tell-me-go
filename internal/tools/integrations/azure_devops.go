@@ -635,8 +635,8 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 		var filteredRuns []adoPipelineRun
 		repoFilter := strings.ToLower(params.Repository)
 		for _, run := range runs {
-			resourcesJSON, _ := json.Marshal(run.Resources)
-			if strings.Contains(strings.ToLower(string(resourcesJSON)), repoFilter) {
+			if strings.Contains(strings.ToLower(run.Repository.Name), repoFilter) ||
+				strings.Contains(strings.ToLower(run.Repository.Id), repoFilter) {
 				filteredRuns = append(filteredRuns, run)
 			}
 		}
@@ -651,12 +651,15 @@ func (m *azureDevOpsManager) adoListPipelineRuns(ctx context.Context, args map[s
 }
 
 type adoPipelineRun struct {
-	Id        int                    `json:"id"`
-	Name      string                 `json:"name"`
-	State     string                 `json:"state"`
-	Result    string                 `json:"result"`
-	Created   string                 `json:"createdDate"`
-	Resources map[string]interface{} `json:"resources"`
+	Id         int    `json:"id"`
+	Name       string `json:"buildNumber"`
+	State      string `json:"status"`
+	Result     string `json:"result"`
+	Created    string `json:"queueTime"`
+	Repository struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"repository"`
 }
 
 func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipelineId, top int) (string, error) {
@@ -664,13 +667,14 @@ func (m *azureDevOpsManager) buildListPipelineRunsURL(org, project string, pipel
 		top = 10
 	}
 
-	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/pipelines/%d/runs",
-		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project), pipelineId))
+	u, err := url.Parse(fmt.Sprintf("%s/%s/%s/_apis/build/builds",
+		m.getBaseURL(), url.PathEscape(org), url.PathEscape(project)))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base URL: %w", err)
 	}
 
 	q := u.Query()
+	q.Set("definitions", strconv.Itoa(pipelineId))
 	q.Set("$top", strconv.Itoa(top))
 	q.Set("api-version", "7.1")
 	u.RawQuery = q.Encode()
@@ -686,8 +690,8 @@ func (m *azureDevOpsManager) formatPipelineRunsList(pipelineId int, runs []adoPi
 	var resultText strings.Builder
 	resultText.WriteString(fmt.Sprintf("Recent runs for pipeline %d:\n\n", pipelineId))
 	for _, run := range runs {
-		resultText.WriteString(fmt.Sprintf("- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s\n",
-			run.Id, run.Name, run.State, run.Result, run.Created))
+		resultText.WriteString(fmt.Sprintf("- Run ID: %d, Name: %s, Status: %s, Result: %s, Created: %s, Repo: %s\n",
+			run.Id, run.Name, run.State, run.Result, run.Created, run.Repository.Name))
 	}
 
 	return resultText.String()
