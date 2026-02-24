@@ -52,7 +52,7 @@ func walkAndProcess(ctx context.Context, sm domain_security.PathValidator, fs pe
 }
 
 // ConcurrentSearch walks the path and processes files in parallel using workers.
-func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) bool) (<-chan string, <-chan error) {
+func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs persistence.FileSystem, root string, matcher func(path, line string) (string, bool)) (<-chan string, <-chan error) {
 	errChan := make(chan error, 1)
 	if ctx.Err() != nil {
 		errChan <- ctx.Err()
@@ -87,7 +87,7 @@ func ConcurrentSearch(ctx context.Context, sp domain_security.PathValidator, fs 
 
 type searchPipeline struct {
 	fs          persistence.FileSystem
-	matcher     func(path, line string) bool
+	matcher     func(path, line string) (string, bool)
 	pathsChan   chan string
 	resultsChan chan string
 	errChan     chan error
@@ -195,9 +195,13 @@ func (p *searchPipeline) scanFile(path string) error {
 
 			lineNum++
 			line := scanner.Text()
-			if p.matcher(path, line) {
+			if match, ok := p.matcher(path, line); ok {
+				text := line
+				if match != "" {
+					text = match
+				}
 				select {
-				case p.resultsChan <- formatMatch(path, lineNum, line):
+				case p.resultsChan <- formatMatch(path, lineNum, text):
 				case <-p.ctx.Done():
 					return p.ctx.Err()
 				}

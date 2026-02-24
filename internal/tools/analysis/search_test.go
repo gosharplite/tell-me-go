@@ -35,6 +35,22 @@ func TestListTodos(t *testing.T) {
 			absent:   []string{"Nothing interesting here"},
 		},
 		{
+			name: "Inline TODO",
+			files: map[string]string{
+				"inline.go": "func main() { // TODO: inline\n}",
+			},
+			expected: []string{"TODO: inline"},
+			absent:   []string{"func main()"},
+		},
+		{
+			name: "Block Comment TODO",
+			files: map[string]string{
+				"block.go": "/* TODO: block */",
+			},
+			expected: []string{"TODO: block"},
+			absent:   []string{"*/"},
+		},
+		{
 			name: "Case Insensitive and Patterns",
 			files: map[string]string{
 				"a.go": "// todo: lowcase\n// BUG: critical",

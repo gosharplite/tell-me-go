@@ -53,8 +53,8 @@ func (s *fileSearcher) searchFiles(ctx context.Context, args map[string]interfac
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) bool {
-		return re.MatchString(line)
+	resChan, errChan := ConcurrentSearch(ctx, s.sm, s.fs, params.Path, func(_, line string) (string, bool) {
+		return "", re.MatchString(line)
 	})
 
 	var results []string
@@ -142,10 +142,10 @@ func getCompiledPatterns() []*regexp.Regexp {
 	return compiled
 }
 
-func getDefinitionMatcher(reQuery *regexp.Regexp, compiledDefs []*regexp.Regexp) func(string, string) bool {
-	return func(path, line string) bool {
+func getDefinitionMatcher(reQuery *regexp.Regexp, compiledDefs []*regexp.Regexp) func(string, string) (string, bool) {
+	return func(path, line string) (string, bool) {
 		if !isSupportedDefExt(filepath.Ext(path)) {
-			return false
+			return "", false
 		}
 
 		isDef := false
@@ -157,10 +157,10 @@ func getDefinitionMatcher(reQuery *regexp.Regexp, compiledDefs []*regexp.Regexp)
 		}
 
 		if !isDef {
-			return false
+			return "", false
 		}
 
-		return reQuery == nil || reQuery.MatchString(line)
+		return "", reQuery == nil || reQuery.MatchString(line)
 	}
 }
 

@@ -22,7 +22,7 @@ type searchManager struct {
 
 var todoRegex = regexp.MustCompile(`(?i)(TODO|FIXME|BUG):?.*`)
 
-func (m *searchManager) executeSearch(ctx context.Context, path string, limit int, emptyMsg string, matchFunc func(string, string) bool) (tools.ToolResult, error) {
+func (m *searchManager) executeSearch(ctx context.Context, path string, limit int, emptyMsg string, matchFunc func(string, string) (string, bool)) (tools.ToolResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -73,8 +73,14 @@ func (m *searchManager) ListTodos(ctx context.Context, args map[string]interface
 		path = "."
 	}
 
-	return m.executeSearch(ctx, path, 500, "No TODOs, FIXMEs, or BUGs found.", func(_, line string) bool {
-		return todoRegex.MatchString(line)
+	return m.executeSearch(ctx, path, 500, "No TODOs, FIXMEs, or BUGs found.", func(_, line string) (string, bool) {
+		match := todoRegex.FindString(line)
+		if match == "" {
+			return "", false
+		}
+		// Clean up common comment patterns
+		match = strings.TrimSuffix(match, "*/")
+		return strings.TrimSpace(match), true
 	})
 }
 
@@ -97,7 +103,7 @@ func (m *searchManager) SearchUsagesGlobally(ctx context.Context, args map[strin
 		path = "."
 	}
 
-	return m.executeSearch(ctx, path, 100, "No matches found.", func(_, line string) bool {
-		return re.MatchString(line)
+	return m.executeSearch(ctx, path, 100, "No matches found.", func(_, line string) (string, bool) {
+		return "", re.MatchString(line)
 	})
 }
