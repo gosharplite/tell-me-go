@@ -15,20 +15,57 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"google.golang.org/genai"
 )
 
+func validateAuthOnly(t *testing.T, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test-token" {
+		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+	}
+}
+
+func validateSystemInstructionReq(t *testing.T, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test-token" {
+		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+	}
+	var req struct {
+		SystemInstruction struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"systemInstruction"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		t.Errorf("failed to decode request: %v", err)
+	}
+	expected := "Be helpful and concise"
+	if len(req.SystemInstruction.Parts) == 0 || req.SystemInstruction.Parts[0].Text != expected {
+		t.Errorf("expected system instruction %q, got %v", expected, req.SystemInstruction.Parts)
+	}
+}
+
+func validateStreamAuth(t *testing.T, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer test" {
+		t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
+	}
+}
+
+type sendChatTestCase struct {
+	name                   string
+	mockResponse           genai.GenerateContentResponse
+	expectedText           string
+	expectedError          string
+	systemInstruction      string
+	thinkingBudget         int
+	thinkingBudgetSeverity string
+	validateReq            func(t *testing.T, r *http.Request)
+}
+
 func TestSendChat_Scenarios(t *testing.T) {
-	tests := []struct {
-		name                   string
-		mockResponse           genai.GenerateContentResponse
-		expectedText           string
-		expectedError          string
-		systemInstruction      string
-		thinkingBudget         int
-		thinkingBudgetSeverity string
-	}{
+	t.Parallel()
+	tests := []sendChatTestCase{
 		{
 			name: "Success",
 			mockResponse: genai.GenerateContentResponse{
@@ -42,6 +79,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 				},
 			},
 			expectedText: "World",
+			validateReq:  validateAuthOnly,
 		},
 		{
 			name: "SafetyBlock",
@@ -51,6 +89,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 				},
 			},
 			expectedError: "blocked by safety filters",
+			validateReq:  validateAuthOnly,
 		},
 		{
 			name: "FinishReasonSafety",
@@ -62,6 +101,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 				},
 			},
 			expectedError: "Finish Reason: SAFETY",
+			validateReq:  validateAuthOnly,
 		},
 		{
 			name: "SystemInstruction",
@@ -70,6 +110,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 			},
 			systemInstruction: "Be helpful and concise",
 			expectedText:      "OK",
+			validateReq:       validateSystemInstructionReq,
 		},
 		{
 			name: "ThinkingBudget",
@@ -79,92 +120,84 @@ func TestSendChat_Scenarios(t *testing.T) {
 			thinkingBudget:         1000,
 			thinkingBudgetSeverity: "LOW",
 			expectedText:           "OK",
+			validateReq:            validateAuthOnly,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify Authorization Header
-				if r.Header.Get("Authorization") != "Bearer test-token" {
-					t.Errorf("expected bearer token, got '%s'", r.Header.Get("Authorization"))
-				}
-
-				// If system instruction is expected, verify it in the request body
-				if tt.systemInstruction != "" {
-					var req struct {
-						SystemInstruction struct {
-							Parts []struct {
-								Text string `json:"text"`
-							} `json:"parts"`
-						} `json:"systemInstruction"`
-					}
-					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-						t.Errorf("failed to decode request: %v", err)
-					}
-					if len(req.SystemInstruction.Parts) == 0 || req.SystemInstruction.Parts[0].Text != tt.systemInstruction {
-						t.Errorf("expected system instruction %q, got %v", tt.systemInstruction, req.SystemInstruction.Parts)
-					}
-				}
-
-				if err := json.NewEncoder(w).Encode(tt.mockResponse); err != nil {
-					t.Errorf("failed to encode response: %v", err)
-				}
-			}))
-			t.Cleanup(server.Close)
-
-			apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-			authenticator := &auth.VertexAuth{Token: "test-token"}
-			client, err := NewClient(
-				apiURL,
-				"test-model",
-				authenticator,
-				tt.thinkingBudget,
-				tt.thinkingBudgetSeverity,
-				0,
-				tt.systemInstruction,
-				false,
-				events.NewSimpleEventBus(),
-				5*time.Second,
-			)
-			if err != nil {
-				t.Fatalf("failed to create client: %v", err)
-			}
-
-			history := []*llm.Content{
-				{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
-			}
-			content, _, err := client.SendChat(context.Background(), history, nil, nil)
-
-			if tt.expectedError != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.expectedError)
-				}
-				if !strings.Contains(err.Error(), tt.expectedError) {
-					t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("SendChat failed: %v", err)
-			}
-
-			if content.Parts[0].Text != tt.expectedText {
-				t.Errorf("expected text %q, got %q", tt.expectedText, content.Parts[0].Text)
-			}
+			runSendChatTest(t, tt)
 		})
 	}
 }
 
+func runSendChatTest(t *testing.T, tt sendChatTestCase) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tt.validateReq != nil {
+			tt.validateReq(t, r)
+		}
+
+		if err := json.NewEncoder(w).Encode(tt.mockResponse); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	authenticator := &auth.VertexAuth{Token: "test-token"}
+	client, err := NewClient(
+		apiURL,
+		"test-model",
+		authenticator,
+		tt.thinkingBudget,
+		tt.thinkingBudgetSeverity,
+		0,
+		tt.systemInstruction,
+		false,
+		events.NewSimpleEventBus(),
+		5*time.Second,
+	)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	history := []*llm.Content{
+		{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}},
+	}
+	content, _, err := client.SendChat(context.Background(), history, nil, nil)
+
+	if tt.expectedError != "" {
+		if err == nil {
+			t.Fatalf("expected error containing %q, got nil", tt.expectedError)
+		}
+		if !strings.Contains(err.Error(), tt.expectedError) {
+			t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("SendChat failed: %v", err)
+	}
+
+	if content.Parts[0].Text != tt.expectedText {
+		t.Errorf("expected text %q, got %q", tt.expectedText, content.Parts[0].Text)
+	}
+}
+
+type streamChatTestCase struct {
+	name           string
+	mockChunks     []genai.GenerateContentResponse
+	expectedText   string
+	expectedError  string
+	expectedTokens int32
+	validateReq    func(t *testing.T, r *http.Request)
+}
+
 func TestStreamChat_Scenarios(t *testing.T) {
-	tests := []struct {
-		name           string
-		mockChunks     []genai.GenerateContentResponse
-		expectedText   string
-		expectedError  string
-		expectedTokens int32
-	}{
+	t.Parallel()
+	tests := []streamChatTestCase{
 		{
 			name: "Success",
 			mockChunks: []genai.GenerateContentResponse{
@@ -195,6 +228,7 @@ func TestStreamChat_Scenarios(t *testing.T) {
 			},
 			expectedText:   "Hello World!",
 			expectedTokens: 2,
+			validateReq:    validateStreamAuth,
 		},
 		{
 			name: "SafetyBlock",
@@ -227,53 +261,65 @@ func TestStreamChat_Scenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-
-				for _, chunk := range tt.mockChunks {
-					data, _ := json.Marshal(chunk)
-					fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
-				}
-			}))
-			t.Cleanup(server.Close)
-
-			apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-			client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
-
-			var receivedText string
-			callback := func(c *llm.Content) {
-				for _, p := range c.Parts {
-					receivedText += p.Text
-				}
-			}
-
-			metrics, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, callback)
-
-			if tt.expectedError != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.expectedError)
-				}
-				if !strings.Contains(err.Error(), tt.expectedError) {
-					t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("StreamChat failed: %v", err)
-			}
-
-			if receivedText != tt.expectedText {
-				t.Errorf("expected %q, got %q", tt.expectedText, receivedText)
-			}
-
-			if tt.expectedTokens > 0 {
-				if metrics == nil || metrics.ResponseTokens != tt.expectedTokens {
-					t.Errorf("expected %d response tokens, got %v", tt.expectedTokens, metrics)
-				}
-			}
+			runStreamChatTest(t, tt)
 		})
+	}
+}
+
+func runStreamChatTest(t *testing.T, tt streamChatTestCase) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tt.validateReq != nil {
+			tt.validateReq(t, r)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		for _, chunk := range tt.mockChunks {
+			data, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\r\n\r\n", string(data))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+
+	var receivedText string
+	callback := func(c *llm.Content) {
+		for _, p := range c.Parts {
+			receivedText += p.Text
+		}
+	}
+
+	metrics, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, callback)
+	assertStreamResults(t, tt, receivedText, metrics, err)
+}
+
+func assertStreamResults(t *testing.T, tt streamChatTestCase, receivedText string, metrics *llm.Metrics, err error) {
+	if tt.expectedError != "" {
+		if err == nil {
+			t.Fatalf("expected error containing %q, got nil", tt.expectedError)
+		}
+		if !strings.Contains(err.Error(), tt.expectedError) {
+			t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("StreamChat failed: %v", err)
+	}
+
+	if receivedText != tt.expectedText {
+		t.Errorf("expected %q, got %q", tt.expectedText, receivedText)
+	}
+
+	if tt.expectedTokens > 0 {
+		if metrics == nil || metrics.ResponseTokens != tt.expectedTokens {
+			t.Errorf("expected %d response tokens, got %v", tt.expectedTokens, metrics)
+		}
 	}
 }
 
@@ -295,5 +341,199 @@ func TestRefreshAuth(t *testing.T) {
 	err := client.RefreshAuth()
 	if err != nil {
 		t.Fatalf("RefreshAuth failed: %v", err)
+	}
+}
+
+type generateImagesTestCase struct {
+	name          string
+	mockResponse  genai.GenerateImagesResponse
+	mockError     error
+	expectedCount int
+	expectedError string
+}
+
+func TestGenerateImages(t *testing.T) {
+	tests := []generateImagesTestCase{
+		{
+			name: "Success",
+			mockResponse: genai.GenerateImagesResponse{
+				GeneratedImages: []*genai.GeneratedImage{
+					{
+						Image: &genai.Image{
+							ImageBytes: []byte("image1"),
+						},
+					},
+					{
+						Image: &genai.Image{
+							ImageBytes: []byte("image2"),
+						},
+					},
+				},
+			},
+			expectedCount: 2,
+		},
+		{
+			name:          "NoImagesGenerated",
+			mockResponse:  genai.GenerateImagesResponse{},
+			expectedError: "no images generated",
+		},
+		{
+			name: "ServerError",
+			mockError:     fmt.Errorf("internal server error"),
+			expectedError: "internal server error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runGenerateImagesTest(t, tt)
+		})
+	}
+}
+
+func runGenerateImagesTest(t *testing.T, tt generateImagesTestCase) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handleGenerateImagesMock(t, w, r, tt)
+	}))
+	t.Cleanup(server.Close)
+
+	t.Setenv("TELL_ME_MOCK_URL", server.URL)
+	t.Setenv("GOOGLE_API_KEY", "dummy")
+	apiURL := "http://localhost/v1" // Trigger GeminiAPI backend with v1
+	client, err := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	images, err := client.GenerateImages(context.Background(), "imagen-3.0", "a cat", "image/png")
+	assertGenerateImagesResults(t, tt, images, err)
+}
+
+func handleGenerateImagesMock(t *testing.T, w http.ResponseWriter, r *http.Request, tt generateImagesTestCase) {
+	if tt.mockError != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, tt.mockError.Error())
+		return
+	}
+
+	if tt.name == "Success" {
+		// Return multiple formats to be safe across different SDK/API versions
+		resp := map[string]interface{}{
+			"generatedImages": []map[string]interface{}{
+				{"image": map[string]interface{}{"imageBytes": "aW1hZ2Ux"}},
+				{"image": map[string]interface{}{"imageBytes": "aW1hZ2Uy"}},
+			},
+			"predictions": []map[string]interface{}{
+				{"bytesBase64Encoded": "aW1hZ2Ux", "mimeType": "image/png"},
+				{"bytesBase64Encoded": "aW1hZ2Uy", "mimeType": "image/png"},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	if err := json.NewEncoder(w).Encode(tt.mockResponse); err != nil {
+		t.Errorf("failed to encode response: %v", err)
+	}
+}
+
+func assertGenerateImagesResults(t *testing.T, tt generateImagesTestCase, images [][]byte, err error) {
+	if tt.expectedError != "" {
+		if err == nil || !strings.Contains(err.Error(), tt.expectedError) {
+			t.Errorf("expected error containing %q, got %v", tt.expectedError, err)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(images) != tt.expectedCount {
+		t.Errorf("expected %d images, got %d", tt.expectedCount, len(images))
+	}
+}
+
+func TestToSDKSchema(t *testing.T) {
+	t.Parallel()
+
+	s := &tools.Schema{
+		Type:        "object",
+		Description: "test schema",
+		Required:    []string{"prop1"},
+		Properties: map[string]*tools.Schema{
+			"prop1": {
+				Type:        "string",
+				Description: "property 1",
+			},
+			"prop2": {
+				Type: "array",
+				Items: &tools.Schema{
+					Type: "integer",
+				},
+			},
+		},
+	}
+
+	sdkSchema := toSDKSchema(s)
+
+	if string(sdkSchema.Type) != "object" {
+		t.Errorf("expected type %q, got %q", "object", sdkSchema.Type)
+	}
+	if sdkSchema.Description != "test schema" {
+		t.Errorf("expected description %q, got %q", "test schema", sdkSchema.Description)
+	}
+	if len(sdkSchema.Required) != 1 || sdkSchema.Required[0] != "prop1" {
+		t.Errorf("expected required %v, got %v", []string{"prop1"}, sdkSchema.Required)
+	}
+	if string(sdkSchema.Properties["prop1"].Type) != "string" {
+		t.Errorf("expected prop1 type %q, got %q", "string", sdkSchema.Properties["prop1"].Type)
+	}
+	if string(sdkSchema.Properties["prop2"].Type) != "array" {
+		t.Errorf("expected prop2 type %q, got %q", "array", sdkSchema.Properties["prop2"].Type)
+	}
+	if string(sdkSchema.Properties["prop2"].Items.Type) != "integer" {
+		t.Errorf("expected prop2 items type %q, got %q", "integer", sdkSchema.Properties["prop2"].Items.Type)
+	}
+
+	// Test nil schema
+	if toSDKSchema(nil) != nil {
+		t.Error("expected nil for nil input")
+	}
+}
+
+func TestClassifyError(t *testing.T) {
+	t.Parallel()
+
+	client := &Client{}
+
+	tests := []struct {
+		name     string
+		err      error
+		expected error
+	}{
+		{
+			name:     "NilError",
+			err:      nil,
+			expected: nil,
+		},
+		{
+			name:     "GenericError",
+			err:      fmt.Errorf("some error"),
+			expected: fmt.Errorf("some error"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := client.classifyError(tt.err)
+			if (got == nil) != (tt.expected == nil) {
+				t.Fatalf("expected error %v, got %v", tt.expected, got)
+			}
+			if got != nil && got.Error() != tt.expected.Error() {
+				t.Errorf("expected error message %q, got %q", tt.expected.Error(), got.Error())
+			}
+		})
 	}
 }
