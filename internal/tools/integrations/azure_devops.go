@@ -23,14 +23,14 @@ import (
 )
 
 type azureDevOpsManager struct {
-	sm              security.PathValidator
-	client          tools.HTTPClient
-	authHeader      string
-	authErr         error
-	authOnce        sync.Once
-	baseURL         string // For testing
-	pipelineCache   map[string][]adoPipeline
-	pipelineCacheMu sync.RWMutex
+	sm                 security.PathValidator
+	client             tools.HTTPClient
+	authHeader         string
+	authErr            error
+	authOnce           sync.Once
+	baseURL            string // For testing
+	pipelineCache      map[string][]adoPipeline
+	pipelineCacheMu    sync.RWMutex
 	pipelineFetchGroup singleflight.Group
 }
 

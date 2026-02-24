@@ -2008,7 +2008,6 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 	}
 }
 
-
 func TestAdoListPipelineRuns_Features(t *testing.T) {
 	t.Setenv("AZURE_PAT_ALL", "test-pat")
 	sm := security.NewSecurityManager(nil)
