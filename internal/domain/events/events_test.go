@@ -5,7 +5,6 @@ package events
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +35,7 @@ func TestSimpleEventBus_Race(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numEvents; j++ {
-				_ = bus.Publish(struct{}{})
+				bus.Publish(struct{}{})
 			}
 		}()
 	}
@@ -57,7 +56,7 @@ func TestSimpleEventBus_DeterministicShutdown(t *testing.T) {
 
 	numEvents := 50
 	for i := 0; i < numEvents; i++ {
-		_ = bus.Publish(i)
+		bus.Publish(i)
 	}
 
 	err := bus.Shutdown(context.Background())
@@ -91,7 +90,7 @@ func TestSimpleEventBus_Flush(t *testing.T) {
 
 	numEvents := 50
 	for i := 0; i < numEvents; i++ {
-		_ = bus.Publish(i)
+		bus.Publish(i)
 	}
 
 	err := bus.Flush(context.Background())
@@ -114,7 +113,7 @@ func TestSimpleEventBus_Shutdown_ContextCancelled(t *testing.T) {
 		ready <- struct{}{}
 		<-block
 	})
-	_ = bus.Publish("init")
+	bus.Publish("init")
 	<-ready
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,12 +144,12 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 		ready <- struct{}{}
 		<-block
 	})
-	_ = bus.Publish("init")
+	bus.Publish("init")
 	<-ready
 
 	// Fill the buffer (capacity 100)
 	for i := 0; i < 100; i++ {
-		_ = bus.Publish(i)
+		bus.Publish(i)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -171,7 +170,7 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 		ready <- struct{}{}
 		<-block
 	})
-	_ = bus.Publish("init")
+	bus.Publish("init")
 	<-ready
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
@@ -192,18 +191,15 @@ func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
 		t.Error("subscriber should not be called")
 	})
 
-	_ = bus.Publish("event")
+	bus.Publish("event")
 }
 
 func TestSimpleEventBus_Publish_ClosedBus(t *testing.T) {
 	bus := NewSimpleEventBus()
 	_ = bus.Shutdown(context.Background())
 
-	// Should return an error and not panic or block indefinitely
-	err := bus.Publish("event")
-	if err == nil {
-		t.Error("expected error when publishing to closed bus, got nil")
-	}
+	// Should not return an error and not panic or block indefinitely
+	bus.Publish("event")
 }
 
 func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
@@ -222,22 +218,16 @@ func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
 		ready <- struct{}{}
 		<-block
 	})
-	_ = bus.Publish("init")
+	bus.Publish("init")
 	<-ready
 
 	// Fill the buffer (100)
 	for i := 0; i < 100; i++ {
-		err := bus.Publish(i)
-		if err != nil {
-			t.Errorf("unexpected error filling buffer: %v", err)
-		}
+		bus.Publish(i)
 	}
 
-	// This should be dropped and return ErrBufferFull
-	err := bus.Publish("dropped")
-	if !errors.Is(err, ErrBufferFull) {
-		t.Errorf("expected ErrBufferFull, got %v", err)
-	}
+	// This should be dropped silently
+	bus.Publish("dropped")
 
 	close(block)
 }

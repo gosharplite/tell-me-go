@@ -1093,11 +1093,10 @@ type mockTransformerEventBus struct {
 	publishFn func(event events.Event)
 }
 
-func (m *mockTransformerEventBus) Publish(event events.Event) error {
+func (m *mockTransformerEventBus) Publish(event events.Event) {
 	if m.publishFn != nil {
 		m.publishFn(event)
 	}
-	return nil
 }
 
 func (m *mockTransformerEventBus) Subscribe(handler func(events.Event)) {}

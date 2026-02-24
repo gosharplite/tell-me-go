@@ -153,7 +153,7 @@ func (a *agent) applyConfig(ctx context.Context) error {
 	tracker := a.tracker
 	a.mu.Unlock()
 
-	_ = a.events.Publish(events.ConfigUpdated{Limits: cfg.Limits})
+	a.events.Publish(events.ConfigUpdated{Limits: cfg.Limits})
 
 	if a.engine != nil {
 		a.engine.Reconfigure(cfg, tracker)
@@ -169,7 +169,7 @@ func (a *agent) Subscribe(sub func(events.Event)) {
 }
 
 func (a *agent) emit(e events.Event) {
-	_ = a.events.Publish(e)
+	a.events.Publish(e)
 }
 
 // SetLimits sets the operational limits for the agent.

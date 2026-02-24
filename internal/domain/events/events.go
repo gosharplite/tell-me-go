@@ -5,7 +5,6 @@ package events
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -18,12 +17,9 @@ import (
 // Event represents a generic signal from the Orchestrator.
 type Event interface{}
 
-// ErrBufferFull is returned when the event bus cannot accept more events.
-var ErrBufferFull = errors.New("event bus buffer full")
-
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
-	Publish(e Event) error
+	Publish(e Event)
 	Subscribe(sub func(Event))
 	Shutdown(ctx context.Context) error
 	Flush(ctx context.Context) error
@@ -47,24 +43,21 @@ func NewSimpleEventBus() *SimpleEventBus {
 	return &SimpleEventBus{}
 }
 
-func (b *SimpleEventBus) Publish(e Event) error {
+func (b *SimpleEventBus) Publish(e Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	if b.closed {
-		return fmt.Errorf("event bus is closed")
+		return
 	}
 
-	var err error
 	for _, ch := range b.subscribers {
 		select {
 		case ch <- e:
 		default:
 			// Buffer full, drop event to avoid blocking the caller
-			err = ErrBufferFull
 		}
 	}
-	return err
 }
 
 func (b *SimpleEventBus) Subscribe(sub func(Event)) {

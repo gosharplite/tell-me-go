@@ -307,7 +307,7 @@ func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBu
 	actualBudget := budget
 	if maxBudget > 0 && actualBudget > maxBudget {
 		if c.eventBus != nil {
-			_ = c.eventBus.Publish(events.SystemMessageEvent{
+			c.eventBus.Publish(events.SystemMessageEvent{
 				Message: fmt.Sprintf("Warning: THINKING_BUDGET (%d) for model '%s' exceeds its maximum (%d). Capping to %d.", actualBudget, model, maxBudget, maxBudget),
 				Level:   "warning",
 			})

@@ -20,7 +20,7 @@ type TestEventBus struct {
 }
 
 // Publish records the event and notifies subscribers.
-func (b *TestEventBus) Publish(e events.Event) error {
+func (b *TestEventBus) Publish(e events.Event) {
 	b.mu.Lock()
 	b.events = append(b.events, e)
 	subs := make([]func(events.Event), len(b.subs))
@@ -30,7 +30,6 @@ func (b *TestEventBus) Publish(e events.Event) error {
 	for _, sub := range subs {
 		sub(e)
 	}
-	return nil
 }
 
 // Subscribe adds a new listener.
@@ -107,13 +106,12 @@ func NewCountingEventBus() *countingEventBus {
 }
 
 // Publish notifies subscribers and increments the internal counter.
-func (b *countingEventBus) Publish(e events.Event) error {
-	err := b.SimpleEventBus.Publish(e)
+func (b *countingEventBus) Publish(e events.Event) {
+	b.SimpleEventBus.Publish(e)
 	b.mu.Lock()
 	b.count++
 	b.cond.Broadcast()
 	b.mu.Unlock()
-	return err
 }
 
 // GetCount returns the current number of published events.

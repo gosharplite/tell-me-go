@@ -241,7 +241,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 
 	actualTurns := len(groupTurns(subset))
 	if cm.Events != nil {
-		_ = cm.Events.Publish(events.SystemMessageEvent{
+		cm.Events.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("summarize_history: processing %d turns (~%d tokens)", actualTurns, tokens),
 		})
 	}

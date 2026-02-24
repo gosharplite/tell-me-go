@@ -58,7 +58,7 @@ func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequ
 		req.Metadata.PrunedTurns += prunedCount
 
 		if t.Events != nil {
-			_ = t.Events.Publish(events.SystemMessageEvent{
+			t.Events.Publish(events.SystemMessageEvent{
 				Message: fmt.Sprintf("History pruned: %d turns removed, %d turns remaining.", prunedCount, len(newHistory)/2),
 				Level:   "info",
 			})

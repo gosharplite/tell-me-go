@@ -159,7 +159,7 @@ func TestPathPolicy_SymlinkBypass_DirectAccess(t *testing.T) {
 	// Test symlink to a forbidden system file
 	passwdLink := filepath.Join(workspace, "passwd_link")
 	target := "/etc/passwd"
-	
+
 	// Create symlink. If it fails, we might be on a platform that requires admin for symlinks
 	// or doesn't support this path.
 	if err := os.Symlink(target, passwdLink); err != nil {

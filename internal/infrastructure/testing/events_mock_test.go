@@ -14,8 +14,8 @@ func TestTestEventBus(t *testing.T) {
 	type MyEvent struct{ ID int }
 	type OtherEvent struct{}
 
-	_ = bus.Publish(MyEvent{ID: 1})
-	_ = bus.Publish(OtherEvent{})
+	bus.Publish(MyEvent{ID: 1})
+	bus.Publish(OtherEvent{})
 
 	if len(bus.getEvents()) != 2 {
 		t.Errorf("Expected 2 events, got %d", len(bus.getEvents()))

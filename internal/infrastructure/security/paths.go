@@ -331,7 +331,6 @@ func (p *pathPolicy) checkBoundary(target, boundary string) (bool, error) {
 
 	rel, err := filepath.Rel(realBoundary, target)
 	ok := err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
-	// fmt.Printf("DEBUG: checkBoundary target=%s boundary=%s realBoundary=%s rel=%s ok=%v\n", target, boundary, realBoundary, rel, ok)
 	return ok, nil
 }
 

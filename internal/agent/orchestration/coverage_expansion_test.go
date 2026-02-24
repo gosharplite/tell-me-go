@@ -94,9 +94,8 @@ type mockExpEventBus struct {
 	events []events.Event
 }
 
-func (m *mockExpEventBus) Publish(e events.Event) error {
+func (m *mockExpEventBus) Publish(e events.Event) {
 	m.events = append(m.events, e)
-	return nil
 }
 func (m *mockExpEventBus) Subscribe(sub func(events.Event))   {}
 func (m *mockExpEventBus) Shutdown(ctx context.Context) error { return nil }

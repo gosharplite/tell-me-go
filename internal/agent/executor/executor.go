@@ -152,7 +152,7 @@ func (c *resultCollector) Wait(ctx context.Context) ([]domaintools.ToolResult, e
 		case res := <-c.ch:
 			c.trs[res.index] = res.tr
 			if c.bus != nil {
-				_ = c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
+				c.bus.Publish(events.ToolResultEvent{Name: res.name, Result: res.tr})
 			}
 			completed++
 		}
@@ -196,7 +196,7 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 			bus := e.events
 			e.mu.RUnlock()
 			if bus != nil {
-				_ = bus.Publish(events.SystemMessageEvent{
+				bus.Publish(events.SystemMessageEvent{
 					Message: tr.Text,
 					Level:   "warn",
 				})
@@ -222,7 +222,7 @@ func (e *ToolExecutor) publishLimitError(maxToolTurns int) {
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		_ = bus.Publish(events.SystemMessageEvent{
+		bus.Publish(events.SystemMessageEvent{
 			Message: fmt.Sprintf("Maximum tool execution turns (%d) reached. Stopping to prevent infinite loop.", maxToolTurns),
 			Level:   "error",
 		})
@@ -234,7 +234,7 @@ func (e *ToolExecutor) publishCallEvent(calls []*llm.FunctionCall, turn int, max
 	bus := e.events
 	e.mu.RUnlock()
 	if bus != nil {
-		_ = bus.Publish(events.ToolCallEvent{
+		bus.Publish(events.ToolCallEvent{
 			Calls:    calls,
 			Turn:     turn,
 			MaxTurns: maxToolTurns,
@@ -462,7 +462,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 
 	if bus != nil {
 		msg := fmt.Sprintf("CRITICAL: Panic in tool executor while running %q: %v\n%s", toolName, r, string(stack))
-		_ = bus.Publish(events.SystemMessageEvent{
+		bus.Publish(events.SystemMessageEvent{
 			Message: msg,
 			Level:   "error",
 		})
