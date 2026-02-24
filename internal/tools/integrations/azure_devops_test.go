@@ -2007,3 +2007,73 @@ func TestAzureDevOps_HTTPIntegration(t *testing.T) {
 		})
 	}
 }
+
+
+func TestAdoListPipelineRuns_Features(t *testing.T) {
+	t.Setenv("AZURE_PAT_ALL", "test-pat")
+	sm := security.NewSecurityManager(nil)
+
+	t.Run("Pipeline Name Resolution", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/_apis/pipelines") {
+				_, _ = w.Write([]byte(`{"value": [{"id": 42, "name": "my-cool-pipeline"}]}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/_apis/build/builds") {
+				assert.Equal(t, "42", r.URL.Query().Get("definitions"))
+				_, _ = w.Write([]byte(`{"value": [{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "myrepo"}}]}`))
+				return
+			}
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_name": "cool"}
+		result, err := m.adoListPipelineRuns(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Recent runs for pipeline 42")
+	})
+
+	t.Run("Repository Filtering", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "100", r.URL.Query().Get("$top"))
+			_, _ = w.Write([]byte(`{"value": [
+				{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},
+				{"id": 102, "buildNumber": "run2", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-b"}}
+			]}`))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "repository": "repo-b"}
+		result, err := m.adoListPipelineRuns(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Run ID: 102")
+		assert.NotContains(t, result.Text, "Run ID: 101")
+	})
+
+	t.Run("Limit Truncation", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"value": [
+				{"id": 101, "buildNumber": "run1", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},
+				{"id": 102, "buildNumber": "run2", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}},
+				{"id": 103, "buildNumber": "run3", "status": "completed", "result": "succeeded", "queueTime": "2023-10-01", "repository": {"name": "repo-a"}}
+			]}`))
+		}))
+		defer server.Close()
+
+		m := newazureDevOpsManager(sm, nil)
+		m.baseURL = server.URL
+
+		args := map[string]interface{}{"organization": "o", "project": "p", "pipeline_id": 1, "top": 2}
+		result, err := m.adoListPipelineRuns(context.Background(), args)
+		assert.NoError(t, err)
+		assert.Contains(t, result.Text, "Run ID: 101")
+		assert.Contains(t, result.Text, "Run ID: 102")
+		assert.NotContains(t, result.Text, "Run ID: 103")
+	})
+}
