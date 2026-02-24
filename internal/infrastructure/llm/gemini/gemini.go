@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package api handles communication with the Gemini API using the Google GenAI SDK.
-package llm
+package gemini
 
 import (
 	"context"
@@ -37,8 +37,8 @@ type Client struct {
 	eventBus          events.EventBus
 }
 
-// NewGeminiClient returns a new Gemini API client.
-func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
+// NewClient returns a new Gemini API client.
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,
@@ -316,14 +316,18 @@ func (c *Client) applyThinkingBudget(config *genai.ThinkingConfig, budget, maxBu
 }
 
 func (c *Client) toSDKContent(ctx context.Context, history []*llm.Content, resolver llm.AssetResolver) []*genai.Content {
-	sdkHistory := make([]*genai.Content, len(history))
-	for i, h := range history {
-		sdkHistory[i] = toSDKContent(ctx, h, resolver)
+	var sdkHistory []*genai.Content
+	for _, h := range history {
+		sdkContent := toSDKContent(ctx, h, resolver)
+		if sdkContent == nil {
+			continue
+		}
 		// Defensive check: Ensure all content objects have at least one part for the SDK.
 		// NOTE: ContextManager should have already filtered out truly empty turns.
-		if len(sdkHistory[i].Parts) == 0 {
-			sdkHistory[i].Parts = []*genai.Part{{Text: "[empty]"}}
+		if len(sdkContent.Parts) == 0 {
+			sdkContent.Parts = []*genai.Part{{Text: "[empty]"}}
 		}
+		sdkHistory = append(sdkHistory, sdkContent)
 	}
 	return sdkHistory
 }
