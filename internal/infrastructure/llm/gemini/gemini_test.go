@@ -90,7 +90,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 				},
 			},
 			expectedError: "blocked by safety filters",
-			validateReq:  validateAuthOnly,
+			validateReq:   validateAuthOnly,
 		},
 		{
 			name: "FinishReasonSafety",
@@ -102,7 +102,7 @@ func TestSendChat_Scenarios(t *testing.T) {
 				},
 			},
 			expectedError: "Finish Reason: SAFETY",
-			validateReq:  validateAuthOnly,
+			validateReq:   validateAuthOnly,
 		},
 		{
 			name: "SystemInstruction",
@@ -379,7 +379,7 @@ func TestGenerateImages(t *testing.T) {
 			expectedError: "no images generated",
 		},
 		{
-			name: "ServerError",
+			name:          "ServerError",
 			mockError:     fmt.Errorf("internal server error"),
 			expectedError: "internal server error",
 		},
