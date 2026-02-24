@@ -469,7 +469,7 @@ func (e *ToolExecutor) handlePanic(r interface{}, toolName string) domaintools.T
 	}
 
 	return domaintools.ToolResult{
-		Text:  fmt.Sprintf("System Error (Panic) in %q: %v", toolName, r),
+		Text:  fmt.Sprintf("Tool %q encountered an internal fatal error (panic) and was terminated.", toolName),
 		Error: fmt.Errorf("%w: Panic detected: %v", llm.ErrTerminal, r),
 	}
 }
