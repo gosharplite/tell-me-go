@@ -436,6 +436,25 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 	}, m.adoListRepositoryItems)
 
 	r.Register(&tools.ToolDeclaration{
+		Name:        "ado_list_pipelines",
+		Description: "Lists pipeline names and their corresponding IDs in an Azure DevOps project.",
+		Parameters: &tools.Schema{
+			Type: "OBJECT",
+			Properties: map[string]*tools.Schema{
+				"organization": {
+					Type:        "STRING",
+					Description: "The Azure DevOps organization name.",
+				},
+				"project": {
+					Type:        "STRING",
+					Description: "The project name or ID.",
+				},
+			},
+			Required: []string{"organization", "project"},
+		},
+	}, m.adoListPipelines)
+
+	r.Register(&tools.ToolDeclaration{
 		Name:        "ado_list_pipeline_runs",
 		Description: "Lists recent runs (executions) for a specific Azure DevOps pipeline.",
 		Parameters: &tools.Schema{
@@ -453,12 +472,20 @@ func registerAzureDevOps(r tools.IToolRegistry, sm domain_security.ISecurityMana
 					Type:        "INTEGER",
 					Description: "The ID of the pipeline definition.",
 				},
+				"pipeline_name": {
+					Type:        "STRING",
+					Description: "The name of the pipeline (used if pipeline_id is omitted).",
+				},
+				"repository": {
+					Type:        "STRING",
+					Description: "Filter runs by repository ID (UUID) or exact internal reference name, as raw names are often omitted in run resource metadata.",
+				},
 				"top": {
 					Type:        "INTEGER",
 					Description: "Maximum number of runs to return (default 10).",
 				},
 			},
-			Required: []string{"organization", "project", "pipeline_id"},
+			Required: []string{"organization", "project"},
 		},
 	}, m.adoListPipelineRuns)
 
