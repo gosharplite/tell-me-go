@@ -60,12 +60,6 @@ The system provides native support for the following flagship models (as of Feb 
 - **Pricing:** Telemetry support for token-based billing, including specialized "Thinking Rates" for reasoning models.
 - **Status:** [x]
 
-### Phase 4: Release & Optimization (In Progress)
-- **Resilience:** Unified error classification (Transient vs. Terminal) implemented via `internal/infrastructure/llm/llmerr`.
-- **E2E Testing:** Validation of tool-calling and history management parity across Google, OpenAI, and Anthropic providers.
-- **Performance:** Benchmarking token throughput and latency for 2026 flagship models.
-- **Status:** [In Progress]
-
 ## 4. References
 - [Google Vertex AI REST Reference](https://docs.cloud.google.com/vertex-ai/docs/reference/rest)
 - [OpenAI Chat Completion Reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
