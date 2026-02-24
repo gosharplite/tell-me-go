@@ -30,7 +30,8 @@ func (m *errorMockHistoryManager) SetContents(ctx context.Context, contents []*l
 	return m.setContentsErr
 }
 
-func TestContextManager_FinalizeSummarization_Errors(t *testing.T) {
+// runFinalizeSummarizationErrorTest is a helper to reduce cyclomatic complexity by unifying repetitive test logic.
+func runFinalizeSummarizationErrorTest(t *testing.T, archiveErr, setContentsErr error, expectedErr error, checkSetContents bool) {
 	ctx := context.Background()
 	content := []*llm.Content{
 		{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
@@ -39,89 +40,47 @@ func TestContextManager_FinalizeSummarization_Errors(t *testing.T) {
 		{Role: "model", Parts: []*llm.Part{{Text: "I'm fine"}}},
 	}
 
-	t.Run("Archive_TerminalError", func(t *testing.T) {
-		h := &errorMockHistoryManager{}
-		h.contents = cloneContentSlice(content)
-		h.archiveErr = errors.New("terminal disk error")
+	h := &errorMockHistoryManager{}
+	h.contents = cloneContentSlice(content)
+	h.archiveErr = archiveErr
+	h.setContentsErr = setContentsErr
 
-		cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), h, nil, nil)
-		cm.Summarizer = &mockSummarizer{}
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), h, nil, nil)
+	cm.Summarizer = &mockSummarizer{}
 
-		_, _, err := cm.SummarizeRange(ctx, 1, "")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !errors.Is(err, llm.ErrTerminal) {
-			t.Errorf("expected llm.ErrTerminal, got %v", err)
-		}
-		if !h.archiveCalled {
-			t.Error("expected Archive to be called")
-		}
-	})
-
-	t.Run("Archive_TransientError", func(t *testing.T) {
-		h := &errorMockHistoryManager{}
-		h.contents = cloneContentSlice(content)
-		h.archiveErr = fmt.Errorf("%w: transient disk error", llm.ErrTransient)
-
-		cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), h, nil, nil)
-		cm.Summarizer = &mockSummarizer{}
-
-		_, _, err := cm.SummarizeRange(ctx, 1, "")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !errors.Is(err, llm.ErrTransient) {
-			t.Errorf("expected llm.ErrTransient, got %v", err)
-		}
-		if !h.archiveCalled {
-			t.Error("expected Archive to be called")
-		}
-	})
-
-	t.Run("SetContents_TerminalError", func(t *testing.T) {
-		h := &errorMockHistoryManager{}
-		h.contents = cloneContentSlice(content)
-		h.setContentsErr = errors.New("terminal disk error")
-
-		cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), h, nil, nil)
-		cm.Summarizer = &mockSummarizer{}
-
-		_, _, err := cm.SummarizeRange(ctx, 1, "")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !errors.Is(err, llm.ErrTerminal) {
-			t.Errorf("expected llm.ErrTerminal, got %v", err)
-		}
-		if !h.archiveCalled {
-			t.Error("expected Archive to be called")
-		}
+	_, _, err := cm.SummarizeRange(ctx, 1, "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("expected %v, got %v", expectedErr, err)
+	}
+	if !h.archiveCalled {
+		t.Error("expected Archive to be called")
+	}
+	if checkSetContents {
 		if !h.setContentsCalled {
 			t.Error("expected SetContents to be called")
 		}
-	})
+	} else {
+		if h.setContentsCalled {
+			t.Error("expected SetContents NOT to be called")
+		}
+	}
+}
 
-	t.Run("SetContents_TransientError", func(t *testing.T) {
-		h := &errorMockHistoryManager{}
-		h.contents = cloneContentSlice(content)
-		h.setContentsErr = fmt.Errorf("%w: transient disk error", llm.ErrTransient)
+func TestFinalizeSummarization_ArchiveTerminalError(t *testing.T) {
+	runFinalizeSummarizationErrorTest(t, errors.New("terminal disk error"), nil, llm.ErrTerminal, false)
+}
 
-		cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, nil), h, nil, nil)
-		cm.Summarizer = &mockSummarizer{}
+func TestFinalizeSummarization_ArchiveTransientError(t *testing.T) {
+	runFinalizeSummarizationErrorTest(t, fmt.Errorf("%w: transient disk error", llm.ErrTransient), nil, llm.ErrTransient, false)
+}
 
-		_, _, err := cm.SummarizeRange(ctx, 1, "")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if !errors.Is(err, llm.ErrTransient) {
-			t.Errorf("expected llm.ErrTransient, got %v", err)
-		}
-		if !h.archiveCalled {
-			t.Error("expected Archive to be called")
-		}
-		if !h.setContentsCalled {
-			t.Error("expected SetContents to be called")
-		}
-	})
+func TestFinalizeSummarization_SetContentsTerminalError(t *testing.T) {
+	runFinalizeSummarizationErrorTest(t, nil, errors.New("terminal disk error"), llm.ErrTerminal, true)
+}
+
+func TestFinalizeSummarization_SetContentsTransientError(t *testing.T) {
+	runFinalizeSummarizationErrorTest(t, nil, fmt.Errorf("%w: transient disk error", llm.ErrTransient), llm.ErrTransient, true)
 }
