@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package api handles communication with the Gemini API using the Google GenAI SDK.
-package llm
+package gemini
 
 import (
 	"context"
@@ -37,8 +37,8 @@ type Client struct {
 	eventBus          events.EventBus
 }
 
-// NewGeminiClient returns a new Gemini API client.
-func NewGeminiClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
+// NewClient returns a new Gemini API client.
+func NewClient(apiURL, model string, authenticator auth.Authenticator, thinkingBudget int, thinkingLevel string, maxThinkingBudget int, systemInstruction string, useSearch bool, bus events.EventBus, timeout time.Duration) (*Client, error) {
 	c := &Client{
 		authenticator:     authenticator,
 		apiURL:            apiURL,

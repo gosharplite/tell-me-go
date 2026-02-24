@@ -1,7 +1,7 @@
 // Copyright (c) 2026 gosharplite@gmail.com
 // SPDX-License-Identifier: MIT
 
-package llm
+package gemini
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func TestSendChat(t *testing.T) {
 	// 2. Setup client with mock server URL and mock authenticator
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, err := NewGeminiClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, err := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestSendChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -108,7 +108,7 @@ func TestSendChat_FinishReason(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err == nil {
@@ -151,7 +151,7 @@ func TestSystemInstruction(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, expectedInstruction, false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestThinkingBudget(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 1000, "LOW", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, _, err := client.SendChat(context.Background(), []*llm.Content{}, nil, nil)
 	if err != nil {
@@ -219,7 +219,7 @@ func TestStreamChat_Success(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	var receivedText string
 	callback := func(c *llm.Content) {
@@ -263,7 +263,7 @@ func TestStreamChat_SafetyBlock(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
 	if err == nil {
@@ -300,7 +300,7 @@ func TestStreamChat_FinishReason_Safety(t *testing.T) {
 	defer server.Close()
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
-	client, _ := NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
 	if err == nil {
@@ -324,7 +324,7 @@ func TestRefreshAuth(t *testing.T) {
 
 	apiURL := server.URL + "/aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models"
 	authenticator := &auth.VertexAuth{Token: "test-token"}
-	client, _ := NewGeminiClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, _ := NewClient(apiURL, "test-model", authenticator, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 
 	err := client.RefreshAuth()
 	if err != nil {

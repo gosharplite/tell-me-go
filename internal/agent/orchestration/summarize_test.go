@@ -23,6 +23,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
@@ -144,17 +145,17 @@ func setupMockGeminiServer() *httptest.Server {
 	}))
 }
 
-func setupTestClient(t *testing.T, url string) *llm.Client {
+func setupTestClient(t *testing.T, url string) *gemini.Client {
 	t.Helper()
 	apiURL := url + "/v1/projects/p/locations/l/publishers/google/models/aiplatform.googleapis.com"
-	client, err := llm.NewGeminiClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
+	client, err := gemini.NewClient(apiURL, "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, events.NewSimpleEventBus(), 5*time.Second)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	return client
 }
 
-func setupInternalTools(client *llm.Client, h services.HistoryManager) *InternalTools {
+func setupInternalTools(client *gemini.Client, h services.HistoryManager) *InternalTools {
 	bus := &events.SimpleEventBus{}
 	reg := registry.New()
 	gw := llm.NewResilientClient(client, true)

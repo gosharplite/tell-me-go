@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/anthropic"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/gemini"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/openai"
 )
 
@@ -38,10 +39,10 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
 	case "google", "gemini", "": // Default to Gemini for now
-		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout)
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout)
 	default:
 		// Fallback to Gemini if type is unknown for backward compatibility
-		baseClient, err = NewGeminiClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout)
+		baseClient, err = gemini.NewClient(p.URL, p.Model, authenticator, p.ThinkingBudget, p.ThinkingLevel, maxBudget, cfg.Person, cfg.UseSearch, bus, timeout)
 	}
 
 	if err != nil {
