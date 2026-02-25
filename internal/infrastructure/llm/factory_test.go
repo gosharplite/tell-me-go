@@ -79,11 +79,11 @@ func TestCreateAuthenticator_Strategies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			auth, err := createAuthenticator(&tt.provider)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			
+
 			if (auth == nil) != tt.wantAuthNil {
 				t.Errorf("createAuthenticator() auth = %v, wantAuthNil %v", auth, tt.wantAuthNil)
 			}

@@ -399,10 +399,10 @@ func TestOtherAuthenticators(t *testing.T) {
 
 func TestNoOpAuth(t *testing.T) {
 	a := &NoOpAuth{}
-	
+
 	// Should not panic
 	a.Invalidate()
-	
+
 	// Should return empty string and nil error
 	token, err := a.getToken(context.Background())
 	if err != nil {
@@ -411,7 +411,7 @@ func TestNoOpAuth(t *testing.T) {
 	if token != "" {
 		t.Errorf("getToken() expected empty string, got %s", token)
 	}
-	
+
 	// Should return nil error
 	req := &Request{Headers: make(map[string]string)}
 	err = a.Apply(context.Background(), req)
@@ -457,7 +457,7 @@ func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
 			return nil, fmt.Errorf("gcloud failure")
 		},
 	}
-	
+
 	// Ensure cache is not present
 	cachePath := auth.getCachePath()
 	_ = os.Remove(cachePath)

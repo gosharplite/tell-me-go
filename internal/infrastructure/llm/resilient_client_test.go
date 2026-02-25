@@ -192,8 +192,8 @@ func TestResilientClient_WrapError(t *testing.T) {
 }
 
 type mockLLMClient struct {
-	sendChatFn    func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	streamChatFn  func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
+	sendChatFn       func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	streamChatFn     func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
 	refreshAuthFn    func() error
 	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
 	authRefreshed    int

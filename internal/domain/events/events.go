@@ -126,29 +126,48 @@ func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
 type eventRingBuffer struct {
 	queue []Event
 	max   int
+	head  int
+	tail  int
+	count int
 }
 
 func (r *eventRingBuffer) push(e Event) {
-	if len(r.queue) >= r.max {
-		r.queue[0] = nil // Avoid memory leak
-		r.queue = r.queue[1:]
+	if r.queue == nil {
+		r.queue = make([]Event, r.max)
 	}
-	r.queue = append(r.queue, e)
+
+	if r.count == r.max {
+		// Buffer full: overwrite the oldest element
+		r.queue[r.tail] = e
+		r.tail = (r.tail + 1) % r.max
+		r.head = (r.head + 1) % r.max // Move head forward to evict
+	} else {
+		r.queue[r.tail] = e
+		r.tail = (r.tail + 1) % r.max
+		r.count++
+	}
 }
 
 func (r *eventRingBuffer) pop() Event {
-	e := r.queue[0]
-	r.queue[0] = nil // Avoid memory leak
-	r.queue = r.queue[1:]
+	if r.count == 0 {
+		return nil
+	}
+	e := r.queue[r.head]
+	r.queue[r.head] = nil // Avoid memory leak
+	r.head = (r.head + 1) % r.max
+	r.count--
 	return e
 }
 
 func (r *eventRingBuffer) front() Event {
-	return r.queue[0]
+	if r.count == 0 {
+		return nil
+	}
+	return r.queue[r.head]
 }
 
 func (r *eventRingBuffer) len() int {
-	return len(r.queue)
+	return r.count
 }
 
 // Shutdown gracefully stops the event bus, flushing pending events.
