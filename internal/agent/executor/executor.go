@@ -38,6 +38,7 @@ type ToolExecutor struct {
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
+	zombieTimeout      time.Duration
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
 	failures           *failureTracker
@@ -51,6 +52,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
+		zombieTimeout:      5 * time.Minute,
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
@@ -773,13 +775,23 @@ func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.Fun
 }
 
 func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {
+	e.mu.RLock()
+	zombieTimeout := e.zombieTimeout
+	e.mu.RUnlock()
+
+	timer := time.NewTimer(zombieTimeout)
+	defer timer.Stop()
+
 	select {
 	case <-outCh:
 		// Tool eventually finished, log the extreme latency
 		telemetry.RecordLateCompletion(name, time.Since(start))
-	case <-time.After(5 * time.Minute):
+	case <-timer.C:
 		// Tool is permanently deadlocked
 		telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
+	case <-ctx.Done():
+		// Application/Session shutting down; safe to abandon due to buffered outCh
+		return
 	}
 }
 

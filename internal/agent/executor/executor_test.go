@@ -59,7 +59,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -105,7 +105,7 @@ func TestToolExecutor_ContextCancellation(t *testing.T) {
 
 func TestWorkerPool_LeakPrevention(t *testing.T) {
 	pool := concurrency.NewWorkerPool(1)
-	defer pool.Shutdown()
+	t.Cleanup(pool.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -150,7 +150,7 @@ func TestWorkerPool_LeakPrevention(t *testing.T) {
 func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	reg := &mockToolRegistry{}
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -196,7 +196,7 @@ func TestRequestBatchConsent_Denied(t *testing.T) {
 	}
 	sm := &mockConsentSecurityManager{confirmResult: false}
 	exec := NewToolExecutor(reg, sm, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
 	declined := exec.requestBatchConsent(context.Background(), calls)
