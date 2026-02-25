@@ -21,6 +21,7 @@ import (
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockLLMClient struct {
@@ -128,34 +129,37 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		setup         func() string // Returns homeDir for this test case
+		setup         func(t *testing.T) string // Returns homeDir for this test case
 		clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)
 		wantErr       string
 	}{
 		{
 			name: "FailsOnInitializePathsError",
-			setup: func() string {
+			setup: func(t *testing.T) string {
 				invalidHome := filepath.Join(tempDir, "a-file")
-				os.WriteFile(invalidHome, []byte("test"), 0644)
+				err := os.WriteFile(invalidHome, []byte("test"), 0644)
+				require.NoError(t, err)
 				return invalidHome
 			},
 			wantErr: "failed to create session directory",
 		},
 		{
 			name: "FailsOnHistoryLoadError",
-			setup: func() string {
+			setup: func(t *testing.T) string {
 				home := filepath.Join(tempDir, "history-err-home")
 				modeDir := filepath.Join(home, "output", cfg.Mode)
-				os.MkdirAll(modeDir, 0755)
+				err := os.MkdirAll(modeDir, 0755)
+				require.NoError(t, err)
 				historyPath := filepath.Join(modeDir, "history.jsonl")
-				os.MkdirAll(historyPath, 0755) // Directory instead of file
+				err = os.MkdirAll(historyPath, 0755) // Directory instead of file
+				require.NoError(t, err)
 				return home
 			},
 			wantErr: "error loading history",
 		},
 		{
 			name: "FailsOnBadClientFactory",
-			setup: func() string {
+			setup: func(t *testing.T) string {
 				return filepath.Join(tempDir, "factory-err-home")
 			},
 			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
@@ -165,7 +169,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 		},
 		{
 			name: "FailsOnClientNotLLMGateway",
-			setup: func() string {
+			setup: func(t *testing.T) string {
 				return filepath.Join(tempDir, "gateway-err-home")
 			},
 			clientFactory: func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error) {
@@ -177,7 +181,7 @@ func TestBootstrapper_Initialize_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			homeDir := tt.setup()
+			homeDir := tt.setup(t)
 			b := NewBootstrapper(homeDir, internal_security.NewSecurityManager(nil), "1.0.0", io.Discard, io.Discard, tt.clientFactory)
 			_, _, _, err := b.BuildSessionDependencies(ctx, cfg, "config.yaml", false, nil)
 			assert.Error(t, err)
