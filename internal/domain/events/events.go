@@ -30,13 +30,14 @@ const DefaultMaxQueueSize = 1000
 
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
-	mu          sync.RWMutex
-	subscribers []chan Event
-	wg          sync.WaitGroup
-	once        sync.Once
-	closed      bool
-	capacity    int
-	closing     chan struct{}
+	mu              sync.RWMutex
+	subscribers     []chan Event
+	wg              sync.WaitGroup
+	once            sync.Once
+	closed          bool
+	capacity        int
+	closing         chan struct{}
+	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
 }
 
 type flushEvent struct {
@@ -197,27 +198,37 @@ func (r *eventRingBuffer) len() int {
 // Shutdown gracefully stops the event bus, flushing pending events.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	b.once.Do(func() {
+		// 1. Mark as closed and signal abort to unblock any pending Flush()
 		b.mu.Lock()
 		b.closed = true
-		close(b.closing)
+		if b.closing != nil {
+			close(b.closing)
+		}
+		b.mu.Unlock()
+
+		// 2. Wait for lockless writers (Flush) to abort or finish
+		b.activeProducers.Wait()
+
+		// 3. Safe to close channels; no writers are active
+		b.mu.Lock()
 		for _, ch := range b.subscribers {
 			close(ch)
 		}
 		b.mu.Unlock()
+
+		// 4. Wait for background processing to stop
+		done := make(chan struct{})
+		go func() {
+			b.wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
 	})
-
-	done := make(chan struct{})
-	go func() {
-		b.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return ctx.Err()
 }
 
 // Flush waits for all currently queued events to be dispatched.
@@ -227,6 +238,10 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 		b.mu.RUnlock()
 		return fmt.Errorf("event bus is closed")
 	}
+
+	// Register active producer before releasing lock
+	b.activeProducers.Add(1)
+	defer b.activeProducers.Done()
 
 	if len(b.subscribers) == 0 {
 		b.mu.RUnlock()

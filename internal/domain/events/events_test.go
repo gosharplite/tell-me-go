@@ -370,3 +370,39 @@ func TestEventRingBuffer_EmptyState(t *testing.T) {
 		t.Errorf("Expected nil when fronting empty buffer, got %v", val)
 	}
 }
+
+func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
+	bus := NewSimpleEventBus()
+	
+	blockSub := make(chan struct{})
+	bus.Subscribe(func(e Event) {
+		<-blockSub 
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Goroutine 1: Flush (will block on the subscriber channel)
+	go func() {
+		defer wg.Done()
+		_ = bus.Flush(context.Background())
+	}()
+
+	// Ensure Flush has actually started and blocked before Shutdown is called
+	time.Sleep(50 * time.Millisecond)
+
+	// Goroutine 2: Shutdown concurrently
+	go func() {
+		defer wg.Done()
+		_ = bus.Shutdown(context.Background())
+	}()
+
+	// Ensure Shutdown has invoked activeProducers.Wait()
+	time.Sleep(50 * time.Millisecond)
+
+	// Unblock the subscriber
+	close(blockSub)
+	
+	wg.Wait()
+	// Test passes if no panic occurs
+}
