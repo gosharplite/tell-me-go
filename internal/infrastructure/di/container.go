@@ -37,8 +37,8 @@ type Container interface {
 	FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *config.Config)
 }
 
-// Bootstrapper handles the instantiation and wiring of system components.
-type Bootstrapper struct {
+// bootstrapper handles the instantiation and wiring of system components.
+type bootstrapper struct {
 	HomeDir       string
 	SM            security.ISecurityManager
 	Version       string
@@ -47,12 +47,12 @@ type Bootstrapper struct {
 	ClientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)
 }
 
-// NewBootstrapper creates a new Bootstrapper instance.
-func NewBootstrapper(homeDir string, sm security.ISecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)) *Bootstrapper {
+// NewBootstrapper creates a new Container instance.
+func NewBootstrapper(homeDir string, sm security.ISecurityManager, version string, stdout, stderr io.Writer, clientFactory func(cfg *config.Config, pricingData pricing.PricingData, bus events.EventBus) (llm.LLMClient, error)) Container {
 	if clientFactory == nil {
 		clientFactory = infra_llm.NewClient
 	}
-	return &Bootstrapper{
+	return &bootstrapper{
 		HomeDir:       homeDir,
 		SM:            sm,
 		Version:       version,
@@ -63,16 +63,16 @@ func NewBootstrapper(homeDir string, sm security.ISecurityManager, version strin
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
+func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
 	paths, err := infra_persistence.InitializePaths(b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	pricingOverrides := b.GetPricingOverrides(cfg)
-	b.SetupSecurity(paths, configPath)
+	pricingOverrides := b.getPricingOverrides(cfg)
+	b.setupSecurity(paths, configPath)
 	if newSession {
-		b.HandleNewSession(ctx, paths, cfg, pricingOverrides)
+		b.handleNewSession(ctx, paths, cfg, pricingOverrides)
 	}
 
 	hManager := history.NewManager(infra_persistence.NewOSFileSystem(), paths.HistoryPath, paths.HistoryArchivePath)
@@ -150,7 +150,7 @@ func (b *Bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
-func (b *Bootstrapper) GetAgentFactory() services.ChatterFactory {
+func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
 	return func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, reg domain_tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]pricing.ModelPricing, tracker pricing.ICostTracker) services.Chatter {
 		telemetry.RegisterTraceSubscriber(bus, logPath)
 
@@ -166,7 +166,7 @@ func (b *Bootstrapper) GetAgentFactory() services.ChatterFactory {
 }
 
 // FinalizeSession saves history and records session cost.
-func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *config.Config) {
+func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *config.Config) {
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
 		fmt.Fprintf(b.Stderr, "Warning: Error saving history: %v\n", saveErr)
@@ -178,8 +178,8 @@ func (b *Bootstrapper) FinalizeSession(ctx stdctx.Context, hManager services.His
 	}
 }
 
-// GetPricingOverrides extracts pricing overrides from the configuration.
-func (b *Bootstrapper) GetPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
+// getPricingOverrides extracts pricing overrides from the configuration.
+func (b *bootstrapper) getPricingOverrides(cfg *config.Config) map[string]pricing.ModelPricing {
 	pricingOverrides := make(map[string]pricing.ModelPricing)
 	for k, v := range cfg.Models {
 		if v.Pricing.Comp > 0 {
@@ -189,8 +189,8 @@ func (b *Bootstrapper) GetPricingOverrides(cfg *config.Config) map[string]pricin
 	return pricingOverrides
 }
 
-// SetupSecurity configures the security manager with necessary paths and bypass states.
-func (b *Bootstrapper) SetupSecurity(paths *persistence.Paths, configPath string) {
+// setupSecurity configures the security manager with necessary paths and bypass states.
+func (b *bootstrapper) setupSecurity(paths *persistence.Paths, configPath string) {
 	if sm, ok := b.SM.(*internal_security.SecurityManager); ok {
 		sm.SetSafePathsFile(paths.SafePathsPath)
 		sm.SetReadOnlyPathsFile(paths.ReadPathsPath)
@@ -208,8 +208,8 @@ func (b *Bootstrapper) SetupSecurity(paths *persistence.Paths, configPath string
 	}
 }
 
-// HandleNewSession manages session rotation and cost recording for new sessions.
-func (b *Bootstrapper) HandleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
+// handleNewSession manages session rotation and cost recording for new sessions.
+func (b *bootstrapper) handleNewSession(ctx stdctx.Context, paths *persistence.Paths, cfg *config.Config, pricingOverrides map[string]pricing.ModelPricing) {
 	timestamp := time.Now().Format("20060102_150405")
 	uniqueID := fmt.Sprintf("backup/%s/%s", timestamp, filepath.Base(paths.LogPath))
 	if err := telemetry.RecordSessionCost(ctx, b.SM, nil, paths.LogPath, cfg.Model, cfg.Mode, uniqueID, pricingOverrides); err != nil {

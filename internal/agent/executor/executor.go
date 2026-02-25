@@ -48,7 +48,7 @@ type ToolExecutor struct {
 func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
-		authorizer:         NewSecurityAuthorizer(sm, registry),
+		authorizer:         newSecurityAuthorizer(sm, registry),
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,

@@ -27,8 +27,8 @@ type securityAuthorizer struct {
 	registry domaintools.IToolRegistry
 }
 
-// NewSecurityAuthorizer creates a new ToolAuthorizer.
-func NewSecurityAuthorizer(sm domain_security.ISecurityManager, registry domaintools.IToolRegistry) ToolAuthorizer {
+// newSecurityAuthorizer creates a new ToolAuthorizer.
+func newSecurityAuthorizer(sm domain_security.ISecurityManager, registry domaintools.IToolRegistry) ToolAuthorizer {
 	return &securityAuthorizer{
 		sm:       sm,
 		registry: registry,

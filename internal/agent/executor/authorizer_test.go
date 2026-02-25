@@ -19,7 +19,7 @@ func TestRequestBatchConsent_Denied(t *testing.T) {
 		},
 	}
 	sm := &mockConsentSecurityManager{confirmResult: false}
-	auth := NewSecurityAuthorizer(sm, reg)
+	auth := newSecurityAuthorizer(sm, reg)
 
 	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
 	declined := auth.RequestBatchConsent(context.Background(), calls)
@@ -30,7 +30,7 @@ func TestRequestBatchConsent_Denied(t *testing.T) {
 func TestIdentifyConsentItems_Panic(t *testing.T) {
 	// A registry that panics on GetDeclarations
 	reg := &panicRegistry{panicOnGet: true}
-	auth := NewSecurityAuthorizer(nil, reg)
+	auth := newSecurityAuthorizer(nil, reg)
 
 	calls := []*llm.FunctionCall{{Name: "any"}}
 	indices, declined := auth.IdentifyConsentItems(calls)
@@ -44,7 +44,7 @@ func TestAuthorizationPanic(t *testing.T) {
 	// For now, let's just test basic authorization denial.
 	reg := &mockToolRegistry{}
 	sm := &mockSecurityManager{allowedCommands: map[string]bool{"allowed": true}}
-	auth := NewSecurityAuthorizer(sm, reg)
+	auth := newSecurityAuthorizer(sm, reg)
 
 	err := auth.AuthorizeTool(&tools.ToolDeclaration{Name: "forbidden"}, &llm.FunctionCall{Name: "forbidden"})
 	assert.Error(t, err)
