@@ -137,17 +137,16 @@ func TestAtlassianProvider_Do_RetryLogic(t *testing.T) {
 		mockClient := new(mockRetryClient)
 		req, _ := http.NewRequest(http.MethodGet, "https://test.com", nil)
 
-		mockClient.On("Do", mock.Anything).Return(&http.Response{
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		mockClient.On("Do", mock.Anything).Run(func(args mock.Arguments) {
+			cancel()
+		}).Return(&http.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Header:     make(http.Header),
 			Body:       io.NopCloser(strings.NewReader("throttled")),
 		}, nil).Once()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			time.Sleep(5 * time.Millisecond)
-			cancel()
-		}()
 
 		_, err := p.Do(ctx, mockClient, req)
 		assert.Error(t, err)

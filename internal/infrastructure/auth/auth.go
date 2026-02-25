@@ -46,8 +46,10 @@ func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
 	return exec.Command("gcloud", "auth", "print-access-token").Output()
 }
 
+var getUID = os.Getuid
+
 func (a *VertexAuth) getCachePath() string {
-	uid := os.Getuid()
+	uid := getUID()
 	uidStr := fmt.Sprintf("%d", uid)
 	if uid == -1 {
 		// Windows or error, fallback to username
@@ -238,5 +240,14 @@ func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
 	if token != "" {
 		req.Headers["Authorization"] = "Bearer " + token
 	}
+	return nil
+}
+
+// NoOpAuth implements the Authenticator interface for providers that do not require authentication.
+type NoOpAuth struct{}
+
+func (a *NoOpAuth) getToken(ctx context.Context) (string, error) { return "", nil }
+func (a *NoOpAuth) Invalidate()                                  {}
+func (a *NoOpAuth) Apply(ctx context.Context, req *Request) error {
 	return nil
 }

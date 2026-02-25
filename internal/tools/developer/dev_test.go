@@ -413,3 +413,39 @@ func TestRunTests_Failure(t *testing.T) {
 		t.Error("expected error, got nil")
 	}
 }
+
+func TestNewDevManager(t *testing.T) {
+	interactor := &security.MockInteractor{}
+	sm := security.NewSecurityManager(interactor)
+	validator := security.NewCommandValidator(sm, interactor)
+	m := newDevManager(sm, validator)
+	assert.NotNil(t, m)
+	assert.NotNil(t, m.executor)
+}
+
+func TestAuthorizeAction_Error(t *testing.T) {
+	m, _, sm := setupDevManager(t)
+	interactor := sm.GetInteractor().(*security.MockInteractor)
+	interactor.Err = errors.New("auth failure")
+	sm.SetBypassActive(false)
+
+	// Use a command that is NOT safe to trigger interactor call in Authorize
+	approved, err := m.authorizeAction(context.Background(), "test", "unauthorized_tool", "detail")
+	assert.Error(t, err)
+	assert.False(t, approved)
+	if err != nil {
+		assert.Contains(t, err.Error(), "auth failure")
+	}
+}
+
+func TestAuthorizeAction_Denied(t *testing.T) {
+	m, _, sm := setupDevManager(t)
+	interactor := sm.GetInteractor().(*security.MockInteractor)
+	interactor.Answer = "n"
+	sm.SetBypassActive(false)
+
+	// Use a command that is NOT safe to trigger interactor call in Authorize
+	approved, err := m.authorizeAction(context.Background(), "test", "unauthorized_tool", "detail")
+	assert.NoError(t, err)
+	assert.False(t, approved)
+}

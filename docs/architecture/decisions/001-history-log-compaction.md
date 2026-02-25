@@ -1,10 +1,10 @@
 # ADR 001: History Log Compaction and Bounded Contexts
 
 ## Status
-Proposed
+Implemented (v3.3.0)
 
 ## Context
-The system currently uses an append-only event sourcing model for the conversation history, where all context turns (user inputs, LLM responses, and tool executions) are appended to a persistent `history.jsonl` file via the Context Manager. Upon a cache miss, the system loads and parses an unbounded `O(N)` history slice into memory.
+Historically, the system used an append-only event sourcing model for the conversation history, where all context turns (user inputs, LLM responses, and tool executions) were appended to a persistent `history.jsonl` file via the Context Manager. Upon a cache miss, the system loaded and parsed an unbounded `O(N)` history slice into memory.
 
 This approach suffers from a critical unbounded memory and disk edge case:
 1. **In-Memory Bloat**: Loading an unbound history file linearly increases memory consumption, leading to an eventual `O(N²)` operational footprint on long-running sessions, causing Out-Of-Memory (OOM) crashes.
@@ -55,3 +55,6 @@ We will implement a hybrid **Summary-Based Sliding Window** for in-memory contex
 **Negative:**
 * **Complexity**: Introduces asynchronous summarization tasks and atomic disk operations to ensure consistency during snapshotting.
 * **Information Loss**: LLM may lose precise verbatim quotes from older turns, relying solely on the fidelity of the generated summary.
+
+## Implementation Details
+This architecture was fully implemented in release `v3.3.0` (Commit `2b15d35`). The `store` interface was rewritten to use `jsonlStore` which appends lightweight `historyPatch` JSON objects. Older turns are summarized and moved to `history.archive.jsonl` using the `ContextManager.SummarizeRange()` function.

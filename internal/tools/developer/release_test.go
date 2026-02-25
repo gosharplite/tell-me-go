@@ -5,6 +5,7 @@ package developer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockCommandExecutor struct {
@@ -166,5 +169,69 @@ func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, 
 	}
 	if !strings.Contains(res.Text, "NOT READY") {
 		t.Errorf("expected NOT READY in report, got:\n%s", res.Text)
+	}
+}
+
+func TestLinterChecker_Fallbacks(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.RegisterSafePath(".")
+
+	tests := []struct {
+		name       string
+		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)
+		wantSubstr string
+	}{
+		{
+			name: "golangci-lint missing, staticcheck found issues",
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "golangci-lint" {
+					return nil, errors.New("executable file not found")
+				}
+				if name == "staticcheck" {
+					return []byte("staticcheck error"), fmt.Errorf("exit status 1")
+				}
+				return []byte("success"), nil
+			},
+			wantSubstr: "staticcheck found issues",
+		},
+		{
+			name: "both linters missing",
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				return nil, errors.New("executable file not found")
+			},
+			wantSubstr: "No linter found",
+		},
+		{
+			name: "golangci-lint execution error",
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "golangci-lint" {
+					return nil, errors.New("unexpected error")
+				}
+				return []byte("success"), nil
+			},
+			wantSubstr: "golangci-lint failed",
+		},
+		{
+			name: "golangci-lint success with output",
+			runFunc: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "golangci-lint" {
+					return []byte("some issues found but exit 0?"), nil
+				}
+				return []byte("success"), nil
+			},
+			wantSubstr: "golangci-lint found issues",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := persistence.NewMockFileSystem()
+			fs.Files = map[string][]byte{"go.mod": []byte("module test")}
+			executor := &mockCommandExecutor{runFunc: tt.runFunc}
+			m := &releaseManager{sm: sm, fs: fs, executor: executor}
+			res, err := m.verifyReleaseReadiness(context.Background(), nil)
+			require.NoError(t, err)
+			assert.Contains(t, res.Text, tt.wantSubstr)
+		})
 	}
 }

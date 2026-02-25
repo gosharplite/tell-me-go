@@ -192,10 +192,11 @@ func TestResilientClient_WrapError(t *testing.T) {
 }
 
 type mockLLMClient struct {
-	sendChatFn    func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
-	streamChatFn  func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
-	refreshAuthFn func() error
-	authRefreshed int
+	sendChatFn       func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)
+	streamChatFn     func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error)
+	refreshAuthFn    func() error
+	generateImagesFn func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error)
+	authRefreshed    int
 }
 
 func (m *mockLLMClient) SendChat(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
@@ -221,6 +222,9 @@ func (m *mockLLMClient) RefreshAuth() error {
 }
 
 func (m *mockLLMClient) GenerateImages(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	if m.generateImagesFn != nil {
+		return m.generateImagesFn(ctx, model, prompt, mimeType)
+	}
 	return nil, nil
 }
 
@@ -360,6 +364,54 @@ func TestResilientClient_RetryIdempotency(t *testing.T) {
 		}
 		if calls != 1 {
 			t.Errorf("expected 1 call, got %d", calls)
+		}
+	})
+}
+
+func TestResilientClient_ErrorDelegation(t *testing.T) {
+	mockErr := errors.New("mock execution error")
+	mock := &mockLLMClient{
+		sendChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, mockErr
+		},
+		streamChatFn: func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver, callback func(*llm.Content)) (*llm.Metrics, error) {
+			return nil, mockErr
+		},
+		refreshAuthFn: func() error {
+			return mockErr
+		},
+		generateImagesFn: func(ctx context.Context, model, prompt string, mimeType string) ([][]byte, error) {
+			return nil, mockErr
+		},
+	}
+
+	client := NewResilientClient(mock, false)
+
+	t.Run("SendChat Error Delegation", func(t *testing.T) {
+		_, _, err := client.SendChat(context.Background(), nil, nil, nil)
+		if !errors.Is(err, mockErr) {
+			t.Errorf("Expected %v, got %v", mockErr, err)
+		}
+	})
+
+	t.Run("StreamChat Error Delegation", func(t *testing.T) {
+		_, err := client.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+		if !errors.Is(err, mockErr) {
+			t.Errorf("Expected %v, got %v", mockErr, err)
+		}
+	})
+
+	t.Run("RefreshAuth Error Delegation", func(t *testing.T) {
+		err := client.RefreshAuth()
+		if !errors.Is(err, mockErr) {
+			t.Errorf("Expected %v, got %v", mockErr, err)
+		}
+	})
+
+	t.Run("GenerateImages Error Delegation", func(t *testing.T) {
+		_, err := client.GenerateImages(context.Background(), "model", "prompt", "image/png")
+		if !errors.Is(err, mockErr) {
+			t.Errorf("Expected %v, got %v", mockErr, err)
 		}
 	})
 }

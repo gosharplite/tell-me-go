@@ -5,7 +5,7 @@ package events
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -17,6 +17,11 @@ import (
 // Event represents a generic signal from the Orchestrator.
 type Event interface{}
 
+var (
+	ErrBufferOverflow = errors.New("event buffer overflowed, events were dropped")
+	ErrBusClosed      = errors.New("event bus is closed")
+)
+
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
 	Publish(e Event)
@@ -25,22 +30,39 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
+// DefaultMaxQueueSize is the default capacity for the event ring buffer.
+const DefaultMaxQueueSize = 1000
+
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
-	mu          sync.RWMutex
-	subscribers []chan Event
-	wg          sync.WaitGroup
-	once        sync.Once
-	closed      bool
+	mu              sync.RWMutex
+	subscribers     []chan Event
+	wg              sync.WaitGroup
+	once            sync.Once
+	closed          bool
+	capacity        int
+	closing         chan struct{}
+	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
 }
 
 type flushEvent struct {
-	done chan struct{}
+	done chan error
 }
 
-// NewSimpleEventBus creates and initializes a new SimpleEventBus.
+// NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
 func NewSimpleEventBus() *SimpleEventBus {
-	return &SimpleEventBus{}
+	return NewSimpleEventBusWithCapacity(DefaultMaxQueueSize)
+}
+
+// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
+func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
+	if capacity <= 0 {
+		capacity = DefaultMaxQueueSize
+	}
+	return &SimpleEventBus{
+		capacity: capacity,
+		closing:  make(chan struct{}),
+	}
 }
 
 func (b *SimpleEventBus) Publish(e Event) {
@@ -55,7 +77,7 @@ func (b *SimpleEventBus) Publish(e Event) {
 		select {
 		case ch <- e:
 		default:
-			// Buffer full, drop event to avoid blocking the caller
+			// Buffer full, drop event to avoid deadlocking the RLock
 		}
 	}
 }
@@ -68,14 +90,25 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	ch := make(chan Event, 100)
-	b.subscribers = append(b.subscribers, ch)
+	in := make(chan Event, 100) // Small initial buffer
+	out := make(chan Event)
+	b.subscribers = append(b.subscribers, in)
 
-	b.wg.Add(1)
+	b.wg.Add(2)
+
+	// 1. Bounded Queue Goroutine
 	go func() {
 		defer b.wg.Done()
-		for e := range ch {
+		defer close(out)
+		b.pumpEvents(in, out)
+	}()
+
+	// 2. Processing Goroutine
+	go func() {
+		defer b.wg.Done()
+		for e := range out {
 			if fe, ok := e.(flushEvent); ok {
+				fe.done <- nil
 				close(fe.done)
 				continue
 			}
@@ -84,29 +117,125 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	}()
 }
 
+func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
+	cap := b.capacity
+	if cap <= 0 {
+		cap = DefaultMaxQueueSize
+	}
+	buffer := &eventRingBuffer{max: cap}
+
+	for {
+		if buffer.len() > 0 {
+			select {
+			case e, ok := <-in:
+				if !ok {
+					in = nil // Stop reading from closed channel
+					continue
+				}
+				buffer.push(e)
+			case out <- buffer.front():
+				buffer.pop()
+			}
+		} else {
+			if in == nil {
+				return
+			}
+			e, ok := <-in
+			if !ok {
+				return
+			}
+			buffer.push(e)
+		}
+	}
+}
+
+type eventRingBuffer struct {
+	queue []Event
+	max   int
+	head  int
+	tail  int
+	count int
+}
+
+func (r *eventRingBuffer) push(e Event) {
+	if r.queue == nil {
+		r.queue = make([]Event, r.max)
+	}
+
+	if r.count == r.max {
+		// Buffer full: overwrite the oldest element
+		oldest := r.queue[r.tail]
+		if fe, ok := oldest.(flushEvent); ok {
+			fe.done <- ErrBufferOverflow
+			close(fe.done) // Safely unblock the waiting Flush caller
+		}
+
+		r.queue[r.tail] = e
+		r.tail = (r.tail + 1) % r.max
+		r.head = (r.head + 1) % r.max // Move head forward to evict
+	} else {
+		r.queue[r.tail] = e
+		r.tail = (r.tail + 1) % r.max
+		r.count++
+	}
+}
+
+func (r *eventRingBuffer) pop() Event {
+	if r.count == 0 {
+		return nil
+	}
+	e := r.queue[r.head]
+	r.queue[r.head] = nil // Avoid memory leak
+	r.head = (r.head + 1) % r.max
+	r.count--
+	return e
+}
+
+func (r *eventRingBuffer) front() Event {
+	if r.count == 0 {
+		return nil
+	}
+	return r.queue[r.head]
+}
+
+func (r *eventRingBuffer) len() int {
+	return r.count
+}
+
 // Shutdown gracefully stops the event bus, flushing pending events.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	b.once.Do(func() {
+		// 1. Mark as closed and signal abort to unblock any pending Flush()
 		b.mu.Lock()
 		b.closed = true
+		if b.closing != nil {
+			close(b.closing)
+		}
+		b.mu.Unlock()
+
+		// 2. Wait for lockless writers (Flush) to abort or finish
+		b.activeProducers.Wait()
+
+		// 3. Safe to close channels; no writers are active
+		b.mu.Lock()
 		for _, ch := range b.subscribers {
 			close(ch)
 		}
 		b.mu.Unlock()
+
+		// 4. Wait for background processing to stop
+		done := make(chan struct{})
+		go func() {
+			b.wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
 	})
-
-	done := make(chan struct{})
-	go func() {
-		b.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return ctx.Err()
 }
 
 // Flush waits for all currently queued events to be dispatched.
@@ -114,35 +243,50 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return fmt.Errorf("event bus is closed")
+		return ErrBusClosed
 	}
+
+	// Register active producer before releasing lock
+	b.activeProducers.Add(1)
+	defer b.activeProducers.Done()
 
 	if len(b.subscribers) == 0 {
 		b.mu.RUnlock()
 		return nil
 	}
 
-	dones := make([]chan struct{}, 0, len(b.subscribers))
+	// 1. Copy subscribers to avoid holding the lock during potentially blocking sends
+	subs := make([]chan Event, len(b.subscribers))
+	copy(subs, b.subscribers)
+	b.mu.RUnlock() // Release lock BEFORE the blocking loop
 
-	// Hold RLock while sending to prevent Shutdown from closing channels under us
-	for _, ch := range b.subscribers {
-		done := make(chan struct{})
+	dones := make([]chan error, 0, len(subs))
+
+	// 2. Safely send flush events to the copied channels
+	for _, ch := range subs {
+		done := make(chan error, 1)
+
 		select {
 		case ch <- flushEvent{done: done}:
 			dones = append(dones, done)
+		case <-b.closing:
+			return ErrBusClosed
 		case <-ctx.Done():
-			b.mu.RUnlock()
 			return ctx.Err()
 		}
 	}
-	b.mu.RUnlock() // Release lock BEFORE waiting for subscribers to process the events
 
-	// Wait for all queued events to be processed
+	// 3. Wait for all successfully queued flush events to be processed
 	for _, done := range dones {
 		select {
-		case <-done:
+		case err := <-done:
+			if err != nil {
+				return err
+			}
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-b.closing:
+			return ErrBusClosed
 		}
 	}
 

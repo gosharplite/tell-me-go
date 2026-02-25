@@ -396,3 +396,111 @@ func TestOtherAuthenticators(t *testing.T) {
 		auth.Invalidate() // should do nothing
 	})
 }
+
+func TestNoOpAuth(t *testing.T) {
+	a := &NoOpAuth{}
+
+	// Should not panic
+	a.Invalidate()
+
+	// Should return empty string and nil error
+	token, err := a.getToken(context.Background())
+	if err != nil {
+		t.Errorf("getToken() expected nil error, got %v", err)
+	}
+	if token != "" {
+		t.Errorf("getToken() expected empty string, got %s", token)
+	}
+
+	// Should return nil error
+	req := &Request{Headers: make(map[string]string)}
+	err = a.Apply(context.Background(), req)
+	if err != nil {
+		t.Errorf("Apply() expected nil error, got %v", err)
+	}
+}
+
+func TestVertexAuth_GetCachePath_WindowsFallback(t *testing.T) {
+	originalGetUID := getUID
+	getUID = func() int { return -1 }
+	t.Cleanup(func() { getUID = originalGetUID })
+
+	t.Setenv("USERNAME", "testwindowsuser")
+	t.Setenv("USER", "should-not-be-used")
+
+	auth := &VertexAuth{}
+	path := auth.getCachePath()
+	if !strings.Contains(path, "testwindowsuser") {
+		t.Errorf("expected path to contain USERNAME 'testwindowsuser', got %s", path)
+	}
+}
+
+func TestVertexAuth_GetCachePath_UnixFallback(t *testing.T) {
+	originalGetUID := getUID
+	getUID = func() int { return -1 }
+	t.Cleanup(func() { getUID = originalGetUID })
+
+	t.Setenv("USERNAME", "")
+	t.Setenv("USER", "testunixuser")
+
+	auth := &VertexAuth{}
+	path := auth.getCachePath()
+	if !strings.Contains(path, "testunixuser") {
+		t.Errorf("expected path to contain USER 'testunixuser', got %s", path)
+	}
+}
+
+func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
+	ctx := context.Background()
+	auth := &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return nil, fmt.Errorf("gcloud failure")
+		},
+	}
+
+	// Ensure cache is not present
+	cachePath := auth.getCachePath()
+	_ = os.Remove(cachePath)
+	defer os.Remove(cachePath)
+
+	_, err := auth.getToken(ctx)
+	if err == nil || !strings.Contains(err.Error(), "failed to get gcloud token") {
+		t.Errorf("expected gcloud token error, got %v", err)
+	}
+}
+
+func TestVertexAuth_Apply_Error(t *testing.T) {
+	ctx := context.Background()
+	auth := &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return nil, fmt.Errorf("mock gcloud error")
+		},
+	}
+	// Force cache miss to ensure tokenCmdFunc is called
+	cachePath := auth.getCachePath()
+	_ = os.Remove(cachePath)
+	defer os.Remove(cachePath)
+
+	req := &Request{Headers: make(map[string]string)}
+	err := auth.Apply(ctx, req)
+
+	if err == nil || !strings.Contains(err.Error(), "mock gcloud error") {
+		t.Errorf("Expected mock gcloud error, got %v", err)
+	}
+}
+
+func TestServiceAccountAuth_Apply_Error(t *testing.T) {
+	ctx := context.Background()
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			return nil, fmt.Errorf("mock oauth2 error")
+		},
+	}
+
+	req := &Request{Headers: make(map[string]string)}
+	err := auth.Apply(ctx, req)
+
+	if err == nil || !strings.Contains(err.Error(), "mock oauth2 error") {
+		t.Errorf("Expected mock oauth2 error, got %v", err)
+	}
+}

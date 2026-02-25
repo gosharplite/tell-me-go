@@ -53,33 +53,56 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 }
 
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+	// Preserve the existing logic for Service Account JSON
+	if p.APIKey != "" && strings.HasSuffix(strings.ToLower(p.APIKey), ".json") {
+		if _, err := os.Stat(p.APIKey); err == nil {
+			return &auth.ServiceAccountAuth{KeyFilePath: p.APIKey}, nil
+		}
+	}
+
+	if strategy, ok := authStrategies[p.Type]; ok {
+		return strategy(p)
+	}
+
+	// Fallback for any unknown provider with an explicit API key
 	if p.APIKey != "" {
-		// Detect if the API_KEY field is actually a path to a GCP Service Account JSON
-		lowerKey := strings.ToLower(p.APIKey)
-		if strings.HasSuffix(lowerKey, ".json") {
-			if _, err := os.Stat(p.APIKey); err == nil {
-				// Use the native Service Account provider
-				return &auth.ServiceAccountAuth{KeyFilePath: p.APIKey}, nil
-			}
-		}
-
-		// Fallback to provider-specific static keys
-		switch p.Type {
-		case "openai", "deepseek":
-			return &auth.BearerAuth{Token: p.APIKey}, nil
-		case "anthropic":
-			return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
-		default:
-			// Default static key for Gemini (Google AI Studio)
-			return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
-		}
+		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
 	}
 
-	// Legacy fallback: Use VertexAuth (which depends on 'gcloud' CLI)
-	if p.Type == "google" || p.Type == "gemini" || p.Type == "" {
-		return &auth.VertexAuth{}, nil
-	}
 	return nil, fmt.Errorf("API key or Service Account JSON is required for provider: %s", p.Type)
+}
+
+type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
+
+var authStrategies = map[string]authStrategy{
+	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
+		if p.APIKey == "" {
+			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		}
+		return &auth.BearerAuth{Token: p.APIKey}, nil
+	},
+	"deepseek": func(p *config.LLMProvider) (auth.Authenticator, error) {
+		if p.APIKey == "" {
+			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		}
+		return &auth.BearerAuth{Token: p.APIKey}, nil
+	},
+	"anthropic": func(p *config.LLMProvider) (auth.Authenticator, error) {
+		if p.APIKey == "" {
+			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
+		}
+		return &auth.AnthropicAuth{APIKey: p.APIKey}, nil
+	},
+	"google": resolveGoogleAuth,
+	"gemini": resolveGoogleAuth,
+	"":       resolveGoogleAuth,
+}
+
+func resolveGoogleAuth(p *config.LLMProvider) (auth.Authenticator, error) {
+	if p.APIKey != "" {
+		return &auth.APIKeyAuth{APIKey: p.APIKey}, nil
+	}
+	return &auth.VertexAuth{}, nil
 }
 
 func resolveTimeout(cfg *config.Config) time.Duration {

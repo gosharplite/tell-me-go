@@ -4,11 +4,14 @@
 package llm
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
@@ -56,4 +59,100 @@ func TestCreateAuthenticator(t *testing.T) {
 			t.Errorf("expected *auth.VertexAuth, got %T", a)
 		}
 	})
+}
+
+func TestCreateAuthenticator_Strategies(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    config.LLMProvider
+		wantErr     bool
+		wantAuthNil bool
+	}{
+		{"OpenAI requires Key", config.LLMProvider{Type: "openai", APIKey: ""}, true, true},
+		{"OpenAI valid Key", config.LLMProvider{Type: "openai", APIKey: "secret"}, false, false},
+		{"DeepSeek requires Key", config.LLMProvider{Type: "deepseek", APIKey: ""}, true, true},
+		{"DeepSeek valid Key", config.LLMProvider{Type: "deepseek", APIKey: "secret"}, false, false},
+		{"Anthropic requires Key", config.LLMProvider{Type: "anthropic", APIKey: ""}, true, true},
+		{"Anthropic valid Key", config.LLMProvider{Type: "anthropic", APIKey: "secret"}, false, false},
+		{"Unknown Provider Fallback with Key", config.LLMProvider{Type: "unknown", APIKey: "secret"}, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			auth, err := createAuthenticator(&tt.provider)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if (auth == nil) != tt.wantAuthNil {
+				t.Errorf("createAuthenticator() auth = %v, wantAuthNil %v", auth, tt.wantAuthNil)
+			}
+		})
+	}
+}
+
+func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		apiKey   string
+		wantErr  bool
+	}{
+		{"openai missing key", "openai", "", true},
+		{"deepseek missing key", "deepseek", "", true},
+		{"anthropic missing key", "anthropic", "", true},
+		{"unknown provider missing key", "unknown", "", true},
+		{"google missing key", "google", "", false},                     // Resolves to VertexAuth
+		{"unknown provider with key", "unknown", "explicit-key", false}, // Resolves to APIKeyAuth
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &config.LLMProvider{
+				Type:   tt.provider,
+				APIKey: tt.apiKey,
+			}
+			a, err := createAuthenticator(p)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			// If it's the unknown provider with a key, verify it uses APIKeyAuth
+			if !tt.wantErr && tt.provider == "unknown" {
+				if _, ok := a.(*auth.APIKeyAuth); !ok {
+					t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+				}
+			}
+		})
+	}
+}
+
+func TestNewClient_FallbackToGemini(t *testing.T) {
+	t.Setenv("GOOGLE_API_KEY", "dummy")
+	cfg := &config.Config{
+		Providers: map[string]config.LLMProvider{
+			"default": {
+				Type:   "some-unknown-type",
+				APIKey: "dummy-key", // Satisfies createAuthenticator fallback
+			},
+		},
+		SelectedProvider: "default",
+	}
+
+	bus := events.NewSimpleEventBus()
+	t.Cleanup(func() {
+		_ = bus.Shutdown(context.Background())
+	})
+
+	pData := pricing.PricingData{}
+
+	// This should hit the default: case in the switch statement
+	client, err := NewClient(cfg, pData, bus)
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected client, got nil")
+	}
 }

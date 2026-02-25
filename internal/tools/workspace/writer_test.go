@@ -287,3 +287,81 @@ type mockFS_Append struct {
 func (m *mockFS_Append) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
 	return nil, m.openErr
 }
+
+func TestUndoFileChange_Errors(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	bm := newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10)
+	w := &fileWriter{sm: sm, bm: bm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	t.Run("no backups", func(t *testing.T) {
+		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 1})
+		if err == nil || !strings.Contains(err.Error(), "no history found") {
+			t.Errorf("expected 'no history found' error, got %v", err)
+		}
+	})
+
+	t.Run("invalid n", func(t *testing.T) {
+		_, err := w.undoFileChange(ctx, map[string]interface{}{"n": 0})
+		if err == nil {
+			t.Error("expected error for n <= 0")
+		}
+	})
+}
+
+func TestAppendText_WriteError(t *testing.T) {
+	sm := security.NewSecurityManager(nil)
+	sm.SetBypassActive(true)
+	tempDir := t.TempDir()
+	sm.RegisterSafePath(tempDir)
+	path := filepath.Join(tempDir, "append_fail.txt")
+	if err := os.WriteFile(path, []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mfs := &mockFS_AppendWrite{FileSystem: infrapersistence.NewOSFileSystem(), writeErr: fmt.Errorf("write error")}
+	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
+
+	_, err := w.appendText(context.Background(), map[string]interface{}{
+		"filepath": path,
+		"content":  "test",
+		"reason":   "testing",
+	})
+	if err == nil || !strings.Contains(err.Error(), "write error") {
+		t.Errorf("expected write error, got %v", err)
+	}
+}
+
+type mockFS_AppendWrite struct {
+	persistence.FileSystem
+	writeErr error
+}
+
+func (m *mockFS_AppendWrite) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (persistence.File, error) {
+	f, err := os.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &mockFile{File: f, writeErr: m.writeErr}, nil
+}
+
+type mockFile struct {
+	*os.File
+	writeErr error
+}
+
+func (m *mockFile) Write(p []byte) (n int, err error) {
+	if m.writeErr != nil {
+		return 0, m.writeErr
+	}
+	return m.File.Write(p)
+}
+
+func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
+	return m.File.Seek(offset, whence)
+}
+
+func (m *mockFile) Close() error {
+	return m.File.Close()
+}

@@ -145,6 +145,10 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
+	if persistence.IsBinary(content) {
+		return tools.ToolResult{Text: fmt.Sprintf("File %s appears to be a binary file and cannot be displayed as text.", resolvedPath)}, nil
+	}
+
 	if len(content) > 100000 {
 		return tools.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
 	}
@@ -187,6 +191,22 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
+func (r *fileReader) validateDiffPrerequisites(ctx context.Context, resolved1, resolved2 string) error {
+	if _, err := r.fs.Stat(ctx, resolved1); err != nil {
+		return fmt.Errorf("file1 (%q) not found: %w", resolved1, err)
+	}
+	if _, err := r.fs.Stat(ctx, resolved2); err != nil {
+		return fmt.Errorf("file2 (%q) not found: %w", resolved2, err)
+	}
+
+	// Check for diff binary (ideally cached at struct initialization, but kept here for now)
+	if _, err := exec.LookPath("diff"); err != nil {
+		return fmt.Errorf("'diff' command not found in system PATH: %w", err)
+	}
+
+	return nil
+}
+
 func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		File1 string `json:"file1"`
@@ -208,11 +228,12 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	if _, err := exec.LookPath("diff"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("'diff' command not found: %w", err)
+	if err := r.validateDiffPrerequisites(ctx, resolved1, resolved2); err != nil {
+		return tools.ToolResult{}, err
 	}
 
-	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
+	// SECURE EXECUTION: Use '--' to prevent argument injection
+	cmd := exec.CommandContext(ctx, "diff", "-u", "--", resolved1, resolved2)
 	out, err := cmd.CombinedOutput()
 
 	if len(out) == 0 && err == nil {

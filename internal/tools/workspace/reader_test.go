@@ -193,3 +193,57 @@ func TestReadFile_Truncation(t *testing.T) {
 		t.Errorf("result too long: %d", len(res.Text))
 	}
 }
+
+func TestReadFile_Binary(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "bin")
+	// Write some binary bytes (containing null byte)
+	if err := os.WriteFile(path, []byte{0x00, 0x01, 0x02}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	res, err := r.readFile(ctx, map[string]interface{}{"filepath": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "binary") {
+		t.Errorf("expected 'binary' message, got %q", res.Text)
+	}
+}
+
+func TestGetFileDiff_Errors(t *testing.T) {
+	tempDir := t.TempDir()
+	f1 := filepath.Join(tempDir, "f1.txt")
+	if err := os.WriteFile(f1, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sm := security.NewSecurityManager(nil)
+	r := &fileReader{sm: sm, fs: infrapersistence.NewOSFileSystem()}
+	ctx := context.Background()
+
+	t.Run("missing file2", func(t *testing.T) {
+		_, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": "missing.txt"})
+		if err == nil {
+			t.Error("expected error for missing file2")
+		}
+	})
+
+	t.Run("binary file", func(t *testing.T) {
+		fbin := filepath.Join(tempDir, "bin")
+		if err := os.WriteFile(fbin, []byte{0x00, 0x01}, 0644); err != nil {
+			t.Fatal(err)
+		}
+		res, err := r.getFileDiff(ctx, map[string]interface{}{"file1": f1, "file2": fbin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.ToLower(res.Text), "binary") {
+			t.Errorf("expected binary message, got %q", res.Text)
+		}
+	})
+}

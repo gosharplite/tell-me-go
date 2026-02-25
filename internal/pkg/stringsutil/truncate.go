@@ -17,7 +17,7 @@ func TruncateOutput(output string, maxLines int) string {
 	for i := 0; i < len(output); i++ {
 		if output[i] == '\n' {
 			count++
-			if count >= maxLines {
+			if count >= maxLines && i < len(output)-1 {
 				return output[:i] + "\n... (Output truncated) ..."
 			}
 		}
