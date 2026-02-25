@@ -138,6 +138,11 @@ func (r *eventRingBuffer) push(e Event) {
 
 	if r.count == r.max {
 		// Buffer full: overwrite the oldest element
+		oldest := r.queue[r.tail]
+		if fe, ok := oldest.(flushEvent); ok {
+			close(fe.done) // Safely unblock the waiting Flush caller
+		}
+
 		r.queue[r.tail] = e
 		r.tail = (r.tail + 1) % r.max
 		r.head = (r.head + 1) % r.max // Move head forward to evict
