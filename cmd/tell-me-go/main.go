@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -66,7 +67,9 @@ func run() int {
 	ctx := context.Background()
 	shutdown := initTracer(ctx)
 	defer func() {
-		if err := shutdown(ctx); err != nil {
+		sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(sCtx); err != nil {
 			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
 		}
 	}()

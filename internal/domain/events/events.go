@@ -70,11 +70,12 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 
 	b.wg.Add(2)
 
-	// 1. Unbounded Queue Goroutine
+	// 1. Bounded Queue Goroutine
 	go func() {
 		defer b.wg.Done()
 		defer close(out)
 
+		const maxQueueSize = 1000
 		var queue []Event
 		for {
 			if len(queue) > 0 {
@@ -83,6 +84,11 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 					if !ok {
 						in = nil // Stop reading from closed channel
 						continue
+					}
+					if len(queue) >= maxQueueSize {
+						// Drop oldest event (ring buffer behavior) to make room for new one
+						queue[0] = nil // Avoid memory leak
+						queue = queue[1:]
 					}
 					queue = append(queue, e)
 				case out <- queue[0]:
