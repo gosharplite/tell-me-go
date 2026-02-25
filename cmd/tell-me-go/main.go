@@ -14,7 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/cli"
 )
 
-const version = "3.2.49-dev"
+const version = "3.2.49"
 
 func initTracer() {
 	// Use a global no-op tracer provider so spans are silent by default

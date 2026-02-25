@@ -33,7 +33,7 @@ func TestToolPanicSerial(t *testing.T) {
 	canContinue := exec.executeSerialTask(ctx, 0, fc, resChan)
 
 	assert.False(t, canContinue, "Should not continue after panic")
-	
+
 	select {
 	case res := <-resChan:
 		assert.Equal(t, 0, res.index)
@@ -136,7 +136,7 @@ func TestZombieToolTimeout(t *testing.T) {
 
 	exec := NewToolExecutor(reg, nil, nil)
 	t.Cleanup(exec.Shutdown)
-	
+
 	// Set very short timeouts for testing
 	exec.toolTimeout = 10 * time.Millisecond
 	exec.zombieTimeout = 20 * time.Millisecond
@@ -147,7 +147,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	result, err := exec.runWithTimeout(ctx, hangingTool, nil)
 	duration := time.Since(start)
 
-	assert.NoError(t, err) 
+	assert.NoError(t, err)
 	assert.Error(t, result.Error)
 	assert.Contains(t, result.Error.Error(), "timed out")
 	assert.True(t, duration >= 10*time.Millisecond)
