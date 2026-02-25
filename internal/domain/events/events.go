@@ -260,33 +260,46 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	copy(subs, b.subscribers)
 	b.mu.RUnlock() // Release lock BEFORE the blocking loop
 
-	dones := make([]chan error, 0, len(subs))
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(subs))
 
-	// 2. Safely send flush events to the copied channels
 	for _, ch := range subs {
-		done := make(chan error, 1)
-
-		select {
-		case ch <- flushEvent{done: done}:
-			dones = append(dones, done)
-		case <-b.closing:
-			return ErrBusClosed
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		wg.Add(1)
+		go func(subCh chan Event) {
+			defer wg.Done()
+			done := make(chan error, 1)
+			// 1. Attempt to send the flush event
+			select {
+			case subCh <- flushEvent{done: done}:
+				// 2. Wait for this specific subscriber to process it
+				select {
+				case err := <-done:
+					if err != nil {
+						errCh <- err
+					}
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+				case <-b.closing:
+					errCh <- ErrBusClosed
+				}
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+			case <-b.closing:
+				errCh <- ErrBusClosed
+			}
+		}(ch)
 	}
 
-	// 3. Wait for all successfully queued flush events to be processed
-	for _, done := range dones {
-		select {
-		case err := <-done:
-			if err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-b.closing:
-			return ErrBusClosed
+	// Launch a background goroutine to wait and close the error channel
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	// Finally, in the main Flush thread, wait for the first error or completion
+	for err := range errCh {
+		if err != nil {
+			return err // Return on the first error encountered
 		}
 	}
 
