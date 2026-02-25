@@ -68,8 +68,6 @@ func TestCreateAuthenticator_Strategies(t *testing.T) {
 		wantErr     bool
 		wantAuthNil bool
 	}{
-		{"Local uses NoOp", config.LLMProvider{Type: "local"}, false, false},
-		{"Ollama uses NoOp", config.LLMProvider{Type: "ollama"}, false, false},
 		{"OpenAI requires Key", config.LLMProvider{Type: "openai", APIKey: ""}, true, true},
 		{"OpenAI valid Key", config.LLMProvider{Type: "openai", APIKey: "secret"}, false, false},
 		{"DeepSeek requires Key", config.LLMProvider{Type: "deepseek", APIKey: ""}, true, true},
@@ -105,8 +103,6 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 		{"deepseek missing key", "deepseek", "", true},
 		{"anthropic missing key", "anthropic", "", true},
 		{"unknown provider missing key", "unknown", "", true},
-		{"local missing key", "local", "", false},
-		{"ollama missing key", "ollama", "", false},
 		{"google missing key", "google", "", false}, // Resolves to VertexAuth
 		{"unknown provider with key", "unknown", "explicit-key", false}, // Resolves to APIKeyAuth
 	}

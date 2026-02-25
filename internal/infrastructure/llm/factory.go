@@ -34,7 +34,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	var baseClient llm.LLMClient
 
 	switch p.Type {
-	case "openai", "deepseek", "local", "ollama":
+	case "openai", "deepseek":
 		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget)
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
@@ -75,8 +75,6 @@ func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
 type authStrategy func(*config.LLMProvider) (auth.Authenticator, error)
 
 var authStrategies = map[string]authStrategy{
-	"local":  func(p *config.LLMProvider) (auth.Authenticator, error) { return &auth.NoOpAuth{}, nil },
-	"ollama": func(p *config.LLMProvider) (auth.Authenticator, error) { return &auth.NoOpAuth{}, nil },
 	"openai": func(p *config.LLMProvider) (auth.Authenticator, error) {
 		if p.APIKey == "" {
 			return nil, fmt.Errorf("API key is required for provider: %s", p.Type)
