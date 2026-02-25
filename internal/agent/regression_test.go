@@ -111,13 +111,14 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, h, registry, sm, bus, nil, "test-provider")
 	sess := services.NewSession("regression-multimodal", h)
-	err := a.Chat(context.Background(), sess, "Show me a cat")
+	ctx := context.Background()
+	err := a.Chat(ctx, sess, "Show me a cat")
 	if err != nil {
 		t.Fatalf("Chat failed: %v", err)
 	}
 
 	// Verify history
-	contents := h.GetContents()
+	contents, _ := h.GetWindow(ctx, 0, -1)
 	// Turns:
 	// 0: User "Show me a cat"
 	// 1: Model ToolCall "get_image"

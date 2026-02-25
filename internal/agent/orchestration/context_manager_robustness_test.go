@@ -275,7 +275,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	}
 
 	// Verify history in manager is NOT changed (it shouldn't have the warning)
-	persistedHistory := hManager.GetContents()
+	persistedHistory, _ := hManager.GetWindow(ctx, 0, -1)
 	for _, c := range persistedHistory {
 		for _, p := range c.Parts {
 			if strings.Contains(p.Text, "Only 2 turns remain") {
@@ -356,7 +356,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	<-summarizeStarted
 	// Concurrent modification of history prefix being summarized
-	current := hManager.GetContents()
+	current, _ := hManager.GetWindow(ctx, 0, -1)
 	current[0].Parts[0].Text = "modified"
 	_ = hManager.SetContents(ctx, current)
 	// We need to trigger a version bump in CM too if it's not watching hManager directly

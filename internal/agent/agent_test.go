@@ -72,7 +72,7 @@ func TestAgent_Chat(t *testing.T) {
 		t.Fatalf("Chat failed: %v", err)
 	}
 
-	contents := h.GetContents()
+	contents, _ := h.GetWindow(ctx, 0, -1)
 	if len(contents) != 2 {
 		t.Errorf("Expected 2 messages in history, got %d", len(contents))
 	}
@@ -266,7 +266,7 @@ func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h services.H
 		t.Errorf("unexpected response: got %q, want %q", resp.Text, expectedMsg)
 	}
 
-	contents := h.GetContents()
+	contents, _ := h.GetWindow(ctx, 0, -1)
 	isPinned := (action == "pin")
 	idx := int(index)
 

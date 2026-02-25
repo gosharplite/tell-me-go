@@ -74,7 +74,29 @@ type mockHistoryManager struct {
 	setContentsErr error
 }
 
-func (m *mockHistoryManager) GetContents() []*llm.Content { return m.contents }
+func (m *mockHistoryManager) GetTotalEntries() int { return len(m.contents) }
+func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	total := len(m.contents)
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > total {
+		startIdx = total
+	}
+	if endIdx == -1 || endIdx > total {
+		endIdx = total
+	}
+	if endIdx < startIdx {
+		return []*llm.Content{}, nil
+	}
+
+	window := m.contents[startIdx:endIdx]
+	cloned := make([]*llm.Content, len(window))
+	for i, c := range window {
+		cloned[i] = llm.CloneContent(c)
+	}
+	return cloned, nil
+}
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	if m.setContentsErr != nil {
 		return m.setContentsErr
