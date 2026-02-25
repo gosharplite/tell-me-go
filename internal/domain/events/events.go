@@ -36,6 +36,7 @@ type SimpleEventBus struct {
 	once        sync.Once
 	closed      bool
 	capacity    int
+	closing     chan struct{}
 }
 
 type flushEvent struct {
@@ -54,6 +55,7 @@ func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	}
 	return &SimpleEventBus{
 		capacity: capacity,
+		closing:  make(chan struct{}),
 	}
 }
 
@@ -197,6 +199,7 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	b.once.Do(func() {
 		b.mu.Lock()
 		b.closed = true
+		close(b.closing)
 		for _, ch := range b.subscribers {
 			close(ch)
 		}
@@ -241,25 +244,13 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	for _, ch := range subs {
 		done := make(chan struct{})
 		
-		err := func() (safeErr error) {
-			// Catch send-on-closed-channel panic if Shutdown() is called concurrently
-			defer func() {
-				if r := recover(); r != nil {
-					safeErr = fmt.Errorf("event bus is closed")
-				}
-			}()
-			
-			select {
-			case ch <- flushEvent{done: done}:
-				dones = append(dones, done)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			return nil
-		}()
-		
-		if err != nil {
-			return err
+		select {
+		case ch <- flushEvent{done: done}:
+			dones = append(dones, done)
+		case <-b.closing:
+			return fmt.Errorf("event bus is closed")
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 

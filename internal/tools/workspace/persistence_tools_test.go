@@ -415,7 +415,7 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 
 	// Inject error into KV store
 	provider.kvStore.err = nil
-	pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k", "value": "v"})
+	_, _ = pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k", "value": "v"})
 	provider.kvStore.err = fmt.Errorf("kv store error")
 	
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "write", "content": "hello"})

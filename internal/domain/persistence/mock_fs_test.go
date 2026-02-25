@@ -237,7 +237,7 @@ func TestMockFileSystem_More(t *testing.T) {
 	})
 
 	t.Run("Open and OpenFile", func(t *testing.T) {
-		fs.WriteFile(ctx, "file.txt", []byte("content"), 0644)
+		_ = fs.WriteFile(ctx, "file.txt", []byte("content"), 0644)
 		
 		f1, err := fs.Open(ctx, "file.txt")
 		if err != nil {

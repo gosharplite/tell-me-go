@@ -106,7 +106,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	
 	tempDir := t.TempDir()
 	outputDir := filepath.Join(tempDir, "output")
-	os.Mkdir(outputDir, 0755)
+	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
 	
 	RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil)
@@ -121,7 +121,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 	t.Run("Call estimate_cost", func(t *testing.T) {
 		handler := reg.handlers["estimate_cost"]
 		// Create log file
-		os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
+		_ = os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
 		
 		res, err := handler(context.Background(), nil)
 		if err != nil {
@@ -141,7 +141,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 			{Date: "2026-01-01", Session: "s1", TotalCost: 1.0, Model: "test-model"},
 		}
 		data, _ := json.Marshal(history)
-		os.WriteFile(historyPath, data, 0644)
+		_ = os.WriteFile(historyPath, data, 0644)
 
 		res, err := handler(context.Background(), nil)
 		if err != nil {
@@ -157,12 +157,9 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 	sm := &mockSM{}
 	tempDir := t.TempDir()
 	outputDir := filepath.Join(tempDir, "output")
-	err := os.Mkdir(outputDir, 0755)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
-	os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
+	_ = os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
 
 	pricing := domain_pricing.PricingData{
 		Models: map[string]domain_pricing.ModelPricing{
@@ -171,7 +168,7 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 	}
 	tracker := NewSessionCostTracker(sm, logFile, "test-mode", "test-model", pricing.Models["test-model"], pricing)
 
-	err = RecordSessionCost(context.Background(), sm, tracker, logFile, "test-model", "test-mode", "test-session", nil)
+	err := RecordSessionCost(context.Background(), sm, tracker, logFile, "test-model", "test-mode", "test-session", nil)
 	if err != nil {
 		t.Fatalf("RecordSessionCost failed: %v", err)
 	}
@@ -218,14 +215,14 @@ func TestTraceTelemetry(t *testing.T) {
 func TestLedger_Extended(t *testing.T) {
 	t.Run("IsStale", func(t *testing.T) {
 		tempFile := filepath.Join(t.TempDir(), "stale.lock")
-		os.WriteFile(tempFile, []byte(""), 0644)
+		_ = os.WriteFile(tempFile, []byte(""), 0644)
 		
 		if isStale(tempFile) {
 			t.Error("New file should not be stale")
 		}
 		
 		oldTime := time.Now().Add(-10 * time.Minute)
-		os.Chtimes(tempFile, oldTime, oldTime)
+		_ = os.Chtimes(tempFile, oldTime, oldTime)
 		
 		if !isStale(tempFile) {
 			t.Error("Old file should be stale")
@@ -235,10 +232,10 @@ func TestLedger_Extended(t *testing.T) {
 	t.Run("FindLogFiles", func(t *testing.T) {
 		tempDir := t.TempDir()
 		subDir := filepath.Join(tempDir, "subdir")
-		os.Mkdir(subDir, 0755)
+		_ = os.Mkdir(subDir, 0755)
 		
 		logPath := filepath.Join(subDir, "session_tokens.log")
-		os.WriteFile(logPath, []byte("data"), 0644)
+		_ = os.WriteFile(logPath, []byte("data"), 0644)
 		
 		ls := &ledgerStore{}
 		files, err := ls.findLogFiles(tempDir)
@@ -289,7 +286,7 @@ func TestLedger_Extended(t *testing.T) {
 func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
 	tempDir := t.TempDir()
 	historyPath := filepath.Join(tempDir, "global_costs.json")
-	os.WriteFile(historyPath, []byte("invalid json"), 0644)
+	_ = os.WriteFile(historyPath, []byte("invalid json"), 0644)
 	
 	m := &metricsManager{}
 	history := m.loadHistory(context.Background(), historyPath, tempDir)
@@ -331,7 +328,7 @@ func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 	
 	// Case 2: Config file with retention days
 	configPath := filepath.Join(tempDir, "config.json")
-	os.WriteFile(configPath, []byte(`{"cost_retention_days": "60"}`), 0644)
+	_ = os.WriteFile(configPath, []byte(`{"cost_retention_days": "60"}`), 0644)
 	if days := m.loadRetentionDays(tempDir); days != 60 {
 		t.Errorf("Expected 60 days, got %d", days)
 	}
