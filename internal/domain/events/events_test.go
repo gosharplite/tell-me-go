@@ -5,6 +5,8 @@ package events
 
 import (
 	"context"
+	"errors"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -208,7 +210,7 @@ func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 
 func TestSimpleEventBus_BufferEviction(t *testing.T) {
 	bus := NewSimpleEventBus()
-	t.Cleanup(func() { bus.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
 
 	block := make(chan struct{})
 	var received []Event
@@ -226,6 +228,7 @@ func TestSimpleEventBus_BufferEviction(t *testing.T) {
 	// This ensures we trigger both the ring buffer eviction and the Publish channel drop.
 	for i := 0; i < 1500; i++ {
 		bus.Publish(i)
+		runtime.Gosched()
 	}
 
 	// Unblock subscriber and let it process
@@ -245,4 +248,32 @@ func TestSimpleEventBus_BufferEviction(t *testing.T) {
 	if len(received) == 0 {
 		t.Errorf("Expected to receive some events, but got 0")
 	}
+}
+
+func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
+	bus := NewSimpleEventBus()
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
+
+	block := make(chan struct{})
+	bus.Subscribe(func(e Event) {
+		<-block
+	})
+
+	// Fill the ring buffer (1000) and the in channel (100)
+	for i := 0; i < 1200; i++ {
+		bus.Publish(i)
+		runtime.Gosched()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := bus.Flush(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	close(block)
 }
