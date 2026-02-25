@@ -52,11 +52,7 @@ func (b *SimpleEventBus) Publish(e Event) {
 	}
 
 	for _, ch := range b.subscribers {
-		select {
-		case ch <- e:
-		default:
-			// Buffer full, drop event to avoid blocking the caller
-		}
+		ch <- e
 	}
 }
 
@@ -68,13 +64,48 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	ch := make(chan Event, 100)
-	b.subscribers = append(b.subscribers, ch)
+	in := make(chan Event, 100) // Small initial buffer
+	out := make(chan Event)
+	b.subscribers = append(b.subscribers, in)
 
-	b.wg.Add(1)
+	b.wg.Add(2)
+
+	// 1. Unbounded Queue Goroutine
 	go func() {
 		defer b.wg.Done()
-		for e := range ch {
+		defer close(out)
+
+		var queue []Event
+		for {
+			if len(queue) > 0 {
+				select {
+				case e, ok := <-in:
+					if !ok {
+						in = nil // Stop reading from closed channel
+						continue
+					}
+					queue = append(queue, e)
+				case out <- queue[0]:
+					queue[0] = nil // Avoid memory leak
+					queue = queue[1:]
+				}
+			} else {
+				if in == nil {
+					return
+				}
+				e, ok := <-in
+				if !ok {
+					return
+				}
+				queue = append(queue, e)
+			}
+		}
+	}()
+
+	// 2. Processing Goroutine
+	go func() {
+		defer b.wg.Done()
+		for e := range out {
 			if fe, ok := e.(flushEvent); ok {
 				close(fe.done)
 				continue

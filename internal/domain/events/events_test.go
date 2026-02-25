@@ -147,11 +147,6 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 	bus.Publish("init")
 	<-ready
 
-	// Fill the buffer (capacity 100)
-	for i := 0; i < 100; i++ {
-		bus.Publish(i)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -210,24 +205,3 @@ func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 	}
 }
 
-func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
-	bus := NewSimpleEventBus()
-	block := make(chan struct{})
-	ready := make(chan struct{})
-	bus.Subscribe(func(e Event) {
-		ready <- struct{}{}
-		<-block
-	})
-	bus.Publish("init")
-	<-ready
-
-	// Fill the buffer (100)
-	for i := 0; i < 100; i++ {
-		bus.Publish(i)
-	}
-
-	// This should be dropped silently
-	bus.Publish("dropped")
-
-	close(block)
-}
