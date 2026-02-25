@@ -98,8 +98,8 @@ func TestToolPanicParallel(t *testing.T) {
 	assert.NoError(t, normalRes.tr.Error)
 }
 
-func TestAuthorizationPanic(t *testing.T) {
-	// Mock registry where resolveTool or something else inside identifyConsentItems panics
+func TestIdentifyConsentItems_Panic_Recovered(t *testing.T) {
+	// Mock registry where resolveTool or something else inside IdentifyConsentItems panics
 	reg := &mockToolRegistry{
 		getDeclarationsFn: func() []*tools.ToolDeclaration {
 			panic("simulated auth panic")
@@ -113,8 +113,8 @@ func TestAuthorizationPanic(t *testing.T) {
 		{Name: "panic_auth_tool"},
 	}
 
-	// identifyConsentItems has a recover block that marks it as declined
-	consentIndices, declinedMap := exec.identifyConsentItems(calls)
+	// IdentifyConsentItems has a recover block that marks it as declined
+	consentIndices, declinedMap := exec.authorizer.IdentifyConsentItems(calls)
 
 	assert.Empty(t, consentIndices, "Should not have consent indices if it panicked")
 	assert.True(t, declinedMap[0], "Tool should be marked as declined/denied after panic (fail closed)")

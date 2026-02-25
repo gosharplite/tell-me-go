@@ -11,7 +11,13 @@ import (
 
 // HistoryManager defines the interface for interacting with history.
 type HistoryManager interface {
-	GetContents() []*llm.Content
+	// GetWindow returns a deep copy of a specific range of history.
+	// If endIdx is -1, it returns from startIdx to the end of the history.
+	GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error)
+
+	// GetTotalEntries returns the total number of content entries currently stored.
+	GetTotalEntries() int
+
 	SetContents(ctx context.Context, contents []*llm.Content) error
 	Archive(ctx context.Context, contents []*llm.Content) error
 	AppendParts(ctx context.Context, index int, parts []*llm.Part) error

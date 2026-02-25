@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -23,17 +24,23 @@ func (r *StdHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n in
 
 // renderHistory renders the chat history to the provided writer.
 func renderHistory(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
-	contents := h.GetContents()
-	if len(contents) == 0 {
+	total := h.GetTotalEntries()
+	if total == 0 {
 		fmt.Fprintln(w, "No history found.")
 		return
 	}
 
-	if n > len(contents) {
-		n = len(contents)
+	if n > total {
+		n = total
 	}
 
-	start := len(contents) - n
+	start := total - n
+	contents, err := h.GetWindow(context.Background(), start, -1)
+	if err != nil {
+		fmt.Fprintf(w, "Error retrieving history: %v\n", err)
+		return
+	}
+
 	hr := &historyRenderer{
 		writer:       w,
 		raw:          options.Raw,
@@ -47,8 +54,7 @@ func renderHistory(w io.Writer, h services.HistoryManager, n int, options servic
 		)
 	}
 
-	for i := start; i < len(contents); i++ {
-		content := contents[i]
+	for _, content := range contents {
 		hr.renderHeader(content.Role)
 
 		for _, p := range content.Parts {

@@ -17,6 +17,7 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -46,19 +47,29 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	var stderr strings.Builder
 	sm := security.NewSecurityManager(nil)
 
-	cmd := &chatCommand{
-		Version: "1.0.0",
-		Stdin:   strings.NewReader("hello"),
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-		HomeDir: tmpDir,
-		SM:      sm,
+	mClient := &mockClient{}
+	// We use the real bootstrapper but wrap it to return our mock chatter
+	bootstrapper := di.NewBootstrapper(tmpDir, sm, "1.0.0", &stdout, &stderr, func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
+		return mClient, nil
+	})
+
+	// Wrap bootstrapper to override AgentFactory
+	container := &wrappedContainer{
+		Container: bootstrapper,
 		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
 			return &integrationMockChatter{}
 		},
-		ClientFactory: func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
-			return &mockClient{}, nil
-		},
+	}
+
+	cmd := &chatCommand{
+		Version:   "1.0.0",
+		Stdin:     strings.NewReader("hello"),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		HomeDir:   tmpDir,
+		SM:        sm,
+		Container: container,
+		Loader:    &mockLoader{},
 	}
 
 	ctx := stdctx.Background()
@@ -78,6 +89,15 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	t.Run("SecurityRegistration", func(t *testing.T) {
 		verifySecurityRegistration(t, sm, filepath.Join(tmpDir, "output"))
 	})
+}
+
+type wrappedContainer struct {
+	di.Container
+	AgentFactory services.ChatterFactory
+}
+
+func (w *wrappedContainer) GetAgentFactory() services.ChatterFactory {
+	return w.AgentFactory
 }
 
 func setupChatIntegrationEnv(t *testing.T) (tmpDir, cfgPath, historyPath, logPath string) {

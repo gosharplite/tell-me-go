@@ -68,7 +68,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 		t.Fatalf("failed to load archive: %v", err)
 	}
 
-	archived := archiveStore.GetContents()
+	archived, _ := archiveStore.GetWindow(ctx, 0, -1)
 	if len(archived) != 4 {
 		t.Fatalf("expected 4 archived messages, got %d", len(archived))
 	}
@@ -78,7 +78,7 @@ func TestSummarizeRange_Archival(t *testing.T) {
 	}
 
 	// 4. Verify main history
-	mainContents := hManager.GetContents()
+	mainContents, _ := hManager.GetWindow(ctx, 0, -1)
 	// Should have: SummaryMsg(2 messages) + Turn 3 (2 messages) = 4 messages
 	if len(mainContents) != 4 {
 		t.Fatalf("expected 4 messages in main history, got %d", len(mainContents))

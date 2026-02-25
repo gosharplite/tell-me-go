@@ -89,15 +89,42 @@ func (m *Manager) AddContent(ctx context.Context, content *llm.Content) error {
 	return m.store.Append(ctx, []*llm.Content{cloned})
 }
 
-// GetContents returns a copy of the current history contents.
-func (m *Manager) GetContents() []*llm.Content {
+// GetTotalEntries returns the total number of content entries currently stored.
+func (m *Manager) GetTotalEntries() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	contents := make([]*llm.Content, len(m.Contents))
-	for i, c := range m.Contents {
-		contents[i] = llm.CloneContent(c)
+	return len(m.Contents)
+}
+
+// GetWindow returns a deep copy of a specific range of history.
+// If endIdx is -1, it returns from startIdx to the end of the history.
+func (m *Manager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	total := len(m.Contents)
+
+	if startIdx < 0 {
+		return nil, fmt.Errorf("invalid startIdx: %d", startIdx)
 	}
-	return contents
+	if startIdx > total {
+		startIdx = total
+	}
+
+	if endIdx == -1 || endIdx > total {
+		endIdx = total
+	}
+	if endIdx < startIdx {
+		return nil, fmt.Errorf("invalid range: startIdx=%d, endIdx=%d", startIdx, endIdx)
+	}
+
+	window := m.Contents[startIdx:endIdx]
+	cloned := make([]*llm.Content, len(window))
+	for i, c := range window {
+		cloned[i] = llm.CloneContent(c)
+	}
+
+	return cloned, nil
 }
 
 // SetContents replaces the entire history and persists it to disk.

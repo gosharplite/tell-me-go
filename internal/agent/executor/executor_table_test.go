@@ -16,7 +16,6 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 	inframock "github.com/gosharplite/tell-me-go/internal/infrastructure/testing"
@@ -487,7 +486,6 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 }
 
 func TestToolExecutor_SuggestTool(t *testing.T) {
-	exec := &ToolExecutor{}
 	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
 
 	tests := []struct {
@@ -517,7 +515,7 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.hallucinated, func(t *testing.T) {
-			got := exec.suggestTool(tt.hallucinated, validTools)
+			got := suggestTool(tt.hallucinated, validTools)
 			if got != tt.expected {
 				t.Errorf("suggestTool(%q) = %q, want %q", tt.hallucinated, got, tt.expected)
 			}
@@ -703,60 +701,6 @@ func TestToolExecutor_Strategies(t *testing.T) {
 	if len(content.Parts) == 0 {
 		t.Error("jsonStrategy produced no parts")
 	}
-}
-
-type mockSecurityManager struct {
-	domain_security.ISecurityManager
-	allowedCommands map[string]bool
-	allowAll        bool
-}
-
-func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
-	if m.allowAll {
-		return true
-	}
-	return m.allowedCommands[command]
-}
-
-type mockStrategy struct{}
-
-func (s *mockStrategy) Format(call *llm.FunctionCall, result tools.ToolResult) *llm.Part {
-	name := ""
-	if call != nil {
-		name = call.Name
-	}
-	return &llm.Part{
-		FunctionResponse: &llm.FunctionResponse{
-			ID:       call.ID,
-			Name:     name,
-			Response: map[string]interface{}{"result": result.Text},
-		},
-	}
-}
-
-type panicRegistry struct {
-	tools.IToolRegistry
-	panicOnExec bool
-	serial      bool
-}
-
-func (r *panicRegistry) GetDeclarations() []*tools.ToolDeclaration {
-	return []*tools.ToolDeclaration{{Name: "any"}}
-}
-
-func (r *panicRegistry) IsSerial(name string) bool {
-	return r.serial
-}
-
-func (r *panicRegistry) IsLongRunning(name string) bool {
-	return false
-}
-
-func (r *panicRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (tools.ToolResult, error) {
-	if r.panicOnExec {
-		panic("registry Execute panic")
-	}
-	return tools.ToolResult{}, nil
 }
 
 func TestToolExecutor_InternalPanicRecovery(t *testing.T) {

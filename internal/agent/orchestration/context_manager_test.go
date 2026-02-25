@@ -263,3 +263,96 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 		t.Errorf("expected history turns limit 50, got %d", hist)
 	}
 }
+
+func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
+	bus := events.NewSimpleEventBus()
+	ctx := context.Background()
+	defer func() {
+		_ = bus.Shutdown(ctx)
+	}()
+
+	strategy := NewContextStrategy(&mockTokenCounter{}, bus)
+	factory := &PipelineFactory{Estimator: strategy, Events: bus}
+	cm := NewContextManager(strategy, &mockHistoryManager{}, bus, factory)
+
+	// Initially nil because NewContextManager doesn't build it until an event or Reconfigure
+	cm.mu.Lock()
+	assert.Nil(t, cm.Pipeline)
+	cm.mu.Unlock()
+
+	newLimits := events.Limits{
+		MaxHistoryTokens: 9999,
+		MaxToolTurns:     50,
+		MaxHistoryTurns:  100,
+	}
+
+	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	err := bus.Flush(ctx)
+	assert.NoError(t, err)
+
+	cm.mu.Lock()
+	p1 := cm.Pipeline
+	cm.mu.Unlock()
+
+	assert.NotNil(t, p1, "Pipeline should be built after ConfigUpdated event")
+
+	// Publish another update to ensure it updates again (rebuilds pipeline)
+	newLimits.MaxHistoryTokens = 8888
+	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	err = bus.Flush(ctx)
+	assert.NoError(t, err)
+
+	cm.mu.Lock()
+	p2 := cm.Pipeline
+	cm.mu.Unlock()
+
+	assert.NotNil(t, p2)
+	assert.NotEqual(t, p1, p2, "Pipeline should be rebuilt on new config update")
+}
+
+func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
+	counter := &mockTokenCounter{}
+	strategy := NewContextStrategy(counter, nil)
+	strategy.setContextWindow(10000)
+
+	// totalEntries = 25, numTurns = 5.
+	// Initial windowSize = 5 * 4 = 20.
+	// The loop will need to increase windowSize.
+	contents := make([]*llm.Content, 25)
+	for i := 0; i < 25; i++ {
+		role := "model"
+		if i == 0 {
+			role = "user"
+		}
+		// Second turn starts at the very end to ensure we reach totalEntries
+		if i == 24 {
+			role = "user"
+		}
+		contents[i] = &llm.Content{Role: role, Parts: []*llm.Part{{Text: "msg"}}}
+	}
+
+	history := &mockHistoryManager{
+		contents: contents,
+	}
+
+	cm := NewContextManager(strategy, history, nil, nil)
+	mockSum := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "summary", nil, nil
+		},
+	}
+	cm.Summarizer = mockSum
+
+	ctx := context.Background()
+
+	// Requesting 5 turns, but history only has 2 turns.
+	// It should reach the end (windowSize = 25), then cap numTurns to totalTurns - 1 = 1.
+	msg, _, err := cm.SummarizeRange(ctx, 5, "")
+	assert.NoError(t, err)
+	assert.Contains(t, msg, "Summarized the first 1 turns")
+
+	// Verify history was updated (summarized 1 turn = 24 messages replaced by 2 summary messages)
+	// Original: 25 messages. Turn 1 (24 msgs), Turn 2 (1 msg).
+	// After summarization of Turn 1: 2 summary messages + 1 message from Turn 2 = 3 messages.
+	assert.Equal(t, 3, history.GetTotalEntries())
+}

@@ -5,6 +5,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -275,7 +276,7 @@ func TestContextManager_Prepare_PersistenceIsolation(t *testing.T) {
 	}
 
 	// Verify history in manager is NOT changed (it shouldn't have the warning)
-	persistedHistory := hManager.GetContents()
+	persistedHistory, _ := hManager.GetWindow(ctx, 0, -1)
 	for _, c := range persistedHistory {
 		for _, p := range c.Parts {
 			if strings.Contains(p.Text, "Only 2 turns remain") {
@@ -356,7 +357,7 @@ func TestContextManager_SummarizeRange_Concurrency(t *testing.T) {
 
 	<-summarizeStarted
 	// Concurrent modification of history prefix being summarized
-	current := hManager.GetContents()
+	current, _ := hManager.GetWindow(ctx, 0, -1)
 	current[0].Parts[0].Text = "modified"
 	_ = hManager.SetContents(ctx, current)
 	// We need to trigger a version bump in CM too if it's not watching hManager directly
@@ -531,4 +532,77 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	if !domain_llm.IsTransient(prepareErr) {
 		t.Errorf("expected transient error, got: %v", prepareErr)
 	}
+}
+
+func TestContextManager_GetWindow_Errors(t *testing.T) {
+	ctx := context.Background()
+	simulatedErr := errors.New("simulated I/O error")
+
+	t.Run("Prepare_Error", func(t *testing.T) {
+		hMock := &mockHistoryManager{getWindowErr: simulatedErr}
+		cm := NewContextManager(nil, hMock, nil, nil)
+		_, _, err := cm.Prepare(ctx, 1)
+		if !errors.Is(err, simulatedErr) {
+			t.Errorf("expected error %v, got %v", simulatedErr, err)
+		}
+	})
+
+	t.Run("AddContent_Error", func(t *testing.T) {
+		hMock := &mockHistoryManager{
+			contents: []*domain_llm.Content{
+				{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}},
+			},
+			getWindowErr: simulatedErr,
+		}
+		cm := NewContextManager(nil, hMock, nil, nil)
+		err := cm.AddContent(ctx, &domain_llm.Content{Role: "user", Parts: []*domain_llm.Part{{Text: "test"}}})
+		if !errors.Is(err, simulatedErr) {
+			t.Errorf("expected error %v, got %v", simulatedErr, err)
+		}
+	})
+
+	t.Run("SummarizeRange_Metadata_Error", func(t *testing.T) {
+		hMock := &mockHistoryManager{
+			contents: []*domain_llm.Content{
+				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
+				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
+				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg3"}}},
+				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg4"}}},
+			},
+			getWindowErr: simulatedErr,
+		}
+		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10}, nil)
+		cm := NewContextManager(strategy, hMock, nil, nil)
+		cm.Summarizer = &mockSummarizer{}
+
+		_, _, err := cm.SummarizeRange(ctx, 1, "")
+		if !errors.Is(err, simulatedErr) {
+			t.Errorf("expected error %v, got %v", simulatedErr, err)
+		}
+	})
+
+	t.Run("SummarizeRange_Finalize_Error", func(t *testing.T) {
+		hMock := &mockHistoryManager{
+			contents: []*domain_llm.Content{
+				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg1"}}},
+				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg2"}}},
+				{Role: "user", Parts: []*domain_llm.Part{{Text: "msg3"}}},
+				{Role: "model", Parts: []*domain_llm.Part{{Text: "msg4"}}},
+			},
+		}
+		strategy := NewContextStrategy(&mockTokenCounter{tokens: 10}, nil)
+		cm := NewContextManager(strategy, hMock, nil, nil)
+		cm.Summarizer = &mockSummarizer{
+			summarizeFn: func(ctx context.Context, subset []*domain_llm.Content, focus string) (string, *domain_llm.Metrics, error) {
+				// Set error just before finalizing
+				hMock.getWindowErr = simulatedErr
+				return "summary", &domain_llm.Metrics{}, nil
+			},
+		}
+
+		_, _, err := cm.SummarizeRange(ctx, 1, "")
+		if !errors.Is(err, simulatedErr) {
+			t.Errorf("expected error %v, got %v", simulatedErr, err)
+		}
+	})
 }

@@ -60,7 +60,7 @@ func (e *turnEngine) WithStatusReporter() turnMiddleware {
 					Status: events.TurnStatus{
 						Timestamp:        turn.Clock.Now(),
 						CurrentTurns:     turn.Index,
-						SessionTurns:     len(turn.CtxManager.History.GetContents()) / 2,
+						SessionTurns:     turn.CtxManager.History.GetTotalEntries() / 2,
 						MaxHistoryTurns:  maxHistTurns,
 						Tokens:           turn.State.Tokens,
 						MaxHistoryTokens: maxTokens,

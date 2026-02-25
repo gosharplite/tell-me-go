@@ -122,8 +122,11 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	}
 
 	// 2. CACHE MISS: Load raw history
-	contents := cm.History.GetContents()
-	history := cloneContentSlice(contents)
+	history, err := cm.History.GetWindow(ctx, 0, -1)
+	if err != nil {
+		cm.mu.Unlock()
+		return nil, nil, err
+	}
 	pipeline := cm.Pipeline
 	cm.mu.Unlock()
 
@@ -143,7 +146,7 @@ func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content
 	// We DO NOT persist the pruned/transformed history back to the store,
 	// preserving the user's full Event Sourced history safely on disk.
 	var persisted bool
-	err := pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
+	err = pipeline.executeWithPersistence(ctx, req, func(ctx context.Context, h []*llm.Content) error {
 		cm.mu.Lock()
 		defer cm.mu.Unlock()
 
@@ -178,14 +181,20 @@ func (cm *ContextManager) AddContent(ctx context.Context, content *llm.Content) 
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	contents := cm.History.GetContents()
-	if len(contents) > 0 {
-		lastIdx := len(contents) - 1
-		last := contents[lastIdx]
-		if last.Role == content.Role {
-			// Fast path: use O(1) AppendParts instead of O(N) SetContents
-			cm.version++
-			return cm.History.AppendParts(ctx, lastIdx, content.Parts)
+	total := cm.History.GetTotalEntries()
+	if total > 0 {
+		lastIdx := total - 1
+		lastWindow, err := cm.History.GetWindow(ctx, lastIdx, -1)
+		if err != nil {
+			return err
+		}
+		if len(lastWindow) > 0 {
+			last := lastWindow[0]
+			if last.Role == content.Role {
+				// Fast path: use O(1) AppendParts instead of O(N) SetContents
+				cm.version++
+				return cm.History.AppendParts(ctx, lastIdx, content.Parts)
+			}
 		}
 	} else if content.Role != "user" {
 		return fmt.Errorf("first message must be 'user', got '%s'", content.Role)
@@ -231,7 +240,7 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 		return "", nil, fmt.Errorf("%w: summarizer not initialized", llm.ErrTerminal)
 	}
 
-	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(numTurns)
+	subset, endIdx, tokens, err := cm.prepareSummarizationMetadata(ctx, numTurns)
 	if err != nil {
 		return "", nil, err
 	}
@@ -263,35 +272,22 @@ func (cm *ContextManager) SummarizeRange(ctx context.Context, numTurns int, focu
 	return fmt.Sprintf("Summarized the first %d turns of history.", actualTurns), metrics, nil
 }
 
-func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
+func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numTurns int) (subset []*llm.Content, endIdx int, tokens int, err error) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	contents := cm.History.GetContents()
-	turns := groupTurns(contents)
-	totalTurns := len(turns)
-
-	if totalTurns < 1 {
+	totalEntries := cm.History.GetTotalEntries()
+	if totalEntries == 0 {
 		return nil, 0, 0, nil
 	}
 
-	// Clamp to available turns, but leave at least 1 turn if possible
-	if numTurns >= totalTurns {
-		numTurns = totalTurns - 1
+	subset, endIdx, err = cm.findSummarizationBoundary(ctx, numTurns, totalEntries)
+	if err != nil {
+		return nil, 0, 0, err
 	}
-
-	if numTurns < 1 {
+	if subset == nil {
 		return nil, 0, 0, nil
 	}
-
-	// Calculate endIdx from logical turns
-	endIdx = 0
-	for i := 0; i < numTurns; i++ {
-		endIdx += len(turns[i])
-	}
-
-	// Deep clone the subset to ensure mutation safety during the slow LLM call
-	subset = cloneContentSlice(contents[:endIdx])
 
 	tokens = cm.Strategy.EstimateTokens(subset)
 
@@ -304,11 +300,58 @@ func (cm *ContextManager) prepareSummarizationMetadata(numTurns int) (subset []*
 	return subset, endIdx, tokens, nil
 }
 
+func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, endIdx int, err error) {
+	// Determine endIdx using a windowed load to avoid cloning the entire history if it's large.
+	// We'll start by loading a chunk that is likely to contain the requested number of turns.
+	windowSize := numTurns * 4 // Conservative estimate: 4 messages per turn on average
+	if windowSize > totalEntries {
+		windowSize = totalEntries
+	}
+
+	var contents []*llm.Content
+	for {
+		contents, err = cm.History.GetWindow(ctx, 0, windowSize)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		turns := groupTurns(contents)
+		if len(turns) >= numTurns || windowSize >= totalEntries {
+			// Found enough turns or reached the end of history.
+			totalTurns := len(turns)
+			if numTurns >= totalTurns {
+				numTurns = totalTurns - 1 // Leave at least 1 turn
+			}
+			if numTurns < 1 {
+				return nil, 0, nil
+			}
+
+			endIdx = 0
+			for i := 0; i < numTurns; i++ {
+				endIdx += len(turns[i])
+			}
+			// subset is the first endIdx elements of contents.
+			// Since contents is already a deep clone from GetWindow, we can just slice it.
+			subset = contents[:endIdx]
+			return subset, endIdx, nil
+		}
+
+		// Not enough turns found, increase window and try again.
+		windowSize += numTurns * 2
+		if windowSize > totalEntries {
+			windowSize = totalEntries
+		}
+	}
+}
+
 func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	currentContents := cm.History.GetContents()
+	currentContents, err := cm.History.GetWindow(ctx, 0, -1)
+	if err != nil {
+		return err
+	}
 	if len(currentContents) < endIdx {
 		return fmt.Errorf("%w: summarization aborted: history was pruned while summarizing", llm.ErrTerminal)
 	}

@@ -81,7 +81,7 @@ func TestAgent_ManageHistory(t *testing.T) {
 
 			if !tt.expectedErr {
 				idx := int(tt.index)
-				contents := hManager.GetContents()
+				contents, _ := hManager.GetWindow(ctx, 0, -1)
 				if contents[idx*2].Pinned != tt.wantStatus || contents[idx*2+1].Pinned != tt.wantStatus {
 					t.Errorf("expected pinned status %v for turn %d, got %v", tt.wantStatus, idx, contents[idx*2].Pinned)
 				}

@@ -10,13 +10,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
@@ -39,6 +43,41 @@ func (m *mockChatter) SetTieredThreshold(ctx stdctx.Context, threshold int) erro
 func (m *mockChatter) Subscribe(sub func(events.Event))                           {}
 func (m *mockChatter) Shutdown(ctx stdctx.Context) error                          { return nil }
 
+type mockContainer struct {
+	AgentFactory services.ChatterFactory
+	Client       domain_llm.LLMClient
+}
+
+func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
+	paths := &domain_persistence.Paths{
+		LogPath: "/tmp/log",
+	}
+	hManager := history.NewManager(persistence.NewOSFileSystem(), "/tmp/h", "/tmp/ha")
+	bus := events.NewSimpleEventBus()
+	pricingData := domain_pricing.PricingData{}
+	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
+	tracker := &mockTracker{}
+
+	deps := orchestration.NewSessionDependencies(paths, hManager, m.Client, m.Client.(domain_llm.LLMGateway), nil, tracker, pricingData, pricingOverrides, bus)
+	return deps, hManager, func() {}, nil
+}
+
+func (m *mockContainer) GetAgentFactory() services.ChatterFactory {
+	return m.AgentFactory
+}
+
+func (m *mockContainer) FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *domain_config.Config) {
+}
+
+type mockTracker struct {
+	domain_pricing.ICostTracker
+}
+
+func (m *mockTracker) Warmup() {}
+func (m *mockTracker) GetStats(ctx stdctx.Context) (domain_pricing.UsageStats, float64) {
+	return domain_pricing.UsageStats{}, 0
+}
+
 func TestChatCommand_Execute(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "assistant.yaml")
@@ -48,22 +87,24 @@ func TestChatCommand_Execute(t *testing.T) {
 
 	var stdout, stderr strings.Builder
 	sm := internal_security.NewSecurityManager(nil)
-	cmd := &chatCommand{
-		Version: "1.0.0",
-		Stdin:   strings.NewReader("hello"),
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-		HomeDir: tmpDir,
-		Loader:  &mockLoader{},
-		SM:      sm,
+	mChatter := &mockChatter{}
+	mClient := &mockClient{}
+	mContainer := &mockContainer{
+		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+			return mChatter
+		},
+		Client: mClient,
 	}
 
-	mChatter := &mockChatter{}
-	cmd.AgentFactory = func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
-		return mChatter
-	}
-	cmd.ClientFactory = func(cfg *domain_config.Config, p domain_pricing.PricingData, bus events.EventBus) (domain_llm.LLMClient, error) {
-		return &mockClient{}, nil
+	cmd := &chatCommand{
+		Version:   "1.0.0",
+		Stdin:     strings.NewReader("hello"),
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		HomeDir:   tmpDir,
+		Loader:    &mockLoader{},
+		SM:        sm,
+		Container: mContainer,
 	}
 
 	ctx := stdctx.Background()
@@ -90,6 +131,19 @@ func (m *mockClient) Generate(ctx stdctx.Context, input []*domain_llm.Content, t
 	return ch, func() (*domain_llm.Content, *domain_llm.Metrics, error) {
 		return &domain_llm.Content{Parts: []*domain_llm.Part{{Text: "response"}}}, &domain_llm.Metrics{}, nil
 	}
+}
+
+func (m *mockClient) SendChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domaintools.ToolDeclaration, resolver domain_llm.AssetResolver) (*domain_llm.Content, *domain_llm.Metrics, error) {
+	return nil, nil, nil
+}
+func (m *mockClient) StreamChat(ctx stdctx.Context, history []*domain_llm.Content, tools []*domaintools.ToolDeclaration, resolver domain_llm.AssetResolver, callback func(*domain_llm.Content)) (*domain_llm.Metrics, error) {
+	return nil, nil
+}
+func (m *mockClient) GenerateImages(ctx stdctx.Context, model, prompt string, mimeType string) ([][]byte, error) {
+	return nil, nil
+}
+func (m *mockClient) RefreshAuth() error {
+	return nil
 }
 
 type mockLoader struct{}

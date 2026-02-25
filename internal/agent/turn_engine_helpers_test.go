@@ -38,14 +38,36 @@ type mockHistoryManager struct {
 	SetContentsFunc func(ctx context.Context, contents []*llm.Content) error
 }
 
-func (m *mockHistoryManager) GetContents() []*llm.Content {
+func (m *mockHistoryManager) GetTotalEntries() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	res := make([]*llm.Content, len(m.Contents))
-	for i, c := range m.Contents {
+	return len(m.Contents)
+}
+
+func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	total := len(m.Contents)
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx > total {
+		startIdx = total
+	}
+	if endIdx == -1 || endIdx > total {
+		endIdx = total
+	}
+	if endIdx < startIdx {
+		return []*llm.Content{}, nil
+	}
+
+	window := m.Contents[startIdx:endIdx]
+	res := make([]*llm.Content, len(window))
+	for i, c := range window {
 		res[i] = llm.CloneContent(c)
 	}
-	return res
+	return res, nil
 }
 
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {

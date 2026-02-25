@@ -185,7 +185,7 @@ func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolRe
 	}
 
 	if tt.expectedMsgs > 0 {
-		contents := h.GetContents()
+		contents, _ := h.GetWindow(context.Background(), 0, -1)
 		if len(contents) != tt.expectedMsgs {
 			t.Errorf("expected %d messages in history, got %d", tt.expectedMsgs, len(contents))
 		}

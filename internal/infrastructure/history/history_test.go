@@ -42,8 +42,49 @@ func TestHistoryManager_Basic(t *testing.T) {
 		t.Fatalf("failed to load history: %v", err)
 	}
 
-	if len(m2.GetContents()) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(m2.GetContents()))
+	if m2.GetTotalEntries() != 2 {
+		t.Errorf("expected 2 entries, got %d", m2.GetTotalEntries())
+	}
+}
+
+func TestHistoryManager_GetWindow(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	m := NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	ctx := context.Background()
+
+	_ = m.addEntry(ctx, "user", "1")
+	_ = m.addEntry(ctx, "model", "2")
+	_ = m.addEntry(ctx, "user", "3")
+	_ = m.addEntry(ctx, "model", "4")
+
+	tests := []struct {
+		name     string
+		start    int
+		end      int
+		expected int
+		err      bool
+	}{
+		{"full", 0, -1, 4, false},
+		{"partial", 1, 3, 2, false},
+		{"single", 2, 3, 1, false},
+		{"out of bounds end", 0, 10, 4, false},
+		{"start > total", 10, -1, 0, false},
+		{"invalid range", 3, 1, 0, true},
+		{"negative start", -1, 2, 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			window, err := m.GetWindow(ctx, tt.start, tt.end)
+			if (err != nil) != tt.err {
+				t.Fatalf("expected error: %v, got: %v", tt.err, err)
+			}
+			if err == nil && len(window) != tt.expected {
+				t.Errorf("expected %d entries, got %d", tt.expected, len(window))
+			}
+		})
 	}
 }
 
@@ -105,16 +146,17 @@ func TestHistoryManager_SnapshotRollback(t *testing.T) {
 	m.snapshot()
 
 	_ = m.addEntry(ctx, "model", "Response")
-	if len(m.GetContents()) != 2 {
-		t.Errorf("expected 2 entries, got %d", len(m.GetContents()))
+	if m.GetTotalEntries() != 2 {
+		t.Errorf("expected 2 entries, got %d", m.GetTotalEntries())
 	}
 
 	m.rollback(ctx)
-	if len(m.GetContents()) != 1 {
-		t.Errorf("expected 1 entry after rollback, got %d", len(m.GetContents()))
+	if m.GetTotalEntries() != 1 {
+		t.Errorf("expected 1 entry after rollback, got %d", m.GetTotalEntries())
 	}
-	if m.GetContents()[0].Parts[0].Text != "Initial" {
-		t.Errorf("expected 'Initial', got '%s'", m.GetContents()[0].Parts[0].Text)
+	contents, _ := m.GetWindow(ctx, 0, 1)
+	if contents[0].Parts[0].Text != "Initial" {
+		t.Errorf("expected 'Initial', got '%s'", contents[0].Parts[0].Text)
 	}
 
 	// rollback with no snapshot should do nothing (or at least not crash)
@@ -205,7 +247,7 @@ func TestHistoryManager_PinValidTurn(t *testing.T) {
 		t.Fatalf("SetPinned(0, true) failed: %v", err)
 	}
 
-	contents := m.GetContents()
+	contents, _ := m.GetWindow(ctx, 0, -1)
 	if !contents[0].Pinned || !contents[1].Pinned {
 		t.Error("Turn 0 (messages 0 and 1) should be pinned")
 	}
@@ -232,7 +274,7 @@ func TestHistoryManager_UnpinTurn(t *testing.T) {
 	if err := m.SetPinned(ctx, 0, false); err != nil {
 		t.Fatalf("SetPinned(0, false) failed: %v", err)
 	}
-	contents := m.GetContents()
+	contents, _ := m.GetWindow(ctx, 0, -1)
 	if contents[0].Pinned || contents[1].Pinned {
 		t.Error("Turn 0 should be unpinned")
 	}
@@ -254,7 +296,7 @@ func TestHistoryManager_ClonePersistent(t *testing.T) {
 		t.Fatalf("AddContent failed: %v", err)
 	}
 
-	contents := m.GetContents()
+	contents, _ := m.GetWindow(ctx, 0, -1)
 	if len(contents) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(contents))
 	}
@@ -348,7 +390,7 @@ func TestHistoryManager_SetContents(t *testing.T) {
 		t.Fatalf("SetContents failed: %v", err)
 	}
 
-	loaded := m.GetContents()
+	loaded, _ := m.GetWindow(ctx, 0, -1)
 	if len(loaded) != 2 {
 		t.Fatalf("expected 2 contents, got %d", len(loaded))
 	}
@@ -372,7 +414,7 @@ func TestHistoryManager_AppendParts(t *testing.T) {
 		t.Fatalf("expected nil err, got %v", err)
 	}
 
-	contents := m.GetContents()
+	contents, _ := m.GetWindow(ctx, 0, -1)
 	if len(contents) != 2 {
 		t.Fatalf("expected 2 contents, got %d", len(contents))
 	}

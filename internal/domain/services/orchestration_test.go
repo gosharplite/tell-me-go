@@ -13,7 +13,10 @@ import (
 
 type mockHistoryManager struct{}
 
-func (m *mockHistoryManager) GetContents() []*llm.Content { return nil }
+func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	return nil, nil
+}
+func (m *mockHistoryManager) GetTotalEntries() int { return 0 }
 func (m *mockHistoryManager) SetContents(ctx context.Context, contents []*llm.Content) error {
 	return nil
 }
