@@ -25,6 +25,9 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
+// DefaultMaxQueueSize is the default capacity for the event ring buffer.
+const DefaultMaxQueueSize = 1000
+
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
 	mu          sync.RWMutex
@@ -32,15 +35,26 @@ type SimpleEventBus struct {
 	wg          sync.WaitGroup
 	once        sync.Once
 	closed      bool
+	capacity    int
 }
 
 type flushEvent struct {
 	done chan struct{}
 }
 
-// NewSimpleEventBus creates and initializes a new SimpleEventBus.
+// NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
 func NewSimpleEventBus() *SimpleEventBus {
-	return &SimpleEventBus{}
+	return NewSimpleEventBusWithCapacity(DefaultMaxQueueSize)
+}
+
+// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
+func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
+	if capacity <= 0 {
+		capacity = DefaultMaxQueueSize
+	}
+	return &SimpleEventBus{
+		capacity: capacity,
+	}
 }
 
 func (b *SimpleEventBus) Publish(e Event) {
@@ -95,8 +109,11 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 }
 
 func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
-	const maxQueueSize = 1000
-	buffer := &eventRingBuffer{max: maxQueueSize}
+	cap := b.capacity
+	if cap <= 0 {
+		cap = DefaultMaxQueueSize
+	}
+	buffer := &eventRingBuffer{max: cap}
 
 	for {
 		if buffer.len() > 0 {
