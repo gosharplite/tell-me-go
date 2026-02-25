@@ -125,12 +125,12 @@ type mockSessionProvider struct {
 	listStore  *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() *services.TaskService      { return m.tasks }
-func (m *mockSessionProvider) GetConfig() *services.ConfigService    { return m.config }
+func (m *mockSessionProvider) GetTasks() *services.TaskService            { return m.tasks }
+func (m *mockSessionProvider) GetConfig() *services.ConfigService         { return m.config }
 func (m *mockSessionProvider) GetScratchpad() *services.ScratchpadService { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() services.SessionInfo        { return m.info }
-func (m *mockSessionProvider) SetInfo(info services.SessionInfo)    { m.info = info }
-func (m *mockSessionProvider) Close() error                         { return nil }
+func (m *mockSessionProvider) GetInfo() services.SessionInfo              { return m.info }
+func (m *mockSessionProvider) SetInfo(info services.SessionInfo)          { m.info = info }
+func (m *mockSessionProvider) Close() error                               { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}
@@ -138,7 +138,7 @@ func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	ts := services.NewTaskService(lt)
 	cs := services.NewConfigService(kv)
 	ss := services.NewScratchpadService(kv)
-	
+
 	provider := &mockSessionProvider{
 		tasks:      ts,
 		config:     cs,
@@ -151,24 +151,24 @@ func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 			Paths:  make(map[string]string),
 		},
 	}
-	
+
 	return newpersistenceTools(provider), provider
 }
 
 func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 	pt, provider := setupPersistenceTools()
 	provider.info.Model = "test-model"
-	
+
 	res, err := pt.GetSessionInfo(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("GetSessionInfo failed: %v", err)
 	}
-	
+
 	var info services.SessionInfo
 	if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
 		t.Fatalf("Failed to unmarshal result: %v", err)
 	}
-	
+
 	if info.Model != "test-model" {
 		t.Errorf("Expected model test-model, got %s", info.Model)
 	}
@@ -308,7 +308,7 @@ func TestPersistenceTools_ManageScratchpad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clear scratchpad failed: %v", err)
 	}
-	
+
 	// Read empty
 	res, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "read"})
 	if err != nil {
@@ -352,7 +352,7 @@ func TestPersistenceTools_ManageConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Delete config failed: %v", err)
 	}
-	
+
 	// List empty
 	res, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "list"})
 	if err != nil {
@@ -398,7 +398,7 @@ func TestNewPersistenceTools_Nil(t *testing.T) {
 	if pt.state != nil {
 		t.Error("Expected nil state")
 	}
-	
+
 	reg := registry.New()
 	pt.Register(reg) // Should not panic
 	if len(reg.GetDeclarations()) != 0 {
@@ -441,12 +441,12 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 
 	// Inject error into list store
 	provider.listStore.err = fmt.Errorf("list store error")
-	
+
 	_, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task"})
 	if err == nil {
 		t.Error("Expected error from addTask")
 	}
-	
+
 	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"})
 	if err == nil {
 		t.Error("Expected error from clearTasks")
@@ -456,27 +456,27 @@ func TestPersistenceTools_StoreErrors(t *testing.T) {
 	provider.kvStore.err = nil
 	_, _ = pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k", "value": "v"})
 	provider.kvStore.err = fmt.Errorf("kv store error")
-	
+
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "write", "content": "hello"})
 	if err == nil {
 		t.Error("Expected error from writeScratchpad")
 	}
-	
+
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "append", "content": "world"})
 	if err == nil {
 		t.Error("Expected error from appendScratchpad")
 	}
-	
+
 	_, err = pt.ManageScratchpad(ctx, map[string]interface{}{"action": "clear"})
 	if err == nil {
 		t.Error("Expected error from clearScratchpad")
 	}
-	
+
 	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "set", "key": "k2", "value": "v"})
 	if err == nil {
 		t.Error("Expected error from setConfig")
 	}
-	
+
 	_, err = pt.ManageConfig(ctx, map[string]interface{}{"action": "delete", "key": "k"})
 	if err == nil {
 		t.Error("Expected error from deleteConfig")

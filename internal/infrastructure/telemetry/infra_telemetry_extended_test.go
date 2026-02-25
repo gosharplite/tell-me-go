@@ -59,10 +59,10 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 			"test-model": {Hit: 0.1, Miss: 1.0, Comp: 2.0},
 		},
 	}
-	
+
 	tempDir := t.TempDir()
 	logFile := filepath.Join(tempDir, "test.log")
-	
+
 	tracker := NewSessionCostTracker(sm, logFile, "test-mode", "test-model", pricing.Models["test-model"], pricing)
 
 	t.Run("Warmup", func(t *testing.T) {
@@ -84,15 +84,15 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 
 	t.Run("AccumulateAndReturn", func(t *testing.T) {
 		mt := llm.Metrics{
-			PromptTokens: 1000,
+			PromptTokens:   1000,
 			ResponseTokens: 500,
-			Model: "test-model",
+			Model:          "test-model",
 		}
 		cost := tracker.AccumulateAndReturn(mt)
 		if cost <= 0 {
 			t.Errorf("Expected positive cost from AccumulateAndReturn")
 		}
-		
+
 		_, totalCost := tracker.GetStats(context.Background())
 		if totalCost < cost {
 			t.Errorf("Total cost should be at least turn cost")
@@ -103,14 +103,14 @@ func TestSessionCostTracker_Extended(t *testing.T) {
 func TestRegisterMetrics_Extended(t *testing.T) {
 	reg := &mockRegistry{}
 	sm := &mockSM{}
-	
+
 	tempDir := t.TempDir()
 	outputDir := filepath.Join(tempDir, "output")
 	_ = os.Mkdir(outputDir, 0755)
 	logFile := filepath.Join(outputDir, "test.log")
-	
+
 	RegisterMetrics(reg, sm, logFile, "test-model", "test-mode", nil)
-	
+
 	if _, ok := reg.handlers["estimate_cost"]; !ok {
 		t.Error("estimate_cost tool not registered")
 	}
@@ -122,7 +122,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 		handler := reg.handlers["estimate_cost"]
 		// Create log file
 		_ = os.WriteFile(logFile, []byte(`{"model": "test-model", "prompt_tokens": 1000, "response_tokens": 500}`+"\n"), 0644)
-		
+
 		res, err := handler(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("estimate_cost failed: %v", err)
@@ -134,7 +134,7 @@ func TestRegisterMetrics_Extended(t *testing.T) {
 
 	t.Run("Call get_cost_summary", func(t *testing.T) {
 		handler := reg.handlers["get_cost_summary"]
-		
+
 		// Create a ledger file
 		historyPath := filepath.Join(tempDir, "global_costs.json")
 		history := []sessionCostRecord{
@@ -183,29 +183,29 @@ func TestRecordSessionCost_Extended(t *testing.T) {
 func TestTraceTelemetry(t *testing.T) {
 	tempDir := t.TempDir()
 	logFile := filepath.Join(tempDir, "test.log")
-	
+
 	trace := &domain_telemetry.TurnTrace{
 		FinalStatus: "success",
 	}
-	
+
 	logTrace(logFile, trace)
-	
+
 	traceFile := filepath.Join(tempDir, "test.trace.jsonl")
 	if _, err := os.Stat(traceFile); os.IsNotExist(err) {
 		t.Error("trace file not created")
 	}
-	
+
 	t.Run("RegisterTraceSubscriber", func(t *testing.T) {
 		bus := events.NewSimpleEventBus()
 		RegisterTraceSubscriber(bus, logFile)
-		
+
 		bus.Publish(events.TraceEvent{Trace: trace})
-		
+
 		// Flush event bus
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
 		bus.Flush(ctx)
-		
+
 		if _, err := os.Stat(traceFile); os.IsNotExist(err) {
 			t.Error("trace file not created via subscriber")
 		}
@@ -216,14 +216,14 @@ func TestLedger_Extended(t *testing.T) {
 	t.Run("IsStale", func(t *testing.T) {
 		tempFile := filepath.Join(t.TempDir(), "stale.lock")
 		_ = os.WriteFile(tempFile, []byte(""), 0644)
-		
+
 		if isStale(tempFile) {
 			t.Error("New file should not be stale")
 		}
-		
+
 		oldTime := time.Now().Add(-10 * time.Minute)
 		_ = os.Chtimes(tempFile, oldTime, oldTime)
-		
+
 		if !isStale(tempFile) {
 			t.Error("Old file should be stale")
 		}
@@ -233,16 +233,16 @@ func TestLedger_Extended(t *testing.T) {
 		tempDir := t.TempDir()
 		subDir := filepath.Join(tempDir, "subdir")
 		_ = os.Mkdir(subDir, 0755)
-		
+
 		logPath := filepath.Join(subDir, "session_tokens.log")
 		_ = os.WriteFile(logPath, []byte("data"), 0644)
-		
+
 		ls := &ledgerStore{}
 		files, err := ls.findLogFiles(tempDir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		
+
 		found := false
 		for _, f := range files {
 			if filepath.Base(f) == "session_tokens.log" {
@@ -258,22 +258,22 @@ func TestLedger_Extended(t *testing.T) {
 	t.Run("AcquireAndReleaseLock", func(t *testing.T) {
 		tempDir := t.TempDir()
 		historyPath := filepath.Join(tempDir, "global_costs.json")
-		
+
 		ls := &ledgerStore{}
 		f, err := ls.acquireLedgerLock(historyPath)
 		if err != nil {
 			t.Fatalf("Failed to acquire lock: %v", err)
 		}
-		
+
 		// Try to acquire again
 		f2, err := ls.acquireLedgerLock(historyPath)
 		if err == nil {
 			f2.Close()
 			t.Error("Should not be able to acquire lock again")
 		}
-		
+
 		ls.releaseLedgerLock(historyPath, f)
-		
+
 		// Should be able to acquire now
 		f3, err := ls.acquireLedgerLock(historyPath)
 		if err != nil {
@@ -287,14 +287,14 @@ func TestMetricsManager_LoadHistory_Corrupted(t *testing.T) {
 	tempDir := t.TempDir()
 	historyPath := filepath.Join(tempDir, "global_costs.json")
 	_ = os.WriteFile(historyPath, []byte("invalid json"), 0644)
-	
+
 	m := &metricsManager{}
 	history := m.loadHistory(context.Background(), historyPath, tempDir)
-	
+
 	if len(history) != 0 {
 		t.Error("Expected empty history for corrupted file")
 	}
-	
+
 	if _, err := os.Stat(historyPath + ".bak"); os.IsNotExist(err) {
 		t.Error("Backup file should be created for corrupted ledger")
 	}
@@ -307,7 +307,7 @@ func TestMetricsManager_Retention(t *testing.T) {
 		{Date: now.Format("2006-01-02"), Session: "new"},
 		{Date: now.AddDate(0, 0, -40).Format("2006-01-02"), Session: "old"},
 	}
-	
+
 	filtered := m.applyRetentionPolicy(history, 30)
 	if len(filtered) != 1 {
 		t.Errorf("Expected 1 record after retention, got %d", len(filtered))
@@ -320,12 +320,12 @@ func TestMetricsManager_Retention(t *testing.T) {
 func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 	tempDir := t.TempDir()
 	m := &metricsManager{}
-	
+
 	// Case 1: No config file
 	if days := m.loadRetentionDays(tempDir); days != 30 {
 		t.Errorf("Expected default 30 days, got %d", days)
 	}
-	
+
 	// Case 2: Config file with retention days
 	configPath := filepath.Join(tempDir, "config.json")
 	_ = os.WriteFile(configPath, []byte(`{"cost_retention_days": "60"}`), 0644)
@@ -335,21 +335,21 @@ func TestMetricsManager_LoadRetentionDays(t *testing.T) {
 }
 
 func TestResolveUsageForSummary_NoTracker(t *testing.T) {
-    sm := &mockSM{}
-    tempDir := t.TempDir()
-    logFile := filepath.Join(tempDir, "nonexistent.log")
-    
-    usage, cost, err := resolveUsageForSummary(context.Background(), sm, nil, logFile, "model", nil)
-    if err != nil {
-        t.Errorf("Unexpected error: %v", err)
-    }
-    if usage.PromptTokens != 0 || cost != 0 {
-        t.Error("Expected zero usage/cost for nonexistent log")
-    }
+	sm := &mockSM{}
+	tempDir := t.TempDir()
+	logFile := filepath.Join(tempDir, "nonexistent.log")
+
+	usage, cost, err := resolveUsageForSummary(context.Background(), sm, nil, logFile, "model", nil)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if usage.PromptTokens != 0 || cost != 0 {
+		t.Error("Expected zero usage/cost for nonexistent log")
+	}
 }
 
 func TestIsStale_NonExistent(t *testing.T) {
-    if isStale("/nonexistent/path/to/lock") {
-        t.Error("Non-existent file should not be stale")
-    }
+	if isStale("/nonexistent/path/to/lock") {
+		t.Error("Non-existent file should not be stale")
+	}
 }

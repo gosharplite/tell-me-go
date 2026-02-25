@@ -172,11 +172,10 @@ func runReleaseReadinessTest(t *testing.T, sm domain_security.ISecurityManager, 
 	}
 }
 
-
 func TestLinterChecker_Fallbacks(t *testing.T) {
 	sm := security.NewSecurityManager(nil)
 	sm.RegisterSafePath(".")
-	
+
 	tests := []struct {
 		name       string
 		runFunc    func(ctx context.Context, name string, args ...string) ([]byte, error)

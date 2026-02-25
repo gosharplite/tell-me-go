@@ -480,10 +480,10 @@ func TestVertexAuth_Apply_Error(t *testing.T) {
 	cachePath := auth.getCachePath()
 	_ = os.Remove(cachePath)
 	defer os.Remove(cachePath)
-	
+
 	req := &Request{Headers: make(map[string]string)}
 	err := auth.Apply(ctx, req)
-	
+
 	if err == nil || !strings.Contains(err.Error(), "mock gcloud error") {
 		t.Errorf("Expected mock gcloud error, got %v", err)
 	}
@@ -496,10 +496,10 @@ func TestServiceAccountAuth_Apply_Error(t *testing.T) {
 			return nil, fmt.Errorf("mock oauth2 error")
 		},
 	}
-	
+
 	req := &Request{Headers: make(map[string]string)}
 	err := auth.Apply(ctx, req)
-	
+
 	if err == nil || !strings.Contains(err.Error(), "mock oauth2 error") {
 		t.Errorf("Expected mock oauth2 error, got %v", err)
 	}

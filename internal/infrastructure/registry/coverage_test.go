@@ -74,7 +74,7 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := registry.New()
 			var wg sync.WaitGroup
-			
+
 			// Start goroutines that register and execute tools concurrently
 			for i := 0; i < tt.numRoutines; i++ {
 				wg.Add(1)
@@ -85,9 +85,9 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 					handler := func(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 						return tools.ToolResult{Text: fmt.Sprintf("res-%d", id)}, nil
 					}
-					
+
 					reg.Register(def, handler)
-					
+
 					// Also try to update some existing ones
 					if id > 0 {
 						prevName := fmt.Sprintf("tool-%d", id-1)
@@ -95,7 +95,7 @@ func TestRegistry_ConcurrentAccess(t *testing.T) {
 						_ = reg.IsLongRunning(prevName)
 						_, _ = reg.Execute(context.Background(), prevName, nil)
 					}
-					
+
 					_, _ = reg.Execute(context.Background(), name, nil)
 					_ = reg.GetDeclarations()
 				}(i)

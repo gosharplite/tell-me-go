@@ -103,7 +103,7 @@ func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
 		{"deepseek missing key", "deepseek", "", true},
 		{"anthropic missing key", "anthropic", "", true},
 		{"unknown provider missing key", "unknown", "", true},
-		{"google missing key", "google", "", false}, // Resolves to VertexAuth
+		{"google missing key", "google", "", false},                     // Resolves to VertexAuth
 		{"unknown provider with key", "unknown", "explicit-key", false}, // Resolves to APIKeyAuth
 	}
 

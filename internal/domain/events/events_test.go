@@ -338,9 +338,9 @@ func TestEventRingBuffer_Eviction(t *testing.T) {
 	buffer.push(1)
 	buffer.push(2)
 	buffer.push(3)
-	
+
 	// Buffer is now full [1, 2, 3]. Pushing next should evict 1.
-	buffer.push(4) 
+	buffer.push(4)
 
 	if buffer.len() != 3 {
 		t.Errorf("Expected length 3 after eviction, got %d", buffer.len())
@@ -351,11 +351,11 @@ func TestEventRingBuffer_Eviction(t *testing.T) {
 	if val := buffer.pop(); val != 2 {
 		t.Errorf("Expected popped value to be 2, got %v", val)
 	}
-	
+
 	// Buffer is now [3, 4]
 	buffer.push(5)
 	buffer.push(6) // Evicts 3
-	
+
 	if val := buffer.pop(); val != 4 {
 		t.Errorf("Expected popped value to be 4, got %v", val)
 	}
@@ -437,12 +437,12 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 	bus.Publish("init")
 	<-ready
 
-	// 2. Now subscriber is blocked. 
+	// 2. Now subscriber is blocked.
 	// Publish an event that will occupy the 1-slot ring buffer.
 	bus.Publish("in-buffer")
 
 	// 3. Trigger Flush() in a separate goroutine. It will block.
-	// It sends a flushEvent to the 'in' channel. 
+	// It sends a flushEvent to the 'in' channel.
 	// pumpEvents will read it and push it to the ring buffer, evicting "in-buffer".
 	flushErr := make(chan error, 1)
 	go func() {

@@ -322,7 +322,7 @@ func TestAppendText_WriteError(t *testing.T) {
 
 	mfs := &mockFS_AppendWrite{FileSystem: infrapersistence.NewOSFileSystem(), writeErr: fmt.Errorf("write error")}
 	w := &fileWriter{sm: sm, bm: newBackupManager(sm, infrapersistence.NewOSFileSystem(), 10), fs: mfs}
-	
+
 	_, err := w.appendText(context.Background(), map[string]interface{}{
 		"filepath": path,
 		"content":  "test",

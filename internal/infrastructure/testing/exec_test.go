@@ -19,7 +19,7 @@ func TestMockExecutor(t *testing.T) {
 		}
 		ctx := context.Background()
 		out, err := m.Output(ctx, "ls", "-la")
-		
+
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("output"), out)
 		assert.Equal(t, "ls", m.CommandName)
@@ -33,7 +33,7 @@ func TestMockExecutor(t *testing.T) {
 		}
 		ctx := context.Background()
 		out, err := m.CombinedOutput(ctx, "grep", "foo")
-		
+
 		assert.Error(t, err)
 		assert.Equal(t, []byte("combined"), out)
 		assert.Equal(t, "grep", m.CommandName)
