@@ -281,46 +281,12 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 		return nil, 0, 0, nil
 	}
 
-	// Determine endIdx using a windowed load to avoid cloning the entire history if it's large.
-	// We'll start by loading a chunk that is likely to contain the requested number of turns.
-	windowSize := numTurns * 4 // Conservative estimate: 4 messages per turn on average
-	if windowSize > totalEntries {
-		windowSize = totalEntries
+	subset, endIdx, err = cm.findSummarizationBoundary(ctx, numTurns, totalEntries)
+	if err != nil {
+		return nil, 0, 0, err
 	}
-
-	var contents []*llm.Content
-	for {
-		contents, err = cm.History.GetWindow(ctx, 0, windowSize)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-
-		turns := groupTurns(contents)
-		if len(turns) >= numTurns || windowSize >= totalEntries {
-			// Found enough turns or reached the end of history.
-			totalTurns := len(turns)
-			if numTurns >= totalTurns {
-				numTurns = totalTurns - 1 // Leave at least 1 turn
-			}
-			if numTurns < 1 {
-				return nil, 0, 0, nil
-			}
-
-			endIdx = 0
-			for i := 0; i < numTurns; i++ {
-				endIdx += len(turns[i])
-			}
-			// subset is the first endIdx elements of contents.
-			// Since contents is already a deep clone from GetWindow, we can just slice it.
-			subset = contents[:endIdx]
-			break
-		}
-
-		// Not enough turns found, increase window and try again.
-		windowSize += numTurns * 2
-		if windowSize > totalEntries {
-			windowSize = totalEntries
-		}
+	if subset == nil {
+		return nil, 0, 0, nil
 	}
 
 	tokens = cm.Strategy.EstimateTokens(subset)
@@ -332,6 +298,50 @@ func (cm *ContextManager) prepareSummarizationMetadata(ctx context.Context, numT
 	}
 
 	return subset, endIdx, tokens, nil
+}
+
+func (cm *ContextManager) findSummarizationBoundary(ctx context.Context, numTurns int, totalEntries int) (subset []*llm.Content, endIdx int, err error) {
+	// Determine endIdx using a windowed load to avoid cloning the entire history if it's large.
+	// We'll start by loading a chunk that is likely to contain the requested number of turns.
+	windowSize := numTurns * 4 // Conservative estimate: 4 messages per turn on average
+	if windowSize > totalEntries {
+		windowSize = totalEntries
+	}
+
+	var contents []*llm.Content
+	for {
+		contents, err = cm.History.GetWindow(ctx, 0, windowSize)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		turns := groupTurns(contents)
+		if len(turns) >= numTurns || windowSize >= totalEntries {
+			// Found enough turns or reached the end of history.
+			totalTurns := len(turns)
+			if numTurns >= totalTurns {
+				numTurns = totalTurns - 1 // Leave at least 1 turn
+			}
+			if numTurns < 1 {
+				return nil, 0, nil
+			}
+
+			endIdx = 0
+			for i := 0; i < numTurns; i++ {
+				endIdx += len(turns[i])
+			}
+			// subset is the first endIdx elements of contents.
+			// Since contents is already a deep clone from GetWindow, we can just slice it.
+			subset = contents[:endIdx]
+			return subset, endIdx, nil
+		}
+
+		// Not enough turns found, increase window and try again.
+		windowSize += numTurns * 2
+		if windowSize > totalEntries {
+			windowSize = totalEntries
+		}
+	}
 }
 
 func (cm *ContextManager) finalizeSummarization(ctx context.Context, subset []*llm.Content, endIdx int, summary string) error {
