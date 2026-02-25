@@ -309,3 +309,64 @@ func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
 		bus.Publish(i)
 	}
 }
+
+func TestEventRingBuffer_Basic(t *testing.T) {
+	buffer := &eventRingBuffer{max: 3}
+	if buffer.len() != 0 {
+		t.Errorf("Expected length 0, got %d", buffer.len())
+	}
+
+	buffer.push(1)
+	buffer.push(2)
+
+	if buffer.len() != 2 {
+		t.Errorf("Expected length 2, got %d", buffer.len())
+	}
+	if val := buffer.front(); val != 1 {
+		t.Errorf("Expected front to be 1, got %v", val)
+	}
+	if val := buffer.pop(); val != 1 {
+		t.Errorf("Expected popped value to be 1, got %v", val)
+	}
+	if buffer.len() != 1 {
+		t.Errorf("Expected length 1, got %d", buffer.len())
+	}
+}
+
+func TestEventRingBuffer_Eviction(t *testing.T) {
+	buffer := &eventRingBuffer{max: 3}
+	buffer.push(1)
+	buffer.push(2)
+	buffer.push(3)
+	
+	// Buffer is now full [1, 2, 3]. Pushing next should evict 1.
+	buffer.push(4) 
+
+	if buffer.len() != 3 {
+		t.Errorf("Expected length 3 after eviction, got %d", buffer.len())
+	}
+	if val := buffer.front(); val != 2 {
+		t.Errorf("Expected front to be 2 after eviction, got %v", val)
+	}
+	if val := buffer.pop(); val != 2 {
+		t.Errorf("Expected popped value to be 2, got %v", val)
+	}
+	
+	// Buffer is now [3, 4]
+	buffer.push(5)
+	buffer.push(6) // Evicts 3
+	
+	if val := buffer.pop(); val != 4 {
+		t.Errorf("Expected popped value to be 4, got %v", val)
+	}
+}
+
+func TestEventRingBuffer_EmptyState(t *testing.T) {
+	buffer := &eventRingBuffer{max: 3}
+	if val := buffer.pop(); val != nil {
+		t.Errorf("Expected nil when popping empty buffer, got %v", val)
+	}
+	if val := buffer.front(); val != nil {
+		t.Errorf("Expected nil when fronting empty buffer, got %v", val)
+	}
+}

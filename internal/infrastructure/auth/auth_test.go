@@ -468,3 +468,39 @@ func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
 		t.Errorf("expected gcloud token error, got %v", err)
 	}
 }
+
+func TestVertexAuth_Apply_Error(t *testing.T) {
+	ctx := context.Background()
+	auth := &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return nil, fmt.Errorf("mock gcloud error")
+		},
+	}
+	// Force cache miss to ensure tokenCmdFunc is called
+	cachePath := auth.getCachePath()
+	_ = os.Remove(cachePath)
+	defer os.Remove(cachePath)
+	
+	req := &Request{Headers: make(map[string]string)}
+	err := auth.Apply(ctx, req)
+	
+	if err == nil || !strings.Contains(err.Error(), "mock gcloud error") {
+		t.Errorf("Expected mock gcloud error, got %v", err)
+	}
+}
+
+func TestServiceAccountAuth_Apply_Error(t *testing.T) {
+	ctx := context.Background()
+	auth := &ServiceAccountAuth{
+		tokenSourceFunc: func() (*oauth2.Token, error) {
+			return nil, fmt.Errorf("mock oauth2 error")
+		},
+	}
+	
+	req := &Request{Headers: make(map[string]string)}
+	err := auth.Apply(ctx, req)
+	
+	if err == nil || !strings.Contains(err.Error(), "mock oauth2 error") {
+		t.Errorf("Expected mock oauth2 error, got %v", err)
+	}
+}

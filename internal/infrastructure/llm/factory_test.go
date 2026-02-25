@@ -4,11 +4,14 @@
 package llm
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 )
 
@@ -88,5 +91,70 @@ func TestCreateAuthenticator_Strategies(t *testing.T) {
 				t.Errorf("createAuthenticator() auth = %v, wantAuthNil %v", auth, tt.wantAuthNil)
 			}
 		})
+	}
+}
+
+func TestCreateAuthenticator_MissingKeysAndFallbacks(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		apiKey   string
+		wantErr  bool
+	}{
+		{"openai missing key", "openai", "", true},
+		{"deepseek missing key", "deepseek", "", true},
+		{"anthropic missing key", "anthropic", "", true},
+		{"unknown provider missing key", "unknown", "", true},
+		{"local missing key", "local", "", false},
+		{"ollama missing key", "ollama", "", false},
+		{"google missing key", "google", "", false}, // Resolves to VertexAuth
+		{"unknown provider with key", "unknown", "explicit-key", false}, // Resolves to APIKeyAuth
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &config.LLMProvider{
+				Type:   tt.provider,
+				APIKey: tt.apiKey,
+			}
+			a, err := createAuthenticator(p)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			// If it's the unknown provider with a key, verify it uses APIKeyAuth
+			if !tt.wantErr && tt.provider == "unknown" {
+				if _, ok := a.(*auth.APIKeyAuth); !ok {
+					t.Errorf("expected *auth.APIKeyAuth for unknown provider with key, got %T", a)
+				}
+			}
+		})
+	}
+}
+
+func TestNewClient_FallbackToGemini(t *testing.T) {
+	t.Setenv("GOOGLE_API_KEY", "dummy")
+	cfg := &config.Config{
+		Providers: map[string]config.LLMProvider{
+			"default": {
+				Type:   "some-unknown-type",
+				APIKey: "dummy-key", // Satisfies createAuthenticator fallback
+			},
+		},
+		SelectedProvider: "default",
+	}
+
+	bus := events.NewSimpleEventBus()
+	defer bus.Shutdown(context.Background())
+
+	pData := pricing.PricingData{}
+
+	// This should hit the default: case in the switch statement
+	client, err := NewClient(cfg, pData, bus)
+	if err != nil {
+		t.Fatalf("NewClient() unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected client, got nil")
 	}
 }
