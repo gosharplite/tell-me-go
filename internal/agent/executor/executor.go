@@ -779,13 +779,19 @@ func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start
 	zombieTimeout := e.zombieTimeout
 	e.mu.RUnlock()
 
+	timer := time.NewTimer(zombieTimeout)
+	defer timer.Stop()
+
 	select {
 	case <-outCh:
 		// Tool eventually finished, log the extreme latency
 		telemetry.RecordLateCompletion(name, time.Since(start))
-	case <-time.After(zombieTimeout):
+	case <-timer.C:
 		// Tool is permanently deadlocked
 		telemetry.LogCritical("CRITICAL: Tool goroutine permanently leaked", name)
+	case <-ctx.Done():
+		// Application/Session shutting down; safe to abandon due to buffered outCh
+		return
 	}
 }
 
