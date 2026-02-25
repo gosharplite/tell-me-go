@@ -398,7 +398,7 @@ func TestOtherAuthenticators(t *testing.T) {
 }
 
 func TestNoOpAuth(t *testing.T) {
-	a := &NoOpAuth{}
+	a := &noOpAuth{}
 
 	// Should not panic
 	a.Invalidate()
