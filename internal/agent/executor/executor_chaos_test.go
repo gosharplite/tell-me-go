@@ -139,7 +139,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	
 	// Set very short timeouts for testing
 	exec.toolTimeout = 10 * time.Millisecond
-	exec.ZombieTimeout = 20 * time.Millisecond
+	exec.zombieTimeout = 20 * time.Millisecond
 
 	ctx := context.Background()
 

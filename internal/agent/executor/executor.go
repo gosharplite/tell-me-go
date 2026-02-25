@@ -38,7 +38,7 @@ type ToolExecutor struct {
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
-	ZombieTimeout      time.Duration
+	zombieTimeout      time.Duration
 	pool               *concurrency.WorkerPool
 	strategy           resultStrategy
 	failures           *failureTracker
@@ -52,7 +52,7 @@ func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISec
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
-		ZombieTimeout:      5 * time.Minute,
+		zombieTimeout:      5 * time.Minute,
 		pool:               concurrency.NewWorkerPool(5),
 		strategy:           &markdownStrategy{},
 		failures:           newFailureTracker(3), // Default threshold of 3
@@ -776,7 +776,7 @@ func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.Fun
 
 func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {
 	e.mu.RLock()
-	zombieTimeout := e.ZombieTimeout
+	zombieTimeout := e.zombieTimeout
 	e.mu.RUnlock()
 
 	select {
