@@ -9,6 +9,10 @@ import (
 	"os"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/gosharplite/tell-me-go/internal/cli"
@@ -16,18 +20,63 @@ import (
 
 const version = "3.3.1-dev"
 
-func initTracer() {
-	// Use a global no-op tracer provider so spans are silent by default
-	// but the application logic remains fully instrumented.
-	otel.SetTracerProvider(noop.NewTracerProvider())
+func initTracer() func(context.Context) error {
+	endpoint := os.Getenv("TELL_ME_TRACE_ENDPOINT")
+	if endpoint == "" {
+		// Use a global no-op tracer provider so spans are silent by default
+		// but the application logic remains fully instrumented.
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		return func(context.Context) error { return nil }
+	}
+
+	ctx := context.Background()
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("tell-me-go"),
+		),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create OTel resource: %v\n", err)
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		return func(context.Context) error { return nil }
+	}
+
+	exporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL(endpoint),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to create OTel exporter: %v\n", err)
+		otel.SetTracerProvider(noop.NewTracerProvider())
+		return func(context.Context) error { return nil }
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+
+	return tp.Shutdown
 }
 
 func main() {
-	initTracer()
+	os.Exit(run())
+}
+
+func run() int {
+	ctx := context.Background()
+	shutdown := initTracer()
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
+		}
+	}()
 
 	app := cli.New(version, os.Stdin, os.Stdout, os.Stderr)
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	if err := app.Run(ctx, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

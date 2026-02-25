@@ -240,3 +240,12 @@ func (a *ServiceAccountAuth) Apply(ctx context.Context, req *Request) error {
 	}
 	return nil
 }
+
+// NoOpAuth implements the Authenticator interface for providers that do not require authentication.
+type NoOpAuth struct{}
+
+func (a *NoOpAuth) getToken(ctx context.Context) (string, error) { return "", nil }
+func (a *NoOpAuth) Invalidate()                                  {}
+func (a *NoOpAuth) Apply(ctx context.Context, req *Request) error {
+	return nil
+}

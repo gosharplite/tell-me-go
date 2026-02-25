@@ -34,7 +34,7 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 	var baseClient llm.LLMClient
 
 	switch p.Type {
-	case "openai", "deepseek":
+	case "openai", "deepseek", "local", "ollama":
 		baseClient = openai.NewClient(p.URL, p.Model, authenticator, p.Headers, cfg.Person, timeout, maxBudget)
 	case "anthropic":
 		baseClient = anthropic.NewClient(p.URL, p.Model, authenticator, p.Headers, maxBudget, cfg.Person, timeout)
@@ -53,6 +53,10 @@ func NewClient(cfg *config.Config, pData pricing.PricingData, bus events.EventBu
 }
 
 func createAuthenticator(p *config.LLMProvider) (auth.Authenticator, error) {
+	if p.Type == "local" || p.Type == "ollama" {
+		return &auth.NoOpAuth{}, nil
+	}
+
 	if p.APIKey != "" {
 		// Detect if the API_KEY field is actually a path to a GCP Service Account JSON
 		lowerKey := strings.ToLower(p.APIKey)
