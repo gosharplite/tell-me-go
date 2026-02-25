@@ -52,8 +52,8 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| Metric | Status | Details |") {
 		t.Errorf("expected table header, got %q", res.Text)
 	}
-	if strings.Contains(res.Text, "| **Dead Code** |") {
-		t.Errorf("did not expect Dead Code row, got %q", res.Text)
+	if !strings.Contains(res.Text, "| **Dead Code** |") {
+		t.Errorf("expected Dead Code row, got %q", res.Text)
 	}
 	if strings.Contains(res.Text, "| **Security** |") {
 		t.Errorf("did not expect Security row, got %q", res.Text)
@@ -95,6 +95,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 		cov  string
 		lint string
 		comp string
+		dead string
 		want []string
 	}{
 		{
@@ -103,6 +104,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Project health is excellent."},
 		},
 		{
@@ -111,6 +113,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Fix failing tests immediately."},
 		},
 		{
@@ -119,6 +122,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "70.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Coverage (70.0%) is below the 80% target."},
 		},
 		{
@@ -127,7 +131,17 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "5 Issues",
 			comp: "3 Alerts",
+			dead: "CLEAN",
 			want: []string{"Refactor high-complexity functions.", "Address linting issues."},
+		},
+		{
+			name: "dead code issues",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			dead: "2 Issues",
+			want: []string{"Remove dead or effectively private code to improve encapsulation."},
 		},
 	}
 
@@ -135,7 +149,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp)
+			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.dead)
 			for _, w := range tt.want {
 				if !strings.Contains(got, w) {
 					t.Errorf("generateRecommendation() = %q, want it to contain %q", got, w)

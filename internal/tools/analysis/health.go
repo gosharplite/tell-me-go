@@ -34,11 +34,12 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		testStatus, testDetails, coverageStatus, coverageDetails string
 		lintStatus, lintDetails                                  string
 		compStatus, compDetails                                  string
+		deadStatus, deadDetails                                  string
 		alerts                                                   []string
 	)
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 
 	// 1 & 2. Run Tests with Coverage
 	go func() {
@@ -58,6 +59,12 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		compStatus, compDetails, alerts = m.checkComplexity(ctx)
 	}()
 
+	// 5. Dead Code
+	go func() {
+		defer wg.Done()
+		deadStatus, deadDetails = m.checkDeadCode(ctx)
+	}()
+
 	wg.Wait()
 
 	// Format table
@@ -69,6 +76,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 	sb.WriteString(fmt.Sprintf("| **Coverage** | %s | %s |\n", coverageStatus, coverageDetails))
 	sb.WriteString(fmt.Sprintf("| **Linting** | %s | %s |\n", lintStatus, lintDetails))
 	sb.WriteString(fmt.Sprintf("| **Complexity** | %s | %s |\n", compStatus, compDetails))
+	sb.WriteString(fmt.Sprintf("| **Dead Code** | %s | %s |\n", deadStatus, deadDetails))
 
 	if len(alerts) > 0 {
 		sb.WriteString("\n**Complexity Alerts (Threshold > 10):**\n")
@@ -77,7 +85,7 @@ func (m *healthManager) GetCodeHealth(ctx context.Context, args map[string]inter
 		}
 	}
 
-	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus)
+	recommendation := m.generateRecommendation(testStatus, coverageStatus, lintStatus, compStatus, deadStatus)
 	if recommendation != "" {
 		sb.WriteString("\n**Architectural Recommendation**: " + recommendation + "\n")
 	}
@@ -202,7 +210,30 @@ func (m *healthManager) checkComplexity(ctx context.Context) (string, string, []
 	return fmt.Sprintf("%d Alerts", highCount), fmt.Sprintf("%d functions > threshold (%d)", highCount, threshold), alerts
 }
 
-func (m *healthManager) generateRecommendation(test, cov, lint, comp string) string {
+func (m *healthManager) checkDeadCode(ctx context.Context) (string, string) {
+	reports, err := m.Ana.DeadCode.GatherOrphanReports(ctx, ".")
+	if err != nil {
+		return "ERROR", err.Error()
+	}
+
+	if len(reports) == 0 {
+		return "CLEAN", "No orphaned symbols found"
+	}
+
+	deadCount := 0
+	privateCount := 0
+	for _, r := range reports {
+		if r.Severity == "DEAD" {
+			deadCount++
+		} else if r.Severity == "PRIVATE" {
+			privateCount++
+		}
+	}
+
+	return fmt.Sprintf("%d Issues", len(reports)), fmt.Sprintf("%d DEAD, %d PRIVATE", deadCount, privateCount)
+}
+
+func (m *healthManager) generateRecommendation(test, cov, lint, comp, dead string) string {
 	var recs []string
 	if test == "FAIL" {
 		recs = append(recs, "Fix failing tests immediately.")
@@ -220,6 +251,9 @@ func (m *healthManager) generateRecommendation(test, cov, lint, comp string) str
 	}
 	if strings.Contains(lint, "Issues") {
 		recs = append(recs, "Address linting issues.")
+	}
+	if strings.Contains(dead, "Issues") {
+		recs = append(recs, "Remove dead or effectively private code to improve encapsulation.")
 	}
 
 	if len(recs) == 0 {
