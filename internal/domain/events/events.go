@@ -5,7 +5,7 @@ package events
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -16,6 +16,11 @@ import (
 
 // Event represents a generic signal from the Orchestrator.
 type Event interface{}
+
+var (
+	ErrBufferOverflow = errors.New("event buffer overflowed, events were dropped")
+	ErrBusClosed      = errors.New("event bus is closed")
+)
 
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
@@ -41,7 +46,7 @@ type SimpleEventBus struct {
 }
 
 type flushEvent struct {
-	done chan struct{}
+	done chan error
 }
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
@@ -103,6 +108,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		defer b.wg.Done()
 		for e := range out {
 			if fe, ok := e.(flushEvent); ok {
+				fe.done <- nil
 				close(fe.done)
 				continue
 			}
@@ -160,6 +166,7 @@ func (r *eventRingBuffer) push(e Event) {
 		// Buffer full: overwrite the oldest element
 		oldest := r.queue[r.tail]
 		if fe, ok := oldest.(flushEvent); ok {
+			fe.done <- ErrBufferOverflow
 			close(fe.done) // Safely unblock the waiting Flush caller
 		}
 
@@ -236,7 +243,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return fmt.Errorf("event bus is closed")
+		return ErrBusClosed
 	}
 
 	// Register active producer before releasing lock
@@ -253,17 +260,17 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	copy(subs, b.subscribers)
 	b.mu.RUnlock() // Release lock BEFORE the blocking loop
 
-	dones := make([]chan struct{}, 0, len(subs))
+	dones := make([]chan error, 0, len(subs))
 
 	// 2. Safely send flush events to the copied channels
 	for _, ch := range subs {
-		done := make(chan struct{})
-		
+		done := make(chan error, 1)
+
 		select {
 		case ch <- flushEvent{done: done}:
 			dones = append(dones, done)
 		case <-b.closing:
-			return fmt.Errorf("event bus is closed")
+			return ErrBusClosed
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -272,9 +279,14 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	// 3. Wait for all successfully queued flush events to be processed
 	for _, done := range dones {
 		select {
-		case <-done:
+		case err := <-done:
+			if err != nil {
+				return err
+			}
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-b.closing:
+			return ErrBusClosed
 		}
 	}
 

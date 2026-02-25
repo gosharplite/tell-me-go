@@ -412,3 +412,126 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	wg.Wait()
 	// Test passes if no panic occurs
 }
+
+func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
+	// Initialize a bus using NewSimpleEventBusWithCapacity(1).
+	bus := NewSimpleEventBusWithCapacity(1)
+
+	// Create a subscriber that blocks intentionally (so events queue up).
+	block := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-block:
+		default:
+			close(block)
+		}
+	})
+
+	ready := make(chan struct{})
+	bus.Subscribe(func(e Event) {
+		ready <- struct{}{}
+		<-block
+	})
+
+	// 1. Publish first event and wait for it to reach the subscriber to block it
+	bus.Publish("init")
+	<-ready
+
+	// 2. Now subscriber is blocked. 
+	// Publish an event that will occupy the 1-slot ring buffer.
+	bus.Publish("in-buffer")
+
+	// 3. Trigger Flush() in a separate goroutine. It will block.
+	// It sends a flushEvent to the 'in' channel. 
+	// pumpEvents will read it and push it to the ring buffer, evicting "in-buffer".
+	flushErr := make(chan error, 1)
+	go func() {
+		flushErr <- bus.Flush(context.Background())
+	}()
+
+	// Give a tiny bit of time for pumpEvents to process the flushEvent
+	time.Sleep(10 * time.Millisecond)
+
+	// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
+	bus.Publish("force-eviction")
+
+	// 5. Assert that the blocked Flush() call returns ErrBufferOverflow.
+	select {
+	case err := <-flushErr:
+		if !errors.Is(err, ErrBufferOverflow) {
+			t.Errorf("expected ErrBufferOverflow, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Flush did not return ErrBufferOverflow")
+	}
+}
+
+func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
+	bus := NewSimpleEventBus()
+
+	// Block processing to ensure Flush blocks.
+	block := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-block:
+		default:
+			close(block)
+		}
+	})
+	ready := make(chan struct{})
+	bus.Subscribe(func(e Event) {
+		ready <- struct{}{}
+		<-block
+	})
+
+	bus.Publish("init")
+	<-ready
+
+	flushErr := make(chan error, 1)
+	go func() {
+		flushErr <- bus.Flush(context.Background())
+	}()
+
+	// Give it a moment to enter the waiting state in Flush
+	time.Sleep(10 * time.Millisecond)
+
+	// Concurrently trigger bus.Shutdown().
+	go func() {
+		_ = bus.Shutdown(context.Background())
+	}()
+
+	// Assert that the Flush() call aborts and returns ErrBusClosed.
+	select {
+	case err := <-flushErr:
+		if !errors.Is(err, ErrBusClosed) {
+			t.Errorf("expected ErrBusClosed, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Flush did not return after Shutdown")
+	}
+}
+
+func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
+	tests := []struct {
+		name     string
+		capacity int
+	}{
+		{"Zero capacity", 0},
+		{"Negative capacity", -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := NewSimpleEventBusWithCapacity(tt.capacity)
+			if bus.capacity != DefaultMaxQueueSize {
+				t.Errorf("expected capacity %d, got %d", DefaultMaxQueueSize, bus.capacity)
+			}
+
+			// Verify it doesn't panic on basic operations
+			bus.Subscribe(func(e Event) {})
+			bus.Publish("test")
+			_ = bus.Flush(context.Background())
+			_ = bus.Shutdown(context.Background())
+		})
+	}
+}
