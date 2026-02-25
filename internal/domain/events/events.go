@@ -74,38 +74,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	go func() {
 		defer b.wg.Done()
 		defer close(out)
-
-		const maxQueueSize = 1000
-		var queue []Event
-		for {
-			if len(queue) > 0 {
-				select {
-				case e, ok := <-in:
-					if !ok {
-						in = nil // Stop reading from closed channel
-						continue
-					}
-					if len(queue) >= maxQueueSize {
-						// Drop oldest event (ring buffer behavior) to make room for new one
-						queue[0] = nil // Avoid memory leak
-						queue = queue[1:]
-					}
-					queue = append(queue, e)
-				case out <- queue[0]:
-					queue[0] = nil // Avoid memory leak
-					queue = queue[1:]
-				}
-			} else {
-				if in == nil {
-					return
-				}
-				e, ok := <-in
-				if !ok {
-					return
-				}
-				queue = append(queue, e)
-			}
-		}
+		b.pumpEvents(in, out)
 	}()
 
 	// 2. Processing Goroutine
@@ -119,6 +88,63 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 			sub(e)
 		}
 	}()
+}
+
+func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
+	const maxQueueSize = 1000
+	buffer := &eventRingBuffer{max: maxQueueSize}
+
+	for {
+		if buffer.len() > 0 {
+			select {
+			case e, ok := <-in:
+				if !ok {
+					in = nil // Stop reading from closed channel
+					continue
+				}
+				buffer.push(e)
+			case out <- buffer.front():
+				buffer.pop()
+			}
+		} else {
+			if in == nil {
+				return
+			}
+			e, ok := <-in
+			if !ok {
+				return
+			}
+			buffer.push(e)
+		}
+	}
+}
+
+type eventRingBuffer struct {
+	queue []Event
+	max   int
+}
+
+func (r *eventRingBuffer) push(e Event) {
+	if len(r.queue) >= r.max {
+		r.queue[0] = nil // Avoid memory leak
+		r.queue = r.queue[1:]
+	}
+	r.queue = append(r.queue, e)
+}
+
+func (r *eventRingBuffer) pop() Event {
+	e := r.queue[0]
+	r.queue[0] = nil // Avoid memory leak
+	r.queue = r.queue[1:]
+	return e
+}
+
+func (r *eventRingBuffer) front() Event {
+	return r.queue[0]
+}
+
+func (r *eventRingBuffer) len() int {
+	return len(r.queue)
 }
 
 // Shutdown gracefully stops the event bus, flushing pending events.
