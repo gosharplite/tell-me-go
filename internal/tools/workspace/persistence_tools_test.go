@@ -175,58 +175,97 @@ func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 }
 
 func TestPersistenceTools_ManageTasks(t *testing.T) {
-	pt, _ := setupPersistenceTools()
-	ctx := context.Background()
+	tests := []struct {
+		name           string
+		args           map[string]interface{}
+		setup          func(*mockListStore, *services.TaskService)
+		expectedResult string
+		expectError    bool
+	}{
+		{
+			name:           "Successfully add task",
+			args:           map[string]interface{}{"action": "add", "content": "task 1"},
+			expectedResult: "Task added with ID 1",
+		},
+		{
+			name: "Successfully list tasks",
+			args: map[string]interface{}{"action": "list"},
+			setup: func(m *mockListStore, ts *services.TaskService) {
+				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				_ = ts.Initialize(context.Background())
+			},
+			expectedResult: "task 1",
+		},
+		{
+			name: "Successfully update task",
+			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
+			setup: func(m *mockListStore, ts *services.TaskService) {
+				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				_ = ts.Initialize(context.Background())
+			},
+			expectedResult: "Task 1 updated",
+		},
+		{
+			name: "Successfully list completed tasks",
+			args: map[string]interface{}{"action": "list", "status": "completed"},
+			setup: func(m *mockListStore, ts *services.TaskService) {
+				m.tasks = []services.Task{
+					{ID: 1, Content: "task 1", Status: "completed"},
+					{ID: 2, Content: "task 2", Status: "pending"},
+				}
+				_ = ts.Initialize(context.Background())
+			},
+			expectedResult: "[x]",
+		},
+		{
+			name: "Successfully delete task",
+			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
+			setup: func(m *mockListStore, ts *services.TaskService) {
+				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				_ = ts.Initialize(context.Background())
+			},
+			expectedResult: "Task 1 deleted",
+		},
+		{
+			name: "Successfully clear tasks",
+			args: map[string]interface{}{"action": "clear"},
+			setup: func(m *mockListStore, ts *services.TaskService) {
+				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				_ = ts.Initialize(context.Background())
+			},
+			expectedResult: "All tasks cleared",
+		},
+		{
+			name:        "Error on unknown action",
+			args:        map[string]interface{}{"action": "unknown"},
+			expectError: true,
+		},
+	}
 
-	// Add
-	res, err := pt.ManageTasks(ctx, map[string]interface{}{"action": "add", "content": "task 1"})
-	if err != nil {
-		t.Fatalf("Add task failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "Task added") {
-		t.Errorf("Expected success message, got %s", res.Text)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pt, provider := setupPersistenceTools()
+			if tt.setup != nil {
+				tt.setup(provider.listStore, provider.tasks)
+			}
+			ctx := context.Background()
+			res, err := pt.ManageTasks(ctx, tt.args)
 
-	// List
-	res, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "list"})
-	if err != nil {
-		t.Fatalf("List tasks failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "task 1") {
-		t.Errorf("Expected task 1 in list, got %s", res.Text)
-	}
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
 
-	// Update
-	res, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"})
-	if err != nil {
-		t.Fatalf("Update task failed: %v", err)
-	}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
 
-	// List again to verify update
-	res, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "list", "status": "completed"})
-	if err != nil {
-		t.Fatalf("List tasks failed: %v", err)
-	}
-	if !strings.Contains(res.Text, "[x]") {
-		t.Errorf("Expected completed task icon, got %s", res.Text)
-	}
-
-	// Delete
-	res, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "delete", "task_id": 1.0})
-	if err != nil {
-		t.Fatalf("Delete task failed: %v", err)
-	}
-
-	// Clear
-	res, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "clear"})
-	if err != nil {
-		t.Fatalf("Clear tasks failed: %v", err)
-	}
-	
-	// Unknown action
-	_, err = pt.ManageTasks(ctx, map[string]interface{}{"action": "unknown"})
-	if err == nil {
-		t.Error("Expected error for unknown action")
+			if !strings.Contains(res.Text, tt.expectedResult) {
+				t.Errorf("Expected result to contain %q, got %q", tt.expectedResult, res.Text)
+			}
+		})
 	}
 }
 
