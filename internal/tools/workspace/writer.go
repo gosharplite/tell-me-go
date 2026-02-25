@@ -16,7 +16,7 @@ import (
 )
 
 type fileWriter struct {
-	sm writerSecurity
+	sm domain_security.ISecurityManager
 	bm *backupManager
 	fs persistence.FileSystem
 }
@@ -164,9 +164,4 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 	}
 
 	return tools.ToolResult{Text: res}, err
-}
-
-type writerSecurity interface {
-	domain_security.PathValidator
-	domain_security.ActionConfirmer
 }

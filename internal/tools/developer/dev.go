@@ -17,7 +17,7 @@ import (
 )
 
 type devManager struct {
-	sm             devSecurity
+	sm             domain_security.ISecurityManager
 	validator      domain_security.ICommandValidator
 	executor       executor
 	stderr         io.Writer
@@ -323,7 +323,7 @@ func (m *devManager) logToolAction(format string, a ...any) {
 	m.sm.Warn(fmt.Sprintf("[Tool Action] "+format, a...))
 }
 
-func newDevManager(sm devSecurity, validator domain_security.ICommandValidator) *devManager {
+func newDevManager(sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) *devManager {
 	return &devManager{
 		sm:             sm,
 		validator:      validator,
@@ -331,10 +331,4 @@ func newDevManager(sm devSecurity, validator domain_security.ICommandValidator) 
 		stderr:         os.Stderr,
 		createTempFile: os.CreateTemp,
 	}
-}
-
-type devSecurity interface {
-	domain_security.ActionConfirmer
-	domain_security.Auditor
-	domain_security.TerminalController
 }

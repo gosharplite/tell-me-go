@@ -14,13 +14,13 @@ import (
 )
 
 type shellTool struct {
-	sm        shellSecurity
+	sm        domain_security.ISecurityManager
 	validator domain_security.ICommandValidator
 	executor  *processExecutor
 	maxOutput int
 }
 
-func newshellTool(sm shellSecurity, validator domain_security.ICommandValidator) *shellTool {
+func newshellTool(sm domain_security.ISecurityManager, validator domain_security.ICommandValidator) *shellTool {
 	return &shellTool{
 		sm:        sm,
 		validator: validator,
@@ -210,11 +210,4 @@ func (t *shellTool) resolveOutputFile(path string) (string, error) {
 
 func (t *shellTool) deniedResult(label string) tools.ToolResult {
 	return tools.ToolResult{Text: fmt.Sprintf("User denied execution of %s.", label)}
-}
-
-type shellSecurity interface {
-	domain_security.TerminalController
-	domain_security.Auditor
-	domain_security.PolicyEvaluator
-	domain_security.PathValidator
 }
