@@ -4,8 +4,12 @@
 package inframock
 
 import (
+	"context"
 	"reflect"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTestEventBus(t *testing.T) {
@@ -38,4 +42,37 @@ func TestTestEventBus(t *testing.T) {
 	if len(bus.getEvents()) != 0 {
 		t.Error("Clear failed")
 	}
+}
+
+func TestTestEventBus_Subscribe(t *testing.T) {
+	bus := &TestEventBus{}
+	type MyEvent struct{ ID int }
+	
+	var receivedID int
+	bus.Subscribe(func(e events.Event) {
+		if ev, ok := e.(MyEvent); ok {
+			receivedID = ev.ID
+		}
+	})
+	
+	bus.Publish(MyEvent{ID: 42})
+	assert.Equal(t, 42, receivedID, "Subscriber should have received the event with correct ID")
+}
+
+func TestTestEventBus_NoOps(t *testing.T) {
+	bus := &TestEventBus{}
+	ctx := context.Background()
+	
+	assert.NoError(t, bus.Flush(ctx))
+	assert.NoError(t, bus.Shutdown(ctx))
+}
+
+func TestCountingEventBus(t *testing.T) {
+	bus := NewCountingEventBus()
+	type MyEvent struct{}
+	
+	bus.Publish(MyEvent{})
+	bus.Publish(MyEvent{})
+	
+	assert.Equal(t, 2, bus.GetCount())
 }
