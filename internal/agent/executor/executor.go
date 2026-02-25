@@ -34,7 +34,7 @@ type toolExecResult struct {
 type ToolExecutor struct {
 	mu                 sync.RWMutex
 	registry           domaintools.IToolRegistry
-	sm                 domain_security.ISecurityManager
+	authorizer         ToolAuthorizer
 	events             events.EventBus
 	maxConcurrentTools int
 	toolTimeout        time.Duration
@@ -48,7 +48,7 @@ type ToolExecutor struct {
 func NewToolExecutor(registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus) *ToolExecutor {
 	e := &ToolExecutor{
 		registry:           registry,
-		sm:                 sm,
+		authorizer:         NewSecurityAuthorizer(sm, registry),
 		events:             bus,
 		maxConcurrentTools: 5,
 		toolTimeout:        30 * time.Second,
@@ -178,9 +178,10 @@ func (e *ToolExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 
 	e.mu.RLock()
 	bus := e.events
+	auth := e.authorizer
 	e.mu.RUnlock()
 
-	declinedMap := e.requestBatchConsent(ctx, calls)
+	declinedMap := auth.RequestBatchConsent(ctx, calls)
 
 	// Orchestrate Execution
 	collector := newResultCollector(calls, bus)
@@ -508,7 +509,10 @@ func (e *ToolExecutor) executeTool(parentCtx context.Context, call *llm.Function
 	}
 
 	// 2. Authorize
-	if err := e.authorizeTool(tool, call); err != nil {
+	e.mu.RLock()
+	auth := e.authorizer
+	e.mu.RUnlock()
+	if err := auth.AuthorizeTool(tool, call); err != nil {
 		tr := e.errorToToolResult(err)
 		return e.finalizeToolExecution(call.Name, tr, err, startTime, trace)
 	}
@@ -582,6 +586,10 @@ func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDec
 	reg := e.registry
 	e.mu.RUnlock()
 
+	return resolveTool(reg, call)
+}
+
+func resolveTool(reg domaintools.IToolRegistry, call *llm.FunctionCall) (*domaintools.ToolDeclaration, error) {
 	var tool *domaintools.ToolDeclaration
 	var validTools []string
 	for _, decl := range reg.GetDeclarations() {
@@ -598,7 +606,7 @@ func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDec
 			call.Name, strings.Join(validTools, ", "),
 		)
 
-		if suggestion := e.suggestTool(call.Name, validTools); suggestion != "" {
+		if suggestion := suggestTool(call.Name, validTools); suggestion != "" {
 			errorMessage += fmt.Sprintf(" Did you mean %q?", suggestion)
 		}
 
@@ -608,19 +616,6 @@ func (e *ToolExecutor) resolveTool(call *llm.FunctionCall) (*domaintools.ToolDec
 	}
 
 	return tool, nil
-}
-
-func (e *ToolExecutor) authorizeTool(tool *domaintools.ToolDeclaration, call *llm.FunctionCall) error {
-	e.mu.RLock()
-	sm := e.sm
-	e.mu.RUnlock()
-
-	if sm != nil && !sm.IsCommandAllowed(call.Name) {
-		msg := fmt.Sprintf("Error: Security policy: command %q is not allowed", call.Name)
-		return fmt.Errorf("%w: %s", llm.ErrTerminal, msg)
-	}
-
-	return nil
 }
 
 func (e *ToolExecutor) runWithTimeout(parentCtx context.Context, tool *domaintools.ToolDeclaration, args map[string]interface{}) (domaintools.ToolResult, error) {
@@ -689,7 +684,7 @@ func (e *ToolExecutor) errorToToolResult(err error) domaintools.ToolResult {
 	}
 }
 
-func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) string {
+func suggestTool(hallucinated string, validTools []string) string {
 	closest := ""
 	hallucinatedLower := strings.ToLower(hallucinated)
 
@@ -713,65 +708,6 @@ func (e *ToolExecutor) suggestTool(hallucinated string, validTools []string) str
 		}
 	}
 	return closest
-}
-
-func (e *ToolExecutor) identifyConsentItems(calls []*llm.FunctionCall) ([]int, map[int]bool) {
-	declinedMap := make(map[int]bool)
-	var consentIndices []int
-
-	for i, call := range calls {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// Fail closed: If we panic evaluating a tool, do not allow it to execute.
-					declinedMap[i] = true
-				}
-			}()
-
-			tool, err := e.resolveTool(call)
-			if err == nil && tool.RequiresConsent {
-				consentIndices = append(consentIndices, i)
-			}
-		}()
-	}
-
-	return consentIndices, declinedMap
-}
-
-func (e *ToolExecutor) requestBatchConsent(ctx context.Context, calls []*llm.FunctionCall) map[int]bool {
-	consentIndices, declinedMap := e.identifyConsentItems(calls)
-
-	if len(consentIndices) == 0 {
-		return declinedMap
-	}
-
-	var sb strings.Builder
-	sb.WriteString("The agent requested the following actions requiring approval:\n")
-	for idx, i := range consentIndices {
-		c := calls[i]
-		sb.WriteString(fmt.Sprintf("%d. %s: %v\n", idx+1, c.Name, c.Args))
-	}
-	sb.WriteString("\nDo you approve all?")
-
-	e.mu.RLock()
-	sm := e.sm
-	e.mu.RUnlock()
-
-	if sm != nil {
-		if !sm.IsBypassActive() {
-			sm.TerminalLock()
-			approved, _ := sm.Confirm(ctx, sb.String())
-			sm.TerminalUnlock()
-
-			if !approved {
-				for _, i := range consentIndices {
-					declinedMap[i] = true
-				}
-			}
-		}
-	}
-
-	return declinedMap
 }
 
 func (e *ToolExecutor) monitorZombieTool(ctx context.Context, name string, start time.Time, outCh <-chan toolOutput) {

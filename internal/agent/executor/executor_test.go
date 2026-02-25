@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/concurrency"
 	"github.com/stretchr/testify/assert"
@@ -174,32 +173,4 @@ func TestExecuteParallelBatch_ContextCancellation(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("Expected result on resChan, but got none")
 	}
-}
-
-type mockConsentSecurityManager struct {
-	domain_security.ISecurityManager
-	confirmResult bool
-}
-
-func (m *mockConsentSecurityManager) IsBypassActive() bool { return false }
-func (m *mockConsentSecurityManager) TerminalLock()        {}
-func (m *mockConsentSecurityManager) TerminalUnlock()      {}
-func (m *mockConsentSecurityManager) Confirm(ctx context.Context, msg string) (bool, error) {
-	return m.confirmResult, nil
-}
-
-func TestRequestBatchConsent_Denied(t *testing.T) {
-	reg := &mockToolRegistry{
-		getDeclarationsFn: func() []*tools.ToolDeclaration {
-			return []*tools.ToolDeclaration{{Name: "dangerous_tool", RequiresConsent: true}}
-		},
-	}
-	sm := &mockConsentSecurityManager{confirmResult: false}
-	exec := NewToolExecutor(reg, sm, nil)
-	t.Cleanup(exec.Shutdown)
-
-	calls := []*llm.FunctionCall{{Name: "dangerous_tool"}}
-	declined := exec.requestBatchConsent(context.Background(), calls)
-
-	assert.True(t, declined[0], "Expected the tool to be declined by user")
 }
