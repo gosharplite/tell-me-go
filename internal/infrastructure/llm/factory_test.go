@@ -57,3 +57,36 @@ func TestCreateAuthenticator(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateAuthenticator_Strategies(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    config.LLMProvider
+		wantErr     bool
+		wantAuthNil bool
+	}{
+		{"Local uses NoOp", config.LLMProvider{Type: "local"}, false, false},
+		{"Ollama uses NoOp", config.LLMProvider{Type: "ollama"}, false, false},
+		{"OpenAI requires Key", config.LLMProvider{Type: "openai", APIKey: ""}, true, true},
+		{"OpenAI valid Key", config.LLMProvider{Type: "openai", APIKey: "secret"}, false, false},
+		{"DeepSeek requires Key", config.LLMProvider{Type: "deepseek", APIKey: ""}, true, true},
+		{"DeepSeek valid Key", config.LLMProvider{Type: "deepseek", APIKey: "secret"}, false, false},
+		{"Anthropic requires Key", config.LLMProvider{Type: "anthropic", APIKey: ""}, true, true},
+		{"Anthropic valid Key", config.LLMProvider{Type: "anthropic", APIKey: "secret"}, false, false},
+		{"Unknown Provider Fallback with Key", config.LLMProvider{Type: "unknown", APIKey: "secret"}, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			auth, err := createAuthenticator(&tt.provider)
+			
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createAuthenticator() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			
+			if (auth == nil) != tt.wantAuthNil {
+				t.Errorf("createAuthenticator() auth = %v, wantAuthNil %v", auth, tt.wantAuthNil)
+			}
+		})
+	}
+}

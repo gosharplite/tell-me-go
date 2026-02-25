@@ -396,3 +396,26 @@ func TestOtherAuthenticators(t *testing.T) {
 		auth.Invalidate() // should do nothing
 	})
 }
+
+func TestNoOpAuth(t *testing.T) {
+	a := &NoOpAuth{}
+	
+	// Should not panic
+	a.Invalidate()
+	
+	// Should return empty string and nil error
+	token, err := a.getToken(context.Background())
+	if err != nil {
+		t.Errorf("getToken() expected nil error, got %v", err)
+	}
+	if token != "" {
+		t.Errorf("getToken() expected empty string, got %s", token)
+	}
+	
+	// Should return nil error
+	req := &Request{Headers: make(map[string]string)}
+	err = a.Apply(context.Background(), req)
+	if err != nil {
+		t.Errorf("Apply() expected nil error, got %v", err)
+	}
+}
