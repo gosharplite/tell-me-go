@@ -18,8 +18,8 @@ import (
 type Event interface{}
 
 var (
-	ErrBufferOverflow = errors.New("event buffer overflowed, events were dropped")
-	ErrBusClosed      = errors.New("event bus is closed")
+	errBufferOverflow = errors.New("event buffer overflowed, events were dropped")
+	errBusClosed      = errors.New("event bus is closed")
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -30,8 +30,8 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
-// DefaultMaxQueueSize is the default capacity for the event ring buffer.
-const DefaultMaxQueueSize = 1000
+// defaultMaxQueueSize is the default capacity for the event ring buffer.
+const defaultMaxQueueSize = 1000
 
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
@@ -51,13 +51,13 @@ type flushEvent struct {
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
 func NewSimpleEventBus() *SimpleEventBus {
-	return NewSimpleEventBusWithCapacity(DefaultMaxQueueSize)
+	return newSimpleEventBusWithCapacity(defaultMaxQueueSize)
 }
 
-// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
-func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
+// newSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
+func newSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	if capacity <= 0 {
-		capacity = DefaultMaxQueueSize
+		capacity = defaultMaxQueueSize
 	}
 	return &SimpleEventBus{
 		capacity: capacity,
@@ -120,7 +120,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
 	cap := b.capacity
 	if cap <= 0 {
-		cap = DefaultMaxQueueSize
+		cap = defaultMaxQueueSize
 	}
 	buffer := &eventRingBuffer{max: cap}
 
@@ -166,7 +166,7 @@ func (r *eventRingBuffer) push(e Event) {
 		// Buffer full: overwrite the oldest element
 		oldest := r.queue[r.tail]
 		if fe, ok := oldest.(flushEvent); ok {
-			fe.done <- ErrBufferOverflow
+			fe.done <- errBufferOverflow
 			close(fe.done) // Safely unblock the waiting Flush caller
 		}
 
@@ -243,7 +243,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return ErrBusClosed
+		return errBusClosed
 	}
 
 	// Register active producer before releasing lock
@@ -280,12 +280,12 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 				case <-ctx.Done():
 					errCh <- ctx.Err()
 				case <-b.closing:
-					errCh <- ErrBusClosed
+					errCh <- errBusClosed
 				}
 			case <-ctx.Done():
 				errCh <- ctx.Err()
 			case <-b.closing:
-				errCh <- ErrBusClosed
+				errCh <- errBusClosed
 			}
 		}(ch)
 	}

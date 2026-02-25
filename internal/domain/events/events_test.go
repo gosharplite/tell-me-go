@@ -414,8 +414,8 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
-	// Initialize a bus using NewSimpleEventBusWithCapacity(1).
-	bus := NewSimpleEventBusWithCapacity(1)
+	// Initialize a bus using newSimpleEventBusWithCapacity(1).
+	bus := newSimpleEventBusWithCapacity(1)
 
 	// Create a subscriber that blocks intentionally (so events queue up).
 	block := make(chan struct{})
@@ -455,14 +455,14 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 	// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
 	bus.Publish("force-eviction")
 
-	// 5. Assert that the blocked Flush() call returns ErrBufferOverflow.
+	// 5. Assert that the blocked Flush() call returns errBufferOverflow.
 	select {
 	case err := <-flushErr:
-		if !errors.Is(err, ErrBufferOverflow) {
-			t.Errorf("expected ErrBufferOverflow, got %v", err)
+		if !errors.Is(err, errBufferOverflow) {
+			t.Errorf("expected errBufferOverflow, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Flush did not return ErrBufferOverflow")
+		t.Fatal("Flush did not return errBufferOverflow")
 	}
 }
 
@@ -500,11 +500,11 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 		_ = bus.Shutdown(context.Background())
 	}()
 
-	// Assert that the Flush() call aborts and returns ErrBusClosed.
+	// Assert that the Flush() call aborts and returns errBusClosed.
 	select {
 	case err := <-flushErr:
-		if !errors.Is(err, ErrBusClosed) {
-			t.Errorf("expected ErrBusClosed, got %v", err)
+		if !errors.Is(err, errBusClosed) {
+			t.Errorf("expected errBusClosed, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Flush did not return after Shutdown")
@@ -522,9 +522,9 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus := NewSimpleEventBusWithCapacity(tt.capacity)
-			if bus.capacity != DefaultMaxQueueSize {
-				t.Errorf("expected capacity %d, got %d", DefaultMaxQueueSize, bus.capacity)
+			bus := newSimpleEventBusWithCapacity(tt.capacity)
+			if bus.capacity != defaultMaxQueueSize {
+				t.Errorf("expected capacity %d, got %d", defaultMaxQueueSize, bus.capacity)
 			}
 
 			// Verify it doesn't panic on basic operations
