@@ -72,10 +72,14 @@ type mockHistoryManager struct {
 	contents       []*llm.Content
 	resolver       llm.AssetResolver
 	setContentsErr error
+	getWindowErr   error
 }
 
 func (m *mockHistoryManager) GetTotalEntries() int { return len(m.contents) }
 func (m *mockHistoryManager) GetWindow(ctx context.Context, startIdx, endIdx int) ([]*llm.Content, error) {
+	if m.getWindowErr != nil {
+		return nil, m.getWindowErr
+	}
 	total := len(m.contents)
 	if startIdx < 0 {
 		startIdx = 0
