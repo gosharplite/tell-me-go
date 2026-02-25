@@ -350,7 +350,7 @@ func TestContextManager_WindowSize_BoundaryCondition(t *testing.T) {
 	msg, _, err := cm.SummarizeRange(ctx, 5, "")
 	assert.NoError(t, err)
 	assert.Contains(t, msg, "Summarized the first 1 turns")
-	
+
 	// Verify history was updated (summarized 1 turn = 24 messages replaced by 2 summary messages)
 	// Original: 25 messages. Turn 1 (24 msgs), Turn 2 (1 msg).
 	// After summarization of Turn 1: 2 summary messages + 1 message from Turn 2 = 3 messages.

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -21,7 +22,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	internal_security "github.com/gosharplite/tell-me-go/internal/infrastructure/security"
-	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 )
 
 type mockChatter struct {
@@ -57,7 +57,7 @@ func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain
 	pricingData := domain_pricing.PricingData{}
 	pricingOverrides := make(map[string]domain_pricing.ModelPricing)
 	tracker := &mockTracker{}
-	
+
 	deps := orchestration.NewSessionDependencies(paths, hManager, m.Client, m.Client.(domain_llm.LLMGateway), nil, tracker, pricingData, pricingOverrides, bus)
 	return deps, hManager, func() {}, nil
 }
