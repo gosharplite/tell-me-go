@@ -145,7 +145,9 @@ func TestNewClient_FallbackToGemini(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	defer bus.Shutdown(context.Background())
+	t.Cleanup(func() {
+		_ = bus.Shutdown(context.Background())
+	})
 
 	pData := pricing.PricingData{}
 
