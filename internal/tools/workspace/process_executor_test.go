@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -904,5 +905,58 @@ func TestOpenOutputFile_Sanitization(t *testing.T) {
 				t.Errorf("expected file object, got nil")
 			}
 		})
+	}
+}
+
+func TestProcessExecutor_Output(t *testing.T) {
+	executor := newprocessExecutor()
+	ctx := context.Background()
+
+	// Success
+	out, err := executor.Output(ctx, "echo", "hello")
+	if err != nil {
+		t.Fatalf("Output failed: %v", err)
+	}
+	if string(out) != "hello\n" {
+		t.Errorf("expected 'hello\\n', got %q", string(out))
+	}
+
+	// Exit error
+	_, err = executor.Output(ctx, "ls", "/nonexistent_path_12345")
+	if err == nil {
+		t.Error("expected error for non-existent path")
+	}
+
+	// CombinedOutput success
+	out, err = executor.CombinedOutput(ctx, "echo", "hello")
+	if err != nil {
+		t.Fatalf("CombinedOutput failed: %v", err)
+	}
+	if string(out) != "hello\n" {
+		t.Errorf("expected 'hello\\n', got %q", string(out))
+	}
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read(p []byte) (n int, err error) {
+	return 0, fmt.Errorf("mock read error")
+}
+
+func TestProcessExecutor_CaptureError(t *testing.T) {
+	executor := newprocessExecutor()
+	var sb strings.Builder
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	truncated := &atomic.Bool{}
+	wt := &writeTracker{}
+	totalCaptured := 0
+
+	wg.Add(1)
+	executor.captureStream(&errorReader{}, false, &sb, &mu, &wg, truncated, wt, executionConfig{}, nil, 100, &totalCaptured)
+	wg.Wait()
+
+	if !strings.Contains(sb.String(), "mock read error") {
+		t.Errorf("expected warning in output, got %q", sb.String())
 	}
 }

@@ -145,6 +145,10 @@ func (r *fileReader) readFile(ctx context.Context, args map[string]interface{}) 
 		return tools.ToolResult{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
+	if persistence.IsBinary(content) {
+		return tools.ToolResult{Text: fmt.Sprintf("File %s appears to be a binary file and cannot be displayed as text.", resolvedPath)}, nil
+	}
+
 	if len(content) > 100000 {
 		return tools.ToolResult{Text: string(content[:100000]) + "\n... (truncated)"}, nil
 	}
@@ -206,6 +210,14 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 	resolved2, err := r.sm.IsPathSafe(file2)
 	if err != nil {
 		return tools.ToolResult{}, err
+	}
+
+	// Verify files exist before calling 'diff' to get better error messages
+	if _, err := r.fs.Stat(ctx, resolved1); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("file1 not found: %w", err)
+	}
+	if _, err := r.fs.Stat(ctx, resolved2); err != nil {
+		return tools.ToolResult{}, fmt.Errorf("file2 not found: %w", err)
 	}
 
 	if _, err := exec.LookPath("diff"); err != nil {

@@ -209,9 +209,12 @@ func (m *mockFileSystem) notifyParents(path string, dirsNotified, skippedDirs ma
 		if !dirsNotified[current] {
 			dirsNotified[current] = true
 			info := &mockFileInfo{name: filepath.Base(current), size: 0, dir: true}
-			if err := fn(current, info, nil); err == filepath.SkipDir {
-				skippedDirs[current] = true
-				return true, nil
+			if err := fn(current, info, nil); err != nil {
+				if err == filepath.SkipDir {
+					skippedDirs[current] = true
+					return true, nil
+				}
+				return false, err
 			}
 		}
 	}

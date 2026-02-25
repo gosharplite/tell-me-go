@@ -97,3 +97,56 @@ func TestTurnTrace_RecordToolExecution(t *testing.T) {
 		}
 	})
 }
+
+func TestTurnTrace_CumulativeToolDuration(t *testing.T) {
+	tests := []struct {
+		name       string
+		traces     []ToolExecutionTrace
+		expected   time.Duration
+		isNilTrace bool
+	}{
+		{
+			name:       "nil trace",
+			isNilTrace: true,
+			expected:   0,
+		},
+		{
+			name:     "no executions",
+			traces:   []ToolExecutionTrace{},
+			expected: 0,
+		},
+		{
+			name: "single execution",
+			traces: []ToolExecutionTrace{
+				{Duration: time.Second},
+			},
+			expected: time.Second,
+		},
+		{
+			name: "multiple executions",
+			traces: []ToolExecutionTrace{
+				{Duration: time.Second},
+				{Duration: 500 * time.Millisecond},
+				{Duration: 2 * time.Second},
+			},
+			expected: 3500 * time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var trace *TurnTrace
+			if !tt.isNilTrace {
+				trace = NewTurnTrace()
+				for _, te := range tt.traces {
+					trace.RecordToolExecution(te)
+				}
+			}
+
+			actual := trace.CumulativeToolDuration()
+			if actual != tt.expected {
+				t.Errorf("CumulativeToolDuration() = %v, want %v", actual, tt.expected)
+			}
+		})
+	}
+}

@@ -155,9 +155,14 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 
 	n := params.N
 	if n <= 0 {
-		n = 1
+		return tools.ToolResult{}, fmt.Errorf("n must be positive")
 	}
+
 	res, err := w.bm.undo(ctx, n)
+	if err == nil && strings.Contains(res, "No snapshots available") {
+		return tools.ToolResult{Text: res}, fmt.Errorf("no history found")
+	}
+
 	return tools.ToolResult{Text: res}, err
 }
 
