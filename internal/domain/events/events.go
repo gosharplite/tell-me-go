@@ -52,7 +52,11 @@ func (b *SimpleEventBus) Publish(e Event) {
 	}
 
 	for _, ch := range b.subscribers {
-		ch <- e
+		select {
+		case ch <- e:
+		default:
+			// Buffer full, drop event to avoid deadlocking the RLock
+		}
 	}
 }
 

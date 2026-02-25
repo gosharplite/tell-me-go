@@ -205,3 +205,44 @@ func TestSimpleEventBus_Flush_NoSubscribers(t *testing.T) {
 	}
 }
 
+
+func TestSimpleEventBus_BufferEviction(t *testing.T) {
+	bus := NewSimpleEventBus()
+	t.Cleanup(func() { bus.Shutdown(context.Background()) })
+
+	block := make(chan struct{})
+	var received []Event
+	var mu sync.Mutex
+
+	// Slow subscriber that intentionally starves the pumpEvents consumer
+	bus.Subscribe(func(e Event) {
+		<-block // Block processing
+		mu.Lock()
+		received = append(received, e)
+		mu.Unlock()
+	})
+
+	// Publish 1500 events (exceeds 100 channel capacity + 1000 ring buffer capacity)
+	// This ensures we trigger both the ring buffer eviction and the Publish channel drop.
+	for i := 0; i < 1500; i++ {
+		bus.Publish(i)
+	}
+
+	// Unblock subscriber and let it process
+	close(block)
+	
+	// Wait for processing to finish
+	bus.Flush(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	
+	// Because of channel capacities and ring buffer limits, 
+	// we shouldn't have received all 1500 events, proving eviction works and didn't panic.
+	if len(received) == 1500 {
+		t.Errorf("Expected events to be dropped/evicted, but received all 1500")
+	}
+	if len(received) == 0 {
+		t.Errorf("Expected to receive some events, but got 0")
+	}
+}
