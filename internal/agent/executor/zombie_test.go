@@ -47,7 +47,7 @@ func TestToolExecutor_GoroutineLeak(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 	// mock the toolTimeout since NewToolExecutor sets it to default
 	exec.toolTimeout = 5 * time.Millisecond
 

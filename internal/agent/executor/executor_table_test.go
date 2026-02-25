@@ -488,7 +488,7 @@ func TestToolExecutor_ConcurrencyLimit_Strict(t *testing.T) {
 
 func TestToolExecutor_SuggestTool(t *testing.T) {
 	exec := &ToolExecutor{}
-	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls"}
+	validTools := []string{"list_files", "read_file", "write_file", "git_status", "ls", "patch"}
 
 	tests := []struct {
 		hallucinated string
@@ -502,6 +502,17 @@ func TestToolExecutor_SuggestTool(t *testing.T) {
 		{"lx", "ls"},
 		{"something_else", ""},
 		{"get_all_outputs", ""},
+
+		// Hits the Length <= 3 boundary (Max distance 1)
+		{"lsa", "ls"}, // length 3, distance 1 -> matches "ls"
+
+		// Hits the 3 < Length <= 6 boundary (Max distance 2)
+		{"patXX", "patch"}, // length 5, distance 2 -> matches "patch"
+		{"patXXX", ""},     // length 6, distance 3 -> exceeds max distance 2, should return ""
+
+		// Hits the Length > 6 boundary (Max distance 3)
+		{"list_fXXXs", "list_files"}, // length 10, distance 3 -> matches "list_files"
+		{"list_XXXXs", ""},           // length 10, distance 4 -> exceeds max distance 3, should return ""
 	}
 
 	for _, tt := range tests {
@@ -756,7 +767,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		reg := &panicRegistry{panicOnExec: true, serial: true}
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
-		defer exec.Shutdown()
+		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -776,7 +787,7 @@ func TestToolExecutor_InternalPanicRecovery(t *testing.T) {
 		reg := &panicRegistry{panicOnExec: true, serial: false}
 		bus := &inframock.TestEventBus{}
 		exec := NewToolExecutor(reg, nil, bus)
-		defer exec.Shutdown()
+		t.Cleanup(exec.Shutdown)
 		exec.setStrategy(&mockStrategy{})
 
 		content := &llm.Content{Parts: []*llm.Part{
@@ -1012,5 +1023,60 @@ func TestToolExecutor_ContextCancellation_Direct(t *testing.T) {
 	res := <-resChan
 	if res.tr.Text != "Skipped: Context cancelled" {
 		t.Errorf("Expected 'Skipped: Context cancelled', got %q", res.tr.Text)
+	}
+}
+
+func TestToolExecutor_UserDeclinedBatch(t *testing.T) {
+	t.Parallel()
+	toolsMap := map[string]toolBehavior{
+		"declined_tool": {result: tools.ToolResult{Text: "ok"}},
+		"allowed_tool":  {result: tools.ToolResult{Text: "ok"}},
+	}
+	exec, _, _ := setupTestExecutor(t, toolsMap, nil)
+
+	calls := []*llm.FunctionCall{
+		{Name: "declined_tool"},
+		{Name: "allowed_tool"},
+	}
+
+	declinedMap := map[int]bool{
+		0: true, // declining the first tool
+	}
+
+	resChan := make(chan toolExecResult, 2)
+	batches := exec.buildExecutionBatches(calls, declinedMap, resChan)
+
+	// Assert that the length of batches is exactly 1.
+	if len(batches) != 1 {
+		t.Fatalf("expected 1 batch, got %d", len(batches))
+	}
+
+	// Assert that the tasks array inside that batch contains exactly one element: index 1 (the allowed_tool).
+	// It should not contain index 0.
+	if len(batches[0].tasks) != 1 {
+		t.Fatalf("expected 1 task in batch, got %d", len(batches[0].tasks))
+	}
+	if batches[0].tasks[0] != 1 {
+		t.Errorf("expected task index 1, got %d", batches[0].tasks[0])
+	}
+
+	// Read one result from resChan
+	res := <-resChan
+
+	// Assert that res.index is 0, res.name is "declined_tool", and res.tr.Error is tools.ErrUserDeclined.
+	if res.index != 0 {
+		t.Errorf("expected result index 0, got %d", res.index)
+	}
+	if res.name != "declined_tool" {
+		t.Errorf("expected result name 'declined_tool', got %s", res.name)
+	}
+	if !errors.Is(res.tr.Error, tools.ErrUserDeclined) {
+		t.Errorf("expected tools.ErrUserDeclined, got %v", res.tr.Error)
+	}
+
+	// Assert that res.tr.Text equals "User explicitly denied this action."
+	expectedText := "User explicitly denied this action."
+	if res.tr.Text != expectedText {
+		t.Errorf("expected text %q, got %q", expectedText, res.tr.Text)
 	}
 }

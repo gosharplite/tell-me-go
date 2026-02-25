@@ -23,7 +23,7 @@ func TestToolPanicSerial(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: "test_tool"}
@@ -63,7 +63,7 @@ func TestToolPanicParallel(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	calls := []*llm.FunctionCall{
@@ -107,7 +107,7 @@ func TestAuthorizationPanic(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	calls := []*llm.FunctionCall{
 		{Name: "panic_auth_tool"},
@@ -135,7 +135,7 @@ func TestZombieToolTimeout(t *testing.T) {
 	}
 
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 	
 	// Set very short timeouts for testing
 	exec.toolTimeout = 10 * time.Millisecond
@@ -166,7 +166,7 @@ func TestExecuteSerialTaskRecovery(t *testing.T) {
 		},
 	}
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: "any_tool"}
@@ -190,7 +190,7 @@ func TestEnqueueParallelTaskRecovery(t *testing.T) {
 		},
 	}
 	exec := NewToolExecutor(reg, nil, nil)
-	defer exec.Shutdown()
+	t.Cleanup(exec.Shutdown)
 
 	ctx := context.Background()
 	fc := &llm.FunctionCall{Name: "any_tool"}
