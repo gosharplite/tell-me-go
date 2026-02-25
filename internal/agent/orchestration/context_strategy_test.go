@@ -4,11 +4,14 @@
 package orchestration
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/stretchr/testify/assert"
 )
 
 func contains(s, substr string) bool {
@@ -280,4 +283,33 @@ func TestContextStrategy_GetPriceWarning(t *testing.T) {
 			t.Errorf("expected [URGENT ECONOMIC NOTICE] prefix for 1001 tokens (threshold 1000), got %q", got)
 		}
 	})
+}
+
+func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
+	bus := events.NewSimpleEventBus()
+	ctx := context.Background()
+	defer func() {
+		_ = bus.Shutdown(ctx)
+	}()
+
+	cs := NewContextStrategy(&mockTokenCounter{}, bus)
+
+	newLimits := events.Limits{
+		MaxHistoryTokens: 7777,
+		MaxToolTurns:     77,
+		MaxHistoryTurns:  7,
+		TieredThreshold:  5555,
+		ContextWindow:    4444,
+	}
+
+	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	err := bus.Flush(ctx)
+	assert.NoError(t, err)
+
+	h, tool, hist := cs.getLimits()
+	assert.Equal(t, 7777, h)
+	assert.Equal(t, 77, tool)
+	assert.Equal(t, 7, hist)
+	assert.Equal(t, 5555, cs.GetTieredThreshold())
+	assert.Equal(t, 4444, cs.getContextWindow())
 }

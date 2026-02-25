@@ -263,3 +263,49 @@ func TestContextManager_Reconfigure_SyncsLimits(t *testing.T) {
 		t.Errorf("expected history turns limit 50, got %d", hist)
 	}
 }
+
+func TestContextManager_ConfigUpdatedEvent(t *testing.T) {
+	bus := events.NewSimpleEventBus()
+	ctx := context.Background()
+	defer func() {
+		_ = bus.Shutdown(ctx)
+	}()
+
+	strategy := NewContextStrategy(&mockTokenCounter{}, bus)
+	factory := &PipelineFactory{Estimator: strategy, Events: bus}
+	cm := NewContextManager(strategy, &mockHistoryManager{}, bus, factory)
+
+	// Initially nil because NewContextManager doesn't build it until an event or Reconfigure
+	cm.mu.Lock()
+	assert.Nil(t, cm.Pipeline)
+	cm.mu.Unlock()
+
+	newLimits := events.Limits{
+		MaxHistoryTokens: 9999,
+		MaxToolTurns:     50,
+		MaxHistoryTurns:  100,
+	}
+
+	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	err := bus.Flush(ctx)
+	assert.NoError(t, err)
+
+	cm.mu.Lock()
+	p1 := cm.Pipeline
+	cm.mu.Unlock()
+
+	assert.NotNil(t, p1, "Pipeline should be built after ConfigUpdated event")
+
+	// Publish another update to ensure it updates again (rebuilds pipeline)
+	newLimits.MaxHistoryTokens = 8888
+	bus.Publish(events.ConfigUpdated{Limits: newLimits})
+	err = bus.Flush(ctx)
+	assert.NoError(t, err)
+
+	cm.mu.Lock()
+	p2 := cm.Pipeline
+	cm.mu.Unlock()
+
+	assert.NotNil(t, p2)
+	assert.NotEqual(t, p1, p2, "Pipeline should be rebuilt on new config update")
+}
