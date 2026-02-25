@@ -20,7 +20,7 @@ import (
 
 const version = "3.3.1-dev"
 
-func initTracer() func(context.Context) error {
+func initTracer(ctx context.Context) func(context.Context) error {
 	endpoint := os.Getenv("TELL_ME_TRACE_ENDPOINT")
 	if endpoint == "" {
 		// Use a global no-op tracer provider so spans are silent by default
@@ -28,8 +28,6 @@ func initTracer() func(context.Context) error {
 		otel.SetTracerProvider(noop.NewTracerProvider())
 		return func(context.Context) error { return nil }
 	}
-
-	ctx := context.Background()
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
@@ -66,7 +64,7 @@ func main() {
 
 func run() int {
 	ctx := context.Background()
-	shutdown := initTracer()
+	shutdown := initTracer(ctx)
 	defer func() {
 		if err := shutdown(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "Error shutting down tracer: %v\n", err)
