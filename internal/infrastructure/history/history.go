@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 )
 
-// Manager handles loading, saving, and basic manipulation of conversation history.
-// It acts as a dumb persistence adapter with an in-memory cache.
+// Manager handles loading, saving, and append-only log compaction of conversation history,
+// ensuring O(1) in-memory state scaling and efficient persistent log rotation.
 type Manager struct {
 	mu       sync.RWMutex
 	store    store

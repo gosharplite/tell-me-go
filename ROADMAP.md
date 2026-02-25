@@ -37,5 +37,13 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - [x] Multi-provider Token & Cost tracking (Supporting Thinking/Reasoning rates for 2026 models)
 - [x] Config-driven provider switching (Support for `SELECTED_PROVIDER` and `PROVIDERS` map)
 
+## Phase 4: Optimization & Scalability (Completed)
+- [x] Gemini Integration: Robust native implementation (`internal/infrastructure/llm/gemini`).
+- [x] History Log Compaction (ADR-001): Implemented `jsonlStore` patches and persistent archiving to solve memory/OOM bloat on long-running sessions.
+
+## Phase 5: Advanced Capability (Planned)
+- [ ] Silent Observability: Implement conditional OpenTelemetry exporter integration in `main.go` using `TELL_ME_TRACE_ENDPOINT`.
+- [ ] Local Inference Support: Draft an ADR and implement compatibility for `Ollama`, `vLLM`, and `Llama.cpp` by extending the `openai` transport.
+
 ---
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*
