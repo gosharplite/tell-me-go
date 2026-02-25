@@ -46,8 +46,10 @@ func (a *VertexAuth) getTokenFromGcloud() ([]byte, error) {
 	return exec.Command("gcloud", "auth", "print-access-token").Output()
 }
 
+var getUID = os.Getuid
+
 func (a *VertexAuth) getCachePath() string {
-	uid := os.Getuid()
+	uid := getUID()
 	uidStr := fmt.Sprintf("%d", uid)
 	if uid == -1 {
 		// Windows or error, fallback to username

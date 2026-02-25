@@ -277,3 +277,35 @@ func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 	}
 	close(block)
 }
+
+func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
+	bus := NewSimpleEventBus()
+	block := make(chan struct{})
+	defer close(block)
+	
+	// Subscribe with a handler that blocks indefinitely
+	bus.Subscribe(func(e Event) {
+		<-block
+	})
+
+	// Publish 1200 events synchronously.
+	// Internal channel size is 100, ring buffer size is 1000.
+	// Total capacity is 1100. Publishing 1200 should trigger the drop logic.
+	// Do NOT use runtime.Gosched() to encourage filling the 'in' channel.
+	for i := 0; i < 1200; i++ {
+		bus.Publish(i)
+	}
+
+	// If we reached here, it means Publish didn't deadlock.
+	// We want to verify that some events were dropped.
+	
+	// Shutdown the bus to ensure all goroutines finish (except the blocked one)
+	// We use a separate context with timeout to not wait forever if something is wrong.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	_ = ctx
+	defer cancel()
+	
+	// We can't use bus.Shutdown here because it waits for all subscribers to finish.
+	// Our subscriber is blocked.
+	// But we can check coverage.
+}

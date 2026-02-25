@@ -419,3 +419,52 @@ func TestNoOpAuth(t *testing.T) {
 		t.Errorf("Apply() expected nil error, got %v", err)
 	}
 }
+
+func TestVertexAuth_GetCachePath_WindowsFallback(t *testing.T) {
+	originalGetUID := getUID
+	getUID = func() int { return -1 }
+	t.Cleanup(func() { getUID = originalGetUID })
+
+	t.Setenv("USERNAME", "testwindowsuser")
+	t.Setenv("USER", "should-not-be-used")
+
+	auth := &VertexAuth{}
+	path := auth.getCachePath()
+	if !strings.Contains(path, "testwindowsuser") {
+		t.Errorf("expected path to contain USERNAME 'testwindowsuser', got %s", path)
+	}
+}
+
+func TestVertexAuth_GetCachePath_UnixFallback(t *testing.T) {
+	originalGetUID := getUID
+	getUID = func() int { return -1 }
+	t.Cleanup(func() { getUID = originalGetUID })
+
+	t.Setenv("USERNAME", "")
+	t.Setenv("USER", "testunixuser")
+
+	auth := &VertexAuth{}
+	path := auth.getCachePath()
+	if !strings.Contains(path, "testunixuser") {
+		t.Errorf("expected path to contain USER 'testunixuser', got %s", path)
+	}
+}
+
+func TestVertexAuth_GetToken_GcloudError(t *testing.T) {
+	ctx := context.Background()
+	auth := &VertexAuth{
+		tokenCmdFunc: func() ([]byte, error) {
+			return nil, fmt.Errorf("gcloud failure")
+		},
+	}
+	
+	// Ensure cache is not present
+	cachePath := auth.getCachePath()
+	_ = os.Remove(cachePath)
+	defer os.Remove(cachePath)
+
+	_, err := auth.getToken(ctx)
+	if err == nil || !strings.Contains(err.Error(), "failed to get gcloud token") {
+		t.Errorf("expected gcloud token error, got %v", err)
+	}
+}
