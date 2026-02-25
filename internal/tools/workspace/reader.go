@@ -191,6 +191,22 @@ func (r *fileReader) findFile(ctx context.Context, args map[string]interface{}) 
 	return tools.ToolResult{Text: strings.Join(results, "\n")}, nil
 }
 
+func (r *fileReader) validateDiffPrerequisites(ctx context.Context, resolved1, resolved2 string) error {
+	if _, err := r.fs.Stat(ctx, resolved1); err != nil {
+		return fmt.Errorf("file1 (%q) not found: %w", resolved1, err)
+	}
+	if _, err := r.fs.Stat(ctx, resolved2); err != nil {
+		return fmt.Errorf("file2 (%q) not found: %w", resolved2, err)
+	}
+
+	// Check for diff binary (ideally cached at struct initialization, but kept here for now)
+	if _, err := exec.LookPath("diff"); err != nil {
+		return fmt.Errorf("'diff' command not found in system PATH: %w", err)
+	}
+
+	return nil
+}
+
 func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
 	var params struct {
 		File1 string `json:"file1"`
@@ -212,19 +228,12 @@ func (r *fileReader) getFileDiff(ctx context.Context, args map[string]interface{
 		return tools.ToolResult{}, err
 	}
 
-	// Verify files exist before calling 'diff' to get better error messages
-	if _, err := r.fs.Stat(ctx, resolved1); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("file1 not found: %w", err)
-	}
-	if _, err := r.fs.Stat(ctx, resolved2); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("file2 not found: %w", err)
+	if err := r.validateDiffPrerequisites(ctx, resolved1, resolved2); err != nil {
+		return tools.ToolResult{}, err
 	}
 
-	if _, err := exec.LookPath("diff"); err != nil {
-		return tools.ToolResult{}, fmt.Errorf("'diff' command not found: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, "diff", "-u", resolved1, resolved2)
+	// SECURE EXECUTION: Use '--' to prevent argument injection
+	cmd := exec.CommandContext(ctx, "diff", "-u", "--", resolved1, resolved2)
 	out, err := cmd.CombinedOutput()
 
 	if len(out) == 0 && err == nil {
