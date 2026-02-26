@@ -504,3 +504,29 @@ func TestServiceAccountAuth_Apply_Error(t *testing.T) {
 		t.Errorf("Expected mock oauth2 error, got %v", err)
 	}
 }
+
+func TestAuthInvalidate_Additional(t *testing.T) {
+	t.Run("APIKeyAuth_Invalidate", func(t *testing.T) {
+		auth := &APIKeyAuth{APIKey: "test-key"}
+		auth.Invalidate()
+		if auth.APIKey != "test-key" {
+			t.Errorf("APIKeyAuth.Invalidate should not clear the key, but it did")
+		}
+	})
+
+	t.Run("BearerAuth_Invalidate", func(t *testing.T) {
+		auth := &BearerAuth{Token: "test-token"}
+		auth.Invalidate()
+		if auth.Token != "test-token" {
+			t.Errorf("BearerAuth.Invalidate should not clear the token, but it did")
+		}
+	})
+
+	t.Run("AnthropicAuth_Invalidate", func(t *testing.T) {
+		auth := &AnthropicAuth{APIKey: "test-key"}
+		auth.Invalidate()
+		if auth.APIKey != "test-key" {
+			t.Errorf("AnthropicAuth.Invalidate should not clear the key, but it did")
+		}
+	})
+}

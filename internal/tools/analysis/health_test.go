@@ -6,6 +6,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -228,5 +229,51 @@ func TestHealthManager_CheckDeadCode(t *testing.T) {
 				t.Errorf("got details %q, want %q", details, tt.wantDetails)
 			}
 		})
+	}
+}
+
+type coverageMockExecutor struct {
+	t *testing.T
+}
+
+func (m *coverageMockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "go" && len(args) > 1 && args[0] == "list" && args[1] == "-m" {
+		return []byte("github.com/gosharplite/tell-me-go"), nil
+	}
+	return []byte(""), nil
+}
+
+func (m *coverageMockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "go" && len(args) > 0 && args[0] == "test" {
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "-coverprofile=") {
+				path := strings.TrimPrefix(arg, "-coverprofile=")
+				content := "mode: set\ngithub.com/gosharplite/tell-me-go/internal/domain/events/events.go:1.1,2.1 1 0\n"
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					m.t.Errorf("failed to write mock coverage file: %v", err)
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+	return []byte(""), nil
+}
+
+func TestHealthManager_GetDetailedCoverage(t *testing.T) {
+	mockExec := &coverageMockExecutor{t: t}
+	hea := &healthManager{Exec: mockExec}
+
+	ctx := context.Background()
+	args := map[string]interface{}{"path": "./internal/domain/events/..."}
+	res, err := hea.getDetailedCoverage(ctx, args)
+	if err != nil {
+		t.Fatalf("getDetailedCoverage failed: %v", err)
+	}
+
+	if !strings.Contains(res.Text, "Detailed Coverage Report") {
+		t.Errorf("expected report title, got %q", res.Text)
+	}
+	if !strings.Contains(res.Text, "events.go") {
+		t.Errorf("expected file name in report, got %q", res.Text)
 	}
 }

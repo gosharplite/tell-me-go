@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -43,6 +44,12 @@ type SimpleEventBus struct {
 	capacity        int
 	closing         chan struct{}
 	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
+	droppedEvents   uint64         // Tracks events dropped at the channel level
+}
+
+// DroppedEvents returns the number of events dropped due to buffer capacity.
+func (b *SimpleEventBus) DroppedEvents() uint64 {
+	return atomic.LoadUint64(&b.droppedEvents)
 }
 
 type flushEvent struct {
@@ -77,7 +84,8 @@ func (b *SimpleEventBus) Publish(e Event) {
 		select {
 		case ch <- e:
 		default:
-			// Buffer full, drop event to avoid deadlocking the RLock
+			// Buffer full, drop newest event and record metric
+			atomic.AddUint64(&b.droppedEvents, 1)
 		}
 	}
 }
@@ -90,7 +98,12 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	in := make(chan Event, 100) // Small initial buffer
+	cap := b.capacity
+	if cap <= 0 {
+		cap = defaultMaxQueueSize
+	}
+
+	in := make(chan Event, cap)
 	out := make(chan Event)
 	b.subscribers = append(b.subscribers, in)
 

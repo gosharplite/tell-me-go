@@ -6,6 +6,7 @@ package events_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -389,13 +390,15 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 	bus.Publish("init")
 	<-ready
 
+	flushStarted := make(chan struct{})
 	flushErr := make(chan error, 1)
 	go func() {
+		close(flushStarted)
 		flushErr <- bus.Flush(context.Background())
 	}()
 
-	// Ensure Flush has a moment to reach its waiting state.
-	time.Sleep(10 * time.Millisecond)
+	// Ensure Flush has actually reached its waiting state.
+	<-flushStarted
 
 	// Concurrently trigger bus.Shutdown() in a goroutine because it waits for subscribers.
 	go func() {
@@ -457,4 +460,38 @@ func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 	if atomic.LoadInt32(&completed) != 0 {
 		t.Errorf("Flush waited for the slow subscriber instead of returning immediately")
 	}
+}
+
+func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
+	bus := events.NewSimpleEventBusWithCapacity(1)
+	
+	// Create a subscriber that blocks.
+	block := make(chan struct{})
+	bus.Subscribe(func(e events.Event) {
+		<-block
+	})
+
+	// 1. Publish first event to occupy the subscriber.
+	bus.Publish("first")
+	
+	// Wait a bit to ensure subscriber has picked up "first"
+	// and is now blocked on the subscriber callback.
+	time.Sleep(20 * time.Millisecond)
+
+	// 2. Publish many events to saturate both the ring buffer and the 'in' channel.
+	for i := 0; i < 50; i++ {
+		bus.Publish(fmt.Sprintf("event-%d", i))
+	}
+	
+	// Give pumpEvents a moment to pick up as many as possible and then block on 'out'.
+	time.Sleep(20 * time.Millisecond)
+
+	// 3. This event should definitely be dropped at the channel level.
+	bus.Publish("dropped-1")
+
+	if bus.DroppedEvents() == 0 {
+		t.Errorf("expected dropped events at channel level, got 0")
+	}
+	
+	close(block)
 }
