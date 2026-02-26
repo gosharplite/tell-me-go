@@ -45,6 +45,8 @@ type SimpleEventBus struct {
 	closing         chan struct{}
 	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
 	droppedEvents   uint64         // Tracks events dropped at the channel level
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // DroppedEvents returns the number of events dropped due to buffer capacity.
@@ -66,9 +68,12 @@ func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	if capacity <= 0 {
 		capacity = defaultMaxQueueSize
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &SimpleEventBus{
 		capacity: capacity,
 		closing:  make(chan struct{}),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
 
@@ -113,7 +118,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	go func() {
 		defer b.wg.Done()
 		defer close(out)
-		b.pumpEvents(in, out)
+		b.pumpEvents(b.ctx, in, out)
 	}()
 
 	// 2. Processing Goroutine
@@ -130,7 +135,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	}()
 }
 
-func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
+func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan<- Event) {
 	cap := b.capacity
 	if cap <= 0 {
 		cap = defaultMaxQueueSize
@@ -140,6 +145,9 @@ func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
 	for {
 		if buffer.len() > 0 {
 			select {
+			case <-ctx.Done():
+				b.cleanupBuffer(buffer, ctx.Err())
+				return
 			case e, ok := <-in:
 				if !ok {
 					in = nil // Stop reading from closed channel
@@ -153,11 +161,25 @@ func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
 			if in == nil {
 				return
 			}
-			e, ok := <-in
-			if !ok {
+			select {
+			case <-ctx.Done():
 				return
+			case e, ok := <-in:
+				if !ok {
+					return
+				}
+				buffer.push(e)
 			}
-			buffer.push(e)
+		}
+	}
+}
+
+func (b *SimpleEventBus) cleanupBuffer(buffer *eventRingBuffer, err error) {
+	for buffer.len() > 0 {
+		e := buffer.pop()
+		if fe, ok := e.(flushEvent); ok {
+			fe.done <- err
+			close(fe.done)
 		}
 	}
 }
@@ -218,7 +240,7 @@ func (r *eventRingBuffer) len() int {
 // Shutdown gracefully stops the event bus, flushing pending events.
 func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 	b.once.Do(func() {
-		// 1. Mark as closed and signal abort to unblock any pending Flush()
+		// 1. Mark as closed and signal pending producers (Flush) to abort
 		b.mu.Lock()
 		b.closed = true
 		if b.closing != nil {
@@ -226,29 +248,44 @@ func (b *SimpleEventBus) Shutdown(ctx context.Context) error {
 		}
 		b.mu.Unlock()
 
-		// 2. Wait for lockless writers (Flush) to abort or finish
-		b.activeProducers.Wait()
-
-		// 3. Safe to close channels; no writers are active
-		b.mu.Lock()
-		for _, ch := range b.subscribers {
-			close(ch)
-		}
-		b.mu.Unlock()
-
-		// 4. Wait for background processing to stop
+		// 2. Wait for everything to finish naturally in a background goroutine
 		done := make(chan struct{})
 		go func() {
+			// a. Wait for active producers (Flush) to acknowledge the closing signal and exit
+			b.activeProducers.Wait()
+
+			// b. Close all subscriber input channels to signal pumpEvents to drain
+			b.mu.Lock()
+			subs := b.subscribers
+			b.subscribers = nil
+			b.mu.Unlock()
+
+			for _, ch := range subs {
+				close(ch)
+			}
+
+			// c. Wait for background processing (pumpEvents and subscriber callbacks) to stop
 			b.wg.Wait()
 			close(done)
 		}()
 
 		select {
 		case <-done:
+			// Graceful shutdown complete
 		case <-ctx.Done():
+			// Timeout! Force termination by canceling internal context.
+			b.abort()
 		}
 	})
 	return ctx.Err()
+}
+
+func (b *SimpleEventBus) abort() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cancel != nil {
+		b.cancel()
+	}
 }
 
 // Flush waits for all currently queued events to be dispatched.
