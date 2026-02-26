@@ -1244,3 +1244,170 @@ func generateMessageHistory(n int) []*llm.Content {
 	}
 	return h
 }
+
+func TestHistoryRepairer_Transform(t *testing.T) {
+	ctx := context.Background()
+	repairer := &historyRepairer{}
+
+	tests := []struct {
+		name           string
+		history        []*llm.Content
+		wantLen        int
+		expectReboot   bool
+		expectPersist  bool
+	}{
+		{
+			name:    "Empty history",
+			history: []*llm.Content{},
+			wantLen: 0,
+		},
+		{
+			name: "Last is user",
+			history: []*llm.Content{
+				{Role: "user", Parts: []*llm.Part{{Text: "hello"}}},
+			},
+			wantLen: 1,
+		},
+		{
+			name: "Last is model with no tool call",
+			history: []*llm.Content{
+				{Role: "model", Parts: []*llm.Part{{Text: "hello"}}},
+			},
+			wantLen: 1,
+		},
+		{
+			name: "Orphaned tool call",
+			history: []*llm.Content{
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{FunctionCall: &llm.FunctionCall{ID: "call_1", Name: "get_weather"}},
+					},
+				},
+			},
+			wantLen:       2,
+			expectReboot:  true,
+			expectPersist: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &request{History: tt.history}
+			err := repairer.Transform(ctx, req)
+			if err != nil {
+				t.Fatalf("Transform failed: %v", err)
+			}
+			if len(req.History) != tt.wantLen {
+				t.Errorf("expected %d messages, got %d", tt.wantLen, len(req.History))
+			}
+			if tt.expectReboot {
+				last := req.History[len(req.History)-1]
+				if last.Role != "user" || last.Parts[0].FunctionResponse == nil {
+					t.Errorf("expected function response, got %v", last.Parts)
+				}
+				if !strings.Contains(last.Parts[0].FunctionResponse.Response["result"].(string), "System rebooted") {
+					t.Errorf("expected reboot message, got %v", last.Parts[0].FunctionResponse.Response)
+				}
+			}
+			if req.PersistHistory != tt.expectPersist {
+				t.Errorf("expected PersistHistory %v, got %v", tt.expectPersist, req.PersistHistory)
+			}
+		})
+	}
+}
+
+func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
+	t.Run("groupTurns with nil", func(t *testing.T) {
+		if groupTurns(nil) != nil {
+			t.Error("expected nil for nil input")
+		}
+	})
+	t.Run("groupTurns with empty", func(t *testing.T) {
+		if groupTurns([]*llm.Content{}) != nil {
+			t.Error("expected nil for empty input")
+		}
+	})
+}
+
+func TestContextManager_CloneContentSlice_NilSafety(t *testing.T) {
+	if cloneContentSlice(nil) != nil {
+		t.Error("expected nil for nil input")
+	}
+}
+
+func TestContentCleaner_Transform(t *testing.T) {
+	ctx := context.Background()
+	cleaner := &contentCleaner{}
+
+	t.Run("Clean empty parts", func(t *testing.T) {
+		req := &request{
+			History: []*llm.Content{
+				{
+					Role: "user",
+					Parts: []*llm.Part{
+						{Text: "real"},
+						{Text: ""},
+					},
+				},
+			},
+		}
+		err := cleaner.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+		if len(req.History[0].Parts) != 1 {
+			t.Errorf("expected 1 part, got %d", len(req.History[0].Parts))
+		}
+		if !req.PersistHistory {
+			t.Error("expected PersistHistory to be true")
+		}
+	})
+
+	t.Run("Fallback for completely empty content", func(t *testing.T) {
+		req := &request{
+			History: []*llm.Content{
+				{
+					Role: "model",
+					Parts: []*llm.Part{
+						{Text: ""},
+					},
+				},
+			},
+		}
+		err := cleaner.Transform(ctx, req)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+		if len(req.History[0].Parts) != 1 || req.History[0].Parts[0].Text != "[empty response]" {
+			t.Errorf("expected [empty response] part, got %v", req.History[0].Parts)
+		}
+	})
+}
+
+func TestTransientMerger_Transform(t *testing.T) {
+	ctx := context.Background()
+	merger := &transientMerger{}
+
+	req := &request{
+		History: []*llm.Content{
+			{
+				Role:  "user",
+				Parts: []*llm.Part{{Text: "permanent"}},
+				TransientParts: []*llm.Part{{Text: "transient"}},
+			},
+		},
+	}
+
+	err := merger.Transform(ctx, req)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	if len(req.History[0].Parts) != 2 {
+		t.Errorf("expected 2 parts, got %d", len(req.History[0].Parts))
+	}
+	if req.History[0].Parts[1].Text != "transient" {
+		t.Errorf("expected transient part, got %s", req.History[0].Parts[1].Text)
+	}
+}

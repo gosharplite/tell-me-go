@@ -181,18 +181,7 @@ type contentCleaner struct{}
 func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextRequest) error {
 	modified := false
 	for _, content := range req.History {
-		var cleanParts []*llm.Part
-		for _, p := range content.Parts {
-			if p.IsEmpty() {
-				continue
-			}
-			cleanParts = append(cleanParts, p)
-		}
-		if len(cleanParts) == 0 {
-			cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
-		}
-		if len(cleanParts) != len(content.Parts) {
-			content.Parts = cleanParts
+		if cleanContent(content) {
 			modified = true
 		}
 	}
@@ -200,6 +189,37 @@ func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextReq
 		req.PersistHistory = true
 	}
 	return nil
+}
+
+func cleanContent(content *llm.Content) bool {
+	originalParts := content.Parts
+	var cleanParts []*llm.Part
+	for _, p := range originalParts {
+		if !p.IsEmpty() {
+			cleanParts = append(cleanParts, p)
+		}
+	}
+	if len(cleanParts) == 0 {
+		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
+	}
+
+	// Check if we actually changed anything
+	isDifferent := len(cleanParts) != len(originalParts)
+	if !isDifferent {
+		// Even if same length, check if the parts themselves changed (e.g. replaced empty with fallback)
+		for i := range cleanParts {
+			if cleanParts[i] != originalParts[i] {
+				isDifferent = true
+				break
+			}
+		}
+	}
+
+	if isDifferent {
+		content.Parts = cleanParts
+		return true
+	}
+	return false
 }
 
 func (t *contentCleaner) Priority() int { return 5 }

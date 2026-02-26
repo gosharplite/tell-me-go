@@ -783,65 +783,85 @@ func TestGemini_InternalErrors(t *testing.T) {
 	})
 }
 
-func TestGemini_EdgeCases(t *testing.T) {
-	t.Run("findInParts", func(t *testing.T) {
-		parts := []string{"a", "b", "c"}
-		if findInParts(parts, "d") != "" {
-			t.Error("expected empty string for missing key")
-		}
-		if findInParts(parts, "c") != "" {
-			t.Error("expected empty string for key at end")
-		}
-		if findInParts(parts, "a") != "b" {
-			t.Errorf("expected b, got %s", findInParts(parts, "a"))
-		}
-	})
+func TestGemini_EdgeCase_FindInParts(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		key   string
+		want  string
+	}{
+		{"missing key", []string{"a", "b", "c"}, "d", ""},
+		{"key at end", []string{"a", "b", "c"}, "c", ""},
+		{"found", []string{"a", "b", "c"}, "a", "b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := findInParts(tt.parts, tt.key); got != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
 
-	t.Run("determineBackend Vertex AI", func(t *testing.T) {
-		c := &Client{}
-		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash"
-		backend, project, location, baseURL := c.determineBackend(apiURL)
-		if backend != genai.BackendVertexAI {
-			t.Errorf("expected VertexAI backend, got %v", backend)
-		}
-		if project != "my-project" {
-			t.Errorf("expected project my-project, got %s", project)
-		}
-		if location != "us-central1" {
-			t.Errorf("expected location us-central1, got %s", location)
-		}
-		if !strings.HasPrefix(baseURL, "https://us-central1-aiplatform.googleapis.com/") {
-			t.Errorf("unexpected baseURL %s", baseURL)
-		}
-	})
+func TestGemini_EdgeCase_DetermineBackend_VertexAI(t *testing.T) {
+	c := &Client{}
+	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash"
+	backend, project, location, baseURL := c.determineBackend(apiURL)
+	if backend != genai.BackendVertexAI {
+		t.Errorf("expected VertexAI backend, got %v", backend)
+	}
+	if project != "my-project" {
+		t.Errorf("expected project my-project, got %s", project)
+	}
+	if location != "us-central1" {
+		t.Errorf("expected location us-central1, got %s", location)
+	}
+	if !strings.HasPrefix(baseURL, "https://us-central1-aiplatform.googleapis.com/") {
+		t.Errorf("unexpected baseURL %s", baseURL)
+	}
+}
 
-	t.Run("determineBackend Mock URL", func(t *testing.T) {
-		t.Setenv("TELL_ME_MOCK_URL", "http://mock")
-		c := &Client{}
-		_, _, _, baseURL := c.determineBackend("http://localhost")
-		if baseURL != "http://mock" {
-			t.Errorf("expected mock baseURL, got %s", baseURL)
-		}
-	})
+func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
+	t.Setenv("TELL_ME_MOCK_URL", "http://mock")
+	c := &Client{}
+	_, _, _, baseURL := c.determineBackend("http://localhost")
+	if baseURL != "http://mock" {
+		t.Errorf("expected mock baseURL, got %s", baseURL)
+	}
+}
 
-	t.Run("toSDKContent nil input", func(t *testing.T) {
-		c := &Client{}
-		res := c.toSDKContent(context.Background(), []*llm.Content{nil}, nil)
-		if len(res) != 0 {
-			t.Errorf("expected 0 contents, got %d", len(res))
-		}
-	})
+func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []*llm.Content
+		wantLen  int
+		wantText string
+	}{
+		{
+			name:    "nil input",
+			input:   []*llm.Content{nil},
+			wantLen: 0,
+		},
+		{
+			name:     "empty parts",
+			input:    []*llm.Content{{Role: "user", Parts: []*llm.Part{}}},
+			wantLen:  1,
+			wantText: "[empty]",
+		},
+	}
 
-	t.Run("toSDKContent empty parts", func(t *testing.T) {
-		c := &Client{}
-		res := c.toSDKContent(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{}}}, nil)
-		if len(res) != 1 {
-			t.Errorf("expected 1 content for empty parts (defensive), got %d", len(res))
-		}
-		if res[0].Parts[0].Text != "[empty]" {
-			t.Errorf("expected [empty] part, got %s", res[0].Parts[0].Text)
-		}
-	})
+	c := &Client{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := c.toSDKContent(context.Background(), tt.input, nil)
+			if len(res) != tt.wantLen {
+				t.Errorf("len: got %d, want %d", len(res), tt.wantLen)
+			}
+			if tt.wantText != "" && len(res) > 0 && res[0].Parts[0].Text != tt.wantText {
+				t.Errorf("text: got %s, want %s", res[0].Parts[0].Text, tt.wantText)
+			}
+		})
+	}
 }
 
 func TestStreamChat_InternalError(t *testing.T) {

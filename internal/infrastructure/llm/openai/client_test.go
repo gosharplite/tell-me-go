@@ -796,78 +796,76 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 	})
 }
 
-func TestOpenAI_EdgeCases(t *testing.T) {
-	t.Run("marshalResponse nil", func(t *testing.T) {
-		res, err := marshalResponse(nil)
-		if err != nil || res != "" {
-			t.Errorf("expected empty string and nil error, got %q, %v", res, err)
-		}
-	})
+func TestOpenAI_EdgeCase_MarshalResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   map[string]interface{}
+		want    string
+		wantErr bool
+	}{
+		{"nil", nil, "", false},
+		{"non-string", map[string]interface{}{"result": 123}, `{"result":123}`, false},
+		{"error", map[string]interface{}{"bad": make(chan int)}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := marshalResponse(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
-	t.Run("marshalResponse non-string result", func(t *testing.T) {
-		res, err := marshalResponse(map[string]interface{}{"result": 123})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res != `{"result":123}` {
-			t.Errorf("expected JSON string, got %q", res)
-		}
-	})
-
-	t.Run("marshalResponse error", func(t *testing.T) {
-		_, err := marshalResponse(map[string]interface{}{"bad": make(chan int)})
-		if err == nil {
-			t.Error("expected error for unmarshallable type")
-		}
-	})
-
-	t.Run("toOpenAITools with declarations", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
-		decls := []*tools.ToolDeclaration{
-			{
-				Name:        "test",
-				Description: "desc",
-				Parameters: &tools.Schema{
-					Type: "OBJECT",
-					Properties: map[string]*tools.Schema{
-						"p1": {Type: "STRING"},
-					},
+func TestOpenAI_EdgeCase_ToOpenAITools(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	decls := []*tools.ToolDeclaration{
+		{
+			Name:        "test",
+			Description: "desc",
+			Parameters: &tools.Schema{
+				Type: "OBJECT",
+				Properties: map[string]*tools.Schema{
+					"p1": {Type: "STRING"},
 				},
 			},
-		}
-		tools := c.toOpenAITools(decls)
-		if len(tools) != 1 || tools[0].Function.Name != "test" {
-			t.Errorf("unexpected tools: %+v", tools)
-		}
-	})
+		},
+	}
+	res := c.toOpenAITools(decls)
+	if len(res) != 1 || res[0].Function.Name != "test" {
+		t.Errorf("unexpected tools: %+v", res)
+	}
+}
 
-	t.Run("parseResponseContent with empty parts", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
-		content := &llm.Content{}
-		c.parseResponseContent([]interface{}{
-			map[string]interface{}{"type": "text", "text": ""},
-			map[string]interface{}{"type": "unknown"},
-			"not a map",
-		}, content)
-		if len(content.Parts) != 0 {
-			t.Errorf("expected 0 parts, got %d", len(content.Parts))
-		}
-	})
+func TestOpenAI_EdgeCase_ParseResponseContent(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	content := &llm.Content{}
+	c.parseResponseContent([]interface{}{
+		map[string]interface{}{"type": "text", "text": ""},
+		map[string]interface{}{"type": "unknown"},
+		"not a map",
+	}, content)
+	if len(content.Parts) != 0 {
+		t.Errorf("expected 0 parts, got %d", len(content.Parts))
+	}
+}
 
-	t.Run("parseResponseToolCalls error", func(t *testing.T) {
-		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
-		content := &llm.Content{}
-		err := c.parseResponseToolCalls([]toolCall{
-			{
-				Function: functionCall{
-					Arguments: "{invalid json}",
-				},
+func TestOpenAI_EdgeCase_ParseResponseToolCalls(t *testing.T) {
+	c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+	content := &llm.Content{}
+	err := c.parseResponseToolCalls([]toolCall{
+		{
+			Function: functionCall{
+				Arguments: "{invalid json}",
 			},
-		}, content)
-		if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
-			t.Errorf("expected unmarshal error, got %v", err)
-		}
-	})
+		},
+	}, content)
+	if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
+		t.Errorf("expected unmarshal error, got %v", err)
+	}
 }
 
 func TestOpenAI_StreamEdgeCases(t *testing.T) {
