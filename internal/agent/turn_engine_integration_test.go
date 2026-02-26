@@ -65,8 +65,8 @@ func (m *integrationMockLLMGateway) RefreshAuth() error { return nil }
 
 // dynamicMockCounter allows controlling token counts for specific contents.
 type dynamicMockCounter struct {
-	trigger *llm.Content
-	val     int
+	trigger    *llm.Content
+	val        int
 	historyVal int
 }
 
@@ -79,7 +79,7 @@ func (m *dynamicMockCounter) Count(contents []*llm.Content) int {
 	if m.historyVal > 0 {
 		return m.historyVal
 	}
-	
+
 	h := &orchestration.HeuristicTokenCounter{}
 	return h.Count(contents)
 }
@@ -155,7 +155,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		turn1 := engine.createTurn(1, time.Now())
 		refiner := &contextRefiner{}
 		// Clear trigger so refiner uses heuristic for the real (mutated) history
-		counter.trigger = nil 
+		counter.trigger = nil
 		_, err = refiner.process(ctx, turn1)
 		assert.NoError(t, err)
 
@@ -192,10 +192,10 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 		// 1. Setup: Already high token count
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "lots of context"}}})
-		
+
 		// Force refiner and other history processing to see 8500 tokens
 		counter.historyVal = 8500
-		
+
 		turn0 := engine.createTurn(0, time.Now())
 		turn0.State.ToolCallCount = make(map[string]int)
 		refiner := &contextRefiner{}

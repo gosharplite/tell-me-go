@@ -119,7 +119,6 @@ func TestChatterOptions(t *testing.T) {
 	})
 }
 
-
 func TestContextMetadata_Clone(t *testing.T) {
 	original := &ContextMetadata{
 		OriginalTokenCount:     100,

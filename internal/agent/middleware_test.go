@@ -189,4 +189,3 @@ func TestWithLoopDetector_Rotation(t *testing.T) {
 		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)
 	})
 }
-

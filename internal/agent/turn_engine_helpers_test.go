@@ -342,8 +342,8 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			History:  &mockHistoryManager{},
 			Strategy: orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil),
 		},
-		Gateway:      mockGw,
-		executor:     &mockExecutor{
+		Gateway: mockGw,
+		executor: &mockExecutor{
 			ExecuteFunc: func(ctx context.Context, respContent *llm.Content, turn int, maxToolTurns int) (*llm.Content, error) {
 				return &llm.Content{Role: "user", Parts: []*llm.Part{{FunctionResponse: &llm.FunctionResponse{Name: "test"}}}}, nil
 			},
