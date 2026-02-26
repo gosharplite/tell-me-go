@@ -18,8 +18,8 @@ import (
 type Event interface{}
 
 var (
-	errBufferOverflow = errors.New("event buffer overflowed, events were dropped")
-	errBusClosed      = errors.New("event bus is closed")
+	ErrBufferOverflow = errors.New("event buffer overflowed, events were dropped")
+	ErrBusClosed      = errors.New("event bus is closed")
 )
 
 // EventBus defines the interface for publishing and subscribing to events.
@@ -51,11 +51,11 @@ type flushEvent struct {
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
 func NewSimpleEventBus() *SimpleEventBus {
-	return newSimpleEventBusWithCapacity(defaultMaxQueueSize)
+	return NewSimpleEventBusWithCapacity(defaultMaxQueueSize)
 }
 
-// newSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
-func newSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
+// NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
+func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	if capacity <= 0 {
 		capacity = defaultMaxQueueSize
 	}
@@ -166,7 +166,7 @@ func (r *eventRingBuffer) push(e Event) {
 		// Buffer full: overwrite the oldest element
 		oldest := r.queue[r.tail]
 		if fe, ok := oldest.(flushEvent); ok {
-			fe.done <- errBufferOverflow
+			fe.done <- ErrBufferOverflow
 			close(fe.done) // Safely unblock the waiting Flush caller
 		}
 
@@ -243,7 +243,7 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()
-		return errBusClosed
+		return ErrBusClosed
 	}
 
 	// Register active producer before releasing lock
@@ -279,14 +279,15 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 		close(errCh)
 	}()
 
-	// Finally, in the main Flush thread, wait for the first error or completion
+	// Finally, in the main Flush thread, wait for all results
+	var errs []error
 	for err := range errCh {
 		if err != nil {
-			return err // Return on the first error encountered
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) error {
@@ -297,14 +298,16 @@ func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) 
 		case err := <-done:
 			return err
 		case <-ctx.Done():
+			// Wait for the subscriber to finish processing current events to maintain synchronization guarantee
+			<-done
 			return ctx.Err()
 		case <-b.closing:
-			return errBusClosed
+			return ErrBusClosed
 		}
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-b.closing:
-		return errBusClosed
+		return ErrBusClosed
 	}
 }
 

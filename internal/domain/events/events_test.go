@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -132,8 +133,8 @@ func TestSimpleEventBus_Flush_ClosedBus(t *testing.T) {
 	_ = bus.Shutdown(context.Background())
 
 	err := bus.Flush(context.Background())
-	if err == nil || err.Error() != "event bus is closed" {
-		t.Errorf("expected 'event bus is closed' error, got %v", err)
+	if !errors.Is(err, ErrBusClosed) {
+		t.Errorf("expected ErrBusClosed, got %v", err)
 	}
 }
 
@@ -151,11 +152,17 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	// Use a background goroutine to unblock the subscriber, since Flush now waits
+	// for the subscriber to finish even if the context is cancelled.
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(block)
+	}()
+
 	err := bus.Flush(ctx)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
-	close(block)
 }
 
 func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
@@ -172,11 +179,17 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
+	// Use a background goroutine to unblock the subscriber, since Flush now waits
+	// for the subscriber to finish even if the context is cancelled.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(block)
+	}()
+
 	err := bus.Flush(ctx)
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("expected context.DeadlineExceeded, got %v", err)
 	}
-	close(block)
 }
 
 func TestSimpleEventBus_Subscribe_ClosedBus(t *testing.T) {
@@ -279,6 +292,13 @@ func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	// Use a background goroutine to unblock the subscriber, since Flush now waits
+	// for the subscriber to finish even if the context is cancelled.
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(block)
+	}()
+
 	err := bus.Flush(ctx)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -286,7 +306,6 @@ func TestSimpleEventBus_Flush_ContextCancelled(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
-	close(block)
 }
 
 func TestSimpleEventBus_Publish_BufferFull(t *testing.T) {
@@ -414,8 +433,8 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 }
 
 func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
-	// Initialize a bus using newSimpleEventBusWithCapacity(1).
-	bus := newSimpleEventBusWithCapacity(1)
+	// Initialize a bus using NewSimpleEventBusWithCapacity(1).
+	bus := NewSimpleEventBusWithCapacity(1)
 
 	// Create a subscriber that blocks intentionally (so events queue up).
 	block := make(chan struct{})
@@ -455,14 +474,14 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 	// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
 	bus.Publish("force-eviction")
 
-	// 5. Assert that the blocked Flush() call returns errBufferOverflow.
+	// 5. Assert that the blocked Flush() call returns ErrBufferOverflow.
 	select {
 	case err := <-flushErr:
-		if !errors.Is(err, errBufferOverflow) {
-			t.Errorf("expected errBufferOverflow, got %v", err)
+		if !errors.Is(err, ErrBufferOverflow) {
+			t.Errorf("expected ErrBufferOverflow, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Flush did not return errBufferOverflow")
+		t.Fatal("Flush did not return ErrBufferOverflow")
 	}
 }
 
@@ -500,11 +519,11 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 		_ = bus.Shutdown(context.Background())
 	}()
 
-	// Assert that the Flush() call aborts and returns errBusClosed.
+	// Assert that the Flush() call aborts and returns ErrBusClosed.
 	select {
 	case err := <-flushErr:
-		if !errors.Is(err, errBusClosed) {
-			t.Errorf("expected errBusClosed, got %v", err)
+		if !errors.Is(err, ErrBusClosed) {
+			t.Errorf("expected ErrBusClosed, got %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Flush did not return after Shutdown")
@@ -522,7 +541,7 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus := newSimpleEventBusWithCapacity(tt.capacity)
+			bus := NewSimpleEventBusWithCapacity(tt.capacity)
 			if bus.capacity != defaultMaxQueueSize {
 				t.Errorf("expected capacity %d, got %d", defaultMaxQueueSize, bus.capacity)
 			}
@@ -533,5 +552,39 @@ func TestNewSimpleEventBusWithCapacity_Defaults(t *testing.T) {
 			_ = bus.Flush(context.Background())
 			_ = bus.Shutdown(context.Background())
 		})
+	}
+}
+
+func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
+	t.Parallel()
+	bus := NewSimpleEventBusWithCapacity(10)
+	defer func() { _ = bus.Shutdown(context.Background()) }()
+
+	var completed int32
+
+	// Fast subscriber that "fails" (simulated by closing the bus mid-flush)
+	bus.Subscribe(func(e Event) {})
+
+	// Slow subscriber
+	bus.Subscribe(func(e Event) {
+		time.Sleep(50 * time.Millisecond)
+		atomic.AddInt32(&completed, 1)
+	})
+
+	bus.Publish("event")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Trigger a flush, but cancel the context immediately to simulate an early error
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	_ = bus.Flush(ctx)
+
+	// If Flush didn't wait, this assertion would fail
+	if atomic.LoadInt32(&completed) == 0 {
+		t.Errorf("Flush returned before slow subscriber finished processing")
 	}
 }
