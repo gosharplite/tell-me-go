@@ -128,3 +128,26 @@ func TestClassify(t *testing.T) {
 		})
 	}
 }
+
+func TestClassify_MultiWrap(t *testing.T) {
+	originalErr := &APIError{Status: 429, Body: "Too Many Requests"}
+	classifiedErr := Classify(originalErr)
+
+	// Verify we can find the domain sentinel
+	if !errors.Is(classifiedErr, llm.ErrRateLimit) {
+		t.Errorf("expected classified error to be llm.ErrRateLimit")
+	}
+
+	// Verify we can find the original error (this requires %w for the second arg)
+	if !errors.Is(classifiedErr, originalErr) {
+		t.Errorf("expected classified error to also wrap the original error")
+	}
+
+	// Verify we can extract the original error via errors.As
+	var apiErr *APIError
+	if !errors.As(classifiedErr, &apiErr) {
+		t.Errorf("expected classified error to be extractable as *APIError")
+	} else if apiErr.Status != 429 {
+		t.Errorf("extracted APIError has wrong status: got %d, want 429", apiErr.Status)
+	}
+}
