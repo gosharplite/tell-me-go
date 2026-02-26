@@ -49,7 +49,7 @@ type retryPolicy interface {
 	ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool)
 }
 
-// defaultRetryPolicy provides a standard retry implementation with linear backoff.
+// defaultRetryPolicy provides a standard retry implementation with exponential backoff and jitter.
 type defaultRetryPolicy struct {
 	MaxRetries       int
 	Backoff          time.Duration
