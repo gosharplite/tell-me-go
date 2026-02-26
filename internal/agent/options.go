@@ -30,7 +30,6 @@ func WithSummarizer(s services.Summarizer) option {
 	}
 }
 
-
 // WithInternalTools enables the registration of internal agent tools.
 func WithInternalTools() option {
 	return func(c *agentConfig) {

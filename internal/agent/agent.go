@@ -19,7 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
 	Limits           events.Limits
