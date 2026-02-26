@@ -150,7 +150,7 @@ func withLoopDetector() turnMiddleware {
 func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON []byte) error {
 	for _, prevHash := range recentHashes {
 		if currentHash == prevHash {
-			snippet := truncateSafe(string(rawJSON), 147)
+			snippet := truncateSafe(rawJSON, 147)
 			errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
 			return newAgentError(errLogic, errMsg, nil)
 		}
@@ -158,14 +158,17 @@ func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON [
 	return nil
 }
 
-// truncateSafe truncates a string to a specific number of runes safely without O(N) memory allocation.
-func truncateSafe(s string, maxRunes int) string {
+// truncateSafe truncates a byte slice to a specific number of runes safely.
+// It uses a Go compiler optimization `range string(b)` to avoid heap allocation
+// during rune decoding.
+func truncateSafe(b []byte, maxRunes int) string {
 	count := 0
-	for byteIndex := range s { // Zero-allocation rune decoding
+	// The Go compiler optimizes `range string(b)` to avoid heap allocation!
+	for byteIndex := range string(b) {
 		if count == maxRunes {
-			return s[:byteIndex] + "..."
+			return string(b[:byteIndex]) + "..." // Only allocates the small truncated snippet
 		}
 		count++
 	}
-	return s
+	return string(b)
 }
