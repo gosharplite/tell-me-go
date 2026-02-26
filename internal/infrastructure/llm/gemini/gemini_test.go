@@ -763,3 +763,100 @@ func TestFormatFinishError(t *testing.T) {
 		}
 	})
 }
+
+func TestGemini_InternalErrors(t *testing.T) {
+	t.Run("Authenticator Error in NewClient", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		_, err := NewClient("http://localhost", "gemini-1.5-flash", errAuth, 0, "", 0, "", false, nil, 0)
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+
+	t.Run("Authenticator Error in prepareAuthHeader", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		c := &Client{authenticator: errAuth}
+		_, err := c.prepareAuthHeader(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+}
+
+func TestGemini_EdgeCases(t *testing.T) {
+	t.Run("findInParts", func(t *testing.T) {
+		parts := []string{"a", "b", "c"}
+		if findInParts(parts, "d") != "" {
+			t.Error("expected empty string for missing key")
+		}
+		if findInParts(parts, "c") != "" {
+			t.Error("expected empty string for key at end")
+		}
+		if findInParts(parts, "a") != "b" {
+			t.Errorf("expected b, got %s", findInParts(parts, "a"))
+		}
+	})
+
+	t.Run("determineBackend Vertex AI", func(t *testing.T) {
+		c := &Client{}
+		apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash"
+		backend, project, location, baseURL := c.determineBackend(apiURL)
+		if backend != genai.BackendVertexAI {
+			t.Errorf("expected VertexAI backend, got %v", backend)
+		}
+		if project != "my-project" {
+			t.Errorf("expected project my-project, got %s", project)
+		}
+		if location != "us-central1" {
+			t.Errorf("expected location us-central1, got %s", location)
+		}
+		if !strings.HasPrefix(baseURL, "https://us-central1-aiplatform.googleapis.com/") {
+			t.Errorf("unexpected baseURL %s", baseURL)
+		}
+	})
+
+	t.Run("determineBackend Mock URL", func(t *testing.T) {
+		t.Setenv("TELL_ME_MOCK_URL", "http://mock")
+		c := &Client{}
+		_, _, _, baseURL := c.determineBackend("http://localhost")
+		if baseURL != "http://mock" {
+			t.Errorf("expected mock baseURL, got %s", baseURL)
+		}
+	})
+	
+	t.Run("toSDKContent nil input", func(t *testing.T) {
+		c := &Client{}
+		res := c.toSDKContent(context.Background(), []*llm.Content{nil}, nil)
+		if len(res) != 0 {
+			t.Errorf("expected 0 contents, got %d", len(res))
+		}
+	})
+
+	t.Run("toSDKContent empty parts", func(t *testing.T) {
+		c := &Client{}
+		res := c.toSDKContent(context.Background(), []*llm.Content{{Role: "user", Parts: []*llm.Part{}}}, nil)
+		if len(res) != 1 {
+			t.Errorf("expected 1 content for empty parts (defensive), got %d", len(res))
+		}
+		if res[0].Parts[0].Text != "[empty]" {
+			t.Errorf("expected [empty] part, got %s", res[0].Parts[0].Text)
+		}
+	})
+}
+
+func TestStreamChat_InternalError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, "internal server error")
+	}))
+	defer server.Close()
+
+	t.Setenv("TELL_ME_MOCK_URL", server.URL)
+	t.Setenv("GOOGLE_API_KEY", "dummy")
+	client, _ := NewClient("http://localhost/v1", "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, nil, 5*time.Second)
+
+	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}

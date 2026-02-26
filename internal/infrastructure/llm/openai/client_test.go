@@ -767,3 +767,142 @@ func TestCacheHitReporting(t *testing.T) {
 		}
 	})
 }
+
+func TestOpenAI_InternalErrors(t *testing.T) {
+	t.Run("Authenticator Error", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		c := NewClient("", "gpt-4", errAuth, nil, "", 0, 0)
+		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+
+	t.Run("Invalid URL", func(t *testing.T) {
+		c := NewClient(" :invalid", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
+			t.Errorf("expected request creation error, got %v", err)
+		}
+	})
+	
+	t.Run("HTTP Request Failure", func(t *testing.T) {
+		// A URL that will fail on Do()
+		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "request failed") {
+			t.Errorf("expected request failure error, got %v", err)
+		}
+	})
+}
+
+func TestOpenAI_EdgeCases(t *testing.T) {
+	t.Run("marshalResponse nil", func(t *testing.T) {
+		res, err := marshalResponse(nil)
+		if err != nil || res != "" {
+			t.Errorf("expected empty string and nil error, got %q, %v", res, err)
+		}
+	})
+
+	t.Run("marshalResponse non-string result", func(t *testing.T) {
+		res, err := marshalResponse(map[string]interface{}{"result": 123})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res != `{"result":123}` {
+			t.Errorf("expected JSON string, got %q", res)
+		}
+	})
+
+	t.Run("marshalResponse error", func(t *testing.T) {
+		_, err := marshalResponse(map[string]interface{}{"bad": make(chan int)})
+		if err == nil {
+			t.Error("expected error for unmarshallable type")
+		}
+	})
+
+	t.Run("toOpenAITools with declarations", func(t *testing.T) {
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		decls := []*tools.ToolDeclaration{
+			{
+				Name:        "test",
+				Description: "desc",
+				Parameters: &tools.Schema{
+					Type: "OBJECT",
+					Properties: map[string]*tools.Schema{
+						"p1": {Type: "STRING"},
+					},
+				},
+			},
+		}
+		tools := c.toOpenAITools(decls)
+		if len(tools) != 1 || tools[0].Function.Name != "test" {
+			t.Errorf("unexpected tools: %+v", tools)
+		}
+	})
+
+	t.Run("parseResponseContent with empty parts", func(t *testing.T) {
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		content := &llm.Content{}
+		c.parseResponseContent([]interface{}{
+			map[string]interface{}{"type": "text", "text": ""},
+			map[string]interface{}{"type": "unknown"},
+			"not a map",
+		}, content)
+		if len(content.Parts) != 0 {
+			t.Errorf("expected 0 parts, got %d", len(content.Parts))
+		}
+	})
+
+	t.Run("parseResponseToolCalls error", func(t *testing.T) {
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		content := &llm.Content{}
+		err := c.parseResponseToolCalls([]toolCall{
+			{
+				Function: functionCall{
+					Arguments: "{invalid json}",
+				},
+			},
+		}, content)
+		if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
+			t.Errorf("expected unmarshal error, got %v", err)
+		}
+	})
+}
+
+func TestOpenAI_StreamEdgeCases(t *testing.T) {
+	t.Run("processStreamChunk malformed JSON", func(t *testing.T) {
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		metrics, err := c.processStreamChunk([]byte("invalid"), nil, nil)
+		if metrics != nil || err != nil {
+			t.Errorf("expected nil, nil for malformed chunk, got %v, %v", metrics, err)
+		}
+	})
+
+	t.Run("emitToolCalls unmarshal error", func(t *testing.T) {
+		c := NewClient("", "gpt-4", nil, nil, "", 0, 0)
+		states := map[int]*toolCallState{
+			0: {
+				name: "test",
+				args: func() strings.Builder {
+					var b strings.Builder
+					b.WriteString("{bad}")
+					return b
+				}(),
+			},
+		}
+		err := c.emitToolCalls(states, func(c *llm.Content) {})
+		if err == nil || !strings.Contains(err.Error(), "failed to unmarshal tool arguments") {
+			t.Errorf("expected unmarshal error, got %v", err)
+		}
+	})
+}
+
+func TestOpenAI_StreamRequestFailure(t *testing.T) {
+	// Use a non-existent URL to trigger Do() error
+	c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)
+	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+	if err == nil || !strings.Contains(err.Error(), "request failed") {
+		t.Errorf("expected request failure error, got %v", err)
+	}
+}

@@ -783,3 +783,79 @@ func TestStreamPromptCaching(t *testing.T) {
 		t.Errorf("unexpected metrics: %+v", metrics)
 	}
 }
+
+func TestAnthropic_InternalErrors(t *testing.T) {
+	t.Run("Authenticator Error", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		c := NewClient("", "claude-3", errAuth, nil, 0, "", 0)
+		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+
+	t.Run("Invalid URL", func(t *testing.T) {
+		c := NewClient(" :invalid", "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+		_, _, err := c.SendChat(context.Background(), nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "failed to create request") {
+			t.Errorf("expected request creation error, got %v", err)
+		}
+	})
+}
+
+func TestAnthropic_EdgeCases(t *testing.T) {
+	t.Run("marshalResponse nil", func(t *testing.T) {
+		res := marshalResponse(nil)
+		if res != "" {
+			t.Errorf("expected empty string, got %q", res)
+		}
+	})
+
+	t.Run("marshalResponse non-string result", func(t *testing.T) {
+		res := marshalResponse(map[string]interface{}{"result": 123})
+		if res != `{"result":123}` {
+			t.Errorf("expected JSON string, got %q", res)
+		}
+	})
+
+	t.Run("partToContentBlock invalid", func(t *testing.T) {
+		c := &client{}
+		_, ok := c.partToContentBlock(&llm.Part{}, "user")
+		if ok {
+			t.Error("expected ok=false for empty part")
+		}
+	})
+
+	t.Run("handleContentBlockStop invalid JSON", func(t *testing.T) {
+		c := &client{}
+		state := &streamState{
+			toolCalls: map[int]*llm.Part{0: {FunctionCall: &llm.FunctionCall{}}},
+			toolJSONs: map[int]*strings.Builder{0: func() *strings.Builder {
+				var b strings.Builder
+				b.WriteString("{bad}")
+				return &b
+			}()},
+		}
+		err := c.handleContentBlockStop(`{"index": 0}`, func(c *llm.Content) {}, state)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		// Should have gracefully handled invalid JSON and still cleaned up or just returned
+	})
+	
+	t.Run("handleAnthropicEvent unknown type", func(t *testing.T) {
+		c := &client{}
+		err := c.handleAnthropicEvent("unknown", "", nil, nil)
+		if err != nil {
+			t.Errorf("unexpected error for unknown event: %v", err)
+		}
+	})
+}
+
+func TestAnthropic_StreamRequestFailure(t *testing.T) {
+	c := NewClient("http://non-existent.localhost", "claude-3", &auth.AnthropicAuth{APIKey: "key"}, nil, 0, "", 0)
+	_, err := c.StreamChat(context.Background(), nil, nil, nil, func(c *llm.Content) {})
+	if err == nil || !strings.Contains(err.Error(), "request failed") {
+		t.Errorf("expected request failure error, got %v", err)
+	}
+}
