@@ -166,6 +166,8 @@ func TestSimpleEventBus_Flush_ContextCancelled_Sending(t *testing.T) {
 
 func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 	bus := events.NewSimpleEventBus()
+	t.Cleanup(func() { _ = bus.Shutdown(context.Background()) })
+
 	block := make(chan struct{})
 	ready := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
@@ -178,9 +180,9 @@ func TestSimpleEventBus_Flush_ContextCancelled_Waiting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	// Slow subscriber will take longer than context timeout
-	defer func() {
-		time.Sleep(20 * time.Millisecond)
+	// Unblock the subscriber ONLY after the context times out.
+	go func() {
+		<-ctx.Done()
 		close(block)
 	}()
 
@@ -329,14 +331,6 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 
 	// Create a subscriber that blocks intentionally (so events queue up).
 	block := make(chan struct{})
-	t.Cleanup(func() {
-		select {
-		case <-block:
-		default:
-			close(block)
-		}
-	})
-
 	ready := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
 		ready <- struct{}{}
@@ -352,28 +346,33 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 	bus.Publish("in-buffer")
 
 	// 3. Trigger Flush() in a separate goroutine. It will block.
-	// It sends a flushEvent to the 'in' channel.
-	// pumpEvents will read it and push it to the ring buffer, evicting "in-buffer".
 	flushErr := make(chan error, 1)
 	go func() {
 		flushErr <- bus.Flush(context.Background())
 	}()
 
-	// Give a tiny bit of time for pumpEvents to process the flushEvent
-	time.Sleep(10 * time.Millisecond)
-
-	// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
-	bus.Publish("force-eviction")
-
-	// 5. Assert that the blocked Flush() call returns ErrBufferOverflow.
-	select {
-	case err := <-flushErr:
-		if !errors.Is(err, events.ErrBufferOverflow) {
-			t.Errorf("expected ErrBufferOverflow, got %v", err)
+	// Instead of Sleep, we use a loop with a small delay to ensure pumpEvents
+	// has a chance to read the flushEvent from the 'in' channel.
+	// We can't be 100% deterministic here without internal hooks, but this is 
+	// more robust than a single sleep.
+	for i := 0; i < 10; i++ {
+		time.Sleep(2 * time.Millisecond)
+		// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
+		bus.Publish("force-eviction")
+		
+		select {
+		case err := <-flushErr:
+			if !errors.Is(err, events.ErrBufferOverflow) {
+				t.Errorf("expected ErrBufferOverflow, got %v", err)
+			}
+			close(block)
+			return
+		default:
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Flush did not return ErrBufferOverflow")
 	}
+
+	close(block)
+	t.Fatal("Flush did not return ErrBufferOverflow after multiple eviction attempts")
 }
 
 func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
@@ -381,13 +380,6 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 
 	// Block processing to ensure Flush blocks.
 	block := make(chan struct{})
-	t.Cleanup(func() {
-		select {
-		case <-block:
-		default:
-			close(block)
-		}
-	})
 	ready := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
 		ready <- struct{}{}
@@ -402,10 +394,10 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 		flushErr <- bus.Flush(context.Background())
 	}()
 
-	// Give it a moment to enter the waiting state in Flush
+	// Ensure Flush has a moment to reach its waiting state.
 	time.Sleep(10 * time.Millisecond)
 
-	// Concurrently trigger bus.Shutdown().
+	// Concurrently trigger bus.Shutdown() in a goroutine because it waits for subscribers.
 	go func() {
 		_ = bus.Shutdown(context.Background())
 	}()
@@ -419,48 +411,50 @@ func TestSimpleEventBus_Flush_ConcurrentShutdown(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Flush did not return after Shutdown")
 	}
+
+	close(block)
 }
 
 func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
-	// Re-checking what the user said:
-	// "They must now assert that Flush returns context.Canceled immediately, without waiting for the slow subscriber to finish."
 	t.Parallel()
 	bus := events.NewSimpleEventBusWithCapacity(10)
 	defer func() { _ = bus.Shutdown(context.Background()) }()
 
 	var completed int32
+	started := make(chan struct{})
+	block := make(chan struct{})
 
-	// Slow subscriber
+	// Slow/hung subscriber
 	bus.Subscribe(func(e events.Event) {
-		time.Sleep(100 * time.Millisecond)
+		close(started) // Signal to the test that this subscriber has picked up the event
+		<-block        // Block indefinitely to simulate a hung process
 		atomic.AddInt32(&completed, 1)
 	})
 
+	// Trigger an event to get the subscriber running
 	bus.Publish("event")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Trigger a flush, but cancel the context quickly
+	// Trigger the cancellation deterministically
 	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
+		<-started // Wait until the subscriber is actually running and blocked
+		cancel()  // Now cancel the context
 	}()
 
-	start := time.Now()
 	err := bus.Flush(ctx)
-	duration := time.Since(start)
 
+	// Cleanup to prevent the subscriber goroutine from leaking
+	close(block)
+
+	// 1. Assert Flush returned immediately due to context cancellation
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 
-	// It should return much faster than the 100ms sleep
-	if duration >= 50*time.Millisecond {
-		t.Errorf("Flush took too long to return after cancellation: %v", duration)
-	}
-
-	// Verify that the subscriber has NOT completed yet at the time Flush returned
+	// 2. Assert Flush did not wait for the slow subscriber to finish
 	if atomic.LoadInt32(&completed) != 0 {
-		t.Errorf("Flush waited for subscriber despite context cancellation")
+		t.Errorf("Flush waited for the slow subscriber instead of returning immediately")
 	}
 }
