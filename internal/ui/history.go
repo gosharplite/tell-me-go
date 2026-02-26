@@ -11,19 +11,19 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// StdHistoryRenderer implements services.HistoryRenderer by wrapping the package-level History function.
+// StdHistoryRenderer implements ports.HistoryRenderer by wrapping the package-level History function.
 type StdHistoryRenderer struct{}
 
-// Render implements services.HistoryRenderer.
-func (r *StdHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+// Render implements ports.HistoryRenderer.
+func (r *StdHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
 	renderHistory(w, h, n, options)
 }
 
 // renderHistory renders the chat history to the provided writer.
-func renderHistory(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+func renderHistory(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
 	total := h.GetTotalEntries()
 	if total == 0 {
 		fmt.Fprintln(w, "No history found.")

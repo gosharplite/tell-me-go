@@ -17,7 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -147,7 +147,7 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
@@ -181,7 +181,7 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextMana
 	return hManager, cm, bus, server
 }
 
-func addHeavyHistory(t *testing.T, h services.HistoryManager, turns int) {
+func addHeavyHistory(t *testing.T, h ports.HistoryManager, turns int) {
 	t.Helper()
 	ctx := context.Background()
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
@@ -373,9 +373,9 @@ func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
 		Summarizer: nil, // This should trigger the panic if not handled
 	}
 
-	req := &services.ContextRequest{
+	req := &ports.ContextRequest{
 		History:  make([]*domain_llm.Content, 10),
-		Metadata: services.ContextMetadata{},
+		Metadata: ports.ContextMetadata{},
 	}
 	// Fill history with some dummy content
 	for i := 0; i < 10; i++ {

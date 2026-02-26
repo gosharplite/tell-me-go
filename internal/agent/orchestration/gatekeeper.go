@@ -10,18 +10,18 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // tokenGatekeeper estimates tokens and triggers auto-summarization if needed.
 type tokenGatekeeper struct {
 	MaxTokens  int
 	Estimator  llm.TokenEstimator
-	Summarizer services.Summarizer
+	Summarizer ports.Summarizer
 	Events     events.EventBus
 }
 
-func (t *tokenGatekeeper) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *tokenGatekeeper) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	// Stage 1: Initial Analysis (includes Tiered Threshold)
 	tokens, err := t.handleTieredThreshold(ctx, req)
 	if err != nil {
@@ -43,7 +43,7 @@ func (t *tokenGatekeeper) Transform(ctx context.Context, req *services.ContextRe
 	return nil
 }
 
-func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *services.ContextRequest) (int, error) {
+func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *ports.ContextRequest) (int, error) {
 	tokens := t.Estimator.EstimateTokens(req.History)
 	req.Metadata.OriginalTokenCount = tokens
 
@@ -74,7 +74,7 @@ func (t *tokenGatekeeper) handleTieredThreshold(ctx context.Context, req *servic
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *services.ContextRequest, tokens int) (int, error) {
+func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *ports.ContextRequest, tokens int) (int, error) {
 	if t.MaxTokens <= 0 {
 		return tokens, nil
 	}
@@ -104,7 +104,7 @@ func (t *tokenGatekeeper) handleSafetyPressure(ctx context.Context, req *service
 	return tokens, nil
 }
 
-func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *services.ContextRequest, tokens int) error {
+func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *ports.ContextRequest, tokens int) error {
 	if t.MaxTokens <= 0 {
 		return nil
 	}
@@ -138,7 +138,7 @@ func (t *tokenGatekeeper) validateHardLimits(ctx context.Context, req *services.
 
 func (t *tokenGatekeeper) Priority() int { return 80 }
 
-func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *services.ContextRequest) (int, error) {
+func (t *tokenGatekeeper) autoSummarize(ctx context.Context, req *ports.ContextRequest) (int, error) {
 	if len(req.History) < 10 {
 		req.Metadata.MaintenanceBlocked = true
 		return 0, fmt.Errorf("not enough history to auto-summarize (got %d)", len(req.History))

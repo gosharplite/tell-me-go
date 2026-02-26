@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 type mockPriorityTransformer struct {
@@ -16,7 +16,7 @@ type mockPriorityTransformer struct {
 	name     string
 }
 
-func (m *mockPriorityTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (m *mockPriorityTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	return nil
 }
 
@@ -31,14 +31,14 @@ func TestContextPipeline_Sort(t *testing.T) {
 
 	p := NewContextPipeline(t1, t2, t3)
 
-	expected := []services.ContextTransformer{t2, t3, t1}
+	expected := []ports.ContextTransformer{t2, t3, t1}
 	if !reflect.DeepEqual(p.transformers, expected) {
 		t.Errorf("NewContextPipeline: expected order %v, got %v", getNames(expected), getNames(p.transformers))
 	}
 
 }
 
-func getNames(transformers []services.ContextTransformer) []string {
+func getNames(transformers []ports.ContextTransformer) []string {
 	names := make([]string, len(transformers))
 	for i, t := range transformers {
 		names[i] = t.(*mockPriorityTransformer).name

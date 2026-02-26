@@ -10,11 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
 )
 
-// mockKVStore implements services.KVStore
+// mockKVStore implements ports.KVStore
 type mockKVStore struct {
 	kv  map[string]string
 	err error
@@ -57,20 +58,20 @@ func (m *mockKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	return res, nil
 }
 
-// mockListStore implements services.ListStore[services.Task]
+// mockListStore implements ports.ListStore[ports.Task]
 type mockListStore struct {
-	tasks []services.Task
+	tasks []ports.Task
 	err   error
 }
 
-func (m *mockListStore) ReadAll(ctx context.Context) ([]services.Task, error) {
+func (m *mockListStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.tasks, nil
 }
 
-func (m *mockListStore) Append(ctx context.Context, item services.Task) error {
+func (m *mockListStore) Append(ctx context.Context, item ports.Task) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -78,7 +79,7 @@ func (m *mockListStore) Append(ctx context.Context, item services.Task) error {
 	return nil
 }
 
-func (m *mockListStore) Update(ctx context.Context, id float64, item services.Task) error {
+func (m *mockListStore) Update(ctx context.Context, id float64, item ports.Task) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -116,16 +117,16 @@ type mockSessionProvider struct {
 	tasks      *services.TaskService
 	config     *services.ConfigService
 	scratchpad *services.ScratchpadService
-	info       services.SessionInfo
+	info       ports.SessionInfo
 	kvStore    *mockKVStore
 	listStore  *mockListStore
 }
 
-func (m *mockSessionProvider) GetTasks() *services.TaskService            { return m.tasks }
-func (m *mockSessionProvider) GetConfig() *services.ConfigService         { return m.config }
-func (m *mockSessionProvider) GetScratchpad() *services.ScratchpadService { return m.scratchpad }
-func (m *mockSessionProvider) GetInfo() services.SessionInfo              { return m.info }
-func (m *mockSessionProvider) SetInfo(info services.SessionInfo)          { m.info = info }
+func (m *mockSessionProvider) GetTasks() ports.ITaskService            { return m.tasks }
+func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return m.config }
+func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return m.scratchpad }
+func (m *mockSessionProvider) GetInfo() ports.SessionInfo              { return m.info }
+func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.info = info }
 func (m *mockSessionProvider) Close() error                               { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
@@ -141,7 +142,7 @@ func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 		scratchpad: ss,
 		kvStore:    kv,
 		listStore:  lt,
-		info: services.SessionInfo{
+		info: ports.SessionInfo{
 			Config: make(map[string]string),
 			Env:    make(map[string]string),
 			Paths:  make(map[string]string),
@@ -160,7 +161,7 @@ func TestPersistenceTools_GetSessionInfo(t *testing.T) {
 		t.Fatalf("GetSessionInfo failed: %v", err)
 	}
 
-	var info services.SessionInfo
+	var info ports.SessionInfo
 	if err := json.Unmarshal([]byte(res.Text), &info); err != nil {
 		t.Fatalf("Failed to unmarshal result: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			name: "Successfully list tasks",
 			args: map[string]interface{}{"action": "list"},
 			setup: func(m *mockListStore, ts *services.TaskService) {
-				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
 			expectedResult: "task 1",
@@ -196,7 +197,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			name: "Successfully update task",
 			args: map[string]interface{}{"action": "update", "task_id": 1.0, "status": "completed"},
 			setup: func(m *mockListStore, ts *services.TaskService) {
-				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
 			expectedResult: "Task 1 updated",
@@ -205,7 +206,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			name: "Successfully list completed tasks",
 			args: map[string]interface{}{"action": "list", "status": "completed"},
 			setup: func(m *mockListStore, ts *services.TaskService) {
-				m.tasks = []services.Task{
+				m.tasks = []ports.Task{
 					{ID: 1, Content: "task 1", Status: "completed"},
 					{ID: 2, Content: "task 2", Status: "pending"},
 				}
@@ -217,7 +218,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			name: "Successfully delete task",
 			args: map[string]interface{}{"action": "delete", "task_id": 1.0},
 			setup: func(m *mockListStore, ts *services.TaskService) {
-				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
 			expectedResult: "Task 1 deleted",
@@ -226,7 +227,7 @@ func TestPersistenceTools_ManageTasks(t *testing.T) {
 			name: "Successfully clear tasks",
 			args: map[string]interface{}{"action": "clear"},
 			setup: func(m *mockListStore, ts *services.TaskService) {
-				m.tasks = []services.Task{{ID: 1, Content: "task 1", Status: "pending"}}
+				m.tasks = []ports.Task{{ID: 1, Content: "task 1", Status: "pending"}}
 				_ = ts.Initialize(context.Background())
 			},
 			expectedResult: "All tasks cleared",

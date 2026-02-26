@@ -17,13 +17,13 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"golang.org/x/term"
 )
 
-// stdUIRenderer implements services.UIRenderer using standard output/error and Glamour.
+// stdUIRenderer implements ports.UIRenderer using standard output/error and Glamour.
 type stdUIRenderer struct {
 	locker   domain_security.ISecurityManager
 	stdout   io.Writer
@@ -46,8 +46,8 @@ type streamState struct {
 	scrollThreshold int
 }
 
-// NewRenderer creates a new services.UIRenderer.
-func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) services.UIRenderer {
+// NewRenderer creates a new ports.UIRenderer.
+func NewRenderer(locker domain_security.ISecurityManager, stdout, stderr io.Writer) ports.UIRenderer {
 	tr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithEmoji(),

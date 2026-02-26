@@ -15,9 +15,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_persistence "github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -29,7 +29,7 @@ type mockChatter struct {
 	prompt     string
 }
 
-func (m *mockChatter) Chat(ctx stdctx.Context, s *services.Session, prompt string) error {
+func (m *mockChatter) Chat(ctx stdctx.Context, s *ports.Session, prompt string) error {
 	m.chatCalled = true
 	m.prompt = prompt
 	return nil
@@ -44,11 +44,11 @@ func (m *mockChatter) Subscribe(sub func(events.Event))                         
 func (m *mockChatter) Shutdown(ctx stdctx.Context) error                          { return nil }
 
 type mockContainer struct {
-	AgentFactory services.ChatterFactory
+	AgentFactory ports.ChatterFactory
 	Client       domain_llm.LLMClient
 }
 
-func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
+func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain_config.Config, configPath string, newSession bool, capturer domain_security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
 	paths := &domain_persistence.Paths{
 		LogPath: "/tmp/log",
 	}
@@ -62,11 +62,11 @@ func (m *mockContainer) BuildSessionDependencies(ctx stdctx.Context, cfg *domain
 	return deps, hManager, func() {}, nil
 }
 
-func (m *mockContainer) GetAgentFactory() services.ChatterFactory {
+func (m *mockContainer) GetAgentFactory() ports.ChatterFactory {
 	return m.AgentFactory
 }
 
-func (m *mockContainer) FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *domain_config.Config) {
+func (m *mockContainer) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *domain_config.Config) {
 }
 
 type mockTracker struct {
@@ -90,7 +90,7 @@ func TestChatCommand_Execute(t *testing.T) {
 	mChatter := &mockChatter{}
 	mClient := &mockClient{}
 	mContainer := &mockContainer{
-		AgentFactory: func(params services.ChatterParams) services.Chatter {
+		AgentFactory: func(params ports.ChatterParams) ports.Chatter {
 			return mChatter
 		},
 		Client: mClient,

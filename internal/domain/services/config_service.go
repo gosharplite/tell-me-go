@@ -7,17 +7,19 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // ConfigService handles the logic for managing configuration.
 type ConfigService struct {
 	mu     sync.RWMutex
-	store  KVStore
+	store  ports.KVStore
 	config map[string]string
 }
 
 // NewConfigService creates a new ConfigService.
-func NewConfigService(store KVStore) *ConfigService {
+func NewConfigService(store ports.KVStore) *ConfigService {
 	return &ConfigService{
 		store:  store,
 		config: make(map[string]string),

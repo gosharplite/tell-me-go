@@ -12,7 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/require"
 )
 
@@ -132,7 +132,7 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	t.Parallel()
 	p := &compositePruningPolicy{
-		Policies: []services.PruningPolicy{
+		Policies: []ports.PruningPolicy{
 			&slidingWindowPolicy{MaxTurns: 1},
 			&pinningPolicy{},
 		},

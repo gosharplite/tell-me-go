@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
@@ -110,7 +110,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, bus, h, "test-provider", registry, sm)
-	sess := services.NewSession("regression-multimodal", h)
+	sess := ports.NewSession("regression-multimodal", h)
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Show me a cat")
 	if err != nil {

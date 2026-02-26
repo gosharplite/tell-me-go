@@ -10,20 +10,20 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // persistenceTools provides tool wrappers for persistence services.
 type persistenceTools struct {
-	tasks      *services.TaskService
-	scratchpad *services.ScratchpadService
-	config     *services.ConfigService
-	state      services.ISessionProvider
+	tasks      ports.ITaskService
+	scratchpad ports.IScratchpadService
+	config     ports.IConfigService
+	state      ports.ISessionProvider
 }
 
 // newpersistenceTools creates a new persistenceTools instance.
-func newpersistenceTools(state services.ISessionProvider) *persistenceTools {
+func newpersistenceTools(state ports.ISessionProvider) *persistenceTools {
 	if state == nil {
 		return &persistenceTools{}
 	}

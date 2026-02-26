@@ -12,7 +12,7 @@ import (
 )
 
 // ConfigRepository manages persistent configuration settings.
-// It implements services.KVStore.
+// It implements ports.KVStore.
 type configRepository struct {
 	mu       sync.RWMutex
 	filePath string

@@ -6,6 +6,8 @@ package services
 import (
 	"context"
 	"sync"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 const scratchpadKey = "content"
@@ -13,12 +15,12 @@ const scratchpadKey = "content"
 // ScratchpadService handles the logic for managing the scratchpad.
 type ScratchpadService struct {
 	mu         sync.RWMutex
-	store      KVStore
+	store      ports.KVStore
 	scratchpad string
 }
 
 // NewScratchpadService creates a new ScratchpadService.
-func NewScratchpadService(store KVStore) *ScratchpadService {
+func NewScratchpadService(store ports.KVStore) *ScratchpadService {
 	return &ScratchpadService{
 		store: store,
 	}

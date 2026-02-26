@@ -15,8 +15,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -29,7 +29,7 @@ type mockChatter struct {
 	mock.Mock
 }
 
-func (m *mockChatter) Chat(ctx context.Context, s *services.Session, prompt string) error {
+func (m *mockChatter) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	args := m.Called(ctx, s, prompt)
 	return args.Error(0)
 }
@@ -90,7 +90,7 @@ type mockHistoryRenderer struct {
 	mock.Mock
 }
 
-func (m *mockHistoryRenderer) Render(w io.Writer, h services.HistoryManager, n int, options services.HistoryRenderOptions) {
+func (m *mockHistoryRenderer) Render(w io.Writer, h ports.HistoryManager, n int, options ports.HistoryRenderOptions) {
 	m.Called(w, h, n, options)
 }
 
@@ -116,7 +116,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params services.ChatterParams) services.Chatter {
+	factory := func(params ports.ChatterParams) ports.Chatter {
 		return mChatter
 	}
 
@@ -314,7 +314,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params services.ChatterParams) services.Chatter {
+	factory := func(params ports.ChatterParams) ports.Chatter {
 		return mChatter
 	}
 
@@ -348,7 +348,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(params services.ChatterParams) services.Chatter {
+	factory := func(params ports.ChatterParams) ports.Chatter {
 		return nil
 	}
 

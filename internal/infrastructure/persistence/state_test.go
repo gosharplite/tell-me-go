@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-func verifyStateInitialization(t *testing.T, state services.ISessionProvider) {
+func verifyStateInitialization(t *testing.T, state ports.ISessionProvider) {
 	t.Helper()
 	if state.GetTasks() == nil || state.GetConfig() == nil || state.GetScratchpad() == nil {
 		t.Error("expected all services to be initialized")

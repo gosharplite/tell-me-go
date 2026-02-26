@@ -16,7 +16,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/telemetry"
 )
@@ -139,12 +139,12 @@ func TestTurnEngine_Run_EventSequence(t *testing.T) {
 func TestTurnEngine_Run_Errors(t *testing.T) {
 	tests := []struct {
 		name    string
-		setup   func(gw *mockGateway, hm services.HistoryManager)
+		setup   func(gw *mockGateway, hm ports.HistoryManager)
 		wantErr string
 	}{
 		{
 			name: "History error in Persistence",
-			setup: func(gw *mockGateway, hm services.HistoryManager) {
+			setup: func(gw *mockGateway, hm ports.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -168,7 +168,7 @@ func TestTurnEngine_Run_Errors(t *testing.T) {
 		},
 		{
 			name: "Finalize error in Inference",
-			setup: func(gw *mockGateway, hm services.HistoryManager) {
+			setup: func(gw *mockGateway, hm ports.HistoryManager) {
 				gw.GenerateFunc = func(ctx context.Context, input []*llm.Content, t []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 					ch := make(chan *llm.Content)
 					close(ch)
@@ -359,7 +359,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	attempts := 0
 	cm := newTestContextManager(strategy, hManager, bus)
 	mt := &mockTransformer{
-		transformFunc: func(ctx context.Context, req *services.ContextRequest) error {
+		transformFunc: func(ctx context.Context, req *ports.ContextRequest) error {
 			attempts++
 			if attempts < 2 {
 				return llm.ErrTransient
@@ -391,10 +391,10 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 }
 
 type mockTransformer struct {
-	transformFunc func(ctx context.Context, req *services.ContextRequest) error
+	transformFunc func(ctx context.Context, req *ports.ContextRequest) error
 }
 
-func (m *mockTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	return m.transformFunc(ctx, req)
 }
 func (m *mockTransformer) Priority() int { return 10 }

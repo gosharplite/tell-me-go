@@ -17,7 +17,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -64,7 +64,7 @@ func TestAgent_Chat(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, bus, h, "test-provider", reg, sm)
-	sess := services.NewSession("test-chat", h)
+	sess := ports.NewSession("test-chat", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Hi")
@@ -146,7 +146,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, bus, h, "test-provider", reg, sm)
-	sess := services.NewSession("test-retry", h)
+	sess := ports.NewSession("test-retry", h)
 
 	ctx := context.Background()
 	_ = a.Chat(ctx, sess, "Hi")
@@ -216,7 +216,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 
 	bus := events.NewSimpleEventBus()
 	a := New(mockClient, bus, h, "test-provider", reg, sm)
-	sess := services.NewSession("test-exhaustion", h)
+	sess := ports.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Too long")
@@ -259,7 +259,7 @@ func TestAgent_PinningFlow(t *testing.T) {
 	})
 }
 
-func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h services.HistoryManager, ctx context.Context, action string, index float64) {
+func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h ports.HistoryManager, ctx context.Context, action string, index float64) {
 	t.Helper()
 	resp, err := it.ManageHistory(ctx, map[string]interface{}{"action": action, "index": index})
 	if err != nil {
@@ -286,7 +286,7 @@ func verifyPinAction(t *testing.T, it *orchestration.InternalTools, h services.H
 	}
 }
 
-func setupPinningFlowTest(t *testing.T) (*agent, services.HistoryManager, context.Context) {
+func setupPinningFlowTest(t *testing.T) (*agent, ports.HistoryManager, context.Context) {
 	t.Helper()
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
@@ -319,7 +319,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	_ = a.SetLimits(ctx, 10, 100000, 3)
 
 	// 4. Run a chat turn to trigger preparation/pruning
-	err := a.Chat(ctx, services.NewSession("test-pin", h), "next")
+	err := a.Chat(ctx, ports.NewSession("test-pin", h), "next")
 	if err != nil {
 		t.Logf("Chat returned error (expected in mock): %v", err)
 	}
@@ -333,7 +333,7 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	verifyPinningResults(t, meta, prepared)
 }
 
-func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Context) {
+func setupPinningTest(t *testing.T) (*agent, ports.HistoryManager, context.Context) {
 	tmpDir := t.TempDir()
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "pin_prune.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
@@ -346,7 +346,7 @@ func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Co
 	return a, a.ctxManager.History, ctx
 }
 
-func addTurns(ctx context.Context, h services.HistoryManager, count int) {
+func addTurns(ctx context.Context, h ports.HistoryManager, count int) {
 	for i := 0; i < count; i++ {
 		_ = h.AddContent(ctx, &llm.Content{Role: "user", Parts: []*llm.Part{{Text: fmt.Sprintf("u%d", i)}}})
 		_ = h.AddContent(ctx, &llm.Content{Role: "model", Parts: []*llm.Part{{Text: fmt.Sprintf("m%d", i)}}})
@@ -512,7 +512,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, bus, h, "test-provider", reg, sm)
-	sess := services.NewSession("test-config-application", h)
+	sess := ports.NewSession("test-config-application", h)
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -573,7 +573,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	a := New(client, bus, h, "test-provider", reg, sm)
-	sess := services.NewSession("test-cancel", h)
+	sess := ports.NewSession("test-cancel", h)
 
 	err := a.applyConfig(ctx)
 	if err == nil || !errors.Is(err, context.Canceled) {

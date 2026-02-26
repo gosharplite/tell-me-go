@@ -5,8 +5,8 @@ package workspace
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -436,6 +436,6 @@ func registerGit(r tools.IToolRegistry, sm domain_security.ISecurityManager, exe
 }
 
 // RegisterPersistence adds persistence tools to the registry.
-func RegisterPersistence(r tools.IToolRegistry, state services.ISessionProvider) {
+func RegisterPersistence(r tools.IToolRegistry, state ports.ISessionProvider) {
 	newpersistenceTools(state).Register(r)
 }

@@ -8,13 +8,13 @@ import (
 	"fmt"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // emptyTurnFilter removes turns where both user and model messages have no meaningful content.
 type emptyTurnFilter struct{}
 
-func (t *emptyTurnFilter) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *emptyTurnFilter) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	turns := groupTurns(req.History)
 	var filtered []*llm.Content
 	for i, turn := range turns {
@@ -42,7 +42,7 @@ type finalContextValidator struct {
 	Strategy *ContextStrategy
 }
 
-func (t *finalContextValidator) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *finalContextValidator) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	maxTokens, _, _ := t.Strategy.getLimits()
 	finalTokens := t.Strategy.EstimateTokens(req.History)
 
@@ -60,7 +60,7 @@ func (t *finalContextValidator) Priority() int { return priorityTransientThresho
 // transientMerger merges TransientParts into Parts for the final API payload.
 type transientMerger struct{}
 
-func (t *transientMerger) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *transientMerger) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	for i, msg := range req.History {
 		if len(msg.TransientParts) > 0 {
 			// Clone to avoid modifying the original if it was somehow shared
@@ -141,7 +141,7 @@ func isTurnEmpty(turn []*llm.Content) bool {
 // historyRepairer ensures the history is valid for the API after a crash or interruption.
 type historyRepairer struct{}
 
-func (t *historyRepairer) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *historyRepairer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	if len(req.History) == 0 {
 		return nil
 	}
@@ -178,7 +178,7 @@ func (t *historyRepairer) Priority() int { return 0 }
 // contentCleaner ensures no empty parts are sent to the API, preventing 400 errors.
 type contentCleaner struct{}
 
-func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *contentCleaner) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	modified := false
 	for _, content := range req.History {
 		if cleanContent(content) {

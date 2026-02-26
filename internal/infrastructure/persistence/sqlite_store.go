@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	_ "modernc.org/sqlite"
 )
 
@@ -125,16 +125,16 @@ func newSQLiteTaskStore(db *sql.DB) *sqliteTaskStore {
 	return &sqliteTaskStore{db: db}
 }
 
-func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]services.Task, error) {
+func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT id, content, status, created_at FROM tasks ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var res []services.Task
+	var res []ports.Task
 	for rows.Next() {
-		var t services.Task
+		var t ports.Task
 		var createdAtStr string
 		if err := rows.Scan(&t.ID, &t.Content, &t.Status, &createdAtStr); err != nil {
 			return nil, err
@@ -149,7 +149,7 @@ func (s *sqliteTaskStore) ReadAll(ctx context.Context) ([]services.Task, error) 
 	return res, rows.Err()
 }
 
-func (s *sqliteTaskStore) Update(ctx context.Context, id float64, item services.Task) error {
+func (s *sqliteTaskStore) Update(ctx context.Context, id float64, item ports.Task) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE tasks SET content = ?, status = ? WHERE id = ?",
 		item.Content, item.Status, int64(id))
 	return err
@@ -165,7 +165,7 @@ func (s *sqliteTaskStore) DeleteAll(ctx context.Context) error {
 	return err
 }
 
-func (s *sqliteTaskStore) Append(ctx context.Context, item services.Task) error {
+func (s *sqliteTaskStore) Append(ctx context.Context, item ports.Task) error {
 	_, err := s.db.ExecContext(ctx, "INSERT INTO tasks (id, content, status, created_at) VALUES (?, ?, ?, ?)",
 		int64(item.ID), item.Content, item.Status, item.CreatedAt.Format(time.RFC3339Nano))
 	return err

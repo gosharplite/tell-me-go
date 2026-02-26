@@ -10,7 +10,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +19,7 @@ type mockExpTransformer struct {
 	err      error
 }
 
-func (m *mockExpTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (m *mockExpTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	return m.err
 }
 
@@ -34,14 +34,14 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 	tests := []struct {
 		name        string
 		req         *request
-		pipeline    []services.ContextTransformer
+		pipeline    []ports.ContextTransformer
 		persistFn   func(context.Context, []*llm.Content) error
 		expectedErr error
 	}{
 		{
 			name: "Error in canonical transformer",
 			req:  &request{},
-			pipeline: []services.ContextTransformer{
+			pipeline: []ports.ContextTransformer{
 				&mockExpTransformer{priority: 10, err: transformErr},
 			},
 			expectedErr: transformErr,
@@ -49,7 +49,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "Error in transient transformer",
 			req:  &request{},
-			pipeline: []services.ContextTransformer{
+			pipeline: []ports.ContextTransformer{
 				&mockExpTransformer{priority: 150, err: transformErr},
 			},
 			expectedErr: transformErr,
@@ -57,7 +57,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "Error in persistence",
 			req:  &request{PersistHistory: true},
-			pipeline: []services.ContextTransformer{
+			pipeline: []ports.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 				&mockExpTransformer{priority: 150},
 			},
@@ -69,7 +69,7 @@ func TestExecuteWithPersistence_Comprehensive(t *testing.T) {
 		{
 			name: "No persist function, no error",
 			req:  &request{PersistHistory: true},
-			pipeline: []services.ContextTransformer{
+			pipeline: []ports.ContextTransformer{
 				&mockExpTransformer{priority: 10},
 			},
 			persistFn:   nil,
