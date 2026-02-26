@@ -38,7 +38,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		Description: "A dummy tool for token estimation stability",
 	}, nil)
 	ctx := context.Background()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +153,7 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextMana
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -210,7 +210,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -283,7 +283,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {

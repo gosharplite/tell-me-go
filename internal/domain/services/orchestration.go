@@ -43,6 +43,7 @@ type Chatter interface {
 
 // ChatterParams encapsulates all dependencies and configuration required to create a Chatter instance.
 type ChatterParams struct {
+	Context          context.Context
 	Loader           config.ConfigLoader
 	Gateway          llm.LLMGateway
 	HistoryManager   HistoryManager
@@ -56,6 +57,119 @@ type ChatterParams struct {
 	LogPath          string
 	PricingOverrides map[string]pricing.ModelPricing
 	CostTracker      pricing.ICostTracker
+}
+
+// ChatterOption defines a functional option for ChatterParams.
+type ChatterOption func(*ChatterParams)
+
+// NewChatterParams creates a new ChatterParams with the given options.
+func NewChatterParams(opts ...ChatterOption) ChatterParams {
+	p := ChatterParams{
+		Context:          context.Background(),
+		PricingOverrides: make(map[string]pricing.ModelPricing),
+	}
+	for _, opt := range opts {
+		opt(&p)
+	}
+	return p
+}
+
+// WithContext sets the context for the Chatter instance.
+func WithContext(ctx context.Context) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Context = ctx
+	}
+}
+
+// WithLoader sets the configuration loader.
+func WithLoader(l config.ConfigLoader) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Loader = l
+	}
+}
+
+// WithGateway sets the LLM gateway.
+func WithGateway(g llm.LLMGateway) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Gateway = g
+	}
+}
+
+// WithHistory sets the history manager.
+func WithHistory(h HistoryManager) ChatterOption {
+	return func(p *ChatterParams) {
+		p.HistoryManager = h
+	}
+}
+
+// WithToolConfig sets the tool registry.
+func WithToolConfig(r tools.IToolRegistry) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Registry = r
+	}
+}
+
+// WithSecurityManager sets the security manager.
+func WithSecurityManager(s security.ISecurityManager) ChatterOption {
+	return func(p *ChatterParams) {
+		p.SecurityManager = s
+	}
+}
+
+// WithStreamingDisabled sets whether streaming is disabled.
+func WithStreamingDisabled(disabled bool) ChatterOption {
+	return func(p *ChatterParams) {
+		p.DisableStreaming = disabled
+	}
+}
+
+// WithEventBus sets the event bus.
+func WithEventBus(e events.EventBus) ChatterOption {
+	return func(p *ChatterParams) {
+		p.EventBus = e
+	}
+}
+
+// WithProvider sets the LLM provider name.
+func WithProvider(provider string) ChatterOption {
+	return func(p *ChatterParams) {
+		p.ProviderName = provider
+	}
+}
+
+// WithModel sets the LLM model name.
+func WithModel(model string) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Model = model
+	}
+}
+
+// WithMode sets the operation mode.
+func WithMode(mode string) ChatterOption {
+	return func(p *ChatterParams) {
+		p.Mode = mode
+	}
+}
+
+// WithLogPath sets the path for session logs.
+func WithLogPath(path string) ChatterOption {
+	return func(p *ChatterParams) {
+		p.LogPath = path
+	}
+}
+
+// WithPricingOverrides sets the model pricing overrides.
+func WithPricingOverrides(overrides map[string]pricing.ModelPricing) ChatterOption {
+	return func(p *ChatterParams) {
+		p.PricingOverrides = overrides
+	}
+}
+
+// WithCostTracker sets the cost tracker.
+func WithCostTracker(c pricing.ICostTracker) ChatterOption {
+	return func(p *ChatterParams) {
+		p.CostTracker = c
+	}
 }
 
 // ChatterFactory defines the functional signature for creating a Chatter instance.

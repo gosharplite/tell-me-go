@@ -113,12 +113,16 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 	b.subscribers = append(b.subscribers, in)
 
 	b.wg.Add(2)
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// 1. Bounded Queue Goroutine
 	go func() {
 		defer b.wg.Done()
 		defer close(out)
-		b.pumpEvents(b.ctx, in, out)
+		b.pumpEvents(ctx, in, out)
 	}()
 
 	// 2. Processing Goroutine

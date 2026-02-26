@@ -131,21 +131,22 @@ func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd se
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
-	params := services.ChatterParams{
-		Loader:           o.Loader,
-		Gateway:          sd.GetGateway(),
-		HistoryManager:   sd.GetHistoryManager(),
-		Registry:         sd.GetRegistry(),
-		SecurityManager:  o.SM,
-		DisableStreaming: cfg.DisableStreaming,
-		EventBus:         sd.GetEventBus(),
-		ProviderName:     cfg.SelectedProvider,
-		Model:            activeModel,
-		Mode:             cfg.Mode,
-		LogPath:          paths.LogPath,
-		PricingOverrides: sd.GetPricingOverrides(),
-		CostTracker:      sd.GetTracker(),
-	}
+	params := services.NewChatterParams(
+		services.WithContext(ctx),
+		services.WithLoader(o.Loader),
+		services.WithGateway(sd.GetGateway()),
+		services.WithHistory(sd.GetHistoryManager()),
+		services.WithToolConfig(sd.GetRegistry()),
+		services.WithSecurityManager(o.SM),
+		services.WithStreamingDisabled(cfg.DisableStreaming),
+		services.WithEventBus(sd.GetEventBus()),
+		services.WithProvider(cfg.SelectedProvider),
+		services.WithModel(activeModel),
+		services.WithMode(cfg.Mode),
+		services.WithLogPath(paths.LogPath),
+		services.WithPricingOverrides(sd.GetPricingOverrides()),
+		services.WithCostTracker(sd.GetTracker()),
+	)
 	chatAgent := o.AgentFactory(params)
 
 	defer func() {

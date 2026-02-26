@@ -232,21 +232,18 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
 
-	params := services.ChatterParams{
-		Loader:           nil,
-		Gateway:          client,
-		HistoryManager:   hManager,
-		Registry:         reg,
-		SecurityManager:  sm,
-		DisableStreaming: false,
-		EventBus:         bus,
-		ProviderName:     "test-provider",
-		Model:            "test-model",
-		Mode:             "assistant",
-		LogPath:          "tokens.log",
-		PricingOverrides: nil,
-		CostTracker:      nil,
-	}
+	params := services.NewChatterParams(
+		services.WithGateway(client),
+		services.WithHistory(hManager),
+		services.WithToolConfig(reg),
+		services.WithSecurityManager(sm),
+		services.WithStreamingDisabled(false),
+		services.WithEventBus(bus),
+		services.WithProvider("test-provider"),
+		services.WithModel("test-model"),
+		services.WithMode("assistant"),
+		services.WithLogPath("tokens.log"),
+	)
 	agent := factory(params)
 	assert.NotNil(t, agent)
 }
