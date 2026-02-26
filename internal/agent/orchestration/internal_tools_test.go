@@ -100,47 +100,42 @@ func TestRegisterInternal(t *testing.T) {
 		t.Fatalf("expected 2 tools registered, got %d", len(decls))
 	}
 
-	foundSummarize := false
-	foundManage := false
+	// Create an expectation map: tool name -> required parameters
+	expectedTools := map[string][]string{
+		"summarize_history": {"turns", "focus"},
+		"manage_history":    {"action", "index"},
+	}
 
 	for _, d := range decls {
-		switch d.Name {
-		case "summarize_history":
-			foundSummarize = true
-			if d.Description == "" {
-				t.Error("summarize_history description is empty")
-			}
-			if d.Parameters == nil || d.Parameters.Type != "OBJECT" {
-				t.Error("summarize_history parameters schema is incorrect")
-			}
-			if _, ok := d.Parameters.Properties["turns"]; !ok {
-				t.Error("summarize_history missing 'turns' parameter")
-			}
-			if _, ok := d.Parameters.Properties["focus"]; !ok {
-				t.Error("summarize_history missing 'focus' parameter")
-			}
-		case "manage_history":
-			foundManage = true
-			if d.Description == "" {
-				t.Error("manage_history description is empty")
-			}
-			if d.Parameters == nil || d.Parameters.Type != "OBJECT" {
-				t.Error("manage_history parameters schema is incorrect")
-			}
-			if _, ok := d.Parameters.Properties["action"]; !ok {
-				t.Error("manage_history missing 'action' parameter")
-			}
-			if _, ok := d.Parameters.Properties["index"]; !ok {
-				t.Error("manage_history missing 'index' parameter")
+		params, ok := expectedTools[d.Name]
+		if !ok {
+			t.Errorf("Unexpected tool registered: %s", d.Name)
+			continue
+		}
+
+		// Generic structural tests for all valid tools
+		if d.Description == "" {
+			t.Errorf("Tool %s missing description", d.Name)
+		}
+		if d.Parameters == nil || d.Parameters.Type != "OBJECT" {
+			t.Errorf("Tool %s missing or invalid parameters", d.Name)
+			continue
+		}
+
+		// Check for specific parameters
+		for _, p := range params {
+			if _, ok := d.Parameters.Properties[p]; !ok {
+				t.Errorf("Tool %s missing '%s' parameter", d.Name, p)
 			}
 		}
+
+		// Mark as found
+		delete(expectedTools, d.Name)
 	}
 
-	if !foundSummarize {
-		t.Error("summarize_history tool not found")
-	}
-	if !foundManage {
-		t.Error("manage_history tool not found")
+	// Assert no missing tools
+	if len(expectedTools) > 0 {
+		t.Errorf("Failed to register expected tools: %v", expectedTools)
 	}
 }
 
