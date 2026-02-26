@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 	"time"
@@ -71,12 +70,24 @@ func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) 
 			base = p.RateLimitBackoff
 		}
 
-		// Exponential backoff: Base * 2^attempt
-		expMultiplier := math.Pow(2, float64(attempt))
-		delay := float64(base) * expMultiplier
+		const maxDelay = 2 * time.Minute // Enforce an architectural ceiling
 
-		// Add Jitter (e.g., +/- 10%) via the clock interface
-		finalDelay := time.Duration(c.Jitter(delay))
+		// 1. Prevent bitshift overflow (30 shifts is > 1 billion multiplier)
+		safeAttempt := attempt
+		if safeAttempt > 30 {
+			safeAttempt = 30
+		}
+
+		// 2. Calculate delay safely using bitwise shift for performance
+		delay := base * time.Duration(1<<safeAttempt)
+
+		// 3. Cap at maximum allowed delay
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+
+		// 4. Apply Jitter
+		finalDelay := time.Duration(c.Jitter(float64(delay)))
 
 		return finalDelay, true
 	}

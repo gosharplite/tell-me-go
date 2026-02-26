@@ -150,13 +150,22 @@ func withLoopDetector() turnMiddleware {
 func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON []byte) error {
 	for _, prevHash := range recentHashes {
 		if currentHash == prevHash {
-			snippet := string(rawJSON)
-			if len(snippet) > 150 {
-				snippet = snippet[:147] + "..."
-			}
+			snippet := truncateSafe(string(rawJSON), 147)
 			errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
 			return newAgentError(errLogic, errMsg, nil)
 		}
 	}
 	return nil
+}
+
+// truncateSafe truncates a string to a specific number of runes safely without O(N) memory allocation.
+func truncateSafe(s string, maxRunes int) string {
+	count := 0
+	for byteIndex := range s { // Zero-allocation rune decoding
+		if count == maxRunes {
+			return s[:byteIndex] + "..."
+		}
+		count++
+	}
+	return s
 }
