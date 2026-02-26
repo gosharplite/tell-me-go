@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -86,7 +87,7 @@ func (m *dynamicMockCounter) Count(contents []*llm.Content) int {
 func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		bus := &events.SimpleEventBus{}
-		historyPath := t.TempDir() + "/history_a.jsonl"
+		historyPath := filepath.Join(t.TempDir(), "history_a.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}
@@ -161,7 +162,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 
 	t.Run("Scenario B - Context Exhaustion", func(t *testing.T) {
 		bus := &events.SimpleEventBus{}
-		historyPath := t.TempDir() + "/history_b.jsonl"
+		historyPath := filepath.Join(t.TempDir(), "history_b.jsonl")
 		h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 
 		counter := &dynamicMockCounter{}

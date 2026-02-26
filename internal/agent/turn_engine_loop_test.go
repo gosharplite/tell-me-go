@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 
 func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	historyPath := t.TempDir() + "/history.jsonl"
+	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
@@ -78,7 +79,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 	bus := &events.SimpleEventBus{}
-	historyPath := t.TempDir() + "/history.jsonl"
+	historyPath := filepath.Join(t.TempDir(), "history.jsonl")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	counter := &orchestration.HeuristicTokenCounter{}
 	strategy := orchestration.NewContextStrategy(counter, bus)
