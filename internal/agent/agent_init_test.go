@@ -39,7 +39,7 @@ func TestAgent_InitConfigFailure_Warning(t *testing.T) {
 	})
 
 	// New should not crash even if applyConfig fails
-	a := New(client, bus, h, "test-provider", reg, sm, WithInitContext(ctx))
+	a := New(client, bus, h, "test-provider", reg, sm, withInitContext(ctx))
 
 	if a == nil {
 		t.Fatal("New returned nil agent")

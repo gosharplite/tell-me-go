@@ -26,8 +26,8 @@ type agentConfig struct {
 // option defines a functional option for configuring an Agent.
 type option func(*agentConfig)
 
-// WithInitContext sets the context for the agent initialization.
-func WithInitContext(ctx context.Context) option {
+// withInitContext sets the context for the agent initialization.
+func withInitContext(ctx context.Context) option {
 	return func(c *agentConfig) {
 		c.initCtx = ctx
 	}

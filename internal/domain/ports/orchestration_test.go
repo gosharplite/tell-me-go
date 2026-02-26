@@ -17,6 +17,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
+type testContextKey string
+
 func TestNewSession(t *testing.T) {
 	id := "test-session"
 	session := NewSession(id, nil)
@@ -33,7 +35,7 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestChatterOptions(t *testing.T) {
-	ctx := context.WithValue(context.Background(), "test", "value")
+	ctx := context.WithValue(context.Background(), testContextKey("test"), "value")
 	loader := (config.ConfigLoader)(nil)
 	gateway := (llm.LLMGateway)(nil)
 	history := (HistoryManager)(nil)
