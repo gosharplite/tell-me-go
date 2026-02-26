@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +35,7 @@ type realClock struct{}
 
 func (realClock) Now() time.Time                         { return time.Now() }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-func (realClock) Jitter(base float64) float64           { return base * (0.9 + (rand.Float64() * 0.2)) }
+func (realClock) Jitter(base float64) float64            { return base * (0.9 + (rand.Float64() * 0.2)) }
 
 // turnPhase represents the current stage of a single agent turn.
 type turnPhase string
