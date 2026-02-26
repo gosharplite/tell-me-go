@@ -514,7 +514,16 @@ func (p *inferenceStep) invokeModel(ctx context.Context, turn *turn) (*llm.Conte
 	if turn.StreamHandler != nil {
 		turn.StreamHandler(ctx, respCh)
 	} else {
-		for range respCh {
+	drainLoop:
+		for {
+			select {
+			case <-ctx.Done():
+				break drainLoop
+			case _, ok := <-respCh:
+				if !ok {
+					break drainLoop
+				}
+			}
 		}
 	}
 
