@@ -1250,11 +1250,11 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 	repairer := &historyRepairer{}
 
 	tests := []struct {
-		name           string
-		history        []*llm.Content
-		wantLen        int
-		expectReboot   bool
-		expectPersist  bool
+		name          string
+		history       []*llm.Content
+		wantLen       int
+		expectReboot  bool
+		expectPersist bool
 	}{
 		{
 			name:    "Empty history",
@@ -1392,8 +1392,8 @@ func TestTransientMerger_Transform(t *testing.T) {
 	req := &request{
 		History: []*llm.Content{
 			{
-				Role:  "user",
-				Parts: []*llm.Part{{Text: "permanent"}},
+				Role:           "user",
+				Parts:          []*llm.Part{{Text: "permanent"}},
 				TransientParts: []*llm.Part{{Text: "transient"}},
 			},
 		},

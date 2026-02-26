@@ -575,3 +575,39 @@ func TestAgent_ContextCancellation(t *testing.T) {
 		t.Errorf("expected context.Canceled from Chat, got %v", err)
 	}
 }
+
+func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
+	client := &mockLLMClient{}
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
+	mockSumm := &mockSummarizer{}
+
+	a := New(client, bus, "test-provider",
+		WithHistoryManager(h),
+		WithRegistry(reg),
+		WithSecurityManager(sm),
+		WithInternalTools(),
+		WithSummarizer(mockSumm),
+	)
+
+	// Verify internal tools are registered
+	decls := reg.GetDeclarations()
+	foundSumm := false
+	for _, d := range decls {
+		if d.Name == "summarize_history" {
+			foundSumm = true
+			break
+		}
+	}
+	if !foundSumm {
+		t.Error("summarize_history tool not registered")
+	}
+
+	// Verify summarizer is bound to ContextManager
+	if a.ctxManager.Summarizer != mockSumm {
+		t.Error("summarizer not bound to ContextManager")
+	}
+}
