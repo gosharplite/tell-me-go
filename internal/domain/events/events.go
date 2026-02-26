@@ -148,33 +148,48 @@ func (b *SimpleEventBus) pumpEvents(ctx context.Context, in chan Event, out chan
 
 	for {
 		if buffer.len() > 0 {
-			select {
-			case <-ctx.Done():
-				b.cleanupBuffer(buffer, ctx.Err())
+			if stop := b.processWithBuffer(ctx, &in, out, buffer); stop {
 				return
-			case e, ok := <-in:
-				if !ok {
-					in = nil // Stop reading from closed channel
-					continue
-				}
-				buffer.push(e)
-			case out <- buffer.front():
-				buffer.pop()
 			}
 		} else {
 			if in == nil {
 				return
 			}
-			select {
-			case <-ctx.Done():
+			if stop := b.processEmptyBuffer(ctx, &in, buffer); stop {
 				return
-			case e, ok := <-in:
-				if !ok {
-					return
-				}
-				buffer.push(e)
 			}
 		}
+	}
+}
+
+func (b *SimpleEventBus) processWithBuffer(ctx context.Context, in *chan Event, out chan<- Event, buffer *eventRingBuffer) bool {
+	select {
+	case <-ctx.Done():
+		b.cleanupBuffer(buffer, ctx.Err())
+		return true
+	case e, ok := <-*in:
+		if !ok {
+			*in = nil // Stop reading from closed channel
+			return false
+		}
+		buffer.push(e)
+		return false
+	case out <- buffer.front():
+		buffer.pop()
+		return false
+	}
+}
+
+func (b *SimpleEventBus) processEmptyBuffer(ctx context.Context, in *chan Event, buffer *eventRingBuffer) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case e, ok := <-*in:
+		if !ok {
+			return true
+		}
+		buffer.push(e)
+		return false
 	}
 }
 
