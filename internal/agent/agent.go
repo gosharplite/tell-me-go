@@ -94,7 +94,12 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager services.Hi
 		orchestration.RegisterInternal(registry, ctxManager)
 	}
 
-	if err := a.applyConfig(context.Background()); err != nil {
+	initCtx := cfg.initCtx
+	if initCtx == nil {
+		initCtx = context.Background()
+	}
+
+	if err := a.applyConfig(initCtx); err != nil {
 		a.emit(events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
 	return a

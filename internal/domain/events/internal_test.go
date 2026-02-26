@@ -222,7 +222,7 @@ func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// Now pumpEvents should be blocked on 'out <- buffer.front()'
-	
+
 	cancel()
 
 	done := make(chan struct{})

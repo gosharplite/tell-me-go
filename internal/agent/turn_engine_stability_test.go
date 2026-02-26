@@ -31,7 +31,7 @@ func TestTurnEngine_RetryCap(t *testing.T) {
 	// attempt 5: delay = 32s
 	// attempt 6: delay = 64s
 	// attempt 7: delay = 128s -> 120s (cap)
-	
+
 	tests := []struct {
 		attempt  int
 		expected time.Duration
@@ -136,7 +136,7 @@ func TestTurnEngine_ErrorCategorization_StateTransitions(t *testing.T) {
 func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	respCh := make(chan *llm.Content) // unbuffered
-	
+
 	gw := &mockGateway{
 		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
 			return respCh, func() (*llm.Content, *llm.Metrics, error) {
@@ -147,10 +147,10 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 
 	step := &inferenceStep{}
 	turn := &turn{
-		Gateway:    gw,
-		State:      &turnState{},
-		Clock:      &mockClock{},
-		Registry:   &mockToolRegistry{},
+		Gateway:  gw,
+		State:    &turnState{},
+		Clock:    &mockClock{},
+		Registry: &mockToolRegistry{},
 		CtxManager: &orchestration.ContextManager{
 			History: &mockHistoryManager{},
 		},
@@ -158,7 +158,7 @@ func TestTurnEngine_EarlyExit_NoDeadlock(t *testing.T) {
 
 	// Cancel context mid-stream
 	cancel()
-	
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

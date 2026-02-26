@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -136,5 +137,73 @@ func TestWithMetrics(t *testing.T) {
 				t.Errorf("Expected %d events, got %d", tt.wantEvents, len(bus.events))
 			}
 		})
+	}
+}
+
+func TestWithLoopDetector_Rotation(t *testing.T) {
+	mw := withLoopDetector()
+	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
+
+	// Use actual constant from domain config
+	maxRep := domain_config.DefaultMaxLoopRepetitions
+
+	state := &turnState{
+		Phase:                phaseInference,
+		RecentResponseHashes: make([]string, 0),
+		Response: &llm.Content{
+			Parts: []*llm.Part{{Text: "initial"}},
+		},
+	}
+	turn := &turn{
+		State: state,
+		Clock: clock.RealClock{},
+	}
+
+	// 1. Fill the buffer to the limit with unique hashes
+	for i := 0; i < maxRep; i++ {
+		state.Response.Parts[0].Text = "response " + string(rune(i))
+		_, err := mw(next).process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("Unexpected error filling buffer at %d: %v", i, err)
+		}
+	}
+
+	if len(state.RecentResponseHashes) != maxRep {
+		t.Errorf("Expected buffer size %d, got %d", maxRep, len(state.RecentResponseHashes))
+	}
+
+	// Capture the oldest hash (the one at index 0)
+	oldestHash := state.RecentResponseHashes[0]
+
+	// 2. Add one more unique hash to trigger rotation
+	state.Response.Parts[0].Text = "one more unique response"
+	_, err := mw(next).process(context.Background(), turn)
+	if err != nil {
+		t.Fatalf("Unexpected error triggering rotation: %v", err)
+	}
+
+	if len(state.RecentResponseHashes) != maxRep {
+		t.Errorf("Expected buffer size to stay %d after rotation, got %d", maxRep, len(state.RecentResponseHashes))
+	}
+
+	// Assert the oldest hash was dropped
+	for _, h := range state.RecentResponseHashes {
+		if h == oldestHash {
+			t.Errorf("Oldest hash was not dropped during rotation")
+		}
+	}
+
+	// 3. Verify no panics and sliding window works correctly
+	// Fill with many more
+	for i := 0; i < 100; i++ {
+		state.Response.Parts[0].Text = "extra " + string(rune(i))
+		_, err := mw(next).process(context.Background(), turn)
+		if err != nil {
+			t.Fatalf("Unexpected error during high volume rotation at %d: %v", i, err)
+		}
+	}
+
+	if len(state.RecentResponseHashes) != maxRep {
+		t.Errorf("Expected buffer size to remain %d, got %d", maxRep, len(state.RecentResponseHashes))
 	}
 }
