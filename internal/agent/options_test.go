@@ -23,7 +23,7 @@ func TestAgentOptions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		option   Option
+		option   option
 		validate func(t *testing.T, cfg *agentConfig)
 	}{
 		{

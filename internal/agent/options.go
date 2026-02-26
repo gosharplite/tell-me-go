@@ -25,46 +25,46 @@ type agentConfig struct {
 	tracker          domain_pricing.ICostTracker
 }
 
-// Option defines a functional option for configuring an Agent.
-type Option func(*agentConfig)
+// option defines a functional option for configuring an Agent.
+type option func(*agentConfig)
 
 // WithRegistry sets the tool registry for the agent.
-func WithRegistry(r tools.IToolRegistry) Option {
+func WithRegistry(r tools.IToolRegistry) option {
 	return func(c *agentConfig) {
 		c.registry = r
 	}
 }
 
 // WithSecurityManager sets the security manager for the agent.
-func WithSecurityManager(sm domain_security.ISecurityManager) Option {
+func WithSecurityManager(sm domain_security.ISecurityManager) option {
 	return func(c *agentConfig) {
 		c.sm = sm
 	}
 }
 
 // WithSummarizer sets the summarizer service for the agent.
-func WithSummarizer(s services.Summarizer) Option {
+func WithSummarizer(s services.Summarizer) option {
 	return func(c *agentConfig) {
 		c.summarizer = s
 	}
 }
 
 // WithHistoryManager sets the history manager for the agent.
-func WithHistoryManager(h services.HistoryManager) Option {
+func WithHistoryManager(h services.HistoryManager) option {
 	return func(c *agentConfig) {
 		c.hManager = h
 	}
 }
 
 // WithInternalTools enables the registration of internal agent tools.
-func WithInternalTools() Option {
+func WithInternalTools() option {
 	return func(c *agentConfig) {
 		c.registerInternal = true
 	}
 }
 
 // WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) Option {
+func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) option {
 	return func(c *agentConfig) {
 		c.model = model
 		c.mode = mode
@@ -73,14 +73,14 @@ func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPr
 }
 
 // WithLoader sets the configuration loader for the agent.
-func WithLoader(loader domain_config.ConfigLoader) Option {
+func WithLoader(loader domain_config.ConfigLoader) option {
 	return func(c *agentConfig) {
 		c.loader = loader
 	}
 }
 
 // WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.ICostTracker) Option {
+func WithSessionCostTracker(tracker domain_pricing.ICostTracker) option {
 	return func(c *agentConfig) {
 		c.tracker = tracker
 	}

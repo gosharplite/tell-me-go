@@ -42,7 +42,7 @@ type agent struct {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string, opts ...Option) *agent {
+func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string, opts ...option) *agent {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
