@@ -46,7 +46,9 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	}
 	// Explicitly shift the modification time to the future to ensure detection
 	futureTime := time.Now().Add(5 * time.Second)
-	os.Chtimes(sessionPath, futureTime, futureTime)
+	if err := os.Chtimes(sessionPath, futureTime, futureTime); err != nil {
+		t.Fatalf("failed to change file times: %v", err)
+	}
 
 	cw.Refresh("default")
 	tokens, _, _, _ = cw.GetLimits()
