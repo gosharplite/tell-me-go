@@ -587,7 +587,7 @@ func (p *executionStep) process(ctx context.Context, turn *turn) (processResult,
 	if toolResponse != nil {
 		turn.State.ToolResponse = toolResponse
 		p.injectCircuitBreakerWarning(ctx, turn, toolResponse)
-		p.validatePayloadLimits(ctx, turn, toolResponse)
+		p.validatePayloadLimits(ctx, turn)
 	}
 
 	if turn.State.Metrics != nil {
@@ -707,8 +707,8 @@ func (p *recoveryStep) attemptRetry(ctx context.Context, turn *turn, delay time.
 	return processResult{NextPhase: phaseRefining}, nil
 }
 
-func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, toolResponse *llm.Content) {
-	if toolResponse == nil || turn.CtxManager == nil || turn.CtxManager.Strategy == nil {
+func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
+	if turn.State.ToolResponse == nil || turn.CtxManager == nil || turn.CtxManager.Strategy == nil {
 		return
 	}
 
@@ -716,6 +716,8 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, t
 	if limits.MaxHistoryTokens <= 0 {
 		return
 	}
+
+	toolResponse := turn.State.ToolResponse
 
 	// Estimate tokens for the new tool response
 	toolTokens := turn.CtxManager.Strategy.EstimateTokens([]*llm.Content{toolResponse})
@@ -725,16 +727,20 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn, t
 
 	// Cap individual tool response size to 50% of total limit just in case,
 	// AND ensure it doesn't push the total over the cliff.
+	var instruction string
 	isTooLarge := false
+
 	if toolTokens > int(float64(limits.MaxHistoryTokens)*0.50) {
 		isTooLarge = true
+		instruction = "The individual tool output is too massive. You MUST use precise boundaries (e.g., 'tail_lines', 'max_lines', 'limit', or 'grep'). Summarizing history will not fix this."
 	} else if turn.State.Tokens+toolTokens > maxAllowed {
 		isTooLarge = true
+		instruction = "The total conversation context is nearly exhausted. Please call 'summarize_history' first to free up space, then run the tool again."
 	}
 
 	if isTooLarge {
-		// Delegate mutation to the utility
-		truncateOversizedResponse(toolResponse, toolTokens)
+		// Delegate mutation to the utility with context-aware instruction
+		truncateOversizedResponse(toolResponse, toolTokens, instruction)
 
 		if turn.Events != nil {
 			turn.Events.Publish(events.SystemMessageEvent{

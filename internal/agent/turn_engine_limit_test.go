@@ -174,14 +174,6 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 
 			cm := orchestration.NewContextManager(strategy, nil, nil, nil)
 
-			turn := &turn{
-				CtxManager: cm,
-				State: &turnState{
-					Tokens: tt.existingTokens,
-				},
-				Events: &events.SimpleEventBus{},
-			}
-
 			toolResponse := &llm.Content{
 				Parts: []*llm.Part{
 					{
@@ -193,12 +185,28 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 				},
 			}
 
+			turn := &turn{
+				CtxManager: cm,
+				State: &turnState{
+					Tokens:       tt.existingTokens,
+					ToolResponse: toolResponse,
+				},
+				Events: &events.SimpleEventBus{},
+			}
+
 			p := &executionStep{}
-			p.validatePayloadLimits(context.Background(), turn, toolResponse)
+			p.validatePayloadLimits(context.Background(), turn)
 
 			if tt.expectedTruncated {
 				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")
 				assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "exceeds safety limit")
+
+				// Verify specific instructions
+				if tt.name == "Individual Breach" {
+					assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "The individual tool output is too massive")
+				} else if tt.name == "Cumulative Breach" {
+					assert.Contains(t, toolResponse.Parts[0].FunctionResponse.Response["error"], "The total conversation context is nearly exhausted")
+				}
 			} else {
 				assert.NotContains(t, toolResponse.Parts[0].FunctionResponse.Response, "error")
 				assert.Equal(t, "some data", toolResponse.Parts[0].FunctionResponse.Response["result"])
