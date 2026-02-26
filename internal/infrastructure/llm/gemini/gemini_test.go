@@ -6,6 +6,7 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -523,7 +524,12 @@ func TestClassifyError(t *testing.T) {
 		{
 			name:     "GenericError",
 			err:      fmt.Errorf("some error"),
-			expected: fmt.Errorf("some error"),
+			expected: fmt.Errorf("%w: some error", llm.ErrTerminal),
+		},
+		{
+			name:     "RateLimitError",
+			err:      fmt.Errorf("Error 429, Message: Resource exhausted."),
+			expected: fmt.Errorf("%w: Error 429, Message: Resource exhausted.", llm.ErrRateLimit),
 		},
 	}
 
@@ -534,7 +540,7 @@ func TestClassifyError(t *testing.T) {
 			if (got == nil) != (tt.expected == nil) {
 				t.Fatalf("expected error %v, got %v", tt.expected, got)
 			}
-			if got != nil && got.Error() != tt.expected.Error() {
+			if got != nil && !errors.Is(got, tt.expected) && got.Error() != tt.expected.Error() {
 				t.Errorf("expected error message %q, got %q", tt.expected.Error(), got.Error())
 			}
 		})

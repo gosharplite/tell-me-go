@@ -18,6 +18,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
+	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm/llmerr"
 	"google.golang.org/genai"
 )
 
@@ -346,7 +347,7 @@ func (c *Client) classifyError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return err
+	return llmerr.Classify(err)
 }
 
 // StreamChat sends the conversation history to the Gemini API and streams the response via a callback.
