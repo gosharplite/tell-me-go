@@ -298,8 +298,6 @@ func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) 
 		case err := <-done:
 			return err
 		case <-ctx.Done():
-			// Wait for the subscriber to finish processing current events to maintain synchronization guarantee
-			<-done
 			return ctx.Err()
 		case <-b.closing:
 			return ErrBusClosed
