@@ -13,8 +13,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
@@ -28,7 +28,7 @@ func (m *mockExecutor) Execute(ctx context.Context, respContent *llm.Content, tu
 	return m.ExecuteFunc(ctx, respContent, turn, maxToolTurns)
 }
 
-// mockHistoryManager implements services.HistoryManager for testing.
+// mockHistoryManager implements ports.HistoryManager for testing.
 type mockHistoryManager struct {
 	mu       sync.RWMutex
 	Contents []*llm.Content
@@ -193,7 +193,7 @@ func minimalPipeline() *orchestration.ContextPipeline {
 	return orchestration.NewContextPipeline()
 }
 
-func newTestContextManager(s *orchestration.ContextStrategy, h services.HistoryManager, bus events.EventBus) *orchestration.ContextManager {
+func newTestContextManager(s *orchestration.ContextStrategy, h ports.HistoryManager, bus events.EventBus) *orchestration.ContextManager {
 	cm := orchestration.NewContextManager(s, h, bus, nil)
 	cm.Pipeline = minimalPipeline()
 	return cm
@@ -205,7 +205,7 @@ type testTurnEnv struct {
 	reg      *mockToolRegistry
 	bus      *events.SimpleEventBus
 	cm       *orchestration.ContextManager
-	hManager services.HistoryManager
+	hManager ports.HistoryManager
 }
 
 func setupTurnEngineTest(t *testing.T) *testTurnEnv {

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // warningInjector adds safety warnings to the context.
@@ -16,7 +16,7 @@ type warningInjector struct {
 	Strategy *ContextStrategy
 }
 
-func (t *warningInjector) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	tokens := req.Metadata.FinalTokenCount
 	currentTurns := len(req.History) / 2
 
@@ -32,7 +32,7 @@ func (t *warningInjector) Transform(ctx context.Context, req *services.ContextRe
 	return nil
 }
 
-func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, turns int) (string, []string) {
+func (t *warningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turns int) (string, []string) {
 	// Temporarily set pruned turns in strategy for warning generation
 	t.Strategy.setPrunedTurns(req.Metadata.PrunedTurns)
 
@@ -61,7 +61,7 @@ func (t *warningInjector) gatherWarnings(req *services.ContextRequest, tokens, t
 	return combined, list
 }
 
-func (t *warningInjector) injectWarning(req *services.ContextRequest, combined string) {
+func (t *warningInjector) injectWarning(req *ports.ContextRequest, combined string) {
 	if len(req.History) == 0 {
 		return
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	_ "modernc.org/sqlite"
 )
 
@@ -303,8 +303,8 @@ func testTaskStoreAppendAndRead(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Millisecond)
-	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
-	task2 := services.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
+	task1 := ports.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task2 := ports.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
 
 	if err := store.Append(ctx, task1); err != nil {
 		t.Errorf("Failed to append task1: %v", err)
@@ -335,7 +335,7 @@ func testTaskStoreUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Millisecond)
-	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task1 := ports.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
 	_ = store.Append(ctx, task1) // initial
 
 	task1Updated := task1
@@ -358,8 +358,8 @@ func testTaskStoreDelete(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Millisecond)
-	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
-	task2 := services.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
+	task1 := ports.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task2 := ports.Task{ID: 2, Content: "task 2", Status: "completed", CreatedAt: now.Add(time.Hour)}
 	_ = store.Append(ctx, task1)
 	_ = store.Append(ctx, task2)
 
@@ -379,7 +379,7 @@ func testTaskStoreDeleteAll(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Millisecond)
-	task1 := services.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
+	task1 := ports.Task{ID: 1, Content: "task 1", Status: "pending", CreatedAt: now}
 	_ = store.Append(ctx, task1)
 
 	if err := store.DeleteAll(ctx); err != nil {

@@ -9,16 +9,16 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // historyPruner enforces history turn limits using a policy.
 type historyPruner struct {
-	Policy services.PruningPolicy
+	Policy ports.PruningPolicy
 	Events events.EventBus
 }
 
-func (t *historyPruner) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (t *historyPruner) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	initialLen := len(req.History)
 	if initialLen == 0 {
 		return nil
@@ -72,7 +72,7 @@ func (t *historyPruner) Priority() int { return 110 }
 
 // compositePruningPolicy aggregates multiple policies using OR logic.
 type compositePruningPolicy struct {
-	Policies []services.PruningPolicy
+	Policies []ports.PruningPolicy
 }
 
 func (p *compositePruningPolicy) MarkTurns(ctx context.Context, turns [][]*llm.Content, keep []bool) int {

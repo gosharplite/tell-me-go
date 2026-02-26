@@ -11,8 +11,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -30,9 +30,9 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	req := &services.ContextRequest{
+	req := &ports.ContextRequest{
 		History:  make([]*llm.Content, 20),
-		Metadata: services.ContextMetadata{},
+		Metadata: ports.ContextMetadata{},
 	}
 	for i := 0; i < 20; i++ {
 		role := "user"
@@ -53,9 +53,9 @@ func TestGatekeeper_ErrorHandling(t *testing.T) {
 		t.Errorf("Expected 'summarizer failed' error from handleSafetyPressure, got: %v", err)
 	}
 
-	req2 := &services.ContextRequest{
+	req2 := &ports.ContextRequest{
 		History:  make([]*llm.Content, 20),
-		Metadata: services.ContextMetadata{},
+		Metadata: ports.ContextMetadata{},
 	}
 	for i := 0; i < 20; i++ {
 		role := "user"
@@ -95,7 +95,7 @@ func TestContextManager_FirstMessageRoleError(t *testing.T) {
 
 func TestContextTransformers_HistoryRepairerEmpty(t *testing.T) {
 	hr := &historyRepairer{}
-	req := &services.ContextRequest{History: nil}
+	req := &ports.ContextRequest{History: nil}
 	err := hr.Transform(context.Background(), req)
 	if err != nil {
 		t.Errorf("Expected nil error for empty history, got: %v", err)
@@ -130,7 +130,7 @@ type mockFailingChatter struct {
 	err error
 }
 
-func (m *mockFailingChatter) Chat(ctx context.Context, session *services.Session, prompt string) error {
+func (m *mockFailingChatter) Chat(ctx context.Context, session *ports.Session, prompt string) error {
 	return nil
 }
 func (m *mockFailingChatter) Shutdown(ctx context.Context) error   { return nil }
@@ -165,7 +165,7 @@ func (m *mockFailingUIRenderer) LogSystemMessage(string, string)                
 func (m *mockFailingUIRenderer) LogAgentStatus(status string)                              {}
 
 func TestOrchestrator_ConfigError(t *testing.T) {
-	agentFactory := func(params services.ChatterParams) services.Chatter {
+	agentFactory := func(params ports.ChatterParams) ports.Chatter {
 		return &mockFailingChatter{err: errors.New("config failed")}
 	}
 

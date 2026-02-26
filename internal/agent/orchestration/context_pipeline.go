@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // Priority levels for transformers
@@ -17,17 +17,17 @@ const (
 )
 
 // Metadata contains diagnostics and auxiliary data from the pipeline.
-type Metadata = services.ContextMetadata
+type Metadata = ports.ContextMetadata
 
 // request represents the input and state of a context preparation pipeline.
-type request = services.ContextRequest
+type request = ports.ContextRequest
 
 // ContextPipeline manages the execution of multiple transformers.
 type ContextPipeline struct {
-	transformers []services.ContextTransformer
+	transformers []ports.ContextTransformer
 }
 
-func NewContextPipeline(transformers ...services.ContextTransformer) *ContextPipeline {
+func NewContextPipeline(transformers ...ports.ContextTransformer) *ContextPipeline {
 	// Sort by priority
 	sort.Slice(transformers, func(i, j int) bool {
 		return transformers[i].Priority() < transformers[j].Priority()
@@ -59,7 +59,7 @@ func (p *ContextPipeline) executeWithPersistence(ctx context.Context, req *reque
 	return nil
 }
 
-func (p *ContextPipeline) partitionTransformers() (canonical, transient []services.ContextTransformer) {
+func (p *ContextPipeline) partitionTransformers() (canonical, transient []ports.ContextTransformer) {
 	for _, t := range p.transformers {
 		if t.Priority() < priorityTransientThreshold {
 			canonical = append(canonical, t)

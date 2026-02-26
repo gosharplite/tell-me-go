@@ -4,27 +4,37 @@
 package agent
 
 import (
+	"context"
+
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
 // agentConfig holds initialization-only dependencies and configuration.
 type agentConfig struct {
-	summarizer       services.Summarizer
+	summarizer       ports.Summarizer
 	registerInternal bool
 	model            string
 	mode             string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	loader           domain_config.ConfigLoader
 	tracker          domain_pricing.ICostTracker
+	initCtx          context.Context
 }
 
 // option defines a functional option for configuring an Agent.
 type option func(*agentConfig)
 
+// withInitContext sets the context for the agent initialization.
+func withInitContext(ctx context.Context) option {
+	return func(c *agentConfig) {
+		c.initCtx = ctx
+	}
+}
+
 // WithSummarizer sets the summarizer service for the agent.
-func WithSummarizer(s services.Summarizer) option {
+func WithSummarizer(s ports.Summarizer) option {
 	return func(c *agentConfig) {
 		c.summarizer = s
 	}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // ContextManager handles the preparation of context for the LLM.
@@ -24,15 +24,15 @@ type ContextManager struct {
 	cachedMetadata *Metadata
 
 	Strategy   *ContextStrategy
-	History    services.HistoryManager
+	History    ports.HistoryManager
 	Events     events.EventBus
 	Pipeline   *ContextPipeline
 	Factory    *PipelineFactory
-	Summarizer services.Summarizer
+	Summarizer ports.Summarizer
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(strategy *ContextStrategy, history services.HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
+func NewContextManager(strategy *ContextStrategy, history ports.HistoryManager, bus events.EventBus, factory *PipelineFactory) *ContextManager {
 	cm := &ContextManager{
 		Strategy: strategy,
 		History:  history,

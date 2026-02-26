@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// MemoryKVStore is an in-memory implementation of services.KVStore.
+// MemoryKVStore is an in-memory implementation of ports.KVStore.
 type memoryKVStore struct {
 	mu   sync.RWMutex
 	data map[string]string
@@ -51,7 +51,7 @@ func (s *memoryKVStore) GetAll(ctx context.Context) (map[string]string, error) {
 	return res, nil
 }
 
-// memoryListStore is an in-memory implementation of services.ListStore.
+// memoryListStore is an in-memory implementation of ports.ListStore.
 type memoryListStore[T any] struct {
 	mu   sync.RWMutex
 	data []T

@@ -14,8 +14,8 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -232,21 +232,18 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
 
-	params := services.ChatterParams{
-		Loader:           nil,
-		Gateway:          client,
-		HistoryManager:   hManager,
-		Registry:         reg,
-		SecurityManager:  sm,
-		DisableStreaming: false,
-		EventBus:         bus,
-		ProviderName:     "test-provider",
-		Model:            "test-model",
-		Mode:             "assistant",
-		LogPath:          "tokens.log",
-		PricingOverrides: nil,
-		CostTracker:      nil,
-	}
+	params := ports.NewChatterParams(
+		ports.WithGateway(client),
+		ports.WithHistory(hManager),
+		ports.WithToolConfig(reg),
+		ports.WithSecurityManager(sm),
+		ports.WithStreamingDisabled(false),
+		ports.WithEventBus(bus),
+		ports.WithProvider("test-provider"),
+		ports.WithModel("test-model"),
+		ports.WithMode("assistant"),
+		ports.WithLogPath("tokens.log"),
+	)
 	agent := factory(params)
 	assert.NotNil(t, agent)
 }

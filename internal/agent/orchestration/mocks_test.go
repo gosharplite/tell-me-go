@@ -9,7 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/mock"
 )
@@ -188,10 +188,10 @@ func (m *mockEventBus) Flush(ctx context.Context) error    { return nil }
 
 type mockTransformer struct {
 	priority    int
-	transformFn func(ctx context.Context, req *services.ContextRequest) error
+	transformFn func(ctx context.Context, req *ports.ContextRequest) error
 }
 
-func (m *mockTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
+func (m *mockTransformer) Transform(ctx context.Context, req *ports.ContextRequest) error {
 	if m.transformFn != nil {
 		return m.transformFn(ctx, req)
 	}

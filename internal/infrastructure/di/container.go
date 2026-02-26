@@ -16,9 +16,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -31,9 +31,9 @@ import (
 
 // Container defines the interface for building session dependencies and provides factories.
 type Container interface {
-	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error)
-	GetAgentFactory() services.ChatterFactory
-	FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *config.Config)
+	BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error)
+	GetAgentFactory() ports.ChatterFactory
+	FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config)
 }
 
 // bootstrapper handles the instantiation and wiring of system components.
@@ -62,7 +62,7 @@ func NewBootstrapper(homeDir string, sm security.ISecurityManager, version strin
 }
 
 // BuildSessionDependencies assembles all dependencies required for a chat session.
-func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (services.SessionDependencies, *history.Manager, func(), error) {
+func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.Config, configPath string, newSession bool, capturer security.UserInteractor) (ports.SessionDependencies, *history.Manager, func(), error) {
 	paths, err := infra_persistence.InitializePaths(b.HomeDir, cfg.Mode)
 	if err != nil {
 		return nil, nil, nil, err
@@ -96,7 +96,7 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 	reg := registry.New()
 
 	executor := &exec.RealExecutor{}
-	var sessionProvider services.ISessionProvider
+	var sessionProvider ports.ISessionProvider
 	if state, err := infra_persistence.NewSessionState(ctx, paths.ModeDir); err == nil {
 		sessionProvider = state
 		// Inject model and provider ground truth for tools like get_session_info
@@ -149,8 +149,8 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 }
 
 // GetAgentFactory returns a factory for creating Chatter instances.
-func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
-	return func(params services.ChatterParams) services.Chatter {
+func (b *bootstrapper) GetAgentFactory() ports.ChatterFactory {
+	return func(params ports.ChatterParams) ports.Chatter {
 		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
 
 		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
@@ -166,7 +166,7 @@ func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
 }
 
 // FinalizeSession saves history and records session cost.
-func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager services.HistoryManager, deps services.SessionDependencies, cfg *config.Config) {
+func (b *bootstrapper) FinalizeSession(ctx stdctx.Context, hManager ports.HistoryManager, deps ports.SessionDependencies, cfg *config.Config) {
 	// Finalize session
 	if saveErr := hManager.Save(ctx); saveErr != nil {
 		fmt.Fprintf(b.Stderr, "Warning: Error saving history: %v\n", saveErr)

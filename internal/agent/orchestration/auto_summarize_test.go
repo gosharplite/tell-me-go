@@ -17,7 +17,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -38,7 +38,7 @@ func TestContextManager_AutoSummarizeTrigger(t *testing.T) {
 		Description: "A dummy tool for token estimation stability",
 	}, nil)
 	ctx := context.Background()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	// Mock server for summarization
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,13 +147,13 @@ func TestAutoSummarize_Logging(t *testing.T) {
 	verifyAutoSummarizeLog(t, logReceived)
 }
 
-func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
+func setupAutoSummarizeTest(t *testing.T) (ports.HistoryManager, *ContextManager, events.EventBus, *httptest.Server) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	historyPath := filepath.Join(tmpDir, "log_test_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -181,7 +181,7 @@ func setupAutoSummarizeTest(t *testing.T) (services.HistoryManager, *ContextMana
 	return hManager, cm, bus, server
 }
 
-func addHeavyHistory(t *testing.T, h services.HistoryManager, turns int) {
+func addHeavyHistory(t *testing.T, h ports.HistoryManager, turns int) {
 	t.Helper()
 	ctx := context.Background()
 	longText := strings.Repeat("A", 32000) // approx 10k tokens
@@ -210,7 +210,7 @@ func TestContextManager_AutoSummarizeWithSystemInstructions(t *testing.T) {
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
 	ctx := context.Background()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiResp := genai.GenerateContentResponse{
@@ -283,7 +283,7 @@ func TestToolInjectedTokenBudgetPressure(t *testing.T) {
 	historyPath := filepath.Join(tmpDir, "tool_pressure_history.json")
 	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
 	reg := registry.New()
-	bus := &events.SimpleEventBus{}
+	bus := events.NewSimpleEventBus()
 
 	// 1. Register many tools to create a large schema (approx 2000 tokens)
 	for i := 0; i < 20; i++ {
@@ -373,9 +373,9 @@ func TestTokenGatekeeper_AutoSummarize_NilSummarizer(t *testing.T) {
 		Summarizer: nil, // This should trigger the panic if not handled
 	}
 
-	req := &services.ContextRequest{
+	req := &ports.ContextRequest{
 		History:  make([]*domain_llm.Content, 10),
-		Metadata: services.ContextMetadata{},
+		Metadata: ports.ContextMetadata{},
 	}
 	// Fill history with some dummy content
 	for i := 0; i < 10; i++ {

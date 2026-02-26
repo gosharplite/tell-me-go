@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 )
 
@@ -17,16 +18,16 @@ type sessionState struct {
 	Tasks      *services.TaskService
 	Config     *services.ConfigService
 	Scratchpad *services.ScratchpadService
-	Info       services.SessionInfo
+	Info       ports.SessionInfo
 	db         *sql.DB
 }
 
-func (s *sessionState) GetTasks() *services.TaskService            { return s.Tasks }
-func (s *sessionState) GetConfig() *services.ConfigService         { return s.Config }
-func (s *sessionState) GetScratchpad() *services.ScratchpadService { return s.Scratchpad }
-func (s *sessionState) GetInfo() services.SessionInfo              { return s.Info }
+func (s *sessionState) GetTasks() ports.ITaskService            { return s.Tasks }
+func (s *sessionState) GetConfig() ports.IConfigService         { return s.Config }
+func (s *sessionState) GetScratchpad() ports.IScratchpadService { return s.Scratchpad }
+func (s *sessionState) GetInfo() ports.SessionInfo              { return s.Info }
 
-func (s *sessionState) SetInfo(info services.SessionInfo) {
+func (s *sessionState) SetInfo(info ports.SessionInfo) {
 	s.Info = info
 }
 
@@ -38,7 +39,7 @@ func (s *sessionState) Close() error {
 }
 
 // NewSessionState initializes repositories and services.
-func NewSessionState(ctx context.Context, configDir string) (services.ISessionProvider, error) {
+func NewSessionState(ctx context.Context, configDir string) (ports.ISessionProvider, error) {
 	storageType := os.Getenv("STORAGE_TYPE")
 	if storageType == "" {
 		storageType = "sqlite" // Set sqlite as default storage
@@ -61,7 +62,7 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 		db:         db,
 	}
 
-	state.Info = services.SessionInfo{
+	state.Info = ports.SessionInfo{
 		Config: config.GetAll(),
 		Env: map[string]string{
 			"TELL_ME_MODE": os.Getenv("TELL_ME_MODE"),
@@ -73,11 +74,11 @@ func NewSessionState(ctx context.Context, configDir string) (services.ISessionPr
 	return state, nil
 }
 
-func initRepositories(ctx context.Context, configDir, storageType string) (services.ListStore[services.Task], services.KVStore, services.KVStore, *sql.DB, map[string]string, error) {
+func initRepositories(ctx context.Context, configDir, storageType string) (ports.ListStore[ports.Task], ports.KVStore, ports.KVStore, *sql.DB, map[string]string, error) {
 	paths := map[string]string{"config_dir": configDir}
 
 	if storageType == "memory" {
-		return newMemoryListStore[services.Task](), newMemoryKVStore(), newMemoryKVStore(), nil, paths, nil
+		return newMemoryListStore[ports.Task](), newMemoryKVStore(), newMemoryKVStore(), nil, paths, nil
 	}
 
 	fs := NewOSFileSystem()
@@ -109,7 +110,7 @@ func initRepositories(ctx context.Context, configDir, storageType string) (servi
 		paths, nil
 }
 
-func initServices(ctx context.Context, taskStore services.ListStore[services.Task], configStore, scratchStore services.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
+func initServices(ctx context.Context, taskStore ports.ListStore[ports.Task], configStore, scratchStore ports.KVStore) (*services.TaskService, *services.ConfigService, *services.ScratchpadService, error) {
 	tasks := services.NewTaskService(taskStore)
 	config := services.NewConfigService(configStore)
 	scratch := services.NewScratchpadService(scratchStore)

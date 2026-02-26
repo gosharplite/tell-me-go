@@ -13,17 +13,17 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
 
 type integrationMockChatter struct {
-	ChatFunc func(ctx stdctx.Context, s *services.Session, prompt string) error
+	ChatFunc func(ctx stdctx.Context, s *ports.Session, prompt string) error
 }
 
-func (m *integrationMockChatter) Chat(ctx stdctx.Context, s *services.Session, prompt string) error {
+func (m *integrationMockChatter) Chat(ctx stdctx.Context, s *ports.Session, prompt string) error {
 	if m.ChatFunc != nil {
 		return m.ChatFunc(ctx, s, prompt)
 	}
@@ -54,7 +54,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	// Wrap bootstrapper to override AgentFactory
 	container := &wrappedContainer{
 		Container: bootstrapper,
-		AgentFactory: func(params services.ChatterParams) services.Chatter {
+		AgentFactory: func(params ports.ChatterParams) ports.Chatter {
 			return &integrationMockChatter{}
 		},
 	}
@@ -91,10 +91,10 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 
 type wrappedContainer struct {
 	di.Container
-	AgentFactory services.ChatterFactory
+	AgentFactory ports.ChatterFactory
 }
 
-func (w *wrappedContainer) GetAgentFactory() services.ChatterFactory {
+func (w *wrappedContainer) GetAgentFactory() ports.ChatterFactory {
 	return w.AgentFactory
 }
 

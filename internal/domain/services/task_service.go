@@ -9,21 +9,23 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // TaskService handles the logic for managing tasks.
 type TaskService struct {
 	mu     sync.RWMutex
-	store  ListStore[Task]
-	tasks  map[float64]Task
+	store  ports.ListStore[ports.Task]
+	tasks  map[float64]ports.Task
 	nextID float64
 }
 
 // NewTaskService creates a new TaskService.
-func NewTaskService(store ListStore[Task]) *TaskService {
+func NewTaskService(store ports.ListStore[ports.Task]) *TaskService {
 	return &TaskService{
 		store:  store,
-		tasks:  make(map[float64]Task),
+		tasks:  make(map[float64]ports.Task),
 		nextID: 1,
 	}
 }
@@ -47,15 +49,15 @@ func (s *TaskService) Initialize(ctx context.Context) error {
 }
 
 // AddTask adds a new task.
-func (s *TaskService) AddTask(ctx context.Context, content string) (Task, error) {
+func (s *TaskService) AddTask(ctx context.Context, content string) (ports.Task, error) {
 	if content == "" {
-		return Task{}, fmt.Errorf("content is required for add")
+		return ports.Task{}, fmt.Errorf("content is required for add")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	t := Task{
+	t := ports.Task{
 		ID:        s.nextID,
 		Content:   content,
 		Status:    "pending",
@@ -63,7 +65,7 @@ func (s *TaskService) AddTask(ctx context.Context, content string) (Task, error)
 	}
 
 	if err := s.store.Append(ctx, t); err != nil {
-		return Task{}, err
+		return ports.Task{}, err
 	}
 
 	s.tasks[t.ID] = t
@@ -72,13 +74,13 @@ func (s *TaskService) AddTask(ctx context.Context, content string) (Task, error)
 }
 
 // UpdateTask updates an existing task.
-func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, status string) (Task, error) {
+func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, status string) (ports.Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	t, ok := s.tasks[id]
 	if !ok {
-		return Task{}, fmt.Errorf("task not found: %.0f", id)
+		return ports.Task{}, fmt.Errorf("task not found: %.0f", id)
 	}
 
 	if content != "" {
@@ -89,7 +91,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, id float64, content, statu
 	}
 
 	if err := s.store.Update(ctx, id, t); err != nil {
-		return Task{}, err
+		return ports.Task{}, err
 	}
 
 	s.tasks[id] = t
@@ -114,11 +116,11 @@ func (s *TaskService) DeleteTask(ctx context.Context, id float64) error {
 }
 
 // ListTasks returns all tasks, optionally filtered by status.
-func (s *TaskService) ListTasks(status string) []Task {
+func (s *TaskService) ListTasks(status string) []ports.Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var list []Task
+	var list []ports.Task
 	for _, t := range s.tasks {
 		if status != "" && t.Status != status {
 			continue
@@ -142,6 +144,6 @@ func (s *TaskService) ClearTasks(ctx context.Context) error {
 		return err
 	}
 
-	s.tasks = make(map[float64]Task)
+	s.tasks = make(map[float64]ports.Task)
 	return nil
 }

@@ -12,8 +12,8 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/config"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/ui"
@@ -108,7 +108,7 @@ func (c *chatCommand) initializeCLI(args []string) (orchestration.Capturer, *cli
 	return capturer.(orchestration.Capturer), opts, fs, cfg, err
 }
 
-func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps services.SessionDependencies) error {
+func (c *chatCommand) performChat(ctx stdctx.Context, capturer orchestration.Capturer, opts *cliOptions, prompt string, cfg *domain_config.Config, deps ports.SessionDependencies) error {
 	uiRenderer := ui.NewRenderer(c.SM, c.Stdout, c.Stderr)
 	historyRenderer := &ui.StdHistoryRenderer{}
 	orch := orchestration.NewOrchestrator(c.HomeDir, c.Version, c.Loader, c.SM, c.Stdout, c.Stderr, c.Container.GetAgentFactory(), historyRenderer, uiRenderer)

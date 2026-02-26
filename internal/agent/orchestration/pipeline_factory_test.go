@@ -9,7 +9,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,7 +22,7 @@ func TestPipelineFactory_PreciseProfile(t *testing.T) {
 
 	// Test Prepare under precise profile
 	ctx := context.Background()
-	req := &services.ContextRequest{
+	req := &ports.ContextRequest{
 		Turn:    1,
 		History: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "test"}}}},
 	}

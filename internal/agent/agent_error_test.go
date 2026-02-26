@@ -9,7 +9,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 func TestAgent_ConfigFailure(t *testing.T) {
@@ -31,7 +31,7 @@ func TestAgent_ConfigFailure(t *testing.T) {
 		},
 	}
 
-	session := &services.Session{StartTime: time.Now()}
+	session := &ports.Session{StartTime: time.Now()}
 	err := a.Chat(ctx, session, "hello")
 
 	if err == nil {

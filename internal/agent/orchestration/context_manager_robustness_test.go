@@ -12,7 +12,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -498,7 +498,7 @@ func TestContextManager_Prepare_ConflictDetection(t *testing.T) {
 	prepareStarted := make(chan struct{})
 	prepareResume := make(chan struct{})
 	blockingTransformer := &mockTransformer{
-		transformFn: func(ctx context.Context, req *services.ContextRequest) error {
+		transformFn: func(ctx context.Context, req *ports.ContextRequest) error {
 			close(prepareStarted)
 			<-prepareResume
 			return nil

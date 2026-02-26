@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestEventRingBuffer_Basic(t *testing.T) {
@@ -114,24 +115,126 @@ func TestSimpleEventBus_ConcurrentFlushAndShutdown(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		bus.Publish("flush_trigger")
+		// Flush will wait for the blocked subscriber
 		_ = bus.Flush(context.Background())
 	}()
 
 	// Ensure Flush has actually started and blocked before Shutdown is called
 	<-flushStarted
 
-	// Goroutine 2: Shutdown concurrently
+	// Goroutine 2: Shutdown concurrently with a short timeout
 	go func() {
 		defer wg.Done()
-		_ = bus.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		_ = bus.Shutdown(ctx)
 	}()
 
-	// Ensure Shutdown has started and signaled via its internal closing channel.
-	<-bus.closing
+	// Wait for Shutdown to timeout and call abort()
+	select {
+	case <-bus.closing:
+		// Success: abort called
+	case <-time.After(200 * time.Millisecond):
+		t.Error("Shutdown did not call abort after timeout")
+	}
 
 	// Unblock the subscriber
 	close(blockSub)
 
 	wg.Wait()
-	// Test passes if no panic occurs
+}
+
+func TestPumpEvents_ContextCancellation_LeakCheck(t *testing.T) {
+	bus := NewSimpleEventBus()
+	in := make(chan Event)
+	out := make(chan Event)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		bus.pumpEvents(ctx, in, out)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("pumpEvents goroutine leaked after context cancellation")
+	}
+}
+
+func TestPumpEvents_GracefulExit_OnInputClose(t *testing.T) {
+	bus := NewSimpleEventBus()
+	in := make(chan Event)
+	out := make(chan Event)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		bus.pumpEvents(ctx, in, out)
+	}()
+
+	// Signal graceful exit
+	close(in)
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("pumpEvents goroutine leaked after input channel was closed")
+	}
+}
+
+func TestPumpEvents_BlockedOnOut_ContextCancellation(t *testing.T) {
+	bus := NewSimpleEventBusWithCapacity(1)
+	in := make(chan Event)
+	out := make(chan Event) // Unbuffered, no one reading
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		bus.pumpEvents(ctx, in, out)
+	}()
+
+	// Send one event to put it in the buffer
+	in <- "event1"
+	// Wait a bit to ensure it's in the buffer and now trying to send to 'out'
+	time.Sleep(20 * time.Millisecond)
+
+	// Now pumpEvents should be blocked on 'out <- buffer.front()'
+
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("pumpEvents goroutine leaked while blocked on out channel")
+	}
 }

@@ -7,16 +7,18 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 type mockTaskRepo struct {
-	tasks    []Task
+	tasks    []ports.Task
 	readErr  error
 	writeErr error
 }
 
-func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]Task, error) { return m.tasks, m.readErr }
-func (m *mockTaskRepo) Update(ctx context.Context, id float64, task Task) error {
+func (m *mockTaskRepo) ReadAll(ctx context.Context) ([]ports.Task, error) { return m.tasks, m.readErr }
+func (m *mockTaskRepo) Update(ctx context.Context, id float64, task ports.Task) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -33,7 +35,7 @@ func (m *mockTaskRepo) Delete(ctx context.Context, id float64) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
-	var next []Task
+	var next []ports.Task
 	for _, t := range m.tasks {
 		if t.ID != id {
 			next = append(next, t)
@@ -51,7 +53,7 @@ func (m *mockTaskRepo) DeleteAll(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockTaskRepo) Append(ctx context.Context, task Task) error {
+func (m *mockTaskRepo) Append(ctx context.Context, task ports.Task) error {
 	if m.writeErr != nil {
 		return m.writeErr
 	}
@@ -139,7 +141,7 @@ func TestTaskService_Initialize(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		repo := &mockTaskRepo{
-			tasks: []Task{
+			tasks: []ports.Task{
 				{ID: 1, Content: "Task 1"},
 				{ID: 10, Content: "Task 10"},
 			},

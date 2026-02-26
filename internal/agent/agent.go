@@ -13,9 +13,9 @@ import (
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -44,7 +44,7 @@ type agent struct {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, hManager services.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) *agent {
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) *agent {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -94,7 +94,12 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager services.Hi
 		orchestration.RegisterInternal(registry, ctxManager)
 	}
 
-	if err := a.applyConfig(context.Background()); err != nil {
+	initCtx := cfg.initCtx
+	if initCtx == nil {
+		initCtx = context.Background()
+	}
+
+	if err := a.applyConfig(initCtx); err != nil {
 		a.emit(events.StatusUpdate{Message: "failed to apply initial configuration", Level: "warning"})
 	}
 	return a
@@ -156,7 +161,7 @@ func (a *agent) SetTieredThreshold(ctx context.Context, threshold int) error {
 }
 
 // Chat runs the multi-turn orchestration loop.
-func (a *agent) Chat(ctx context.Context, s *services.Session, prompt string) error {
+func (a *agent) Chat(ctx context.Context, s *ports.Session, prompt string) error {
 	if err := a.ctxManager.AddContent(ctx, &domain_llm.Content{
 		Role:  "user",
 		Parts: []*domain_llm.Part{{Text: prompt}},

@@ -11,7 +11,7 @@ import (
 )
 
 // scratchpadRepository manages a persistent scratchpad.
-// It implements services.KVStore but is specialized for a single "content" key
+// It implements ports.KVStore but is specialized for a single "content" key
 // to maintain compatibility with raw text storage.
 type scratchpadRepository struct {
 	mu       sync.RWMutex

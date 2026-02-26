@@ -8,9 +8,9 @@ import (
 
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -96,7 +96,7 @@ func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 }
 
 type mockSummarizer struct {
-	services.Summarizer
+	ports.Summarizer
 }
 
 type mockLoader struct {

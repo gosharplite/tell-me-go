@@ -6,7 +6,7 @@ package orchestration
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -21,8 +21,8 @@ const (
 // PipelineFactory encapsulates the logic for creating context processing pipelines.
 type PipelineFactory struct {
 	Registry   tools.IToolRegistry
-	History    services.HistoryManager
-	Summarizer services.Summarizer
+	History    ports.HistoryManager
+	Summarizer ports.Summarizer
 	Estimator  llm.TokenEstimator
 	Events     events.EventBus
 	Profile    optimizationProfile
@@ -41,12 +41,12 @@ func (f *PipelineFactory) BuildStandardPipeline(limits events.Limits) *ContextPi
 		}
 	}
 
-	transformers := []services.ContextTransformer{
+	transformers := []ports.ContextTransformer{
 		&historyRepairer{},
 		&contentCleaner{},
 		&historyPruner{
 			Policy: &compositePruningPolicy{
-				Policies: []services.PruningPolicy{
+				Policies: []ports.PruningPolicy{
 					// 2. Use the profile-adjusted window size
 					&slidingWindowPolicy{MaxTurns: windowTurns},
 					&pinningPolicy{},

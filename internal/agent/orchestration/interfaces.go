@@ -7,7 +7,7 @@ import (
 	"context"
 	"flag"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // Capturer defines the interface for UI interactions that the orchestrator needs.
@@ -18,5 +18,5 @@ type Capturer interface {
 
 // Orchestrator defines the entry point for running a chat session.
 type Orchestrator interface {
-	Run(ctx context.Context, sc services.SessionConfig, sd services.SessionDependencies, ic Capturer) error
+	Run(ctx context.Context, sc ports.SessionConfig, sd ports.SessionDependencies, ic Capturer) error
 }

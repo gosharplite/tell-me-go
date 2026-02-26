@@ -10,17 +10,17 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
-// summarizer implements the services.Summarizer interface using an LLM gateway.
+// summarizer implements the ports.Summarizer interface using an LLM gateway.
 type summarizer struct {
 	gateway llm.LLMGateway
 	events  events.EventBus
 }
 
 // NewSummarizer creates a new summarization service.
-func NewSummarizer(g llm.LLMGateway, bus events.EventBus) services.Summarizer {
+func NewSummarizer(g llm.LLMGateway, bus events.EventBus) ports.Summarizer {
 	return &summarizer{gateway: g, events: bus}
 }
 

@@ -11,11 +11,11 @@ import (
 	"sync"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 // TaskRepository manages a list of tasks with persistence.
-// It implements services.ListStore[services.Task].
+// It implements ports.ListStore[ports.Task].
 type taskRepository struct {
 	mu       sync.RWMutex
 	filePath string
@@ -30,7 +30,7 @@ func newTaskRepository(fs persistence.FileSystem, filePath string) *taskReposito
 	}
 }
 
-func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, error) {
+func (r *taskRepository) readAllInternal(ctx context.Context) ([]ports.Task, error) {
 	if _, err := r.fs.Stat(ctx, r.filePath); os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -46,7 +46,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, 
 	}
 
 	// Try decoding as a JSON array first (backward compatibility/standard JSON)
-	var loaded []services.Task
+	var loaded []ports.Task
 	if data[0] == '[' {
 		if err := json.Unmarshal(data, &loaded); err == nil {
 			return loaded, nil
@@ -57,7 +57,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, 
 	loaded = nil
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	for decoder.More() {
-		var t services.Task
+		var t ports.Task
 		if err := decoder.Decode(&t); err != nil {
 			return nil, err
 		}
@@ -68,7 +68,7 @@ func (r *taskRepository) readAllInternal(ctx context.Context) ([]services.Task, 
 }
 
 // ReadAll loads tasks from disk.
-func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
+func (r *taskRepository) ReadAll(ctx context.Context) ([]ports.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.readAllInternal(ctx)

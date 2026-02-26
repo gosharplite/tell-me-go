@@ -9,9 +9,9 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/tools/analysis"
 	"github.com/gosharplite/tell-me-go/internal/tools/developer"
@@ -25,7 +25,7 @@ type ToolRegistrationParams struct {
 	SecurityManager  domain_security.ISecurityManager
 	CommandExecutor  tools.CommandExecutor
 	CommandValidator domain_security.ICommandValidator
-	SessionProvider  services.ISessionProvider
+	SessionProvider  ports.ISessionProvider
 	LogFile          string
 	Model            string
 	Mode             string

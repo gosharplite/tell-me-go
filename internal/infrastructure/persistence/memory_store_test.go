@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 )
 
 func TestMemoryKVStore(t *testing.T) {
@@ -137,10 +137,10 @@ func runListAppendAndReadAll(t *testing.T, ctx context.Context) {
 }
 
 func runListUpdateAndDelete(t *testing.T, ctx context.Context) {
-	store := newMemoryListStore[services.Task]()
-	_ = store.Append(ctx, services.Task{ID: 1, Content: "old"})
+	store := newMemoryListStore[ports.Task]()
+	_ = store.Append(ctx, ports.Task{ID: 1, Content: "old"})
 
-	if err := store.Update(ctx, 1, services.Task{ID: 1, Content: "new"}); err != nil {
+	if err := store.Update(ctx, 1, ports.Task{ID: 1, Content: "new"}); err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func runListUpdateAndDelete(t *testing.T, ctx context.Context) {
 		t.Errorf("Delete did not remove correctly: %v", items)
 	}
 
-	_ = store.Append(ctx, services.Task{ID: 2, Content: "item"})
+	_ = store.Append(ctx, ports.Task{ID: 2, Content: "item"})
 	if err := store.DeleteAll(ctx); err != nil {
 		t.Fatalf("DeleteAll failed: %v", err)
 	}
@@ -169,7 +169,7 @@ func runListUpdateAndDelete(t *testing.T, ctx context.Context) {
 }
 
 func runListConcurrency(t *testing.T, ctx context.Context) {
-	store := newMemoryListStore[services.Task]()
+	store := newMemoryListStore[ports.Task]()
 	var wg sync.WaitGroup
 	count := 100
 
@@ -178,7 +178,7 @@ func runListConcurrency(t *testing.T, ctx context.Context) {
 		wg.Add(1)
 		go func(val float64) {
 			defer wg.Done()
-			_ = store.Append(ctx, services.Task{ID: val})
+			_ = store.Append(ctx, ports.Task{ID: val})
 		}(float64(i))
 	}
 
@@ -187,7 +187,7 @@ func runListConcurrency(t *testing.T, ctx context.Context) {
 		wg.Add(1)
 		go func(val float64) {
 			defer wg.Done()
-			_ = store.Update(ctx, val, services.Task{ID: val, Content: "updated"})
+			_ = store.Update(ctx, val, ports.Task{ID: val, Content: "updated"})
 		}(float64(i))
 	}
 

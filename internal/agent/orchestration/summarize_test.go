@@ -18,7 +18,7 @@ import (
 
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/auth"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
@@ -117,7 +117,7 @@ func runSummarizeTest(t *testing.T, tt summarizeTestCase) {
 	verifySummarizeResult(t, tt, resp, err, hManager)
 }
 
-func setupTestHistory(t *testing.T, turns int) services.HistoryManager {
+func setupTestHistory(t *testing.T, turns int) ports.HistoryManager {
 	t.Helper()
 	historyPath := filepath.Join(t.TempDir(), "history.json")
 	h := history.NewManager(infrapersistence.NewOSFileSystem(), historyPath, historyPath+".archive")
@@ -155,7 +155,7 @@ func setupTestClient(t *testing.T, url string) *gemini.Client {
 	return client
 }
 
-func setupInternalTools(client *gemini.Client, h services.HistoryManager) *InternalTools {
+func setupInternalTools(client *gemini.Client, h ports.HistoryManager) *InternalTools {
 	bus := &events.SimpleEventBus{}
 	reg := registry.New()
 	gw := llm.NewResilientClient(client, true)
@@ -171,7 +171,7 @@ func setupInternalTools(client *gemini.Client, h services.HistoryManager) *Inter
 	return NewInternalTools(cm)
 }
 
-func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h services.HistoryManager) {
+func verifySummarizeResult(t *testing.T, tt summarizeTestCase, resp tools.ToolResult, err error, h ports.HistoryManager) {
 	t.Helper()
 	if (err != nil) != tt.expectedErr {
 		t.Fatalf("expected error: %v, got: %v", tt.expectedErr, err)

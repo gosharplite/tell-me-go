@@ -5,12 +5,12 @@ package executor
 
 import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
-	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/ports"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
 // resultStrategy defines how tool outputs are transformed back into LLM messages.
-type resultStrategy = services.ResultStrategy
+type resultStrategy = ports.ResultStrategy
 
 // markdownStrategy formats tool results as markdown-friendly text.
 type markdownStrategy struct{}
