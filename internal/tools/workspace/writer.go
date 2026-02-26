@@ -168,5 +168,4 @@ func (w *fileWriter) undoFileChange(ctx context.Context, args map[string]interfa
 
 type writerSecurity interface {
 	domain_security.PathValidator
-	domain_security.ActionConfirmer
 }

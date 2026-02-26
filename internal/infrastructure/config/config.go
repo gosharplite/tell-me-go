@@ -12,16 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Re-export constants for compatibility
-const (
-	DefaultMaxToolTurns     = domain_config.DefaultMaxToolTurns
-	DefaultMaxHistoryTurns  = domain_config.DefaultMaxHistoryTurns
-	DefaultMaxHistoryTokens = domain_config.DefaultMaxHistoryTokens
-	DefaultTieredThreshold  = domain_config.DefaultTieredThreshold
-	WarningRatio            = domain_config.WarningRatio
-	SystemContextBuffer     = domain_config.SystemContextBuffer
-)
-
 // YAMLConfigLoader implements domain_config.ConfigLoader.
 type YAMLConfigLoader struct{}
 

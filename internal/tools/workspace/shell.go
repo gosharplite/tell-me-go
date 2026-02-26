@@ -215,6 +215,5 @@ func (t *shellTool) deniedResult(label string) tools.ToolResult {
 type shellSecurity interface {
 	domain_security.TerminalController
 	domain_security.Auditor
-	domain_security.PolicyEvaluator
 	domain_security.PathValidator
 }

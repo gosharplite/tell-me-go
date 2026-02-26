@@ -4,11 +4,13 @@
 package analysis
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -329,12 +331,16 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 		if total == 0 {
 			complexity := a.calculateSymbolComplexity(meta.obj, state.pkgs)
 			impact := a.calculateImpactScore(meta.obj, state.pkgs)
+			reason := "No references found within the module (including interfaces/tests)."
+			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
+				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
+			}
 			findings = append(findings, orphanReport{
 				Symbol:     meta.name,
 				Pkg:        meta.pkgPath,
 				Type:       meta.symType,
 				Severity:   "DEAD",
-				Reason:     "No references found within the module (including interfaces/tests).",
+				Reason:     reason,
 				Complexity: complexity,
 				Impact:     impact,
 			})
@@ -344,6 +350,9 @@ func (a *deadCodeAnalyzer) buildReport(ctx context.Context, state *scanState) []
 			reason := "Exported symbol is only used within its own package."
 			if complexity >= 10 {
 				reason = "High Priority Refactoring Candidate: can be refactored with zero external impact."
+			}
+			if a.hasTextMatchOutsidePackage(state, meta.name, meta.pkgPath) {
+				reason = reason + " [WARNING: Text search found potential cross-package usage. Verify this is not a false positive due to structural typing.]"
 			}
 			findings = append(findings, orphanReport{
 				Symbol:     meta.name,
@@ -529,6 +538,26 @@ func (a *deadCodeAnalyzer) propagateInterfaceUsages(ctx context.Context, state *
 			}
 		}
 	}
+}
+
+func (a *deadCodeAnalyzer) hasTextMatchOutsidePackage(state *scanState, symbolName string, declaringPkgPath string) bool {
+	symbolBytes := []byte(symbolName)
+	declaringBase := getBasePkgPath(declaringPkgPath)
+
+	for _, pkg := range state.pkgs {
+		pkgBase := getBasePkgPath(pkg.PkgPath)
+		if pkgBase == declaringBase {
+			continue // Skip the package that actually owns the symbol
+		}
+
+		for _, file := range pkg.GoFiles {
+			content, err := os.ReadFile(file)
+			if err == nil && bytes.Contains(content, symbolBytes) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *deadCodeAnalyzer) calculateSymbolComplexity(obj types.Object, pkgs []*packages.Package) int {

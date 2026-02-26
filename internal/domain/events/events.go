@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -30,8 +31,8 @@ type EventBus interface {
 	Flush(ctx context.Context) error
 }
 
-// DefaultMaxQueueSize is the default capacity for the event ring buffer.
-const DefaultMaxQueueSize = 1000
+// defaultMaxQueueSize is the default capacity for the event ring buffer.
+const defaultMaxQueueSize = 1000
 
 // SimpleEventBus is an asynchronous implementation of EventBus that uses a buffered channel.
 type SimpleEventBus struct {
@@ -43,6 +44,12 @@ type SimpleEventBus struct {
 	capacity        int
 	closing         chan struct{}
 	activeProducers sync.WaitGroup // Tracks lockless senders like Flush
+	droppedEvents   uint64         // Tracks events dropped at the channel level
+}
+
+// DroppedEvents returns the number of events dropped due to buffer capacity.
+func (b *SimpleEventBus) DroppedEvents() uint64 {
+	return atomic.LoadUint64(&b.droppedEvents)
 }
 
 type flushEvent struct {
@@ -51,13 +58,13 @@ type flushEvent struct {
 
 // NewSimpleEventBus creates and initializes a new SimpleEventBus with the default capacity.
 func NewSimpleEventBus() *SimpleEventBus {
-	return NewSimpleEventBusWithCapacity(DefaultMaxQueueSize)
+	return NewSimpleEventBusWithCapacity(defaultMaxQueueSize)
 }
 
 // NewSimpleEventBusWithCapacity creates a new SimpleEventBus with a custom ring buffer capacity.
 func NewSimpleEventBusWithCapacity(capacity int) *SimpleEventBus {
 	if capacity <= 0 {
-		capacity = DefaultMaxQueueSize
+		capacity = defaultMaxQueueSize
 	}
 	return &SimpleEventBus{
 		capacity: capacity,
@@ -77,7 +84,8 @@ func (b *SimpleEventBus) Publish(e Event) {
 		select {
 		case ch <- e:
 		default:
-			// Buffer full, drop event to avoid deadlocking the RLock
+			// Buffer full, drop newest event and record metric
+			atomic.AddUint64(&b.droppedEvents, 1)
 		}
 	}
 }
@@ -90,7 +98,12 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 		return
 	}
 
-	in := make(chan Event, 100) // Small initial buffer
+	cap := b.capacity
+	if cap <= 0 {
+		cap = defaultMaxQueueSize
+	}
+
+	in := make(chan Event, cap)
 	out := make(chan Event)
 	b.subscribers = append(b.subscribers, in)
 
@@ -120,7 +133,7 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
 	cap := b.capacity
 	if cap <= 0 {
-		cap = DefaultMaxQueueSize
+		cap = defaultMaxQueueSize
 	}
 	buffer := &eventRingBuffer{max: cap}
 
@@ -260,37 +273,53 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	copy(subs, b.subscribers)
 	b.mu.RUnlock() // Release lock BEFORE the blocking loop
 
-	dones := make([]chan error, 0, len(subs))
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(subs))
 
-	// 2. Safely send flush events to the copied channels
 	for _, ch := range subs {
-		done := make(chan error, 1)
+		wg.Add(1)
+		go func(subCh chan Event) {
+			defer wg.Done()
+			if err := b.flushSubscriber(ctx, subCh); err != nil {
+				errCh <- err
+			}
+		}(ch)
+	}
 
-		select {
-		case ch <- flushEvent{done: done}:
-			dones = append(dones, done)
-		case <-b.closing:
-			return ErrBusClosed
-		case <-ctx.Done():
-			return ctx.Err()
+	// Launch a background goroutine to wait and close the error channel
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+
+	// Finally, in the main Flush thread, wait for all results
+	var errs []error
+	for err := range errCh {
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	// 3. Wait for all successfully queued flush events to be processed
-	for _, done := range dones {
+	return errors.Join(errs...)
+}
+
+func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) error {
+	done := make(chan error, 1)
+	select {
+	case subCh <- flushEvent{done: done}:
 		select {
 		case err := <-done:
-			if err != nil {
-				return err
-			}
+			return err
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-b.closing:
 			return ErrBusClosed
 		}
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.closing:
+		return ErrBusClosed
 	}
-
-	return nil
 }
 
 // StatusUpdate signals a change in the agent's internal state or progress.

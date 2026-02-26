@@ -180,13 +180,15 @@ func TestGitTools(t *testing.T) {
 
 func TestGitDestructiveActions(t *testing.T) {
 	tests := []struct {
-		name     string
-		toolName string
-		args     map[string]interface{}
-		approved bool
-		mockOut  string
-		expected string
-		wantErr  bool
+		name        string
+		toolName    string
+		args        map[string]interface{}
+		approved    bool
+		mockOut     string
+		mockErr     error
+		expected    string
+		expectedErr string
+		wantErr     bool
 	}{
 		{
 			name:     "git_commit approved",
@@ -195,6 +197,17 @@ func TestGitDestructiveActions(t *testing.T) {
 			approved: true,
 			mockOut:  "[main abc] feat: test",
 			expected: "[main abc] feat: test",
+		},
+		{
+			name:        "git_commit nothing to commit",
+			toolName:    "git_commit",
+			args:        map[string]interface{}{"message": "feat: test"},
+			approved:    true,
+			mockOut:     "On branch main\nnothing to commit, working tree clean",
+			mockErr:     fmt.Errorf("exit status 1"),
+			expected:    "On branch main\nnothing to commit, working tree clean",
+			expectedErr: "no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing",
+			wantErr:     true,
 		},
 		{
 			name:     "git_create_branch approved",
@@ -242,7 +255,7 @@ func TestGitDestructiveActions(t *testing.T) {
 
 			executor := &mockGitExecutor{
 				handler: func(ctx context.Context, name string, args ...string) ([]byte, error) {
-					return []byte(tt.mockOut), nil
+					return []byte(tt.mockOut), tt.mockErr
 				},
 			}
 
@@ -253,6 +266,11 @@ func TestGitDestructiveActions(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if tt.expectedErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectedErr) {
+					t.Errorf("Execute() error = %v, want error containing %q", err, tt.expectedErr)
+				}
 			}
 			if res.Text != tt.expected {
 				t.Errorf("Execute() got = %v, want %v", res.Text, tt.expected)

@@ -117,7 +117,15 @@ func (m *gitManager) gitCommit(ctx context.Context, args map[string]interface{})
 	}
 
 	res, err := m.runGitCommand(ctx, "commit", "-m", message)
-	return tools.ToolResult{Text: res}, err
+	if err != nil {
+		// If git failed and the output indicates no staged changes, return an actionable error
+		if strings.Contains(res, "nothing to commit") || strings.Contains(res, "no changes added to commit") {
+			return tools.ToolResult{Text: res}, fmt.Errorf("no staged changes. You must stage files first (e.g., using execute_command with 'git add .') before committing")
+		}
+		// Otherwise, return the generic error with the raw output
+		return tools.ToolResult{Text: res}, err
+	}
+	return tools.ToolResult{Text: res}, nil
 }
 
 func (m *gitManager) gitCreateBranch(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
@@ -148,5 +156,4 @@ func (m *gitManager) runGitCommand(ctx context.Context, args ...string) (string,
 
 type gitSecurity interface {
 	domain_security.PathValidator
-	domain_security.ActionConfirmer
 }

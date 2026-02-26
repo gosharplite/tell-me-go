@@ -5,12 +5,28 @@ package analysis
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
+
+type mockDeadCodeAnalyzer struct {
+	reports []orphanReport
+	err     error
+}
+
+func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+	return m.reports, m.err
+}
+
+func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
 
 type mockHealthExecutor struct{}
 
@@ -52,8 +68,8 @@ func TestHealthManager_GetCodeHealth(t *testing.T) {
 	if !strings.Contains(res.Text, "| Metric | Status | Details |") {
 		t.Errorf("expected table header, got %q", res.Text)
 	}
-	if strings.Contains(res.Text, "| **Dead Code** |") {
-		t.Errorf("did not expect Dead Code row, got %q", res.Text)
+	if !strings.Contains(res.Text, "| **Dead Code** |") {
+		t.Errorf("expected Dead Code row, got %q", res.Text)
 	}
 	if strings.Contains(res.Text, "| **Security** |") {
 		t.Errorf("did not expect Security row, got %q", res.Text)
@@ -95,6 +111,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 		cov  string
 		lint string
 		comp string
+		dead string
 		want []string
 	}{
 		{
@@ -103,6 +120,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Project health is excellent."},
 		},
 		{
@@ -111,6 +129,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Fix failing tests immediately."},
 		},
 		{
@@ -119,6 +138,7 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "70.0%",
 			lint: "CLEAN",
 			comp: "GOOD",
+			dead: "CLEAN",
 			want: []string{"Coverage (70.0%) is below the 80% target."},
 		},
 		{
@@ -127,7 +147,17 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 			cov:  "85.0%",
 			lint: "5 Issues",
 			comp: "3 Alerts",
+			dead: "CLEAN",
 			want: []string{"Refactor high-complexity functions.", "Address linting issues."},
+		},
+		{
+			name: "dead code issues",
+			test: "PASS",
+			cov:  "85.0%",
+			lint: "CLEAN",
+			comp: "GOOD",
+			dead: "2 Issues",
+			want: []string{"Remove dead or effectively private code to improve encapsulation."},
 		},
 	}
 
@@ -135,12 +165,115 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp)
+			got := hea.generateRecommendation(tt.test, tt.cov, tt.lint, tt.comp, tt.dead)
 			for _, w := range tt.want {
 				if !strings.Contains(got, w) {
 					t.Errorf("generateRecommendation() = %q, want it to contain %q", got, w)
 				}
 			}
 		})
+	}
+}
+
+func TestHealthManager_CheckDeadCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		mockReports []orphanReport
+		mockErr     error
+		wantStatus  string
+		wantDetails string
+	}{
+		{
+			name:        "error path",
+			mockErr:     fmt.Errorf("analyzer failure"),
+			wantStatus:  "ERROR",
+			wantDetails: "analyzer failure",
+		},
+		{
+			name:        "clean path",
+			mockReports: nil,
+			wantStatus:  "CLEAN",
+			wantDetails: "No orphaned symbols found",
+		},
+		{
+			name: "mixed issues",
+			mockReports: []orphanReport{
+				{Severity: "DEAD"},
+				{Severity: "PRIVATE"},
+				{Severity: "PRIVATE"},
+			},
+			wantStatus:  "3 Issues",
+			wantDetails: "1 DEAD, 2 PRIVATE",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// Setup mock
+			mockAna := &mockDeadCodeAnalyzer{reports: tt.mockReports, err: tt.mockErr}
+
+			// Inject into a dummy healthManager
+			hea := &healthManager{
+				Ana: &analysisManager{DeadCode: mockAna},
+			}
+
+			status, details := hea.checkDeadCode(context.Background())
+			if status != tt.wantStatus {
+				t.Errorf("got status %q, want %q", status, tt.wantStatus)
+			}
+			if details != tt.wantDetails {
+				t.Errorf("got details %q, want %q", details, tt.wantDetails)
+			}
+		})
+	}
+}
+
+type coverageMockExecutor struct {
+	t *testing.T
+}
+
+func (m *coverageMockExecutor) Output(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "go" && len(args) > 1 && args[0] == "list" && args[1] == "-m" {
+		return []byte("github.com/gosharplite/tell-me-go"), nil
+	}
+	return []byte(""), nil
+}
+
+func (m *coverageMockExecutor) CombinedOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "go" && len(args) > 0 && args[0] == "test" {
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "-coverprofile=") {
+				path := strings.TrimPrefix(arg, "-coverprofile=")
+				content := "mode: set\ngithub.com/gosharplite/tell-me-go/internal/domain/events/events.go:1.1,2.1 1 0\n"
+				if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+					m.t.Errorf("failed to write mock coverage file: %v", err)
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+	return []byte(""), nil
+}
+
+func TestHealthManager_GetDetailedCoverage(t *testing.T) {
+	mockExec := &coverageMockExecutor{t: t}
+	hea := &healthManager{Exec: mockExec}
+
+	ctx := context.Background()
+	args := map[string]interface{}{"path": "./internal/domain/events/..."}
+	res, err := hea.getDetailedCoverage(ctx, args)
+	if err != nil {
+		t.Fatalf("getDetailedCoverage failed: %v", err)
+	}
+
+	if !strings.Contains(res.Text, "Detailed Coverage Report") {
+		t.Errorf("expected report title, got %q", res.Text)
+	}
+	if !strings.Contains(res.Text, "events.go") {
+		t.Errorf("expected file name in report, got %q", res.Text)
 	}
 }
