@@ -122,7 +122,12 @@ func withLoopDetector() turnMiddleware {
 
 				for _, prevHash := range turn.State.RecentResponseHashes {
 					if currentHash == prevHash {
-						return processResult{Stop: true}, newAgentError(errLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil)
+						snippet := string(rawJSON)
+						if len(snippet) > 150 {
+							snippet = snippet[:147] + "..."
+						}
+						errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
+						return processResult{Stop: true}, newAgentError(errLogic, errMsg, nil)
 					}
 				}
 				// Keep last N hashes (using the same repetition limit)
