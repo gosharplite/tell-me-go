@@ -1411,3 +1411,17 @@ func TestTransientMerger_Transform(t *testing.T) {
 		t.Errorf("expected transient part, got %s", req.History[0].Parts[1].Text)
 	}
 }
+
+func TestCleanContent_NilSafety(t *testing.T) {
+	// This should not panic after the fix
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("cleanContent(nil) panicked: %v", r)
+		}
+	}()
+
+	result := cleanContent(nil)
+	if result != false {
+		t.Errorf("expected false for nil content, got %v", result)
+	}
+}

@@ -192,7 +192,12 @@ func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextReq
 }
 
 func cleanContent(content *llm.Content) bool {
-	// 1. O(N) check to see if an allocation/rebuild is actually needed
+	// 1. Add defensive nil-check to prevent panics
+	if content == nil {
+		return false
+	}
+
+	// 2. O(N) check to see if an allocation/rebuild is actually needed
 	hasEmpty := false
 	for _, p := range content.Parts {
 		if p.IsEmpty() {
