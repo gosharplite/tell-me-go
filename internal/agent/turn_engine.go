@@ -76,7 +76,7 @@ func (p *defaultRetryPolicy) ShouldRetry(c clock, err error, attempt int) (time.
 	if isFatal(err) {
 		return 0, false
 	}
-	if isTransient(err) || errors.Is(err, llm.ErrRateLimit) {
+	if isTransient(err) {
 		base := p.Backoff
 
 		// Specific handling for Rate Limits

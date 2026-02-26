@@ -53,7 +53,7 @@ func Classify(err error) error {
 }
 
 func classifyDomain(err error) (error, bool) {
-	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) {
+	if errors.Is(err, llm.ErrAuth) || errors.Is(err, llm.ErrTransient) || errors.Is(err, llm.ErrTerminal) || errors.Is(err, llm.ErrRateLimit) {
 		return err, true
 	}
 	return nil, false
