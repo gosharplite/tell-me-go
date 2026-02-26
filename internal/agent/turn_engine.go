@@ -72,21 +72,23 @@ func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) 
 
 		const maxDelay = 2 * time.Minute // Enforce an architectural ceiling
 
-		// 1. Prevent bitshift overflow (30 shifts is > 1 billion multiplier)
-		safeAttempt := attempt
-		if safeAttempt > 30 {
-			safeAttempt = 30
-		}
+		delay := base
 
-		// 2. Calculate delay safely using bitwise shift for performance
-		delay := base * time.Duration(1<<safeAttempt)
-
-		// 3. Cap at maximum allowed delay
-		if delay > maxDelay {
+		// 1. Initial cap in case base > maxDelay
+		if delay >= maxDelay {
 			delay = maxDelay
+		} else {
+			// 2. Safely double the delay, breaking early to prevent int64 overflow
+			for i := 0; i < attempt; i++ {
+				delay *= 2
+				if delay >= maxDelay {
+					delay = maxDelay
+					break
+				}
+			}
 		}
 
-		// 4. Apply Jitter
+		// 3. Apply Jitter
 		finalDelay := time.Duration(c.Jitter(float64(delay)))
 
 		return finalDelay, true
