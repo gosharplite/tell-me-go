@@ -85,7 +85,7 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, hManager ports.Histo
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus,
+	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus, strategy,
 		withConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)

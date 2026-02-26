@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/gosharplite/tell-me-go/internal/agent/orchestration"
 	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
@@ -140,11 +142,9 @@ func TestWithMetrics(t *testing.T) {
 	}
 }
 
-func TestWithLoopDetector_Rotation(t *testing.T) {
+func setupLoopDetectorTest() (turnMiddleware, *mockProcessor, *turn) {
 	mw := withLoopDetector()
 	next := &mockProcessor{res: processResult{NextPhase: phaseComplete}}
-	maxRep := domain_config.DefaultMaxLoopRepetitions
-
 	state := &turnState{
 		Phase:                phaseInference,
 		RecentResponseHashes: make([]string, 0),
@@ -152,57 +152,40 @@ func TestWithLoopDetector_Rotation(t *testing.T) {
 			Parts: []*llm.Part{{Text: "initial"}},
 		},
 	}
-	turn := &turn{
-		State: state,
-		Clock: clock.RealClock{},
+	return mw, next, &turn{State: state, Clock: clock.RealClock{}}
+}
+
+func fillBuffer(t *testing.T, mw turnMiddleware, next *mockProcessor, turn *turn, count int) {
+	for i := 0; i < count; i++ {
+		turn.State.Response.Parts[0].Text = "response " + string(rune(i))
+		_, err := mw(next).process(context.Background(), turn)
+		assert.NoError(t, err)
 	}
+}
 
-	var oldestHash string
-
+func TestWithLoopDetector_Rotation(t *testing.T) {
 	t.Run("Fill Buffer", func(t *testing.T) {
-		for i := 0; i < maxRep; i++ {
-			state.Response.Parts[0].Text = "response " + string(rune(i))
-			_, err := mw(next).process(context.Background(), turn)
-			if err != nil {
-				t.Fatalf("Unexpected error filling buffer at %d: %v", i, err)
-			}
-		}
-
-		if len(state.RecentResponseHashes) != maxRep {
-			t.Errorf("Expected buffer size %d, got %d", maxRep, len(state.RecentResponseHashes))
-		}
-		oldestHash = state.RecentResponseHashes[0]
+		mw, next, turn := setupLoopDetectorTest()
+		fillBuffer(t, mw, next, turn, domain_config.DefaultMaxLoopRepetitions)
+		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)
 	})
 
 	t.Run("Trigger Rotation", func(t *testing.T) {
-		state.Response.Parts[0].Text = "one more unique response"
+		mw, next, turn := setupLoopDetectorTest()
+		fillBuffer(t, mw, next, turn, domain_config.DefaultMaxLoopRepetitions)
+		oldestHash := turn.State.RecentResponseHashes[0]
+
+		turn.State.Response.Parts[0].Text = "unique"
 		_, err := mw(next).process(context.Background(), turn)
-		if err != nil {
-			t.Fatalf("Unexpected error triggering rotation: %v", err)
-		}
+		assert.NoError(t, err)
 
-		if len(state.RecentResponseHashes) != maxRep {
-			t.Errorf("Expected buffer size to stay %d after rotation, got %d", maxRep, len(state.RecentResponseHashes))
-		}
-
-		for _, h := range state.RecentResponseHashes {
-			if h == oldestHash {
-				t.Errorf("Oldest hash was not dropped during rotation")
-			}
-		}
+		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)
+		assert.NotContains(t, turn.State.RecentResponseHashes, oldestHash)
 	})
 
 	t.Run("High Volume", func(t *testing.T) {
-		for i := 0; i < 100; i++ {
-			state.Response.Parts[0].Text = "extra " + string(rune(i))
-			_, err := mw(next).process(context.Background(), turn)
-			if err != nil {
-				t.Fatalf("Unexpected error during high volume rotation at %d: %v", i, err)
-			}
-		}
-
-		if len(state.RecentResponseHashes) != maxRep {
-			t.Errorf("Expected buffer size to remain %d, got %d", maxRep, len(state.RecentResponseHashes))
-		}
+		mw, next, turn := setupLoopDetectorTest()
+		fillBuffer(t, mw, next, turn, 100)
+		assert.Len(t, turn.State.RecentResponseHashes, domain_config.DefaultMaxLoopRepetitions)
 	})
 }

@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -26,7 +27,7 @@ import (
 func TestAgent_Concurrency_ConfigRace(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
-	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json", tmpDir+"/history.archive.jsonl")
+	hManager := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	reg := registry.New()
 	sm := security.NewSecurityManager(nil)
 
@@ -175,7 +176,7 @@ func TestToolExecutor_ConcurrentExecutionAndConfig(t *testing.T) {
 
 func TestContextManager_Race(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := history.NewManager(infrapersistence.NewOSFileSystem(), tmpDir+"/history.json", tmpDir+"/history.archive.jsonl")
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 	bus := &events.SimpleEventBus{}
 	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(nil), bus)
 	factory := &orchestration.PipelineFactory{
@@ -269,7 +270,7 @@ func TestTurnEngine_Concurrency_TaskCost(t *testing.T) {
 
 	tracker := &mockEngineCostTracker{} // Returns 0.05 per call
 
-	e := newTurnEngine(gw, executor, cm, reg, bus, withCostTracker(tracker))
+	e := newTurnEngine(gw, executor, cm, reg, bus, strategy, withCostTracker(tracker))
 	strategy.SetLimits(10000, 10, 10)
 
 	var wg sync.WaitGroup

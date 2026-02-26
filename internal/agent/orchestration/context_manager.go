@@ -16,7 +16,7 @@ import (
 
 // ContextManager handles the preparation of context for the LLM.
 type ContextManager struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	version int
 
 	cachedVersion  int
@@ -112,23 +112,23 @@ func (cm *ContextManager) updateCache(snapshotVersion int, req *request) error {
 
 // Prepare prepares the history for the given turn, applying pruning and summarization.
 func (cm *ContextManager) Prepare(ctx context.Context, turn int) ([]*llm.Content, *Metadata, error) {
-	cm.mu.Lock()
+	cm.mu.RLock()
 	snapshotVersion := cm.version
 
 	// 1. CACHE HIT: Return cached Read-Model if version hasn't changed
 	if history, meta, ok := cm.getCachedView(snapshotVersion); ok {
-		cm.mu.Unlock()
+		cm.mu.RUnlock()
 		return history, meta, nil
 	}
 
 	// 2. CACHE MISS: Load raw history
 	history, err := cm.History.GetWindow(ctx, 0, -1)
 	if err != nil {
-		cm.mu.Unlock()
+		cm.mu.RUnlock()
 		return nil, nil, err
 	}
 	pipeline := cm.Pipeline
-	cm.mu.Unlock()
+	cm.mu.RUnlock()
 
 	// Initialize request with snapshot of history
 	req := &request{
@@ -213,8 +213,8 @@ func (cm *ContextManager) SetPipeline(p *ContextPipeline) {
 }
 
 func (cm *ContextManager) GetLimits() events.Limits {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
 
 	tokens, turns, histTurns := cm.Strategy.getLimits()
 	return events.Limits{
