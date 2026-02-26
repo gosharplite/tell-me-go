@@ -118,7 +118,11 @@ func (b *SimpleEventBus) Subscribe(sub func(Event)) {
 }
 
 func (b *SimpleEventBus) pumpEvents(in chan Event, out chan<- Event) {
-	buffer := &eventRingBuffer{max: b.capacity}
+	cap := b.capacity
+	if cap <= 0 {
+		cap = defaultMaxQueueSize
+	}
+	buffer := &eventRingBuffer{max: cap}
 
 	for {
 		if buffer.len() > 0 {

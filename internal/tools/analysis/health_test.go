@@ -5,12 +5,27 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
+
+type mockDeadCodeAnalyzer struct {
+	reports []orphanReport
+	err     error
+}
+
+func (m *mockDeadCodeAnalyzer) GatherOrphanReports(ctx context.Context, path string) ([]orphanReport, error) {
+	return m.reports, m.err
+}
+
+func (m *mockDeadCodeAnalyzer) FindOrphanedSymbols(ctx context.Context, args map[string]interface{}) (tools.ToolResult, error) {
+	return tools.ToolResult{}, nil
+}
 
 type mockHealthExecutor struct{}
 
@@ -154,6 +169,63 @@ func TestHealthManager_GenerateRecommendation(t *testing.T) {
 				if !strings.Contains(got, w) {
 					t.Errorf("generateRecommendation() = %q, want it to contain %q", got, w)
 				}
+			}
+		})
+	}
+}
+
+func TestHealthManager_CheckDeadCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		mockReports []orphanReport
+		mockErr     error
+		wantStatus  string
+		wantDetails string
+	}{
+		{
+			name:        "error path",
+			mockErr:     fmt.Errorf("analyzer failure"),
+			wantStatus:  "ERROR",
+			wantDetails: "analyzer failure",
+		},
+		{
+			name:        "clean path",
+			mockReports: nil,
+			wantStatus:  "CLEAN",
+			wantDetails: "No orphaned symbols found",
+		},
+		{
+			name: "mixed issues",
+			mockReports: []orphanReport{
+				{Severity: "DEAD"},
+				{Severity: "PRIVATE"},
+				{Severity: "PRIVATE"},
+			},
+			wantStatus:  "3 Issues",
+			wantDetails: "1 DEAD, 2 PRIVATE",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// Setup mock
+			mockAna := &mockDeadCodeAnalyzer{reports: tt.mockReports, err: tt.mockErr}
+
+			// Inject into a dummy healthManager
+			hea := &healthManager{
+				Ana: &analysisManager{DeadCode: mockAna},
+			}
+
+			status, details := hea.checkDeadCode(context.Background())
+			if status != tt.wantStatus {
+				t.Errorf("got status %q, want %q", status, tt.wantStatus)
+			}
+			if details != tt.wantDetails {
+				t.Errorf("got details %q, want %q", details, tt.wantDetails)
 			}
 		})
 	}
