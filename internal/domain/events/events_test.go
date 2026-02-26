@@ -354,13 +354,13 @@ func TestSimpleEventBus_Flush_EvictedFlushEvent(t *testing.T) {
 
 	// Instead of Sleep, we use a loop with a small delay to ensure pumpEvents
 	// has a chance to read the flushEvent from the 'in' channel.
-	// We can't be 100% deterministic here without internal hooks, but this is 
+	// We can't be 100% deterministic here without internal hooks, but this is
 	// more robust than a single sleep.
 	for i := 0; i < 10; i++ {
 		time.Sleep(2 * time.Millisecond)
 		// 4. Publish one more event to force the ring buffer to overflow and evict the flushEvent.
 		bus.Publish("force-eviction")
-		
+
 		select {
 		case err := <-flushErr:
 			if !errors.Is(err, events.ErrBufferOverflow) {
@@ -464,7 +464,7 @@ func TestSimpleEventBus_Flush_WaitsForAllToFinish(t *testing.T) {
 
 func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
 	bus := events.NewSimpleEventBusWithCapacity(1)
-	
+
 	// Create a subscriber that blocks.
 	block := make(chan struct{})
 	bus.Subscribe(func(e events.Event) {
@@ -473,7 +473,7 @@ func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
 
 	// 1. Publish first event to occupy the subscriber.
 	bus.Publish("first")
-	
+
 	// Wait a bit to ensure subscriber has picked up "first"
 	// and is now blocked on the subscriber callback.
 	time.Sleep(20 * time.Millisecond)
@@ -482,7 +482,7 @@ func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		bus.Publish(fmt.Sprintf("event-%d", i))
 	}
-	
+
 	// Give pumpEvents a moment to pick up as many as possible and then block on 'out'.
 	time.Sleep(20 * time.Millisecond)
 
@@ -492,6 +492,6 @@ func TestSimpleEventBus_DroppedEventsMetric(t *testing.T) {
 	if bus.DroppedEvents() == 0 {
 		t.Errorf("expected dropped events at channel level, got 0")
 	}
-	
+
 	close(block)
 }
