@@ -263,25 +263,8 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 		wg.Add(1)
 		go func(subCh chan Event) {
 			defer wg.Done()
-			done := make(chan error, 1)
-			// 1. Attempt to send the flush event
-			select {
-			case subCh <- flushEvent{done: done}:
-				// 2. Wait for this specific subscriber to process it
-				select {
-				case err := <-done:
-					if err != nil {
-						errCh <- err
-					}
-				case <-ctx.Done():
-					errCh <- ctx.Err()
-				case <-b.closing:
-					errCh <- errBusClosed
-				}
-			case <-ctx.Done():
-				errCh <- ctx.Err()
-			case <-b.closing:
-				errCh <- errBusClosed
+			if err := b.flushSubscriber(ctx, subCh); err != nil {
+				errCh <- err
 			}
 		}(ch)
 	}
@@ -300,6 +283,25 @@ func (b *SimpleEventBus) Flush(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (b *SimpleEventBus) flushSubscriber(ctx context.Context, subCh chan Event) error {
+	done := make(chan error, 1)
+	select {
+	case subCh <- flushEvent{done: done}:
+		select {
+		case err := <-done:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-b.closing:
+			return errBusClosed
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.closing:
+		return errBusClosed
+	}
 }
 
 // StatusUpdate signals a change in the agent's internal state or progress.
