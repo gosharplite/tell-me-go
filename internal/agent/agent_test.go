@@ -34,7 +34,7 @@ func TestAgent_SetLimits(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	a := New(client, bus, h, "test-provider", reg, sm)
 
 	_ = a.SetLimits(context.Background(), 5, 1000, 10)
 	_ = a.events.Flush(context.Background())
@@ -63,7 +63,7 @@ func TestAgent_Chat(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
+	a := New(mockClient, bus, h, "test-provider", reg, sm)
 	sess := services.NewSession("test-chat", h)
 
 	ctx := context.Background()
@@ -94,7 +94,7 @@ func TestAgent_ConfigWatcherIntegration(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, "test-provider", WithLoader(&config.YAMLConfigLoader{}))
+	a := New(client, bus, h, "test-provider", reg, sm, WithLoader(&config.YAMLConfigLoader{}))
 	a.configWatcher.SetPaths(mainConfig, sessionConfig)
 
 	// Refresh should trigger update
@@ -115,7 +115,7 @@ func TestAgent_TieredThreshold(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	a := New(client, bus, h, "test-provider", reg, sm)
 	_ = a.SetTieredThreshold(context.Background(), 100000)
 	_ = a.events.Flush(context.Background())
 
@@ -145,7 +145,7 @@ func TestAgent_ToolFlow_Retry(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
+	a := New(mockClient, bus, h, "test-provider", reg, sm)
 	sess := services.NewSession("test-retry", h)
 
 	ctx := context.Background()
@@ -161,7 +161,9 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
-		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil, "test-provider")
+		tmpDir := t.TempDir()
+		h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+		_ = New(&mockLLMClient{}, bus, h, "test-provider", reg, sm)
 
 		decls := reg.GetDeclarations()
 		for _, d := range decls {
@@ -175,7 +177,9 @@ func TestAgent_InternalTools_Registration(t *testing.T) {
 		reg := registry.New()
 		sm := security_impl.NewSecurityManager(nil)
 		bus := events.NewSimpleEventBus()
-		_ = New(&mockLLMClient{}, nil, reg, sm, bus, nil, "test-provider", WithInternalTools())
+		tmpDir := t.TempDir()
+		h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history2.json"), filepath.Join(tmpDir, "history2.archive.jsonl"))
+		_ = New(&mockLLMClient{}, bus, h, "test-provider", reg, sm, WithInternalTools())
 
 		decls := reg.GetDeclarations()
 		foundSumm := false
@@ -211,7 +215,7 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil, "test-provider")
+	a := New(mockClient, bus, h, "test-provider", reg, sm)
 	sess := services.NewSession("test-exhaustion", h)
 
 	ctx := context.Background()
@@ -228,7 +232,10 @@ func TestAgent_ContextExhaustion_Error(t *testing.T) {
 func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	reg := registry.New()
 	bus := events.NewSimpleEventBus()
-	a := New(&mockLLMClient{}, nil, reg, security_impl.NewSecurityManager(nil), bus, nil, "test-provider")
+	sm := security_impl.NewSecurityManager(nil)
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_pipeline.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	a := New(&mockLLMClient{}, bus, h, "test-provider", reg, sm)
 
 	// Build pipeline
 	a.ctxManager.SetPipeline(a.ctxManager.Factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000}))
@@ -237,8 +244,6 @@ func TestAgent_ToolRegistry_PropagatedToPipeline(t *testing.T) {
 	orchestration.RegisterInternal(reg, a.ctxManager)
 
 	// Verify that at least one transformer has the registry
-	// This is verified via behavior in the Prepare phase or by inspecting the pipeline
-	// but since we just want to ensure it doesn't panic and internal state is updated.
 }
 
 func TestAgent_PinningFlow(t *testing.T) {
@@ -296,7 +301,7 @@ func setupPinningFlowTest(t *testing.T) (*agent, services.HistoryManager, contex
 	}
 
 	bus := events.NewSimpleEventBus()
-	a := New(&mockLLMClient{}, h, reg, sm, bus, nil, "test-provider", WithInternalTools())
+	a := New(&mockLLMClient{}, bus, h, "test-provider", reg, sm, WithInternalTools())
 	return a, h, ctx
 }
 
@@ -320,10 +325,6 @@ func TestAgent_Integration_PinningPruning(t *testing.T) {
 	}
 
 	// 5. Verify results
-	// We expect:
-	// - The most recent 3 turns (indices 7, 8, 9)
-	// - The pinned 2nd turn (index 1)
-	// - The new user prompt from Chat() (index 10)
 	prepared, meta, err := a.ctxManager.Prepare(ctx, 11)
 	if err != nil {
 		t.Fatalf("Prepare failed: %v", err)
@@ -341,7 +342,7 @@ func setupPinningTest(t *testing.T) (*agent, services.HistoryManager, context.Co
 
 	mockClient := &mockLLMClient{}
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, h, reg, sm, bus, nil, "test-provider", WithInternalTools())
+	a := New(mockClient, bus, h, "test-provider", reg, sm, WithInternalTools())
 	return a, a.ctxManager.History, ctx
 }
 
@@ -380,10 +381,10 @@ func TestAgent_Reconfiguration(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 
-	// Test initial injection via option
+	// Test initial injection via positional args
 	tracker1 := &mockCostTracker{}
 	bus := events.NewSimpleEventBus()
-	a := New(client, h, reg, sm, bus, nil, "test-provider",
+	a := New(client, bus, h, "test-provider", reg, sm,
 		WithSessionCostTracker(tracker1),
 	)
 
@@ -415,8 +416,10 @@ func TestAgent_Option_WithPricing(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_pricing.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
-	a := New(client, nil, reg, sm, bus, nil, "test-provider",
+	a := New(client, bus, h, "test-provider", reg, sm,
 		WithPricing("test-model", "chat", overrides),
 	)
 
@@ -438,7 +441,9 @@ func TestAgent_Subscribe(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
-	a := New(client, nil, reg, sm, bus, nil, "test-provider")
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_sub.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	a := New(client, bus, h, "test-provider", reg, sm)
 
 	var eventReceived events.Event
 	var mu sync.Mutex
@@ -474,9 +479,11 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 	reg := registry.New()
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history_cost.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
 
-	// 1. Test passing during New (engine is nil when option is applied)
-	a := New(client, nil, reg, sm, bus, nil, "test-provider",
+	// 1. Test passing during New
+	a := New(client, bus, h, "test-provider", reg, sm,
 		WithSessionCostTracker(tracker),
 	)
 
@@ -484,9 +491,12 @@ func TestAgent_Option_WithSessionCostTracker(t *testing.T) {
 		t.Error("a.tracker does not match passed tracker")
 	}
 
-	// 2. Test applying to existing agent (engine is NOT nil)
+	// 2. Test direct setting (since we removed the ability to use the option at runtime)
 	tracker2 := &mockCostTracker{}
-	WithSessionCostTracker(tracker2)(a)
+	a.tracker = tracker2
+	if a.engine != nil {
+		a.engine.ApplyOptions(withCostTracker(tracker2))
+	}
 
 	if a.tracker != tracker2 {
 		t.Error("a.tracker does not match updated tracker")
@@ -501,7 +511,7 @@ func TestAgent_Chat_ConfigFailure(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	a := New(client, bus, h, "test-provider", reg, sm)
 	sess := services.NewSession("test-config-application", h)
 
 	// Test context cancellation
@@ -523,7 +533,7 @@ func TestAgent_Shutdown(t *testing.T) {
 	bus := events.NewSimpleEventBus()
 
 	// 2. Initialize Agent
-	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	a := New(client, bus, h, "test-provider", reg, sm)
 
 	// 3. Define a timeout context for shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -562,7 +572,7 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	sm := security_impl.NewSecurityManager(nil)
 	bus := events.NewSimpleEventBus()
 
-	a := New(client, h, reg, sm, bus, nil, "test-provider")
+	a := New(client, bus, h, "test-provider", reg, sm)
 	sess := services.NewSession("test-cancel", h)
 
 	err := a.applyConfig(ctx)
@@ -573,5 +583,38 @@ func TestAgent_ContextCancellation(t *testing.T) {
 	err = a.Chat(ctx, sess, "Hello")
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled from Chat, got %v", err)
+	}
+}
+
+func TestAgent_Integration_InternalTools_And_Summarizer(t *testing.T) {
+	client := &mockLLMClient{}
+	tmpDir := t.TempDir()
+	h := history.NewManager(infrapersistence.NewOSFileSystem(), filepath.Join(tmpDir, "history.json"), filepath.Join(tmpDir, "history.archive.jsonl"))
+	reg := registry.New()
+	sm := security_impl.NewSecurityManager(nil)
+	bus := events.NewSimpleEventBus()
+	mockSumm := &mockSummarizer{}
+
+	a := New(client, bus, h, "test-provider", reg, sm,
+		WithInternalTools(),
+		WithSummarizer(mockSumm),
+	)
+
+	// Verify internal tools are registered
+	decls := reg.GetDeclarations()
+	foundSumm := false
+	for _, d := range decls {
+		if d.Name == "summarize_history" {
+			foundSumm = true
+			break
+		}
+	}
+	if !foundSumm {
+		t.Error("summarize_history tool not registered")
+	}
+
+	// Verify summarizer is bound to ContextManager
+	if a.ctxManager.Summarizer != mockSumm {
+		t.Error("summarizer not bound to ContextManager")
 	}
 }

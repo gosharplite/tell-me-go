@@ -131,7 +131,22 @@ func (o *orchestrator) Run(ctx context.Context, sc services.SessionConfig, sd se
 	cfg := sc.GetConfig()
 	paths := sd.GetPaths()
 	activeModel := cfg.GetActiveProvider().Model
-	chatAgent := o.AgentFactory(o.Loader, sd.GetGateway(), sd.GetHistoryManager(), sd.GetRegistry(), o.SM, cfg.DisableStreaming, sd.GetEventBus(), cfg.SelectedProvider, activeModel, cfg.Mode, paths.LogPath, sd.GetPricingOverrides(), sd.GetTracker())
+	params := services.ChatterParams{
+		Loader:           o.Loader,
+		Gateway:          sd.GetGateway(),
+		HistoryManager:   sd.GetHistoryManager(),
+		Registry:         sd.GetRegistry(),
+		SecurityManager:  o.SM,
+		DisableStreaming: cfg.DisableStreaming,
+		EventBus:         sd.GetEventBus(),
+		ProviderName:     cfg.SelectedProvider,
+		Model:            activeModel,
+		Mode:             cfg.Mode,
+		LogPath:          paths.LogPath,
+		PricingOverrides: sd.GetPricingOverrides(),
+		CostTracker:      sd.GetTracker(),
+	}
+	chatAgent := o.AgentFactory(params)
 
 	defer func() {
 		if err := chatAgent.Shutdown(ctx); err != nil {

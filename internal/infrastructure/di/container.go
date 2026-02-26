@@ -19,7 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -118,21 +117,21 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 		}
 	}
 
-	tools.RegisterAll(
-		reg,
-		b.SM,
-		executor,
-		validator,
-		sessionProvider,
-		paths.LogPath,
-		cfg.Model,
-		cfg.Mode,
-		pricingOverrides,
-		client,
-		filepath.Join(b.HomeDir, "assets/generated"),
-		bus,
-		infra_persistence.NewOSFileSystem(),
-	)
+	tools.RegisterAll(tools.ToolRegistrationParams{
+		Registry:         reg,
+		SecurityManager:  b.SM,
+		CommandExecutor:  executor,
+		CommandValidator: validator,
+		SessionProvider:  sessionProvider,
+		LogFile:          paths.LogPath,
+		Model:            cfg.Model,
+		Mode:             cfg.Mode,
+		PricingOverrides: pricingOverrides,
+		Client:           client,
+		AssetsDir:        filepath.Join(b.HomeDir, "assets/generated"),
+		EventBus:         bus,
+		FileSystem:       infra_persistence.NewOSFileSystem(),
+	})
 
 	// Infrastructure-specific tool registration
 	telemetry.RegisterMetrics(reg, b.SM, paths.LogPath, cfg.Model, cfg.Mode, pricingOverrides)
@@ -151,16 +150,17 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
-	return func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, reg domain_tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]pricing.ModelPricing, tracker pricing.ICostTracker) services.Chatter {
-		telemetry.RegisterTraceSubscriber(bus, logPath)
+	return func(params services.ChatterParams) services.Chatter {
+		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
 
-		summarizer := infra_llm.NewSummarizer(client, bus)
+		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
 
-		return agent.New(client, hManager, reg, sm, bus, summarizer, providerName,
-			agent.WithPricing(model, mode, pricingOverrides),
-			agent.WithSessionCostTracker(tracker),
+		return agent.New(params.Gateway, params.EventBus, params.HistoryManager, params.ProviderName, params.Registry, params.SecurityManager,
+			agent.WithSummarizer(summarizer),
+			agent.WithPricing(params.Model, params.Mode, params.PricingOverrides),
+			agent.WithSessionCostTracker(params.CostTracker),
 			agent.WithInternalTools(),
-			agent.WithLoader(loader),
+			agent.WithLoader(params.Loader),
 		)
 	}
 }

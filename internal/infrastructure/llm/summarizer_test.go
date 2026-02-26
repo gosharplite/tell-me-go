@@ -152,3 +152,57 @@ func TestSummarizer_Summarize(t *testing.T) {
 		assert.True(t, errors.Is(err, llm.ErrTransient))
 	})
 }
+
+func TestSummarizer_EdgeCases(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Permanent error", func(t *testing.T) {
+		gw := new(mockGateway)
+		s := NewSummarizer(gw, nil)
+
+		respCh := make(chan *llm.Content)
+		close(respCh)
+
+		permErr := errors.New("permanent failure")
+
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, permErr
+		})
+
+		_, _, err := s.Summarize(ctx, nil, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "summarization failed permanently")
+	})
+
+	t.Run("Nil response content", func(t *testing.T) {
+		gw := new(mockGateway)
+		s := NewSummarizer(gw, nil)
+
+		respCh := make(chan *llm.Content)
+		close(respCh)
+
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
+			return nil, nil, nil
+		})
+
+		_, _, err := s.Summarize(ctx, nil, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "empty content")
+	})
+
+	t.Run("Empty text in response", func(t *testing.T) {
+		gw := new(mockGateway)
+		s := NewSummarizer(gw, nil)
+
+		respCh := make(chan *llm.Content)
+		close(respCh)
+
+		gw.On("Generate", ctx, mock.Anything, mock.Anything, mock.Anything).Return(respCh, func() (*llm.Content, *llm.Metrics, error) {
+			return &llm.Content{Parts: []*llm.Part{{Text: ""}}}, nil, nil
+		})
+
+		_, _, err := s.Summarize(ctx, nil, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "empty content")
+	})
+}

@@ -34,63 +34,37 @@ type agent struct {
 	gateway       domain_llm.LLMGateway
 	engine        *turnEngine
 	ctxManager    *orchestration.ContextManager
-	registry      tools.IToolRegistry
-	sm            domain_security.ISecurityManager
 	configWatcher *orchestration.ConfigWatcher
 	strategy      *orchestration.ContextStrategy
 	executor      *executor.ToolExecutor
 	events        events.EventBus
 	tracker       domain_pricing.ICostTracker
-	summarizer    services.Summarizer
 
-	config           runtimeConfig
-	registerInternal bool
-}
-
-// agentOption defines a functional option for configuring an Agent.
-type agentOption func(*agent)
-
-// WithPricing sets the pricing configuration for cost estimation.
-func WithPricing(model, mode string, overrides map[string]domain_pricing.ModelPricing) agentOption {
-	return func(a *agent) {
-		a.config.Model = model
-		a.config.Mode = mode
-		a.config.PricingOverrides = overrides
-	}
-}
-
-// WithInternalTools enables the registration of internal agent tools (e.g., history management).
-func WithInternalTools() agentOption {
-	return func(a *agent) {
-		a.registerInternal = true
-	}
-}
-
-// WithLoader sets the configuration loader for the agent.
-func WithLoader(loader domain_config.ConfigLoader) agentOption {
-	return func(a *agent) {
-		if a.configWatcher != nil {
-			a.configWatcher.Loader = loader
-		}
-	}
+	config runtimeConfig
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg tools.IToolRegistry, sm domain_security.ISecurityManager, bus events.EventBus, summarizer services.Summarizer, providerName string, options ...agentOption) *agent {
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), bus)
-	exec := executor.NewToolExecutor(reg, sm, bus)
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager services.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...option) *agent {
+	cfg := &agentConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
+	exec := executor.NewToolExecutor(registry, sm, bus)
 
 	a := &agent{
 		gateway:       client,
-		registry:      reg,
-		sm:            sm,
-		configWatcher: orchestration.NewConfigWatcher(nil, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
+		configWatcher: orchestration.NewConfigWatcher(cfg.loader, domain_config.DefaultMaxHistoryTokens, domain_config.DefaultMaxToolTurns, domain_config.DefaultMaxHistoryTurns),
 		strategy:      strategy,
 		executor:      exec,
 		events:        bus,
-		summarizer:    summarizer,
+		tracker:       cfg.tracker,
 		config: runtimeConfig{
-			ProviderName: providerName,
+			ProviderName:     providerName,
+			Model:            cfg.model,
+			Mode:             cfg.mode,
+			PricingOverrides: cfg.pricingOverrides,
 			Limits: events.Limits{
 				MaxHistoryTokens: domain_config.DefaultMaxHistoryTokens,
 				MaxToolTurns:     domain_config.DefaultMaxToolTurns,
@@ -99,15 +73,10 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 		},
 	}
 
-	// Apply options
-	for _, opt := range options {
-		opt(a)
-	}
-
 	factory := &orchestration.PipelineFactory{
-		Registry:   reg,
+		Registry:   registry,
 		History:    hManager,
-		Summarizer: a.summarizer,
+		Summarizer: cfg.summarizer,
 		Estimator:  strategy,
 		Events:     bus,
 	}
@@ -116,13 +85,13 @@ func New(client domain_llm.LLMGateway, hManager services.HistoryManager, reg too
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(client, exec, ctxManager, reg, bus,
-		withConfig(a.sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
+	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus,
+		withConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)
 
-	if a.registerInternal {
-		orchestration.RegisterInternal(reg, ctxManager)
+	if cfg.registerInternal {
+		orchestration.RegisterInternal(registry, ctxManager)
 	}
 
 	if err := a.applyConfig(context.Background()); err != nil {
@@ -200,16 +169,6 @@ func (a *agent) Chat(ctx context.Context, s *services.Session, prompt string) er
 	}
 	a.emit(events.StatusUpdate{Message: "Starting chat...", Level: "info"})
 	return a.engine.Run(ctx, s.StartTime)
-}
-
-// WithSessionCostTracker sets the cost tracker for the agent.
-func WithSessionCostTracker(tracker domain_pricing.ICostTracker) agentOption {
-	return func(a *agent) {
-		a.tracker = tracker
-		if a.engine != nil {
-			a.engine.ApplyOptions(withCostTracker(tracker))
-		}
-	}
 }
 
 // Shutdown gracefully stops the agent and its components.

@@ -14,9 +14,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	domaintools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/di"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/security"
 )
@@ -56,7 +54,7 @@ func TestChatCommand_NewSessionIntegration(t *testing.T) {
 	// Wrap bootstrapper to override AgentFactory
 	container := &wrappedContainer{
 		Container: bootstrapper,
-		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, registry domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+		AgentFactory: func(params services.ChatterParams) services.Chatter {
 			return &integrationMockChatter{}
 		},
 	}

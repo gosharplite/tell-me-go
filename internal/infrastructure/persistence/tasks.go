@@ -73,22 +73,3 @@ func (r *taskRepository) ReadAll(ctx context.Context) ([]services.Task, error) {
 	defer r.mu.RUnlock()
 	return r.readAllInternal(ctx)
 }
-
-func (r *taskRepository) ReadPage(ctx context.Context, limit, offset int) ([]services.Task, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	all, err := r.readAllInternal(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if offset >= len(all) {
-		return nil, nil
-	}
-	end := offset + limit
-	if end > len(all) {
-		end = len(all)
-	}
-	res := make([]services.Task, end-offset)
-	copy(res, all[offset:end])
-	return res, nil
-}

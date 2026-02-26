@@ -6,8 +6,11 @@ package agent
 import (
 	"context"
 
+	domain_config "github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
+	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
@@ -90,4 +93,16 @@ func (m *mockSecurityManager) TerminalLock()                          {}
 func (m *mockSecurityManager) TerminalUnlock()                        {}
 func (m *mockSecurityManager) IsCommandAllowed(command string) bool {
 	return m.AllowAll
+}
+
+type mockSummarizer struct {
+	services.Summarizer
+}
+
+type mockLoader struct {
+	domain_config.ConfigLoader
+}
+
+type mockTracker struct {
+	domain_pricing.ICostTracker
 }

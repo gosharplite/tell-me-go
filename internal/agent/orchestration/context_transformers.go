@@ -181,18 +181,7 @@ type contentCleaner struct{}
 func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextRequest) error {
 	modified := false
 	for _, content := range req.History {
-		var cleanParts []*llm.Part
-		for _, p := range content.Parts {
-			if p.IsEmpty() {
-				continue
-			}
-			cleanParts = append(cleanParts, p)
-		}
-		if len(cleanParts) == 0 {
-			cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
-		}
-		if len(cleanParts) != len(content.Parts) {
-			content.Parts = cleanParts
+		if cleanContent(content) {
 			modified = true
 		}
 	}
@@ -200,6 +189,43 @@ func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextReq
 		req.PersistHistory = true
 	}
 	return nil
+}
+
+func cleanContent(content *llm.Content) bool {
+	// 1. Add defensive nil-check to prevent panics
+	if content == nil {
+		return false
+	}
+
+	// 2. O(N) check to see if an allocation/rebuild is actually needed
+	hasEmpty := false
+	for _, p := range content.Parts {
+		if p.IsEmpty() {
+			hasEmpty = true
+			break
+		}
+	}
+
+	// 2. Happy path: Zero allocations
+	if !hasEmpty && len(content.Parts) > 0 {
+		return false
+	}
+
+	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
+	var cleanParts []*llm.Part
+	for _, p := range content.Parts {
+		if !p.IsEmpty() {
+			cleanParts = append(cleanParts, p)
+		}
+	}
+
+	// 4. Fallback if everything was empty
+	if len(cleanParts) == 0 {
+		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
+	}
+
+	content.Parts = cleanParts
+	return true
 }
 
 func (t *contentCleaner) Priority() int { return 5 }

@@ -89,3 +89,113 @@ func TestAgent_ManageHistory(t *testing.T) {
 		})
 	}
 }
+
+func TestRegisterInternal(t *testing.T) {
+	registry := &mockToolRegistry{}
+	cm := &ContextManager{}
+	RegisterInternal(registry, cm)
+
+	decls := registry.GetDeclarations()
+	if len(decls) != 2 {
+		t.Fatalf("expected 2 tools registered, got %d", len(decls))
+	}
+
+	// Create an expectation map: tool name -> required parameters
+	expectedTools := map[string][]string{
+		"summarize_history": {"turns", "focus"},
+		"manage_history":    {"action", "index"},
+	}
+
+	for _, d := range decls {
+		params, ok := expectedTools[d.Name]
+		if !ok {
+			t.Errorf("Unexpected tool registered: %s", d.Name)
+			continue
+		}
+
+		// Generic structural tests for all valid tools
+		if d.Description == "" {
+			t.Errorf("Tool %s missing description", d.Name)
+		}
+		if d.Parameters == nil || d.Parameters.Type != "OBJECT" {
+			t.Errorf("Tool %s missing or invalid parameters", d.Name)
+			continue
+		}
+
+		// Check for specific parameters
+		for _, p := range params {
+			if _, ok := d.Parameters.Properties[p]; !ok {
+				t.Errorf("Tool %s missing '%s' parameter", d.Name, p)
+			}
+		}
+
+		// Mark as found
+		delete(expectedTools, d.Name)
+	}
+
+	// Assert no missing tools
+	if len(expectedTools) > 0 {
+		t.Errorf("Failed to register expected tools: %v", expectedTools)
+	}
+}
+
+func TestInternalTools_SummarizeHistory(t *testing.T) {
+	mockSumm := &mockSummarizer{
+		summarizeFn: func(ctx context.Context, subset []*llm.Content, focus string) (string, *llm.Metrics, error) {
+			return "summary result", &llm.Metrics{ResponseTokens: 10}, nil
+		},
+	}
+	factory := &PipelineFactory{
+		Summarizer: mockSumm,
+		Estimator:  NewContextStrategy(&mockTokenCounter{}, &mockEventBus{}),
+		Events:     &mockEventBus{},
+	}
+	hManager := &mockHistoryManager{
+		contents: []*llm.Content{
+			{Role: "user", Parts: []*llm.Part{{Text: "U1"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "M1"}}},
+			{Role: "user", Parts: []*llm.Part{{Text: "U2"}}},
+			{Role: "model", Parts: []*llm.Part{{Text: "M2"}}},
+		},
+	}
+	cm := NewContextManager(NewContextStrategy(&mockTokenCounter{}, &mockEventBus{}), hManager, &mockEventBus{}, factory)
+	it := NewInternalTools(cm)
+
+	ctx := context.Background()
+
+	t.Run("valid summarization", func(t *testing.T) {
+		args := map[string]interface{}{
+			"turns": 1.0,
+			"focus": "test focus",
+		}
+		res, err := it.summarizeHistory(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Text != "Summarized the first 1 turns of history." {
+			t.Errorf("expected text 'Summarized the first 1 turns of history.', got '%s'", res.Text)
+		}
+		metrics := res.Metadata["metrics"].(*llm.Metrics)
+		if metrics.ResponseTokens != 10 {
+			t.Errorf("expected 10 response tokens, got %d", metrics.ResponseTokens)
+		}
+	})
+
+	t.Run("invalid turns", func(t *testing.T) {
+		args := map[string]interface{}{
+			"turns": 0.0,
+		}
+		_, err := it.summarizeHistory(ctx, args)
+		if err == nil {
+			t.Fatal("expected error for 0 turns, got nil")
+		}
+	})
+
+	t.Run("missing arguments", func(t *testing.T) {
+		args := map[string]interface{}{}
+		_, err := it.summarizeHistory(ctx, args)
+		if err == nil {
+			t.Fatal("expected error for missing arguments, got nil")
+		}
+	})
+}

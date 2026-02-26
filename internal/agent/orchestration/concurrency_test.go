@@ -17,11 +17,15 @@ import (
 type blockingTransformer struct {
 	priority int
 	block    chan struct{}
+	entered  chan struct{}
 }
 
 func (t *blockingTransformer) Transform(ctx context.Context, req *services.ContextRequest) error {
 	// Signal we want history persisted so ExecuteWithPersistence calls persistFn
 	req.PersistHistory = true
+	if t.entered != nil {
+		close(t.entered)
+	}
 	if t.block != nil {
 		<-t.block
 	}
@@ -50,7 +54,8 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 	history := &mockHistoryManager{}
 
 	blockCh := make(chan struct{})
-	bt := &blockingTransformer{priority: 50, block: blockCh}
+	enteredCh := make(chan struct{})
+	bt := &blockingTransformer{priority: 50, block: blockCh, entered: enteredCh}
 	// Add a transformer with Priority >= 100 to trigger persistence
 	// The pipeline calls persistFn when it transitions from Priority < 100 to Priority >= 100
 	nt := &noopTransformer{priority: 150}
@@ -73,7 +78,7 @@ func TestContextManager_Prepare_ConcurrencyDetection(t *testing.T) {
 
 	// Give the goroutine a moment to start and hit the block
 	// We want to ensure it's inside ExecuteWithPersistence, specifically blocked in bt.Transform
-	time.Sleep(100 * time.Millisecond)
+	<-enteredCh
 
 	// 3. Call cm.AddContent(...) to bump version
 	// This will increment cm.version

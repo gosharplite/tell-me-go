@@ -41,8 +41,14 @@ This document outlines the strategic evolution of `tell-me-go`. Our primary goal
 - [x] Gemini Integration: Robust native implementation (`internal/infrastructure/llm/gemini`).
 - [x] History Log Compaction (ADR-001): Implemented `jsonlStore` patches and persistent archiving to solve memory/OOM bloat on long-running sessions.
 
-## Phase 5: Advanced Capability (Planned)
+## Phase 5: Advanced Capability (Completed)
 - [x] Silent Observability: Implement conditional OpenTelemetry exporter integration in `main.go` using `TELL_ME_TRACE_ENDPOINT`.
+
+## Phase 6: Domain Decomposition & Scalability (New)
+- **Goal:** Address Single Responsibility Principle (SRP) violations and decompose God Objects.
+- **Task:** Investigate the `Chatter` domain service. It currently accepts a massive `ChatterParams` struct with 13 dependencies. 
+- **Task:** Evaluate splitting `Chatter` into distinct pipeline stages (e.g., `ContextBuilder`, `ExecutionEngine`, `ResponseProcessor`) or applying the Facade Pattern.
+- **Task:** Continuous dependency injection audit to ensure the composition root (`container.go`) remains clean.
 
 ---
 *Note: This roadmap is subject to change based on the evolution of LLM APIs and project requirements.*

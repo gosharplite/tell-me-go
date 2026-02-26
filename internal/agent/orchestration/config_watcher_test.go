@@ -41,9 +41,13 @@ func TestConfigWatcher_Refresh(t *testing.T) {
 	}
 
 	// 3. Update session config (ensure mtime change is detected)
-	time.Sleep(10 * time.Millisecond)
 	if err := os.WriteFile(sessionPath, []byte(`{"MAX_HISTORY_TOKENS": "300"}`), 0644); err != nil {
 		t.Fatal(err)
+	}
+	// Explicitly shift the modification time to the future to ensure detection
+	futureTime := time.Now().Add(5 * time.Second)
+	if err := os.Chtimes(sessionPath, futureTime, futureTime); err != nil {
+		t.Fatalf("failed to change file times: %v", err)
 	}
 
 	cw.Refresh("default")

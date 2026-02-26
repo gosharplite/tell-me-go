@@ -763,3 +763,120 @@ func TestFormatFinishError(t *testing.T) {
 		}
 	})
 }
+
+func TestGemini_InternalErrors(t *testing.T) {
+	t.Run("Authenticator Error in NewClient", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		_, err := NewClient("http://localhost", "gemini-1.5-flash", errAuth, 0, "", 0, "", false, nil, 0)
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+
+	t.Run("Authenticator Error in prepareAuthHeader", func(t *testing.T) {
+		errAuth := &auth.ServiceAccountAuth{KeyFilePath: "non-existent"}
+		c := &Client{authenticator: errAuth}
+		_, err := c.prepareAuthHeader(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "failed to read service account key") {
+			t.Errorf("expected auth error, got %v", err)
+		}
+	})
+}
+
+func TestGemini_EdgeCase_FindInParts(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		key   string
+		want  string
+	}{
+		{"missing key", []string{"a", "b", "c"}, "d", ""},
+		{"key at end", []string{"a", "b", "c"}, "c", ""},
+		{"found", []string{"a", "b", "c"}, "a", "b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := findInParts(tt.parts, tt.key); got != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestGemini_EdgeCase_DetermineBackend_VertexAI(t *testing.T) {
+	c := &Client{}
+	apiURL := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-1.5-flash"
+	backend, project, location, baseURL := c.determineBackend(apiURL)
+	if backend != genai.BackendVertexAI {
+		t.Errorf("expected VertexAI backend, got %v", backend)
+	}
+	if project != "my-project" {
+		t.Errorf("expected project my-project, got %s", project)
+	}
+	if location != "us-central1" {
+		t.Errorf("expected location us-central1, got %s", location)
+	}
+	if !strings.HasPrefix(baseURL, "https://us-central1-aiplatform.googleapis.com/") {
+		t.Errorf("unexpected baseURL %s", baseURL)
+	}
+}
+
+func TestGemini_EdgeCase_DetermineBackend_MockURL(t *testing.T) {
+	t.Setenv("TELL_ME_MOCK_URL", "http://mock")
+	c := &Client{}
+	_, _, _, baseURL := c.determineBackend("http://localhost")
+	if baseURL != "http://mock" {
+		t.Errorf("expected mock baseURL, got %s", baseURL)
+	}
+}
+
+func TestGemini_EdgeCase_ToSDKContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []*llm.Content
+		wantLen  int
+		wantText string
+	}{
+		{
+			name:    "nil input",
+			input:   []*llm.Content{nil},
+			wantLen: 0,
+		},
+		{
+			name:     "empty parts",
+			input:    []*llm.Content{{Role: "user", Parts: []*llm.Part{}}},
+			wantLen:  1,
+			wantText: "[empty]",
+		},
+	}
+
+	c := &Client{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := c.toSDKContent(context.Background(), tt.input, nil)
+			if len(res) != tt.wantLen {
+				t.Errorf("len: got %d, want %d", len(res), tt.wantLen)
+			}
+			if tt.wantText != "" && len(res) > 0 && res[0].Parts[0].Text != tt.wantText {
+				t.Errorf("text: got %s, want %s", res[0].Parts[0].Text, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestStreamChat_InternalError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, "internal server error")
+	}))
+	defer server.Close()
+
+	t.Setenv("TELL_ME_MOCK_URL", server.URL)
+	t.Setenv("GOOGLE_API_KEY", "dummy")
+	client, _ := NewClient("http://localhost/v1", "test-model", &auth.VertexAuth{Token: "test"}, 0, "", 0, "", false, nil, 5*time.Second)
+
+	_, err := client.StreamChat(context.Background(), []*llm.Content{}, nil, nil, func(c *llm.Content) {})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}

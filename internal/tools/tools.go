@@ -19,27 +19,30 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/tools/workspace"
 )
 
+// ToolRegistrationParams encapsulates all dependencies for tool registration.
+type ToolRegistrationParams struct {
+	Registry         tools.IToolRegistry
+	SecurityManager  domain_security.ISecurityManager
+	CommandExecutor  tools.CommandExecutor
+	CommandValidator domain_security.ICommandValidator
+	SessionProvider  services.ISessionProvider
+	LogFile          string
+	Model            string
+	Mode             string
+	PricingOverrides map[string]pricing.ModelPricing
+	Client           llm.LLMClient
+	AssetsDir        string
+	EventBus         events.EventBus
+	FileSystem       persistence.FileSystem
+}
+
 // RegisterAll registers all available tools into the registry.
-func RegisterAll(
-	r tools.IToolRegistry,
-	sm domain_security.ISecurityManager,
-	executor tools.CommandExecutor,
-	validator domain_security.ICommandValidator,
-	state services.ISessionProvider,
-	logFile string,
-	model string,
-	mode string,
-	pricingOverrides map[string]pricing.ModelPricing,
-	client llm.LLMClient,
-	assetsDir string,
-	bus events.EventBus,
-	fs persistence.FileSystem,
-) {
-	workspace.Register(r, sm, executor, validator, fs)
-	if state != nil {
-		workspace.RegisterPersistence(r, state)
+func RegisterAll(params ToolRegistrationParams) {
+	workspace.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem)
+	if params.SessionProvider != nil {
+		workspace.RegisterPersistence(params.Registry, params.SessionProvider)
 	}
-	analysis.Register(r, sm, bus, executor, fs)
-	developer.Register(r, sm, executor, validator, fs)
-	integrations.RegisterAll(r, sm, client, assetsDir)
+	analysis.Register(params.Registry, params.SecurityManager, params.EventBus, params.CommandExecutor, params.FileSystem)
+	developer.Register(params.Registry, params.SecurityManager, params.CommandExecutor, params.CommandValidator, params.FileSystem)
+	integrations.RegisterAll(params.Registry, params.SecurityManager, params.Client, params.AssetsDir)
 }

@@ -23,6 +23,7 @@ func (m *mockToolRegistry) GetDeclarations() []*tools.ToolDeclaration {
 }
 
 func (m *mockToolRegistry) Register(declaration *tools.ToolDeclaration, implementation tools.ToolFunc) {
+	m.declarations = append(m.declarations, declaration)
 }
 
 func (m *mockToolRegistry) RegisterWithOptions(def *tools.ToolDeclaration, handler tools.ToolFunc, opts tools.ToolOptions) {

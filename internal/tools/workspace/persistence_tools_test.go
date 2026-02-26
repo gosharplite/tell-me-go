@@ -70,10 +70,6 @@ func (m *mockListStore) ReadAll(ctx context.Context) ([]services.Task, error) {
 	return m.tasks, nil
 }
 
-func (m *mockListStore) ReadPage(ctx context.Context, limit, offset int) ([]services.Task, error) {
-	return nil, nil
-}
-
 func (m *mockListStore) Append(ctx context.Context, item services.Task) error {
 	if m.err != nil {
 		return m.err

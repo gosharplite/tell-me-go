@@ -330,19 +330,3 @@ func TestTaskService_DeleteTask_Multiple(t *testing.T) {
 		t.Error("task not deleted from repo")
 	}
 }
-
-func (m *mockTaskRepo) ReadPage(ctx context.Context, limit, offset int) ([]Task, error) {
-	if m.readErr != nil {
-		return nil, m.readErr
-	}
-	if offset >= len(m.tasks) {
-		return nil, nil
-	}
-	end := offset + limit
-	if end > len(m.tasks) {
-		end = len(m.tasks)
-	}
-	res := make([]Task, end-offset)
-	copy(res, m.tasks[offset:end])
-	return res, nil
-}
