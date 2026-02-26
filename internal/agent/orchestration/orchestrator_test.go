@@ -401,13 +401,9 @@ func TestUIBridge_RelayStream_ContextCancelledDuringSend(t *testing.T) {
 	stream := make(chan *llm.Content)
 	uiCh := make(chan *llm.Content) // Unbuffered
 
+	// Blocks until the consumer (relayStream) picks it up, guaranteeing state
 	go func() {
 		stream <- &llm.Content{}
-	}()
-
-	// Wait a bit to ensure relayStream is blocked on sending to uiCh
-	go func() {
-		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
 
