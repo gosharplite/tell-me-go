@@ -623,8 +623,8 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		t.Errorf("expected max retries error, got %v", err)
 	}
 
-	if attempts != 4 { // 1st attempt + 3 retries
-		t.Errorf("expected 4 attempts total across all turns, got %d", attempts)
+	if attempts != 5 { // 1st attempt + 4 retries
+		t.Errorf("expected 5 attempts total across all turns, got %d", attempts)
 	}
 }
 
@@ -1125,19 +1125,31 @@ func TestDefaultRetryPolicy_Coverage(t *testing.T) {
 
 	t.Run("Transient error", func(t *testing.T) {
 		err := &agentError{Category: llm.ErrTransient, Message: "retry"}
+		
+		// Attempt 0: 10ms * 2^0 * [0.9, 1.1] = [9ms, 11ms]
 		delay, retry := policy.ShouldRetry(err, 0)
-		if !retry || delay != 10*time.Millisecond {
-			t.Errorf("expected retry with 10ms, got %v, %v", retry, delay)
+		if !retry || delay < 9*time.Millisecond || delay > 11*time.Millisecond {
+			t.Errorf("expected retry with ~10ms, got %v, %v", retry, delay)
 		}
 
+		// Attempt 1: 10ms * 2^1 * [0.9, 1.1] = [18ms, 22ms]
 		delay, retry = policy.ShouldRetry(err, 1)
-		if !retry || delay != 20*time.Millisecond {
-			t.Errorf("expected retry with 20ms, got %v, %v", retry, delay)
+		if !retry || delay < 18*time.Millisecond || delay > 22*time.Millisecond {
+			t.Errorf("expected retry with ~20ms, got %v, %v", retry, delay)
 		}
 
 		_, retry = policy.ShouldRetry(err, 2)
 		if retry {
 			t.Error("expected no retry after MaxRetries")
+		}
+	})
+
+	t.Run("Rate limit error", func(t *testing.T) {
+		err := newAgentError(llm.ErrTransient, "429 Resource exhausted", nil)
+		// Base overridden to 5s. 5s * 2^0 * [0.9, 1.1] = [4.5s, 5.5s]
+		delay, retry := policy.ShouldRetry(err, 0)
+		if !retry || delay < 4500*time.Millisecond || delay > 5500*time.Millisecond {
+			t.Errorf("expected retry with ~5s for 429, got %v, %v", retry, delay)
 		}
 	})
 

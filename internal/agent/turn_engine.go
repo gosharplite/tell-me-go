@@ -6,6 +6,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +73,23 @@ func (p *defaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration,
 		return 0, false
 	}
 	if isTransient(err) {
-		return time.Duration(attempt+1) * p.Backoff, true
+		base := p.Backoff
+
+		// Specific handling for Rate Limits
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "429") || strings.Contains(errMsg, "Resource exhausted") {
+			base = 5 * time.Second // Much longer base delay for rate limits
+		}
+
+		// Exponential backoff: Base * 2^attempt
+		expMultiplier := math.Pow(2, float64(attempt))
+		delay := float64(base) * expMultiplier
+
+		// Add Jitter (e.g., +/- 10%)
+		jitter := 0.9 + (rand.Float64() * 0.2)
+		finalDelay := time.Duration(delay * jitter)
+
+		return finalDelay, true
 	}
 	return 0, false
 }
@@ -213,7 +231,7 @@ func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.Contex
 		registry:    reg,
 		events:      bus,
 		processors:  make(map[turnPhase]turnProcessor),
-		retryPolicy: &defaultRetryPolicy{MaxRetries: 3, Backoff: 100 * time.Millisecond},
+		retryPolicy: &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second},
 		clock:       realClock{},
 	}
 
