@@ -58,9 +58,9 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 	}
 	cm := orchestration.NewContextManager(strategy, hManager, bus, factory)
 
-	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
+	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker), withClock(&mockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -105,6 +105,61 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	}
 
 	// Verification: Phase sequence should include: Guard -> Refining -> Inference -> Recovering -> Refining -> Inference
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
+
+	if len(tracker.phases) != len(expectedPhases) {
+		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
+	} else {
+		for i, p := range expectedPhases {
+			if tracker.phases[i] != p {
+				t.Errorf("Phase mismatch at index %d: expected %s, got %s", i, p, tracker.phases[i])
+			}
+		}
+	}
+}
+
+func TestTurnEngine_RateLimitRecovery(t *testing.T) {
+	tracker := &errorPhaseTracker{}
+	callCount := 0
+
+	gw := &mockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			callCount++
+			ch := make(chan *llm.Content)
+			close(ch)
+
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				if callCount == 1 {
+					return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
+				}
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
+			}
+		},
+	}
+
+	exec := &errorMockExecutor{}
+	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+
+	err := engine.Run(context.Background(), time.Now())
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verification: turn.State.RetryCount should be 1
+	if tracker.lastState == nil {
+		t.Fatal("lastState should not be nil")
+	}
+	if tracker.lastState.RetryCount != 1 {
+		t.Errorf("Expected RetryCount 1, got %d", tracker.lastState.RetryCount)
+	}
+
+	// Verification: Ensure callCount == 2
+	if callCount != 2 {
+		t.Errorf("Expected 2 calls, got %d", callCount)
+	}
+
+	// Verification: Phase sequence should include: Refining -> Inference -> Recovering -> Refining -> Inference -> Persisting -> Complete
 	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
 
 	if len(tracker.phases) != len(expectedPhases) {
@@ -279,6 +334,7 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 		State: &turnState{
 			Phase: "phaseNonExistent",
 		},
+		Clock: &mockClock{},
 	}
 
 	_, err := engine.executePhase(context.Background(), turn)
@@ -319,6 +375,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 		State: &turnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(context.Background(), turn)
@@ -425,7 +482,7 @@ func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 				}, nil
 			},
 		},
-		Clock: &realClock{},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(ctx, turnObj)
@@ -458,7 +515,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 				return nil, expectedErr
 			},
 		},
-		Clock: &realClock{},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(ctx, turnObj)

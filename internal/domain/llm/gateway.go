@@ -17,11 +17,13 @@ var (
 	ErrTerminal = errors.New("terminal error")
 	// ErrAuth signals an authentication failure.
 	ErrAuth = errors.New("authentication error")
+	// ErrRateLimit signals a rate limit failure.
+	ErrRateLimit = errors.New("rate limit exceeded")
 )
 
-// IsTransient returns true if the error is ErrTransient.
+// IsTransient returns true if the error is ErrTransient or ErrRateLimit.
 func IsTransient(err error) bool {
-	return errors.Is(err, ErrTransient)
+	return errors.Is(err, ErrTransient) || errors.Is(err, ErrRateLimit)
 }
 
 // IsTerminal returns true if the error is ErrTerminal or other non-retryable domain errors.

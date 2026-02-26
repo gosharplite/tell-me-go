@@ -73,6 +73,7 @@ func TestTurnEngine_MultiStepLoopDetection(t *testing.T) {
 	err := engine.Run(ctx, time.Now())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "infinite loop detected: model is repeating a previous response")
+	assert.Contains(t, err.Error(), "Response A")
 }
 
 func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
@@ -130,5 +131,6 @@ func TestTurnEngine_ToolCallLoopDetection(t *testing.T) {
 
 	err := engine.Run(ctx, time.Now())
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "infinite loop detected: model is repeating a previous response (content or tool calls)")
+	assert.Contains(t, err.Error(), "infinite loop detected: model is repeating a previous response")
+	assert.Contains(t, err.Error(), "tool_a")
 }

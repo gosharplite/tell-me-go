@@ -120,10 +120,8 @@ func withLoopDetector() turnMiddleware {
 				h := sha256.Sum256(rawJSON)
 				currentHash := hex.EncodeToString(h[:])
 
-				for _, prevHash := range turn.State.RecentResponseHashes {
-					if currentHash == prevHash {
-						return processResult{Stop: true}, newAgentError(errLogic, "infinite loop detected: model is repeating a previous response (content or tool calls)", nil)
-					}
+				if err := checkDuplicateResponse(currentHash, turn.State.RecentResponseHashes, rawJSON); err != nil {
+					return processResult{Stop: true}, err
 				}
 				// Keep last N hashes (using the same repetition limit)
 				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
@@ -147,4 +145,30 @@ func withLoopDetector() turnMiddleware {
 			return res, err
 		})
 	}
+}
+
+func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON []byte) error {
+	for _, prevHash := range recentHashes {
+		if currentHash == prevHash {
+			snippet := truncateSafe(rawJSON, 147)
+			errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
+			return newAgentError(errLogic, errMsg, nil)
+		}
+	}
+	return nil
+}
+
+// truncateSafe truncates a byte slice to a specific number of runes safely.
+// It uses a Go compiler optimization `range string(b)` to avoid heap allocation
+// during rune decoding.
+func truncateSafe(b []byte, maxRunes int) string {
+	count := 0
+	// The Go compiler optimizes `range string(b)` to avoid heap allocation!
+	for byteIndex := range string(b) {
+		if count == maxRunes {
+			return string(b[:byteIndex]) + "..." // Only allocates the small truncated snippet
+		}
+		count++
+	}
+	return string(b)
 }

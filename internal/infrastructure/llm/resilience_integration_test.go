@@ -34,8 +34,8 @@ func TestResilientClient_OpenAI_Classification(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	if !errors.Is(err, llm.ErrTransient) {
-		t.Errorf("expected llm.ErrTransient, got %v", err)
+	if !errors.Is(err, llm.ErrRateLimit) {
+		t.Errorf("expected llm.ErrRateLimit, got %v", err)
 	}
 
 	if !strings.Contains(err.Error(), "429") {

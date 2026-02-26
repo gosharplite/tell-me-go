@@ -14,6 +14,7 @@ func TestTurnEngine_ExecutionStep_NoToolCalls(t *testing.T) {
 		State: &turnState{
 			HasToolCalls: false,
 		},
+		Clock: &mockClock{},
 	}
 
 	res, err := step.process(context.Background(), tn)
@@ -32,6 +33,7 @@ func TestTurnEngine_RecoveryStep_NoLastError(t *testing.T) {
 		State: &turnState{
 			LastError: nil,
 		},
+		Clock: &mockClock{},
 	}
 
 	res, err := step.process(context.Background(), tn)

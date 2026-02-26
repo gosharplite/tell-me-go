@@ -16,6 +16,7 @@ import (
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 // mockExecutor implements iToolExecutor for testing.
@@ -120,11 +121,16 @@ type mockClock struct {
 }
 
 func (m *mockClock) Now() time.Time { return m.CurrentTime }
+func (m *mockClock) Sleep(d time.Duration) {
+	m.CurrentTime = m.CurrentTime.Add(d)
+}
 func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	ch := make(chan time.Time, 1)
+	m.CurrentTime = m.CurrentTime.Add(d)
 	ch <- m.CurrentTime
 	return ch
 }
+func (m *mockClock) Jitter(base float64) float64 { return base }
 
 type mockHook struct {
 	beforeCalled int
@@ -142,7 +148,7 @@ type mockRetryPolicy struct {
 	retry             bool
 }
 
-func (m *mockRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+func (m *mockRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool) {
 	m.shouldRetryCalled = true
 	return m.delay, m.retry
 }
@@ -342,7 +348,7 @@ func setupTransitionTurn(hasTools bool, phase turnPhase) *turn {
 			},
 		},
 		Registry: reg,
-		Clock:    &realClock{},
+		Clock:    &clock.RealClock{},
 	}
 	if phase == phaseRefining || phase == phaseGuard {
 		turn.CtxManager.Pipeline = orchestration.NewContextPipeline()

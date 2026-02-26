@@ -56,7 +56,7 @@ func TestClassify(t *testing.T) {
 		{
 			name:         "HTTP 429 via APIError",
 			input:        &APIError{Status: 429, Body: "Rate limit exceeded"},
-			expectedWrap: llm.ErrTransient,
+			expectedWrap: llm.ErrRateLimit,
 		},
 		{
 			name:         "HTTP 503 via APIError",
@@ -83,19 +83,19 @@ func TestClassify(t *testing.T) {
 		{
 			name:          "String matching RESOURCE_EXHAUSTED",
 			input:         errors.New("RESOURCE_EXHAUSTED"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "RESOURCE_EXHAUSTED",
 		},
 		{
 			name:          "String matching QUOTA",
 			input:         errors.New("exceeded QUOTA"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "QUOTA",
 		},
 		{
 			name:          "String matching 429",
 			input:         errors.New("got 429 error"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "429",
 		},
 		{
@@ -126,5 +126,28 @@ func TestClassify(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClassify_MultiWrap(t *testing.T) {
+	originalErr := &APIError{Status: 429, Body: "Too Many Requests"}
+	classifiedErr := Classify(originalErr)
+
+	// Verify we can find the domain sentinel
+	if !errors.Is(classifiedErr, llm.ErrRateLimit) {
+		t.Errorf("expected classified error to be llm.ErrRateLimit")
+	}
+
+	// Verify we can find the original error (this requires %w for the second arg)
+	if !errors.Is(classifiedErr, originalErr) {
+		t.Errorf("expected classified error to also wrap the original error")
+	}
+
+	// Verify we can extract the original error via errors.As
+	var apiErr *APIError
+	if !errors.As(classifiedErr, &apiErr) {
+		t.Errorf("expected classified error to be extractable as *APIError")
+	} else if apiErr.Status != 429 {
+		t.Errorf("extracted APIError has wrong status: got %d, want 429", apiErr.Status)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infrapersistence "github.com/gosharplite/tell-me-go/internal/infrastructure/persistence"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 )
 
 type mockEventBus struct {
@@ -46,6 +47,7 @@ func TestWithStreaming(t *testing.T) {
 	ctx := context.Background()
 	turn := &turn{
 		State: &turnState{Phase: phaseInference},
+		Clock: &mockClock{},
 	}
 
 	_, _ = mw(next).process(ctx, turn)
@@ -91,7 +93,7 @@ func TestWithStatusReporter(t *testing.T) {
 			turn := &turn{
 				State:      &turnState{Phase: tt.phase},
 				CtxManager: cm,
-				Clock:      realClock{},
+				Clock:      clock.RealClock{},
 			}
 			_, _ = mw(next).process(context.Background(), turn)
 			if len(bus.events) != tt.wantEvents {
@@ -127,6 +129,7 @@ func TestWithMetrics(t *testing.T) {
 			}
 			turn := &turn{
 				State: state,
+				Clock: &mockClock{},
 			}
 			_, _ = mw(next).process(context.Background(), turn)
 			if len(bus.events) != tt.wantEvents {

@@ -161,16 +161,16 @@ func TestResilientClient_WrapError(t *testing.T) {
 		{"gRPC PermissionDenied", status.Error(codes.PermissionDenied, "fail"), llm.ErrTerminal},
 
 		{"HTTP 401", mockHttpStatusErr{401}, llm.ErrAuth},
-		{"HTTP 429", mockHttpStatusErr{429}, llm.ErrTransient},
+		{"HTTP 429", mockHttpStatusErr{429}, llm.ErrRateLimit},
 		{"HTTP 500", mockHttpStatusErr{500}, llm.ErrTransient},
 		{"HTTP 404", mockHttpStatusErr{404}, llm.ErrTerminal},
 
 		{"String match Auth", errors.New("API_KEY_INVALID"), llm.ErrAuth},
 		{"String match Auth Upper", errors.New("unauthenticated request"), llm.ErrAuth},
 
-		{"String match Rate Limit 429", errors.New("error 429: too many requests"), llm.ErrTransient},
-		{"String match Quota", errors.New("quota exceeded for project"), llm.ErrTransient},
-		{"String match Resource Exhausted", errors.New("RESOURCE_EXHAUSTED: quota limit reached"), llm.ErrTransient},
+		{"String match Rate Limit 429", errors.New("error 429: too many requests"), llm.ErrRateLimit},
+		{"String match Quota", errors.New("quota exceeded for project"), llm.ErrRateLimit},
+		{"String match Resource Exhausted", errors.New("RESOURCE_EXHAUSTED: quota limit reached"), llm.ErrRateLimit},
 
 		{"Generic fallback", errors.New("unknown error"), llm.ErrTerminal},
 	}

@@ -31,6 +31,11 @@ func TestIsTransient(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "positive: ErrRateLimit",
+			err:  ErrRateLimit,
+			want: true,
+		},
+		{
 			name: "negative: unrelated standard error",
 			err:  errors.New("random network timeout"),
 			want: false,
