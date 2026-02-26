@@ -49,6 +49,10 @@ func (m *mockTokenCounter) Count(contents []*llm.Content) int {
 	return m.tokens
 }
 
+func (m *mockTokenCounter) CountTokens(text string) int {
+	return m.tokens
+}
+
 type mockGateway struct {
 	GenerateFunc func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error))
 	sendChatFn   func(ctx context.Context, history []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (*llm.Content, *llm.Metrics, error)

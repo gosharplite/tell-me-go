@@ -85,7 +85,7 @@ func TestTurnEngine_MaxTurnsLimit(t *testing.T) {
 	cm.Pipeline = factory.BuildStandardPipeline(events.Limits{MaxHistoryTokens: 1000, MaxToolTurns: 2, MaxHistoryTurns: 10})
 
 	reg := &limitMockRegistry{}
-	engine := newTurnEngine(gw, exec, cm, reg, bus)
+	engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
 	ctx := context.Background()
 
@@ -187,7 +187,8 @@ func TestTurnEngine_ValidatePayloadLimits(t *testing.T) {
 			}
 
 			turn := &turn{
-				CtxManager: cm,
+				CtxManager:   cm,
+				TokenCounter: counter,
 				State: &turnState{
 					Tokens:       tt.existingTokens,
 					ToolResponse: toolResponse,

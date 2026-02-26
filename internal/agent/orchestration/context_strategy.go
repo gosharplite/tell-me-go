@@ -128,6 +128,18 @@ func (cs *ContextStrategy) EstimateTokens(contents []*llm.Content) int {
 	return cs.counter.Count(contents)
 }
 
+// Count implements llm.TokenCounter.
+func (cs *ContextStrategy) Count(contents []*llm.Content) int {
+	return cs.EstimateTokens(contents)
+}
+
+// CountTokens implements llm.TokenCounter.
+func (cs *ContextStrategy) CountTokens(text string) int {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.counter.CountTokens(text)
+}
+
 // getWarnings generates safety and financial warnings based on current state.
 func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns int) []warning {
 	cs.mu.Lock()

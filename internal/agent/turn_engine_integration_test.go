@@ -84,6 +84,10 @@ func (m *dynamicMockCounter) Count(contents []*llm.Content) int {
 	return h.Count(contents)
 }
 
+func (m *dynamicMockCounter) CountTokens(text string) int {
+	return len(text) / 4
+}
+
 func TestTurnEngine_TruncationIntegration(t *testing.T) {
 	t.Run("Scenario A - Single Massive Payload", func(t *testing.T) {
 		bus := &events.SimpleEventBus{}
@@ -107,7 +111,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
 		reg := &mockToolRegistry{}
-		engine := newTurnEngine(gw, exec, cm, reg, bus)
+		engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 
@@ -182,7 +186,7 @@ func TestTurnEngine_TruncationIntegration(t *testing.T) {
 		gw := &integrationMockLLMGateway{}
 		exec := &integrationMockExecutor{}
 		reg := &mockToolRegistry{}
-		engine := newTurnEngine(gw, exec, cm, reg, bus)
+		engine := newTurnEngine(gw, exec, cm, reg, bus, counter)
 
 		ctx := context.Background()
 

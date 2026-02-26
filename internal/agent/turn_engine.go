@@ -151,6 +151,7 @@ type turn struct {
 	Gateway      llm.LLMGateway
 	executor     iToolExecutor
 	Registry     tools.IToolRegistry
+	TokenCounter llm.TokenCounter
 	Events       events.EventBus
 	MaxToolTurns int
 	Clock        clock.Clock
@@ -172,6 +173,7 @@ type turnEngine struct {
 	gateway          llm.LLMGateway
 	executor         iToolExecutor
 	registry         tools.IToolRegistry
+	tokenCounter     llm.TokenCounter
 	events           events.EventBus
 	processors       map[turnPhase]turnProcessor
 	middleware       []turnMiddleware
@@ -232,16 +234,17 @@ func (e *turnEngine) Reconfigure(cfg runtimeConfig, tracker domain_pricing.ICost
 }
 
 // newTurnEngine creates a new turnEngine with a default pipeline.
-func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, opts ...engineOption) *turnEngine {
+func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.ContextManager, reg tools.IToolRegistry, bus events.EventBus, counter llm.TokenCounter, opts ...engineOption) *turnEngine {
 	e := &turnEngine{
-		gateway:     gw,
-		executor:    ex,
-		ctxManager:  cm,
-		registry:    reg,
-		events:      bus,
-		processors:  make(map[turnPhase]turnProcessor),
-		retryPolicy: &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second, RateLimitBackoff: 5 * time.Second},
-		clock:       clock.RealClock{},
+		gateway:      gw,
+		executor:     ex,
+		ctxManager:   cm,
+		registry:     reg,
+		tokenCounter: counter,
+		events:       bus,
+		processors:   make(map[turnPhase]turnProcessor),
+		retryPolicy:  &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second, RateLimitBackoff: 5 * time.Second},
+		clock:        clock.RealClock{},
 	}
 
 	// Register default processors
@@ -319,6 +322,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 	tracker := e.costTracker
 	providerName := e.providerName
 	model := e.model
+	counter := e.tokenCounter
 	e.mu.RUnlock()
 
 	turn := &turn{
@@ -329,6 +333,7 @@ func (e *turnEngine) createTurn(index int, startTime time.Time) *turn {
 		Gateway:      e.gateway,
 		executor:     e.executor,
 		Registry:     e.registry,
+		TokenCounter: counter,
 		Events:       e.events,
 		Clock:        e.clock,
 		CostTracker:  tracker,
@@ -719,8 +724,8 @@ func (p *executionStep) validatePayloadLimits(ctx context.Context, turn *turn) {
 
 	toolResponse := turn.State.ToolResponse
 
-	// Estimate tokens for the new tool response
-	toolTokens := turn.CtxManager.Strategy.EstimateTokens([]*llm.Content{toolResponse})
+	// Estimate tokens for the new tool response using the decoupled counter
+	toolTokens := turn.TokenCounter.Count([]*llm.Content{toolResponse})
 
 	// We use the remaining buffer, accounting for the 10% system reservation
 	maxAllowed := int(float64(limits.MaxHistoryTokens) * 0.90)
