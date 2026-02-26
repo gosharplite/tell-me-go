@@ -172,8 +172,8 @@ type turnEngine struct {
 	costTracker      domain_pricing.ICostTracker
 }
 
-// WithClock sets a custom clock implementation.
-func WithClock(c clock.Clock) engineOption {
+// withClock sets a custom clock implementation.
+func withClock(c clock.Clock) engineOption {
 	return func(e *turnEngine) {
 		e.clock = c
 	}
