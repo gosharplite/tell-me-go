@@ -127,7 +127,7 @@ func (m *mockSessionProvider) GetConfig() ports.IConfigService         { return 
 func (m *mockSessionProvider) GetScratchpad() ports.IScratchpadService { return m.scratchpad }
 func (m *mockSessionProvider) GetInfo() ports.SessionInfo              { return m.info }
 func (m *mockSessionProvider) SetInfo(info ports.SessionInfo)          { m.info = info }
-func (m *mockSessionProvider) Close() error                               { return nil }
+func (m *mockSessionProvider) Close() error                            { return nil }
 
 func setupPersistenceTools() (*persistenceTools, *mockSessionProvider) {
 	kv := &mockKVStore{kv: make(map[string]string)}
