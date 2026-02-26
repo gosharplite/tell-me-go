@@ -66,7 +66,9 @@ func classifyHTTP(err error) (error, bool) {
 		switch {
 		case status == 401:
 			return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
-		case status == 429 || status >= 500:
+		case status == 429:
+			return fmt.Errorf("%w: %v", llm.ErrRateLimit, err), true
+		case status >= 500:
 			return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
 		case status >= 400 && status < 500:
 			return fmt.Errorf("%w: %v", llm.ErrTerminal, err), true
@@ -80,8 +82,8 @@ func classifyString(err error) (error, bool) {
 	if strings.Contains(msg, "UNAUTHENTICATED") || strings.Contains(msg, "API_KEY_INVALID") {
 		return fmt.Errorf("%w: %v", llm.ErrAuth, err), true
 	}
-	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "QUOTA") {
-		return fmt.Errorf("%w: %v", llm.ErrTransient, err), true
+	if strings.Contains(msg, "429") || strings.Contains(msg, "RESOURCE_EXHAUSTED") || strings.Contains(msg, "QUOTA") || strings.Contains(msg, "RESOURCE EXHAUSTED") {
+		return fmt.Errorf("%w: %v", llm.ErrRateLimit, err), true
 	}
 	return nil, false
 }

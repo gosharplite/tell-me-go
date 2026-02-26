@@ -125,6 +125,7 @@ func (m *mockClock) After(d time.Duration) <-chan time.Time {
 	ch <- m.CurrentTime
 	return ch
 }
+func (m *mockClock) Jitter(base float64) float64 { return base }
 
 type mockHook struct {
 	beforeCalled int
@@ -142,7 +143,7 @@ type mockRetryPolicy struct {
 	retry             bool
 }
 
-func (m *mockRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+func (m *mockRetryPolicy) ShouldRetry(c clock, err error, attempt int) (time.Duration, bool) {
 	m.shouldRetryCalled = true
 	return m.delay, m.retry
 }

@@ -56,7 +56,7 @@ func TestClassify(t *testing.T) {
 		{
 			name:         "HTTP 429 via APIError",
 			input:        &APIError{Status: 429, Body: "Rate limit exceeded"},
-			expectedWrap: llm.ErrTransient,
+			expectedWrap: llm.ErrRateLimit,
 		},
 		{
 			name:         "HTTP 503 via APIError",
@@ -83,19 +83,19 @@ func TestClassify(t *testing.T) {
 		{
 			name:          "String matching RESOURCE_EXHAUSTED",
 			input:         errors.New("RESOURCE_EXHAUSTED"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "RESOURCE_EXHAUSTED",
 		},
 		{
 			name:          "String matching QUOTA",
 			input:         errors.New("exceeded QUOTA"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "QUOTA",
 		},
 		{
 			name:          "String matching 429",
 			input:         errors.New("got 429 error"),
-			expectedWrap:  llm.ErrTransient,
+			expectedWrap:  llm.ErrRateLimit,
 			containsMatch: "429",
 		},
 		{

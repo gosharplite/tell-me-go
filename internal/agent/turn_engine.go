@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -27,12 +28,14 @@ import (
 type clock interface {
 	Now() time.Time
 	After(d time.Duration) <-chan time.Time
+	Jitter(base float64) float64
 }
 
 type realClock struct{}
 
 func (realClock) Now() time.Time                         { return time.Now() }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+func (realClock) Jitter(base float64) float64           { return base * (0.9 + (rand.Float64() * 0.2)) }
 
 // turnPhase represents the current stage of a single agent turn.
 type turnPhase string
@@ -56,38 +59,37 @@ type processResult struct {
 
 // retryPolicy defines how the engine should handle errors and retries.
 type retryPolicy interface {
-	ShouldRetry(err error, attempt int) (time.Duration, bool)
+	ShouldRetry(c clock, err error, attempt int) (time.Duration, bool)
 }
 
 // defaultRetryPolicy provides a standard retry implementation with linear backoff.
 type defaultRetryPolicy struct {
-	MaxRetries int
-	Backoff    time.Duration
+	MaxRetries       int
+	Backoff          time.Duration
+	RateLimitBackoff time.Duration
 }
 
-func (p *defaultRetryPolicy) ShouldRetry(err error, attempt int) (time.Duration, bool) {
+func (p *defaultRetryPolicy) ShouldRetry(c clock, err error, attempt int) (time.Duration, bool) {
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
 	if isFatal(err) {
 		return 0, false
 	}
-	if isTransient(err) {
+	if isTransient(err) || errors.Is(err, llm.ErrRateLimit) {
 		base := p.Backoff
 
 		// Specific handling for Rate Limits
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "429") || strings.Contains(errMsg, "Resource exhausted") {
-			base = 5 * time.Second // Much longer base delay for rate limits
+		if errors.Is(err, llm.ErrRateLimit) {
+			base = p.RateLimitBackoff
 		}
 
 		// Exponential backoff: Base * 2^attempt
 		expMultiplier := math.Pow(2, float64(attempt))
 		delay := float64(base) * expMultiplier
 
-		// Add Jitter (e.g., +/- 10%)
-		jitter := 0.9 + (rand.Float64() * 0.2)
-		finalDelay := time.Duration(delay * jitter)
+		// Add Jitter (e.g., +/- 10%) via the clock interface
+		finalDelay := time.Duration(c.Jitter(delay))
 
 		return finalDelay, true
 	}
@@ -231,7 +233,7 @@ func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.Contex
 		registry:    reg,
 		events:      bus,
 		processors:  make(map[turnPhase]turnProcessor),
-		retryPolicy: &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second},
+		retryPolicy: &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second, RateLimitBackoff: 5 * time.Second},
 		clock:       realClock{},
 	}
 
@@ -648,7 +650,7 @@ func (p *recoveryStep) process(ctx context.Context, turn *turn) (processResult, 
 		return processResult{NextPhase: phaseComplete}, nil
 	}
 
-	delay, retry := p.Policy.ShouldRetry(err, turn.State.RetryCount)
+	delay, retry := p.Policy.ShouldRetry(turn.Clock, err, turn.State.RetryCount)
 	if !retry {
 		return p.handleFailure(err)
 	}
