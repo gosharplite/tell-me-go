@@ -33,9 +33,6 @@ func (t *warningInjector) Transform(ctx context.Context, req *ports.ContextReque
 }
 
 func (t *warningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turns int) (string, []string) {
-	// Temporarily set pruned turns in strategy for warning generation
-	t.Strategy.setPrunedTurns(req.Metadata.PrunedTurns)
-
 	var combined string
 	var list []string
 	maxTokens, _, _ := t.Strategy.getLimits()
@@ -46,7 +43,7 @@ func (t *warningInjector) gatherWarnings(req *ports.ContextRequest, tokens, turn
 		combined = t.Strategy.getCloggedWarning()
 		list = append(list, combined)
 	} else {
-		warnings := t.Strategy.getWarnings(req.Turn, tokens, turns)
+		warnings := t.Strategy.getWarnings(req.Turn, tokens, turns, req.Metadata.PrunedTurns)
 		if len(warnings) == 0 {
 			return "", nil
 		}

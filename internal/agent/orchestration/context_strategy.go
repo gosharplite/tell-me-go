@@ -26,7 +26,6 @@ type ContextStrategy struct {
 	maxHistoryTurns  int
 	tieredThreshold  int
 	contextWindow    int
-	prunedTurns      int
 }
 
 // NewContextStrategy creates a new context strategy.
@@ -103,13 +102,6 @@ func (cs *ContextStrategy) setTieredThreshold(threshold int) {
 	}
 }
 
-// setPrunedTurns sets the initial pruned turns count.
-func (cs *ContextStrategy) setPrunedTurns(n int) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	cs.prunedTurns = n
-}
-
 // getLimits returns the current limits.
 func (cs *ContextStrategy) getLimits() (int, int, int) {
 	cs.mu.RLock()
@@ -141,9 +133,9 @@ func (cs *ContextStrategy) CountTokens(text string) int {
 }
 
 // getWarnings generates safety and financial warnings based on current state.
-func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns int) []warning {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns, prunedTurns int) []warning {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	var warnings []warning
 
 	if w := cs.getTurnWarningLocked(turn); w != "" {
@@ -152,7 +144,7 @@ func (cs *ContextStrategy) getWarnings(turn, tokens, currentTurns int) []warning
 	if w := cs.getTokenWarningLocked(tokens); w != "" {
 		warnings = append(warnings, warning{Message: w})
 	}
-	if w := cs.getHistoryTurnWarningLocked(currentTurns); w != "" {
+	if w := cs.getHistoryTurnWarningLocked(currentTurns, prunedTurns); w != "" {
 		warnings = append(warnings, warning{Message: w})
 	}
 	if w := cs.getPriceWarningLocked(tokens); w != "" {
@@ -201,14 +193,13 @@ func (cs *ContextStrategy) getTokenWarningLocked(tokens int) string {
 	return ""
 }
 
-func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns int) string {
+func (cs *ContextStrategy) getHistoryTurnWarningLocked(currentTurns, prunedTurns int) string {
 	if cs.maxHistoryTurns <= 0 {
 		return ""
 	}
 
-	if cs.prunedTurns > 5 {
-		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to the 'manage_scratchpad' and read 'manage_tasks' to continue unfinished tasks and re-synchronize your internal state.]", cs.prunedTurns)
-		cs.prunedTurns = 0
+	if prunedTurns > 5 {
+		msg := fmt.Sprintf("[URGENT SYSTEM NOTICE: A major history cleanup has occurred. To maintain performance and cache efficiency, the oldest %d turns of this conversation have been removed. You have lost significant recent context. You MUST refer to the 'manage_scratchpad' and read 'manage_tasks' to continue unfinished tasks and re-synchronize your internal state.]", prunedTurns)
 		return msg
 	}
 

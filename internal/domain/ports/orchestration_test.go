@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/gosharplite/tell-me-go/internal/domain/config"
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
@@ -35,158 +37,88 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestChatterOptions(t *testing.T) {
-	ctx := context.WithValue(context.Background(), testContextKey("test"), "value")
-	loader := (config.ConfigLoader)(nil)
-	gateway := (llm.LLMGateway)(nil)
-	history := (HistoryManager)(nil)
-	registry := (tools.IToolRegistry)(nil)
-	securityManager := (security.ISecurityManager)(nil)
-	bus := (events.EventBus)(nil)
-	tracker := (pricing.ICostTracker)(nil)
-	overrides := map[string]pricing.ModelPricing{
-		"test": {Miss: 1.0, Comp: 2.0},
-	}
+	t.Run("WithContext", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), testContextKey("test"), "value")
+		params := NewChatterParams(WithContext(ctx))
+		assert.Equal(t, ctx, params.Context)
+	})
 
-	tests := []struct {
-		name     string
-		option   ChatterOption
-		validate func(*testing.T, ChatterParams)
-	}{
-		{
-			name:   "WithContext",
-			option: WithContext(ctx),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Context != ctx {
-					t.Errorf("WithContext: expected %v, got %v", ctx, p.Context)
-				}
-			},
-		},
-		{
-			name:   "WithLoader",
-			option: WithLoader(loader),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Loader != loader {
-					t.Errorf("WithLoader: expected %v, got %v", loader, p.Loader)
-				}
-			},
-		},
-		{
-			name:   "WithGateway",
-			option: WithGateway(gateway),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Gateway != gateway {
-					t.Errorf("WithGateway: expected %v, got %v", gateway, p.Gateway)
-				}
-			},
-		},
-		{
-			name:   "WithHistory",
-			option: WithHistory(history),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.HistoryManager != history {
-					t.Errorf("WithHistory: expected %v, got %v", history, p.HistoryManager)
-				}
-			},
-		},
-		{
-			name:   "WithToolConfig",
-			option: WithToolConfig(registry),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Registry != registry {
-					t.Errorf("WithToolConfig: expected %v, got %v", registry, p.Registry)
-				}
-			},
-		},
-		{
-			name:   "WithSecurityManager",
-			option: WithSecurityManager(securityManager),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.SecurityManager != securityManager {
-					t.Errorf("WithSecurityManager: expected %v, got %v", securityManager, p.SecurityManager)
-				}
-			},
-		},
-		{
-			name:   "WithStreamingDisabled",
-			option: WithStreamingDisabled(true),
-			validate: func(t *testing.T, p ChatterParams) {
-				if !p.DisableStreaming {
-					t.Errorf("WithStreamingDisabled: expected true, got false")
-				}
-			},
-		},
-		{
-			name:   "WithEventBus",
-			option: WithEventBus(bus),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.EventBus != bus {
-					t.Errorf("WithEventBus: expected %v, got %v", bus, p.EventBus)
-				}
-			},
-		},
-		{
-			name:   "WithProvider",
-			option: WithProvider("test-provider"),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.ProviderName != "test-provider" {
-					t.Errorf("WithProvider: expected test-provider, got %s", p.ProviderName)
-				}
-			},
-		},
-		{
-			name:   "WithModel",
-			option: WithModel("test-model"),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Model != "test-model" {
-					t.Errorf("WithModel: expected test-model, got %s", p.Model)
-				}
-			},
-		},
-		{
-			name:   "WithMode",
-			option: WithMode("test-mode"),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.Mode != "test-mode" {
-					t.Errorf("WithMode: expected test-mode, got %s", p.Mode)
-				}
-			},
-		},
-		{
-			name:   "WithLogPath",
-			option: WithLogPath("/tmp/test.log"),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.LogPath != "/tmp/test.log" {
-					t.Errorf("WithLogPath: expected /tmp/test.log, got %s", p.LogPath)
-				}
-			},
-		},
-		{
-			name:   "WithPricingOverrides",
-			option: WithPricingOverrides(overrides),
-			validate: func(t *testing.T, p ChatterParams) {
-				if !reflect.DeepEqual(p.PricingOverrides, overrides) {
-					t.Errorf("WithPricingOverrides: expected %v, got %v", overrides, p.PricingOverrides)
-				}
-			},
-		},
-		{
-			name:   "WithCostTracker",
-			option: WithCostTracker(tracker),
-			validate: func(t *testing.T, p ChatterParams) {
-				if p.CostTracker != tracker {
-					t.Errorf("WithCostTracker: expected %v, got %v", tracker, p.CostTracker)
-				}
-			},
-		},
-	}
+	t.Run("WithLoader", func(t *testing.T) {
+		var loader config.ConfigLoader
+		params := NewChatterParams(WithLoader(loader))
+		assert.Equal(t, loader, params.Loader)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			params := NewChatterParams(tt.option)
-			tt.validate(t, params)
-		})
-	}
+	t.Run("WithGateway", func(t *testing.T) {
+		var gateway llm.LLMGateway
+		params := NewChatterParams(WithGateway(gateway))
+		assert.Equal(t, gateway, params.Gateway)
+	})
+
+	t.Run("WithHistory", func(t *testing.T) {
+		var history HistoryManager
+		params := NewChatterParams(WithHistory(history))
+		assert.Equal(t, history, params.HistoryManager)
+	})
+
+	t.Run("WithToolConfig", func(t *testing.T) {
+		var registry tools.IToolRegistry
+		params := NewChatterParams(WithToolConfig(registry))
+		assert.Equal(t, registry, params.Registry)
+	})
+
+	t.Run("WithSecurityManager", func(t *testing.T) {
+		var securityManager security.ISecurityManager
+		params := NewChatterParams(WithSecurityManager(securityManager))
+		assert.Equal(t, securityManager, params.SecurityManager)
+	})
+
+	t.Run("WithStreamingDisabled", func(t *testing.T) {
+		params := NewChatterParams(WithStreamingDisabled(true))
+		assert.True(t, params.DisableStreaming)
+	})
+
+	t.Run("WithEventBus", func(t *testing.T) {
+		var bus events.EventBus
+		params := NewChatterParams(WithEventBus(bus))
+		assert.Equal(t, bus, params.EventBus)
+	})
+
+	t.Run("WithProvider", func(t *testing.T) {
+		params := NewChatterParams(WithProvider("test-provider"))
+		assert.Equal(t, "test-provider", params.ProviderName)
+	})
+
+	t.Run("WithModel", func(t *testing.T) {
+		params := NewChatterParams(WithModel("test-model"))
+		assert.Equal(t, "test-model", params.Model)
+	})
+
+	t.Run("WithMode", func(t *testing.T) {
+		params := NewChatterParams(WithMode("test-mode"))
+		assert.Equal(t, "test-mode", params.Mode)
+	})
+
+	t.Run("WithLogPath", func(t *testing.T) {
+		params := NewChatterParams(WithLogPath("/tmp/test.log"))
+		assert.Equal(t, "/tmp/test.log", params.LogPath)
+	})
+
+	t.Run("WithPricingOverrides", func(t *testing.T) {
+		overrides := map[string]pricing.ModelPricing{
+			"test": {Miss: 1.0, Comp: 2.0},
+		}
+		params := NewChatterParams(WithPricingOverrides(overrides))
+		assert.Equal(t, overrides, params.PricingOverrides)
+	})
+
+	t.Run("WithCostTracker", func(t *testing.T) {
+		var tracker pricing.ICostTracker
+		params := NewChatterParams(WithCostTracker(tracker))
+		assert.Equal(t, tracker, params.CostTracker)
+	})
 }
+
 
 func TestContextMetadata_Clone(t *testing.T) {
 	original := &ContextMetadata{

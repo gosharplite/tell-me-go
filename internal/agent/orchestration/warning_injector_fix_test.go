@@ -99,7 +99,7 @@ func TestWarningInjector_Idempotency(t *testing.T) {
 			Role: "user",
 			Parts: []*llm.Part{
 				{Text: "hello"},
-				{Text: "\n\n" + strategy.getWarnings(0, 91, 0)[0].Message},
+				{Text: "\n\n" + strategy.getWarnings(0, 91, 0, 0)[0].Message},
 			},
 		},
 		{Role: "model", Parts: []*llm.Part{{Text: "hi"}}},

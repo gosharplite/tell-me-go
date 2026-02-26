@@ -103,7 +103,7 @@ func setupWarningTest() *ContextStrategy {
 
 func TestContextStrategy_Warnings_WarningVerification(t *testing.T) {
 	cs := setupWarningTest()
-	warnings := cs.getWarnings(0, 0, 0)
+	warnings := cs.getWarnings(0, 0, 0, 0)
 	if len(warnings) != 0 {
 		t.Errorf("expected no warnings for empty history, got %d", len(warnings))
 	}
@@ -124,7 +124,7 @@ func TestContextStrategy_Warnings_TokenPressureValidation(t *testing.T) {
 		{951, "95%"},
 	}
 	for _, tt := range tests {
-		warnings := cs.getWarnings(0, tt.tokens, 0)
+		warnings := cs.getWarnings(0, tt.tokens, 0, 0)
 		got := ""
 		for _, w := range warnings {
 			if tt.expected != "" && contains(w.Message, tt.expected) {
@@ -154,7 +154,7 @@ func TestContextStrategy_Warnings_TurnCountLimits(t *testing.T) {
 		{9, []string{"FINAL", "final turn", "forbidden"}},
 	}
 	for _, tt := range tests {
-		warnings := cs.getWarnings(tt.turn, 0, 0)
+		warnings := cs.getWarnings(tt.turn, 0, 0, 0)
 		got := ""
 		if len(warnings) > 0 {
 			got = warnings[0].Message
@@ -193,7 +193,7 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 			{100, "limit has been reached"},
 		}
 		for _, tt := range tests {
-			warnings := cs.getWarnings(0, 0, tt.turns)
+			warnings := cs.getWarnings(0, 0, tt.turns, 0)
 			found := false
 			for _, w := range warnings {
 				if contains(w.Message, tt.expected) {
@@ -208,10 +208,17 @@ func TestContextStrategy_Warnings_SystemBufferExhaustion(t *testing.T) {
 	})
 
 	t.Run("Pruning Counter Reset", func(t *testing.T) {
-		cs.setPrunedTurns(10)
-		_ = cs.getWarnings(1, 10, 1)
-		if cs.prunedTurns != 0 {
-			t.Errorf("expected prunedTurns to be reset, got %d", cs.prunedTurns)
+		// Since we no longer use internal state for prunedTurns, we just check that it's passed through
+		warnings := cs.getWarnings(1, 10, 1, 10)
+		found := false
+		for _, w := range warnings {
+			if contains(w.Message, "major history cleanup") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected cleanup warning when prunedTurns=10")
 		}
 	})
 
@@ -239,7 +246,7 @@ func TestContextStrategy_setTieredThresholdZero(t *testing.T) {
 	}
 
 	// Verify no price warning is generated when threshold is 0
-	warnings := cs.getWarnings(1, 200000, 1) // High token count
+	warnings := cs.getWarnings(1, 200000, 1, 0) // High token count
 	for _, w := range warnings {
 		if contains(w.Message, "ECONOMIC") {
 			t.Errorf("expected no economic warnings when threshold is 0, but got: %q", w.Message)
@@ -247,42 +254,172 @@ func TestContextStrategy_setTieredThresholdZero(t *testing.T) {
 	}
 }
 
-func TestContextStrategy_GetPriceWarning(t *testing.T) {
-	cs := NewContextStrategy(NewHeuristicTokenCounter(&mockToolRegistry{}), nil)
+func TestContextStrategy_getPriceWarningLocked(t *testing.T) {
+	// cliff = tieredThreshold
+	// warning = int(float64(cliff) * config.WarningRatio)
 
-	t.Run("Zero Threshold", func(t *testing.T) {
-		cs.setTieredThreshold(0)
-		got := cs.getPriceWarningLocked(1000)
-		if got != "" {
-			t.Errorf("expected empty warning for zero threshold, got %q", got)
-		}
-	})
+	tests := []struct {
+		name      string
+		threshold int
+		tokens    int
+		want      string // expected substring
+	}{
+		{
+			name:      "Threshold disabled (0)",
+			threshold: 0,
+			tokens:    1000000,
+			want:      "",
+		},
+		{
+			name:      "Well below warning threshold",
+			threshold: 1000,
+			tokens:    500,
+			want:      "",
+		},
+		{
+			name:      "Exactly at warning threshold (780 for 1000)",
+			threshold: 1000,
+			tokens:    780,
+			want:      "[ECONOMIC NOTICE",
+		},
+		{
+			name:      "Just below limit",
+			threshold: 1000,
+			tokens:    999,
+			want:      "[ECONOMIC NOTICE",
+		},
+		{
+			name:      "Exactly at limit",
+			threshold: 1000,
+			tokens:    1000,
+			want:      "[URGENT ECONOMIC NOTICE",
+		},
+		{
+			name:      "Over limit",
+			threshold: 1000,
+			tokens:    1001,
+			want:      "[URGENT ECONOMIC NOTICE",
+		},
+	}
 
-	t.Run("Below Warning", func(t *testing.T) {
-		cs.setTieredThreshold(1000)
-		// WarningRatio is 0.78. 0.78 * 1000 = 780.
-		got := cs.getPriceWarningLocked(500)
-		if got != "" {
-			t.Errorf("expected empty warning for 500 tokens (threshold 1000), got %q", got)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			cs := &ContextStrategy{
+				tieredThreshold: tt.threshold,
+			}
 
-	t.Run("Warning Ratio", func(t *testing.T) {
-		cs.setTieredThreshold(1000)
-		// 901 >= 780 (threshold * 0.78)
-		got := cs.getPriceWarningLocked(901)
-		if !contains(got, "[ECONOMIC NOTICE") {
-			t.Errorf("expected [ECONOMIC NOTICE] prefix for 901 tokens (threshold 1000), got %q", got)
-		}
-	})
+			// Act
+			got := cs.getPriceWarningLocked(tt.tokens)
 
-	t.Run("Threshold Hit", func(t *testing.T) {
-		cs.setTieredThreshold(1000)
-		got := cs.getPriceWarningLocked(1001)
-		if !contains(got, "[URGENT ECONOMIC NOTICE") {
-			t.Errorf("expected [URGENT ECONOMIC NOTICE] prefix for 1001 tokens (threshold 1000), got %q", got)
-		}
-	})
+			// Assert
+			if tt.want == "" {
+				if got != "" {
+					t.Errorf("expected empty warning, got %q", got)
+				}
+			} else {
+				if !strings.Contains(got, tt.want) {
+					t.Errorf("expected warning to contain %q, got %q", tt.want, got)
+				}
+			}
+		})
+	}
+}
+
+func TestContextStrategy_getHistoryTurnWarningLocked(t *testing.T) {
+	tests := []struct {
+		name         string
+		maxTurns     int
+		prunedTurns  int
+		currentTurns int
+		wantContains string
+	}{
+		{
+			name:         "Disabled: Max turns 0",
+			maxTurns:     0,
+			currentTurns: 100,
+			wantContains: "",
+		},
+		{
+			name:         "Well below limit (80%)",
+			maxTurns:     100,
+			currentTurns: 80,
+			wantContains: "",
+		},
+		{
+			name:         "Exactly at 90% threshold (ratio 0.90 is not > 0.90)",
+			maxTurns:     100,
+			currentTurns: 90,
+			wantContains: "",
+		},
+		{
+			name:         "Just over 90% threshold",
+			maxTurns:     100,
+			currentTurns: 91,
+			wantContains: "90% of the turn limit",
+		},
+		{
+			name:         "At 95% threshold (ratio 0.95 is not > 0.95)",
+			maxTurns:     100,
+			currentTurns: 95,
+			wantContains: "90% of the turn limit",
+		},
+		{
+			name:         "Just over 95% threshold",
+			maxTurns:     100,
+			currentTurns: 96,
+			wantContains: "95% of the turn limit",
+		},
+		{
+			name:         "At limit (100%)",
+			maxTurns:     100,
+			currentTurns: 100,
+			wantContains: "limit has been reached",
+		},
+		{
+			name:         "Over limit",
+			maxTurns:     100,
+			currentTurns: 105,
+			wantContains: "limit has been reached",
+		},
+		{
+			name:         "Major cleanup (pruned > 5)",
+			maxTurns:     100,
+			prunedTurns:  10,
+			currentTurns: 1,
+			wantContains: "major history cleanup has occurred",
+		},
+		{
+			name:         "Minor cleanup (pruned <= 5)",
+			maxTurns:     100,
+			prunedTurns:  5,
+			currentTurns: 1,
+			wantContains: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			cs := &ContextStrategy{
+				maxHistoryTurns: tt.maxTurns,
+			}
+
+			// Act
+			got := cs.getHistoryTurnWarningLocked(tt.currentTurns, tt.prunedTurns)
+
+			// Assert
+			if tt.wantContains == "" {
+				if got != "" {
+					t.Errorf("expected empty warning, got %q", got)
+				}
+			} else {
+				if !strings.Contains(got, tt.wantContains) {
+					t.Errorf("expected warning to contain %q, got %q", tt.wantContains, got)
+				}
+			}
+		})
+	}
 }
 
 func TestContextStrategy_ConfigUpdatedEvent(t *testing.T) {
