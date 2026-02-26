@@ -785,7 +785,7 @@ func TestOpenAI_InternalErrors(t *testing.T) {
 			t.Errorf("expected request creation error, got %v", err)
 		}
 	})
-	
+
 	t.Run("HTTP Request Failure", func(t *testing.T) {
 		// A URL that will fail on Do()
 		c := NewClient("http://non-existent.localhost", "gpt-4", &auth.BearerAuth{Token: "key"}, nil, "", 0, 0)

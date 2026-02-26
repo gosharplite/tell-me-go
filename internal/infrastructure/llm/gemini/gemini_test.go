@@ -823,7 +823,7 @@ func TestGemini_EdgeCases(t *testing.T) {
 			t.Errorf("expected mock baseURL, got %s", baseURL)
 		}
 	})
-	
+
 	t.Run("toSDKContent nil input", func(t *testing.T) {
 		c := &Client{}
 		res := c.toSDKContent(context.Background(), []*llm.Content{nil}, nil)

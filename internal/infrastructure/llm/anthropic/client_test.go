@@ -842,7 +842,7 @@ func TestAnthropic_EdgeCases(t *testing.T) {
 		}
 		// Should have gracefully handled invalid JSON and still cleaned up or just returned
 	})
-	
+
 	t.Run("handleAnthropicEvent unknown type", func(t *testing.T) {
 		c := &client{}
 		err := c.handleAnthropicEvent("unknown", "", nil, nil)

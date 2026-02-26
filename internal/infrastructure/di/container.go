@@ -155,7 +155,11 @@ func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
 
 		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
 
-		return agent.New(params.Gateway, params.HistoryManager, params.Registry, params.SecurityManager, params.EventBus, summarizer, params.ProviderName,
+		return agent.New(params.Gateway, params.EventBus, params.ProviderName,
+			agent.WithHistoryManager(params.HistoryManager),
+			agent.WithRegistry(params.Registry),
+			agent.WithSecurityManager(params.SecurityManager),
+			agent.WithSummarizer(summarizer),
 			agent.WithPricing(params.Model, params.Mode, params.PricingOverrides),
 			agent.WithSessionCostTracker(params.CostTracker),
 			agent.WithInternalTools(),
