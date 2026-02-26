@@ -118,6 +118,61 @@ func TestTurnEngine_TransientRecovery(t *testing.T) {
 	}
 }
 
+func TestTurnEngine_RateLimitRecovery(t *testing.T) {
+	tracker := &errorPhaseTracker{}
+	callCount := 0
+
+	gw := &mockGateway{
+		GenerateFunc: func(ctx context.Context, input []*llm.Content, tools []*tools.ToolDeclaration, resolver llm.AssetResolver) (<-chan *llm.Content, func() (*llm.Content, *llm.Metrics, error)) {
+			callCount++
+			ch := make(chan *llm.Content)
+			close(ch)
+
+			return ch, func() (*llm.Content, *llm.Metrics, error) {
+				if callCount == 1 {
+					return nil, nil, newAgentError(llm.ErrRateLimit, "resource exhausted", nil)
+				}
+				return &llm.Content{Role: "model", Parts: []*llm.Part{{Text: "recovered"}}}, &llm.Metrics{}, nil
+			}
+		},
+	}
+
+	exec := &errorMockExecutor{}
+	engine, _ := setupEngineForErrors(t, gw, exec, tracker)
+
+	err := engine.Run(context.Background(), time.Now())
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	// Verification: turn.State.RetryCount should be 1
+	if tracker.lastState == nil {
+		t.Fatal("lastState should not be nil")
+	}
+	if tracker.lastState.RetryCount != 1 {
+		t.Errorf("Expected RetryCount 1, got %d", tracker.lastState.RetryCount)
+	}
+
+	// Verification: Ensure callCount == 2
+	if callCount != 2 {
+		t.Errorf("Expected 2 calls, got %d", callCount)
+	}
+
+	// Verification: Phase sequence should include: Refining -> Inference -> Recovering -> Refining -> Inference -> Persisting -> Complete
+	expectedPhases := []turnPhase{phaseRefining, phaseInference, phaseRecovering, phaseRefining, phaseInference, phasePersisting, phaseComplete}
+
+	if len(tracker.phases) != len(expectedPhases) {
+		t.Errorf("Expected %d phase transitions, got %d: %v", len(expectedPhases), len(tracker.phases), tracker.phases)
+	} else {
+		for i, p := range expectedPhases {
+			if tracker.phases[i] != p {
+				t.Errorf("Phase mismatch at index %d: expected %s, got %s", i, p, tracker.phases[i])
+			}
+		}
+	}
+}
+
 func TestTurnEngine_FatalAuthFailure(t *testing.T) {
 	tracker := &errorPhaseTracker{}
 	callCount := 0
