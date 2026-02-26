@@ -41,19 +41,25 @@ type Chatter interface {
 	Shutdown(ctx context.Context) error
 }
 
+// ChatterParams encapsulates all dependencies and configuration required to create a Chatter instance.
+type ChatterParams struct {
+	Loader           config.ConfigLoader
+	Gateway          llm.LLMGateway
+	HistoryManager   HistoryManager
+	Registry         tools.IToolRegistry
+	SecurityManager  security.ISecurityManager
+	DisableStreaming bool
+	EventBus         events.EventBus
+	ProviderName     string
+	Model            string
+	Mode             string
+	LogPath          string
+	PricingOverrides map[string]pricing.ModelPricing
+	CostTracker      pricing.ICostTracker
+}
+
 // ChatterFactory defines the functional signature for creating a Chatter instance.
-type ChatterFactory func(
-	loader config.ConfigLoader,
-	client llm.LLMGateway,
-	hManager HistoryManager,
-	registry tools.IToolRegistry,
-	sm security.ISecurityManager,
-	disableStreaming bool,
-	bus events.EventBus,
-	providerName, model, mode, logPath string,
-	pricingOverrides map[string]pricing.ModelPricing,
-	tracker pricing.ICostTracker,
-) Chatter
+type ChatterFactory func(params ChatterParams) Chatter
 
 // SessionConfig defines the configuration interface for a session.
 type SessionConfig interface {

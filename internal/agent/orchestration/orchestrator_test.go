@@ -16,7 +16,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/stretchr/testify/assert"
@@ -117,7 +116,7 @@ func TestOrchestrator_Run_Success(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+	factory := func(params services.ChatterParams) services.Chatter {
 		return mChatter
 	}
 
@@ -315,7 +314,7 @@ func TestOrchestrator_Run_Error(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+	factory := func(params services.ChatterParams) services.Chatter {
 		return mChatter
 	}
 
@@ -349,7 +348,7 @@ func TestOrchestrator_Run_NoPrompt_WithLastN(t *testing.T) {
 	mHistory := new(mockHistoryManager)
 	mEventBus := events.NewSimpleEventBus()
 
-	factory := func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, registry tools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+	factory := func(params services.ChatterParams) services.Chatter {
 		return nil
 	}
 

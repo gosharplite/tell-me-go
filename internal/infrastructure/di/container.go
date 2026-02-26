@@ -19,7 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
 	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
-	domain_tools "github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/exec"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	infra_llm "github.com/gosharplite/tell-me-go/internal/infrastructure/llm"
@@ -151,16 +150,16 @@ func (b *bootstrapper) BuildSessionDependencies(ctx stdctx.Context, cfg *config.
 
 // GetAgentFactory returns a factory for creating Chatter instances.
 func (b *bootstrapper) GetAgentFactory() services.ChatterFactory {
-	return func(loader config.ConfigLoader, client llm.LLMGateway, hManager services.HistoryManager, reg domain_tools.IToolRegistry, sm security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]pricing.ModelPricing, tracker pricing.ICostTracker) services.Chatter {
-		telemetry.RegisterTraceSubscriber(bus, logPath)
+	return func(params services.ChatterParams) services.Chatter {
+		telemetry.RegisterTraceSubscriber(params.EventBus, params.LogPath)
 
-		summarizer := infra_llm.NewSummarizer(client, bus)
+		summarizer := infra_llm.NewSummarizer(params.Gateway, params.EventBus)
 
-		return agent.New(client, hManager, reg, sm, bus, summarizer, providerName,
-			agent.WithPricing(model, mode, pricingOverrides),
-			agent.WithSessionCostTracker(tracker),
+		return agent.New(params.Gateway, params.HistoryManager, params.Registry, params.SecurityManager, params.EventBus, summarizer, params.ProviderName,
+			agent.WithPricing(params.Model, params.Mode, params.PricingOverrides),
+			agent.WithSessionCostTracker(params.CostTracker),
 			agent.WithInternalTools(),
-			agent.WithLoader(loader),
+			agent.WithLoader(params.Loader),
 		)
 	}
 }

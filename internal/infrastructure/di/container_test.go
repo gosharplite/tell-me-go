@@ -15,6 +15,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/history"
 	"github.com/gosharplite/tell-me-go/internal/infrastructure/registry"
@@ -231,7 +232,22 @@ func TestGetAgentFactory_Execution(t *testing.T) {
 	hManager := history.NewManager(nil, "history.jsonl", "archive.jsonl")
 	reg := registry.New()
 
-	agent := factory(nil, client, hManager, reg, sm, false, bus, "test-provider", "test-model", "assistant", "tokens.log", nil, nil)
+	params := services.ChatterParams{
+		Loader:           nil,
+		Gateway:          client,
+		HistoryManager:   hManager,
+		Registry:         reg,
+		SecurityManager:  sm,
+		DisableStreaming: false,
+		EventBus:         bus,
+		ProviderName:     "test-provider",
+		Model:            "test-model",
+		Mode:             "assistant",
+		LogPath:          "tokens.log",
+		PricingOverrides: nil,
+		CostTracker:      nil,
+	}
+	agent := factory(params)
 	assert.NotNil(t, agent)
 }
 

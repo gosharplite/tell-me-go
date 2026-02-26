@@ -90,7 +90,7 @@ func TestChatCommand_Execute(t *testing.T) {
 	mChatter := &mockChatter{}
 	mClient := &mockClient{}
 	mContainer := &mockContainer{
-		AgentFactory: func(loader domain_config.ConfigLoader, client domain_llm.LLMGateway, hManager services.HistoryManager, reg domaintools.IToolRegistry, sm domain_security.ISecurityManager, disableStreaming bool, bus events.EventBus, providerName, model, mode, logPath string, pricingOverrides map[string]domain_pricing.ModelPricing, tracker domain_pricing.ICostTracker) services.Chatter {
+		AgentFactory: func(params services.ChatterParams) services.Chatter {
 			return mChatter
 		},
 		Client: mClient,

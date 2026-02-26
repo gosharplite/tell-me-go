@@ -12,7 +12,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/persistence"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
-	"github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
@@ -166,18 +165,7 @@ func (m *mockFailingUIRenderer) LogSystemMessage(string, string)                
 func (m *mockFailingUIRenderer) LogAgentStatus(status string)                              {}
 
 func TestOrchestrator_ConfigError(t *testing.T) {
-	agentFactory := func(
-		loader config.ConfigLoader,
-		gw llm.LLMGateway,
-		history services.HistoryManager,
-		registry tools.IToolRegistry,
-		sm security.ISecurityManager,
-		disableStreaming bool,
-		bus events.EventBus,
-		provider, model, mode, logPath string,
-		overrides map[string]domain_pricing.ModelPricing,
-		tracker domain_pricing.ICostTracker,
-	) services.Chatter {
+	agentFactory := func(params services.ChatterParams) services.Chatter {
 		return &mockFailingChatter{err: errors.New("config failed")}
 	}
 
