@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -20,22 +19,10 @@ import (
 	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/telemetry"
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
+	"github.com/gosharplite/tell-me-go/internal/pkg/clock"
 
 	"go.opentelemetry.io/otel"
 )
-
-// clock provides a way to get the current time and handle delays, facilitating deterministic testing.
-type clock interface {
-	Now() time.Time
-	After(d time.Duration) <-chan time.Time
-	Jitter(base float64) float64
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time                         { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-func (realClock) Jitter(base float64) float64            { return base * (0.9 + (rand.Float64() * 0.2)) }
 
 // turnPhase represents the current stage of a single agent turn.
 type turnPhase string
@@ -59,7 +46,7 @@ type processResult struct {
 
 // retryPolicy defines how the engine should handle errors and retries.
 type retryPolicy interface {
-	ShouldRetry(c clock, err error, attempt int) (time.Duration, bool)
+	ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool)
 }
 
 // defaultRetryPolicy provides a standard retry implementation with linear backoff.
@@ -69,7 +56,7 @@ type defaultRetryPolicy struct {
 	RateLimitBackoff time.Duration
 }
 
-func (p *defaultRetryPolicy) ShouldRetry(c clock, err error, attempt int) (time.Duration, bool) {
+func (p *defaultRetryPolicy) ShouldRetry(c clock.Clock, err error, attempt int) (time.Duration, bool) {
 	if attempt >= p.MaxRetries {
 		return 0, false
 	}
@@ -153,7 +140,7 @@ type turn struct {
 	Registry     tools.IToolRegistry
 	Events       events.EventBus
 	MaxToolTurns int
-	Clock        clock
+	Clock        clock.Clock
 	CostTracker  domain_pricing.ICostTracker
 	ProviderName string
 	Model        string
@@ -177,12 +164,19 @@ type turnEngine struct {
 	middleware       []turnMiddleware
 	hooks            []turnHook
 	retryPolicy      retryPolicy
-	clock            clock
+	clock            clock.Clock
 	sm               domain_security.ISecurityManager
 	providerName     string
 	model            string
 	pricingOverrides map[string]domain_pricing.ModelPricing
 	costTracker      domain_pricing.ICostTracker
+}
+
+// WithClock sets a custom clock implementation.
+func WithClock(c clock.Clock) engineOption {
+	return func(e *turnEngine) {
+		e.clock = c
+	}
 }
 
 // engineOption allows configuring the turnEngine.
@@ -234,7 +228,7 @@ func newTurnEngine(gw llm.LLMGateway, ex iToolExecutor, cm *orchestration.Contex
 		events:      bus,
 		processors:  make(map[turnPhase]turnProcessor),
 		retryPolicy: &defaultRetryPolicy{MaxRetries: 4, Backoff: 1 * time.Second, RateLimitBackoff: 5 * time.Second},
-		clock:       realClock{},
+		clock:       clock.RealClock{},
 	}
 
 	// Register default processors
@@ -384,7 +378,7 @@ func (e *turnEngine) runPhaseLoop(ctx context.Context, turn *turn) error {
 }
 
 func (e *turnEngine) finalizeTurnTrace(trace *telemetry.TurnTrace, err error) {
-	trace.EndTime = time.Now()
+	trace.EndTime = e.clock.Now()
 	trace.FinalStatus = "success"
 	if err != nil {
 		trace.FinalStatus = "error"
@@ -477,9 +471,9 @@ func (p *contextRefiner) process(ctx context.Context, turn *turn) (processResult
 type inferenceStep struct{}
 
 func (p *inferenceStep) process(ctx context.Context, turn *turn) (processResult, error) {
-	start := time.Now()
+	start := turn.Clock.Now()
 	respContent, metrics, err := p.invokeModel(ctx, turn)
-	inferenceDuration := time.Since(start)
+	inferenceDuration := turn.Clock.Now().Sub(start)
 
 	if trace := telemetry.TraceFromContext(ctx); trace != nil {
 		trace.InferenceDuration = inferenceDuration

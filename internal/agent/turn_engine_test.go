@@ -304,7 +304,7 @@ func TestTurnEngine_Recovery_InferenceTransient(t *testing.T) {
 	}
 
 	cm := newTestContextManager(strategy, hManager, bus)
-	e := newTurnEngine(mockGw, nil, cm, reg, bus, withClock(&mockClock{}))
+	e := newTurnEngine(mockGw, nil, cm, reg, bus, WithClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -369,7 +369,7 @@ func TestTurnEngine_Recovery_PrepareTransient(t *testing.T) {
 	}
 	cm.SetPipeline(orchestration.NewContextPipeline(mt))
 
-	e := newTurnEngine(mockGw, nil, cm, reg, bus, withClock(&mockClock{}))
+	e := newTurnEngine(mockGw, nil, cm, reg, bus, WithClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -444,7 +444,7 @@ func TestTurnEngine_MiddlewareOrder(t *testing.T) {
 		Gateway:    mockGw,
 		CtxManager: e.ctxManager,
 		Registry:   reg,
-		Clock:      &realClock{},
+		Clock:      &mockClock{},
 	}
 
 	if _, err := e.processors[phaseInference].process(context.Background(), turn); err != nil {
@@ -490,7 +490,7 @@ func TestTurnEngine_ClockInjection(t *testing.T) {
 	hManager := &mockHistoryManager{}
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "p"}}})
 
-	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, bus), reg, bus, withClock(mockClock))
+	e := newTurnEngine(mockGw, nil, newTestContextManager(orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(reg), nil), hManager, bus), reg, bus, WithClock(mockClock))
 
 	err := e.Run(context.Background(), fixedTime)
 	if err != nil {
@@ -545,7 +545,7 @@ func TestTurnEngine_RecoveryLogic_TerminalAndContext(t *testing.T) {
 					LastError: tt.err,
 					Phase:     phaseRecovering,
 				},
-				Clock: &realClock{},
+				Clock: &mockClock{},
 			}
 
 			p := &recoveryStep{Policy: &defaultRetryPolicy{MaxRetries: 3}}
@@ -582,7 +582,7 @@ func TestTurnEngine_RecoveryLogic_GatewayTransient(t *testing.T) {
 		}
 	}
 
-	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, withClock(&mockClock{}))
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -613,7 +613,7 @@ func TestTurnEngine_Run_GlobalRetryLimit(t *testing.T) {
 		}
 	}
 
-	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, withClock(&mockClock{}))
+	e := newTurnEngine(mockGw, nil, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&mockClock{}))
 	strategy.SetLimits(1000, 5, 10)
 
 	err := e.Run(context.Background(), time.Now())
@@ -871,7 +871,7 @@ func TestTurnEngine_Run_PerTurnRetryLimit(t *testing.T) {
 		},
 	}
 
-	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil, withClock(&mockClock{}))
+	e := newTurnEngine(mockGw, mockEx, newTestContextManager(strategy, hManager, nil), reg, nil, WithClock(&mockClock{}))
 	// Default MaxRetries is 3.
 	// If retries were global, turn 1 would fail because totalRetries would be 2 from turn 0,
 	// and turn 1's first failure would set it to 3, then second would hit limit.
@@ -1198,12 +1198,6 @@ func withRetryPolicy(p retryPolicy) engineOption {
 	}
 }
 
-func withClock(c clock) engineOption {
-	return func(e *turnEngine) {
-		e.clock = c
-	}
-}
-
 // mockBlockingClock for testing select blocks with ctx.Done()
 type mockBlockingClock struct {
 	afterChan chan time.Time
@@ -1211,6 +1205,12 @@ type mockBlockingClock struct {
 }
 
 func (m *mockBlockingClock) Now() time.Time { return time.Now() }
+func (m *mockBlockingClock) Sleep(d time.Duration) {
+	if m.onAfter != nil {
+		m.onAfter()
+	}
+	<-m.afterChan
+}
 func (m *mockBlockingClock) After(d time.Duration) <-chan time.Time {
 	if m.onAfter != nil {
 		m.onAfter()
@@ -1257,7 +1257,7 @@ func testContextCancellation_ExecutionStep(t *testing.T) {
 			HasToolCalls: true,
 		},
 		executor: ex,
-		Clock:    realClock{},
+		Clock:    &mockClock{},
 	}
 
 	p := &executionStep{}

@@ -58,9 +58,9 @@ func setupEngineForErrors(t *testing.T, gw llm.LLMGateway, exec iToolExecutor, t
 	}
 	cm := orchestration.NewContextManager(strategy, hManager, bus, factory)
 
-	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Microsecond}
+	policy := &defaultRetryPolicy{MaxRetries: 2, Backoff: 1 * time.Second}
 
-	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker))
+	engine := newTurnEngine(gw, exec, cm, reg, bus, withRetryPolicy(policy), withHook(tracker), WithClock(&mockClock{}))
 
 	// Pre-populate history with a user message so it can run
 	_ = hManager.AddContent(context.Background(), &llm.Content{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}})
@@ -334,6 +334,7 @@ func TestTurnEngine_UnknownPhaseError(t *testing.T) {
 		State: &turnState{
 			Phase: "phaseNonExistent",
 		},
+		Clock: &mockClock{},
 	}
 
 	_, err := engine.executePhase(context.Background(), turn)
@@ -374,6 +375,7 @@ func TestTurnEngine_NilLLMResponse(t *testing.T) {
 		State: &turnState{
 			PreparedHistory: []*llm.Content{{Role: "user", Parts: []*llm.Part{{Text: "Hello"}}}},
 		},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(context.Background(), turn)
@@ -480,7 +482,7 @@ func TestTurnEngine_ExecutionStep_CircuitBreaker(t *testing.T) {
 				}, nil
 			},
 		},
-		Clock: &realClock{},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(ctx, turnObj)
@@ -513,7 +515,7 @@ func TestTurnEngine_ExecutionStep_ToolError(t *testing.T) {
 				return nil, expectedErr
 			},
 		},
-		Clock: &realClock{},
+		Clock: &mockClock{},
 	}
 
 	_, err := step.process(ctx, turnObj)
