@@ -120,15 +120,8 @@ func withLoopDetector() turnMiddleware {
 				h := sha256.Sum256(rawJSON)
 				currentHash := hex.EncodeToString(h[:])
 
-				for _, prevHash := range turn.State.RecentResponseHashes {
-					if currentHash == prevHash {
-						snippet := string(rawJSON)
-						if len(snippet) > 150 {
-							snippet = snippet[:147] + "..."
-						}
-						errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
-						return processResult{Stop: true}, newAgentError(errLogic, errMsg, nil)
-					}
+				if err := checkDuplicateResponse(currentHash, turn.State.RecentResponseHashes, rawJSON); err != nil {
+					return processResult{Stop: true}, err
 				}
 				// Keep last N hashes (using the same repetition limit)
 				turn.State.RecentResponseHashes = append(turn.State.RecentResponseHashes, currentHash)
@@ -152,4 +145,18 @@ func withLoopDetector() turnMiddleware {
 			return res, err
 		})
 	}
+}
+
+func checkDuplicateResponse(currentHash string, recentHashes []string, rawJSON []byte) error {
+	for _, prevHash := range recentHashes {
+		if currentHash == prevHash {
+			snippet := string(rawJSON)
+			if len(snippet) > 150 {
+				snippet = snippet[:147] + "..."
+			}
+			errMsg := fmt.Sprintf("infinite loop detected: model is repeating a previous response: %s", snippet)
+			return newAgentError(errLogic, errMsg, nil)
+		}
+	}
+	return nil
 }
