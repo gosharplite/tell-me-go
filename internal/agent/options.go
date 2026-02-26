@@ -12,7 +12,6 @@ import (
 // agentConfig holds initialization-only dependencies and configuration.
 type agentConfig struct {
 	summarizer       services.Summarizer
-	hManager         services.HistoryManager
 	registerInternal bool
 	model            string
 	mode             string
@@ -31,12 +30,6 @@ func WithSummarizer(s services.Summarizer) Option {
 	}
 }
 
-// WithHistoryManager sets the history manager for the agent.
-func WithHistoryManager(h services.HistoryManager) Option {
-	return func(c *agentConfig) {
-		c.hManager = h
-	}
-}
 
 // WithInternalTools enables the registration of internal agent tools.
 func WithInternalTools() Option {

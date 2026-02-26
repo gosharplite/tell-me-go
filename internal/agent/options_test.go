@@ -12,7 +12,6 @@ import (
 
 func TestAgentOptions(t *testing.T) {
 	mockSummarizer := &mockSummarizer{}
-	mockHManager := &mockHistoryManager{}
 	mockLoader := &mockLoader{}
 	mockTracker := &mockTracker{}
 	overrides := map[string]domain_pricing.ModelPricing{
@@ -29,13 +28,6 @@ func TestAgentOptions(t *testing.T) {
 			option: WithSummarizer(mockSummarizer),
 			validate: func(t *testing.T, cfg *agentConfig) {
 				require.Equal(t, mockSummarizer, cfg.summarizer)
-			},
-		},
-		{
-			name:   "WithHistoryManager",
-			option: WithHistoryManager(mockHManager),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockHManager, cfg.hManager)
 			},
 		},
 		{

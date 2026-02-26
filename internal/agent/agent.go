@@ -19,15 +19,6 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
 
-// Registry defines the tool management interface needed by the agent.
-type Registry interface {
-	tools.IToolRegistry
-}
-
-// SecurityManager defines the safety controls needed for tool execution.
-type SecurityManager interface {
-	domain_security.ISecurityManager
-}
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
@@ -54,7 +45,7 @@ type agent struct {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string, registry Registry, sm SecurityManager, opts ...Option) *agent {
+func New(client domain_llm.LLMGateway, bus events.EventBus, hManager services.HistoryManager, providerName string, registry tools.IToolRegistry, sm domain_security.ISecurityManager, opts ...Option) *agent {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
@@ -85,13 +76,13 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string,
 
 	factory := &orchestration.PipelineFactory{
 		Registry:   registry,
-		History:    cfg.hManager,
+		History:    hManager,
 		Summarizer: cfg.summarizer,
 		Estimator:  strategy,
 		Events:     bus,
 	}
 
-	ctxManager := orchestration.NewContextManager(strategy, cfg.hManager, bus, factory)
+	ctxManager := orchestration.NewContextManager(strategy, hManager, bus, factory)
 	a.ctxManager = ctxManager
 
 	// Initialize engine

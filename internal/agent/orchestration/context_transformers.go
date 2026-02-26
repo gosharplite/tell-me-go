@@ -192,34 +192,35 @@ func (t *contentCleaner) Transform(ctx context.Context, req *services.ContextReq
 }
 
 func cleanContent(content *llm.Content) bool {
-	originalParts := content.Parts
+	// 1. O(N) check to see if an allocation/rebuild is actually needed
+	hasEmpty := false
+	for _, p := range content.Parts {
+		if p.IsEmpty() {
+			hasEmpty = true
+			break
+		}
+	}
+
+	// 2. Happy path: Zero allocations
+	if !hasEmpty && len(content.Parts) > 0 {
+		return false
+	}
+
+	// 3. Unhappy path: Only allocate and rebuild if modifications are necessary
 	var cleanParts []*llm.Part
-	for _, p := range originalParts {
+	for _, p := range content.Parts {
 		if !p.IsEmpty() {
 			cleanParts = append(cleanParts, p)
 		}
 	}
+
+	// 4. Fallback if everything was empty
 	if len(cleanParts) == 0 {
 		cleanParts = append(cleanParts, &llm.Part{Text: "[empty response]"})
 	}
 
-	// Check if we actually changed anything
-	isDifferent := len(cleanParts) != len(originalParts)
-	if !isDifferent {
-		// Even if same length, check if the parts themselves changed (e.g. replaced empty with fallback)
-		for i := range cleanParts {
-			if cleanParts[i] != originalParts[i] {
-				isDifferent = true
-				break
-			}
-		}
-	}
-
-	if isDifferent {
-		content.Parts = cleanParts
-		return true
-	}
-	return false
+	content.Parts = cleanParts
+	return true
 }
 
 func (t *contentCleaner) Priority() int { return 5 }
