@@ -13,6 +13,7 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	"github.com/gosharplite/tell-me-go/internal/domain/llm"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
@@ -39,9 +40,7 @@ func TestSlidingWindowPolicy_MarkTurns(t *testing.T) {
 
 			p.MarkTurns(context.Background(), turns, keep)
 			for i, k := range keep {
-				if k != tt.expectKeep[i] {
-					t.Errorf("at index %d: expected %v, got %v", i, tt.expectKeep[i], k)
-				}
+				require.Equal(t, tt.expectKeep[i], k, "at index %d", i)
 			}
 		})
 	}
@@ -67,19 +66,13 @@ func TestHistoryPruner_Transform(t *testing.T) {
 		}
 
 		err := pruner.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if len(req.History) != 2 {
-			t.Errorf("expected 2 messages remaining, got %d", len(req.History))
-		}
-		if req.Metadata.PrunedTurns != 2 {
-			t.Errorf("expected 2 pruned turns, got %d", req.Metadata.PrunedTurns)
-		}
-		if count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]; !ok || count != 1 {
-			t.Errorf("expected KeptByPolicy[SlidingWindow] == 1, got %v", count)
-		}
+		require.Len(t, req.History, 2)
+		require.Equal(t, 2, req.Metadata.PrunedTurns)
+		count, ok := req.Metadata.KeptByPolicy["SlidingWindow"]
+		require.True(t, ok)
+		require.Equal(t, 1, count)
 	})
 
 	t.Run("No pruning", func(t *testing.T) {
@@ -90,12 +83,8 @@ func TestHistoryPruner_Transform(t *testing.T) {
 			History: []*llm.Content{{Role: "user"}},
 		}
 		err := pruner.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
-		if req.Metadata.PrunedTurns != 0 {
-			t.Errorf("expected 0 pruned turns, got %d", req.Metadata.PrunedTurns)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 0, req.Metadata.PrunedTurns)
 	})
 }
 
@@ -112,15 +101,11 @@ func TestImportanceRankPolicy_MarkTurns(t *testing.T) {
 
 	count := p.MarkTurns(context.Background(), history, keep)
 
-	if count != 3 {
-		t.Errorf("expected count 3, got %d", count)
-	}
+	require.Equal(t, 3, count)
 
 	expected := []bool{false, true, true, true}
 	for i, k := range keep {
-		if k != expected[i] {
-			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
-		}
+		require.Equal(t, expected[i], k, "at index %d", i)
 	}
 }
 
@@ -136,15 +121,11 @@ func TestPinningPolicy_MarkTurns(t *testing.T) {
 
 	count := p.MarkTurns(context.Background(), history, keep)
 
-	if count != 2 {
-		t.Errorf("expected count 2, got %d", count)
-	}
+	require.Equal(t, 2, count)
 
 	expected := []bool{false, true, true}
 	for i, k := range keep {
-		if k != expected[i] {
-			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
-		}
+		require.Equal(t, expected[i], k, "at index %d", i)
 	}
 }
 
@@ -168,9 +149,7 @@ func TestCompositePruningPolicy_MarkTurns(t *testing.T) {
 	// T0 kept by Pinning, T2 kept by SlidingWindow
 	expected := []bool{true, false, true}
 	for i, k := range keep {
-		if k != expected[i] {
-			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
-		}
+		require.Equal(t, expected[i], k, "at index %d", i)
 	}
 }
 
@@ -184,12 +163,8 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
-		if req.Metadata.FinalTokenCount != 500 {
-			t.Errorf("expected 500 tokens, got %d", req.Metadata.FinalTokenCount)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 500, req.Metadata.FinalTokenCount)
 	})
 
 	t.Run("Exceeds limit after summarization", func(t *testing.T) {
@@ -209,9 +184,7 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		}
 		req := &request{History: h}
 		err := tg.Transform(ctx, req)
-		if !errors.Is(err, llm.ErrContextLimitExceeded) {
-			t.Errorf("expected ErrContextLimitExceeded, got %v", err)
-		}
+		require.ErrorIs(t, err, llm.ErrContextLimitExceeded)
 	})
 
 	t.Run("Summarization failure", func(t *testing.T) {
@@ -231,12 +204,8 @@ func TestTokenGatekeeper_Transform(t *testing.T) {
 		req := &request{History: h}
 		err := tg.Transform(ctx, req)
 		// Should still succeed if under limit, but metadata won't show summarization
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
-		if req.Metadata.SummarizedTurns != 0 {
-			t.Errorf("expected 0 summarized turns on error, got %d", req.Metadata.SummarizedTurns)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 0, req.Metadata.SummarizedTurns)
 	})
 }
 
@@ -257,13 +226,9 @@ func TestWarningInjector_Transform(t *testing.T) {
 		req.Metadata.FinalTokenCount = 100
 
 		err := injector.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if len(req.Metadata.Warnings) == 0 {
-			t.Error("expected warnings in metadata")
-		}
+		require.NotEmpty(t, req.Metadata.Warnings)
 		lastContent := req.History[len(req.History)-1]
 		found := false
 		for _, p := range lastContent.TransientParts {
@@ -272,9 +237,7 @@ func TestWarningInjector_Transform(t *testing.T) {
 				break
 			}
 		}
-		if !found {
-			t.Errorf("warning not found in transient parts: %v", lastContent.TransientParts)
-		}
+		require.True(t, found, "warning not found in transient parts: %v", lastContent.TransientParts)
 	})
 }
 
@@ -315,19 +278,13 @@ func TestTokenGatekeeper_AutoSummarize_PinnedAware(t *testing.T) {
 	}
 
 	req := &request{History: h}
-	if err := tg.Transform(ctx, req); err != nil {
-		t.Fatalf("Transform failed: %v", err)
-	}
+	err := tg.Transform(ctx, req)
+	require.NoError(t, err)
 
-	if !summarizerCalled {
-		t.Error("Summarizer was not called")
-	}
-	if req.Metadata.SummarizedTurns != 5 {
-		t.Errorf("expected 5 summarized turns, got %d", req.Metadata.SummarizedTurns)
-	}
-	if !req.History[0].Pinned || req.History[2].Pinned == false {
-		t.Error("Pinned turns were lost or corrupted")
-	}
+	require.True(t, summarizerCalled)
+	require.Equal(t, 5, req.Metadata.SummarizedTurns)
+	require.True(t, req.History[0].Pinned)
+	require.True(t, req.History[2].Pinned)
 }
 
 func TestWarningInjector_Transform_Clogged(t *testing.T) {
@@ -348,13 +305,9 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 		req.Metadata.SummarizationAttempted = true
 
 		err := injector.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
+		require.NoError(t, err)
 
-		if len(req.Metadata.Warnings) == 0 {
-			t.Error("expected warnings in metadata")
-		}
+		require.NotEmpty(t, req.Metadata.Warnings)
 		lastContent := req.History[len(req.History)-1]
 		found := false
 		for _, p := range lastContent.TransientParts {
@@ -363,9 +316,7 @@ func TestWarningInjector_Transform_Clogged(t *testing.T) {
 				break
 			}
 		}
-		if !found {
-			t.Errorf("clogged warning not found in transient parts: %v", lastContent.TransientParts)
-		}
+		require.True(t, found, "clogged warning not found in transient parts: %v", lastContent.TransientParts)
 	})
 }
 
@@ -386,12 +337,8 @@ func TestTokenGatekeeper_SetsSummarizationAttempted(t *testing.T) {
 	}
 	req := &request{History: h}
 	err := tg.Transform(ctx, req)
-	if err != nil {
-		t.Fatalf("Transform failed: %v", err)
-	}
-	if !req.Metadata.SummarizationAttempted {
-		t.Error("expected SummarizationAttempted to be true")
-	}
+	require.NoError(t, err)
+	require.True(t, req.Metadata.SummarizationAttempted)
 }
 
 func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
@@ -414,13 +361,9 @@ func TestTokenGatekeeper_AutoSummarize_BlockedByPins(t *testing.T) {
 
 	err := tg.Transform(ctx, req)
 	// autoSummarize will fail, but since tokens (1900) < SafetyLimit (2000-buffer), it might not fail the turn.
-	if !errors.Is(err, llm.ErrContextLimitExceeded) {
-		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
-	}
+	require.ErrorIs(t, err, llm.ErrContextLimitExceeded)
 
-	if !req.Metadata.MaintenanceBlocked {
-		t.Error("expected MaintenanceBlocked to be true")
-	}
+	require.True(t, req.Metadata.MaintenanceBlocked)
 }
 
 func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
@@ -438,9 +381,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 		req.Metadata.MaintenanceBlocked = true
 
 		err := injector.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
+		require.NoError(t, err)
 
 		found := false
 		for _, w := range req.Metadata.Warnings {
@@ -449,9 +390,7 @@ func TestWarningInjector_Transform_MaintenanceBlocked(t *testing.T) {
 				break
 			}
 		}
-		if !found {
-			t.Error("Clogged warning not found in metadata after maintenance was blocked")
-		}
+		require.True(t, found, "Clogged warning not found in metadata after maintenance was blocked")
 	})
 }
 
@@ -482,8 +421,10 @@ func TestTokenGatekeeper_SafetyBuffer_Boundary(t *testing.T) {
 			}
 			req := &request{History: []*llm.Content{{Role: "user"}}}
 			err := tg.Transform(ctx, req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -500,13 +441,9 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 	}
 
 	err := pipeline.executeWithPersistence(ctx, req, nil)
-	if !errors.Is(err, llm.ErrContextLimitExceeded) {
-		t.Fatalf("expected ErrContextLimitExceeded, got %v", err)
-	}
+	require.ErrorIs(t, err, llm.ErrContextLimitExceeded)
 
-	if !req.Metadata.MaintenanceBlocked {
-		t.Error("expected MaintenanceBlocked to be true")
-	}
+	require.True(t, req.Metadata.MaintenanceBlocked)
 
 	// Second run with higher limit to trigger clogged warning instead of error
 	maxTokens = 20000
@@ -518,13 +455,10 @@ func TestContextPipeline_EndToEnd_CloggedPressure(t *testing.T) {
 		History: generatePinnedHistory(20, 2960),
 		Turn:    1,
 	}
-	if err := pipeline.executeWithPersistence(ctx, req2, nil); err != nil {
-		t.Fatalf("execute failed: %v", err)
-	}
+	err = pipeline.executeWithPersistence(ctx, req2, nil)
+	require.NoError(t, err)
 
-	if !req2.Metadata.MaintenanceBlocked {
-		t.Error("expected MaintenanceBlocked to be true for second run")
-	}
+	require.True(t, req2.Metadata.MaintenanceBlocked)
 
 	assertHasWarning(t, req2.History[len(req2.History)-1], "A recent summarization failed")
 }
@@ -539,15 +473,11 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
-		if !errors.Is(err, llm.ErrContextLimitExceeded) {
-			t.Errorf("expected ErrContextLimitExceeded for 901 tokens (limit 900), got %v", err)
-		}
+		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 901 tokens (limit 900)")
 
 		tg.Estimator.(*mockEstimator).tokens = 900
 		err = tg.Transform(ctx, req)
-		if err != nil {
-			t.Errorf("expected success for 900 tokens, got %v", err)
-		}
+		require.NoError(t, err)
 	})
 
 	t.Run("Capped by SystemContextBuffer", func(t *testing.T) {
@@ -557,15 +487,11 @@ func TestTokenGatekeeper_SystemContextBuffer_Boundary(t *testing.T) {
 		}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		err := tg.Transform(ctx, req)
-		if !errors.Is(err, llm.ErrContextLimitExceeded) {
-			t.Errorf("expected ErrContextLimitExceeded for 9001 tokens (limit 9000), got %v", err)
-		}
+		require.ErrorIs(t, err, llm.ErrContextLimitExceeded, "expected ErrContextLimitExceeded for 9001 tokens (limit 9000)")
 
 		tg.Estimator.(*mockEstimator).tokens = 9000
 		err = tg.Transform(ctx, req)
-		if err != nil {
-			t.Errorf("expected success for 9000 tokens, got %v", err)
-		}
+		require.NoError(t, err)
 	})
 }
 
@@ -664,12 +590,8 @@ func TestEmptyTurnFilter_Transform(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := &request{History: tt.input}
 			err := filter.Transform(ctx, req)
-			if err != nil {
-				t.Fatalf("Transform failed: %v", err)
-			}
-			if len(req.History) != tt.expected {
-				t.Errorf("expected %d messages, got %d", tt.expected, len(req.History))
-			}
+			require.NoError(t, err)
+			require.Len(t, req.History, tt.expected)
 		})
 	}
 }
@@ -691,9 +613,7 @@ func TestImportanceRankPolicy_MixedContent(t *testing.T) {
 
 	expected := []bool{true, false}
 	for i, k := range keep {
-		if k != expected[i] {
-			t.Errorf("at index %d: expected %v, got %v", i, expected[i], k)
-		}
+		require.Equal(t, expected[i], k, "at index %d", i)
 	}
 }
 
@@ -727,17 +647,12 @@ func TestFinalContextValidator_Transform(t *testing.T) {
 			}
 
 			err := validator.Transform(context.Background(), req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("wantErr = %v, got %v", tt.wantErr, err)
-			}
-
-			if !tt.wantErr {
-				if req.Metadata.FinalTokenCount != tt.tokens {
-					t.Errorf("expected FinalTokenCount %d, got %d", tt.tokens, req.Metadata.FinalTokenCount)
-				}
-				if req.Metadata.FinalTurnCount != 1 {
-					t.Errorf("expected FinalTurnCount 1, got %d", req.Metadata.FinalTurnCount)
-				}
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.tokens, req.Metadata.FinalTokenCount)
+				require.Equal(t, 1, req.Metadata.FinalTurnCount)
 			}
 		})
 	}
@@ -758,28 +673,18 @@ func TestHistoryPruner_Unbalanced(t *testing.T) {
 	}
 
 	err := pruner.Transform(ctx, req)
-	if err != nil {
-		t.Fatalf("Transform failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Grouping: [1,2], [3]. MaxTurns 1 keeps the last turn: [3].
-	if len(req.History) != 1 {
-		t.Errorf("expected 1 message remaining, got %d", len(req.History))
-	}
-	if req.History[0].Parts[0].Text != "3" {
-		t.Errorf("expected message '3', got %s", req.History[0].Parts[0].Text)
-	}
+	require.Len(t, req.History, 1)
+	require.Equal(t, "3", req.History[0].Parts[0].Text)
 }
 
 func TestGroupTurns_Helper(t *testing.T) {
 	history := []*llm.Content{{Role: "user"}, {Role: "model"}, {Role: "user"}}
 	turns := groupTurns(history)
-	if len(turns) != 2 {
-		t.Errorf("expected 2 turns, got %d", len(turns))
-	}
-	if len(turns[1]) != 1 {
-		t.Errorf("expected last turn to have 1 message, got %d", len(turns[1]))
-	}
+	require.Len(t, turns, 2)
+	require.Len(t, turns[1], 1)
 }
 
 func TestIsTurnEmpty_Helper(t *testing.T) {
@@ -795,9 +700,7 @@ func TestIsTurnEmpty_Helper(t *testing.T) {
 		{"FunctionCall", []*llm.Content{{Parts: []*llm.Part{{FunctionCall: &llm.FunctionCall{Name: "c"}}}}}, false},
 	}
 	for _, tt := range tests {
-		if got := isTurnEmpty(tt.turn); got != tt.expected {
-			t.Errorf("%s: expected %v, got %v", tt.name, tt.expected, got)
-		}
+		require.Equal(t, tt.expected, isTurnEmpty(tt.turn), tt.name)
 	}
 }
 
@@ -807,27 +710,18 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 	t.Run("No pins", func(t *testing.T) {
 		history := generateMessageHistory(20)
 		start, end, numTurns, err := tg.findSummarizableRange(history)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if numTurns != 5 {
-			t.Errorf("expected 5 turns, got %d", numTurns)
-		}
-		if start != 0 || end != 10 {
-			t.Errorf("expected [0:10], got [%d:%d]", start, end)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 5, numTurns)
+		require.Equal(t, 0, start)
+		require.Equal(t, 10, end)
 	})
 
 	t.Run("Pin turn 0", func(t *testing.T) {
 		history := generateMessageHistory(20)
 		history[0].Pinned = true
 		start, _, _, err := tg.findSummarizableRange(history)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if start != 2 {
-			t.Errorf("expected start 2, got %d", start)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 2, start)
 	})
 
 	t.Run("All pinned", func(t *testing.T) {
@@ -836,9 +730,7 @@ func TestFindSummarizableRange_Helper(t *testing.T) {
 			history[i].Pinned = true
 		}
 		_, _, _, err := tg.findSummarizableRange(history)
-		if err == nil {
-			t.Error("expected error when all turns are pinned")
-		}
+		require.Error(t, err)
 	})
 }
 
@@ -852,15 +744,9 @@ func TestApplySummary_Helper(t *testing.T) {
 	}
 	// Replace turns [0,1] (msgs 0,1,2,3)
 	newHist := applySummaryToHistory(history, 0, 4, "summary")
-	if len(newHist) != 3 { // [SummaryUser, SummaryModel, Msg4]
-		t.Errorf("expected 3 messages, got %d", len(newHist))
-	}
-	if !strings.Contains(newHist[0].Parts[0].Text, "summary") {
-		t.Errorf("summary not found in first message: %s", newHist[0].Parts[0].Text)
-	}
-	if newHist[2].Parts[0].Text != "4" {
-		t.Errorf("expected last message to be '4', got '%s'", newHist[2].Parts[0].Text)
-	}
+	require.Len(t, newHist, 3) // [SummaryUser, SummaryModel, Msg4]
+	require.Contains(t, newHist[0].Parts[0].Text, "summary")
+	require.Equal(t, "4", newHist[2].Parts[0].Text)
 }
 
 func TestApplySummaryToHistory_UserMerging(t *testing.T) {
@@ -871,9 +757,7 @@ func TestApplySummaryToHistory_UserMerging(t *testing.T) {
 	// start: 1, end: 2 -> keeps u1, replaces m1
 	got := applySummaryToHistory(history, 1, 2, "sum")
 
-	if len(got) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(got))
-	}
+	require.Len(t, got, 2)
 
 	foundU1 := false
 	foundSum := false
@@ -885,9 +769,8 @@ func TestApplySummaryToHistory_UserMerging(t *testing.T) {
 			foundSum = true
 		}
 	}
-	if !foundU1 || !foundSum {
-		t.Errorf("expected u1 and sum in first message, got parts: %v", got[0].Parts)
-	}
+	require.True(t, foundU1, "u1 not found in parts")
+	require.True(t, foundSum, "sum not found in parts")
 }
 
 func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
@@ -898,13 +781,9 @@ func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
 	// start: 0, end: 1 -> replaces u1, keeps m1
 	got := applySummaryToHistory(history, 0, 1, "sum")
 
-	if len(got) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(got))
-	}
+	require.Len(t, got, 2)
 
-	if !strings.Contains(got[0].Parts[0].Text, "sum") {
-		t.Errorf("expected summary in first message, got %s", got[0].Parts[0].Text)
-	}
+	require.Contains(t, got[0].Parts[0].Text, "sum")
 
 	foundUnderstood := false
 	foundM1 := false
@@ -916,9 +795,8 @@ func TestApplySummaryToHistory_ModelMerging(t *testing.T) {
 			foundM1 = true
 		}
 	}
-	if !foundUnderstood || !foundM1 {
-		t.Errorf("expected Understood and m1 in second message, got parts: %v", got[1].Parts)
-	}
+	require.True(t, foundUnderstood, "Understood not found in parts")
+	require.True(t, foundM1, "m1 not found in parts")
 }
 
 func TestApplySummaryToHistory_Merging(t *testing.T) {
@@ -931,17 +809,17 @@ func TestApplySummaryToHistory_Merging(t *testing.T) {
 		}
 		// start: 1, end: 3 -> keeps u1, replaces m1,u2, keeps m2
 		got := applySummaryToHistory(history, 1, 3, "sum")
-		if len(got) != 2 {
-			t.Fatalf("expected 2 messages, got %d", len(got))
-		}
+		require.Len(t, got, 2)
 
 		assertHasText := func(c *llm.Content, text string) {
+			found := false
 			for _, p := range c.Parts {
 				if strings.Contains(p.Text, text) {
-					return
+					found = true
+					break
 				}
 			}
-			t.Errorf("text %q not found in parts", text)
+			require.True(t, found, "text %q not found in parts", text)
 		}
 
 		assertHasText(got[0], "u1")
@@ -954,9 +832,7 @@ func TestApplySummaryToHistory_Merging(t *testing.T) {
 func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 	t.Run("Empty History", func(t *testing.T) {
 		got := applySummaryToHistory([]*llm.Content{}, 0, 0, "sum")
-		if len(got) != 2 {
-			t.Errorf("expected 2 messages for empty history, got %d", len(got))
-		}
+		require.Len(t, got, 2)
 	})
 
 	t.Run("Start=0, following is user", func(t *testing.T) {
@@ -964,9 +840,7 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 			{Role: "user", Parts: []*llm.Part{{Text: "u1"}}},
 		}
 		got := applySummaryToHistory(history, 0, 0, "sum")
-		if len(got) != 3 {
-			t.Errorf("expected 3 roles, got %d", len(got))
-		}
+		require.Len(t, got, 3)
 	})
 
 	t.Run("End=Len, previous is model", func(t *testing.T) {
@@ -975,9 +849,7 @@ func TestApplySummaryToHistory_EdgeCases(t *testing.T) {
 			{Role: "model", Parts: []*llm.Part{{Text: "m1"}}},
 		}
 		got := applySummaryToHistory(history, 2, 2, "sum")
-		if len(got) != 4 {
-			t.Errorf("expected 4 roles, got %d", len(got))
-		}
+		require.Len(t, got, 4)
 	})
 }
 
@@ -990,15 +862,9 @@ func TestTokenGatekeeper_HandleTieredThreshold_Disabled(t *testing.T) {
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
-	if err != nil {
-		t.Fatalf("handleTieredThreshold failed: %v", err)
-	}
-	if tokens != 1000 {
-		t.Errorf("expected 1000 tokens, got %d", tokens)
-	}
-	if req.Metadata.SummarizationAttempted {
-		t.Error("summarization should not have been attempted")
-	}
+	require.NoError(t, err)
+	require.Equal(t, 1000, tokens)
+	require.False(t, req.Metadata.SummarizationAttempted)
 }
 
 func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
@@ -1010,12 +876,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_Below(t *testing.T) {
 	req := &request{History: []*llm.Content{{Role: "user"}}}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
-	if err != nil {
-		t.Fatalf("handleTieredThreshold failed: %v", err)
-	}
-	if tokens != 1000 {
-		t.Errorf("expected 1000 tokens, got %d", tokens)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 1000, tokens)
 }
 
 func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
@@ -1042,15 +904,9 @@ func TestTokenGatekeeper_HandleTieredThreshold_Triggers(t *testing.T) {
 	req := &request{History: h}
 
 	_, err := tg.handleTieredThreshold(ctx, req)
-	if err != nil {
-		t.Fatalf("handleTieredThreshold failed: %v", err)
-	}
-	if !summarizerCalled {
-		t.Error("summarizer should have been called")
-	}
-	if !req.Metadata.SummarizationAttempted {
-		t.Error("summarization should have been marked as attempted")
-	}
+	require.NoError(t, err)
+	require.True(t, summarizerCalled)
+	require.True(t, req.Metadata.SummarizationAttempted)
 }
 
 func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
@@ -1063,9 +919,7 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 		tg := &tokenGatekeeper{Estimator: strategy}
 		req := &request{History: []*llm.Content{{Role: "user"}}}
 		_, _ = tg.handleTieredThreshold(ctx, req)
-		if !req.Metadata.MaintenanceBlocked {
-			t.Error("expected MaintenanceBlocked to be true")
-		}
+		require.True(t, req.Metadata.MaintenanceBlocked)
 	})
 
 	t.Run("Critical error", func(t *testing.T) {
@@ -1083,9 +937,8 @@ func TestTokenGatekeeper_HandleTieredThreshold_Failures(t *testing.T) {
 		}
 		req := &request{History: h}
 		_, err := tg.handleTieredThreshold(ctx, req)
-		if err == nil || err.Error() != "boom" {
-			t.Errorf("expected 'boom' error, got %v", err)
-		}
+		require.Error(t, err)
+		require.Equal(t, "boom", err.Error())
 	})
 }
 
@@ -1135,30 +988,19 @@ func TestTokenGatekeeper_HandleTieredThreshold_WithEvents(t *testing.T) {
 	req := &request{History: h}
 
 	_, err := tg.handleTieredThreshold(ctx, req)
-	if err != nil {
-		t.Fatalf("handleTieredThreshold failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(publishedEvents) == 0 {
-		t.Error("expected events to be published")
-	} else {
-		found := false
-		for _, ev := range publishedEvents {
-			if sre, ok := ev.(events.SummarizationRequired); ok {
-				found = true
-				if sre.Reason != "High-tier pricing threshold reached" {
-					t.Errorf("expected reason 'High-tier pricing threshold reached', got %s", sre.Reason)
-				}
-			}
-		}
-		if !found {
-			t.Errorf("events.SummarizationRequired not found in %v", publishedEvents)
+	require.NotEmpty(t, publishedEvents)
+	found := false
+	for _, ev := range publishedEvents {
+		if sre, ok := ev.(events.SummarizationRequired); ok {
+			found = true
+			require.Equal(t, "High-tier pricing threshold reached", sre.Reason)
 		}
 	}
+	require.True(t, found, "events.SummarizationRequired not found")
 
-	if req.Metadata.OriginalTokenCount != 1000 {
-		t.Errorf("expected OriginalTokenCount 1000, got %d", req.Metadata.OriginalTokenCount)
-	}
+	require.Equal(t, 1000, req.Metadata.OriginalTokenCount)
 }
 
 func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
@@ -1179,18 +1021,12 @@ func TestTokenGatekeeper_HandleTieredThreshold_AlreadyAttempted(t *testing.T) {
 	}
 
 	tokens, err := tg.handleTieredThreshold(ctx, req)
-	if err != nil {
-		t.Fatalf("handleTieredThreshold failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if tokens != 1000 {
-		t.Errorf("expected 1000 tokens, got %d", tokens)
-	}
+	require.Equal(t, 1000, tokens)
 
 	// Should NOT have set MaintenanceBlocked because it shouldn't have even tried autoSummarize
-	if req.Metadata.MaintenanceBlocked {
-		t.Error("MaintenanceBlocked should not be true when summarization was already attempted")
-	}
+	require.False(t, req.Metadata.MaintenanceBlocked)
 }
 
 func setupTestPipeline(maxTokens int) (*ContextPipeline, *ContextStrategy) {
@@ -1225,12 +1061,14 @@ func generatePinnedHistory(n int, textLen int) []*llm.Content {
 
 func assertHasWarning(t *testing.T, content *llm.Content, substring string) {
 	t.Helper()
+	found := false
 	for _, p := range content.Parts {
 		if strings.Contains(p.Text, substring) {
-			return
+			found = true
+			break
 		}
 	}
-	t.Errorf("warning substring %q not found in content parts", substring)
+	require.True(t, found, "warning substring %q not found in content parts", substring)
 }
 
 func generateMessageHistory(n int) []*llm.Content {
@@ -1295,45 +1133,30 @@ func TestHistoryRepairer_Transform(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := &request{History: tt.history}
 			err := repairer.Transform(ctx, req)
-			if err != nil {
-				t.Fatalf("Transform failed: %v", err)
-			}
-			if len(req.History) != tt.wantLen {
-				t.Errorf("expected %d messages, got %d", tt.wantLen, len(req.History))
-			}
+			require.NoError(t, err)
+			require.Len(t, req.History, tt.wantLen)
 			if tt.expectReboot {
 				last := req.History[len(req.History)-1]
-				if last.Role != "user" || last.Parts[0].FunctionResponse == nil {
-					t.Errorf("expected function response, got %v", last.Parts)
-				}
-				if !strings.Contains(last.Parts[0].FunctionResponse.Response["result"].(string), "System rebooted") {
-					t.Errorf("expected reboot message, got %v", last.Parts[0].FunctionResponse.Response)
-				}
+				require.Equal(t, "user", last.Role)
+				require.NotNil(t, last.Parts[0].FunctionResponse)
+				require.Contains(t, last.Parts[0].FunctionResponse.Response["result"].(string), "System rebooted")
 			}
-			if req.PersistHistory != tt.expectPersist {
-				t.Errorf("expected PersistHistory %v, got %v", tt.expectPersist, req.PersistHistory)
-			}
+			require.Equal(t, tt.expectPersist, req.PersistHistory)
 		})
 	}
 }
 
 func TestContextTransformers_NilSafety_Coverage(t *testing.T) {
 	t.Run("groupTurns with nil", func(t *testing.T) {
-		if groupTurns(nil) != nil {
-			t.Error("expected nil for nil input")
-		}
+		require.Nil(t, groupTurns(nil))
 	})
 	t.Run("groupTurns with empty", func(t *testing.T) {
-		if groupTurns([]*llm.Content{}) != nil {
-			t.Error("expected nil for empty input")
-		}
+		require.Nil(t, groupTurns([]*llm.Content{}))
 	})
 }
 
 func TestContextManager_CloneContentSlice_NilSafety(t *testing.T) {
-	if cloneContentSlice(nil) != nil {
-		t.Error("expected nil for nil input")
-	}
+	require.Nil(t, cloneContentSlice(nil))
 }
 
 func TestContentCleaner_Transform(t *testing.T) {
@@ -1353,15 +1176,9 @@ func TestContentCleaner_Transform(t *testing.T) {
 			},
 		}
 		err := cleaner.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
-		if len(req.History[0].Parts) != 1 {
-			t.Errorf("expected 1 part, got %d", len(req.History[0].Parts))
-		}
-		if !req.PersistHistory {
-			t.Error("expected PersistHistory to be true")
-		}
+		require.NoError(t, err)
+		require.Len(t, req.History[0].Parts, 1)
+		require.True(t, req.PersistHistory)
 	})
 
 	t.Run("Fallback for completely empty content", func(t *testing.T) {
@@ -1376,12 +1193,9 @@ func TestContentCleaner_Transform(t *testing.T) {
 			},
 		}
 		err := cleaner.Transform(ctx, req)
-		if err != nil {
-			t.Fatalf("Transform failed: %v", err)
-		}
-		if len(req.History[0].Parts) != 1 || req.History[0].Parts[0].Text != "[empty response]" {
-			t.Errorf("expected [empty response] part, got %v", req.History[0].Parts)
-		}
+		require.NoError(t, err)
+		require.Len(t, req.History[0].Parts, 1)
+		require.Equal(t, "[empty response]", req.History[0].Parts[0].Text)
 	})
 }
 
@@ -1400,16 +1214,10 @@ func TestTransientMerger_Transform(t *testing.T) {
 	}
 
 	err := merger.Transform(ctx, req)
-	if err != nil {
-		t.Fatalf("Transform failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	if len(req.History[0].Parts) != 2 {
-		t.Errorf("expected 2 parts, got %d", len(req.History[0].Parts))
-	}
-	if req.History[0].Parts[1].Text != "transient" {
-		t.Errorf("expected transient part, got %s", req.History[0].Parts[1].Text)
-	}
+	require.Len(t, req.History[0].Parts, 2)
+	require.Equal(t, "transient", req.History[0].Parts[1].Text)
 }
 
 func TestCleanContent_NilSafety(t *testing.T) {
@@ -1421,7 +1229,5 @@ func TestCleanContent_NilSafety(t *testing.T) {
 	}()
 
 	result := cleanContent(nil)
-	if result != false {
-		t.Errorf("expected false for nil content, got %v", result)
-	}
+	require.False(t, result)
 }

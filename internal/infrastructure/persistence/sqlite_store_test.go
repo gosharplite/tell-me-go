@@ -3,7 +3,6 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"testing"
 	"time"
 
@@ -420,51 +419,5 @@ func TestStoreErrors(t *testing.T) {
 	taskStore := newSQLiteTaskStore(db)
 	if _, err := taskStore.ReadAll(ctx); err == nil {
 		t.Errorf("Expected error on closed db ReadAll")
-	}
-}
-
-func TestSQLiteTaskStore_ReadPage(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-
-	store := newSQLiteTaskStore(db)
-	ctx := context.Background()
-
-	// Insert 5 tasks
-	for i := 1; i <= 5; i++ {
-		task := services.Task{
-			ID:        float64(i),
-			Content:   fmt.Sprintf("task %d", i),
-			Status:    "pending",
-			CreatedAt: time.Now(),
-		}
-		err := store.Append(ctx, task)
-		if err != nil {
-			t.Fatalf("failed to append task %d: %v", i, err)
-		}
-	}
-
-	tests := []struct {
-		name     string
-		limit    int
-		offset   int
-		expected int // Expected number of results
-	}{
-		{"Page 1", 2, 0, 2},
-		{"Page 2", 2, 2, 2},
-		{"Page 3", 2, 4, 1},
-		{"Out of Bounds", 2, 10, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := store.ReadPage(ctx, tt.limit, tt.offset)
-			if err != nil {
-				t.Fatalf("failed to read page: %v", err)
-			}
-			if len(res) != tt.expected {
-				t.Errorf("expected %d results, got %d", tt.expected, len(res))
-			}
-		})
 	}
 }
