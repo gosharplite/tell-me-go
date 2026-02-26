@@ -11,8 +11,6 @@ import (
 )
 
 func TestAgentOptions(t *testing.T) {
-	mockRegistry := &mockToolRegistry{}
-	mockSM := &mockSecurityManager{}
 	mockSummarizer := &mockSummarizer{}
 	mockHManager := &mockHistoryManager{}
 	mockLoader := &mockLoader{}
@@ -23,23 +21,9 @@ func TestAgentOptions(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		option   option
+		option   Option
 		validate func(t *testing.T, cfg *agentConfig)
 	}{
-		{
-			name:   "WithRegistry",
-			option: WithRegistry(mockRegistry),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockRegistry, cfg.registry)
-			},
-		},
-		{
-			name:   "WithSecurityManager",
-			option: WithSecurityManager(mockSM),
-			validate: func(t *testing.T, cfg *agentConfig) {
-				require.Equal(t, mockSM, cfg.sm)
-			},
-		},
 		{
 			name:   "WithSummarizer",
 			option: WithSummarizer(mockSummarizer),

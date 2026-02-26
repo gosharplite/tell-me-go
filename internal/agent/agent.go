@@ -14,8 +14,20 @@ import (
 	"github.com/gosharplite/tell-me-go/internal/domain/events"
 	domain_llm "github.com/gosharplite/tell-me-go/internal/domain/llm"
 	domain_pricing "github.com/gosharplite/tell-me-go/internal/domain/pricing"
+	domain_security "github.com/gosharplite/tell-me-go/internal/domain/security"
 	"github.com/gosharplite/tell-me-go/internal/domain/services"
+	"github.com/gosharplite/tell-me-go/internal/domain/tools"
 )
+
+// Registry defines the tool management interface needed by the agent.
+type Registry interface {
+	tools.IToolRegistry
+}
+
+// SecurityManager defines the safety controls needed for tool execution.
+type SecurityManager interface {
+	domain_security.ISecurityManager
+}
 
 // runtimeConfig consolidates all agent configuration parameters.
 type runtimeConfig struct {
@@ -42,14 +54,14 @@ type agent struct {
 }
 
 // New creates a new Agent with required dependencies.
-func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string, opts ...option) *agent {
+func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string, registry Registry, sm SecurityManager, opts ...Option) *agent {
 	cfg := &agentConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(cfg.registry), bus)
-	exec := executor.NewToolExecutor(cfg.registry, cfg.sm, bus)
+	strategy := orchestration.NewContextStrategy(orchestration.NewHeuristicTokenCounter(registry), bus)
+	exec := executor.NewToolExecutor(registry, sm, bus)
 
 	a := &agent{
 		gateway:       client,
@@ -72,7 +84,7 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string,
 	}
 
 	factory := &orchestration.PipelineFactory{
-		Registry:   cfg.registry,
+		Registry:   registry,
 		History:    cfg.hManager,
 		Summarizer: cfg.summarizer,
 		Estimator:  strategy,
@@ -83,13 +95,13 @@ func New(client domain_llm.LLMGateway, bus events.EventBus, providerName string,
 	a.ctxManager = ctxManager
 
 	// Initialize engine
-	a.engine = newTurnEngine(client, exec, ctxManager, cfg.registry, bus,
-		withConfig(cfg.sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
+	a.engine = newTurnEngine(client, exec, ctxManager, registry, bus,
+		withConfig(sm, a.config.ProviderName, a.config.Model, a.config.PricingOverrides),
 		withCostTracker(a.tracker),
 	)
 
 	if cfg.registerInternal {
-		orchestration.RegisterInternal(cfg.registry, ctxManager)
+		orchestration.RegisterInternal(registry, ctxManager)
 	}
 
 	if err := a.applyConfig(context.Background()); err != nil {

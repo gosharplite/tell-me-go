@@ -36,7 +36,7 @@ func TestAgent_EmptyPartProtection(t *testing.T) {
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
-	a := New(client, bus, "test-provider", WithHistoryManager(h), WithRegistry(registry), WithSecurityManager(sm))
+	a := New(client, bus, "test-provider", registry, sm, WithHistoryManager(h))
 
 	// Prepare should trigger the contentCleaner transformer
 	preparedHistory, _, err := a.ctxManager.Prepare(ctx, 1)
@@ -73,7 +73,7 @@ func TestAgent_InLoopPruning(t *testing.T) {
 	client := &mockLLMClient{}
 	sm := &mockSecurityManager{AllowAll: true}
 	bus := events.NewSimpleEventBus()
-	a := New(client, bus, "test-provider", WithHistoryManager(h), WithRegistry(registry), WithSecurityManager(sm))
+	a := New(client, bus, "test-provider", registry, sm, WithHistoryManager(h))
 	_ = a.SetLimits(ctx, 10, 100000, 1) // Limit history to 1 turn
 
 	// Prepare should trigger the pruning pipeline
@@ -109,7 +109,7 @@ func TestAgent_MultiModalFlow(t *testing.T) {
 	mockClient := newMultiModalMockClient()
 
 	bus := events.NewSimpleEventBus()
-	a := New(mockClient, bus, "test-provider", WithHistoryManager(h), WithRegistry(registry), WithSecurityManager(sm))
+	a := New(mockClient, bus, "test-provider", registry, sm, WithHistoryManager(h))
 	sess := services.NewSession("regression-multimodal", h)
 	ctx := context.Background()
 	err := a.Chat(ctx, sess, "Show me a cat")
